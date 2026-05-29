@@ -9,6 +9,7 @@ import {
   Activity,
   Zap,
   Sparkle,
+  Bot,
   Plug,
   Settings,
   type LucideIcon,
@@ -166,6 +167,15 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Webhooks", slug: "webhooks" },
       { label: "Runbooks", slug: "runbooks" },
       { label: "Audit Log", slug: "audit-log" },
+    ],
+  },
+  {
+    slug: "agent",
+    label: "RAG Agent",
+    icon: Bot,
+    color: "text-violet-400/60",
+    subItems: [
+      { label: "Agents", slug: "agents" },
     ],
   },
   {

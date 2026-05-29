@@ -150,6 +150,61 @@ function parseEnvFile(content: string): DetectedEnv[] {
     });
 }
 
+// Extract a lightweight app structure (pages + interactive elements) for the RAG agent.
+// Heuristic, source-based: finds page-like files and parses routes + UI elements.
+async function extractAppStructure(
+  token: string,
+  fullName: string,
+  ref: string,
+  fileTree: string[],
+): Promise<{ pages: any[]; routes: string[]; element_count: number }> {
+  // Candidate page files (cap to keep latency bounded).
+  const pageFiles = fileTree
+    .filter((p) =>
+      /\.(tsx|jsx|vue|svelte)$/.test(p) &&
+      (/\/pages\//i.test(p) || /\/app\/.*\/(page|route)\.(tsx|jsx)$/i.test(p) || /\/(features|views|screens)\//i.test(p) || /page\.(tsx|jsx)$/i.test(p)),
+    )
+    .slice(0, 25);
+
+  // Router files to extract route paths.
+  const routerFiles = fileTree.filter((p) => /(router|routes|App)\.(tsx|jsx|ts)$/i.test(p)).slice(0, 5);
+
+  const routes = new Set<string>();
+  for (const rf of routerFiles) {
+    const content = await fetchFileContent(token, fullName, ref, rf).catch(() => null);
+    if (!content) continue;
+    for (const m of content.matchAll(/path:\s*["'`]([^"'`]+)["'`]/g)) routes.add(m[1]);
+    for (const m of content.matchAll(/<Route[^>]*path=["'`]([^"'`]+)["'`]/g)) routes.add(m[1]);
+  }
+
+  const pages: any[] = [];
+  let elementCount = 0;
+  for (const pf of pageFiles) {
+    const content = await fetchFileContent(token, fullName, ref, pf).catch(() => null);
+    if (!content) continue;
+    const name = (pf.split("/").pop() ?? pf).replace(/\.(tsx|jsx|vue|svelte)$/, "");
+    const elements: any[] = [];
+
+    // Buttons (text content)
+    for (const m of content.matchAll(/<(?:Button|button)[^>]*>([^<]{1,60})</g)) {
+      const label = m[1].replace(/\{[^}]*\}/g, "").trim();
+      if (label) elements.push({ type: "button", label });
+    }
+    // Links
+    for (const m of content.matchAll(/<(?:Link|a)[^>]*(?:to|href)=["'`]([^"'`]+)["'`][^>]*>([^<]{0,60})</g)) {
+      elements.push({ type: "link", label: m[2].trim() || m[1], action: m[1] });
+    }
+    // Forms
+    if (/<form/i.test(content)) elements.push({ type: "form", label: "form" });
+
+    const deduped = elements.slice(0, 20);
+    elementCount += deduped.length;
+    pages.push({ name, path: pf, elements: deduped });
+  }
+
+  return { pages, routes: [...routes], element_count: elementCount };
+}
+
 async function patchProgress(jobId: string, step: string) {
   const admin = createServiceClient();
   await admin.from("scan_jobs").update({ progress: { step }, status: "running" }).eq("id", jobId);
@@ -266,6 +321,10 @@ Deno.serve(async (req) => {
       manifests_found: Object.keys(fileContents),
     };
 
+    // Extract the app's UI structure (pages/buttons) for the RAG onboarding agent.
+    await patchProgress(scanJobId, "extract_structure");
+    const appStructure = await extractAppStructure(token, repo.full_name, ref, fileTree).catch(() => ({ pages: [], routes: [], element_count: 0 }));
+
     await patchProgress(scanJobId, "store_results");
 
     const { data: scanResultRow } = await admin
@@ -281,6 +340,7 @@ Deno.serve(async (req) => {
         services,
         architecture: { frontend: fw.frontend, backend: fw.backend_framework },
         security_findings: recommendations,
+        app_structure: appStructure,
         ai_analysis: { status: "pending" },
       })
       .select("id")

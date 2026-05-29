@@ -50,6 +50,9 @@ import {
 } from "@/features/users/Extra";
 import { EngagementPage } from "@/features/users/Engagement";
 
+import { RagAgentsPage } from "@/features/agent-rag/Agents";
+import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
+
 import { ContentStudioPage } from "@/features/marketing/ContentStudio";
 import {
   MarketingOverviewPage,
@@ -168,6 +171,8 @@ const PAGES: Record<string, PageEl> = {
   "users/health-scores": <HealthScoresPage />,
   "users/churn-risk": <ChurnRiskPage />,
   "users/funnels": <FunnelsPage />,
+
+  "agent/agents": <RagAgentsPage />,
 
   "marketing/overview": <MarketingOverviewPage />,
   "marketing/content-studio": <ContentStudioPage />,
@@ -289,6 +294,14 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <DashboardBuilderPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "agent/builder/:agentId",
+        element: (
+          <ErrorBoundary>
+            <AgentBuilderPage />
           </ErrorBoundary>
         ),
       },

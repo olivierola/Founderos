@@ -1,0 +1,441 @@
+import { useState, useRef, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ArrowLeft, Loader2, Bot, Database, MessageSquare, Code2, BarChart3, Settings2,
+  Plus, Trash2, Send, FileText, Link2, LayoutGrid, Check, Copy, Sparkles,
+} from "lucide-react";
+import { MetricCard } from "@/components/MetricCard";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/EmptyState";
+import { supabase } from "@/lib/supabase";
+import { callEdge } from "@/lib/edge";
+import { useCurrentContext } from "@/hooks/useCurrentContext";
+
+type Tab = "knowledge" | "playground" | "widget" | "analytics" | "settings";
+
+interface Agent {
+  id: string; name: string; description: string | null; persona: string | null;
+  instructions: string | null; model: string; temperature: number;
+  welcome_message: string | null; widget_config: any; public_key: string;
+  enabled: boolean; onboarding_enabled: boolean;
+}
+interface Source { id: string; type: string; title: string; status: string; chunk_count: number; error_message: string | null; created_at: string; }
+
+export function AgentBuilderPage() {
+  const navigate = useNavigate();
+  const { workspaceSlug, projectSlug, agentId } = useParams();
+  const { workspaceId, projectId } = useCurrentContext();
+  const [tab, setTab] = useState<Tab>("knowledge");
+
+  const { data: agent, isLoading } = useQuery({
+    queryKey: ["rag_agent", agentId],
+    enabled: !!agentId,
+    queryFn: async () => {
+      const { data } = await supabase.from("rag_agents").select("*").eq("id", agentId!).maybeSingle();
+      return data as Agent | null;
+    },
+  });
+
+  if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (!agent) return <EmptyState icon={Bot} title="Agent not found" />;
+
+  const TABS: { value: Tab; label: string; icon: any }[] = [
+    { value: "knowledge", label: "Knowledge", icon: Database },
+    { value: "playground", label: "Playground", icon: MessageSquare },
+    { value: "widget", label: "Widget", icon: Code2 },
+    { value: "analytics", label: "Analytics", icon: BarChart3 },
+    { value: "settings", label: "Settings", icon: Settings2 },
+  ];
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/agents`)}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+          <Bot className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{agent.name}</h1>
+          {agent.description && <p className="text-sm text-muted-foreground">{agent.description}</p>}
+        </div>
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-border">
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => setTab(t.value)}
+            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${
+              tab === t.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <t.icon className="h-4 w-4" /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "knowledge" && <KnowledgeTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {tab === "playground" && <PlaygroundTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {tab === "widget" && <WidgetTab agent={agent} />}
+      {tab === "analytics" && <AnalyticsTab agent={agent} />}
+      {tab === "settings" && <SettingsTab agent={agent} />}
+    </div>
+  );
+}
+
+// --- Knowledge ----------------------------------------------------------
+function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspaceId: string | null; projectId: string | null }) {
+  const queryClient = useQueryClient();
+  const [type, setType] = useState<"text" | "url" | "saas_structure">("text");
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: sources } = useQuery({
+    queryKey: ["rag_sources", agent.id],
+    enabled: !!agent.id,
+    refetchInterval: 4000,
+    queryFn: async () => {
+      const { data } = await supabase.from("rag_sources").select("*").eq("agent_id", agent.id).order("created_at", { ascending: false });
+      return (data ?? []) as Source[];
+    },
+  });
+
+  async function ingest() {
+    if (!workspaceId || !projectId) return;
+    setBusy(true); setError(null);
+    try {
+      const payload: any = { workspace_id: workspaceId, project_id: projectId, agent_id: agent.id, type, title: title || (type === "saas_structure" ? "SaaS structure" : type) };
+      if (type === "text") payload.content = content;
+      if (type === "url") payload.url = url;
+      await callEdge("rag-ingest", payload);
+      setTitle(""); setContent(""); setUrl("");
+      queryClient.invalidateQueries({ queryKey: ["rag_sources", agent.id] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  async function removeSource(id: string) {
+    await supabase.from("rag_sources").delete().eq("id", id);
+    queryClient.invalidateQueries({ queryKey: ["rag_sources", agent.id] });
+  }
+
+  const icon = (t: string) => (t === "url" ? Link2 : t === "saas_structure" ? LayoutGrid : FileText);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Plus className="h-4 w-4" /> Add knowledge</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex gap-1.5">
+            {(["text", "url", "saas_structure"] as const).map((t) => (
+              <Button key={t} size="sm" variant={type === t ? "default" : "outline"} onClick={() => setType(t)}>
+                {t === "saas_structure" ? "SaaS structure" : t}
+              </Button>
+            ))}
+          </div>
+          {type !== "saas_structure" && <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />}
+          {type === "text" && (
+            <textarea placeholder="Paste text / FAQ / docs…" value={content} onChange={(e) => setContent(e.target.value)} rows={6}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          )}
+          {type === "url" && <Input placeholder="https://docs.example.com/page" value={url} onChange={(e) => setUrl(e.target.value)} />}
+          {type === "saas_structure" && (
+            <p className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+              Imports your app's pages & interactive elements from the latest code scan, so the agent can guide users (onboarding). Run a code scan first.
+            </p>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <Button onClick={ingest} disabled={busy || (type === "text" && !content) || (type === "url" && !url)}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Ingest & vectorize
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Sources</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {!sources || sources.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No sources yet.</p>
+          ) : (
+            sources.map((s) => {
+              const Icon = icon(s.type);
+              return (
+                <div key={s.id} className="flex items-center gap-2 rounded-md border border-border p-2.5">
+                  <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">{s.title}</div>
+                    {s.error_message && <div className="truncate text-xs text-destructive">{s.error_message}</div>}
+                  </div>
+                  <Badge variant={s.status === "ready" ? "success" : s.status === "failed" ? "destructive" : "secondary"}>
+                    {s.status === "ready" ? `${s.chunk_count} chunks` : s.status}
+                    {(s.status === "processing" || s.status === "pending") && <Loader2 className="ml-1 inline h-3 w-3 animate-spin" />}
+                  </Badge>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeSource(s.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// --- Playground ---------------------------------------------------------
+function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; workspaceId: string | null; projectId: string | null }) {
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string; sources?: any[] }[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [convId, setConvId] = useState<string | undefined>();
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  async function send() {
+    if (!input.trim() || !workspaceId || !projectId) return;
+    const q = input.trim();
+    setInput("");
+    setMessages((m) => [...m, { role: "user", content: q }]);
+    setBusy(true);
+    try {
+      const res = await callEdge<{ answer: string; conversation_id: string; sources: any[] }>("rag-chat", {
+        workspace_id: workspaceId, project_id: projectId, agent_id: agent.id, message: q, conversation_id: convId,
+      });
+      setConvId(res.conversation_id);
+      setMessages((m) => [...m, { role: "assistant", content: res.answer, sources: res.sources }]);
+    } catch (e) {
+      setMessages((m) => [...m, { role: "assistant", content: `Error: ${e instanceof Error ? e.message : String(e)}` }]);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Card>
+      <CardContent className="flex h-[60vh] flex-col p-0">
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          {messages.length === 0 && (
+            <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
+              <div>
+                <Bot className="mx-auto mb-2 h-8 w-8 text-primary" />
+                {agent.welcome_message ?? "Ask me anything about your knowledge base."}
+              </div>
+            </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>
+                <p className="whitespace-pre-wrap">{m.content}</p>
+                {m.sources && m.sources.length > 0 && (
+                  <div className="mt-2 border-t border-border/50 pt-1.5 text-xs opacity-70">
+                    {m.sources.length} source(s) · top match {(m.sources[0]?.similarity * 100).toFixed(0)}%
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {busy && <div className="flex justify-start"><div className="rounded-lg bg-secondary px-3 py-2"><Loader2 className="h-4 w-4 animate-spin" /></div></div>}
+          <div ref={endRef} />
+        </div>
+        <div className="flex gap-2 border-t border-border p-3">
+          <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Type a message…" />
+          <Button onClick={send} disabled={busy || !input.trim()}><Send className="h-4 w-4" /></Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- Widget -------------------------------------------------------------
+function WidgetTab({ agent }: { agent: Agent }) {
+  const queryClient = useQueryClient();
+  const cfg = agent.widget_config ?? {};
+  const [color, setColor] = useState(cfg.color ?? "#C2D099");
+  const [title, setTitle] = useState(cfg.title ?? agent.name);
+  const [position, setPosition] = useState(cfg.position ?? "bottom-right");
+  const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const base = (import.meta as any).env?.VITE_SUPABASE_URL ?? "https://YOUR_PROJECT.supabase.co";
+  const snippet = `<script>
+  (function(){
+    window.FounderOSAgent = { key: "${agent.public_key}", endpoint: "${base}/functions/v1/rag-chat", title: ${JSON.stringify(title)}, color: ${JSON.stringify(color)}, position: ${JSON.stringify(position)} };
+    var s = document.createElement('script');
+    s.src = "${base}/storage/v1/object/public/widget/agent-widget.js";
+    s.async = true; document.head.appendChild(s);
+  })();
+</script>`;
+
+  async function save() {
+    setSaving(true);
+    try {
+      await supabase.from("rag_agents").update({ widget_config: { color, title, position } }).eq("id", agent.id);
+      queryClient.invalidateQueries({ queryKey: ["rag_agent", agent.id] });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <Card>
+        <CardHeader><CardTitle>Widget appearance</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Title</label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Accent color</label>
+              <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent p-0.5" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Position</label>
+              <select value={position} onChange={(e) => setPosition(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
+                <option value="bottom-right">Bottom right</option>
+                <option value="bottom-left">Bottom left</option>
+              </select>
+            </div>
+          </div>
+          <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save</Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Embed snippet</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-xs text-muted-foreground">Paste this before <code>&lt;/body&gt;</code> on your site. The agent answers from this knowledge base.</p>
+          <pre className="max-h-64 overflow-auto rounded-md border border-border bg-background/40 p-3 text-xs"><code>{snippet}</code></pre>
+          <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(snippet); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+            {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />} Copy snippet
+          </Button>
+          <p className="text-xs text-muted-foreground">Public key: <code className="text-foreground">{agent.public_key}</code></p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// --- Analytics ----------------------------------------------------------
+function AnalyticsTab({ agent }: { agent: Agent }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["rag_analytics", agent.id],
+    enabled: !!agent.id,
+    queryFn: async () => {
+      const [convos, msgs] = await Promise.all([
+        supabase.from("rag_conversations").select("id, source, created_at, rating").eq("agent_id", agent.id).limit(1000),
+        supabase.from("rag_messages").select("role, content, created_at").eq("agent_id", agent.id).eq("role", "user").order("created_at", { ascending: false }).limit(500),
+      ]);
+      return { convos: convos.data ?? [], questions: (msgs.data ?? []) as { content: string }[] };
+    },
+  });
+
+  if (isLoading) return <EmptyState icon={Loader2} title="Loading…" />;
+  const convos = data?.convos ?? [];
+  const questions = data?.questions ?? [];
+  const widget = convos.filter((c: any) => c.source === "widget").length;
+  const ratings = convos.map((c: any) => c.rating).filter((r: any) => r != null);
+  const avgRating = ratings.length ? (ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length).toFixed(1) : "—";
+
+  // Frequent question keywords (naive).
+  const freq = new Map<string, number>();
+  questions.forEach((q) => freq.set(q.content.slice(0, 60), (freq.get(q.content.slice(0, 60)) ?? 0) + 1));
+  const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <MetricCard label="Conversations" value={String(convos.length)} icon={MessageSquare} />
+        <MetricCard label="From widget" value={String(widget)} />
+        <MetricCard label="Questions asked" value={String(questions.length)} />
+        <MetricCard label="Avg rating" value={String(avgRating)} />
+      </div>
+      <Card>
+        <CardHeader><CardTitle>Top questions</CardTitle></CardHeader>
+        <CardContent>
+          {top.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No questions yet.</p>
+          ) : (
+            <ul className="space-y-1.5 text-sm">
+              {top.map(([q, n]) => (
+                <li key={q} className="flex items-center justify-between gap-2">
+                  <span className="truncate">{q}</span>
+                  <Badge variant="secondary">{n}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// --- Settings -----------------------------------------------------------
+function SettingsTab({ agent }: { agent: Agent }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState({
+    name: agent.name, description: agent.description ?? "", persona: agent.persona ?? "",
+    instructions: agent.instructions ?? "", model: agent.model, temperature: agent.temperature,
+    welcome_message: agent.welcome_message ?? "", enabled: agent.enabled, onboarding_enabled: agent.onboarding_enabled,
+  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function save() {
+    setSaving(true); setSaved(false);
+    try {
+      await supabase.from("rag_agents").update({ ...form, updated_at: new Date().toISOString() }).eq("id", agent.id);
+      queryClient.invalidateQueries({ queryKey: ["rag_agent", agent.id] });
+      setSaved(true); setTimeout(() => setSaved(false), 1500);
+    } finally { setSaving(false); }
+  }
+
+  function upd<K extends keyof typeof form>(k: K, v: (typeof form)[K]) { setForm((f) => ({ ...f, [k]: v })); }
+
+  return (
+    <Card className="max-w-2xl">
+      <CardContent className="space-y-3 p-5">
+        <div><label className="mb-1 block text-xs text-muted-foreground">Name</label><Input value={form.name} onChange={(e) => upd("name", e.target.value)} /></div>
+        <div><label className="mb-1 block text-xs text-muted-foreground">Description</label><Input value={form.description} onChange={(e) => upd("description", e.target.value)} /></div>
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Persona</label>
+          <Input value={form.persona} onChange={(e) => upd("persona", e.target.value)} placeholder="You are a friendly support agent for…" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Extra instructions</label>
+          <textarea value={form.instructions} onChange={(e) => upd("instructions", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Welcome message</label>
+          <Input value={form.welcome_message} onChange={(e) => upd("welcome_message", e.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Model</label>
+            <select value={form.model} onChange={(e) => upd("model", e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
+              <option value="groq">Groq (fast)</option>
+              <option value="deepseek">DeepSeek (deep)</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Temperature ({form.temperature})</label>
+            <input type="range" min={0} max={1} step={0.1} value={form.temperature} onChange={(e) => upd("temperature", Number(e.target.value))} className="mt-2 w-full accent-primary" />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-primary" checked={form.onboarding_enabled} onChange={(e) => upd("onboarding_enabled", e.target.checked)} /> Enable onboarding mode (guide users through the SaaS UI)</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-primary" checked={form.enabled} onChange={(e) => upd("enabled", e.target.checked)} /> Agent enabled (widget active)</label>
+        <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : <Check className="h-4 w-4" />} {saved ? "Saved" : "Save settings"}</Button>
+      </CardContent>
+    </Card>
+  );
+}
