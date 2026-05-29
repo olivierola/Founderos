@@ -19,7 +19,8 @@ Deno.serve(async (req) => {
     const { data: userData } = await userClient.auth.getUser();
     if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
-    const { workspace_id, project_id } = await req.json();
+    const body = await req.json();
+    const { workspace_id, project_id } = body;
     if (!workspace_id || !project_id) {
       return jsonResponse({ error: "workspace_id and project_id required" }, { status: 400 });
     }
