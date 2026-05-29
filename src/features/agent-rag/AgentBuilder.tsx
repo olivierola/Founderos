@@ -401,7 +401,10 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+    <div
+      className="-mx-6 -my-6 grid grid-cols-1 gap-4 px-6 py-6 lg:-mx-12 lg:grid-cols-[320px_1fr] lg:px-12 xl:-mx-20 xl:px-20"
+      style={{ backgroundImage: "radial-gradient(hsl(var(--muted-foreground)/0.18) 1px, transparent 1px)", backgroundSize: "16px 16px" }}
+    >
       {/* Left config panel */}
       <div className="space-y-4">
         <h2 className="text-xl font-bold">Playground</h2>
@@ -441,11 +444,8 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
         </Button>
       </div>
 
-      {/* Right chat panel (dotted background) */}
-      <div
-        className="flex justify-center rounded-lg border border-border/40 p-6"
-        style={{ backgroundImage: "radial-gradient(hsl(var(--muted-foreground)/0.18) 1px, transparent 1px)", backgroundSize: "16px 16px" }}
-      >
+      {/* Right chat panel */}
+      <div className="flex justify-center">
         <Card className="flex h-[68vh] w-full max-w-md flex-col overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
