@@ -228,3 +228,16 @@ export async function addCustomerBalance(token: string, customerId: string, amou
     currency: "eur",
   });
 }
+
+// Retry collection of an open/past-due invoice (dunning).
+export async function payInvoice(token: string, invoiceId: string) {
+  return gsPost(token, `/invoices/${invoiceId}/pay`, {});
+}
+
+// Extend a subscription's trial to a future date (unix seconds).
+export async function extendTrial(token: string, subscriptionId: string, trialEndUnix: number) {
+  return gsPost(token, `/subscriptions/${subscriptionId}`, {
+    trial_end: String(trialEndUnix),
+    proration_behavior: "none",
+  });
+}

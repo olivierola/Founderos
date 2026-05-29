@@ -154,6 +154,38 @@ function contextualActions(
     });
   }
 
+  // Trial extension when applicable.
+  if (sub && sub.status === "trialing" && p === "stripe") {
+    list.push({
+      icon: PlayCircle,
+      values: { subscription_id: sub.external_id, days: "7" },
+      cfg: {
+        action_type: "stripe.extend_trial",
+        title: "Extend trial",
+        description: "Give this customer extra trial days.",
+        risk: "medium",
+        fields: [
+          { key: "subscription_id", label: "Subscription ID", required: true },
+          { key: "days", label: "Extra days", type: "number", placeholder: "7" },
+        ],
+      },
+    });
+  }
+
+  if (p === "stripe") {
+    list.push({
+      icon: RotateCcw,
+      values: {},
+      cfg: {
+        action_type: "stripe.retry_payment",
+        title: "Retry failed payment",
+        description: "Re-attempt collection on an open/past-due invoice (dunning).",
+        risk: "medium",
+        fields: [{ key: "invoice_id", label: "Invoice ID", placeholder: "in_...", required: true }],
+      },
+    });
+  }
+
   if (customer.email) {
     list.push({
       icon: KeyRound,
@@ -166,9 +198,88 @@ function contextualActions(
         fields: [{ key: "email", label: "Email", required: true }],
       },
     });
+    list.push({
+      icon: Wallet,
+      values: { email: customer.email },
+      cfg: {
+        action_type: "user.export_data",
+        title: "Export customer data (GDPR)",
+        description: `Gather all stored data for ${customer.email}.`,
+        risk: "low",
+        fields: [{ key: "email", label: "Email", required: true }],
+      },
+    });
+    list.push({
+      icon: Gift,
+      values: { target_email: customer.email },
+      cfg: {
+        action_type: "feature.grant",
+        title: "Grant a feature flag",
+        description: `Enable a feature for ${customer.email}.`,
+        risk: "low",
+        fields: [
+          { key: "flag_key", label: "Feature key", placeholder: "beta_dashboard", required: true },
+          { key: "target_email", label: "Target email", required: true },
+        ],
+      },
+    });
   }
 
   return list;
+}
+
+// Project-wide ops & maintenance actions (no specific customer needed).
+function opsActions(): { cfg: AdminActionConfig; icon: any }[] {
+  return [
+    {
+      icon: RotateCcw,
+      cfg: {
+        action_type: "ops.resync_billing",
+        title: "Re-sync billing data",
+        description: "Pull the latest customers, subscriptions and invoices from your billing provider.",
+        risk: "low",
+        fields: [],
+      },
+    },
+    {
+      icon: RotateCcw,
+      cfg: {
+        action_type: "ops.recalc_metrics",
+        title: "Recalculate metrics",
+        description: "Recompute MRR/ARR/LTV and refresh the latest snapshot.",
+        risk: "low",
+        fields: [],
+      },
+    },
+    {
+      icon: ShieldAlert,
+      cfg: {
+        action_type: "ops.create_alert",
+        title: "Create an alert",
+        description: "Raise a manual alert visible in Overview → Alerts.",
+        risk: "low",
+        fields: [
+          { key: "title", label: "Title", required: true },
+          { key: "message", label: "Message" },
+          { key: "severity", label: "Severity (info/warning/high/critical)", placeholder: "warning" },
+        ],
+      },
+    },
+    {
+      icon: Gift,
+      cfg: {
+        action_type: "ops.create_announcement",
+        title: "Post an announcement",
+        description: "Publish an in-app announcement for your users.",
+        risk: "medium",
+        fields: [
+          { key: "title", label: "Title", required: true },
+          { key: "body", label: "Body" },
+          { key: "level", label: "Level (info/success/warning/critical)", placeholder: "info" },
+        ],
+      },
+    },
+  ];
 }
 
 export function QuickActionsPage() {
@@ -365,6 +476,14 @@ export function QuickActionsPage() {
             Icon={cfg.action_type.includes("coupon") ? TicketPercent : cfg.action_type.includes("password") ? KeyRound : CreditCard}
             onRun={() => run(cfg)}
           />
+        ))}
+      </div>
+
+      {/* Ops & maintenance */}
+      <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ops &amp; maintenance</h2>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {opsActions().map(({ cfg, icon: Icon }) => (
+          <ActionCard key={cfg.action_type} cfg={cfg} Icon={Icon} onRun={() => run(cfg)} />
         ))}
       </div>
 

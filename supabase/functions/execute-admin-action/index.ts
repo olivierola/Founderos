@@ -25,6 +25,8 @@ import {
   resumeSubscription,
   applyCouponToSubscription,
   addCustomerBalance,
+  payInvoice,
+  extendTrial,
 } from "../_shared/stripe.ts";
 
 interface ActionMeta {
@@ -42,6 +44,8 @@ const REGISTRY: Record<string, ActionMeta> = {
   "stripe.apply_coupon": { risk: "medium", requires_confirm: false, target_type: "stripe_subscription" },
   "stripe.create_coupon": { risk: "medium", requires_confirm: false, target_type: "stripe_coupon" },
   "stripe.add_credit": { risk: "high", requires_confirm: true, target_type: "stripe_customer" },
+  "stripe.retry_payment": { risk: "medium", requires_confirm: false, target_type: "stripe_invoice" },
+  "stripe.extend_trial": { risk: "medium", requires_confirm: false, target_type: "stripe_subscription" },
   // Lemon Squeezy
   "lemonsqueezy.cancel_subscription": { risk: "high", requires_confirm: true, target_type: "ls_subscription" },
   "lemonsqueezy.refund_order": { risk: "high", requires_confirm: true, target_type: "ls_order" },
@@ -52,6 +56,15 @@ const REGISTRY: Record<string, ActionMeta> = {
   "user.ban": { risk: "critical", requires_confirm: true, target_type: "auth_user" },
   "user.unban": { risk: "high", requires_confirm: true, target_type: "auth_user" },
   "user.delete": { risk: "critical", requires_confirm: true, target_type: "auth_user" },
+  // Lifecycle / data
+  "user.export_data": { risk: "low", requires_confirm: false, target_type: "auth_user" },
+  "feature.grant": { risk: "low", requires_confirm: false, target_type: "feature_flag" },
+  "feature.revoke": { risk: "low", requires_confirm: false, target_type: "feature_flag" },
+  // Ops / maintenance
+  "ops.resync_billing": { risk: "low", requires_confirm: false, target_type: "project" },
+  "ops.recalc_metrics": { risk: "low", requires_confirm: false, target_type: "project" },
+  "ops.create_alert": { risk: "low", requires_confirm: false, target_type: "alert" },
+  "ops.create_announcement": { risk: "medium", requires_confirm: false, target_type: "announcement" },
 };
 
 async function runAction(
@@ -102,6 +115,18 @@ async function runAction(
         const id = String(payload.customer_id);
         const amount = Number(payload.amount_cents);
         const r = await addCustomerBalance(token, id, amount);
+        return { result: r, target_id: id };
+      }
+      case "stripe.retry_payment": {
+        const id = String(payload.invoice_id);
+        const r = await payInvoice(token, id);
+        return { result: r, target_id: id };
+      }
+      case "stripe.extend_trial": {
+        const id = String(payload.subscription_id);
+        const days = Number(payload.days ?? 7);
+        const trialEnd = Math.floor(Date.now() / 1000) + days * 86400;
+        const r = await extendTrial(token, id, trialEnd);
         return { result: r, target_id: id };
       }
       case "stripe.create_coupon": {
@@ -184,6 +209,83 @@ async function runAction(
     const { error } = await admin.auth.admin.deleteUser(userId);
     if (error) throw new Error(error.message);
     return { result: { deleted: true }, target_id: userId };
+  }
+
+  // --- Lifecycle / data ---
+  if (type === "user.export_data") {
+    const admin = createServiceClient();
+    const email = String(payload.email);
+    const [cust, evts] = await Promise.all([
+      admin.from("customers").select("*").eq("project_id", projectId).eq("email", email).maybeSingle(),
+      admin.from("product_events").select("event_name, occurred_at").eq("project_id", projectId).eq("user_email", email).limit(500),
+    ]);
+    const subs = cust.data
+      ? await admin.from("subscriptions").select("*").eq("project_id", projectId).eq("customer_external_id", cust.data.external_id)
+      : { data: [] };
+    return { result: { customer: cust.data, subscriptions: subs.data, events: evts.data }, target_id: email };
+  }
+
+  if (type === "feature.grant" || type === "feature.revoke") {
+    const admin = createServiceClient();
+    const flagKey = String(payload.flag_key);
+    const targetEmail = payload.target_email ? String(payload.target_email) : null;
+    const { error } = await admin.from("feature_flags").upsert(
+      { workspace_id: workspaceId, project_id: projectId, flag_key: flagKey, target_email: targetEmail, enabled: type === "feature.grant" },
+      { onConflict: "project_id,flag_key,target_email" },
+    );
+    if (error) throw new Error(error.message);
+    return { result: { flag_key: flagKey, enabled: type === "feature.grant" }, target_id: targetEmail ?? flagKey };
+  }
+
+  // --- Ops / maintenance (re-dispatch to existing edges via service key) ---
+  if (type === "ops.resync_billing" || type === "ops.recalc_metrics") {
+    const projectUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const fn = type === "ops.resync_billing" ? "sync-stripe-data" : "calculate-metrics";
+    const res = await fetch(`${projectUrl}/functions/v1/${fn}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", apikey: serviceKey },
+      body: JSON.stringify({ workspace_id: workspaceId, project_id: projectId }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out?.error ?? `${fn} failed`);
+    return { result: out, target_id: projectId };
+  }
+
+  if (type === "ops.create_alert") {
+    const admin = createServiceClient();
+    const { data, error } = await admin
+      .from("alerts")
+      .insert({
+        workspace_id: workspaceId,
+        project_id: projectId,
+        type: "manual",
+        severity: String(payload.severity ?? "warning"),
+        title: String(payload.title ?? "Manual alert"),
+        message: String(payload.message ?? ""),
+        metadata: { source: "admin_action" },
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return { result: { alert_id: data?.id }, target_id: data?.id ?? null };
+  }
+
+  if (type === "ops.create_announcement") {
+    const admin = createServiceClient();
+    const { data, error } = await admin
+      .from("announcements")
+      .insert({
+        workspace_id: workspaceId,
+        project_id: projectId,
+        title: String(payload.title ?? "Announcement"),
+        body: String(payload.body ?? ""),
+        level: String(payload.level ?? "info"),
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return { result: { announcement_id: data?.id }, target_id: data?.id ?? null };
   }
 
   throw new Error(`Unknown action_type ${type}`);
