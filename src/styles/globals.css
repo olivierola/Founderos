@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Palette: zinc dark base (not pure black) + accents.
+     Accent primary  #C2D099 (sage)    -> 78 36% 71%  (dark text on it)
+     Accent info     #BBE0EF (sky)     -> 200 58% 84%
+     Deep surface    #161E54 (navy)    -> 232 59% 21%
+     Base is a zinc-950-ish neutral kept slightly warm-neutral, never #000. */
+  :root {
+    --background: 240 6% 8%;           /* zinc dark, not pure black */
+    --foreground: 240 5% 96%;          /* ~zinc-100 */
+
+    --card: 240 5% 11%;                /* ~zinc-900 raised */
+    --card-foreground: 240 5% 96%;
+
+    --popover: 240 5% 11%;
+    --popover-foreground: 240 5% 96%;
+
+    --primary: 78 36% 71%;             /* #C2D099 sage */
+    --primary-foreground: 240 6% 10%;  /* dark text on sage */
+
+    --secondary: 240 4% 16%;           /* ~zinc-800 */
+    --secondary-foreground: 240 5% 96%;
+
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;    /* ~zinc-400 */
+
+    --accent: 240 4% 16%;
+    --accent-foreground: 240 5% 96%;
+
+    /* Info accent (sky #BBE0EF) for highlights, links, info badges */
+    --info: 200 58% 84%;
+    --info-foreground: 232 59% 21%;
+
+    /* Deep navy surface (#161E54) for emphasis panels */
+    --surface-deep: 232 59% 21%;
+
+    --destructive: 0 72% 51%;          /* red-500 */
+    --destructive-foreground: 240 5% 96%;
+
+    --border: 240 4% 17%;              /* ~zinc-800 */
+    --input: 240 4% 17%;
+    --ring: 78 36% 71%;                /* sage ring */
+
+    --sidebar: 240 6% 7%;              /* slightly darker than bg */
+    --sidebar-foreground: 240 5% 65%;
+    --sidebar-accent: 240 5% 13%;
+
+    --radius: 0.5rem;                  /* less rounded, sober */
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* react-grid-layout theming */
+.react-grid-item.react-grid-placeholder {
+  background: hsl(var(--primary) / 0.2) !important;
+  border-radius: 0.5rem;
+}
+.react-grid-item > .react-resizable-handle::after {
+  border-right-color: hsl(var(--muted-foreground));
+  border-bottom-color: hsl(var(--muted-foreground));
+}
+
+/* Refined, thin accent scrollbar */
+* {
+  scrollbar-width: thin;                                   /* Firefox */
+  scrollbar-color: hsl(var(--primary) / 0.35) transparent; /* thumb / track */
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.35);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.6);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

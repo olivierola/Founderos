@@ -1,0 +1,129 @@
+project_id = "scugmxahflsjabglodyv"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/onboarding"]
+jwt_expiry = 3600
+enable_signup = true
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+secure_password_change = false
+
+# All Edge Functions deployed with --no-verify-jwt per user request.
+[functions.connect-github]
+verify_jwt = false
+
+[functions.github-list-repos]
+verify_jwt = false
+
+[functions.start-repo-scan]
+verify_jwt = false
+
+[functions.process-repo-scan]
+verify_jwt = false
+
+[functions.ai-fast-summary]
+verify_jwt = false
+
+[functions.ai-code-analysis]
+verify_jwt = false
+
+[functions.connect-provider]
+verify_jwt = false
+
+[functions.disconnect-provider]
+verify_jwt = false
+
+[functions.sync-stripe-data]
+verify_jwt = false
+
+[functions.calculate-metrics]
+verify_jwt = false
+
+[functions.record-cost]
+verify_jwt = false
+
+[functions.ai-cost-optimization]
+verify_jwt = false
+
+[functions.ai-agent-chat]
+verify_jwt = false
+
+[functions.execute-admin-action]
+verify_jwt = false
+
+[functions.daily-briefing]
+verify_jwt = false
+
+[functions.db-admin]
+verify_jwt = false
+
+[functions.send-notification]
+verify_jwt = false
+
+[functions.dashboard-data]
+verify_jwt = false
+
+[functions.track-event]
+verify_jwt = false
+
+[functions.report-error]
+verify_jwt = false
+
+[functions.run-workflow]
+verify_jwt = false
+
+[functions.generate-runbook]
+verify_jwt = false
+
+[functions.dispatch-webhook]
+verify_jwt = false
+
+[functions.issue-api-key]
+verify_jwt = false
+
+[functions.invite-member]
+verify_jwt = false
+
+[functions.accept-invite]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = false
+
+[functions.sync-github-deployments]
+verify_jwt = false
+
+[functions.run-sql]
+verify_jwt = false
+
+[functions.delete-workspace]
+verify_jwt = false
+
+[functions.create-checkout]
+verify_jwt = false
+
+[functions.automation-receiver]
+verify_jwt = false

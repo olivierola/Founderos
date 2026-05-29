@@ -1,0 +1,24 @@
+node_modules
+dist
+dist-ssr
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Build info
+tsconfig.tsbuildinfo
+
+# Vercel
+.vercel
+
+# Personal documents (not part of the project)
+*.pdf
+
+# Supabase local
+supabase/.temp
+supabase/.branches

@@ -1,0 +1,700 @@
+import {
+  Github,
+  Gitlab,
+  CreditCard,
+  Database,
+  Cloud,
+  Sparkles,
+  Brain,
+  BarChart3,
+  Mail,
+  Bot,
+  ShieldAlert,
+  Activity,
+  MessageSquare,
+  Send,
+  Box,
+  Cpu,
+  LineChart,
+  Bug,
+  Lock,
+  Webhook,
+  HardDrive,
+  Boxes,
+  Workflow,
+  Users,
+  FileText,
+  Phone,
+  Search,
+  Headphones,
+  Zap,
+  Megaphone,
+  Twitter,
+  Linkedin,
+  CalendarClock,
+  type LucideIcon,
+} from "lucide-react";
+
+export interface ProviderField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  secret: boolean;
+  helpUrl?: string;
+}
+
+export type ProviderCategory =
+  | "repo"
+  | "payments"
+  | "backend"
+  | "hosting"
+  | "ai"
+  | "analytics"
+  | "email"
+  | "monitoring"
+  | "messaging"
+  | "storage"
+  | "automation"
+  | "security"
+  | "crm"
+  | "marketing"
+  | "tooling";
+
+export interface ProviderDef {
+  slug: string;
+  name: string;
+  category: ProviderCategory;
+  icon: LucideIcon;
+  description: string;
+  fields: ProviderField[];
+  mvp: boolean;
+}
+
+function apiKeyField(label = "API key", placeholder = "key…", helpUrl?: string): ProviderField {
+  return { key: "api_key", label, placeholder, secret: true, helpUrl };
+}
+
+export const PROVIDERS: ProviderDef[] = [
+  {
+    slug: "github",
+    name: "GitHub",
+    category: "repo",
+    icon: Github,
+    description: "Read-only access to scan your repositories.",
+    mvp: true,
+    fields: [
+      {
+        key: "token",
+        label: "Personal Access Token",
+        placeholder: "github_pat_…",
+        secret: true,
+        helpUrl: "https://github.com/settings/tokens?type=beta",
+      },
+    ],
+  },
+  {
+    slug: "stripe",
+    name: "Stripe",
+    category: "payments",
+    icon: CreditCard,
+    description: "Sync customers, subscriptions, invoices and compute MRR/ARR.",
+    mvp: true,
+    fields: [
+      {
+        key: "secret_key",
+        label: "Restricted secret key (read-only)",
+        placeholder: "rk_live_… or sk_test_…",
+        secret: true,
+        helpUrl: "https://dashboard.stripe.com/apikeys/create",
+      },
+    ],
+  },
+  {
+    slug: "vercel",
+    name: "Vercel",
+    category: "hosting",
+    icon: Cloud,
+    description: "Pull deployments and usage data.",
+    mvp: true,
+    fields: [
+      {
+        key: "token",
+        label: "Vercel access token",
+        placeholder: "Token from Account Settings → Tokens",
+        secret: true,
+        helpUrl: "https://vercel.com/account/tokens",
+      },
+      {
+        key: "team_id",
+        label: "Team ID (optional)",
+        placeholder: "team_xxx",
+        secret: false,
+      },
+    ],
+  },
+  {
+    slug: "supabase",
+    name: "Supabase",
+    category: "backend",
+    icon: Database,
+    description: "Browse tables, add rows and manage auth users without writing SQL.",
+    mvp: true,
+    fields: [
+      {
+        key: "access_token",
+        label: "Supabase Personal Access Token",
+        placeholder: "sbp_…",
+        secret: true,
+        helpUrl: "https://supabase.com/dashboard/account/tokens",
+      },
+      {
+        key: "project_url",
+        label: "Project URL (for table browsing / CRUD)",
+        placeholder: "https://xxxx.supabase.co",
+        secret: false,
+      },
+      {
+        key: "service_role_key",
+        label: "Service role key (for CRUD — stored encrypted)",
+        placeholder: "eyJ… (service_role)",
+        secret: true,
+        helpUrl: "https://supabase.com/dashboard/project/_/settings/api",
+      },
+    ],
+  },
+  {
+    slug: "groq",
+    name: "Groq",
+    category: "ai",
+    icon: Sparkles,
+    description: "Fast LLM for classification, summarisation, JSON extraction.",
+    mvp: true,
+    fields: [
+      {
+        key: "api_key",
+        label: "Groq API key",
+        placeholder: "gsk_…",
+        secret: true,
+        helpUrl: "https://console.groq.com/keys",
+      },
+    ],
+  },
+  {
+    slug: "deepseek",
+    name: "DeepSeek",
+    category: "ai",
+    icon: Brain,
+    description: "Deeper LLM for code, architecture and security review.",
+    mvp: true,
+    fields: [
+      {
+        key: "api_key",
+        label: "DeepSeek API key",
+        placeholder: "sk-…",
+        secret: true,
+        helpUrl: "https://platform.deepseek.com/api_keys",
+      },
+    ],
+  },
+  {
+    slug: "posthog",
+    name: "PostHog",
+    category: "analytics",
+    icon: BarChart3,
+    description: "Pull engagement metrics and feature usage.",
+    mvp: true,
+    fields: [
+      { key: "api_key", label: "Personal API key", placeholder: "phx_…", secret: true, helpUrl: "https://posthog.com/" },
+      { key: "host", label: "Host", placeholder: "https://eu.posthog.com", secret: false },
+    ],
+  },
+  {
+    slug: "resend",
+    name: "Resend",
+    category: "email",
+    icon: Mail,
+    description: "Send transactional emails from admin actions.",
+    mvp: true,
+    fields: [
+      { key: "api_key", label: "Resend API key", placeholder: "re_…", secret: true, helpUrl: "https://resend.com/api-keys" },
+    ],
+  },
+
+  // --- Repo providers ---
+  {
+    slug: "gitlab",
+    name: "GitLab",
+    category: "repo",
+    icon: Gitlab,
+    description: "Scan GitLab repositories.",
+    mvp: true,
+    fields: [apiKeyField("Personal Access Token", "glpat-…", "https://gitlab.com/-/profile/personal_access_tokens")],
+  },
+
+  // --- Payments ---
+  {
+    slug: "lemonsqueezy",
+    name: "Lemon Squeezy",
+    category: "payments",
+    icon: CreditCard,
+    description: "Merchant-of-record billing, subscriptions and orders.",
+    mvp: true,
+    fields: [apiKeyField("API key", "eyJ…", "https://app.lemonsqueezy.com/settings/api")],
+  },
+  {
+    slug: "paddle",
+    name: "Paddle",
+    category: "payments",
+    icon: CreditCard,
+    description: "Subscription billing and tax compliance.",
+    mvp: true,
+    fields: [apiKeyField("API key", "pdl_…", "https://vendors.paddle.com/authentication")],
+  },
+
+  // --- AI providers ---
+  {
+    slug: "openai",
+    name: "OpenAI",
+    category: "ai",
+    icon: Sparkles,
+    description: "GPT models for chat, embeddings and analysis.",
+    mvp: true,
+    fields: [apiKeyField("OpenAI API key", "sk-…", "https://platform.openai.com/api-keys")],
+  },
+  {
+    slug: "anthropic",
+    name: "Anthropic",
+    category: "ai",
+    icon: Bot,
+    description: "Claude models for deep reasoning and code.",
+    mvp: true,
+    fields: [apiKeyField("Anthropic API key", "sk-ant-…", "https://console.anthropic.com/settings/keys")],
+  },
+  {
+    slug: "mistral",
+    name: "Mistral",
+    category: "ai",
+    icon: Cpu,
+    description: "Open-weight European LLMs.",
+    mvp: true,
+    fields: [apiKeyField("Mistral API key", "…", "https://console.mistral.ai/api-keys")],
+  },
+  {
+    slug: "openrouter",
+    name: "OpenRouter",
+    category: "ai",
+    icon: Workflow,
+    description: "Unified gateway to many LLM providers.",
+    mvp: true,
+    fields: [apiKeyField("OpenRouter key", "sk-or-…", "https://openrouter.ai/keys")],
+  },
+
+  // --- Analytics ---
+  {
+    slug: "mixpanel",
+    name: "Mixpanel",
+    category: "analytics",
+    icon: LineChart,
+    description: "Product analytics and funnels.",
+    mvp: true,
+    fields: [
+      { key: "project_token", label: "Project token", placeholder: "…", secret: true },
+      apiKeyField("API secret", "…", "https://mixpanel.com/settings/project"),
+    ],
+  },
+  {
+    slug: "plausible",
+    name: "Plausible",
+    category: "analytics",
+    icon: BarChart3,
+    description: "Privacy-friendly web analytics.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://plausible.io/settings/api-keys")],
+  },
+  {
+    slug: "amplitude",
+    name: "Amplitude",
+    category: "analytics",
+    icon: LineChart,
+    description: "Digital product analytics.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://amplitude.com")],
+  },
+
+  // --- Monitoring ---
+  {
+    slug: "sentry",
+    name: "Sentry",
+    category: "monitoring",
+    icon: Bug,
+    description: "Error tracking and performance monitoring.",
+    mvp: true,
+    fields: [apiKeyField("Auth token", "sntrys_…", "https://sentry.io/settings/account/api/auth-tokens/")],
+  },
+  {
+    slug: "datadog",
+    name: "Datadog",
+    category: "monitoring",
+    icon: Activity,
+    description: "Infrastructure and APM monitoring.",
+    mvp: true,
+    fields: [
+      apiKeyField("API key", "…", "https://app.datadoghq.com/organization-settings/api-keys"),
+      { key: "app_key", label: "Application key", placeholder: "…", secret: true },
+    ],
+  },
+  {
+    slug: "betterstack",
+    name: "Better Stack",
+    category: "monitoring",
+    icon: Activity,
+    description: "Uptime monitoring and incident management.",
+    mvp: true,
+    fields: [apiKeyField("API token", "…", "https://betterstack.com")],
+  },
+
+  // --- Messaging ---
+  {
+    slug: "slack",
+    name: "Slack",
+    category: "messaging",
+    icon: MessageSquare,
+    description: "Send alerts and admin notifications to Slack.",
+    mvp: true,
+    fields: [
+      { key: "webhook_url", label: "Incoming webhook URL", placeholder: "https://hooks.slack.com/…", secret: true, helpUrl: "https://api.slack.com/messaging/webhooks" },
+    ],
+  },
+  {
+    slug: "discord",
+    name: "Discord",
+    category: "messaging",
+    icon: MessageSquare,
+    description: "Post notifications to a Discord channel.",
+    mvp: true,
+    fields: [
+      { key: "webhook_url", label: "Webhook URL", placeholder: "https://discord.com/api/webhooks/…", secret: true },
+    ],
+  },
+  {
+    slug: "telegram",
+    name: "Telegram",
+    category: "messaging",
+    icon: Send,
+    description: "Bot notifications to a Telegram chat.",
+    mvp: true,
+    fields: [
+      apiKeyField("Bot token", "123:ABC…"),
+      { key: "chat_id", label: "Chat ID", placeholder: "-100…", secret: false },
+    ],
+  },
+
+  // --- Email (more) ---
+  {
+    slug: "sendgrid",
+    name: "SendGrid",
+    category: "email",
+    icon: Mail,
+    description: "Transactional and marketing email.",
+    mvp: true,
+    fields: [apiKeyField("API key", "SG.…", "https://app.sendgrid.com/settings/api_keys")],
+  },
+  {
+    slug: "postmark",
+    name: "Postmark",
+    category: "email",
+    icon: Mail,
+    description: "Fast transactional email delivery.",
+    mvp: true,
+    fields: [apiKeyField("Server token", "…", "https://postmarkapp.com")],
+  },
+
+  // --- Storage ---
+  {
+    slug: "aws-s3",
+    name: "AWS S3",
+    category: "storage",
+    icon: HardDrive,
+    description: "Object storage buckets and usage.",
+    mvp: true,
+    fields: [
+      { key: "access_key_id", label: "Access key ID", placeholder: "AKIA…", secret: true },
+      { key: "secret_access_key", label: "Secret access key", placeholder: "…", secret: true },
+      { key: "region", label: "Region", placeholder: "eu-west-1", secret: false },
+    ],
+  },
+  {
+    slug: "cloudflare",
+    name: "Cloudflare",
+    category: "hosting",
+    icon: Cloud,
+    description: "Pages, Workers, R2 and CDN analytics.",
+    mvp: true,
+    fields: [apiKeyField("API token", "…", "https://dash.cloudflare.com/profile/api-tokens")],
+  },
+  {
+    slug: "cloudinary",
+    name: "Cloudinary",
+    category: "storage",
+    icon: Box,
+    description: "Media storage and transformation.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://cloudinary.com/console")],
+  },
+
+  // --- Hosting (more) ---
+  {
+    slug: "netlify",
+    name: "Netlify",
+    category: "hosting",
+    icon: Cloud,
+    description: "Deploys and build usage.",
+    mvp: true,
+    fields: [apiKeyField("Personal access token", "…", "https://app.netlify.com/user/applications")],
+  },
+  {
+    slug: "railway",
+    name: "Railway",
+    category: "hosting",
+    icon: Boxes,
+    description: "App hosting and usage costs.",
+    mvp: true,
+    fields: [apiKeyField("API token", "…", "https://railway.app/account/tokens")],
+  },
+  {
+    slug: "render",
+    name: "Render",
+    category: "hosting",
+    icon: Cloud,
+    description: "Web services and deploys.",
+    mvp: true,
+    fields: [apiKeyField("API key", "rnd_…", "https://dashboard.render.com/u/settings#api-keys")],
+  },
+
+  // --- Backend / auth (more) ---
+  {
+    slug: "clerk",
+    name: "Clerk",
+    category: "backend",
+    icon: Lock,
+    description: "Auth and user management.",
+    mvp: true,
+    fields: [apiKeyField("Secret key", "sk_…", "https://dashboard.clerk.com")],
+  },
+  {
+    slug: "neon",
+    name: "Neon",
+    category: "backend",
+    icon: Database,
+    description: "Serverless Postgres metrics.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://console.neon.tech/app/settings/api-keys")],
+  },
+  {
+    slug: "planetscale",
+    name: "PlanetScale",
+    category: "backend",
+    icon: Database,
+    description: "Serverless MySQL platform.",
+    mvp: true,
+    fields: [
+      { key: "service_token_id", label: "Service token ID", placeholder: "…", secret: false },
+      apiKeyField("Service token", "pscale_tkn_…", "https://app.planetscale.com"),
+    ],
+  },
+
+  // --- Automation ---
+  {
+    slug: "n8n",
+    name: "n8n",
+    category: "automation",
+    icon: Workflow,
+    description: "Trigger n8n workflows from FounderOS events.",
+    mvp: true,
+    fields: [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://…/webhook/…", secret: true }],
+  },
+  {
+    slug: "zapier",
+    name: "Zapier",
+    category: "automation",
+    icon: Webhook,
+    description: "Connect to 6000+ apps via Zapier.",
+    mvp: true,
+    fields: [{ key: "webhook_url", label: "Catch hook URL", placeholder: "https://hooks.zapier.com/…", secret: true }],
+  },
+  {
+    slug: "make",
+    name: "Make",
+    category: "automation",
+    icon: Workflow,
+    description: "Visual automation scenarios.",
+    mvp: true,
+    fields: [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://hook.…/…", secret: true }],
+  },
+
+  // --- Security ---
+  {
+    slug: "snyk",
+    name: "Snyk",
+    category: "security",
+    icon: ShieldAlert,
+    description: "Dependency vulnerability scanning.",
+    mvp: true,
+    fields: [apiKeyField("API token", "…", "https://app.snyk.io/account")],
+  },
+
+  // --- CRM ---
+  {
+    slug: "hubspot",
+    name: "HubSpot",
+    category: "crm",
+    icon: Users,
+    description: "CRM contacts, deals and pipelines.",
+    mvp: true,
+    fields: [apiKeyField("Private app token", "pat-…", "https://app.hubspot.com")],
+  },
+  {
+    slug: "intercom",
+    name: "Intercom",
+    category: "crm",
+    icon: Headphones,
+    description: "Customer support conversations and contacts.",
+    mvp: true,
+    fields: [apiKeyField("Access token", "…", "https://app.intercom.com")],
+  },
+  {
+    slug: "linear",
+    name: "Linear",
+    category: "tooling",
+    icon: Zap,
+    description: "Issues, projects and engineering velocity.",
+    mvp: true,
+    fields: [apiKeyField("API key", "lin_api_…", "https://linear.app/settings/api")],
+  },
+  {
+    slug: "notion",
+    name: "Notion",
+    category: "tooling",
+    icon: FileText,
+    description: "Docs, wikis and databases.",
+    mvp: true,
+    fields: [apiKeyField("Integration token", "secret_…", "https://www.notion.so/my-integrations")],
+  },
+  {
+    slug: "algolia",
+    name: "Algolia",
+    category: "tooling",
+    icon: Search,
+    description: "Hosted search and indexing.",
+    mvp: true,
+    fields: [
+      { key: "app_id", label: "Application ID", placeholder: "…", secret: false },
+      apiKeyField("Admin API key", "…", "https://dashboard.algolia.com/account/api-keys"),
+    ],
+  },
+  {
+    slug: "twilio",
+    name: "Twilio",
+    category: "messaging",
+    icon: Phone,
+    description: "SMS and voice notifications.",
+    mvp: true,
+    fields: [
+      { key: "account_sid", label: "Account SID", placeholder: "AC…", secret: false },
+      apiKeyField("Auth token", "…", "https://console.twilio.com"),
+    ],
+  },
+  {
+    slug: "segment",
+    name: "Segment",
+    category: "analytics",
+    icon: BarChart3,
+    description: "Customer data pipeline.",
+    mvp: true,
+    fields: [apiKeyField("Write key", "…", "https://app.segment.com")],
+  },
+  {
+    slug: "upstash",
+    name: "Upstash",
+    category: "backend",
+    icon: Database,
+    description: "Serverless Redis and Kafka.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://console.upstash.com")],
+  },
+  {
+    slug: "inngest",
+    name: "Inngest",
+    category: "automation",
+    icon: Workflow,
+    description: "Durable background jobs and workflows.",
+    mvp: true,
+    fields: [apiKeyField("Event key", "…", "https://app.inngest.com")],
+  },
+
+  // --- Marketing / social publishing ---
+  {
+    slug: "buffer",
+    name: "Buffer",
+    category: "marketing",
+    icon: Megaphone,
+    description: "Schedule & publish posts to X, LinkedIn, Instagram, Facebook and more from one place.",
+    mvp: true,
+    fields: [
+      { key: "access_token", label: "Buffer access token", placeholder: "1/…", secret: true, helpUrl: "https://buffer.com/developers/api" },
+    ],
+  },
+  {
+    slug: "typefully",
+    name: "Typefully",
+    category: "marketing",
+    icon: CalendarClock,
+    description: "Write, schedule and publish threads to X and LinkedIn.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://typefully.com/settings/api")],
+  },
+  {
+    slug: "hypefury",
+    name: "Hypefury",
+    category: "marketing",
+    icon: CalendarClock,
+    description: "Grow and automate your social presence.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://hypefury.com")],
+  },
+  {
+    slug: "x",
+    name: "X (Twitter)",
+    category: "marketing",
+    icon: Twitter,
+    description: "Publish posts directly to X via the API v2.",
+    mvp: true,
+    fields: [
+      { key: "bearer_token", label: "Bearer token", placeholder: "AAAA…", secret: true, helpUrl: "https://developer.twitter.com" },
+    ],
+  },
+  {
+    slug: "linkedin",
+    name: "LinkedIn",
+    category: "marketing",
+    icon: Linkedin,
+    description: "Publish posts to a LinkedIn page or profile.",
+    mvp: true,
+    fields: [
+      { key: "access_token", label: "Access token", placeholder: "…", secret: true, helpUrl: "https://www.linkedin.com/developers/" },
+    ],
+  },
+  {
+    slug: "social-webhook",
+    name: "Social webhook (n8n/Make/Zapier)",
+    category: "marketing",
+    icon: Webhook,
+    description: "Relay posts to any channel via an automation webhook.",
+    mvp: true,
+    fields: [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://…", secret: true }],
+  },
+];
+
+export function findProvider(slug: string) {
+  return PROVIDERS.find((p) => p.slug === slug);
+}
