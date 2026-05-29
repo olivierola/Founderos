@@ -664,11 +664,12 @@ function ScheduleDialog({
 function MkDialog({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      {/* grid-cols-[minmax(0,1fr)] lets the single column shrink below content so children can truncate */}
+      <DialogContent className="max-h-[85vh] w-[calc(100vw-2rem)] max-w-lg grid-cols-[minmax(0,1fr)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        {children}
+        <div className="min-w-0">{children}</div>
       </DialogContent>
     </Dialog>
   );
@@ -683,6 +684,7 @@ export function MarketingChannelsPage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const { data: channels, isLoading } = useQuery({
     queryKey: ["mkt_channels", projectId],
@@ -730,8 +732,9 @@ export function MarketingChannelsPage() {
         description="Social accounts you publish to. Re-sync from Buffer, or toggle a channel off to skip it when publishing."
         actions={
           <div className="flex gap-2">
+            <Button size="sm" onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" /> Add channel</Button>
             <Button size="sm" variant="outline" onClick={resync} disabled={syncing}>
-              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Resync from Buffer
+              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Resync
             </Button>
             <Link to={`${base}/integrations/catalog`}><Button size="sm" variant="outline"><Plug className="h-4 w-4" /> Catalog</Button></Link>
           </div>
@@ -783,7 +786,125 @@ export function MarketingChannelsPage() {
           })}
         </div>
       )}
+
+      <AddChannelDialog
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onImported={() => { queryClient.invalidateQueries({ queryKey: ["mkt_channels", projectId] }); setAddOpen(false); }}
+        workspaceId={workspaceId}
+        projectId={projectId}
+      />
     </div>
+  );
+}
+
+interface BufferChannel { external_id: string; platform: string; handle: string | null; imported: boolean }
+
+function AddChannelDialog({
+  open, onClose, onImported, workspaceId, projectId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+  workspaceId: string | null;
+  projectId: string | null;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [available, setAvailable] = useState<BufferChannel[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  async function load() {
+    if (!workspaceId || !projectId) return;
+    setLoading(true); setError(null);
+    try {
+      const res = await callEdge<{ channels: BufferChannel[] }>("marketing-sync-channels", {
+        workspace_id: workspaceId, project_id: projectId, mode: "list",
+      });
+      setAvailable(res.channels ?? []);
+      setSelected(new Set());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Fetch the Buffer profile list each time the dialog opens.
+  useMemo(() => { if (open) load(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function importSelected() {
+    if (!workspaceId || !projectId || selected.size === 0) return;
+    setImporting(true); setError(null);
+    try {
+      await callEdge("marketing-sync-channels", {
+        workspace_id: workspaceId, project_id: projectId, mode: "import", external_ids: [...selected],
+      });
+      onImported();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function toggleSel(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  const importable = available.filter((c) => !c.imported);
+
+  return (
+    <MkDialog open={open} onClose={onClose} title="Add channels from Buffer">
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading your Buffer profiles…</div>
+      ) : error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : available.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No Buffer profiles found. Connect your social accounts inside Buffer first — they'll appear here to import.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            To add a brand-new network, connect it in Buffer, then import it here.
+          </p>
+          <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            {available.map((c) => (
+              <label
+                key={c.external_id}
+                className={`flex cursor-pointer items-center gap-2 rounded-md border p-2.5 ${
+                  c.imported ? "border-border opacity-60" : selected.has(c.external_id) ? "border-primary/50 bg-primary/10" : "border-border hover:bg-secondary"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary"
+                  disabled={c.imported}
+                  checked={c.imported || selected.has(c.external_id)}
+                  onChange={() => toggleSel(c.external_id)}
+                />
+                <Badge variant="info" className="shrink-0 capitalize">{c.platform}</Badge>
+                <span className="min-w-0 flex-1 truncate text-sm">{c.handle ?? c.external_id}</span>
+                {c.imported && <span className="shrink-0 text-xs text-muted-foreground">already added</span>}
+              </label>
+            ))}
+          </div>
+          {importable.length === 0 && <p className="text-xs text-muted-foreground">All Buffer profiles are already imported.</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Close</Button>
+            <Button onClick={importSelected} disabled={importing || selected.size === 0}>
+              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add {selected.size > 0 ? `(${selected.size})` : ""}
+            </Button>
+          </div>
+        </div>
+      )}
+    </MkDialog>
   );
 }
 
@@ -1027,13 +1148,12 @@ function CampaignDetailDialog({
   function row(p: Post, action: "add" | "remove") {
     return (
       <div key={p.id} className="flex items-center gap-2 rounded-md border border-border p-2">
-        <Badge variant="info">{p.platform}</Badge>
-        {statusBadge(p.status)}
+        <Badge variant="info" className="shrink-0">{p.platform}</Badge>
         <span className="min-w-0 flex-1 truncate text-sm">{p.content}</span>
         <Button
-          size="sm"
+          size="icon"
           variant={action === "add" ? "outline" : "ghost"}
-          className={action === "remove" ? "text-muted-foreground hover:text-destructive" : ""}
+          className={`h-8 w-8 shrink-0 ${action === "remove" ? "text-muted-foreground hover:text-destructive" : ""}`}
           disabled={busyId === p.id}
           onClick={() => setCampaign(p.id, action === "add" ? campaign!.id : null)}
         >

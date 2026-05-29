@@ -26,6 +26,8 @@ const GROQ_TASKS: AiTask[] = [
   "alert_explanation",
   "content_generation",
   "marketing_advice",
+  // For now the code scan analysis runs on Groq too (faster, no DeepSeek dependency).
+  "code_analysis",
 ];
 
 export function routeAiRequest(task: AiTask): "groq" | "deepseek" {

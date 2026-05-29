@@ -1,6 +1,8 @@
-// marketing-sync-channels — refresh the project's Buffer channels via GraphQL.
-// Body: { workspace_id, project_id }
-// Upserts current Buffer channels into marketing_channels.
+// marketing-sync-channels — manage the project's Buffer channels via GraphQL.
+// Body: { workspace_id, project_id, mode?, external_ids? }
+//   mode "sync"  (default) — upsert ALL Buffer channels into marketing_channels.
+//   mode "list"            — return Buffer channels + which are already imported (no write).
+//   mode "import"          — upsert only the channels in external_ids[].
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
@@ -55,17 +57,44 @@ Deno.serve(async (req) => {
     const channels = (json?.data?.account?.currentOrganization?.channels ?? []) as Array<{
       id?: string; service?: string; name?: string;
     }>;
-    const rows = channels
-      .filter((c) => c.id)
-      .map((c) => ({
-        workspace_id,
-        project_id,
-        provider: "buffer",
-        platform: (c.service ?? "unknown").toLowerCase(),
-        external_id: c.id!,
-        handle: c.name ?? null,
-        status: "connected",
-      }));
+    const valid = channels.filter((c) => c.id);
+    const toRow = (c: { id?: string; service?: string; name?: string }) => ({
+      workspace_id,
+      project_id,
+      provider: "buffer",
+      platform: (c.service ?? "unknown").toLowerCase(),
+      external_id: c.id!,
+      handle: c.name ?? null,
+      status: "connected",
+    });
+
+    const mode = body.mode ?? "sync";
+
+    // List mode: report Buffer channels + which are already imported. No write.
+    if (mode === "list") {
+      const { data: existing } = await admin
+        .from("marketing_channels")
+        .select("external_id")
+        .eq("project_id", project_id)
+        .eq("provider", "buffer");
+      const importedIds = new Set((existing ?? []).map((e: { external_id: string }) => e.external_id));
+      return jsonResponse({
+        ok: true,
+        channels: valid.map((c) => ({
+          external_id: c.id,
+          platform: (c.service ?? "unknown").toLowerCase(),
+          handle: c.name ?? null,
+          imported: importedIds.has(c.id!),
+        })),
+      });
+    }
+
+    // Import mode: only the selected external_ids.
+    let rows = valid.map(toRow);
+    if (mode === "import" && Array.isArray(body.external_ids)) {
+      const wanted = new Set(body.external_ids as string[]);
+      rows = rows.filter((r) => wanted.has(r.external_id));
+    }
 
     if (rows.length > 0) {
       const { error } = await admin
