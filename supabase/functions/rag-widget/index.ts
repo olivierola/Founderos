@@ -21,11 +21,12 @@ const WIDGET_JS = `(function(){
   var sendLabel = c.text_send || "Send";
   var pos = (c.placement || A.position) === "bottom-left" ? "left:20px" : "right:20px";
   var convId = null, open = false, accepted = !(c.terms_enabled && c.terms_content);
+  var launchers = { chat: "&#128172;", help: "?", sparkle: "&#10024;" };
 
   var btn = document.createElement("button");
   btn.setAttribute("aria-label", "Open chat");
   btn.style.cssText = "position:fixed;bottom:20px;"+pos+";z-index:2147483000;width:56px;height:56px;border:none;border-radius:50%;background:"+accent+";color:"+accentText+";cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);font-size:24px;line-height:56px";
-  btn.innerHTML = "&#128172;";
+  btn.innerHTML = launchers[c.launcher_icon] || launchers.chat;
 
   var panel = document.createElement("div");
   panel.style.cssText = "position:fixed;bottom:88px;"+pos+";z-index:2147483000;width:360px;max-width:calc(100vw - 40px);height:520px;max-height:calc(100vh - 120px);background:"+baseBg+";color:"+baseText+";border:1px solid "+border+";border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.3);display:none;flex-direction:column;overflow:hidden;font-family:system-ui,-apple-system,sans-serif";
@@ -80,15 +81,36 @@ const WIDGET_JS = `(function(){
     log.appendChild(ok);
   }
 
+  function suggestions(){
+    var raw = (c.suggested_questions||"").split(/\\n+/).map(function(s){return s.trim();}).filter(Boolean);
+    if(raw.length===0) return;
+    var wrap = document.createElement("div");
+    wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:4px";
+    raw.slice(0,5).forEach(function(q){
+      var chip = document.createElement("button");
+      chip.textContent = q;
+      chip.style.cssText = "border:1px solid "+border+";border-radius:999px;background:transparent;color:"+baseText+";padding:5px 10px;font-size:12px;cursor:pointer";
+      chip.onclick = function(){ input.value = q; send(); wrap.remove(); };
+      wrap.appendChild(chip);
+    });
+    log.appendChild(wrap);
+  }
+
   sendBtn.onclick = send;
   input.addEventListener("keydown", function(e){ if(e.key==="Enter") send(); });
   btn.onclick = function(){
     open=!open; panel.style.display = open ? "flex" : "none";
-    if(open){ if(log.childElementCount===0){ showTermsOr(function(){ if(A.welcome) bubble(A.welcome,"bot"); }); } input.focus(); }
+    if(open){ if(log.childElementCount===0){ showTermsOr(function(){ if(A.welcome) bubble(A.welcome,"bot"); suggestions(); }); } input.focus(); }
   };
 
   bar.appendChild(input); bar.appendChild(sendBtn);
   panel.appendChild(head); panel.appendChild(log); panel.appendChild(bar);
+  if (c.show_branding !== false) {
+    var brand = document.createElement("div");
+    brand.style.cssText = "text-align:center;padding:6px;font-size:10px;color:"+subtle;
+    brand.textContent = "Powered by FounderOS";
+    panel.appendChild(brand);
+  }
   document.body.appendChild(btn); document.body.appendChild(panel);
 })();`;
 

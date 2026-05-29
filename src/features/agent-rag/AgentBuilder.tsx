@@ -359,6 +359,10 @@ const WIDGET_DEFAULTS = {
   // terms
   terms_enabled: false,
   terms_content: "",
+  // behavior
+  launcher_icon: "chat",         // chat | help | sparkle
+  suggested_questions: "",       // newline-separated quick replies
+  show_branding: true,
   // text contents
   text_main_label: "Need help?",
   text_start_chat: "Start a chat",
@@ -369,7 +373,7 @@ const WIDGET_DEFAULTS = {
 // Section row: label/description on the left, controls on the right (ElevenLabs style).
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-1 gap-4 border-b border-border py-6 lg:grid-cols-[260px_1fr]">
+    <div className="grid grid-cols-1 gap-4 border-b border-border/40 py-6 lg:grid-cols-[260px_1fr]">
       <div>
         <h3 className="font-semibold">{title}</h3>
         {desc && <p className="mt-1 text-sm text-muted-foreground">{desc}</p>}
@@ -383,9 +387,9 @@ function ColorRow({ label, value, onChange }: { label: string; value: string; on
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-3">
       <label className="text-sm">{label}</label>
-      <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5">
-        <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-5 w-5 cursor-pointer rounded-full border-0 bg-transparent p-0" />
-        <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-transparent text-sm outline-none" />
+      <div className="flex items-center gap-2 rounded-md bg-secondary/60 px-2.5 py-1.5">
+        <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-5 w-5 shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-transparent font-mono text-sm outline-none" />
       </div>
     </div>
   );
@@ -395,7 +399,15 @@ function RadiusRow({ label, value, onChange }: { label: string; value: number; o
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-3">
       <label className="text-sm">{label}</label>
-      <Input type="number" value={value} onChange={(e) => onChange(Number(e.target.value))} className="h-9" />
+      <div className="flex items-center rounded-md bg-secondary/60 pr-3">
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="h-9 w-full bg-transparent px-2.5 text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+        />
+        <span className="text-xs text-muted-foreground">px</span>
+      </div>
     </div>
   );
 }
@@ -422,7 +434,12 @@ function TextRow({ label, value, placeholder, onChange }: { label: string; value
   return (
     <div className="grid grid-cols-[160px_1fr] items-center gap-3">
       <label className="font-mono text-xs text-muted-foreground">{label}</label>
-      <Input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="h-9" />
+      <input
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-md bg-secondary/60 px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      />
     </div>
   );
 }
@@ -442,7 +459,7 @@ function WidgetTab({ agent }: { agent: Agent }) {
     key: "${agent.public_key}",
     endpoint: "${base}/functions/v1/rag-chat",
     welcome: ${JSON.stringify(agent.welcome_message ?? "Hi! How can I help you today?")},
-    config: ${JSON.stringify(cfg)}
+    config: ${JSON.stringify(cfg, null, 2).replace(/\n/g, "\n    ")}
   };
 </script>
 <script src="${base}/functions/v1/rag-widget" async></script>`;
@@ -467,16 +484,16 @@ function WidgetTab({ agent }: { agent: Agent }) {
 
       {/* Setup / Embed */}
       <Section title="Setup" desc="Attach the widget on your website.">
-        <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+        <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">
           The agent answers from its knowledge base. Paste the embed code on the pages where you want the chat widget.
         </div>
         <div>
-          <div className="mb-1 text-sm font-medium">Embed code</div>
-          <pre className="max-h-48 overflow-auto rounded-md border border-border bg-background/40 p-3 text-xs"><code>{snippet}</code></pre>
+          <div className="mb-1.5 text-sm font-medium">Embed code</div>
+          <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-secondary/50 p-3 font-mono text-xs leading-relaxed text-foreground/90">{snippet}</pre>
           <Button variant="outline" size="sm" className="mt-2" onClick={() => { navigator.clipboard.writeText(snippet); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
             {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />} Copy snippet
           </Button>
-          <p className="mt-2 text-xs text-muted-foreground">Public key: <code className="text-foreground">{agent.public_key}</code></p>
+          <p className="mt-2 text-xs text-muted-foreground">Public key: <code className="rounded bg-secondary/60 px-1.5 py-0.5 text-foreground">{agent.public_key}</code></p>
         </div>
         <Toggle label="Feedback collection" desc="Visitors can rate their satisfaction from 1 to 5 after the conversation." checked={cfg.feedback} onChange={(v) => set("feedback", v)} />
       </Section>
@@ -484,20 +501,39 @@ function WidgetTab({ agent }: { agent: Agent }) {
       {/* Interface */}
       <Section title="Interface" desc="Configure the parts of the widget interface.">
         <Toggle label="Collapsible" desc="Visitors can collapse the chat back to the bubble." checked={cfg.collapsible} onChange={(v) => set("collapsible", v)} />
+        <Toggle label="Show branding" desc="Display a small 'Powered by FounderOS' line at the bottom." checked={cfg.show_branding} onChange={(v) => set("show_branding", v)} />
         <div>
-          <label className="mb-1 block text-sm font-medium">Variant</label>
-          <div className="inline-flex rounded-md border border-border p-0.5">
+          <label className="mb-1.5 block text-sm font-medium">Variant</label>
+          <div className="inline-flex rounded-md bg-secondary/60 p-0.5">
             {["tiny", "compact", "full"].map((v) => (
-              <button key={v} onClick={() => set("variant", v)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.variant === v ? "bg-secondary text-foreground" : "text-muted-foreground"}`}>{v}</button>
+              <button key={v} onClick={() => set("variant", v)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.variant === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>{v}</button>
             ))}
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">Placement</label>
-          <select value={cfg.placement} onChange={(e) => set("placement", e.target.value)} className="h-9 w-full max-w-xs rounded-md border border-input bg-background px-2 text-sm">
+          <label className="mb-1.5 block text-sm font-medium">Launcher icon</label>
+          <div className="inline-flex rounded-md bg-secondary/60 p-0.5">
+            {["chat", "help", "sparkle"].map((v) => (
+              <button key={v} onClick={() => set("launcher_icon", v)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.launcher_icon === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>{v}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">Placement</label>
+          <select value={cfg.placement} onChange={(e) => set("placement", e.target.value)} className="h-9 w-full max-w-xs rounded-md bg-secondary/60 px-2.5 text-sm outline-none">
             <option value="bottom-right">Bottom-right</option>
             <option value="bottom-left">Bottom-left</option>
           </select>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">Suggested questions</label>
+          <textarea
+            value={cfg.suggested_questions}
+            onChange={(e) => set("suggested_questions", e.target.value)}
+            rows={3}
+            placeholder={"One per line, shown as quick replies\nHow do I get started?\nWhat are your pricing plans?"}
+            className="w-full rounded-md bg-secondary/60 px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          />
         </div>
       </Section>
 
@@ -516,18 +552,18 @@ function WidgetTab({ agent }: { agent: Agent }) {
 
       {/* Avatar */}
       <Section title="Avatar" desc="Configure the chat orb or provide your own avatar image.">
-        <div className="inline-flex rounded-md border border-border p-0.5">
+        <div className="inline-flex rounded-md bg-secondary/60 p-0.5">
           {["orb", "image"].map((t) => (
-            <button key={t} onClick={() => set("avatar_type", t)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.avatar_type === t ? "bg-secondary text-foreground" : "text-muted-foreground"}`}>{t}</button>
+            <button key={t} onClick={() => set("avatar_type", t)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.avatar_type === t ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>{t}</button>
           ))}
         </div>
         {cfg.avatar_type === "orb" ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <ColorRow label="First color" value={cfg.avatar_first} onChange={(v) => set("avatar_first", v)} />
             <ColorRow label="Second color" value={cfg.avatar_second} onChange={(v) => set("avatar_second", v)} />
           </div>
         ) : (
-          <Input placeholder="Avatar image URL" value={cfg.avatar_url} onChange={(e) => set("avatar_url", e.target.value)} />
+          <input placeholder="Avatar image URL" value={cfg.avatar_url} onChange={(e) => set("avatar_url", e.target.value)} className="h-9 w-full rounded-md bg-secondary/60 px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring" />
         )}
       </Section>
 
@@ -536,8 +572,8 @@ function WidgetTab({ agent }: { agent: Agent }) {
         <Toggle label="Enable terms & conditions" checked={cfg.terms_enabled} onChange={(v) => set("terms_enabled", v)} />
         {cfg.terms_enabled && (
           <div>
-            <label className="mb-1 block text-sm font-medium">Terms content <span className="text-xs text-muted-foreground">(Markdown)</span></label>
-            <textarea value={cfg.terms_content} onChange={(e) => set("terms_content", e.target.value)} rows={5} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+            <label className="mb-1.5 block text-sm font-medium">Terms content <span className="text-xs text-muted-foreground">(Markdown)</span></label>
+            <textarea value={cfg.terms_content} onChange={(e) => set("terms_content", e.target.value)} rows={5} className="w-full rounded-md bg-secondary/60 px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring" />
           </div>
         )}
       </Section>

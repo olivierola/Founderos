@@ -173,7 +173,7 @@ export const MODULES: ModuleNavItem[] = [
     slug: "agent",
     label: "RAG Agent",
     icon: Bot,
-    color: "text-violet-400/60",
+    color: "text-white",
     subItems: [
       { label: "Agents", slug: "agents" },
     ],
