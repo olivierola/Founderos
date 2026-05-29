@@ -602,6 +602,7 @@ export const PROVIDERS: ProviderDef[] = [
     fields: [
       { key: "account_sid", label: "Account SID", placeholder: "AC…", secret: false },
       apiKeyField("Auth token", "…", "https://console.twilio.com"),
+      { key: "from_number", label: "From number (E.164, optional)", placeholder: "+1…", secret: false },
     ],
   },
   {

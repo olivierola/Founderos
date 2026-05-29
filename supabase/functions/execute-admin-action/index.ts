@@ -65,6 +65,9 @@ const REGISTRY: Record<string, ActionMeta> = {
   "ops.recalc_metrics": { risk: "low", requires_confirm: false, target_type: "project" },
   "ops.create_alert": { risk: "low", requires_confirm: false, target_type: "alert" },
   "ops.create_announcement": { risk: "medium", requires_confirm: false, target_type: "announcement" },
+  // Communication
+  "comms.notify": { risk: "low", requires_confirm: false, target_type: "messaging" },
+  "comms.sms": { risk: "medium", requires_confirm: false, target_type: "phone" },
 };
 
 async function runAction(
@@ -286,6 +289,45 @@ async function runAction(
       .maybeSingle();
     if (error) throw new Error(error.message);
     return { result: { announcement_id: data?.id }, target_id: data?.id ?? null };
+  }
+
+  // --- Communication ---
+  if (type === "comms.notify") {
+    const projectUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const res = await fetch(`${projectUrl}/functions/v1/send-notification`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", apikey: serviceKey },
+      body: JSON.stringify({
+        workspace_id: workspaceId,
+        project_id: projectId,
+        message: String(payload.message ?? ""),
+        provider: payload.provider ? String(payload.provider) : undefined,
+      }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out?.detail ?? out?.error ?? "Notification failed");
+    return { result: out, target_id: out?.provider ?? null };
+  }
+
+  if (type === "comms.sms") {
+    const { payload: cred } = await getConnectorCredential(workspaceId, projectId, "twilio");
+    const sid = cred.account_sid;
+    const token = cred.api_key;
+    const fromNumber = cred.from_number;
+    if (!sid || !token) throw new Error("Twilio account_sid + auth token required");
+    const to = String(payload.to);
+    const fromN = String(payload.from ?? fromNumber ?? "");
+    if (!fromN) throw new Error("A Twilio 'from' number is required");
+    const form = new URLSearchParams({ To: to, From: fromN, Body: String(payload.message ?? "") });
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: "POST",
+      headers: { Authorization: `Basic ${btoa(`${sid}:${token}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out?.message ?? `Twilio HTTP ${res.status}`);
+    return { result: { sid: out?.sid }, target_id: to };
   }
 
   throw new Error(`Unknown action_type ${type}`);

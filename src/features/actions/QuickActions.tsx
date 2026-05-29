@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CreditCard, TicketPercent, KeyRound, XCircle, Loader2, ShieldAlert, Search,
   PauseCircle, PlayCircle, Wallet, Ban, Gift, RotateCcw, User as UserIcon,
+  MessageSquare, Smartphone,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -282,6 +283,39 @@ function opsActions(): { cfg: AdminActionConfig; icon: any }[] {
   ];
 }
 
+// Communication actions (messaging + SMS).
+function commsActions(): { cfg: AdminActionConfig; icon: any }[] {
+  return [
+    {
+      icon: MessageSquare,
+      cfg: {
+        action_type: "comms.notify",
+        title: "Send a team notification",
+        description: "Post a message to your connected Slack / Discord / Telegram.",
+        risk: "low",
+        fields: [
+          { key: "message", label: "Message", required: true },
+          { key: "provider", label: "Channel (slack/discord/telegram — optional)", placeholder: "slack" },
+        ],
+      },
+    },
+    {
+      icon: Smartphone,
+      cfg: {
+        action_type: "comms.sms",
+        title: "Send an SMS (Twilio)",
+        description: "Send a text message via your connected Twilio account.",
+        risk: "medium",
+        fields: [
+          { key: "to", label: "To (E.164, e.g. +33…)", required: true },
+          { key: "message", label: "Message", required: true },
+          { key: "from", label: "From number (optional)", placeholder: "+1…" },
+        ],
+      },
+    },
+  ];
+}
+
 export function QuickActionsPage() {
   const { workspaceId, projectId } = useCurrentContext();
   const { billing } = useCapabilities(projectId);
@@ -476,6 +510,14 @@ export function QuickActionsPage() {
             Icon={cfg.action_type.includes("coupon") ? TicketPercent : cfg.action_type.includes("password") ? KeyRound : CreditCard}
             onRun={() => run(cfg)}
           />
+        ))}
+      </div>
+
+      {/* Communication */}
+      <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Communication</h2>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {commsActions().map(({ cfg, icon: Icon }) => (
+          <ActionCard key={cfg.action_type} cfg={cfg} Icon={Icon} onRun={() => run(cfg)} />
         ))}
       </div>
 
