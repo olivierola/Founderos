@@ -100,6 +100,7 @@ import {
   DatabaseConsolePage,
   EmailSenderPage,
   ActionsWebhooksPage,
+  ApprovalsPage,
 } from "@/features/actions/Extra";
 import { RunbooksPage } from "@/features/actions/Runbooks";
 
@@ -202,6 +203,7 @@ const PAGES: Record<string, PageEl> = {
   "health/database": <DatabasePage />,
 
   "actions/quick-actions": <QuickActionsPage />,
+  "actions/approvals": <ApprovalsPage />,
   "actions/user-management": <UserManagementPage />,
   "actions/stripe-operations": <StripeOperationsPage />,
   "actions/database-console": <DatabaseConsolePage />,

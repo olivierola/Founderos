@@ -157,7 +157,8 @@ export const MODULES: ModuleNavItem[] = [
     icon: Zap,
     color: "text-slate-400",
     subItems: [
-      { label: "Quick Actions", slug: "quick-actions" },
+      { label: "Actions Center", slug: "quick-actions" },
+      { label: "Approvals", slug: "approvals" },
       { label: "User Management", slug: "user-management" },
       { label: "Billing Operations", slug: "stripe-operations" },
       { label: "Database Console", slug: "database-console" },

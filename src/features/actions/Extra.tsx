@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Mail, Send, Loader2, Webhook, Plus, Trash2 } from "lucide-react";
+import { Mail, Send, Loader2, Webhook, Plus, Trash2, ShieldCheck, Check, X, Clock } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,97 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 
 // DatabaseConsolePage moved to ./DatabaseConsole.tsx (visual browse + query builder)
 export { DatabaseConsolePage } from "./DatabaseConsole";
+
+// --- Approvals queue ----------------------------------------------------
+interface PendingAction {
+  id: string;
+  action_type: string;
+  target_id: string | null;
+  risk_level: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export function ApprovalsPage() {
+  const { workspaceId, projectId } = useCurrentContext();
+  const queryClient = useQueryClient();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: pending, isLoading } = useQuery({
+    queryKey: ["admin_actions_pending", projectId],
+    enabled: !!projectId,
+    refetchInterval: 8000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("admin_actions")
+        .select("id, action_type, target_id, risk_level, payload, created_at")
+        .eq("project_id", projectId!)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return (data ?? []) as PendingAction[];
+    },
+  });
+
+  async function decide(id: string, decision: "approve" | "reject") {
+    if (!workspaceId) return;
+    setBusyId(id);
+    setError(null);
+    try {
+      await callEdge("admin-action-approve", { workspace_id: workspaceId, action_id: id, decision });
+      queryClient.invalidateQueries({ queryKey: ["admin_actions_pending", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["admin_actions_recent", projectId] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Approvals"
+        description="High-risk actions submitted for approval. Only owners and admins can approve or reject them."
+      />
+      {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
+      {isLoading ? (
+        <EmptyState icon={Loader2} title="Loading…" />
+      ) : !pending || pending.length === 0 ? (
+        <EmptyState icon={ShieldCheck} title="No pending approvals" description="Actions submitted for approval will appear here." />
+      ) : (
+        <div className="space-y-2">
+          {pending.map((a) => (
+            <Card key={a.id}>
+              <CardContent className="flex flex-wrap items-center gap-3 p-3">
+                <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm">{a.action_type}</span>
+                    <Badge variant={["high", "critical"].includes(a.risk_level) ? "destructive" : "warning"}>{a.risk_level}</Badge>
+                    {a.target_id && <span className="font-mono text-xs text-muted-foreground">{a.target_id}</span>}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {new Date(a.created_at).toLocaleString()}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}>
+                    <X className="h-4 w-4" /> Reject
+                  </Button>
+                  <Button size="sm" disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}>
+                    {busyId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve & run
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // --- Email Sender (real, via Resend connector) ---------------------------
 export function EmailSenderPage() {

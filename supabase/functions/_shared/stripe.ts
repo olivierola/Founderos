@@ -204,3 +204,27 @@ export async function createCoupon(
   if (opts.id) form.id = opts.id;
   return gsPost<{ id: string }>(token, "/coupons", form);
 }
+
+// Pause/resume collection on a subscription (keeps it active, stops invoicing).
+export async function pauseSubscription(token: string, subscriptionId: string) {
+  return gsPost(token, `/subscriptions/${subscriptionId}`, {
+    "pause_collection[behavior]": "void",
+  });
+}
+export async function resumeSubscription(token: string, subscriptionId: string) {
+  return gsPost(token, `/subscriptions/${subscriptionId}`, { "pause_collection": "" });
+}
+
+// Apply a coupon to an existing subscription (e.g. winback discount).
+export async function applyCouponToSubscription(token: string, subscriptionId: string, couponId: string) {
+  return gsPost(token, `/subscriptions/${subscriptionId}`, { coupon: couponId });
+}
+
+// Add a credit (negative balance) to a customer, in cents. Negative = credit.
+export async function addCustomerBalance(token: string, customerId: string, amountCents: number) {
+  // Stripe customer balance: a negative amount is a credit toward future invoices.
+  return gsPost(token, `/customers/${customerId}/balance_transactions`, {
+    amount: String(-Math.abs(amountCents)),
+    currency: "eur",
+  });
+}

@@ -57,12 +57,14 @@ export function AdminActionModal({
   const [confirmText, setConfirmText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requestApproval, setRequestApproval] = useState(false);
 
   if (!action) return null;
 
   const isHighRisk = action.risk === "high" || action.risk === "critical";
   const expectedConfirm = action.typeToConfirm ?? "CONFIRM";
-  const confirmOk = !isHighRisk || confirmText.trim() === expectedConfirm;
+  // When submitting for approval, no type-to-confirm is required (an approver runs it later).
+  const confirmOk = !isHighRisk || requestApproval || confirmText.trim() === expectedConfirm;
 
   async function handleSubmit() {
     if (!action) return;
@@ -78,15 +80,17 @@ export function AdminActionModal({
         const raw = values[f.key] ?? "";
         payload[f.key] = f.type === "number" ? Number(raw) : raw;
       });
-      const res = await callEdge<{ ok: boolean; result?: unknown }>("execute-admin-action", {
+      const res = await callEdge<{ ok: boolean; result?: unknown; status?: string }>("execute-admin-action", {
         workspace_id: workspaceId,
         project_id: projectId,
         action_type: action.action_type,
         payload,
         confirm: true,
+        request_approval: isHighRisk && requestApproval,
       });
       setConfirmText("");
       setValues({});
+      setRequestApproval(false);
       onOpenChange(false);
       onSuccess?.(res.result);
     } catch (e) {
@@ -131,16 +135,29 @@ export function AdminActionModal({
           ))}
 
           {isHighRisk && (
-            <div className="space-y-1.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-              <label className="text-xs text-destructive">
-                Type <span className="font-mono font-semibold">{expectedConfirm}</span> to confirm
+            <>
+              <label className="flex items-center gap-2 rounded-md border border-border p-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary"
+                  checked={requestApproval}
+                  onChange={(e) => setRequestApproval(e.target.checked)}
+                />
+                Submit for approval instead of running now
               </label>
-              <Input
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder={expectedConfirm}
-              />
-            </div>
+              {!requestApproval && (
+                <div className="space-y-1.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                  <label className="text-xs text-destructive">
+                    Type <span className="font-mono font-semibold">{expectedConfirm}</span> to confirm
+                  </label>
+                  <Input
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value)}
+                    placeholder={expectedConfirm}
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -150,9 +167,9 @@ export function AdminActionModal({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant={isHighRisk ? "destructive" : "default"} onClick={handleSubmit} disabled={submitting || !confirmOk}>
+          <Button variant={isHighRisk && !requestApproval ? "destructive" : "default"} onClick={handleSubmit} disabled={submitting || !confirmOk}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Execute action
+            {isHighRisk && requestApproval ? "Submit for approval" : "Execute action"}
           </Button>
         </div>
       </DialogContent>

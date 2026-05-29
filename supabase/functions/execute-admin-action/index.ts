@@ -21,6 +21,10 @@ import {
   refundInvoice,
   cancelSubscription,
   createCoupon,
+  pauseSubscription,
+  resumeSubscription,
+  applyCouponToSubscription,
+  addCustomerBalance,
 } from "../_shared/stripe.ts";
 
 interface ActionMeta {
@@ -33,7 +37,11 @@ const REGISTRY: Record<string, ActionMeta> = {
   "stripe.refund_charge": { risk: "high", requires_confirm: true, target_type: "stripe_charge" },
   "stripe.refund_invoice": { risk: "high", requires_confirm: true, target_type: "stripe_invoice" },
   "stripe.cancel_subscription": { risk: "high", requires_confirm: true, target_type: "stripe_subscription" },
+  "stripe.pause_subscription": { risk: "medium", requires_confirm: false, target_type: "stripe_subscription" },
+  "stripe.resume_subscription": { risk: "medium", requires_confirm: false, target_type: "stripe_subscription" },
+  "stripe.apply_coupon": { risk: "medium", requires_confirm: false, target_type: "stripe_subscription" },
   "stripe.create_coupon": { risk: "medium", requires_confirm: false, target_type: "stripe_coupon" },
+  "stripe.add_credit": { risk: "high", requires_confirm: true, target_type: "stripe_customer" },
   // Lemon Squeezy
   "lemonsqueezy.cancel_subscription": { risk: "high", requires_confirm: true, target_type: "ls_subscription" },
   "lemonsqueezy.refund_order": { risk: "high", requires_confirm: true, target_type: "ls_order" },
@@ -43,6 +51,7 @@ const REGISTRY: Record<string, ActionMeta> = {
   "user.reset_password": { risk: "medium", requires_confirm: false, target_type: "auth_user" },
   "user.ban": { risk: "critical", requires_confirm: true, target_type: "auth_user" },
   "user.unban": { risk: "high", requires_confirm: true, target_type: "auth_user" },
+  "user.delete": { risk: "critical", requires_confirm: true, target_type: "auth_user" },
 };
 
 async function runAction(
@@ -71,6 +80,28 @@ async function runAction(
       case "stripe.cancel_subscription": {
         const id = String(payload.subscription_id);
         const r = await cancelSubscription(token, id);
+        return { result: r, target_id: id };
+      }
+      case "stripe.pause_subscription": {
+        const id = String(payload.subscription_id);
+        const r = await pauseSubscription(token, id);
+        return { result: r, target_id: id };
+      }
+      case "stripe.resume_subscription": {
+        const id = String(payload.subscription_id);
+        const r = await resumeSubscription(token, id);
+        return { result: r, target_id: id };
+      }
+      case "stripe.apply_coupon": {
+        const id = String(payload.subscription_id);
+        const coupon = String(payload.coupon_id);
+        const r = await applyCouponToSubscription(token, id, coupon);
+        return { result: r, target_id: id };
+      }
+      case "stripe.add_credit": {
+        const id = String(payload.customer_id);
+        const amount = Number(payload.amount_cents);
+        const r = await addCustomerBalance(token, id, amount);
         return { result: r, target_id: id };
       }
       case "stripe.create_coupon": {
@@ -147,6 +178,14 @@ async function runAction(
     return { result: { banned: type === "user.ban" }, target_id: userId };
   }
 
+  if (type === "user.delete") {
+    const admin = createServiceClient();
+    const userId = String(payload.user_id);
+    const { error } = await admin.auth.admin.deleteUser(userId);
+    if (error) throw new Error(error.message);
+    return { result: { deleted: true }, target_id: userId };
+  }
+
   throw new Error(`Unknown action_type ${type}`);
 }
 
@@ -164,12 +203,13 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json();
-    const { workspace_id, project_id, action_type, payload, confirm } = body as {
+    const { workspace_id, project_id, action_type, payload, confirm, request_approval } = body as {
       workspace_id?: string;
       project_id?: string;
       action_type?: string;
       payload?: Record<string, unknown>;
       confirm?: boolean;
+      request_approval?: boolean;
     };
 
     if (!workspace_id || !project_id || !action_type) {
@@ -206,6 +246,15 @@ Deno.serve(async (req) => {
       })
       .select()
       .single();
+
+    // Approval workflow: leave the action pending for an approver to execute later.
+    if (request_approval) {
+      await admin
+        .from("admin_actions")
+        .update({ status: "pending", requires_approval: true })
+        .eq("id", actionRow!.id);
+      return jsonResponse({ ok: true, action_id: actionRow!.id, status: "pending" });
+    }
 
     if (meta.requires_confirm && !confirm) {
       await admin
