@@ -82,33 +82,34 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Could not save credential", detail: credErr.message }, { status: 500 });
     }
 
-    // Buffer: discover social profiles and register them as marketing channels.
+    // Buffer: discover channels via GraphQL and register them as marketing channels.
     if (provider === "buffer" && payload.access_token) {
       try {
-        let res = await fetch("https://api.buffer.com/1/profiles.json", {
-          headers: { Authorization: `Bearer ${payload.access_token}` },
+        const res = await fetch("https://api.buffer.com/", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${payload.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: "query { account { currentOrganization { channels { id service name } } } }",
+          }),
         });
-        if (!res.ok) {
-          res = await fetch(
-            `https://api.bufferapp.com/1/profiles.json?access_token=${encodeURIComponent(payload.access_token)}`,
-          );
-        }
         if (res.ok) {
-          const profiles = (await res.json()) as Array<{
+          const json = await res.json();
+          const channels = (json?.data?.account?.currentOrganization?.channels ?? []) as Array<{
             id?: string;
             service?: string;
-            service_username?: string;
-            formatted_username?: string;
+            name?: string;
           }>;
-          const rows = (profiles ?? []).map((p) => ({
-            workspace_id,
-            project_id,
-            provider: "buffer",
-            platform: (p.service ?? "unknown").toLowerCase(),
-            external_id: p.id ?? null,
-            handle: p.formatted_username ?? p.service_username ?? null,
-            status: "connected",
-          }));
+          const rows = channels
+            .filter((c) => c.id)
+            .map((c) => ({
+              workspace_id,
+              project_id,
+              provider: "buffer",
+              platform: (c.service ?? "unknown").toLowerCase(),
+              external_id: c.id!,
+              handle: c.name ?? null,
+              status: "connected",
+            }));
           if (rows.length > 0) {
             await admin.from("marketing_channels").upsert(rows, { onConflict: "project_id,provider,external_id" });
           }

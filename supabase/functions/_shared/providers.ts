@@ -314,26 +314,20 @@ export async function validateProvider(
       }
       case "buffer": {
         if (!payload.access_token) return fail("access_token required");
-        const token = payload.access_token;
-        // New Buffer API (api.buffer.com) uses a Bearer token. The legacy
-        // api.bufferapp.com endpoint is deprecated; try the new one first,
-        // then fall back to legacy for old "1/<hash>" tokens.
-        let r = await fetchJson("https://api.buffer.com/1/profiles.json", {
-          headers: { Authorization: `Bearer ${token}` },
+        // Modern Buffer uses a GraphQL API at api.buffer.com with a Bearer token.
+        const r = await fetchJson("https://api.buffer.com/", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${payload.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: "query { account { email currentOrganization { id channels { id } } } }",
+          }),
         });
-        if (!r.ok) {
-          r = await fetchJson(
-            `https://api.bufferapp.com/1/profiles.json?access_token=${encodeURIComponent(token)}`,
-            {},
-          );
+        const body = r.body as { data?: { account?: { currentOrganization?: { channels?: unknown[] } } }; errors?: unknown };
+        if (!r.ok || body?.errors || !body?.data?.account) {
+          return fail("Buffer rejected the token. Generate an access token from your Buffer account and paste it here.");
         }
-        if (!r.ok) {
-          return fail(
-            `Buffer rejected the token (HTTP ${r.status}). Use an access token from publish.buffer.com → Settings → Apps & Extras, or a Developer app token.`,
-          );
-        }
-        const profiles = Array.isArray(r.body) ? r.body.length : 0;
-        return ok({ profiles }, "write_enabled");
+        const channels = body.data.account.currentOrganization?.channels?.length ?? 0;
+        return ok({ channels }, "write_enabled");
       }
       case "typefully":
       case "hypefury":

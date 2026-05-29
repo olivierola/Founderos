@@ -7,36 +7,39 @@ import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { getConnectorCredential } from "../_shared/credentials.ts";
 
-async function publishViaBuffer(token: string, profileIds: string[], text: string, scheduleAt?: string) {
-  // POST /updates/create.json — body is form-encoded on both API hosts.
-  const form = new URLSearchParams();
-  form.set("text", text);
-  for (const id of profileIds) form.append("profile_ids[]", id);
-  if (scheduleAt) {
-    form.set("scheduled_at", String(Math.floor(new Date(scheduleAt).getTime() / 1000)));
-  } else {
-    form.set("now", "true");
-  }
-
-  // New Buffer API uses a Bearer token (api.buffer.com); legacy uses ?access_token=.
-  let res = await fetch("https://api.buffer.com/1/updates/create.json", {
+// Buffer GraphQL: create one post per channel. mode=shareNow publishes immediately,
+// mode=customScheduled + dueAt schedules it.
+async function bufferGraphql(token: string, query: string, variables: Record<string, unknown>) {
+  const res = await fetch("https://api.buffer.com/", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: form.toString(),
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
   });
-  if (res.status === 401 || res.status === 403 || res.status === 404) {
-    res = await fetch(`https://api.bufferapp.com/1/updates/create.json?access_token=${encodeURIComponent(token)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
-    });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.errors) {
+    const msg = json?.errors?.[0]?.message ?? `HTTP ${res.status}`;
+    throw new Error(`Buffer: ${msg}`);
   }
-  const text2 = await res.text();
-  if (!res.ok) throw new Error(`Buffer ${res.status}: ${text2.slice(0, 200)}`);
-  let json: any = {};
-  try { json = JSON.parse(text2); } catch { /* ignore */ }
-  const updateId = json?.updates?.[0]?.id ?? json?.buffer_id ?? null;
-  return { externalId: updateId };
+  return json;
+}
+
+async function publishViaBuffer(token: string, channelIds: string[], text: string, scheduleAt?: string) {
+  if (channelIds.length === 0) throw new Error("No Buffer channels connected for this project.");
+  const mutation =
+    "mutation Create($input: CreatePostInput!){ createPost(input: $input){ __typename } }";
+  const scheduled = !!scheduleAt;
+  for (const channelId of channelIds) {
+    const input: Record<string, unknown> = {
+      channelId,
+      text,
+      assets: [],
+      schedulingType: "automatic",
+      mode: scheduled ? "customScheduled" : "shareNow",
+    };
+    if (scheduled) input.dueAt = new Date(scheduleAt!).toISOString();
+    await bufferGraphql(token, mutation, { input });
+  }
+  return { externalId: null };
 }
 
 async function publishViaWebhook(url: string, payload: unknown) {
@@ -99,15 +102,17 @@ Deno.serve(async (req) => {
 
       if (buffer?.payload?.access_token) {
         usedProvider = "buffer";
-        // Channel rows hold Buffer profile ids; fall back to all connected channels.
+        // Buffer channel ids (external_id). Match the post's platform when possible.
         const { data: channels } = await admin
           .from("marketing_channels")
-          .select("external_id")
+          .select("external_id, platform")
           .eq("project_id", project_id)
           .eq("provider", "buffer")
           .eq("status", "connected");
-        const profileIds = (channels ?? []).map((c: any) => c.external_id).filter(Boolean);
-        const r = await publishViaBuffer(buffer.payload.access_token, profileIds, fullText, schedule_at);
+        const all = (channels ?? []).filter((c: any) => c.external_id);
+        const matched = all.filter((c: any) => c.platform === post.platform);
+        const channelIds = (matched.length > 0 ? matched : all).map((c: any) => c.external_id);
+        const r = await publishViaBuffer(buffer.payload.access_token, channelIds, fullText, schedule_at);
         externalId = r.externalId;
       } else {
         let hook: { payload: Record<string, string> } | null = null;
