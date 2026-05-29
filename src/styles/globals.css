@@ -77,10 +77,10 @@
   border-bottom-color: hsl(var(--muted-foreground));
 }
 
-/* Refined, thin accent scrollbar */
+/* Refined, thin grey scrollbar */
 * {
-  scrollbar-width: thin;                                   /* Firefox */
-  scrollbar-color: hsl(var(--primary) / 0.35) transparent; /* thumb / track */
+  scrollbar-width: thin;                                            /* Firefox */
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent; /* thumb / track */
 }
 *::-webkit-scrollbar {
   width: 6px;
@@ -90,11 +90,11 @@
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.35);
+  background: hsl(var(--muted-foreground) / 0.35);
   border-radius: 9999px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.6);
+  background: hsl(var(--muted-foreground) / 0.6);
 }
 *::-webkit-scrollbar-corner {
   background: transparent;
