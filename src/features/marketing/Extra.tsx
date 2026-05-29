@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 import {
   Megaphone, Loader2, Send, BarChart3, CalendarDays, Plug, Plus, RefreshCw,
   Sparkles, Lightbulb, TrendingUp, Heart, Eye, Trash2,
-  MessageCircle, Repeat2, MousePointerClick, ChevronLeft, ChevronRight,
+  MessageCircle, Repeat2, MousePointerClick, ChevronLeft, ChevronRight, Check, X,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -25,6 +25,9 @@ interface Post {
   platform: string;
   status: string;
   objective: string | null;
+  tone: string | null;
+  angle: string | null;
+  cta: string | null;
   content: string;
   hashtags: string[] | null;
   scheduled_at: string | null;
@@ -235,6 +238,7 @@ export function MarketingCalendarPage() {
 
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [scheduleDay, setScheduleDay] = useState<Date | null>(null);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
   // Map posts (scheduled or published) to their day key.
   const postsByDay = useMemo(() => {
@@ -328,16 +332,17 @@ export function MarketingCalendarPage() {
                     </div>
                     <div className="space-y-1">
                       {dayPosts.slice(0, 4).map((p) => (
-                        <div
+                        <button
                           key={p.id}
                           title={p.content}
-                          className={`flex items-center gap-1 truncate rounded px-1 py-0.5 text-[10px] ${
+                          onClick={() => setSelectedPost(p)}
+                          className={`flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-80 ${
                             p.status === "published" ? "bg-emerald-500/15 text-emerald-300" : "bg-info/15 text-info"
                           }`}
                         >
                           {platformDot(p.platform)}
                           <span className="truncate">{p.content.slice(0, 28)}</span>
-                        </div>
+                        </button>
                       ))}
                       {dayPosts.length > 4 && <div className="text-[10px] text-muted-foreground">+{dayPosts.length - 4} more</div>}
                     </div>
@@ -361,7 +366,163 @@ export function MarketingCalendarPage() {
         workspaceId={workspaceId}
         projectId={projectId}
       />
+
+      <PostDetailDialog
+        post={selectedPost}
+        onClose={() => setSelectedPost(null)}
+        onChanged={() => {
+          queryClient.invalidateQueries({ queryKey: ["mkt_posts", projectId] });
+          setSelectedPost(null);
+        }}
+        workspaceId={workspaceId}
+        projectId={projectId}
+      />
     </div>
+  );
+}
+
+// Shared post detail / edit modal. Lets you edit content, reschedule and delete.
+export function PostDetailDialog({
+  post, onClose, onChanged, workspaceId, projectId,
+}: {
+  post: Post | null;
+  onClose: () => void;
+  onChanged: () => void;
+  workspaceId: string | null;
+  projectId: string | null;
+}) {
+  const [content, setContent] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reschedule, setReschedule] = useState(false);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("09:00");
+
+  // Sync local editing state when a new post is opened.
+  const pid = post?.id ?? "";
+  useMemo(() => {
+    setContent(post?.content ?? "");
+    setError(null);
+    setReschedule(false);
+    if (post?.scheduled_at) {
+      const d = new Date(post.scheduled_at);
+      setDate(ymdKey(d));
+      setTime(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
+    }
+  }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!post) return null;
+  const editable = post.status === "draft" || post.status === "scheduled";
+
+  async function saveContent() {
+    if (!post) return;
+    setBusy(true); setError(null);
+    try {
+      await supabase.from("marketing_posts").update({ content, updated_at: new Date().toISOString() }).eq("id", post.id);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  async function applyReschedule() {
+    if (!workspaceId || !projectId || !post || !date) return;
+    setBusy(true); setError(null);
+    try {
+      const [h, m] = time.split(":").map(Number);
+      const when = new Date(date);
+      when.setHours(h || 9, m || 0, 0, 0);
+      // Persist any content edits first, then (re)schedule via the publish edge.
+      await supabase.from("marketing_posts").update({ content }).eq("id", post.id);
+      await callEdge("marketing-publish", {
+        workspace_id: workspaceId, project_id: projectId, post_id: post.id, schedule_at: when.toISOString(),
+      });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  async function remove() {
+    if (!post) return;
+    setBusy(true);
+    try {
+      await supabase.from("marketing_posts").delete().eq("id", post.id);
+      onChanged();
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <MkDialog open={!!post} onClose={onClose} title="Post details">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="info">{post.platform}</Badge>
+          {statusBadge(post.status)}
+          {post.objective && <Badge variant="outline">{post.objective}</Badge>}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {post.scheduled_at
+              ? `Scheduled ${new Date(post.scheduled_at).toLocaleString()}`
+              : post.published_at
+                ? `Published ${new Date(post.published_at).toLocaleString()}`
+                : ""}
+          </span>
+        </div>
+
+        {editable ? (
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={6}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        ) : (
+          <p className="whitespace-pre-wrap rounded-md border border-border bg-muted/20 p-3 text-sm">{post.content}</p>
+        )}
+
+        {(post.hashtags ?? []).length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {post.hashtags!.map((h) => <span key={h} className="text-xs text-primary">#{h}</span>)}
+          </div>
+        )}
+        {post.cta && <p className="text-xs text-muted-foreground">CTA: {post.cta}</p>}
+
+        {editable && reschedule && (
+          <div className="grid grid-cols-2 gap-2 rounded-md border border-border p-2">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Date</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Time</label>
+              <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" />
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={remove} disabled={busy}>
+            <Trash2 className="h-4 w-4" /> Delete
+          </Button>
+          <div className="flex items-center gap-2">
+            {editable && (
+              <Button variant="outline" size="sm" onClick={saveContent} disabled={busy}>Save</Button>
+            )}
+            {editable && !reschedule && (
+              <Button variant="outline" size="sm" onClick={() => { setReschedule(true); if (!date) setDate(ymdKey(new Date())); }}>
+                <CalendarDays className="h-4 w-4" /> {post.status === "scheduled" ? "Reschedule" : "Schedule"}
+              </Button>
+            )}
+            {editable && reschedule && (
+              <Button size="sm" onClick={applyReschedule} disabled={busy || !date}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />} Confirm
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </MkDialog>
   );
 }
 
@@ -416,16 +577,33 @@ function ScheduleDialog({
       ) : (
         <div className="space-y-3">
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Draft to schedule</label>
-            <select
-              value={postId}
-              onChange={(e) => setPostId(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-            >
-              {drafts.map((d) => (
-                <option key={d.id} value={d.id}>[{d.platform}] {d.content.slice(0, 50)}</option>
-              ))}
-            </select>
+            <label className="mb-1.5 block text-xs text-muted-foreground">Choose a draft</label>
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {drafts.map((d) => {
+                const active = postId === d.id;
+                return (
+                  <button
+                    key={d.id}
+                    onClick={() => setPostId(d.id)}
+                    className={`w-full rounded-md border p-3 text-left transition-colors ${
+                      active ? "border-primary/50 bg-primary/10" : "border-border hover:bg-secondary"
+                    }`}
+                  >
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <Badge variant="info">{d.platform}</Badge>
+                      {d.objective && <Badge variant="outline">{d.objective}</Badge>}
+                      {active && <Check className="ml-auto h-4 w-4 text-primary" />}
+                    </div>
+                    <p className="line-clamp-3 text-sm">{d.content}</p>
+                    {(d.hashtags ?? []).length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {d.hashtags!.slice(0, 5).map((h) => <span key={h} className="text-xs text-primary">#{h}</span>)}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">Time</label>
@@ -640,6 +818,7 @@ export function MarketingCampaignsPage() {
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [openCampaign, setOpenCampaign] = useState<Campaign | null>(null);
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ["mkt_campaigns", projectId],
     enabled: !!projectId,
@@ -664,7 +843,7 @@ export function MarketingCampaignsPage() {
     <div>
       <PageHeader
         title="Campaigns"
-        description="Group posts into goal-driven campaigns."
+        description="Group posts into goal-driven campaigns. Click a campaign to add or remove posts."
         actions={<Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" /> New campaign</Button>}
       />
       {isLoading ? (
@@ -674,14 +853,19 @@ export function MarketingCampaignsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {campaigns.map((c) => (
-            <Card key={c.id}>
+            <Card key={c.id} className="cursor-pointer transition-colors hover:border-primary/40" onClick={() => setOpenCampaign(c)}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="font-semibold">{c.name}</div>
                     <Badge variant="outline" className="mt-1">{c.objective}</Badge>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => remove(c.id)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => { e.stopPropagation(); remove(c.id); }}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -705,7 +889,90 @@ export function MarketingCampaignsPage() {
           queryClient.invalidateQueries({ queryKey: ["mkt_campaigns", projectId] });
         }}
       />
+
+      <CampaignDetailDialog
+        campaign={openCampaign}
+        posts={posts ?? []}
+        onClose={() => setOpenCampaign(null)}
+        onChanged={() => {
+          queryClient.invalidateQueries({ queryKey: ["mkt_posts", projectId] });
+          queryClient.invalidateQueries({ queryKey: ["mkt_campaigns", projectId] });
+        }}
+      />
     </div>
+  );
+}
+
+function CampaignDetailDialog({
+  campaign, posts, onClose, onChanged,
+}: {
+  campaign: Campaign | null;
+  posts: Post[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  if (!campaign) return null;
+  const inCampaign = posts.filter((p) => p.campaign_id === campaign.id);
+  const available = posts.filter((p) => !p.campaign_id);
+
+  async function setCampaign(postId: string, value: string | null) {
+    setBusyId(postId);
+    try {
+      await supabase.from("marketing_posts").update({ campaign_id: value }).eq("id", postId);
+      onChanged();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function row(p: Post, action: "add" | "remove") {
+    return (
+      <div key={p.id} className="flex items-center gap-2 rounded-md border border-border p-2">
+        <Badge variant="info">{p.platform}</Badge>
+        {statusBadge(p.status)}
+        <span className="min-w-0 flex-1 truncate text-sm">{p.content}</span>
+        <Button
+          size="sm"
+          variant={action === "add" ? "outline" : "ghost"}
+          className={action === "remove" ? "text-muted-foreground hover:text-destructive" : ""}
+          disabled={busyId === p.id}
+          onClick={() => setCampaign(p.id, action === "add" ? campaign!.id : null)}
+        >
+          {busyId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : action === "add" ? <Plus className="h-4 w-4" /> : <X className="h-4 w-4" />}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <MkDialog open={!!campaign} onClose={onClose} title={campaign.name}>
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">{campaign.objective}</Badge>
+          <span className="text-xs text-muted-foreground">{inCampaign.length} posts in this campaign</span>
+        </div>
+
+        <div>
+          <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">In campaign</div>
+          {inCampaign.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No posts yet. Add some from the list below.</p>
+          ) : (
+            <div className="max-h-48 space-y-2 overflow-y-auto pr-1">{inCampaign.map((p) => row(p, "remove"))}</div>
+          )}
+        </div>
+
+        <div>
+          <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Available posts</div>
+          {available.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No unassigned posts. Generate more in Content Studio.</p>
+          ) : (
+            <div className="max-h-48 space-y-2 overflow-y-auto pr-1">{available.map((p) => row(p, "add"))}</div>
+          )}
+        </div>
+      </div>
+    </MkDialog>
   );
 }
 

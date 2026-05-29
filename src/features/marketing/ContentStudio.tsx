@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sparkles, Loader2, Send, Trash2, Copy, Check, Wand2 } from "lucide-react";
+import { Sparkles, Loader2, Send, Trash2, Copy, Check, Wand2, CalendarDays } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { PublishedPostCard } from "./Extra";
+import { PublishedPostCard, PostDetailDialog } from "./Extra";
 
 const PLATFORMS = ["twitter", "linkedin", "facebook", "instagram", "threads"];
 const OBJECTIVES = ["awareness", "launch", "feature", "educational", "engagement", "conversion"];
@@ -44,6 +44,14 @@ export function ContentStudioPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<string | null>(null);
+  const [detailPost, setDetailPost] = useState<any | null>(null);
+
+  function refreshAll() {
+    queryClient.invalidateQueries({ queryKey: ["mkt_drafts", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["mkt_scheduled_studio", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["mkt_published_studio", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["mkt_posts", projectId] });
+  }
 
   const { data: drafts } = useQuery({
     queryKey: ["mkt_drafts", projectId],
@@ -71,6 +79,21 @@ export function ContentStudioPage() {
         .eq("status", "published")
         .order("published_at", { ascending: false })
         .limit(20);
+      return (data ?? []) as any[];
+    },
+  });
+
+  const { data: scheduled } = useQuery({
+    queryKey: ["mkt_scheduled_studio", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("marketing_posts")
+        .select("*")
+        .eq("project_id", projectId!)
+        .eq("status", "scheduled")
+        .order("scheduled_at", { ascending: true })
+        .limit(50);
       return (data ?? []) as any[];
     },
   });
@@ -205,9 +228,35 @@ export function ContentStudioPage() {
               onPublish={() => publish(p.id)}
               onRemove={() => remove(p.id)}
               onSave={(c) => saveEdit(p.id, c)}
+              onSchedule={() => setDetailPost(p)}
             />
           ))}
         </div>
+      )}
+
+      {scheduled && scheduled.length > 0 && (
+        <>
+          <h2 className="mb-3 mt-8 text-sm font-medium">Scheduled posts</h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {scheduled.map((p) => (
+              <button key={p.id} onClick={() => setDetailPost(p)} className="text-left">
+                <Card className="transition-colors hover:border-primary/40">
+                  <CardContent className="space-y-2 p-4">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="info">{p.platform}</Badge>
+                      <Badge variant="info">scheduled</Badge>
+                      <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        {p.scheduled_at ? new Date(p.scheduled_at).toLocaleString() : "—"}
+                      </span>
+                    </div>
+                    <p className="line-clamp-3 text-sm">{p.content}</p>
+                  </CardContent>
+                </Card>
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {published && published.length > 0 && (
@@ -220,6 +269,14 @@ export function ContentStudioPage() {
           </div>
         </>
       )}
+
+      <PostDetailDialog
+        post={detailPost}
+        onClose={() => setDetailPost(null)}
+        onChanged={() => { refreshAll(); setDetailPost(null); }}
+        workspaceId={workspaceId}
+        projectId={projectId}
+      />
     </div>
   );
 }
@@ -232,6 +289,7 @@ function DraftCard({
   onPublish,
   onRemove,
   onSave,
+  onSchedule,
 }: {
   post: PostRow;
   copied: boolean;
@@ -240,6 +298,7 @@ function DraftCard({
   onPublish: () => void;
   onRemove: () => void;
   onSave: (content: string) => void;
+  onSchedule: () => void;
 }) {
   const [text, setText] = useState(post.content);
   const dirty = text !== post.content;
@@ -275,6 +334,9 @@ function DraftCard({
             </Button>
             <Button size="sm" variant="ghost" onClick={onRemove} title="Delete" className="text-muted-foreground hover:text-destructive">
               <Trash2 className="h-4 w-4" />
+            </Button>
+            <Button size="sm" variant="outline" onClick={onSchedule} title="Schedule">
+              <CalendarDays className="h-4 w-4" /> Schedule
             </Button>
             <Button size="sm" onClick={onPublish} disabled={publishing}>
               {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
