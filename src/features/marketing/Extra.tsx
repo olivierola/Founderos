@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import {
   Megaphone, Loader2, Send, BarChart3, CalendarDays, Plug, Plus, RefreshCw,
   Sparkles, Lightbulb, TrendingUp, Heart, Eye, Trash2,
+  MessageCircle, Repeat2, MousePointerClick, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/EmptyState";
 import { PromptDialog } from "@/components/PromptDialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
@@ -80,21 +82,75 @@ function statusBadge(s: string) {
   return <Badge variant="secondary">draft</Badge>;
 }
 
+// Reusable: render a published post with its metrics (impressions / likes / etc.).
+export function PublishedPostCard({ post, metric }: { post: Post; metric?: Metric }) {
+  return (
+    <Card>
+      <CardContent className="space-y-2 p-4">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="info">{post.platform}</Badge>
+          {statusBadge(post.status)}
+          {post.objective && <Badge variant="outline">{post.objective}</Badge>}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {post.published_at ? new Date(post.published_at).toLocaleDateString() : "—"}
+          </span>
+        </div>
+        <p className="line-clamp-3 text-sm">{post.content}</p>
+        {(post.hashtags ?? []).length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {post.hashtags!.slice(0, 6).map((h) => <span key={h} className="text-xs text-primary">#{h}</span>)}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-4 border-t border-border pt-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {(metric?.impressions ?? 0).toLocaleString()}</span>
+          <span className="flex items-center gap-1"><Heart className="h-3.5 w-3.5" /> {(metric?.likes ?? 0).toLocaleString()}</span>
+          <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {(metric?.comments ?? 0).toLocaleString()}</span>
+          <span className="flex items-center gap-1"><Repeat2 className="h-3.5 w-3.5" /> {(metric?.shares ?? 0).toLocaleString()}</span>
+          <span className="flex items-center gap-1"><MousePointerClick className="h-3.5 w-3.5" /> {(metric?.clicks ?? 0).toLocaleString()}</span>
+          <span className="ml-auto flex items-center gap-1 text-foreground">
+            <TrendingUp className="h-3.5 w-3.5" /> {((metric?.engagement_rate ?? 0) * 100).toFixed(1)}%
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // --- Overview -----------------------------------------------------------
 export function MarketingOverviewPage() {
   const { workspaceSlug, projectSlug } = useParams();
   const { data: posts, isLoading } = usePosts();
   const { data: metrics } = useMetrics();
 
+  const metricById = useMemo(() => new Map((metrics ?? []).map((m) => [m.post_id, m])), [metrics]);
+
   const stats = useMemo(() => {
     const list = posts ?? [];
     const published = list.filter((p) => p.status === "published");
     const m = metrics ?? [];
     const impressions = m.reduce((s, x) => s + x.impressions, 0);
+    const likes = m.reduce((s, x) => s + x.likes, 0);
+    const clicks = m.reduce((s, x) => s + x.clicks, 0);
     const eng = m.reduce((s, x) => s + x.likes + x.comments + x.shares + x.clicks, 0);
     const avgRate = m.length ? m.reduce((s, x) => s + x.engagement_rate, 0) / m.length : 0;
-    return { total: list.length, published: published.length, scheduled: list.filter((p) => p.status === "scheduled").length, impressions, eng, avgRate };
+    // Best post by engagement rate
+    const best = [...m].sort((a, b) => b.engagement_rate - a.engagement_rate)[0] ?? null;
+    return {
+      total: list.length,
+      published: published.length,
+      scheduled: list.filter((p) => p.status === "scheduled").length,
+      drafts: list.filter((p) => p.status === "draft").length,
+      impressions, likes, clicks, eng, avgRate, best,
+    };
   }, [posts, metrics]);
+
+  const publishedPosts = useMemo(
+    () =>
+      (posts ?? [])
+        .filter((p) => p.status === "published")
+        .sort((a, b) => (b.published_at ?? b.created_at).localeCompare(a.published_at ?? a.created_at)),
+    [posts],
+  );
 
   const base = `/app/${workspaceSlug}/${projectSlug}/marketing`;
 
@@ -105,12 +161,23 @@ export function MarketingOverviewPage() {
         <EmptyState icon={Loader2} title="Loading…" />
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-            <MetricCard label="Posts" value={String(stats.total)} icon={Megaphone} />
+          {/* Volume metrics */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <MetricCard label="Total posts" value={String(stats.total)} icon={Megaphone} hint={`${stats.drafts} drafts`} />
             <MetricCard label="Published" value={String(stats.published)} icon={Send} />
             <MetricCard label="Scheduled" value={String(stats.scheduled)} icon={CalendarDays} />
+            <MetricCard
+              label="Best engagement"
+              value={`${((stats.best?.engagement_rate ?? 0) * 100).toFixed(1)}%`}
+              icon={TrendingUp}
+            />
+          </div>
+          {/* Engagement metrics */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <MetricCard label="Impressions" value={stats.impressions.toLocaleString()} icon={Eye} />
-            <MetricCard label="Avg engagement" value={`${(stats.avgRate * 100).toFixed(1)}%`} icon={Heart} />
+            <MetricCard label="Likes" value={stats.likes.toLocaleString()} icon={Heart} />
+            <MetricCard label="Clicks" value={stats.clicks.toLocaleString()} icon={MousePointerClick} />
+            <MetricCard label="Avg engagement" value={`${(stats.avgRate * 100).toFixed(1)}%`} icon={TrendingUp} />
           </div>
 
           {stats.total === 0 ? (
@@ -121,12 +188,32 @@ export function MarketingOverviewPage() {
               action={<Link to={`${base}/content-studio`}><Button><Sparkles className="h-4 w-4" /> Open Content Studio</Button></Link>}
             />
           ) : (
-            <div className="flex flex-wrap gap-2">
-              <Link to={`${base}/content-studio`}><Button variant="outline" size="sm"><Sparkles className="h-4 w-4" /> Content Studio</Button></Link>
-              <Link to={`${base}/calendar`}><Button variant="outline" size="sm"><CalendarDays className="h-4 w-4" /> Calendar</Button></Link>
-              <Link to={`${base}/analytics`}><Button variant="outline" size="sm"><BarChart3 className="h-4 w-4" /> Analytics</Button></Link>
-              <Link to={`${base}/advisor`}><Button variant="outline" size="sm"><Lightbulb className="h-4 w-4" /> Advisor</Button></Link>
-            </div>
+            <>
+              <div className="flex flex-wrap gap-2">
+                <Link to={`${base}/content-studio`}><Button variant="outline" size="sm"><Sparkles className="h-4 w-4" /> Content Studio</Button></Link>
+                <Link to={`${base}/calendar`}><Button variant="outline" size="sm"><CalendarDays className="h-4 w-4" /> Calendar</Button></Link>
+                <Link to={`${base}/analytics`}><Button variant="outline" size="sm"><BarChart3 className="h-4 w-4" /> Analytics</Button></Link>
+                <Link to={`${base}/advisor`}><Button variant="outline" size="sm"><Lightbulb className="h-4 w-4" /> Advisor</Button></Link>
+              </div>
+
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-medium">Published posts</h2>
+                  {publishedPosts.length > 0 && (
+                    <Link to={`${base}/analytics`} className="text-xs text-primary hover:underline">View analytics →</Link>
+                  )}
+                </div>
+                {publishedPosts.length === 0 ? (
+                  <EmptyState icon={Send} title="No published posts yet" description="Publish from Content Studio to see them here with their metrics." />
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {publishedPosts.slice(0, 6).map((p) => (
+                      <PublishedPostCard key={p.id} post={p} metric={metricById.get(p.id)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -134,43 +221,244 @@ export function MarketingOverviewPage() {
   );
 }
 
-// --- Calendar -----------------------------------------------------------
+// --- Calendar (real month grid) ----------------------------------------
+function ymdKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 export function MarketingCalendarPage() {
+  const { workspaceId, projectId } = useCurrentContext();
+  const queryClient = useQueryClient();
   const { data: posts, isLoading } = usePosts();
-  const scheduled = useMemo(
-    () => (posts ?? []).filter((p) => p.status === "scheduled" || p.status === "published")
-      .sort((a, b) => (b.scheduled_at ?? b.published_at ?? b.created_at).localeCompare(a.scheduled_at ?? a.published_at ?? a.created_at)),
-    [posts],
-  );
+
+  const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [scheduleDay, setScheduleDay] = useState<Date | null>(null);
+
+  // Map posts (scheduled or published) to their day key.
+  const postsByDay = useMemo(() => {
+    const m = new Map<string, Post[]>();
+    (posts ?? []).forEach((p) => {
+      const when = p.scheduled_at ?? p.published_at;
+      if (!when || (p.status !== "scheduled" && p.status !== "published")) return;
+      const key = ymdKey(new Date(when));
+      const arr = m.get(key) ?? [];
+      arr.push(p);
+      m.set(key, arr);
+    });
+    return m;
+  }, [posts]);
+
+  // Build the month grid (weeks start Monday).
+  const cells = useMemo(() => {
+    const year = cursor.getFullYear();
+    const month = cursor.getMonth();
+    const first = new Date(year, month, 1);
+    const startOffset = (first.getDay() + 6) % 7; // Mon=0
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const out: (Date | null)[] = [];
+    for (let i = 0; i < startOffset; i++) out.push(null);
+    for (let d = 1; d <= daysInMonth; d++) out.push(new Date(year, month, d));
+    while (out.length % 7 !== 0) out.push(null);
+    return out;
+  }, [cursor]);
+
+  const todayKey = ymdKey(new Date());
+  const drafts = useMemo(() => (posts ?? []).filter((p) => p.status === "draft"), [posts]);
+
+  function platformDot(platform: string) {
+    const color =
+      platform === "twitter" || platform === "x" ? "bg-sky-400"
+      : platform === "linkedin" ? "bg-blue-500"
+      : platform === "instagram" ? "bg-pink-400"
+      : platform === "facebook" ? "bg-indigo-400" : "bg-primary";
+    return <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${color}`} />;
+  }
 
   return (
     <div>
-      <PageHeader title="Calendar" description="Scheduled and published posts timeline." />
+      <PageHeader
+        title="Calendar"
+        description="Schedule posts to specific dates. Scheduled and published posts appear as badges in their day."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="min-w-36 text-center text-sm font-medium">{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</span>
+            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { const d = new Date(); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); }}>Today</Button>
+          </div>
+        }
+      />
       {isLoading ? (
         <EmptyState icon={Loader2} title="Loading…" />
-      ) : scheduled.length === 0 ? (
-        <EmptyState icon={CalendarDays} title="Nothing scheduled" description="Publish or schedule posts from Content Studio." />
       ) : (
-        <div className="space-y-2">
-          {scheduled.map((p) => (
-            <Card key={p.id}>
-              <CardContent className="flex items-start gap-3 p-3">
-                <div className="w-28 shrink-0 text-xs text-muted-foreground">
-                  {new Date(p.scheduled_at ?? p.published_at ?? p.created_at).toLocaleString()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <Badge variant="info">{p.platform}</Badge>
-                    {statusBadge(p.status)}
+        <Card>
+          <CardContent className="p-3">
+            <div className="grid grid-cols-7 gap-1">
+              {WEEKDAYS.map((w) => (
+                <div key={w} className="px-2 py-1 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">{w}</div>
+              ))}
+              {cells.map((day, i) => {
+                if (!day) return <div key={i} className="min-h-24 rounded-md bg-muted/20" />;
+                const key = ymdKey(day);
+                const dayPosts = postsByDay.get(key) ?? [];
+                const isToday = key === todayKey;
+                const isPast = day < new Date(new Date().setHours(0, 0, 0, 0));
+                return (
+                  <div
+                    key={i}
+                    className={`group min-h-24 rounded-md border p-1.5 transition-colors ${isToday ? "border-primary/50 bg-primary/5" : "border-border"}`}
+                  >
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className={`text-xs ${isToday ? "font-semibold text-primary" : "text-muted-foreground"}`}>{day.getDate()}</span>
+                      {!isPast && (
+                        <button
+                          onClick={() => setScheduleDay(day)}
+                          className="opacity-0 transition-opacity group-hover:opacity-100"
+                          title="Schedule a post"
+                        >
+                          <Plus className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {dayPosts.slice(0, 4).map((p) => (
+                        <div
+                          key={p.id}
+                          title={p.content}
+                          className={`flex items-center gap-1 truncate rounded px-1 py-0.5 text-[10px] ${
+                            p.status === "published" ? "bg-emerald-500/15 text-emerald-300" : "bg-info/15 text-info"
+                          }`}
+                        >
+                          {platformDot(p.platform)}
+                          <span className="truncate">{p.content.slice(0, 28)}</span>
+                        </div>
+                      ))}
+                      {dayPosts.length > 4 && <div className="text-[10px] text-muted-foreground">+{dayPosts.length - 4} more</div>}
+                    </div>
                   </div>
-                  <p className="line-clamp-2 text-sm">{p.content}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <ScheduleDialog
+        open={!!scheduleDay}
+        day={scheduleDay}
+        drafts={drafts}
+        onClose={() => setScheduleDay(null)}
+        onScheduled={() => {
+          queryClient.invalidateQueries({ queryKey: ["mkt_posts", projectId] });
+          setScheduleDay(null);
+        }}
+        workspaceId={workspaceId}
+        projectId={projectId}
+      />
+    </div>
+  );
+}
+
+function ScheduleDialog({
+  open, day, drafts, onClose, onScheduled, workspaceId, projectId,
+}: {
+  open: boolean;
+  day: Date | null;
+  drafts: Post[];
+  onClose: () => void;
+  onScheduled: () => void;
+  workspaceId: string | null;
+  projectId: string | null;
+}) {
+  const [postId, setPostId] = useState("");
+  const [time, setTime] = useState("09:00");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset selection when the dialog opens for a new day.
+  const dayKey = day ? ymdKey(day) : "";
+  useMemo(() => { setPostId(drafts[0]?.id ?? ""); setError(null); }, [dayKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function submit() {
+    if (!workspaceId || !projectId || !postId || !day) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const [h, m] = time.split(":").map(Number);
+      const when = new Date(day);
+      when.setHours(h || 9, m || 0, 0, 0);
+      await callEdge("marketing-publish", {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        post_id: postId,
+        schedule_at: when.toISOString(),
+      });
+      onScheduled();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <MkDialog open={open} onClose={onClose} title={`Schedule a post${day ? ` — ${day.toLocaleDateString()}` : ""}`}>
+      {drafts.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No drafts available. Generate posts in Content Studio first, then come back to schedule them.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Draft to schedule</label>
+            <select
+              value={postId}
+              onChange={(e) => setPostId(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              {drafts.map((d) => (
+                <option key={d.id} value={d.id}>[{d.platform}] {d.content.slice(0, 50)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Time</label>
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={submit} disabled={submitting || !postId}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />} Schedule
+            </Button>
+          </div>
         </div>
       )}
-    </div>
+    </MkDialog>
+  );
+}
+
+function MkDialog({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }
 

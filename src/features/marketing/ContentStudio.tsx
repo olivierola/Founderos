@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles, Loader2, Send, Trash2, Copy, Check, Wand2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { PublishedPostCard } from "./Extra";
 
 const PLATFORMS = ["twitter", "linkedin", "facebook", "instagram", "threads"];
 const OBJECTIVES = ["awareness", "launch", "feature", "educational", "engagement", "conversion"];
@@ -59,6 +60,35 @@ export function ContentStudioPage() {
     },
   });
 
+  const { data: published } = useQuery({
+    queryKey: ["mkt_published_studio", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("marketing_posts")
+        .select("*")
+        .eq("project_id", projectId!)
+        .eq("status", "published")
+        .order("published_at", { ascending: false })
+        .limit(20);
+      return (data ?? []) as any[];
+    },
+  });
+
+  const { data: metrics } = useQuery({
+    queryKey: ["mkt_metrics", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("marketing_post_metrics")
+        .select("*")
+        .eq("project_id", projectId!)
+        .limit(300);
+      return (data ?? []) as any[];
+    },
+  });
+  const metricById = useMemo(() => new Map((metrics ?? []).map((m: any) => [m.post_id, m])), [metrics]);
+
   async function generate() {
     if (!workspaceId || !projectId) return;
     setGenerating(true);
@@ -89,6 +119,8 @@ export function ContentStudioPage() {
     try {
       await callEdge("marketing-publish", { workspace_id: workspaceId, project_id: projectId, post_id: id });
       queryClient.invalidateQueries({ queryKey: ["mkt_drafts", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["mkt_published_studio", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["mkt_posts", projectId] });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -176,6 +208,17 @@ export function ContentStudioPage() {
             />
           ))}
         </div>
+      )}
+
+      {published && published.length > 0 && (
+        <>
+          <h2 className="mb-3 mt-8 text-sm font-medium">Published posts</h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {published.map((p) => (
+              <PublishedPostCard key={p.id} post={p} metric={metricById.get(p.id)} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
