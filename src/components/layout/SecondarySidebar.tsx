@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 
 // Agent builder sub-tabs, shown in the secondary sidebar once an agent is opened.
 const AGENT_TABS = [
-  { slug: "knowledge", label: "Knowledge" },
   { slug: "playground", label: "Playground" },
+  { slug: "knowledge", label: "Knowledge" },
   { slug: "widget", label: "Widget" },
   { slug: "analytics", label: "Analytics" },
   { slug: "settings", label: "Settings" },

@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Loader2, Bot, MessageSquare,
+  ArrowLeft, Loader2, Bot, BarChart3,
   Plus, Trash2, Send, FileText, Link2, LayoutGrid, Check, Copy, Sparkles, BookOpen, Search,
+  Globe, FileUp, Type, RotateCcw,
 } from "lucide-react";
-import { MetricCard } from "@/components/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -19,12 +19,12 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 type Tab = "knowledge" | "playground" | "widget" | "analytics" | "settings";
 
 interface Agent {
-  id: string; name: string; description: string | null; persona: string | null;
+  id: string; project_id: string; name: string; description: string | null; persona: string | null;
   instructions: string | null; model: string; temperature: number;
   welcome_message: string | null; widget_config: any; public_key: string;
-  enabled: boolean; onboarding_enabled: boolean;
+  enabled: boolean; onboarding_enabled: boolean; accent_color: string | null;
 }
-interface Source { id: string; type: string; title: string; status: string; chunk_count: number; error_message: string | null; created_at: string; }
+interface Source { id: string; type: string; title: string; status: string; chunk_count: number; byte_size?: number; error_message: string | null; created_at: string; }
 
 const VALID_TABS: Tab[] = ["knowledge", "playground", "widget", "analytics", "settings"];
 
@@ -32,7 +32,7 @@ export function AgentBuilderPage() {
   const navigate = useNavigate();
   const { workspaceSlug, projectSlug, agentId, tab: tabParam } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
-  const tab: Tab = VALID_TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "knowledge";
+  const tab: Tab = VALID_TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "playground";
 
   const { data: agent, isLoading } = useQuery({
     queryKey: ["rag_agent", agentId],
@@ -81,11 +81,22 @@ function sourceIcon(t: string) {
   return t === "url" ? Link2 : t === "saas_structure" ? LayoutGrid : FileText;
 }
 
+function fmtBytes(n: number) {
+  if (!n) return "0 B";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1024 / 1024).toFixed(2) + " MB";
+}
+
 function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspaceId: string | null; projectId: string | null }) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [defaultType, setDefaultType] = useState<"text" | "url" | "saas_structure">("text");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const { data: sources } = useQuery({
     queryKey: ["rag_sources", agent.id],
@@ -97,9 +108,39 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
     },
   });
 
+  const usedBytes = (sources ?? []).reduce((s, x) => s + (x.byte_size ?? 0), 0);
+
   async function removeSource(id: string) {
     await supabase.from("rag_sources").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["rag_sources", agent.id] });
+  }
+
+  function openDialog(t: "text" | "url" | "saas_structure") {
+    setDefaultType(t);
+    setAddOpen(true);
+  }
+
+  // Upload files to Storage, then trigger server-side extraction + ingestion.
+  async function onFiles(files: FileList | null) {
+    if (!files || !workspaceId || !projectId) return;
+    setUploading(true); setUploadErr(null);
+    try {
+      for (const file of Array.from(files)) {
+        const path = `${projectId}/${agent.id}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
+        const { error: upErr } = await supabase.storage.from("rag-docs").upload(path, file, { upsert: false });
+        if (upErr) throw new Error(upErr.message);
+        await callEdge("rag-extract-file", {
+          workspace_id: workspaceId, project_id: projectId, agent_id: agent.id,
+          title: file.name, storage_path: path, mime: file.type,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["rag_sources", agent.id] });
+    } catch (e) {
+      setUploadErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
 
   const filtered = (sources ?? []).filter((s) => {
@@ -109,6 +150,13 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
     return true;
   });
 
+  const ACTIONS = [
+    { icon: Globe, label: "Add URL", onClick: () => openDialog("url") },
+    { icon: FileUp, label: "Add Files", onClick: () => fileRef.current?.click() },
+    { icon: Type, label: "Create Text", onClick: () => openDialog("text") },
+    { icon: LayoutGrid, label: "SaaS structure", onClick: () => openDialog("saas_structure") },
+  ];
+
   return (
     <div>
       {/* Header */}
@@ -117,8 +165,28 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
           <BookOpen className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-lg font-semibold">Knowledge Base</h2>
         </div>
-        <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" /> Add document</Button>
+        <div className="flex items-center gap-2 rounded-full border border-border/60 px-3 py-1.5 text-xs">
+          <span className={`h-2 w-2 rounded-full ${usedBytes > 0 ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
+          RAG Storage: <span className="font-semibold text-foreground">{fmtBytes(usedBytes)}</span>
+        </div>
       </div>
+
+      {/* Action cards */}
+      <input ref={fileRef} type="file" multiple accept=".txt,.md,.csv,.json,.html,.pdf,.docx" className="hidden" onChange={(e) => onFiles(e.target.files)} />
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {ACTIONS.map((a) => (
+          <button
+            key={a.label}
+            onClick={a.onClick}
+            disabled={a.label === "Add Files" && uploading}
+            className="flex flex-col items-center gap-2 rounded-lg border border-border/60 bg-card p-4 text-sm transition-colors hover:border-primary/40 hover:bg-secondary/40 disabled:opacity-60"
+          >
+            {a.label === "Add Files" && uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <a.icon className="h-5 w-5 text-muted-foreground" />}
+            {a.label}
+          </button>
+        ))}
+      </div>
+      {uploadErr && <p className="mb-3 text-sm text-destructive">{uploadErr}</p>}
 
       {/* Search */}
       <div className="relative mb-3">
@@ -155,7 +223,7 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
           <p className="mt-1 text-sm text-muted-foreground">
             {sources && sources.length > 0 ? "No documents match your filters." : "This agent has no attached documents yet."}
           </p>
-          <Button className="mt-4" onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" /> Add document</Button>
+          <Button className="mt-4" onClick={() => openDialog("text")}><Plus className="h-4 w-4" /> Add document</Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -195,6 +263,7 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
 
       <AddDocumentDialog
         open={addOpen}
+        defaultType={defaultType}
         onClose={() => setAddOpen(false)}
         onAdded={() => { queryClient.invalidateQueries({ queryKey: ["rag_sources", agent.id] }); setAddOpen(false); }}
         agent={agent}
@@ -206,12 +275,13 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
 }
 
 function AddDocumentDialog({
-  open, onClose, onAdded, agent, workspaceId, projectId,
+  open, defaultType, onClose, onAdded, agent, workspaceId, projectId,
 }: {
-  open: boolean; onClose: () => void; onAdded: () => void;
+  open: boolean; defaultType: "text" | "url" | "saas_structure"; onClose: () => void; onAdded: () => void;
   agent: Agent; workspaceId: string | null; projectId: string | null;
 }) {
-  const [type, setType] = useState<"text" | "url" | "saas_structure">("text");
+  const [type, setType] = useState<"text" | "url" | "saas_structure">(defaultType);
+  useEffect(() => { if (open) setType(defaultType); }, [open, defaultType]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [url, setUrl] = useState("");
@@ -271,11 +341,35 @@ function AddDocumentDialog({
 
 // --- Playground ---------------------------------------------------------
 function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; workspaceId: string | null; projectId: string | null }) {
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string; sources?: any[] }[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [convId, setConvId] = useState<string | undefined>();
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Quick-edit config in the left panel.
+  const [model, setModel] = useState(agent.model);
+  const [instructions, setInstructions] = useState(agent.instructions ?? "");
+  const [savingCfg, setSavingCfg] = useState(false);
+
+  const accent = agent.accent_color || "#001BB7";
+
+  const { data: stats } = useQuery({
+    queryKey: ["rag_pg_stats", agent.id],
+    enabled: !!agent.id,
+    queryFn: async () => {
+      const { data } = await supabase.from("rag_sources").select("chunk_count, byte_size, status").eq("agent_id", agent.id);
+      const rows = data ?? [];
+      return {
+        chunks: rows.reduce((s: number, r: any) => s + (r.chunk_count ?? 0), 0),
+        bytes: rows.reduce((s: number, r: any) => s + (r.byte_size ?? 0), 0),
+        ready: rows.filter((r: any) => r.status === "ready").length,
+        total: rows.length,
+      };
+    },
+  });
+  const trained = (stats?.ready ?? 0) > 0;
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -296,39 +390,119 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
     } finally { setBusy(false); }
   }
 
+  function reset() { setMessages([]); setConvId(undefined); }
+
+  async function saveCfg() {
+    setSavingCfg(true);
+    try {
+      await supabase.from("rag_agents").update({ model, instructions }).eq("id", agent.id);
+      queryClient.invalidateQueries({ queryKey: ["rag_agent", agent.id] });
+    } finally { setSavingCfg(false); }
+  }
+
   return (
-    <Card>
-      <CardContent className="flex h-[60vh] flex-col p-0">
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          {messages.length === 0 && (
-            <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-              <div>
-                <Bot className="mx-auto mb-2 h-8 w-8 text-primary" />
-                {agent.welcome_message ?? "Ask me anything about your knowledge base."}
-              </div>
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      {/* Left config panel */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-bold">Playground</h2>
+        <Card>
+          <CardContent className="p-4">
+            <div className={`flex items-center gap-2 text-sm font-medium ${trained ? "text-emerald-400" : "text-muted-foreground"}`}>
+              <span className={`h-2 w-2 rounded-full ${trained ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
+              {trained ? "Trained" : "Not trained yet"}
             </div>
-          )}
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>
-                <p className="whitespace-pre-wrap">{m.content}</p>
-                {m.sources && m.sources.length > 0 && (
-                  <div className="mt-2 border-t border-border/50 pt-1.5 text-xs opacity-70">
-                    {m.sources.length} source(s) · top match {(m.sources[0]?.similarity * 100).toFixed(0)}%
-                  </div>
-                )}
-              </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {stats ? `${stats.ready}/${stats.total} sources · ${stats.chunks} chunks · ${fmtBytes(stats.bytes)}` : "—"}
             </div>
-          ))}
-          {busy && <div className="flex justify-start"><div className="rounded-lg bg-secondary px-3 py-2"><Loader2 className="h-4 w-4 animate-spin" /></div></div>}
-          <div ref={endRef} />
+          </CardContent>
+        </Card>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">Model</label>
+          <select value={model} onChange={(e) => setModel(e.target.value)} className="h-10 w-full rounded-md bg-secondary/60 px-3 text-sm outline-none">
+            <option value="groq">Groq — Llama 3.3 70B (fast)</option>
+            <option value="deepseek">DeepSeek Chat (deep)</option>
+          </select>
         </div>
-        <div className="flex gap-2 border-t border-border p-3">
-          <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Type a message…" />
-          <Button onClick={send} disabled={busy || !input.trim()}><Send className="h-4 w-4" /></Button>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">Instructions (System prompt)</label>
+          <textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            rows={8}
+            placeholder="### Role&#10;- You are a helpful assistant for…"
+            className="w-full rounded-md bg-secondary/60 px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
         </div>
-      </CardContent>
-    </Card>
+
+        <Button onClick={saveCfg} disabled={savingCfg} className="w-full">
+          {savingCfg ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save changes
+        </Button>
+      </div>
+
+      {/* Right chat panel (dotted background) */}
+      <div
+        className="flex justify-center rounded-lg border border-border/40 p-6"
+        style={{ backgroundImage: "radial-gradient(hsl(var(--muted-foreground)/0.18) 1px, transparent 1px)", backgroundSize: "16px 16px" }}
+      >
+        <Card className="flex h-[68vh] w-full max-w-md flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md" style={{ background: `${accent}26` }}>
+                <Bot className="h-4 w-4" style={{ color: accent }} />
+              </div>
+              <span className="truncate text-sm font-medium">{agent.name}</span>
+            </div>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={reset} title="Reset conversation">
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </div>
+          {/* Messages */}
+          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+            <div className="flex justify-start">
+              <div className="max-w-[85%] rounded-2xl bg-secondary px-3 py-2 text-sm">{agent.welcome_message ?? "Hi! What can I help you with?"}</div>
+            </div>
+            {messages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className="max-w-[85%] rounded-2xl px-3 py-2 text-sm" style={m.role === "user" ? { background: accent, color: "#fff" } : undefined}>
+                  <p className={`whitespace-pre-wrap ${m.role === "assistant" ? "" : ""}`}>{m.content}</p>
+                  {m.sources && m.sources.length > 0 && (
+                    <div className="mt-1.5 border-t border-white/20 pt-1 text-[11px] opacity-70">
+                      {m.sources.length} source(s){m.sources[0]?.similarity ? ` · top ${(m.sources[0].similarity * 100).toFixed(0)}%` : ""}
+                    </div>
+                  )}
+                </div>
+                {m.role === "assistant" && false}
+              </div>
+            ))}
+            {messages.filter((m) => m.role === "assistant").length === 0 && messages.length === 0 && null}
+            {busy && <div className="flex justify-start"><div className="rounded-2xl bg-secondary px-3 py-2"><Loader2 className="h-4 w-4 animate-spin" /></div></div>}
+            <div ref={endRef} />
+          </div>
+          {/* Branding + input */}
+          <div className="px-4 pb-1 text-center text-[10px] text-muted-foreground">Powered by FounderOS</div>
+          <div className="flex items-center gap-2 border-t border-border p-3">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && send()}
+              placeholder="Message…"
+              className="h-9 flex-1 rounded-full bg-secondary/60 px-4 text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <button
+              onClick={send}
+              disabled={busy || !input.trim()}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white disabled:opacity-40"
+              style={{ background: accent }}
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
+        </Card>
+      </div>
+    </div>
   );
 }
 
@@ -590,56 +764,203 @@ function WidgetTab({ agent }: { agent: Agent }) {
 }
 
 // --- Analytics ----------------------------------------------------------
+type AnalyticsTab = "general" | "tools" | "llms" | "knowledge";
+const RANGES = [
+  { value: 7, label: "Last week" },
+  { value: 30, label: "Last 30 days" },
+  { value: 90, label: "Last 90 days" },
+];
+
+// A KPI cell used in the General top band.
+function Kpi({ label, value, active }: { label: string; value: string; active?: boolean }) {
+  return (
+    <div className={`min-w-0 px-4 py-3 ${active ? "border-b-2 border-primary" : ""}`}>
+      <div className="truncate text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+// Card body placeholder when there's nothing to chart yet.
+function NoData({ title }: { title: string }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-sm font-medium">{title}</div>
+        <div className="mt-1 text-lg text-muted-foreground">—</div>
+        <div className="flex h-40 flex-col items-center justify-center text-sm text-muted-foreground">
+          <BarChart3 className="mb-2 h-7 w-7 opacity-30" />
+          No data has been collected
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-sm font-medium">{title}</div>
+        <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+        {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
 function AnalyticsTab({ agent }: { agent: Agent }) {
+  const [tab, setTab] = useState<AnalyticsTab>("general");
+  const [days, setDays] = useState(7);
+
   const { data, isLoading } = useQuery({
-    queryKey: ["rag_analytics", agent.id],
+    queryKey: ["rag_analytics", agent.id, days],
     enabled: !!agent.id,
     queryFn: async () => {
-      const [convos, msgs] = await Promise.all([
-        supabase.from("rag_conversations").select("id, source, created_at, rating").eq("agent_id", agent.id).limit(1000),
-        supabase.from("rag_messages").select("role, content, created_at").eq("agent_id", agent.id).eq("role", "user").order("created_at", { ascending: false }).limit(500),
+      const since = new Date(Date.now() - days * 86400_000).toISOString();
+      const [convos, msgs, llm, sources] = await Promise.all([
+        supabase.from("rag_conversations").select("id, source, created_at, rating").eq("agent_id", agent.id).gte("created_at", since).limit(2000),
+        supabase.from("rag_messages").select("role, content, sources, created_at").eq("agent_id", agent.id).gte("created_at", since).limit(3000),
+        supabase.from("llm_usage").select("total_tokens, estimated_cost_cents, created_at").eq("project_id", agent.project_id).eq("feature", "rag-agent").gte("created_at", since).limit(3000),
+        supabase.from("rag_sources").select("id, chunk_count, status").eq("agent_id", agent.id),
       ]);
-      return { convos: convos.data ?? [], questions: (msgs.data ?? []) as { content: string }[] };
+      return {
+        convos: convos.data ?? [],
+        msgs: (msgs.data ?? []) as { role: string; content: string; sources: any[]; created_at: string }[],
+        llm: (llm.data ?? []) as { total_tokens: number; estimated_cost_cents: number }[],
+        sources: (sources.data ?? []) as { chunk_count: number; status: string }[],
+      };
     },
   });
 
+  const TABS: { value: AnalyticsTab; label: string }[] = [
+    { value: "general", label: "General" },
+    { value: "tools", label: "Tools" },
+    { value: "llms", label: "LLMs" },
+    { value: "knowledge", label: "Knowledge Base" },
+  ];
+
   if (isLoading) return <EmptyState icon={Loader2} title="Loading…" />;
   const convos = data?.convos ?? [];
-  const questions = data?.questions ?? [];
-  const widget = convos.filter((c: any) => c.source === "widget").length;
+  const msgs = data?.msgs ?? [];
+  const userMsgs = msgs.filter((m) => m.role === "user");
+  const asstMsgs = msgs.filter((m) => m.role === "assistant");
+  const llm = data?.llm ?? [];
+  const sources = data?.sources ?? [];
+
+  const totalConvos = convos.length;
+  const widgetConvos = convos.filter((c: any) => c.source === "widget").length;
   const ratings = convos.map((c: any) => c.rating).filter((r: any) => r != null);
   const avgRating = ratings.length ? (ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length).toFixed(1) : "—";
+  const totalTokens = llm.reduce((s, x) => s + (x.total_tokens ?? 0), 0);
+  const totalCost = llm.reduce((s, x) => s + (x.estimated_cost_cents ?? 0), 0) / 100;
+  const llmRequests = llm.length;
+  const docRefs = asstMsgs.reduce((s, m) => s + (Array.isArray(m.sources) ? m.sources.length : 0), 0);
+  const answeredWithSources = asstMsgs.filter((m) => Array.isArray(m.sources) && m.sources.length > 0).length;
+  const successRate = asstMsgs.length ? Math.round((answeredWithSources / asstMsgs.length) * 100) : null;
+  const chunks = sources.reduce((s, x) => s + (x.chunk_count ?? 0), 0);
 
-  // Frequent question keywords (naive).
+  // Top questions for the General view.
   const freq = new Map<string, number>();
-  questions.forEach((q) => freq.set(q.content.slice(0, 60), (freq.get(q.content.slice(0, 60)) ?? 0) + 1));
+  userMsgs.forEach((q) => freq.set(q.content.slice(0, 60), (freq.get(q.content.slice(0, 60)) ?? 0) + 1));
   const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
 
+  const fmt = (n: number) => (n === 0 ? "—" : n.toLocaleString());
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <MetricCard label="Conversations" value={String(convos.length)} icon={MessageSquare} />
-        <MetricCard label="From widget" value={String(widget)} />
-        <MetricCard label="Questions asked" value={String(questions.length)} />
-        <MetricCard label="Avg rating" value={String(avgRating)} />
+    <div>
+      {/* Sub-tabs */}
+      <div className="mb-4 flex flex-wrap gap-4 border-b border-border/40">
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => setTab(t.value)}
+            className={`-mb-px border-b-2 pb-2 text-sm transition-colors ${tab === t.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
-      <Card>
-        <CardHeader><CardTitle>Top questions</CardTitle></CardHeader>
-        <CardContent>
-          {top.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No questions yet.</p>
-          ) : (
-            <ul className="space-y-1.5 text-sm">
-              {top.map(([q, n]) => (
-                <li key={q} className="flex items-center justify-between gap-2">
-                  <span className="truncate">{q}</span>
-                  <Badge variant="secondary">{n}</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+
+      {/* Filter bar */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 rounded-md bg-secondary/60 px-2.5 py-1.5 text-sm">
+          <span className="text-xs text-muted-foreground">Date Range</span>
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="bg-transparent text-sm outline-none">
+            {RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </div>
+        <span className="rounded-md bg-secondary/60 px-2.5 py-1.5 text-sm">Agent · {agent.name}</span>
+      </div>
+
+      {tab === "general" && (
+        <div className="space-y-4">
+          {/* KPI band */}
+          <Card>
+            <CardContent className="grid grid-cols-2 divide-x divide-border/40 p-0 sm:grid-cols-3 lg:grid-cols-6">
+              <Kpi label="Conversations" value={fmt(totalConvos)} active />
+              <Kpi label="From widget" value={fmt(widgetConvos)} />
+              <Kpi label="Messages" value={fmt(msgs.length)} />
+              <Kpi label="Avg CSAT" value={avgRating} />
+              <Kpi label="Total LLM cost" value={totalCost ? `€${totalCost.toFixed(2)}` : "—"} />
+              <Kpi label="LLM requests" value={fmt(llmRequests)} />
+            </CardContent>
+          </Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <StatCard title="Overall success rate" value={successRate != null ? `${successRate}%` : "—"} hint="Answers grounded in a source" />
+            <StatCard title="Average CSAT rating" value={ratings.length ? `${avgRating} / 5` : "—"} hint={`${ratings.length} rating(s)`} />
+          </div>
+          <Card>
+            <CardHeader><CardTitle>Top questions</CardTitle></CardHeader>
+            <CardContent>
+              {top.length === 0 ? (
+                <div className="flex h-32 flex-col items-center justify-center text-sm text-muted-foreground">
+                  <BarChart3 className="mb-2 h-7 w-7 opacity-30" /> No data has been collected
+                </div>
+              ) : (
+                <ul className="space-y-1.5 text-sm">
+                  {top.map(([q, n]) => (
+                    <li key={q} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{q}</span>
+                      <Badge variant="secondary">{n}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {tab === "tools" && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <NoData title="Total tool calls" />
+          <NoData title="Average tool latency" />
+          <NoData title="Total tool errors" />
+          <NoData title="Average error rate" />
+          <div className="lg:col-span-2 rounded-md bg-secondary/40 p-3 text-xs text-muted-foreground">
+            This agent answers from its knowledge base and doesn't call external tools yet. Tool analytics will appear here once tool use is enabled.
+          </div>
+        </div>
+      )}
+
+      {tab === "llms" && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <StatCard title="Total LLM requests" value={fmt(llmRequests)} />
+          <StatCard title="Total tokens" value={fmt(totalTokens)} />
+          <StatCard title="Total LLM cost" value={totalCost ? `€${totalCost.toFixed(2)}` : "—"} />
+          <StatCard title="Avg cost / request" value={llmRequests ? `€${(totalCost / llmRequests).toFixed(4)}` : "—"} />
+        </div>
+      )}
+
+      {tab === "knowledge" && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <StatCard title="Total document references" value={fmt(docRefs)} hint="Chunks cited across answers" />
+          <StatCard title="Answers with sources" value={asstMsgs.length ? `${answeredWithSources} / ${asstMsgs.length}` : "—"} />
+          <StatCard title="Indexed chunks" value={fmt(chunks)} />
+          <StatCard title="Ready sources" value={fmt(sources.filter((s) => s.status === "ready").length)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -651,6 +972,7 @@ function SettingsTab({ agent }: { agent: Agent }) {
     name: agent.name, description: agent.description ?? "", persona: agent.persona ?? "",
     instructions: agent.instructions ?? "", model: agent.model, temperature: agent.temperature,
     welcome_message: agent.welcome_message ?? "", enabled: agent.enabled, onboarding_enabled: agent.onboarding_enabled,
+    accent_color: agent.accent_color ?? "#001BB7",
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -669,7 +991,13 @@ function SettingsTab({ agent }: { agent: Agent }) {
   return (
     <Card className="max-w-2xl">
       <CardContent className="space-y-3 p-5">
-        <div><label className="mb-1 block text-xs text-muted-foreground">Name</label><Input value={form.name} onChange={(e) => upd("name", e.target.value)} /></div>
+        <div className="flex items-end gap-3">
+          <div className="flex-1"><label className="mb-1 block text-xs text-muted-foreground">Name</label><Input value={form.name} onChange={(e) => upd("name", e.target.value)} /></div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Accent color</label>
+            <input type="color" value={form.accent_color} onChange={(e) => upd("accent_color", e.target.value)} className="h-10 w-12 cursor-pointer rounded-md border border-border bg-transparent p-0.5" title="Card accent color" />
+          </div>
+        </div>
         <div><label className="mb-1 block text-xs text-muted-foreground">Description</label><Input value={form.description} onChange={(e) => upd("description", e.target.value)} /></div>
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">Persona</label>
