@@ -10,9 +10,12 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/EmptyState";
-import { PromptDialog } from "@/components/PromptDialog";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+
+const AGENT_COLORS = ["#001BB7", "#2F2FE4", "#7c3aed", "#db2777", "#e11d48", "#ea580c", "#16a34a", "#0891b2", "#475569"];
 
 interface Agent {
   id: string;
@@ -29,6 +32,28 @@ export function RagAgentsPage() {
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState(AGENT_COLORS[0]);
+  const [creating, setCreating] = useState(false);
+
+  async function createAgent() {
+    if (!workspaceId || !projectId || !newName.trim()) return;
+    setCreating(true);
+    try {
+      const { data } = await supabase
+        .from("rag_agents")
+        .insert({ workspace_id: workspaceId, project_id: projectId, name: newName.trim(), accent_color: newColor })
+        .select("id")
+        .single();
+      queryClient.invalidateQueries({ queryKey: ["rag_agents", projectId] });
+      setCreateOpen(false);
+      setNewName("");
+      setNewColor(AGENT_COLORS[0]);
+      if (data) navigate(`/app/${workspaceSlug}/${projectSlug}/agent/builder/${data.id}/playground`);
+    } finally {
+      setCreating(false);
+    }
+  }
 
   const { data: agents, isLoading } = useQuery({
     queryKey: ["rag_agents", projectId],
@@ -95,12 +120,8 @@ export function RagAgentsPage() {
                 style={{ borderColor: undefined }}
                 onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/builder/${a.id}/playground`)}
               >
-                {/* Accent strip + hover glow */}
+                {/* Accent strip */}
                 <div className="absolute inset-x-0 top-0 h-1 transition-all duration-200 group-hover:h-1.5" style={{ background: color }} />
-                <div
-                  className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                  style={{ background: `radial-gradient(120% 80% at 50% 0%, ${color}1f, transparent 70%)` }}
-                />
                 <CardContent className="relative p-5">
                   <div className="flex items-start justify-between">
                     <div
@@ -156,24 +177,58 @@ export function RagAgentsPage() {
         </div>
       )}
 
-      <PromptDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        title="New RAG agent"
-        label="Agent name"
-        placeholder="Support assistant"
-        confirmText="Create"
-        onSubmit={async (name) => {
-          if (!workspaceId || !projectId) return;
-          const { data } = await supabase
-            .from("rag_agents")
-            .insert({ workspace_id: workspaceId, project_id: projectId, name })
-            .select("id")
-            .single();
-          queryClient.invalidateQueries({ queryKey: ["rag_agents", projectId] });
-          if (data) navigate(`/app/${workspaceSlug}/${projectSlug}/agent/builder/${data.id}/playground`);
-        }}
-      />
+      <Dialog open={createOpen} onOpenChange={(o) => { if (!o) setCreateOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>New RAG agent</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">Agent name</label>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && createAgent()}
+                placeholder="Support assistant"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">Ambience color</label>
+              <div className="flex flex-wrap items-center gap-2">
+                {AGENT_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setNewColor(c)}
+                    className={`h-7 w-7 rounded-full transition-transform ${newColor === c ? "ring-2 ring-offset-2 ring-offset-card scale-110" : "hover:scale-105"}`}
+                    style={{ background: c, boxShadow: newColor === c ? `0 0 0 2px ${c}` : undefined }}
+                    aria-label={c}
+                  />
+                ))}
+                <label className="relative ml-1 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-dashed border-border" title="Custom color">
+                  <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                  <input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} className="absolute h-7 w-7 cursor-pointer opacity-0" />
+                </label>
+              </div>
+            </div>
+            {/* Live preview */}
+            <div className="overflow-hidden rounded-lg border border-border">
+              <div className="h-1" style={{ background: newColor }} />
+              <div className="flex items-center gap-2 p-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-md" style={{ background: `${newColor}26` }}>
+                  <Bot className="h-4 w-4" style={{ color: newColor }} />
+                </div>
+                <span className="text-sm font-medium">{newName.trim() || "Agent name"}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
+              <Button onClick={createAgent} disabled={creating || !newName.trim()}>
+                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
