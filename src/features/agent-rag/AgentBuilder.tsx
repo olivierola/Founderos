@@ -268,13 +268,16 @@ function WidgetTab({ agent }: { agent: Agent }) {
 
   const base = (import.meta as any).env?.VITE_SUPABASE_URL ?? "https://YOUR_PROJECT.supabase.co";
   const snippet = `<script>
-  (function(){
-    window.FounderOSAgent = { key: "${agent.public_key}", endpoint: "${base}/functions/v1/rag-chat", title: ${JSON.stringify(title)}, color: ${JSON.stringify(color)}, position: ${JSON.stringify(position)} };
-    var s = document.createElement('script');
-    s.src = "${base}/storage/v1/object/public/widget/agent-widget.js";
-    s.async = true; document.head.appendChild(s);
-  })();
-</script>`;
+  window.FounderOSAgent = {
+    key: "${agent.public_key}",
+    endpoint: "${base}/functions/v1/rag-chat",
+    title: ${JSON.stringify(title)},
+    color: ${JSON.stringify(color)},
+    position: ${JSON.stringify(position)},
+    welcome: ${JSON.stringify(agent.welcome_message ?? "Hi! How can I help you today?")}
+  };
+</script>
+<script src="${base}/functions/v1/rag-widget" async></script>`;
 
   async function save() {
     setSaving(true);
