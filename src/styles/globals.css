@@ -4,7 +4,7 @@
 
 @layer base {
   /* Palette: zinc dark base (not pure black) + accents.
-     Accent primary  #2F2FE4 (indigo)  -> 240 78% 54%  (white text on it)
+     Accent primary  #001BB7 (deep blue) -> 231 100% 36%  (white text on it)
      Accent info     #BBE0EF (sky)     -> 200 58% 84%
      Deep surface    #161E54 (navy)    -> 232 59% 21%
      Base is a zinc-950-ish neutral kept slightly warm-neutral, never #000. */
@@ -18,8 +18,8 @@
     --popover: 240 5% 11%;
     --popover-foreground: 240 5% 96%;
 
-    --primary: 240 78% 54%;            /* #2F2FE4 indigo */
-    --primary-foreground: 0 0% 100%;   /* white text on indigo */
+    --primary: 231 100% 36%;           /* #001BB7 deep blue */
+    --primary-foreground: 0 0% 100%;   /* white text on deep blue */
 
     --secondary: 240 4% 16%;           /* ~zinc-800 */
     --secondary-foreground: 240 5% 96%;
@@ -42,13 +42,13 @@
 
     --border: 240 4% 17%;              /* ~zinc-800 */
     --input: 240 4% 17%;
-    --ring: 240 78% 54%;               /* indigo ring */
+    --ring: 231 100% 36%;              /* deep blue ring */
 
     --sidebar: 240 6% 7%;              /* slightly darker than bg */
     --sidebar-foreground: 240 5% 65%;
     --sidebar-accent: 240 5% 13%;
 
-    --radius: 0.5rem;                  /* less rounded, sober */
+    --radius: 0.3rem;                  /* tighter corners, sharper/sober */
   }
 
   * {
@@ -70,7 +70,7 @@
 /* react-grid-layout theming */
 .react-grid-item.react-grid-placeholder {
   background: hsl(var(--primary) / 0.2) !important;
-  border-radius: 0.5rem;
+  border-radius: var(--radius);
 }
 .react-grid-item > .react-resizable-handle::after {
   border-right-color: hsl(var(--muted-foreground));
