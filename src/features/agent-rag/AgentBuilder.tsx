@@ -333,73 +333,222 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
 }
 
 // --- Widget -------------------------------------------------------------
+// Default widget config (text-chat adaptation of the ElevenLabs widget layout).
+const WIDGET_DEFAULTS = {
+  title: "Need help?",
+  variant: "full",            // tiny | compact | full
+  placement: "bottom-right",  // bottom-right | bottom-left
+  collapsible: true,
+  feedback: true,
+  // colors
+  base: "#ffffff",
+  base_border: "#e5e7eb",
+  base_subtle: "#6b7280",
+  base_primary: "#18181b",
+  accent: "#001BB7",
+  accent_primary: "#ffffff",
+  // radii (px)
+  button_radius: 12,
+  input_radius: 12,
+  bubble_radius: 14,
+  // avatar
+  avatar_type: "orb",         // orb | image
+  avatar_first: "#2792dc",
+  avatar_second: "#9ce6e6",
+  avatar_url: "",
+  // terms
+  terms_enabled: false,
+  terms_content: "",
+  // text contents
+  text_main_label: "Need help?",
+  text_start_chat: "Start a chat",
+  text_send: "Send",
+  text_placeholder: "Type a message…",
+};
+
+// Section row: label/description on the left, controls on the right (ElevenLabs style).
+function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 border-b border-border py-6 lg:grid-cols-[260px_1fr]">
+      <div>
+        <h3 className="font-semibold">{title}</h3>
+        {desc && <p className="mt-1 text-sm text-muted-foreground">{desc}</p>}
+      </div>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="grid grid-cols-[140px_1fr] items-center gap-3">
+      <label className="text-sm">{label}</label>
+      <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5">
+        <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-5 w-5 cursor-pointer rounded-full border-0 bg-transparent p-0" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-transparent text-sm outline-none" />
+      </div>
+    </div>
+  );
+}
+
+function RadiusRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="grid grid-cols-[140px_1fr] items-center gap-3">
+      <label className="text-sm">{label}</label>
+      <Input type="number" value={value} onChange={(e) => onChange(Number(e.target.value))} className="h-9" />
+    </div>
+  );
+}
+
+function Toggle({ label, desc, checked, onChange }: { label: string; desc?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors ${checked ? "bg-primary" : "bg-secondary"}`}
+      >
+        <span className={`h-4 w-4 rounded-full bg-white transition-transform ${checked ? "translate-x-4" : ""}`} />
+      </button>
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        {desc && <div className="text-xs text-muted-foreground">{desc}</div>}
+      </div>
+    </label>
+  );
+}
+
+function TextRow({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (v: string) => void }) {
+  return (
+    <div className="grid grid-cols-[160px_1fr] items-center gap-3">
+      <label className="font-mono text-xs text-muted-foreground">{label}</label>
+      <Input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="h-9" />
+    </div>
+  );
+}
+
 function WidgetTab({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
-  const cfg = agent.widget_config ?? {};
-  const [color, setColor] = useState(cfg.color ?? "#C2D099");
-  const [title, setTitle] = useState(cfg.title ?? agent.name);
-  const [position, setPosition] = useState(cfg.position ?? "bottom-right");
+  const [cfg, setCfg] = useState<Record<string, any>>({ ...WIDGET_DEFAULTS, ...(agent.widget_config ?? {}) });
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  function set<K extends string>(k: K, v: any) { setCfg((c) => ({ ...c, [k]: v })); }
 
   const base = (import.meta as any).env?.VITE_SUPABASE_URL ?? "https://YOUR_PROJECT.supabase.co";
   const snippet = `<script>
   window.FounderOSAgent = {
     key: "${agent.public_key}",
     endpoint: "${base}/functions/v1/rag-chat",
-    title: ${JSON.stringify(title)},
-    color: ${JSON.stringify(color)},
-    position: ${JSON.stringify(position)},
-    welcome: ${JSON.stringify(agent.welcome_message ?? "Hi! How can I help you today?")}
+    welcome: ${JSON.stringify(agent.welcome_message ?? "Hi! How can I help you today?")},
+    config: ${JSON.stringify(cfg)}
   };
 </script>
 <script src="${base}/functions/v1/rag-widget" async></script>`;
 
   async function save() {
-    setSaving(true);
+    setSaving(true); setSaved(false);
     try {
-      await supabase.from("rag_agents").update({ widget_config: { color, title, position } }).eq("id", agent.id);
+      await supabase.from("rag_agents").update({ widget_config: cfg }).eq("id", agent.id);
       queryClient.invalidateQueries({ queryKey: ["rag_agent", agent.id] });
+      setSaved(true); setTimeout(() => setSaved(false), 1500);
     } finally { setSaving(false); }
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <Card>
-        <CardHeader><CardTitle>Widget appearance</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Title</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Accent color</label>
-              <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent p-0.5" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Position</label>
-              <select value={position} onChange={(e) => setPosition(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
-                <option value="bottom-right">Bottom right</option>
-                <option value="bottom-left">Bottom left</option>
-              </select>
-            </div>
-          </div>
-          <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save</Button>
-        </CardContent>
-      </Card>
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-bold">Widget</h2>
+        <Button onClick={save} disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {saved ? "Saved" : "Save"}
+        </Button>
+      </div>
 
-      <Card>
-        <CardHeader><CardTitle>Embed snippet</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-xs text-muted-foreground">Paste this before <code>&lt;/body&gt;</code> on your site. The agent answers from this knowledge base.</p>
-          <pre className="max-h-64 overflow-auto rounded-md border border-border bg-background/40 p-3 text-xs"><code>{snippet}</code></pre>
-          <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(snippet); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+      {/* Setup / Embed */}
+      <Section title="Setup" desc="Attach the widget on your website.">
+        <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+          The agent answers from its knowledge base. Paste the embed code on the pages where you want the chat widget.
+        </div>
+        <div>
+          <div className="mb-1 text-sm font-medium">Embed code</div>
+          <pre className="max-h-48 overflow-auto rounded-md border border-border bg-background/40 p-3 text-xs"><code>{snippet}</code></pre>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => { navigator.clipboard.writeText(snippet); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
             {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />} Copy snippet
           </Button>
-          <p className="text-xs text-muted-foreground">Public key: <code className="text-foreground">{agent.public_key}</code></p>
-        </CardContent>
-      </Card>
+          <p className="mt-2 text-xs text-muted-foreground">Public key: <code className="text-foreground">{agent.public_key}</code></p>
+        </div>
+        <Toggle label="Feedback collection" desc="Visitors can rate their satisfaction from 1 to 5 after the conversation." checked={cfg.feedback} onChange={(v) => set("feedback", v)} />
+      </Section>
+
+      {/* Interface */}
+      <Section title="Interface" desc="Configure the parts of the widget interface.">
+        <Toggle label="Collapsible" desc="Visitors can collapse the chat back to the bubble." checked={cfg.collapsible} onChange={(v) => set("collapsible", v)} />
+        <div>
+          <label className="mb-1 block text-sm font-medium">Variant</label>
+          <div className="inline-flex rounded-md border border-border p-0.5">
+            {["tiny", "compact", "full"].map((v) => (
+              <button key={v} onClick={() => set("variant", v)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.variant === v ? "bg-secondary text-foreground" : "text-muted-foreground"}`}>{v}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium">Placement</label>
+          <select value={cfg.placement} onChange={(e) => set("placement", e.target.value)} className="h-9 w-full max-w-xs rounded-md border border-input bg-background px-2 text-sm">
+            <option value="bottom-right">Bottom-right</option>
+            <option value="bottom-left">Bottom-left</option>
+          </select>
+        </div>
+      </Section>
+
+      {/* Styling */}
+      <Section title="Styling" desc="Customize the colors and shape of the widget to best fit your website.">
+        <ColorRow label="Base" value={cfg.base} onChange={(v) => set("base", v)} />
+        <ColorRow label="Base Border" value={cfg.base_border} onChange={(v) => set("base_border", v)} />
+        <ColorRow label="Base Subtle" value={cfg.base_subtle} onChange={(v) => set("base_subtle", v)} />
+        <ColorRow label="Base Primary" value={cfg.base_primary} onChange={(v) => set("base_primary", v)} />
+        <ColorRow label="Accent" value={cfg.accent} onChange={(v) => set("accent", v)} />
+        <ColorRow label="Accent Primary" value={cfg.accent_primary} onChange={(v) => set("accent_primary", v)} />
+        <RadiusRow label="Button Radius" value={cfg.button_radius} onChange={(v) => set("button_radius", v)} />
+        <RadiusRow label="Input Radius" value={cfg.input_radius} onChange={(v) => set("input_radius", v)} />
+        <RadiusRow label="Bubble Radius" value={cfg.bubble_radius} onChange={(v) => set("bubble_radius", v)} />
+      </Section>
+
+      {/* Avatar */}
+      <Section title="Avatar" desc="Configure the chat orb or provide your own avatar image.">
+        <div className="inline-flex rounded-md border border-border p-0.5">
+          {["orb", "image"].map((t) => (
+            <button key={t} onClick={() => set("avatar_type", t)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.avatar_type === t ? "bg-secondary text-foreground" : "text-muted-foreground"}`}>{t}</button>
+          ))}
+        </div>
+        {cfg.avatar_type === "orb" ? (
+          <div className="grid grid-cols-2 gap-3">
+            <ColorRow label="First color" value={cfg.avatar_first} onChange={(v) => set("avatar_first", v)} />
+            <ColorRow label="Second color" value={cfg.avatar_second} onChange={(v) => set("avatar_second", v)} />
+          </div>
+        ) : (
+          <Input placeholder="Avatar image URL" value={cfg.avatar_url} onChange={(e) => set("avatar_url", e.target.value)} />
+        )}
+      </Section>
+
+      {/* Terms & Conditions */}
+      <Section title="Terms & Conditions" desc="Require the visitor to accept your terms before chatting.">
+        <Toggle label="Enable terms & conditions" checked={cfg.terms_enabled} onChange={(v) => set("terms_enabled", v)} />
+        {cfg.terms_enabled && (
+          <div>
+            <label className="mb-1 block text-sm font-medium">Terms content <span className="text-xs text-muted-foreground">(Markdown)</span></label>
+            <textarea value={cfg.terms_content} onChange={(e) => set("terms_content", e.target.value)} rows={5} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          </div>
+        )}
+      </Section>
+
+      {/* Text contents */}
+      <Section title="Text contents" desc="Modify the text shown in the widget interface.">
+        <TextRow label="main_label" value={cfg.text_main_label} placeholder="Need help?" onChange={(v) => set("text_main_label", v)} />
+        <TextRow label="start_chat" value={cfg.text_start_chat} placeholder="Start a chat" onChange={(v) => set("text_start_chat", v)} />
+        <TextRow label="send" value={cfg.text_send} placeholder="Send" onChange={(v) => set("text_send", v)} />
+        <TextRow label="placeholder" value={cfg.text_placeholder} placeholder="Type a message…" onChange={(v) => set("text_placeholder", v)} />
+      </Section>
     </div>
   );
 }
