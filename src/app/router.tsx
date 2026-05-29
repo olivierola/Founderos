@@ -298,7 +298,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: "agent/builder/:agentId",
+        path: "agent/builder/:agentId/:tab?",
         element: (
           <ErrorBoundary>
             <AgentBuilderPage />

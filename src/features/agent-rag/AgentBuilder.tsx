@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Loader2, Bot, Database, MessageSquare, Code2, BarChart3, Settings2,
+  ArrowLeft, Loader2, Bot, MessageSquare,
   Plus, Trash2, Send, FileText, Link2, LayoutGrid, Check, Copy, Sparkles,
 } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
@@ -25,11 +25,13 @@ interface Agent {
 }
 interface Source { id: string; type: string; title: string; status: string; chunk_count: number; error_message: string | null; created_at: string; }
 
+const VALID_TABS: Tab[] = ["knowledge", "playground", "widget", "analytics", "settings"];
+
 export function AgentBuilderPage() {
   const navigate = useNavigate();
-  const { workspaceSlug, projectSlug, agentId } = useParams();
+  const { workspaceSlug, projectSlug, agentId, tab: tabParam } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
-  const [tab, setTab] = useState<Tab>("knowledge");
+  const tab: Tab = VALID_TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "knowledge";
 
   const { data: agent, isLoading } = useQuery({
     queryKey: ["rag_agent", agentId],
@@ -42,14 +44,6 @@ export function AgentBuilderPage() {
 
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   if (!agent) return <EmptyState icon={Bot} title="Agent not found" />;
-
-  const TABS: { value: Tab; label: string; icon: any }[] = [
-    { value: "knowledge", label: "Knowledge", icon: Database },
-    { value: "playground", label: "Playground", icon: MessageSquare },
-    { value: "widget", label: "Widget", icon: Code2 },
-    { value: "analytics", label: "Analytics", icon: BarChart3 },
-    { value: "settings", label: "Settings", icon: Settings2 },
-  ];
 
   return (
     <div>
@@ -64,20 +58,6 @@ export function AgentBuilderPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{agent.name}</h1>
           {agent.description && <p className="text-sm text-muted-foreground">{agent.description}</p>}
         </div>
-      </div>
-
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setTab(t.value)}
-            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${
-              tab === t.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <t.icon className="h-4 w-4" /> {t.label}
-          </button>
-        ))}
       </div>
 
       {tab === "knowledge" && <KnowledgeTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}

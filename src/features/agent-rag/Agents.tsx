@@ -89,7 +89,7 @@ export function RagAgentsPage() {
             <Card
               key={a.id}
               className="group cursor-pointer transition-colors hover:border-primary/40"
-              onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/builder/${a.id}`)}
+              onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/builder/${a.id}/knowledge`)}
             >
               <CardContent className="p-5">
                 <div className="flex items-start justify-between">
@@ -146,7 +146,7 @@ export function RagAgentsPage() {
             .select("id")
             .single();
           queryClient.invalidateQueries({ queryKey: ["rag_agents", projectId] });
-          if (data) navigate(`/app/${workspaceSlug}/${projectSlug}/agent/builder/${data.id}`);
+          if (data) navigate(`/app/${workspaceSlug}/${projectSlug}/agent/builder/${data.id}/knowledge`);
         }}
       />
     </div>
