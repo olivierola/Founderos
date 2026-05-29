@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { PublishedPostCard, PostDetailDialog } from "./Extra";
+import { PublishedPostCard, PostDetailDialog, markDueAsPublished } from "./Extra";
 
 const PLATFORMS = ["twitter", "linkedin", "facebook", "instagram", "threads"];
 const OBJECTIVES = ["awareness", "launch", "feature", "educational", "engagement", "conversion"];
@@ -94,7 +94,14 @@ export function ContentStudioPage() {
         .eq("status", "scheduled")
         .order("scheduled_at", { ascending: true })
         .limit(50);
-      return (data ?? []) as any[];
+      const list = (data ?? []) as any[];
+      // Promote due scheduled posts to published, then keep only still-future ones.
+      const changed = await markDueAsPublished(list);
+      if (changed) {
+        queryClient.invalidateQueries({ queryKey: ["mkt_published_studio", projectId] });
+        return list.filter((p) => !(p.scheduled_at && new Date(p.scheduled_at).getTime() <= Date.now()));
+      }
+      return list;
     },
   });
 

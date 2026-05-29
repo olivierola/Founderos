@@ -45,8 +45,29 @@ interface Metric {
   engagement_rate: number;
 }
 
-function usePosts() {
+// Flip scheduled posts whose time has passed to "published" (Buffer posts them
+// on its side without notifying us). Best-effort; ids passed are already due.
+export async function markDueAsPublished(duePosts: { id: string; status: string; scheduled_at: string | null }[]) {
+  const now = Date.now();
+  const due = duePosts.filter(
+    (p) => p.status === "scheduled" && p.scheduled_at && new Date(p.scheduled_at).getTime() <= now,
+  );
+  if (due.length === 0) return false;
+  await Promise.all(
+    due.map((p) =>
+      supabase
+        .from("marketing_posts")
+        .update({ status: "published", published_at: p.scheduled_at })
+        .eq("id", p.id)
+        .eq("status", "scheduled"),
+    ),
+  );
+  return true;
+}
+
+export function usePosts() {
   const { projectId } = useCurrentContext();
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: ["mkt_posts", projectId],
     enabled: !!projectId,
@@ -57,7 +78,20 @@ function usePosts() {
         .eq("project_id", projectId!)
         .order("created_at", { ascending: false })
         .limit(300);
-      return (data ?? []) as Post[];
+      const posts = (data ?? []) as Post[];
+      // Auto-promote due scheduled posts, then refetch once so the UI reflects it.
+      const changed = await markDueAsPublished(posts);
+      if (changed) {
+        posts.forEach((p) => {
+          if (p.status === "scheduled" && p.scheduled_at && new Date(p.scheduled_at).getTime() <= Date.now()) {
+            p.status = "published";
+            p.published_at = p.scheduled_at;
+          }
+        });
+        queryClient.invalidateQueries({ queryKey: ["mkt_published_studio", projectId] });
+        queryClient.invalidateQueries({ queryKey: ["mkt_scheduled_studio", projectId] });
+      }
+      return posts;
     },
   });
 }
@@ -644,46 +678,109 @@ function MkDialog({ open, onClose, title, children }: { open: boolean; onClose: 
 interface Channel { id: string; provider: string; platform: string; handle: string | null; status: string; }
 export function MarketingChannelsPage() {
   const { workspaceSlug, projectSlug } = useParams();
-  const { projectId } = useCurrentContext();
+  const { workspaceId, projectId } = useCurrentContext();
+  const queryClient = useQueryClient();
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
   const { data: channels, isLoading } = useQuery({
     queryKey: ["mkt_channels", projectId],
     enabled: !!projectId,
     queryFn: async () => {
-      const { data } = await supabase.from("marketing_channels").select("*").eq("project_id", projectId!);
+      const { data } = await supabase
+        .from("marketing_channels")
+        .select("*")
+        .eq("project_id", projectId!)
+        .order("platform", { ascending: true });
       return (data ?? []) as Channel[];
     },
   });
   const base = `/app/${workspaceSlug}/${projectSlug}`;
 
+  async function resync() {
+    if (!workspaceId || !projectId) return;
+    setSyncing(true);
+    setError(null);
+    try {
+      await callEdge("marketing-sync-channels", { workspace_id: workspaceId, project_id: projectId });
+      queryClient.invalidateQueries({ queryKey: ["mkt_channels", projectId] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function toggle(c: Channel) {
+    setBusyId(c.id);
+    try {
+      const next = c.status === "connected" ? "disconnected" : "connected";
+      await supabase.from("marketing_channels").update({ status: next }).eq("id", c.id);
+      queryClient.invalidateQueries({ queryKey: ["mkt_channels", projectId] });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Channels"
-        description="Social accounts you publish to. Connect Buffer (or a webhook) in the Catalog, then add channels."
-        actions={<Link to={`${base}/integrations/catalog`}><Button size="sm" variant="outline"><Plug className="h-4 w-4" /> Catalog</Button></Link>}
+        description="Social accounts you publish to. Re-sync from Buffer, or toggle a channel off to skip it when publishing."
+        actions={
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={resync} disabled={syncing}>
+              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Resync from Buffer
+            </Button>
+            <Link to={`${base}/integrations/catalog`}><Button size="sm" variant="outline"><Plug className="h-4 w-4" /> Catalog</Button></Link>
+          </div>
+        }
       />
+      {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
       {isLoading ? (
         <EmptyState icon={Loader2} title="Loading…" />
       ) : !channels || channels.length === 0 ? (
         <EmptyState
           icon={Plug}
           title="No channels yet"
-          description="Connect Buffer from the Catalog to publish to X, LinkedIn, Instagram and more from one place."
-          action={<Link to={`${base}/integrations/catalog`}><Button><Plug className="h-4 w-4" /> Connect a channel</Button></Link>}
+          description="Connect Buffer from the Catalog, then click 'Resync from Buffer' to pull your social accounts."
+          action={
+            <div className="flex gap-2">
+              <Link to={`${base}/integrations/catalog`}><Button><Plug className="h-4 w-4" /> Connect Buffer</Button></Link>
+              <Button variant="outline" onClick={resync} disabled={syncing}>
+                {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Resync
+              </Button>
+            </div>
+          }
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {channels.map((c) => (
-            <Card key={c.id}>
-              <CardContent className="flex items-center justify-between p-4">
-                <div>
-                  <div className="font-medium capitalize">{c.platform}</div>
-                  <div className="text-xs text-muted-foreground">{c.handle ?? c.provider}</div>
-                </div>
-                <Badge variant={c.status === "connected" ? "success" : "destructive"}>{c.status}</Badge>
-              </CardContent>
-            </Card>
-          ))}
+          {channels.map((c) => {
+            const on = c.status === "connected";
+            return (
+              <Card key={c.id} className={on ? "" : "opacity-60"}>
+                <CardContent className="flex items-center justify-between p-4">
+                  <div className="min-w-0">
+                    <div className="font-medium capitalize">{c.platform}</div>
+                    <div className="truncate text-xs text-muted-foreground">{c.handle ?? c.provider}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge variant={on ? "success" : "secondary"}>{on ? "active" : "off"}</Badge>
+                    <Button
+                      size="sm"
+                      variant={on ? "ghost" : "outline"}
+                      disabled={busyId === c.id}
+                      onClick={() => toggle(c)}
+                      title={on ? "Disable channel" : "Enable channel"}
+                    >
+                      {busyId === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : on ? "Disable" : "Enable"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
