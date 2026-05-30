@@ -35,29 +35,43 @@ export function PrimarySidebar() {
             </Tooltip>
           </div>
           <nav className="flex flex-col gap-1 pt-3">
-            {MODULES.map((mod) => {
-              const Icon = mod.icon;
-              const to = `/app/${workspaceSlug}/${projectSlug}/${mod.slug}`;
-              const isActive = activeModule === mod.slug;
+            {(() => {
+              const main = MODULES.filter((m) => !m.pinBottom);
+              const bottom = MODULES.filter((m) => m.pinBottom);
+              const renderModule = (mod: typeof MODULES[number]) => {
+                const Icon = mod.icon;
+                const to = `/app/${workspaceSlug}/${projectSlug}/${mod.slug}`;
+                const isActive = activeModule === mod.slug;
+                return (
+                  <Tooltip key={mod.slug}>
+                    <TooltipTrigger asChild>
+                      <NavLink
+                        to={to}
+                        className={cn(
+                          "relative flex h-10 w-10 items-center justify-center rounded-md transition-colors",
+                          isActive
+                            ? "bg-secondary opacity-100 ring-1 ring-border"
+                            : "opacity-60 hover:bg-sidebar-accent/40 hover:opacity-90",
+                        )}
+                      >
+                        <Icon className={cn("h-[18px] w-[18px]", mod.color)} strokeWidth={1.5} />
+                      </NavLink>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">{mod.label}</TooltipContent>
+                  </Tooltip>
+                );
+              };
               return (
-                <Tooltip key={mod.slug}>
-                  <TooltipTrigger asChild>
-                    <NavLink
-                      to={to}
-                      className={cn(
-                        "relative flex h-10 w-10 items-center justify-center rounded-md transition-colors",
-                        isActive
-                          ? "bg-secondary opacity-100 ring-1 ring-border"
-                          : "opacity-60 hover:bg-sidebar-accent/40 hover:opacity-90",
-                      )}
-                    >
-                      <Icon className={cn("h-[18px] w-[18px]", mod.color)} strokeWidth={1.5} />
-                    </NavLink>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">{mod.label}</TooltipContent>
-                </Tooltip>
+                <>
+                  {main.map(renderModule)}
+                  {bottom.length > 0 && (
+                    <div className="mt-6 flex flex-col gap-1 border-t border-border/40 pt-4">
+                      {bottom.map(renderModule)}
+                    </div>
+                  )}
+                </>
               );
-            })}
+            })()}
           </nav>
         </div>
         <div className="flex flex-col items-center gap-2 pb-3">

@@ -27,6 +27,8 @@ export interface ModuleNavItem {
   /** Tailwind text color class for the module icon (soft, per-module hue) */
   color: string;
   subItems: SubNavItem[];
+  /** When true, the PrimarySidebar pushes this module to a separate bottom group. */
+  pinBottom?: boolean;
 }
 
 export const MODULES: ModuleNavItem[] = [
@@ -66,21 +68,6 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Budgets", slug: "costs-budgets" },
       { label: "Optimization", slug: "costs-optimization" },
       { label: "Invoices", slug: "costs-invoices" },
-    ],
-  },
-  {
-    slug: "marketing",
-    label: "Marketing",
-    icon: Megaphone,
-    color: "text-fuchsia-400/55",
-    subItems: [
-      { label: "Overview", slug: "overview" },
-      { label: "Content Studio", slug: "content-studio" },
-      { label: "Calendar", slug: "calendar" },
-      { label: "Campaigns", slug: "campaigns" },
-      { label: "Channels", slug: "channels" },
-      { label: "Analytics", slug: "analytics" },
-      { label: "Advisor", slug: "advisor" },
     ],
   },
   {
@@ -169,10 +156,26 @@ export const MODULES: ModuleNavItem[] = [
     ],
   },
   {
+    slug: "marketing",
+    label: "Marketing",
+    icon: Megaphone,
+    color: "text-fuchsia-400/55",
+    subItems: [
+      { label: "Overview", slug: "overview" },
+      { label: "Content Studio", slug: "content-studio" },
+      { label: "Calendar", slug: "calendar" },
+      { label: "Campaigns", slug: "campaigns" },
+      { label: "Channels", slug: "channels" },
+      { label: "Analytics", slug: "analytics" },
+      { label: "Advisor", slug: "advisor" },
+    ],
+  },
+  {
     slug: "integrations",
     label: "Integrations",
     icon: Plug,
     color: "text-cyan-500/55",
+    pinBottom: true,
     subItems: [
       { label: "Connected", slug: "connected" },
       { label: "Catalog", slug: "catalog" },
@@ -187,6 +190,7 @@ export const MODULES: ModuleNavItem[] = [
     label: "Settings",
     icon: Settings,
     color: "text-slate-400",
+    pinBottom: true,
     subItems: [
       { label: "Profile", slug: "profile" },
       { label: "Workspace", slug: "workspace" },
