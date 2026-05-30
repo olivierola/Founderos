@@ -16,6 +16,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { ExportMenu } from "@/components/ExportMenu";
 import { MetricCard } from "@/components/MetricCard";
+import { SparkChart } from "@/components/SparkChart";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -338,16 +339,33 @@ export function DeploymentsPage() {
         .select("*")
         .eq("project_id", projectId!)
         .order("created_at_provider", { ascending: false, nullsFirst: false })
-        .limit(50);
+        .limit(200);
       return data ?? [];
     },
   });
+
+  // Aggregate hourly counts over the last 12 hours for the SparkChart.
+  const seriesAll = useMemo(() => bucketByHour(data ?? [], 12), [data]);
+  const seriesByProvider = useMemo(() => {
+    const groups = new Map<string, any[]>();
+    (data ?? []).forEach((d: any) => {
+      const k = d.provider ?? "unknown";
+      const arr = groups.get(k) ?? [];
+      arr.push(d);
+      groups.set(k, arr);
+    });
+    return Array.from(groups.entries()).map(([provider, rows]) => ({
+      provider,
+      total: rows.length,
+      series: bucketByHour(rows, 12),
+    }));
+  }, [data]);
 
   async function sync() {
     if (!workspaceId || !projectId) return;
     setSyncing(true);
     try {
-      await callEdge("sync-github-deployments", { workspace_id: workspaceId, project_id: projectId });
+      await callEdge("sync-deployments", { workspace_id: workspaceId, project_id: projectId });
       queryClient.invalidateQueries({ queryKey: ["deployments", projectId] });
     } finally {
       setSyncing(false);
@@ -358,72 +376,173 @@ export function DeploymentsPage() {
     <div>
       <PageHeader
         title="Deployments"
-        description="GitHub deployments per repository."
+        description="Real deployments synced from Vercel, GitHub Actions, Netlify, Render and Cloudflare Pages."
         actions={
           <div className="flex gap-2">
             <ExportMenu
               rows={(data ?? []).map((d: any) => ({
                 when: d.created_at_provider,
+                provider: d.provider,
                 env: d.environment,
                 ref: d.ref,
                 sha: d.sha,
                 state: d.state,
+                url: d.url,
               }))}
               filename="deployments"
             />
             <Button onClick={sync} disabled={syncing} size="sm">
               {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Sync from GitHub
+              Sync deployments
             </Button>
           </div>
         }
       />
+
       {isLoading ? (
         <EmptyState icon={Loader2} title="Loading…" />
       ) : !data || data.length === 0 ? (
         <EmptyState
           icon={GitMerge}
           title="No deployments yet"
-          description="Connect GitHub and click Sync to import deployments."
+          description="Connect Vercel, GitHub, Netlify, Render or Cloudflare and click Sync to import deployments."
+          action={
+            <Button onClick={sync} disabled={syncing}>
+              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Sync now
+            </Button>
+          }
         />
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">When</th>
-                  <th className="px-4 py-3">Env</th>
-                  <th className="px-4 py-3">Ref</th>
-                  <th className="px-4 py-3">SHA</th>
-                  <th className="px-4 py-3">State</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {data.map((d: any) => (
-                  <tr key={d.id}>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {d.created_at_provider ? new Date(d.created_at_provider).toLocaleString() : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline">{d.environment}</Badge>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs">{d.ref}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{d.sha?.slice(0, 8)}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant={d.state === "success" ? "success" : d.state === "failure" ? "destructive" : "secondary"}>
-                        {d.state ?? "unknown"}
-                      </Badge>
-                    </td>
+        <>
+          {/* Sparkline summary — total deploys & per-provider trends (last 12h). */}
+          <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <SparkChart
+              title="Deployments"
+              subtitle="Total (12h)"
+              total={seriesAll.reduce((s, p) => s + (p.y as number), 0)}
+              data={seriesAll}
+              xLabels={{ start: "12h ago", end: "Just now" }}
+              height={150}
+            />
+            {seriesByProvider.slice(0, 5).map((g) => (
+              <SparkChart
+                key={g.provider}
+                title={providerLabel(g.provider)}
+                subtitle="Deployments (12h)"
+                total={g.series.reduce((s, p) => s + (p.y as number), 0)}
+                data={g.series}
+                xLabels={{ start: "12h ago", end: "Just now" }}
+                height={150}
+                color={providerColor(g.provider)}
+              />
+            ))}
+          </div>
+
+          <Card>
+            <CardContent className="p-0">
+              <table className="w-full text-sm">
+                <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">When</th>
+                    <th className="px-4 py-3">Provider</th>
+                    <th className="px-4 py-3">Env</th>
+                    <th className="px-4 py-3">Ref</th>
+                    <th className="px-4 py-3">SHA</th>
+                    <th className="px-4 py-3">State</th>
+                    <th className="px-4 py-3">URL</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {data.map((d: any) => (
+                    <tr key={d.id}>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {d.created_at_provider ? new Date(d.created_at_provider).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className="text-[10px]">{providerLabel(d.provider)}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline">{d.environment}</Badge>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{d.ref ?? "—"}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{d.sha?.slice(0, 8) ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant={
+                            d.state === "ready" || d.state === "success" || d.state === "live"
+                              ? "success"
+                              : d.state === "failure" || d.state === "error" || d.state === "failed"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
+                          {d.state ?? "unknown"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        {d.url ? (
+                          <a
+                            href={d.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-[hsl(var(--primary-soft))] hover:underline"
+                          >
+                            open ↗
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );
+}
+
+/* Bucket deployments by hour over the last N hours, oldest → newest. */
+function bucketByHour(rows: Array<{ created_at_provider: string | null }>, hours: number) {
+  const now = Date.now();
+  const buckets = new Array(hours).fill(0);
+  rows.forEach((r) => {
+    if (!r.created_at_provider) return;
+    const t = new Date(r.created_at_provider).getTime();
+    const diffH = Math.floor((now - t) / 3600000);
+    if (diffH < 0 || diffH >= hours) return;
+    buckets[hours - 1 - diffH] += 1;
+  });
+  return buckets.map((y, i) => {
+    const time = new Date(now - (hours - 1 - i) * 3600000);
+    return { x: time, y };
+  });
+}
+
+function providerLabel(p?: string) {
+  switch (p) {
+    case "vercel": return "Vercel";
+    case "github": return "GitHub Actions";
+    case "netlify": return "Netlify";
+    case "render": return "Render";
+    case "cloudflare": return "Cloudflare Pages";
+    default: return p ?? "Unknown";
+  }
+}
+
+function providerColor(p?: string) {
+  switch (p) {
+    case "vercel": return "hsl(var(--primary-soft))";
+    case "github": return "hsl(var(--accent-2))";
+    case "netlify": return "#00ad9f";
+    case "render": return "#46e3b7";
+    case "cloudflare": return "#f6821f";
+    default: return "hsl(var(--primary-soft))";
+  }
 }
 
 // --- Incidents -----------------------------------------------------
