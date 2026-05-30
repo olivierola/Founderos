@@ -1,13 +1,13 @@
 import {
   LayoutDashboard,
-  LineChart,
-  Megaphone,
-  Code2,
-  Zap,
-  Sparkle,
-  Bot,
-  Plug,
-  Settings,
+  Wallet,
+  Rocket,
+  Braces,
+  ShieldCheck,
+  Brain,
+  MessageSquareText,
+  Plug2,
+  Cog,
   type LucideIcon,
 } from "lucide-react";
 
@@ -49,7 +49,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "actions",
     label: "Admin panel",
-    icon: Zap,
+    icon: ShieldCheck,
     color: "text-slate-400",
     subItems: [
       { label: "Actions Center", slug: "quick-actions" },
@@ -87,7 +87,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "finance",
     label: "Finance",
-    icon: LineChart,
+    icon: Wallet,
     color: "text-emerald-500/55",
     subItems: [
       { label: "Revenue", slug: "revenue", group: "Revenue" },
@@ -111,7 +111,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "code",
     label: "Code",
-    icon: Code2,
+    icon: Braces,
     color: "text-sky-500/55",
     subItems: [
       { label: "Overview", slug: "overview", group: "Code" },
@@ -134,7 +134,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "agent",
     label: "RAG Agent",
-    icon: Bot,
+    icon: MessageSquareText,
     color: "text-white",
     subItems: [
       { label: "Agents", slug: "agents" },
@@ -144,7 +144,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "ai",
     label: "AI Agent",
-    icon: Sparkle,
+    icon: Brain,
     color: "text-primary/60",
     subItems: [
       { label: "Insights", slug: "insights" },
@@ -158,7 +158,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "marketing",
     label: "Marketing",
-    icon: Megaphone,
+    icon: Rocket,
     color: "text-fuchsia-400/55",
     subItems: [
       { label: "Overview", slug: "overview" },
@@ -173,7 +173,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "integrations",
     label: "Integrations",
-    icon: Plug,
+    icon: Plug2,
     color: "text-cyan-500/55",
     pinBottom: true,
     subItems: [
@@ -188,7 +188,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "settings",
     label: "Settings",
-    icon: Settings,
+    icon: Cog,
     color: "text-slate-400",
     pinBottom: true,
     subItems: [

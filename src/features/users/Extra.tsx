@@ -9,12 +9,16 @@ import {
   Search,
   Loader2,
   LayoutGrid,
+  Plus,
+  Trash2,
+  X,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ExportMenu } from "@/components/ExportMenu";
 import { MetricCard } from "@/components/MetricCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
@@ -72,31 +76,337 @@ function subMapByCustomer(subs: SubRow[]) {
 }
 
 // --- Segments --------------------------------------------------------------
-export function SegmentsPage() {
-  const { customers, subs } = useCustomers();
-  const map = useMemo(() => subMapByCustomer(subs), [subs]);
 
+type SegmentField = "status" | "plan" | "mrr" | "ltv" | "created_days";
+type SegmentOp = "=" | "!=" | ">" | "<" | ">=" | "<=" | "in";
+
+interface SegmentRule {
+  id: string;
+  field: SegmentField;
+  op: SegmentOp;
+  value: string;
+}
+
+interface SegmentDef {
+  id: string;
+  name: string;
+  rules: SegmentRule[];
+}
+
+const SEG_FIELDS: { value: SegmentField; label: string; ops: SegmentOp[] }[] = [
+  { value: "status", label: "Subscription status", ops: ["=", "!="] },
+  { value: "plan", label: "Plan name", ops: ["=", "!=", "in"] },
+  { value: "mrr", label: "MRR (€)", ops: [">", "<", ">=", "<="] },
+  { value: "ltv", label: "LTV (€)", ops: [">", "<", ">=", "<="] },
+  { value: "created_days", label: "Signed up (days ago)", ops: [">", "<", ">=", "<="] },
+];
+
+const SEG_STORAGE = "founderos.user-segments";
+
+function loadSegments(): SegmentDef[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(SEG_STORAGE) ?? "null");
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+function saveSegments(segs: SegmentDef[]) {
+  try {
+    localStorage.setItem(SEG_STORAGE, JSON.stringify(segs));
+  } catch {
+    /* ignore */
+  }
+}
+
+function ruleMatches(rule: SegmentRule, ctx: { status?: string; plan?: string; mrr: number; ltv: number; createdDays: number }) {
+  const left =
+    rule.field === "status"
+      ? ctx.status ?? ""
+      : rule.field === "plan"
+        ? ctx.plan ?? ""
+        : rule.field === "mrr"
+          ? ctx.mrr
+          : rule.field === "ltv"
+            ? ctx.ltv
+            : ctx.createdDays;
+  const right: string | number = typeof left === "number" ? Number(rule.value) : rule.value;
+  switch (rule.op) {
+    case "=": return String(left) === String(right);
+    case "!=": return String(left) !== String(right);
+    case ">": return Number(left) > Number(right);
+    case "<": return Number(left) < Number(right);
+    case ">=": return Number(left) >= Number(right);
+    case "<=": return Number(left) <= Number(right);
+    case "in": return rule.value.split(",").map((s) => s.trim()).includes(String(left));
+  }
+}
+
+function evaluateSegment(seg: SegmentDef, customers: CustomerRow[], subs: SubRow[]): number {
+  const subBy = subMapByCustomer(subs);
+  // Sum LTV proxy = sum of past sub amounts per customer.
+  const ltvBy = new Map<string, number>();
+  subs.forEach((s) => {
+    ltvBy.set(s.customer_external_id, (ltvBy.get(s.customer_external_id) ?? 0) + (s.amount_cents ?? 0));
+  });
+  return customers.filter((c) => {
+    const s = subBy.get(c.external_id);
+    const monthly = s
+      ? Math.round((s.amount_cents ?? 0) / 100)
+      : 0;
+    const ctx = {
+      status: s?.status,
+      plan: s?.plan_name ?? undefined,
+      mrr: monthly,
+      ltv: Math.round((ltvBy.get(c.external_id) ?? 0) / 100),
+      createdDays: c.created_at_provider
+        ? Math.floor((Date.now() - new Date(c.created_at_provider).getTime()) / 86400000)
+        : 9999,
+    };
+    return seg.rules.every((r) => ruleMatches(r, ctx));
+  }).length;
+}
+
+export function SegmentsPage() {
+  const { customers, subs, loading } = useCustomers();
+  const [segments, setSegments] = useState<SegmentDef[]>(() => loadSegments());
+  const [editing, setEditing] = useState<SegmentDef | null>(null);
+
+  function persist(next: SegmentDef[]) {
+    setSegments(next);
+    saveSegments(next);
+  }
+
+  function newSegment() {
+    setEditing({ id: Math.random().toString(36).slice(2), name: "New segment", rules: [] });
+  }
+  function save() {
+    if (!editing) return;
+    const existing = segments.findIndex((s) => s.id === editing.id);
+    const next = existing >= 0 ? segments.map((s) => (s.id === editing.id ? editing : s)) : [...segments, editing];
+    persist(next);
+    setEditing(null);
+  }
+  function remove(id: string) {
+    persist(segments.filter((s) => s.id !== id));
+  }
+
+  // Aggregate quick counters as a baseline.
+  const subMap = useMemo(() => subMapByCustomer(subs), [subs]);
   const counts = useMemo(() => {
     const c = { paying: 0, trial: 0, churned: 0, free: 0 };
     customers.forEach((cu) => {
-      const s = map.get(cu.external_id);
+      const s = subMap.get(cu.external_id);
       if (!s) c.free++;
       else if (s.status === "trialing") c.trial++;
       else if (s.status === "active" || s.status === "past_due") c.paying++;
       else c.churned++;
     });
     return c;
-  }, [customers, map]);
+  }, [customers, subMap]);
 
   return (
     <div>
-      <PageHeader title="Segments" description="Customer segmentation based on Stripe subscription state." />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <PageHeader
+        title="Segments"
+        description="Build dynamic customer segments by composing rules on subscription, plan, MRR, LTV and tenure."
+        actions={<Button size="sm" onClick={newSegment}><Plus className="h-4 w-4" /> New segment</Button>}
+      />
+
+      {/* Baseline metrics */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Paying" value={String(counts.paying)} icon={Heart} trend="up" />
         <MetricCard label="Trial" value={String(counts.trial)} icon={Filter} />
         <MetricCard label="Free / no plan" value={String(counts.free)} icon={Users} />
         <MetricCard label="Churned" value={String(counts.churned)} icon={TrendingDown} trend="down" />
       </div>
+
+      {/* Saved segments */}
+      {loading ? (
+        <EmptyState icon={Loader2} title="Loading customers…" />
+      ) : segments.length === 0 ? (
+        <EmptyState
+          icon={Filter}
+          title="No segments yet"
+          description="Create your first segment to group customers by your own criteria."
+          action={<Button onClick={newSegment}><Plus className="h-4 w-4" /> Create segment</Button>}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {segments.map((seg) => {
+            const size = evaluateSegment(seg, customers, subs);
+            const pct = customers.length > 0 ? (size / customers.length) * 100 : 0;
+            return (
+              <Card key={seg.id}>
+                <CardContent className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-medium">{seg.name}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {seg.rules.length} rule{seg.rules.length === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(seg)} title="Edit">
+                        <Filter className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => remove(seg.id)} title="Delete">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <div className="text-2xl font-semibold tabular-nums">{size}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {pct.toFixed(1)}% of base
+                    </div>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className="h-full rounded-full bg-[hsl(var(--primary-soft))]"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    {seg.rules.map((r) => (
+                      <Badge key={r.id} variant="outline" className="mr-1 font-mono text-[10px]">
+                        {r.field} {r.op} {r.value || "?"}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Editor dialog */}
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-lg">
+            <CardContent className="space-y-4 p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold">Segment editor</h3>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Name</label>
+                <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-muted-foreground">Rules (AND)</label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setEditing({
+                        ...editing,
+                        rules: [
+                          ...editing.rules,
+                          {
+                            id: Math.random().toString(36).slice(2),
+                            field: "status",
+                            op: "=",
+                            value: "active",
+                          },
+                        ],
+                      })
+                    }
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Rule
+                  </Button>
+                </div>
+                {editing.rules.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                    Add at least one rule.
+                  </p>
+                ) : (
+                  editing.rules.map((r) => {
+                    const fieldDef = SEG_FIELDS.find((f) => f.value === r.field)!;
+                    return (
+                      <div key={r.id} className="grid grid-cols-[1fr_70px_1fr_32px] gap-1.5">
+                        <select
+                          value={r.field}
+                          onChange={(e) => {
+                            const nextField = e.target.value as SegmentField;
+                            const allowedOps = SEG_FIELDS.find((f) => f.value === nextField)!.ops;
+                            setEditing({
+                              ...editing,
+                              rules: editing.rules.map((x) =>
+                                x.id === r.id
+                                  ? { ...x, field: nextField, op: allowedOps.includes(x.op) ? x.op : allowedOps[0] }
+                                  : x,
+                              ),
+                            });
+                          }}
+                          className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                        >
+                          {SEG_FIELDS.map((f) => (
+                            <option key={f.value} value={f.value}>{f.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={r.op}
+                          onChange={(e) =>
+                            setEditing({
+                              ...editing,
+                              rules: editing.rules.map((x) =>
+                                x.id === r.id ? { ...x, op: e.target.value as SegmentOp } : x,
+                              ),
+                            })
+                          }
+                          className="h-9 rounded-md border border-input bg-background px-1.5 text-xs font-mono"
+                        >
+                          {fieldDef.ops.map((op) => <option key={op} value={op}>{op}</option>)}
+                        </select>
+                        <Input
+                          value={r.value}
+                          onChange={(e) =>
+                            setEditing({
+                              ...editing,
+                              rules: editing.rules.map((x) =>
+                                x.id === r.id ? { ...x, value: e.target.value } : x,
+                              ),
+                            })
+                          }
+                          placeholder={r.field === "status" ? "active" : r.field === "plan" ? "pro" : "0"}
+                          className="h-9 font-mono text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setEditing({ ...editing, rules: editing.rules.filter((x) => x.id !== r.id) })
+                          }
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <p className="text-xs text-muted-foreground">
+                  Matches:{" "}
+                  <span className="font-semibold text-foreground">
+                    {evaluateSegment(editing, customers, subs)}
+                  </span>{" "}
+                  / {customers.length}
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
+                  <Button size="sm" onClick={save}>Save segment</Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

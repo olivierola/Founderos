@@ -46,7 +46,6 @@ import {
   User360Page,
   HealthScoresPage,
   ChurnRiskPage,
-  FunnelsPage,
 } from "@/features/users/Extra";
 import { EngagementPage } from "@/features/users/Engagement";
 
@@ -177,7 +176,7 @@ const PAGES: Record<string, PageEl> = {
   "actions/users-engagement": <EngagementPage />,
   "actions/users-health-scores": <HealthScoresPage />,
   "actions/users-churn": <ChurnRiskPage />,
-  "actions/users-funnels": <FunnelsPage />,
+  "actions/users-funnels": <UserJourneysPage />,
   "actions/users-per-user": <PerUserAnalyticsPage />,
   "actions/users-groups": <GroupAnalyticsPage />,
   "actions/users-journeys": <UserJourneysPage />,

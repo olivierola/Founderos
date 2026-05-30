@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, Briefcase, BarChart3, FileText, Loader2, Download } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
@@ -83,30 +83,61 @@ export function ForecastingPage() {
   const { workspaceId, projectId } = useCurrentContext();
   const connector = useStripeConnector(projectId);
   const latest = useLatestMetrics(projectId);
-  const history = useMetricsHistory(projectId, 30);
+  const history = useMetricsHistory(projectId, 90);
 
-  const projection = useMemo(() => {
+  // User-tunable assumptions overlaid on top of the historical growth rate.
+  const [horizon, setHorizon] = useState(12);
+  const [acquisitionOverride, setAcquisitionOverride] = useState<number | null>(null);
+  const [churnOverride, setChurnOverride] = useState<number | null>(null);
+
+  // Compute the historical monthly growth rate from snapshots: average of
+  // (next/prev - 1) across consecutive monthly samples.
+  const observed = useMemo(() => {
+    const snaps = (history.data ?? []) as Array<{ snapshot_date: string; metrics: { mrr_cents: number } }>;
+    if (!snaps || snaps.length < 2) return null;
+    const sorted = [...snaps].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    // Estimate growth between the first and last snapshot, normalised per month.
+    const first = sorted[0].metrics.mrr_cents;
+    const last = sorted[sorted.length - 1].metrics.mrr_cents;
+    const days = Math.max(
+      1,
+      Math.round(
+        (new Date(sorted[sorted.length - 1].snapshot_date).getTime() -
+          new Date(sorted[0].snapshot_date).getTime()) /
+          86400000,
+      ),
+    );
+    const monthly = first > 0 ? Math.pow(last / first, 30 / days) - 1 : 0;
+    return { growthMonthly: monthly, days, points: sorted.length };
+  }, [history.data]);
+
+  const scenarios = useMemo(() => {
     const m = latest.data?.metrics;
     if (!m) return null;
     const mrr = m.mrr_cents / 100;
-    const churn = m.churn_rate_30d;
-    // Naive linear projection: MRR_(t+1) = MRR_t * (1 - churn) + assumed_new
-    // For MVP, just project current MRR forward with churn.
-    const months: { label: string; value: number }[] = [];
-    let v = mrr;
-    for (let i = 1; i <= 12; i++) {
-      v = v * (1 - churn);
-      months.push({ label: `M+${i}`, value: Math.max(0, v) });
-    }
+    const churn = churnOverride ?? m.churn_rate_30d ?? 0;
+    const acquisitionDelta =
+      acquisitionOverride ??
+      Math.max(0, (observed?.growthMonthly ?? 0) + churn); // gross growth net of churn
+    const buildSeries = (g: number, c: number) => {
+      const arr: { label: string; value: number }[] = [];
+      let v = mrr;
+      for (let i = 1; i <= horizon; i++) {
+        v = Math.max(0, v * (1 - c) + v * g); // simple compounding
+        arr.push({ label: `M+${i}`, value: v });
+      }
+      return arr;
+    };
     return {
       currency: m.currency.toUpperCase(),
       currentMrr: mrr,
-      mrr12m: months[months.length - 1]!.value,
-      annualizedAtCurrent: mrr * 12,
-      months,
+      observedGrowth: observed?.growthMonthly ?? 0,
       churn,
+      base: { series: buildSeries(acquisitionDelta, churn), label: "Base" },
+      best: { series: buildSeries(acquisitionDelta * 1.5, churn * 0.7), label: "Best" },
+      worst: { series: buildSeries(acquisitionDelta * 0.5, churn * 1.3), label: "Worst" },
     };
-  }, [latest.data]);
+  }, [latest.data, horizon, acquisitionOverride, churnOverride, observed]);
 
   if (!workspaceId || !projectId) return <PageHeader title="Forecasting" />;
 
@@ -114,54 +145,133 @@ export function ForecastingPage() {
     <div>
       <PageHeader
         title="Forecasting"
-        description="Naive 12-month MRR projection assuming current churn and no new acquisition."
+        description="Project MRR forward using historical growth, churn and tunable scenarios (best / base / worst)."
       />
       <StripeGate connectorPresent={!!connector.data} workspaceId={workspaceId} projectId={projectId}>
-        {!projection ? (
+        {!scenarios ? (
           <EmptyState icon={TrendingUp} title="No metrics yet" description="Sync Stripe to enable forecasting." />
         ) : (
           <>
+            {/* Tuners */}
+            <Card className="mb-4">
+              <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Horizon (months)</label>
+                  <input
+                    type="number"
+                    min={3}
+                    max={36}
+                    value={horizon}
+                    onChange={(e) => setHorizon(Math.max(3, Math.min(36, Number(e.target.value) || 12)))}
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">
+                    Monthly acquisition growth (%) — auto if empty
+                  </label>
+                  <input
+                    type="number"
+                    step={0.1}
+                    placeholder={`${((observed?.growthMonthly ?? 0) * 100).toFixed(1)} auto`}
+                    value={acquisitionOverride != null ? acquisitionOverride * 100 : ""}
+                    onChange={(e) =>
+                      setAcquisitionOverride(e.target.value === "" ? null : Number(e.target.value) / 100)
+                    }
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">
+                    Monthly churn (%) — auto if empty
+                  </label>
+                  <input
+                    type="number"
+                    step={0.1}
+                    placeholder={`${(scenarios.churn * 100).toFixed(1)} auto`}
+                    value={churnOverride != null ? churnOverride * 100 : ""}
+                    onChange={(e) =>
+                      setChurnOverride(e.target.value === "" ? null : Number(e.target.value) / 100)
+                    }
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Headline metrics */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <MetricCard label="Current MRR" value={formatCurrency(scenarios.currentMrr, scenarios.currency)} icon={TrendingUp} />
               <MetricCard
-                label="Current MRR"
-                value={formatCurrency(projection.currentMrr, projection.currency)}
-                icon={TrendingUp}
+                label={`MRR at M+${horizon} (base)`}
+                value={formatCurrency(scenarios.base.series[horizon - 1].value, scenarios.currency)}
+                hint={`${(scenarios.churn * 100).toFixed(1)}% churn`}
               />
               <MetricCard
-                label="MRR in 12 months (no growth)"
-                value={formatCurrency(projection.mrr12m, projection.currency)}
-                hint={`${(projection.churn * 100).toFixed(1)}% monthly churn`}
-              />
-              <MetricCard
-                label="Annualized at current"
-                value={formatCurrency(projection.annualizedAtCurrent, projection.currency)}
+                label="Observed monthly growth"
+                value={`${(scenarios.observedGrowth * 100).toFixed(1)}%`}
+                hint={`${observed?.points ?? 0} snapshots`}
               />
             </div>
 
+            {/* Multi-scenario chart */}
             <Card className="mt-6">
               <CardHeader>
-                <CardTitle>12-month MRR projection</CardTitle>
+                <CardTitle>{horizon}-month MRR projection — 3 scenarios</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex h-32 items-end gap-1">
-                  {projection.months.map((m, i) => {
-                    const max = projection.months[0]!.value || 1;
-                    const h = Math.max(4, Math.round((m.value / max) * 120));
-                    return (
-                      <div key={i} className="flex-1" title={`${m.label}: ${formatCurrency(m.value, projection.currency)}`}>
-                        <div className="rounded-t bg-primary/60" style={{ height: `${h}px` }} />
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  Naive projection — does not account for new acquisition. {history.data?.length ?? 0} historical snapshots available.
+                <ScenarioChart scenarios={scenarios} currency={scenarios.currency} />
+                <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                  <ScenarioLegend color="hsl(var(--accent-2))" label={`Best — ${formatCurrency(scenarios.best.series[horizon - 1].value, scenarios.currency)}`} />
+                  <ScenarioLegend color="hsl(var(--primary-soft))" label={`Base — ${formatCurrency(scenarios.base.series[horizon - 1].value, scenarios.currency)}`} />
+                  <ScenarioLegend color="hsl(var(--destructive))" label={`Worst — ${formatCurrency(scenarios.worst.series[horizon - 1].value, scenarios.currency)}`} />
                 </div>
               </CardContent>
             </Card>
           </>
         )}
       </StripeGate>
+    </div>
+  );
+}
+
+function ScenarioLegend({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function ScenarioChart({
+  scenarios,
+  currency,
+}: {
+  scenarios: { best: { series: { value: number }[] }; base: { series: { value: number }[] }; worst: { series: { value: number }[] } };
+  currency: string;
+}) {
+  const all = [...scenarios.best.series, ...scenarios.base.series, ...scenarios.worst.series].map((p) => p.value);
+  const max = Math.max(1, ...all);
+  return (
+    <div className="flex h-40 items-end gap-1">
+      {scenarios.base.series.map((_, i) => {
+        const h = (v: number) => Math.max(4, Math.round((v / max) * 150));
+        const b = scenarios.best.series[i]!.value;
+        const ba = scenarios.base.series[i]!.value;
+        const w = scenarios.worst.series[i]!.value;
+        return (
+          <div
+            key={i}
+            className="relative flex-1"
+            title={`M+${i + 1} — best ${formatCurrency(b, currency)} · base ${formatCurrency(ba, currency)} · worst ${formatCurrency(w, currency)}`}
+          >
+            <div className="absolute bottom-0 w-full rounded-t" style={{ height: h(b), background: "hsl(var(--accent-2) / 0.65)" }} />
+            <div className="absolute bottom-0 w-full rounded-t" style={{ height: h(ba), background: "hsl(var(--primary-soft) / 0.85)" }} />
+            <div className="absolute bottom-0 w-full rounded-t" style={{ height: h(w), background: "hsl(var(--destructive) / 0.55)" }} />
+          </div>
+        );
+      })}
     </div>
   );
 }
