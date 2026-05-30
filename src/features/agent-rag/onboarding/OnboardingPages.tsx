@@ -1,11 +1,25 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ListChecks, Route, Workflow, BarChart3, Layers, Copy, Check, Code2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ListChecks,
+  Route,
+  Workflow,
+  BarChart3,
+  Layers,
+  Copy,
+  Check,
+  Code2,
+  Loader2,
+  Sparkles,
+  Network,
+} from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
+import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { formatCompact, cn } from "@/lib/utils";
 import { AgentPicker } from "./AgentPicker";
@@ -17,7 +31,9 @@ import { FlowEditor } from "./FlowEditor";
 
 export function OnboardingOverviewPage() {
   const { workspaceId, projectId } = useCurrentContext();
+  const queryClient = useQueryClient();
   const [agentId, setAgentId] = useState<string | null>(null);
+  const [enriching, setEnriching] = useState(false);
 
   const { data: agent } = useQuery({
     queryKey: ["onb_agent_meta", agentId],
@@ -31,6 +47,51 @@ export function OnboardingOverviewPage() {
       return data;
     },
   });
+
+  // Whether the latest scan has an enriched semantic map for this project.
+  const { data: enrichmentStatus } = useQuery({
+    queryKey: ["onb_enrichment_status", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("scan_results")
+        .select("id, app_structure, created_at")
+        .eq("project_id", projectId!)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const struct = (data?.app_structure ?? {}) as {
+        pages?: unknown[];
+        enriched?: { pages?: unknown[]; summary?: string };
+        enriched_at?: string;
+      };
+      return {
+        has_scan: !!data,
+        scanned_pages: (struct.pages ?? []).length,
+        has_enriched: !!struct.enriched,
+        enriched_pages: (struct.enriched?.pages ?? []).length,
+        enriched_summary: struct.enriched?.summary ?? null,
+        enriched_at: struct.enriched_at ?? null,
+        scan_result_id: data?.id ?? null,
+      };
+    },
+  });
+
+  async function enrich() {
+    if (!workspaceId || !projectId) return;
+    setEnriching(true);
+    try {
+      await callEdge("enrich-app-structure", {
+        workspace_id: workspaceId,
+        project_id: projectId,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["onb_enrichment_status", projectId] });
+    } catch (e) {
+      alert("Enrichment failed: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setEnriching(false);
+    }
+  }
 
   const { data: counts } = useQuery({
     queryKey: ["onb_counts", agentId],
@@ -66,6 +127,27 @@ export function OnboardingOverviewPage() {
     event: { type: "user.signup" },        // or { type: "project.created", data: {...} }
   }),
 })`
+    : null;
+
+  // Dynamic onboarding SDK embed snippet — points at the deployed SDK and the
+  // orchestrate endpoint that lets the agent drive the UI live.
+  const dynamicSnippet = agent?.public_key
+    ? `<!-- 1. Embed the FounderOS Onboarding SDK -->
+<script src="https://founderos-peach.vercel.app/founderos-onboarding.js"></script>
+<script>
+  FounderOS.init({
+    agentPublicKey: "${agent.public_key}",
+    endpoint: "https://your-supabase.functions.supabase.co/rag-onboarding-orchestrate",
+    userId: window.currentUser?.id, // optional
+  });
+
+  // 2. Notify the agent when key things happen
+  FounderOS.emit("project.created", { id: project.id });
+  FounderOS.emit("payment.first_success");
+
+  // 3. Or let the user ask explicitly
+  // FounderOS.ask("How do I invite my team?");
+</script>`
     : null;
 
   return (
@@ -106,15 +188,95 @@ export function OnboardingOverviewPage() {
             <KpiTile icon={Layers} label="Total runs" value={counts?.runs ?? 0} />
           </div>
 
-          {/* Integration */}
+          {/* App structure (semantic map for dynamic onboarding) */}
+          <Card>
+            <CardContent className="space-y-3 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="flex items-center gap-2 text-sm font-semibold">
+                    <Network className="h-4 w-4" /> App structure
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    The agent uses an enriched map of your SaaS pages and actions to drive dynamic
+                    onboarding. Run an enrichment after each new code scan.
+                  </p>
+                </div>
+                <Button size="sm" onClick={enrich} disabled={enriching || !enrichmentStatus?.has_scan}>
+                  {enriching ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {enrichmentStatus?.has_enriched ? "Re-enrich" : "Enrich now"}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <StatTile
+                  label="Scanned pages"
+                  value={enrichmentStatus?.scanned_pages ?? 0}
+                  hint={!enrichmentStatus?.has_scan ? "No scan yet" : undefined}
+                />
+                <StatTile
+                  label="Enriched pages"
+                  value={enrichmentStatus?.enriched_pages ?? 0}
+                  hint={enrichmentStatus?.has_enriched ? "Ready for the agent" : "Not enriched yet"}
+                />
+                <StatTile
+                  label="Last enrichment"
+                  value={
+                    enrichmentStatus?.enriched_at
+                      ? new Date(enrichmentStatus.enriched_at).toLocaleDateString()
+                      : "—"
+                  }
+                />
+              </div>
+
+              {enrichmentStatus?.enriched_summary && (
+                <div className="rounded-md border border-border bg-secondary/30 p-3 text-xs">
+                  <span className="font-medium text-foreground">Summary: </span>
+                  {enrichmentStatus.enriched_summary}
+                </div>
+              )}
+
+              {!enrichmentStatus?.has_scan && (
+                <p className="text-xs text-amber-400">
+                  Run a code scan in <span className="font-mono">Code → Repositories</span> first.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Dynamic onboarding SDK */}
+          <Card>
+            <CardContent className="space-y-3 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Dynamic onboarding (SDK)</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Drop the SDK into your SaaS. The agent will decide live what to highlight,
+                    pop up, scroll to or navigate to — using the app structure above.
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-[10px]">Recommended</Badge>
+              </div>
+              {dynamicSnippet ? (
+                <CodeBlock code={dynamicSnippet} />
+              ) : (
+                <p className="text-xs text-muted-foreground">Pick an agent to see the embed snippet.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Integration (server-side, scripted flows) */}
           <Card>
             <CardContent className="space-y-3 p-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold">Integrate from your SaaS backend</h2>
+                  <h2 className="text-sm font-semibold">Scripted flows (server API)</h2>
                   <p className="text-xs text-muted-foreground">
-                    Call this endpoint from your server when a key event occurs. The widget will
-                    automatically pick up the same flow if the user opens chat.
+                    For predefined flows you built in the Flows / Tours / Checklist tabs, call this
+                    endpoint from your server to step through them.
                   </p>
                 </div>
                 <Badge variant="outline" className="font-mono text-[10px]">POST</Badge>
@@ -128,6 +290,16 @@ export function OnboardingOverviewPage() {
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+function StatTile({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
+  return (
+    <div className="rounded-md border border-border p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
+      {hint && <div className="mt-0.5 text-[10px] text-muted-foreground">{hint}</div>}
     </div>
   );
 }
