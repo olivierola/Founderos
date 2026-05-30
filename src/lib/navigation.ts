@@ -108,7 +108,7 @@ export const MODULES: ModuleNavItem[] = [
   },
   {
     slug: "actions",
-    label: "Actions",
+    label: "Admin panel",
     icon: Zap,
     color: "text-slate-400",
     subItems: [
