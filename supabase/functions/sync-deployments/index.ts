@@ -16,10 +16,14 @@ interface DeploymentRow {
   project_id: string;
   provider: string;
   environment: string;
+  kind?: "deploy" | "release" | "infra_event";
   sha: string | null;
   ref: string | null;
   state: string | null;
   url: string | null;
+  duration_ms?: number | null;
+  author?: string | null;
+  commit_message?: string | null;
   created_at_provider: string | null;
   metadata: Record<string, unknown>;
 }
@@ -55,7 +59,20 @@ Deno.serve(async (req) => {
     if (!membership) return jsonResponse({ error: "Not authorized" }, { status: 403 });
 
     /* Resolve providers. */
-    const SUPPORTED = ["vercel", "github", "netlify", "render", "cloudflare"];
+    const SUPPORTED = [
+      "vercel",
+      "github",
+      "netlify",
+      "render",
+      "cloudflare",
+      "supabase",
+      "firebase",
+      "fly",
+      "heroku",
+      "railway",
+      "digitalocean",
+      "hetzner",
+    ];
     let toSync = (providers ?? []).filter((p) => SUPPORTED.includes(p));
     if (toSync.length === 0) {
       const { data: cs } = await admin
@@ -140,6 +157,13 @@ async function fetchDeployments(
     case "netlify": return await fetchNetlify(workspaceId, projectId);
     case "render": return await fetchRender(workspaceId, projectId);
     case "cloudflare": return await fetchCloudflare(workspaceId, projectId);
+    case "supabase": return await fetchSupabase(workspaceId, projectId);
+    case "firebase": return await fetchFirebase(workspaceId, projectId);
+    case "fly": return await fetchFly(workspaceId, projectId);
+    case "heroku": return await fetchHeroku(workspaceId, projectId);
+    case "railway": return await fetchRailway(workspaceId, projectId);
+    case "digitalocean": return await fetchDigitalOcean(workspaceId, projectId);
+    case "hetzner": return await fetchHetzner(workspaceId, projectId);
     default: return [];
   }
 }
@@ -182,20 +206,21 @@ async function fetchVercel(workspaceId: string, projectId: string): Promise<Depl
     workspace_id: workspaceId,
     project_id: projectId,
     provider: "vercel",
+    kind: "deploy",
     environment: d.target ?? "production",
     sha: d.meta?.githubCommitSha ?? d.uid ?? null,
     ref: d.meta?.githubCommitRef ?? null,
     state: (d.state ?? "").toLowerCase(),
     url: d.url ? `https://${d.url}` : null,
+    duration_ms: d.ready && d.buildingAt ? d.ready - d.buildingAt : null,
+    author: d.creator?.username ?? d.creator?.email ?? d.meta?.githubCommitAuthorName ?? null,
+    commit_message: d.meta?.githubCommitMessage ?? null,
     created_at_provider: d.created ? new Date(d.created).toISOString() : null,
     metadata: {
       name: d.name,
       uid: d.uid,
       inspector_url: d.inspectorUrl,
-      build_duration_ms: d.ready && d.buildingAt ? d.ready - d.buildingAt : null,
       ready_at: d.ready ? new Date(d.ready).toISOString() : null,
-      author: d.creator?.username ?? d.creator?.email ?? d.meta?.githubCommitAuthorName ?? null,
-      commit_message: d.meta?.githubCommitMessage ?? null,
       repository:
         d.meta?.githubOrg && d.meta?.githubRepo ? `${d.meta.githubOrg}/${d.meta.githubRepo}` : null,
     },
@@ -345,6 +370,7 @@ async function fetchCloudflare(workspaceId: string, projectId: string): Promise<
     workspace_id: workspaceId,
     project_id: projectId,
     provider: "cloudflare",
+    kind: "deploy",
     environment: d.environment ?? "production",
     sha: d.deployment_trigger?.metadata?.commit_hash ?? d.id,
     ref: d.deployment_trigger?.metadata?.branch ?? null,
@@ -352,5 +378,338 @@ async function fetchCloudflare(workspaceId: string, projectId: string): Promise<
     url: d.url ?? null,
     created_at_provider: d.created_on ?? null,
     metadata: { id: d.id, stage: d.latest_stage?.name },
+  }));
+}
+
+/* -------------------------------------------------------------------- */
+/*  Supabase Edge Functions — every function with its current version    */
+/* -------------------------------------------------------------------- */
+
+async function fetchSupabase(workspaceId: string, projectId: string): Promise<DeploymentRow[]> {
+  const { payload } = await getConnectorCredential(workspaceId, projectId, "supabase");
+  const token = payload.access_token;
+  const projectUrl = payload.project_url;
+  if (!token || !projectUrl) return [];
+  const ref = new URL(projectUrl).hostname.split(".")[0];
+  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/functions`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const functions = (await res.json()) as Array<{
+    id: string;
+    slug: string;
+    name: string;
+    status?: string;
+    version?: number;
+    created_at?: number;
+    updated_at?: number;
+  }>;
+  return functions.map((f) => ({
+    workspace_id: workspaceId,
+    project_id: projectId,
+    provider: "supabase",
+    kind: "deploy",
+    environment: "production",
+    // Use slug + version as a stable de-dup key.
+    sha: `${f.slug}@v${f.version ?? 1}`,
+    ref: f.slug,
+    state: (f.status ?? "active").toLowerCase(),
+    url: `https://${ref}.supabase.co/functions/v1/${f.slug}`,
+    author: null,
+    commit_message: null,
+    duration_ms: null,
+    created_at_provider: f.updated_at
+      ? new Date(f.updated_at).toISOString()
+      : f.created_at
+        ? new Date(f.created_at).toISOString()
+        : null,
+    metadata: { function_id: f.id, name: f.name, version: f.version, project_ref: ref },
+  }));
+}
+
+/* -------------------------------------------------------------------- */
+/*  Firebase Hosting releases                                            */
+/* -------------------------------------------------------------------- */
+
+async function fetchFirebase(workspaceId: string, projectId: string): Promise<DeploymentRow[]> {
+  const { connector, payload } = await getConnectorCredential(workspaceId, projectId, "firebase");
+  const token = payload.access_token ?? payload.api_key;
+  const site = (connector.metadata?.["firebase_site"] as string | undefined)
+    ?? (payload.site as string | undefined);
+  if (!token || !site) return [];
+  const res = await fetch(
+    `https://firebasehosting.googleapis.com/v1beta1/sites/${site}/releases?pageSize=30`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`Firebase ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const json = await res.json();
+  const releases = (json.releases ?? []) as Array<{
+    name?: string;
+    version?: { name?: string; status?: string };
+    type?: string;
+    releaseTime?: string;
+    releaseUser?: { email?: string };
+    message?: string;
+  }>;
+  return releases.map((r) => ({
+    workspace_id: workspaceId,
+    project_id: projectId,
+    provider: "firebase",
+    kind: "release",
+    environment: "production",
+    sha: r.name ?? r.version?.name ?? null,
+    ref: r.type ?? null,
+    state: (r.version?.status ?? "ready").toLowerCase(),
+    url: `https://${site}.web.app`,
+    author: r.releaseUser?.email ?? null,
+    commit_message: r.message ?? null,
+    duration_ms: null,
+    created_at_provider: r.releaseTime ?? null,
+    metadata: { site, version: r.version?.name },
+  }));
+}
+
+/* -------------------------------------------------------------------- */
+/*  Fly.io — releases per app                                            */
+/* -------------------------------------------------------------------- */
+
+async function fetchFly(workspaceId: string, projectId: string): Promise<DeploymentRow[]> {
+  const { connector, payload } = await getConnectorCredential(workspaceId, projectId, "fly");
+  const token = payload.api_key ?? payload.token;
+  const appName = connector.metadata?.["fly_app"] as string | undefined;
+  if (!token || !appName) return [];
+  const query = `query App($name: String!) {
+    app(name: $name) {
+      name
+      releases(first: 30) {
+        nodes {
+          id version status reason description user { email } createdAt
+        }
+      }
+    }
+  }`;
+  const res = await fetch("https://api.fly.io/graphql", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables: { name: appName } }),
+  });
+  if (!res.ok) throw new Error(`Fly ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const json = await res.json();
+  const releases = (json?.data?.app?.releases?.nodes ?? []) as Array<{
+    id: string;
+    version: number;
+    status?: string;
+    reason?: string;
+    description?: string;
+    user?: { email?: string };
+    createdAt?: string;
+  }>;
+  return releases.map((r) => ({
+    workspace_id: workspaceId,
+    project_id: projectId,
+    provider: "fly",
+    kind: "release",
+    environment: "production",
+    sha: `${appName}@v${r.version}`,
+    ref: r.reason ?? null,
+    state: (r.status ?? "").toLowerCase(),
+    url: `https://${appName}.fly.dev`,
+    author: r.user?.email ?? null,
+    commit_message: r.description ?? null,
+    duration_ms: null,
+    created_at_provider: r.createdAt ?? null,
+    metadata: { release_id: r.id, version: r.version, app: appName },
+  }));
+}
+
+/* -------------------------------------------------------------------- */
+/*  Heroku — releases per app                                            */
+/* -------------------------------------------------------------------- */
+
+async function fetchHeroku(workspaceId: string, projectId: string): Promise<DeploymentRow[]> {
+  const { connector, payload } = await getConnectorCredential(workspaceId, projectId, "heroku");
+  const token = payload.api_key ?? payload.token;
+  const appName = connector.metadata?.["heroku_app"] as string | undefined;
+  if (!token || !appName) return [];
+  const res = await fetch(`https://api.heroku.com/apps/${appName}/releases`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.heroku+json; version=3",
+      Range: "version ..; max=30, order=desc",
+    },
+  });
+  if (!res.ok) throw new Error(`Heroku ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const list = (await res.json()) as Array<{
+    id: string;
+    version: number;
+    description?: string;
+    status?: string;
+    user?: { email?: string };
+    created_at?: string;
+  }>;
+  return list.map((r) => ({
+    workspace_id: workspaceId,
+    project_id: projectId,
+    provider: "heroku",
+    kind: "release",
+    environment: "production",
+    sha: `${appName}@v${r.version}`,
+    ref: null,
+    state: (r.status ?? "").toLowerCase(),
+    url: `https://${appName}.herokuapp.com`,
+    author: r.user?.email ?? null,
+    commit_message: r.description ?? null,
+    duration_ms: null,
+    created_at_provider: r.created_at ?? null,
+    metadata: { release_id: r.id, version: r.version, app: appName },
+  }));
+}
+
+/* -------------------------------------------------------------------- */
+/*  Railway — deployments per service/environment                        */
+/* -------------------------------------------------------------------- */
+
+async function fetchRailway(workspaceId: string, projectId: string): Promise<DeploymentRow[]> {
+  const { connector, payload } = await getConnectorCredential(workspaceId, projectId, "railway");
+  const token = payload.api_key ?? payload.token;
+  const railwayProjectId = connector.metadata?.["railway_project_id"] as string | undefined;
+  const environmentId = connector.metadata?.["railway_environment_id"] as string | undefined;
+  if (!token || !railwayProjectId) return [];
+  const query = `query Deployments($projectId: String!, $environmentId: String) {
+    deployments(input: { projectId: $projectId, environmentId: $environmentId }, first: 30) {
+      edges { node {
+        id status createdAt updatedAt
+        meta
+        staticUrl
+      } }
+    }
+  }`;
+  const res = await fetch("https://backboard.railway.app/graphql/v2", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query,
+      variables: { projectId: railwayProjectId, environmentId },
+    }),
+  });
+  if (!res.ok) throw new Error(`Railway ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const json = await res.json();
+  if (json.errors) throw new Error(JSON.stringify(json.errors).slice(0, 200));
+  const edges = (json?.data?.deployments?.edges ?? []) as Array<{
+    node: {
+      id: string;
+      status?: string;
+      createdAt?: string;
+      updatedAt?: string;
+      meta?: Record<string, any>;
+      staticUrl?: string;
+    };
+  }>;
+  return edges.map(({ node: r }) => ({
+    workspace_id: workspaceId,
+    project_id: projectId,
+    provider: "railway",
+    kind: "deploy",
+    environment: "production",
+    sha: r.meta?.commitHash ?? r.id,
+    ref: r.meta?.branch ?? null,
+    state: (r.status ?? "").toLowerCase(),
+    url: r.staticUrl ? `https://${r.staticUrl}` : null,
+    author: r.meta?.commitAuthor ?? null,
+    commit_message: r.meta?.commitMessage ?? null,
+    duration_ms: null,
+    created_at_provider: r.createdAt ?? null,
+    metadata: { id: r.id, project: railwayProjectId, environment: environmentId },
+  }));
+}
+
+/* -------------------------------------------------------------------- */
+/*  DigitalOcean — droplet actions = infra events                        */
+/* -------------------------------------------------------------------- */
+
+async function fetchDigitalOcean(workspaceId: string, projectId: string): Promise<DeploymentRow[]> {
+  const { connector, payload } = await getConnectorCredential(workspaceId, projectId, "digitalocean");
+  const token = payload.api_key ?? payload.token;
+  const dropletId = connector.metadata?.["droplet_id"] as string | undefined;
+  if (!token) return [];
+  const url = dropletId
+    ? `https://api.digitalocean.com/v2/droplets/${dropletId}/actions?per_page=30`
+    : `https://api.digitalocean.com/v2/actions?per_page=30`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`DigitalOcean ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const json = await res.json();
+  const actions = (json.actions ?? []) as Array<{
+    id: number;
+    type?: string;
+    status?: string;
+    started_at?: string;
+    completed_at?: string;
+    resource_id?: number;
+    resource_type?: string;
+    region?: { slug?: string };
+  }>;
+  return actions.map((a) => ({
+    workspace_id: workspaceId,
+    project_id: projectId,
+    provider: "digitalocean",
+    kind: "infra_event",
+    environment: "production",
+    sha: `do-${a.id}`,
+    ref: a.type ?? null,
+    state: (a.status ?? "").toLowerCase(),
+    url: null,
+    author: null,
+    commit_message: null,
+    duration_ms:
+      a.started_at && a.completed_at
+        ? new Date(a.completed_at).getTime() - new Date(a.started_at).getTime()
+        : null,
+    created_at_provider: a.started_at ?? null,
+    metadata: { action_id: a.id, resource_id: a.resource_id, resource_type: a.resource_type, region: a.region?.slug },
+  }));
+}
+
+/* -------------------------------------------------------------------- */
+/*  Hetzner Cloud — server actions = infra events                        */
+/* -------------------------------------------------------------------- */
+
+async function fetchHetzner(workspaceId: string, projectId: string): Promise<DeploymentRow[]> {
+  const { connector, payload } = await getConnectorCredential(workspaceId, projectId, "hetzner");
+  const token = payload.api_key ?? payload.token;
+  const serverId = connector.metadata?.["hetzner_server_id"] as string | undefined;
+  if (!token) return [];
+  const url = serverId
+    ? `https://api.hetzner.cloud/v1/servers/${serverId}/actions?per_page=30`
+    : `https://api.hetzner.cloud/v1/actions?per_page=30`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Hetzner ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const json = await res.json();
+  const actions = (json.actions ?? []) as Array<{
+    id: number;
+    command?: string;
+    status?: string;
+    started?: string;
+    finished?: string;
+    resources?: Array<{ id: number; type: string }>;
+    error?: { message?: string };
+  }>;
+  return actions.map((a) => ({
+    workspace_id: workspaceId,
+    project_id: projectId,
+    provider: "hetzner",
+    kind: "infra_event",
+    environment: "production",
+    sha: `hetzner-${a.id}`,
+    ref: a.command ?? null,
+    state: (a.status ?? "").toLowerCase(),
+    url: null,
+    author: null,
+    commit_message: a.error?.message ?? null,
+    duration_ms:
+      a.started && a.finished
+        ? new Date(a.finished).getTime() - new Date(a.started).getTime()
+        : null,
+    created_at_provider: a.started ?? null,
+    metadata: { action_id: a.id, resources: a.resources },
   }));
 }

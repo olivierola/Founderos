@@ -470,6 +470,61 @@ export const PROVIDERS: ProviderDef[] = [
     mvp: true,
     fields: [apiKeyField("API key", "rnd_…", "https://dashboard.render.com/u/settings#api-keys")],
   },
+  {
+    slug: "fly",
+    name: "Fly.io",
+    category: "hosting",
+    icon: Cloud,
+    description: "Edge VM hosting — pull releases per app.",
+    mvp: true,
+    fields: [
+      apiKeyField("API token", "fly_…", "https://fly.io/user/personal_access_tokens"),
+    ],
+  },
+  {
+    slug: "heroku",
+    name: "Heroku",
+    category: "hosting",
+    icon: Cloud,
+    description: "Classic PaaS — fetch releases per app.",
+    mvp: true,
+    fields: [
+      apiKeyField("API token", "HRKU-…", "https://dashboard.heroku.com/account#api-key"),
+    ],
+  },
+  {
+    slug: "firebase",
+    name: "Firebase",
+    category: "backend",
+    icon: Cloud,
+    description: "Hosting + Functions releases.",
+    mvp: true,
+    fields: [
+      apiKeyField("Access token (OAuth)", "…", "https://firebase.google.com/docs/cli#cli-ci-systems"),
+    ],
+  },
+  {
+    slug: "digitalocean",
+    name: "DigitalOcean",
+    category: "hosting",
+    icon: Cloud,
+    description: "Droplets, App Platform — infra events and deploys.",
+    mvp: true,
+    fields: [
+      apiKeyField("Personal access token", "dop_v1_…", "https://cloud.digitalocean.com/account/api/tokens"),
+    ],
+  },
+  {
+    slug: "hetzner",
+    name: "Hetzner Cloud",
+    category: "hosting",
+    icon: Cloud,
+    description: "EU VPS — server actions as infra events.",
+    mvp: true,
+    fields: [
+      apiKeyField("API token", "…", "https://docs.hetzner.cloud/#getting-started"),
+    ],
+  },
 
   // --- Backend / auth (more) ---
   {

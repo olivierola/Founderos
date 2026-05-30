@@ -503,6 +503,7 @@ export function DeploymentsPage() {
                   <tr>
                     <th className="px-4 py-3">When</th>
                     <th className="px-4 py-3">Provider</th>
+                    <th className="px-4 py-3">Kind</th>
                     <th className="px-4 py-3">Env</th>
                     <th className="px-4 py-3">Ref</th>
                     <th className="px-4 py-3">SHA</th>
@@ -522,6 +523,9 @@ export function DeploymentsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline" className="text-[10px]">{providerLabel(d.provider)}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <KindBadge kind={d.kind ?? "deploy"} />
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline">{d.environment}</Badge>
@@ -750,6 +754,21 @@ function bucketByHour(rows: Array<{ created_at_provider: string | null }>, hours
   });
 }
 
+function KindBadge({ kind }: { kind: string }) {
+  const label = kind === "infra_event" ? "infra" : kind === "release" ? "release" : "deploy";
+  const cls =
+    kind === "infra_event"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+      : kind === "release"
+        ? "border-[hsl(var(--accent-2)/0.4)] bg-[hsl(var(--accent-2)/0.12)] text-[hsl(var(--accent-2))]"
+        : "border-[hsl(var(--primary-soft)/0.4)] bg-[hsl(var(--primary-soft)/0.12)] text-[hsl(var(--primary-soft))]";
+  return (
+    <span className={"inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] " + cls}>
+      {label}
+    </span>
+  );
+}
+
 function providerLabel(p?: string) {
   switch (p) {
     case "vercel": return "Vercel";
@@ -757,6 +776,13 @@ function providerLabel(p?: string) {
     case "netlify": return "Netlify";
     case "render": return "Render";
     case "cloudflare": return "Cloudflare Pages";
+    case "supabase": return "Supabase Functions";
+    case "firebase": return "Firebase";
+    case "fly": return "Fly.io";
+    case "heroku": return "Heroku";
+    case "railway": return "Railway";
+    case "digitalocean": return "DigitalOcean";
+    case "hetzner": return "Hetzner";
     default: return p ?? "Unknown";
   }
 }
@@ -768,6 +794,13 @@ function providerColor(p?: string) {
     case "netlify": return "#00ad9f";
     case "render": return "#46e3b7";
     case "cloudflare": return "#f6821f";
+    case "supabase": return "#3ecf8e";
+    case "firebase": return "#ffa000";
+    case "fly": return "#8b5cf6";
+    case "heroku": return "#7673c0";
+    case "railway": return "#9333ea";
+    case "digitalocean": return "#0080ff";
+    case "hetzner": return "#d50c2d";
     default: return "hsl(var(--primary-soft))";
   }
 }

@@ -49,6 +49,21 @@ const META_FIELDS: Record<string, MetadataField[]> = {
     { key: "railway_project_id", label: "Railway project ID", placeholder: "…" },
     { key: "railway_environment_id", label: "Railway environment ID", placeholder: "…" },
   ],
+  firebase: [
+    { key: "firebase_site", label: "Firebase Hosting site name", placeholder: "my-app" },
+  ],
+  fly: [
+    { key: "fly_app", label: "Fly app name", placeholder: "my-app" },
+  ],
+  heroku: [
+    { key: "heroku_app", label: "Heroku app name", placeholder: "my-app" },
+  ],
+  digitalocean: [
+    { key: "droplet_id", label: "Droplet ID (optional, narrows actions)", placeholder: "12345" },
+  ],
+  hetzner: [
+    { key: "hetzner_server_id", label: "Server ID (optional, narrows actions)", placeholder: "1234567" },
+  ],
 };
 
 export function ConnectorDialog({
