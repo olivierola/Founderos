@@ -65,7 +65,7 @@ export function PrimarySidebar() {
                 <>
                   {main.map(renderModule)}
                   {bottom.length > 0 && (
-                    <div className="mt-6 flex flex-col gap-1 border-t border-border/40 pt-4">
+                    <div className="mt-12 flex flex-col gap-1 border-t border-border/40 pt-6">
                       {bottom.map(renderModule)}
                     </div>
                   )}
