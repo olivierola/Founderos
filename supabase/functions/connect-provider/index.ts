@@ -21,11 +21,12 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json();
-    const { workspace_id, project_id, provider, payload } = body as {
+    const { workspace_id, project_id, provider, payload, extra_metadata } = body as {
       workspace_id?: string;
       project_id?: string;
       provider?: Provider;
       payload?: Record<string, string>;
+      extra_metadata?: Record<string, string>;
     };
 
     if (!workspace_id || !project_id || !provider || !payload) {
@@ -48,6 +49,11 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: validation.error ?? "Validation failed" }, { status: 400 });
     }
 
+    // Merge: provider validation metadata (account info, etc.) + user-supplied
+    // extra_metadata (e.g. vercel_project_id, render_service_id) used by other
+    // edges (sync-deployments, propagate-credential).
+    const mergedMetadata = { ...(validation.metadata ?? {}), ...(extra_metadata ?? {}) };
+
     const { data: connector, error: connErr } = await admin
       .from("connectors")
       .upsert(
@@ -57,7 +63,7 @@ Deno.serve(async (req) => {
           provider,
           status: "connected",
           permissions: validation.permissions,
-          metadata: validation.metadata,
+          metadata: mergedMetadata,
         },
         { onConflict: "workspace_id,project_id,provider" },
       )

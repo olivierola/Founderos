@@ -361,12 +361,24 @@ export function DeploymentsPage() {
     }));
   }, [data]);
 
+  const [syncReport, setSyncReport] = useState<
+    Array<{ provider: string; inserted: number; updated: number; error?: string }> | null
+  >(null);
+
   async function sync() {
     if (!workspaceId || !projectId) return;
     setSyncing(true);
+    setSyncReport(null);
     try {
-      await callEdge("sync-deployments", { workspace_id: workspaceId, project_id: projectId });
+      const res = await callEdge<{
+        results: Array<{ provider: string; inserted: number; updated: number; error?: string }>;
+      }>("sync-deployments", { workspace_id: workspaceId, project_id: projectId });
+      setSyncReport(res.results ?? []);
       queryClient.invalidateQueries({ queryKey: ["deployments", projectId] });
+    } catch (e) {
+      setSyncReport([
+        { provider: "all", inserted: 0, updated: 0, error: e instanceof Error ? e.message : String(e) },
+      ]);
     } finally {
       setSyncing(false);
     }
@@ -398,6 +410,33 @@ export function DeploymentsPage() {
           </div>
         }
       />
+
+      {syncReport && syncReport.length > 0 && (
+        <Card className="mb-4">
+          <CardContent className="space-y-1.5 p-4 text-xs">
+            <div className="mb-1 font-medium">Sync report</div>
+            {syncReport.map((r) => (
+              <div key={r.provider} className="flex items-start gap-2">
+                {r.error ? (
+                  <AlertOctagon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                ) : (
+                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[hsl(var(--accent-2))]" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium">{providerLabel(r.provider)}</span>
+                  {r.error ? (
+                    <span className="ml-1 text-destructive">— {r.error}</span>
+                  ) : (
+                    <span className="ml-1 text-muted-foreground">
+                      — {r.inserted} deployment{r.inserted === 1 ? "" : "s"} synced
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading ? (
         <EmptyState icon={Loader2} title="Loading…" />

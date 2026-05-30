@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { ExternalLink, Loader2, Settings2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,36 @@ interface ConnectorDialogProps {
   onConnected?: () => void;
 }
 
+/* Provider-specific non-secret IDs that other edges (sync-deployments,
+   propagate-credential) need to call the right project / site / service.
+   These land in connectors.metadata, not in encrypted_credentials. */
+interface MetadataField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  helpUrl?: string;
+}
+const META_FIELDS: Record<string, MetadataField[]> = {
+  vercel: [
+    { key: "vercel_project_id", label: "Vercel project ID", placeholder: "prj_…", helpUrl: "https://vercel.com/docs/projects/overview#project-id" },
+  ],
+  netlify: [
+    { key: "site_id", label: "Netlify site ID (optional)", placeholder: "12345678-aaaa-…" },
+  ],
+  render: [
+    { key: "render_service_id", label: "Render service ID", placeholder: "srv_…" },
+  ],
+  cloudflare: [
+    { key: "account_id", label: "Cloudflare account ID", placeholder: "0123abcd…" },
+    { key: "pages_project", label: "Cloudflare Pages project name", placeholder: "my-app" },
+    { key: "script_name", label: "Workers script name (optional)", placeholder: "my-worker" },
+  ],
+  railway: [
+    { key: "railway_project_id", label: "Railway project ID", placeholder: "…" },
+    { key: "railway_environment_id", label: "Railway environment ID", placeholder: "…" },
+  ],
+};
+
 export function ConnectorDialog({
   open,
   onOpenChange,
@@ -30,21 +60,30 @@ export function ConnectorDialog({
   onConnected,
 }: ConnectorDialogProps) {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [meta, setMeta] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const metaFields = provider ? META_FIELDS[provider.slug] ?? [] : [];
 
   async function handleSubmit() {
     if (!provider) return;
     setSubmitting(true);
     setError(null);
     try {
+      // Strip empty meta values so we don't overwrite existing metadata with "".
+      const extraMetadata = Object.fromEntries(
+        Object.entries(meta).filter(([, v]) => v && v.trim() !== ""),
+      );
       await callEdge("connect-provider", {
         workspace_id: workspaceId,
         project_id: projectId,
         provider: provider.slug,
         payload: values,
+        extra_metadata: extraMetadata,
       });
       setValues({});
+      setMeta({});
       onOpenChange(false);
       onConnected?.();
     } catch (e) {
@@ -99,6 +138,41 @@ export function ConnectorDialog({
               />
             </div>
           ))}
+          {metaFields.length > 0 && (
+            <div className="space-y-2 rounded-md border border-border bg-secondary/30 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium">
+                <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                Configuration (used to target the right project)
+              </div>
+              {metaFields.map((field) => (
+                <div key={field.key} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor={"meta-" + field.key} className="text-xs text-muted-foreground">
+                      {field.label}
+                    </label>
+                    {field.helpUrl && (
+                      <a
+                        href={field.helpUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                      >
+                        Find it <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    )}
+                  </div>
+                  <Input
+                    id={"meta-" + field.key}
+                    placeholder={field.placeholder}
+                    value={meta[field.key] ?? ""}
+                    onChange={(e) => setMeta({ ...meta, [field.key]: e.target.value })}
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
