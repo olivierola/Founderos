@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ListChecks,
@@ -29,7 +30,7 @@ import { FlowEditor } from "./FlowEditor";
 /* ============================================================ */
 
 export function OnboardingOverviewPage() {
-  const { workspaceId, projectId } = useCurrentContext();
+  const { workspaceId, projectId, workspace, project } = useCurrentContext();
   const queryClient = useQueryClient();
   const [agentId, setAgentId] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
@@ -132,16 +133,30 @@ export function OnboardingOverviewPage() {
 
       {!agentId ? null : (
         <div className="space-y-4">
-          {/* Status banner */}
-          {agent && !agent.onboarding_enabled && (
-            <Card className="border-amber-500/40 bg-amber-500/5">
+          {/* Status banner — onboarding is activated per-agent in the agent's Settings tab. */}
+          {agent && (
+            <Card className={agent.onboarding_enabled ? "" : "border-amber-500/40 bg-amber-500/5"}>
               <CardContent className="flex items-start justify-between gap-3 p-4 text-sm">
                 <div>
-                  <div className="font-medium">Onboarding is disabled for this agent.</div>
-                  <div className="text-xs text-muted-foreground">
-                    Toggle “Enable onboarding mode” in the agent's Settings tab to start serving flows.
+                  <div className="font-medium">
+                    {agent.onboarding_enabled
+                      ? "Onboarding is active for this agent."
+                      : "Onboarding is disabled for this agent."}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    Onboarding is enabled per-agent — toggle it in the agent's Settings tab.
                   </div>
                 </div>
+                {agentId && workspace?.slug && project?.slug && (
+                  <Link
+                    to={`/app/${workspace.slug}/${project.slug}/agent/builder/${agentId}/settings`}
+                    className="shrink-0"
+                  >
+                    <Button size="sm" variant="outline">
+                      Open agent settings
+                    </Button>
+                  </Link>
+                )}
               </CardContent>
             </Card>
           )}
