@@ -52,6 +52,13 @@ import { EngagementPage } from "@/features/users/Engagement";
 
 import { RagAgentsPage } from "@/features/agent-rag/Agents";
 import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
+import {
+  OnboardingOverviewPage,
+  OnboardingFlowsPage,
+  OnboardingToursPage,
+  OnboardingChecklistPage,
+  OnboardingAnalyticsPage,
+} from "@/features/agent-rag/onboarding/OnboardingPages";
 
 import { ContentStudioPage } from "@/features/marketing/ContentStudio";
 import {
@@ -182,6 +189,11 @@ const PAGES: Record<string, PageEl> = {
   "actions/users-journeys": <UserJourneysPage />,
 
   "agent/agents": <RagAgentsPage />,
+  "agent/onboarding": <OnboardingOverviewPage />,
+  "agent/onboarding-flows": <OnboardingFlowsPage />,
+  "agent/onboarding-tours": <OnboardingToursPage />,
+  "agent/onboarding-checklist": <OnboardingChecklistPage />,
+  "agent/onboarding-analytics": <OnboardingAnalyticsPage />,
 
   "marketing/overview": <MarketingOverviewPage />,
   "marketing/content-studio": <ContentStudioPage />,
