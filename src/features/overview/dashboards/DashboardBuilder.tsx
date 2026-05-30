@@ -28,7 +28,10 @@ import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { WidgetView, type CrossFilter } from "./WidgetView";
 import { WidgetConfigDialog } from "./WidgetConfigDialog";
+import { WidgetCatalogDialog } from "./WidgetCatalogDialog";
 import { exportDashboardPdf } from "./exportPdf";
+import type { CatalogWidget } from "./widgetCatalog";
+import { LayoutGrid } from "lucide-react";
 import type { Widget, WidgetConfig, WidgetType } from "./types";
 
 const COLS = 12;
@@ -52,6 +55,7 @@ export function DashboardBuilderPage() {
 
   const [editMode, setEditMode] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [editingWidget, setEditingWidget] = useState<Widget | null>(null);
   const [dirtyLayout, setDirtyLayout] = useState<GridItem[] | null>(null);
   const [savingLayout, setSavingLayout] = useState(false);
@@ -137,6 +141,20 @@ export function DashboardBuilderPage() {
     queryClient.invalidateQueries({ queryKey: ["dashboard-widgets", dashboardId] });
   }
 
+  async function addFromCatalog(cw: CatalogWidget) {
+    if (!workspaceId || !dashboardId) return;
+    const size = DEFAULT_SIZE[cw.type];
+    await supabase.from("dashboard_widgets").insert({
+      dashboard_id: dashboardId,
+      workspace_id: workspaceId,
+      type: cw.type,
+      title: cw.title,
+      config: cw.config,
+      position: { x: 0, y: 0, w: size.w, h: size.h },
+    });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-widgets", dashboardId] });
+  }
+
   async function deleteWidget(id: string) {
     await supabase.from("dashboard_widgets").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["dashboard-widgets", dashboardId] });
@@ -210,8 +228,11 @@ export function DashboardBuilderPage() {
           <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting || widgets.length === 0} title="Export to PDF">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setCatalogOpen(true)} title="Browse pre-configured widgets">
+            <LayoutGrid className="h-4 w-4" /> From catalog
+          </Button>
           <Button variant="outline" size="sm" onClick={() => { setEditingWidget(null); setConfigOpen(true); }}>
-            <Plus className="h-4 w-4" /> Add widget
+            <Plus className="h-4 w-4" /> Custom widget
           </Button>
           {editMode ? (
             <Button size="sm" onClick={saveLayout} disabled={savingLayout}>
@@ -249,9 +270,14 @@ export function DashboardBuilderPage() {
           title="Empty dashboard"
           description="Add KPI cards, charts, tables or notes. Drag to arrange, resize from the corner."
           action={
-            <Button onClick={() => { setEditingWidget(null); setConfigOpen(true); }}>
-              <Plus className="h-4 w-4" /> Add your first widget
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button onClick={() => setCatalogOpen(true)}>
+                <LayoutGrid className="h-4 w-4" /> Pick from catalog
+              </Button>
+              <Button variant="outline" onClick={() => { setEditingWidget(null); setConfigOpen(true); }}>
+                <Plus className="h-4 w-4" /> Custom widget
+              </Button>
+            </div>
           }
         />
       ) : (
@@ -313,6 +339,11 @@ export function DashboardBuilderPage() {
         onOpenChange={setConfigOpen}
         widget={editingWidget}
         onSave={saveWidget}
+      />
+      <WidgetCatalogDialog
+        open={catalogOpen}
+        onOpenChange={setCatalogOpen}
+        onPick={addFromCatalog}
       />
     </div>
   );
