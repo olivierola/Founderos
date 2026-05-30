@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Link as LinkIcon, AlignLeft, AlignCenter, AlignRight, Type } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -25,8 +26,34 @@ const TYPES: { value: WidgetType; label: string }[] = [
   { value: "area", label: "Area chart" },
   { value: "pie", label: "Pie chart" },
   { value: "table", label: "Table" },
-  { value: "markdown", label: "Text / note" },
+  { value: "markdown", label: "Text / heading" },
 ];
+
+/** Wrap or insert markdown markers at the cursor in a textarea. */
+function applyMarkdown(
+  ref: React.RefObject<HTMLTextAreaElement>,
+  current: string,
+  setText: (v: string) => void,
+  before: string,
+  after = before,
+  placeholder = "text",
+) {
+  const ta = ref.current;
+  if (!ta) {
+    setText(current + before + placeholder + after);
+    return;
+  }
+  const start = ta.selectionStart ?? current.length;
+  const end = ta.selectionEnd ?? current.length;
+  const selected = current.slice(start, end) || placeholder;
+  const next = current.slice(0, start) + before + selected + after + current.slice(end);
+  setText(next);
+  requestAnimationFrame(() => {
+    ta.focus();
+    ta.selectionStart = start + before.length;
+    ta.selectionEnd = start + before.length + selected.length;
+  });
+}
 
 const AGG_FNS = ["count", "count_distinct", "sum", "avg", "min", "max"] as const;
 const BUCKET_UNITS = [
@@ -106,18 +133,8 @@ export function WidgetConfigDialog({ open, onOpenChange, widget, onSave }: Props
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Widget title" />
           </div>
 
-          {/* Markdown */}
-          {type === "markdown" && (
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Text</label>
-              <textarea
-                value={cfg.text ?? ""}
-                onChange={(e) => setCfg({ ...cfg, text: e.target.value })}
-                rows={5}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-          )}
+          {/* Markdown / Text / Heading */}
+          {type === "markdown" && <MarkdownEditor cfg={cfg} setCfg={setCfg} />}
 
           {/* Data source */}
           {isData && (
@@ -449,5 +466,146 @@ export function WidgetConfigDialog({ open, onOpenChange, widget, onSave }: Props
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface MarkdownEditorProps {
+  cfg: WidgetConfig;
+  setCfg: (c: WidgetConfig) => void;
+}
+
+function MarkdownEditor({ cfg, setCfg }: MarkdownEditorProps) {
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const text = cfg.text ?? "";
+  const setText = (t: string) => setCfg({ ...cfg, text: t });
+  const align = cfg.textAlign ?? "left";
+  const headingMode = !!cfg.headingLevel;
+
+  const toolBtn = "inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
+  const activeBtn = "inline-flex h-7 w-7 items-center justify-center rounded bg-secondary text-foreground";
+
+  return (
+    <div className="space-y-2">
+      {/* Mode toggle */}
+      <div className="flex items-center gap-1 rounded-md border border-border bg-card p-0.5 text-xs">
+        <button
+          type="button"
+          onClick={() => setCfg({ ...cfg, headingLevel: undefined })}
+          className={
+            "inline-flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 transition-colors " +
+            (!headingMode ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")
+          }
+        >
+          <Type className="h-3.5 w-3.5" /> Rich text
+        </button>
+        <button
+          type="button"
+          onClick={() => setCfg({ ...cfg, headingLevel: cfg.headingLevel ?? 2 })}
+          className={
+            "inline-flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 transition-colors " +
+            (headingMode ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")
+          }
+        >
+          <Heading2 className="h-3.5 w-3.5" /> Heading only
+        </button>
+      </div>
+
+      {/* Heading-mode controls */}
+      {headingMode && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Level</span>
+          <div className="flex gap-1">
+            {[1, 2, 3, 4].map((lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => setCfg({ ...cfg, headingLevel: lvl as 1 | 2 | 3 | 4 })}
+                className={cfg.headingLevel === lvl ? activeBtn + " px-2 w-auto" : toolBtn + " px-2 w-auto"}
+              >
+                H{lvl}
+              </button>
+            ))}
+          </div>
+          <span className="ml-2 text-muted-foreground">Align</span>
+          <div className="flex gap-1">
+            <button type="button" onClick={() => setCfg({ ...cfg, textAlign: "left" })} className={align === "left" ? activeBtn : toolBtn} title="Left">
+              <AlignLeft className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={() => setCfg({ ...cfg, textAlign: "center" })} className={align === "center" ? activeBtn : toolBtn} title="Center">
+              <AlignCenter className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={() => setCfg({ ...cfg, textAlign: "right" })} className={align === "right" ? activeBtn : toolBtn} title="Right">
+              <AlignRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rich text toolbar (markdown shortcuts) */}
+      {!headingMode && (
+        <div className="flex flex-wrap items-center gap-0.5 rounded-md border border-border bg-card p-1">
+          <button type="button" className={toolBtn} title="Heading 1" onClick={() => applyMarkdown(taRef, text, setText, "# ", "", "Title")}>
+            <Heading1 className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className={toolBtn} title="Heading 2" onClick={() => applyMarkdown(taRef, text, setText, "## ", "", "Subtitle")}>
+            <Heading2 className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className={toolBtn} title="Heading 3" onClick={() => applyMarkdown(taRef, text, setText, "### ", "", "Section")}>
+            <Heading3 className="h-3.5 w-3.5" />
+          </button>
+          <div className="mx-1 h-4 w-px bg-border" />
+          <button type="button" className={toolBtn} title="Bold (**text**)" onClick={() => applyMarkdown(taRef, text, setText, "**")}>
+            <Bold className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className={toolBtn} title="Italic (*text*)" onClick={() => applyMarkdown(taRef, text, setText, "*")}>
+            <Italic className="h-3.5 w-3.5" />
+          </button>
+          <div className="mx-1 h-4 w-px bg-border" />
+          <button type="button" className={toolBtn} title="Bullet list" onClick={() => applyMarkdown(taRef, text, setText, "\n- ", "", "item")}>
+            <List className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className={toolBtn} title="Numbered list" onClick={() => applyMarkdown(taRef, text, setText, "\n1. ", "", "item")}>
+            <ListOrdered className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className={toolBtn} title="Quote" onClick={() => applyMarkdown(taRef, text, setText, "\n> ", "", "quote")}>
+            <Quote className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className={toolBtn} title="Link" onClick={() => applyMarkdown(taRef, text, setText, "[", "](https://)", "label")}>
+            <LinkIcon className="h-3.5 w-3.5" />
+          </button>
+          <div className="mx-1 h-4 w-px bg-border" />
+          <div className="ml-auto flex gap-1">
+            <button type="button" onClick={() => setCfg({ ...cfg, textAlign: "left" })} className={align === "left" ? activeBtn : toolBtn} title="Align left">
+              <AlignLeft className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={() => setCfg({ ...cfg, textAlign: "center" })} className={align === "center" ? activeBtn : toolBtn} title="Align center">
+              <AlignCenter className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={() => setCfg({ ...cfg, textAlign: "right" })} className={align === "right" ? activeBtn : toolBtn} title="Align right">
+              <AlignRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <textarea
+        ref={taRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={headingMode ? 2 : 7}
+        placeholder={
+          headingMode
+            ? "Section heading…"
+            : "# Title\n\nSupports **bold**, *italic*, lists, [links](https://example.com), tables, code blocks…"
+        }
+        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+
+      {!headingMode && text.trim() && (
+        <p className="text-[11px] text-muted-foreground">
+          Markdown is rendered live in the widget — supports GFM (tables, task lists, strikethrough).
+        </p>
+      )}
+    </div>
   );
 }

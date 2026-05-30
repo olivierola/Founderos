@@ -28,6 +28,11 @@ export interface WidgetConfig {
   showDelta?: boolean; // compare last vs previous point of a time series
   // markdown
   text?: string;
+  /** Optional heading level applied to a "text" widget. When set, the value is
+   *  rendered as an H1/H2/H3/H4 — useful to drop section titles between charts. */
+  headingLevel?: 1 | 2 | 3 | 4;
+  /** Optional text alignment for markdown widgets. */
+  textAlign?: "left" | "center" | "right";
   // optional formula applied to a numeric result (uses `value`, basic JS-safe expr)
   formula?: string;
   // cross-filtering: which column this chart emits when a segment is clicked

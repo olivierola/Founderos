@@ -5,6 +5,7 @@
 import type { WidgetConfig, WidgetType } from "./types";
 
 export type WidgetCategory =
+  | "Text"
   | "Finance"
   | "Costs"
   | "Users"
@@ -14,7 +15,8 @@ export type WidgetCategory =
   | "Security"
   | "Health"
   | "Ops"
-  | "AI";
+  | "AI"
+  | "Integrations";
 
 export interface CatalogWidget {
   id: string;
@@ -600,6 +602,837 @@ export const WIDGET_CATALOG: CatalogWidget[] = [
       },
       xKey: "date",
       yKey: "value",
+    },
+  },
+
+  /* ===================== Text / Layout ===================== */
+  {
+    id: "text-section-title",
+    category: "Text",
+    title: "Section heading",
+    description: "Big H2 title to separate sections in the dashboard.",
+    type: "markdown",
+    config: { text: "Section title", headingLevel: 2, textAlign: "left" },
+  },
+  {
+    id: "text-page-title",
+    category: "Text",
+    title: "Page title",
+    description: "Large centered H1 — good for the top of a dashboard.",
+    type: "markdown",
+    config: { text: "Dashboard", headingLevel: 1, textAlign: "center" },
+  },
+  {
+    id: "text-subtitle",
+    category: "Text",
+    title: "Subtitle",
+    description: "Smaller H3 heading.",
+    type: "markdown",
+    config: { text: "Subtitle", headingLevel: 3, textAlign: "left" },
+  },
+  {
+    id: "text-note",
+    category: "Text",
+    title: "Note / paragraph",
+    description: "Formatted markdown note with bold, italic, lists, links.",
+    type: "markdown",
+    config: {
+      text:
+        "**Note.** Add context to your dashboard. Supports *italic*, [links](https://example.com), `code`, lists and tables.",
+      textAlign: "left",
+    },
+  },
+  {
+    id: "text-checklist",
+    category: "Text",
+    title: "Checklist",
+    description: "Markdown task list — GFM checkboxes.",
+    type: "markdown",
+    config: {
+      text: "- [ ] First task\n- [ ] Second task\n- [x] Done",
+      textAlign: "left",
+    },
+  },
+  {
+    id: "text-divider",
+    category: "Text",
+    title: "Divider",
+    description: "Horizontal rule to break sections.",
+    type: "markdown",
+    config: { text: "---", textAlign: "left" },
+  },
+
+  /* ===================== Finance — extras ===================== */
+  {
+    id: "fin-total-revenue",
+    category: "Finance",
+    title: "Total revenue (all time)",
+    description: "Lifetime revenue from the metrics snapshot.",
+    type: "kpi",
+    config: {
+      source: { kind: "metrics", metric: "total_revenue_cents" },
+      format: "currency",
+      formula: "value / 100",
+    },
+  },
+  {
+    id: "fin-revenue-30d",
+    category: "Finance",
+    title: "Revenue (30d)",
+    description: "Trailing 30-day revenue.",
+    type: "kpi",
+    config: {
+      source: { kind: "metrics", metric: "revenue_last_30d_cents" },
+      format: "currency",
+      formula: "value / 100",
+    },
+  },
+  {
+    id: "fin-revenue-7d",
+    category: "Finance",
+    title: "Revenue (7d)",
+    description: "Trailing 7-day revenue.",
+    type: "kpi",
+    config: {
+      source: { kind: "metrics", metric: "revenue_last_7d_cents" },
+      format: "currency",
+      formula: "value / 100",
+    },
+  },
+  {
+    id: "fin-churned-30d",
+    category: "Finance",
+    title: "Churned (30d)",
+    description: "Customers churned in the last 30 days.",
+    type: "kpi",
+    config: { source: { kind: "metrics", metric: "churned_customers_30d" } },
+  },
+  {
+    id: "fin-arr-trend",
+    category: "Finance",
+    title: "ARR trend",
+    description: "Annualised revenue over time.",
+    type: "area",
+    config: {
+      source: { kind: "metrics", metric: "arr_cents" },
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+  {
+    id: "fin-active-subs-trend",
+    category: "Finance",
+    title: "Active subs trend",
+    description: "Number of active subscriptions over time.",
+    type: "line",
+    config: {
+      source: { kind: "metrics", metric: "active_subscriptions" },
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+  {
+    id: "fin-customers-trend",
+    category: "Finance",
+    title: "Customers trend",
+    description: "Customer count over time.",
+    type: "area",
+    config: {
+      source: { kind: "metrics", metric: "customers" },
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+  {
+    id: "fin-churn-trend",
+    category: "Finance",
+    title: "Churn rate trend",
+    description: "30d churn rate evolution.",
+    type: "line",
+    config: {
+      source: { kind: "metrics", metric: "churn_rate_30d" },
+      format: "percent",
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+  {
+    id: "fin-trial-users",
+    category: "Finance",
+    title: "Trial users",
+    description: "Subscriptions currently in trial.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "subscriptions",
+        aggregate: { fn: "count", column: "id" },
+        filters: [{ column: "status", op: "=", value: "trialing" }],
+      },
+    },
+  },
+  {
+    id: "fin-past-due",
+    category: "Finance",
+    title: "Past-due subs",
+    description: "Subscriptions in past_due state.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "subscriptions",
+        aggregate: { fn: "count", column: "id" },
+        filters: [{ column: "status", op: "=", value: "past_due" }],
+      },
+    },
+  },
+  {
+    id: "fin-canceled-30d",
+    category: "Finance",
+    title: "Canceled (30d)",
+    description: "Subscriptions canceled in the last 30 days.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "subscriptions",
+        aggregate: { fn: "count", column: "id" },
+        filters: [{ column: "status", op: "=", value: "canceled" }],
+      },
+    },
+  },
+  {
+    id: "fin-recent-revenue",
+    category: "Finance",
+    title: "Recent revenue events",
+    description: "Latest 10 revenue records.",
+    type: "table",
+    config: {
+      source: {
+        kind: "internal",
+        table: "revenue_records",
+        order_by: "recorded_at",
+        order_dir: "desc",
+        limit: 10,
+      },
+    },
+  },
+  {
+    id: "fin-recent-invoices",
+    category: "Finance",
+    title: "Recent invoices",
+    description: "Last 20 invoices.",
+    type: "table",
+    config: {
+      source: {
+        kind: "internal",
+        table: "invoices",
+        order_by: "created_at",
+        order_dir: "desc",
+        limit: 20,
+      },
+    },
+  },
+  {
+    id: "fin-invoices-by-status",
+    category: "Finance",
+    title: "Invoices by status",
+    description: "Distribution of invoices across statuses.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "invoices",
+        aggregate: { fn: "count", column: "id" },
+        group_by: "status",
+      },
+      xKey: "label",
+      yKey: "value",
+      emitFilterColumn: "status",
+    },
+  },
+  {
+    id: "fin-signups-by-month",
+    category: "Finance",
+    title: "Signups by month",
+    description: "New customers per month.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "customers",
+        aggregate: { fn: "count", column: "id" },
+        bucket: { column: "created_at", unit: "month" },
+      },
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+  {
+    id: "fin-top-customers",
+    category: "Finance",
+    title: "Top customers by LTV",
+    description: "Top 20 customers ranked by lifetime value.",
+    type: "table",
+    config: {
+      source: {
+        kind: "internal",
+        table: "customers",
+        order_by: "lifetime_value_cents",
+        order_dir: "desc",
+        limit: 20,
+      },
+    },
+  },
+
+  /* ===================== Costs — extras ===================== */
+  {
+    id: "costs-total-recorded",
+    category: "Costs",
+    title: "Total recorded costs",
+    description: "Sum of all cost records.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "cost_records",
+        aggregate: { fn: "sum", column: "amount_cents" },
+      },
+      format: "currency",
+      formula: "value / 100",
+    },
+  },
+  {
+    id: "costs-by-category",
+    category: "Costs",
+    title: "Spend by category",
+    description: "Cost records grouped by category.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "cost_records",
+        aggregate: { fn: "sum", column: "amount_cents" },
+        group_by: "category",
+      },
+      xKey: "label",
+      yKey: "value",
+      emitFilterColumn: "category",
+    },
+  },
+  {
+    id: "costs-by-provider",
+    category: "Costs",
+    title: "Spend by provider",
+    description: "Cost records grouped by provider.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "cost_records",
+        aggregate: { fn: "sum", column: "amount_cents" },
+        group_by: "provider",
+      },
+      xKey: "label",
+      yKey: "value",
+      emitFilterColumn: "provider",
+    },
+  },
+  {
+    id: "costs-llm-calls-count",
+    category: "Costs",
+    title: "LLM calls count",
+    description: "Total number of LLM calls.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "llm_usage",
+        aggregate: { fn: "count", column: "id" },
+      },
+    },
+  },
+  {
+    id: "costs-llm-tokens-total",
+    category: "Costs",
+    title: "LLM tokens (total)",
+    description: "Sum of total tokens consumed.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "llm_usage",
+        aggregate: { fn: "sum", column: "tokens" },
+      },
+    },
+  },
+  {
+    id: "costs-llm-by-model",
+    category: "Costs",
+    title: "LLM cost by model",
+    description: "Spend grouped by model name.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "llm_usage",
+        aggregate: { fn: "sum", column: "cost_cents" },
+        group_by: "model",
+      },
+      xKey: "label",
+      yKey: "value",
+      emitFilterColumn: "model",
+    },
+  },
+
+  /* ===================== Users — extras ===================== */
+  {
+    id: "users-churned-30d",
+    category: "Users",
+    title: "Churned (30d)",
+    description: "Customers churned in the last 30 days.",
+    type: "kpi",
+    config: { source: { kind: "metrics", metric: "churned_customers_30d" } },
+  },
+  {
+    id: "users-dau",
+    category: "Users",
+    title: "DAU (1d)",
+    description: "Distinct users with a product event in the last day.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "product_events",
+        aggregate: { fn: "count_distinct", column: "user_id" },
+      },
+    },
+  },
+  {
+    id: "users-wau",
+    category: "Users",
+    title: "WAU (7d)",
+    description: "Distinct users active over the last 7 days.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "product_events",
+        aggregate: { fn: "count_distinct", column: "user_id" },
+      },
+    },
+  },
+  {
+    id: "users-mau",
+    category: "Users",
+    title: "MAU (30d)",
+    description: "Distinct monthly active users.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "product_events",
+        aggregate: { fn: "count_distinct", column: "user_id" },
+      },
+    },
+  },
+
+  /* ===================== Engagement — extras ===================== */
+  {
+    id: "eng-events-by-hour",
+    category: "Engagement",
+    title: "Events by hour",
+    description: "Product events grouped by event_name (top 10).",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "product_events",
+        aggregate: { fn: "count", column: "id" },
+        group_by: "event_name",
+        order_by: "value",
+        order_dir: "desc",
+        limit: 10,
+      },
+      xKey: "label",
+      yKey: "value",
+    },
+  },
+  {
+    id: "eng-activity-daily",
+    category: "Engagement",
+    title: "Activity volume (daily)",
+    description: "Activity log entries per day.",
+    type: "line",
+    config: {
+      source: {
+        kind: "internal",
+        table: "activity_logs",
+        aggregate: { fn: "count", column: "id" },
+        bucket: { column: "created_at", unit: "day" },
+      },
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+
+  /* ===================== Marketing — extras ===================== */
+  {
+    id: "mkt-posts-by-status",
+    category: "Marketing",
+    title: "Posts by status",
+    description: "Marketing posts split by status (via activity_logs).",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "activity_logs",
+        aggregate: { fn: "count", column: "id" },
+        group_by: "event_type",
+        filters: [{ column: "event_type", op: "LIKE", value: "marketing.%" }],
+      },
+      xKey: "label",
+      yKey: "value",
+    },
+  },
+
+  /* ===================== Code — extras ===================== */
+  {
+    id: "code-failed-scans",
+    category: "Code",
+    title: "Failed scans",
+    description: "Recent failed scan jobs (best-effort proxy).",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "scan_results",
+        aggregate: { fn: "count", column: "id" },
+        filters: [{ column: "ai_analysis", op: "is", value: "null" }],
+      },
+    },
+  },
+
+  /* ===================== Security — extras ===================== */
+  {
+    id: "sec-critical-alerts",
+    category: "Security",
+    title: "Critical alerts (open)",
+    description: "Open alerts with severity=critical.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "alerts",
+        aggregate: { fn: "count", column: "id" },
+        filters: [
+          { column: "status", op: "=", value: "open" },
+          { column: "severity", op: "=", value: "critical" },
+        ],
+      },
+    },
+  },
+  {
+    id: "sec-high-alerts",
+    category: "Security",
+    title: "High alerts (open)",
+    description: "Open alerts with severity=high.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "alerts",
+        aggregate: { fn: "count", column: "id" },
+        filters: [
+          { column: "status", op: "=", value: "open" },
+          { column: "severity", op: "=", value: "high" },
+        ],
+      },
+    },
+  },
+  {
+    id: "sec-alerts-trend",
+    category: "Security",
+    title: "Alerts over time",
+    description: "Alert volume per week.",
+    type: "line",
+    config: {
+      source: {
+        kind: "internal",
+        table: "alerts",
+        aggregate: { fn: "count", column: "id" },
+        bucket: { column: "created_at", unit: "week" },
+      },
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+  {
+    id: "sec-recent-alerts",
+    category: "Security",
+    title: "Recent alerts",
+    description: "Last 10 alerts (any status).",
+    type: "table",
+    config: {
+      source: {
+        kind: "internal",
+        table: "alerts",
+        order_by: "created_at",
+        order_dir: "desc",
+        limit: 10,
+      },
+    },
+  },
+
+  /* ===================== Health — extras ===================== */
+  {
+    id: "health-incidents-count",
+    category: "Health",
+    title: "Open incidents (count)",
+    description: "Number of unresolved incidents.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "incidents",
+        aggregate: { fn: "count", column: "id" },
+        filters: [{ column: "status", op: "!=", value: "resolved" }],
+      },
+    },
+  },
+  {
+    id: "health-incidents-by-severity",
+    category: "Health",
+    title: "Incidents by severity",
+    description: "Open incidents grouped by severity.",
+    type: "pie",
+    config: {
+      source: {
+        kind: "internal",
+        table: "incidents",
+        aggregate: { fn: "count", column: "id" },
+        group_by: "severity",
+        filters: [{ column: "status", op: "!=", value: "resolved" }],
+      },
+      xKey: "label",
+      yKey: "value",
+      emitFilterColumn: "severity",
+    },
+  },
+  {
+    id: "health-incidents-trend",
+    category: "Health",
+    title: "Incidents per week",
+    description: "Number of incidents reported each week.",
+    type: "line",
+    config: {
+      source: {
+        kind: "internal",
+        table: "incidents",
+        aggregate: { fn: "count", column: "id" },
+        bucket: { column: "created_at", unit: "week" },
+      },
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+  {
+    id: "health-errors-7d",
+    category: "Health",
+    title: "Errors (7d)",
+    description: "Error events in the last 7 days.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "error_events",
+        aggregate: { fn: "count", column: "id" },
+      },
+    },
+  },
+  {
+    id: "health-errors-by-level",
+    category: "Health",
+    title: "Errors by level",
+    description: "Error events grouped by severity level.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "error_events",
+        aggregate: { fn: "count", column: "id" },
+        group_by: "level",
+      },
+      xKey: "label",
+      yKey: "value",
+      emitFilterColumn: "level",
+    },
+  },
+  {
+    id: "health-top-errors",
+    category: "Health",
+    title: "Top error messages",
+    description: "Most frequent error messages.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "error_events",
+        aggregate: { fn: "count", column: "id" },
+        group_by: "message",
+        order_by: "value",
+        order_dir: "desc",
+        limit: 10,
+      },
+      xKey: "label",
+      yKey: "value",
+    },
+  },
+  {
+    id: "health-deploys-24h",
+    category: "Health",
+    title: "Deploys (24h)",
+    description: "Number of deployments in the last day.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "deployments",
+        aggregate: { fn: "count", column: "id" },
+      },
+    },
+  },
+  {
+    id: "health-deploys-by-env",
+    category: "Health",
+    title: "Deploys by environment",
+    description: "Deployments grouped by environment.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "deployments",
+        aggregate: { fn: "count", column: "id" },
+        group_by: "environment",
+      },
+      xKey: "label",
+      yKey: "value",
+      emitFilterColumn: "environment",
+    },
+  },
+  {
+    id: "health-failed-deploys",
+    category: "Health",
+    title: "Failed deploys",
+    description: "Recent failed deployments.",
+    type: "table",
+    config: {
+      source: {
+        kind: "internal",
+        table: "deployments",
+        order_by: "created_at",
+        order_dir: "desc",
+        limit: 10,
+        filters: [{ column: "state", op: "=", value: "failure" }],
+      },
+    },
+  },
+
+  /* ===================== Ops — extras ===================== */
+  {
+    id: "ops-activity-24h",
+    category: "Ops",
+    title: "Activity events (24h)",
+    description: "Number of activity entries in the last 24 hours.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "activity_logs",
+        aggregate: { fn: "count", column: "id" },
+      },
+    },
+  },
+  {
+    id: "ops-activity-by-actor",
+    category: "Ops",
+    title: "Activity by actor",
+    description: "Top actors by number of activity events.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "activity_logs",
+        aggregate: { fn: "count", column: "id" },
+        group_by: "actor_user_id",
+        order_by: "value",
+        order_dir: "desc",
+        limit: 10,
+      },
+      xKey: "label",
+      yKey: "value",
+    },
+  },
+
+  /* ===================== AI — extras ===================== */
+  {
+    id: "ai-llm-calls-7d",
+    category: "AI",
+    title: "LLM calls (7d)",
+    description: "LLM API calls over the last week.",
+    type: "kpi",
+    config: {
+      source: {
+        kind: "internal",
+        table: "llm_usage",
+        aggregate: { fn: "count", column: "id" },
+      },
+    },
+  },
+  {
+    id: "ai-llm-tokens-by-model",
+    category: "AI",
+    title: "LLM tokens by model",
+    description: "Total tokens grouped by model.",
+    type: "bar",
+    config: {
+      source: {
+        kind: "internal",
+        table: "llm_usage",
+        aggregate: { fn: "sum", column: "tokens" },
+        group_by: "model",
+      },
+      xKey: "label",
+      yKey: "value",
+    },
+  },
+  {
+    id: "ai-llm-cost-day",
+    category: "AI",
+    title: "LLM cost per day",
+    description: "Daily LLM spend over time.",
+    type: "line",
+    config: {
+      source: {
+        kind: "internal",
+        table: "llm_usage",
+        aggregate: { fn: "sum", column: "cost_cents" },
+        bucket: { column: "created_at", unit: "day" },
+      },
+      xKey: "date",
+      yKey: "value",
+    },
+  },
+
+  /* ===================== Integrations ===================== */
+  {
+    id: "int-connectors-total",
+    category: "Integrations",
+    title: "Connectors total",
+    description: "Total connectors configured for this project.",
+    type: "kpi",
+    config: {
+      source: { kind: "internal", table: "activity_logs", aggregate: { fn: "count", column: "id" }, filters: [{ column: "event_type", op: "=", value: "connector.connected" }] },
     },
   },
 ];

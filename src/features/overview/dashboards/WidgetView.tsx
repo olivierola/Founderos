@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ResponsiveContainer,
   LineChart,
@@ -87,9 +89,74 @@ export function WidgetView({
   });
 
   if (widget.type === "markdown") {
+    const text = widget.config.text ?? "";
+    const align = widget.config.textAlign ?? "left";
+    const headingLevel = widget.config.headingLevel;
+
+    // When a heading level is set, render the whole text as a single heading
+    // (clean shortcut for "Section title" widgets without typing # markers).
+    if (headingLevel && text.trim()) {
+      const sizes: Record<1 | 2 | 3 | 4, string> = {
+        1: "text-3xl font-semibold tracking-tight",
+        2: "text-2xl font-semibold tracking-tight",
+        3: "text-xl font-semibold",
+        4: "text-base font-semibold",
+      };
+      const alignClass = align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left";
+      return (
+        <div className={`flex h-full items-center px-1 ${alignClass}`}>
+          <div className={`w-full ${sizes[headingLevel]}`}>{text}</div>
+        </div>
+      );
+    }
+
+    if (!text.trim()) {
+      return (
+        <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
+          Empty note. Edit this widget to add text.
+        </div>
+      );
+    }
+
+    const alignClass = align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left";
     return (
-      <div className="h-full overflow-auto whitespace-pre-wrap p-1 text-sm text-foreground/90">
-        {widget.config.text || "Empty note. Edit this widget to add text."}
+      <div className={`h-full overflow-auto p-1 text-sm leading-relaxed ${alignClass}`}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            h1: ({ children }) => <h1 className="mb-2 mt-3 text-2xl font-semibold tracking-tight first:mt-0">{children}</h1>,
+            h2: ({ children }) => <h2 className="mb-2 mt-3 text-xl font-semibold first:mt-0">{children}</h2>,
+            h3: ({ children }) => <h3 className="mb-1.5 mt-2 text-base font-semibold first:mt-0">{children}</h3>,
+            h4: ({ children }) => <h4 className="mb-1 mt-2 text-sm font-semibold first:mt-0">{children}</h4>,
+            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+            ul: ({ children }) => <ul className="mb-2 ml-4 list-disc space-y-0.5 last:mb-0">{children}</ul>,
+            ol: ({ children }) => <ol className="mb-2 ml-4 list-decimal space-y-0.5 last:mb-0">{children}</ol>,
+            strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+            em: ({ children }) => <em className="italic">{children}</em>,
+            a: ({ href, children }) => (
+              <a href={href} target="_blank" rel="noopener noreferrer" className="text-[hsl(var(--primary-soft))] underline underline-offset-2 hover:opacity-80">
+                {children}
+              </a>
+            ),
+            code: ({ inline, children, ...props }: any) =>
+              inline ? (
+                <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em]" {...props}>
+                  {children}
+                </code>
+              ) : (
+                <code className="block" {...props}>{children}</code>
+              ),
+            pre: ({ children }) => (
+              <pre className="my-2 overflow-x-auto rounded border border-border bg-secondary p-2 text-xs">{children}</pre>
+            ),
+            blockquote: ({ children }) => (
+              <blockquote className="my-2 border-l-2 border-border pl-3 italic text-muted-foreground">{children}</blockquote>
+            ),
+            hr: () => <hr className="my-3 border-border" />,
+          }}
+        >
+          {text}
+        </ReactMarkdown>
       </div>
     );
   }
