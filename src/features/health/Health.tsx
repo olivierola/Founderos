@@ -17,6 +17,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { ExportMenu } from "@/components/ExportMenu";
 import { MetricCard } from "@/components/MetricCard";
 import { SparkChart } from "@/components/SparkChart";
+import { useToast } from "@/components/ToastProvider";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -364,15 +366,31 @@ export function DeploymentsPage() {
   const [syncReport, setSyncReport] = useState<
     Array<{ provider: string; inserted: number; updated: number; error?: string }> | null
   >(null);
+  const [detail, setDetail] = useState<any | null>(null);
+  const toast = useToast();
 
   async function sync() {
     if (!workspaceId || !projectId) return;
     setSyncing(true);
     setSyncReport(null);
     try {
-      const res = await callEdge<{
-        results: Array<{ provider: string; inserted: number; updated: number; error?: string }>;
-      }>("sync-deployments", { workspace_id: workspaceId, project_id: projectId });
+      const res = await toast.run(
+        () =>
+          callEdge<{
+            results: Array<{ provider: string; inserted: number; updated: number; error?: string }>;
+          }>("sync-deployments", { workspace_id: workspaceId, project_id: projectId }),
+        {
+          loading: "Syncing deployments…",
+          success: (r) => {
+            const ok = r.results.filter((x) => !x.error).reduce((s, x) => s + x.inserted, 0);
+            const failed = r.results.filter((x) => x.error).length;
+            return failed > 0
+              ? `Synced ${ok} deployment(s) · ${failed} provider error${failed > 1 ? "s" : ""}`
+              : `Synced ${ok} deployment(s)`;
+          },
+          error: "Deployment sync failed",
+        },
+      );
       setSyncReport(res.results ?? []);
       queryClient.invalidateQueries({ queryKey: ["deployments", projectId] });
     } catch (e) {
@@ -494,7 +512,11 @@ export function DeploymentsPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {data.map((d: any) => (
-                    <tr key={d.id}>
+                    <tr
+                      key={d.id}
+                      className="cursor-pointer hover:bg-secondary/30"
+                      onClick={() => setDetail(d)}
+                    >
                       <td className="px-4 py-3 text-xs text-muted-foreground">
                         {d.created_at_provider ? new Date(d.created_at_provider).toLocaleString() : "—"}
                       </td>
@@ -519,7 +541,7 @@ export function DeploymentsPage() {
                           {d.state ?? "unknown"}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         {d.url ? (
                           <a
                             href={d.url}
@@ -541,6 +563,172 @@ export function DeploymentsPage() {
           </Card>
         </>
       )}
+
+      <DeploymentDetailDialog deployment={detail} onClose={() => setDetail(null)} />
+    </div>
+  );
+}
+
+function DeploymentDetailDialog({ deployment, onClose }: { deployment: any; onClose: () => void }) {
+  const [logs, setLogs] = useState<string | null>(null);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const toast = useToast();
+  const open = !!deployment;
+
+  // Reset when changing deployment.
+  useEffect(() => {
+    setLogs(null);
+  }, [deployment?.id]);
+
+  async function fetchLogs() {
+    if (!deployment) return;
+    setLoadingLogs(true);
+    try {
+      const res = await toast.run(
+        () =>
+          callEdge<{ logs: string; url?: string }>("fetch-deployment-logs", {
+            deployment_id: deployment.id,
+          }),
+        { loading: "Fetching build logs…", success: "Logs loaded", error: "Could not fetch logs" },
+      );
+      setLogs(res.logs ?? "");
+    } catch {
+      /* toast already shown */
+    } finally {
+      setLoadingLogs(false);
+    }
+  }
+
+  if (!deployment) return null;
+  const md = (deployment.metadata ?? {}) as Record<string, any>;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span>{providerLabel(deployment.provider)}</span>
+            <Badge variant="outline">{deployment.environment}</Badge>
+            <Badge
+              variant={
+                deployment.state === "ready" || deployment.state === "success" || deployment.state === "live"
+                  ? "success"
+                  : deployment.state === "failure" || deployment.state === "error" || deployment.state === "failed"
+                    ? "destructive"
+                    : "secondary"
+              }
+            >
+              {deployment.state ?? "unknown"}
+            </Badge>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {/* Headline */}
+          <div className="rounded-md border border-border p-3">
+            <div className="text-xs text-muted-foreground">Deployed</div>
+            <div className="text-sm font-medium">
+              {deployment.created_at_provider
+                ? new Date(deployment.created_at_provider).toLocaleString()
+                : "—"}
+              {md.build_duration_ms && (
+                <span className="ml-2 text-muted-foreground">
+                  · built in {Math.round(md.build_duration_ms / 1000)}s
+                </span>
+              )}
+            </div>
+            {md.author && (
+              <div className="mt-1 text-xs text-muted-foreground">by {md.author}</div>
+            )}
+          </div>
+
+          {/* Commit / changes */}
+          {(deployment.sha || md.commit_message) && (
+            <div className="rounded-md border border-border p-3">
+              <div className="mb-1 text-xs text-muted-foreground">Commit</div>
+              <div className="flex items-center gap-2 text-xs">
+                {deployment.sha && (
+                  <code className="rounded bg-secondary px-1.5 py-0.5 font-mono">
+                    {deployment.sha.slice(0, 12)}
+                  </code>
+                )}
+                {deployment.ref && <span className="text-muted-foreground">on {deployment.ref}</span>}
+              </div>
+              {md.commit_message && (
+                <pre className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">{md.commit_message}</pre>
+              )}
+              {md.repository && (
+                <a
+                  href={`https://github.com/${md.repository}/commit/${deployment.sha}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 text-xs text-[hsl(var(--primary-soft))] hover:underline"
+                >
+                  View commit on GitHub <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Redirect URLs */}
+          <div className="rounded-md border border-border p-3">
+            <div className="mb-1.5 text-xs text-muted-foreground">URLs</div>
+            <div className="space-y-1.5">
+              {deployment.url && (
+                <UrlRow label="Deployment URL" url={deployment.url} />
+              )}
+              {md.inspector_url && (
+                <UrlRow label="Inspector" url={md.inspector_url} />
+              )}
+              {!deployment.url && !md.inspector_url && (
+                <span className="text-xs text-muted-foreground">No URL available.</span>
+              )}
+            </div>
+          </div>
+
+          {/* Logs */}
+          <div className="rounded-md border border-border p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">Build logs</div>
+              <Button size="sm" variant="outline" onClick={fetchLogs} disabled={loadingLogs}>
+                {loadingLogs ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                {logs === null ? "Fetch logs" : "Reload"}
+              </Button>
+            </div>
+            {logs === null ? (
+              <p className="text-xs text-muted-foreground">
+                Click "Fetch logs" to retrieve the build output from {providerLabel(deployment.provider)}.
+              </p>
+            ) : logs === "" ? (
+              <p className="text-xs text-muted-foreground">No logs available for this deployment.</p>
+            ) : (
+              <pre className="max-h-72 overflow-auto rounded bg-secondary p-3 font-mono text-[11px] leading-relaxed">
+                {logs}
+              </pre>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UrlRow({ label, url }: { label: string; url: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="truncate text-[hsl(var(--primary-soft))] hover:underline"
+      >
+        {url}
+      </a>
     </div>
   );
 }

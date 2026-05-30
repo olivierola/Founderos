@@ -78,9 +78,19 @@ Deno.serve(async (req) => {
           results.push({ provider, inserted: 0, updated: 0 });
           continue;
         }
+        // Deduplicate on the unique key to avoid PostgreSQL's
+        // "ON CONFLICT DO UPDATE command cannot affect row a second time"
+        // when the source API returns multiple rows for the same sha/env.
+        const seen = new Set<string>();
+        const dedup = rows.filter((r) => {
+          const k = `${r.project_id}|${r.provider}|${r.sha ?? ""}|${r.environment}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
         const { data, error } = await admin
           .from("deployments")
-          .upsert(rows, { onConflict: "project_id,provider,sha,environment" })
+          .upsert(dedup, { onConflict: "project_id,provider,sha,environment" })
           .select("id");
         if (error) {
           results.push({ provider, inserted: 0, updated: 0, error: error.message });
@@ -153,7 +163,20 @@ async function fetchVercel(workspaceId: string, projectId: string): Promise<Depl
     state?: string;
     target?: string;
     created?: number;
-    meta?: { githubCommitSha?: string; githubCommitRef?: string };
+    buildingAt?: number;
+    ready?: number;
+    inspectorUrl?: string;
+    aliasAssigned?: number;
+    aliasError?: { message?: string };
+    creator?: { username?: string; email?: string };
+    meta?: {
+      githubCommitSha?: string;
+      githubCommitRef?: string;
+      githubCommitMessage?: string;
+      githubCommitAuthorName?: string;
+      githubRepo?: string;
+      githubOrg?: string;
+    };
   }>;
   return list.map((d) => ({
     workspace_id: workspaceId,
@@ -165,7 +188,17 @@ async function fetchVercel(workspaceId: string, projectId: string): Promise<Depl
     state: (d.state ?? "").toLowerCase(),
     url: d.url ? `https://${d.url}` : null,
     created_at_provider: d.created ? new Date(d.created).toISOString() : null,
-    metadata: { name: d.name, uid: d.uid },
+    metadata: {
+      name: d.name,
+      uid: d.uid,
+      inspector_url: d.inspectorUrl,
+      build_duration_ms: d.ready && d.buildingAt ? d.ready - d.buildingAt : null,
+      ready_at: d.ready ? new Date(d.ready).toISOString() : null,
+      author: d.creator?.username ?? d.creator?.email ?? d.meta?.githubCommitAuthorName ?? null,
+      commit_message: d.meta?.githubCommitMessage ?? null,
+      repository:
+        d.meta?.githubOrg && d.meta?.githubRepo ? `${d.meta.githubOrg}/${d.meta.githubRepo}` : null,
+    },
   }));
 }
 
