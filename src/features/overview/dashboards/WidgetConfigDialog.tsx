@@ -262,10 +262,15 @@ export function WidgetConfigDialog({ open, onOpenChange, widget, onSave }: Props
                     <Input
                       value={src.table ?? ""}
                       onChange={(e) => setSource({ table: e.target.value })}
-                      placeholder="users / orders / events"
+                      placeholder="profiles / orders / events"
                       className="h-9 font-mono text-xs"
                     />
-                    <p className="mt-1 text-xs text-muted-foreground">Queried via the connected Supabase project's service key.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Queried via PostgREST on your connected Supabase project — only tables in
+                      the <span className="font-mono">public</span> schema are exposed. The auth
+                      table is <span className="font-mono">auth.users</span> and is not reachable
+                      this way; use a <span className="font-mono">profiles</span> table instead.
+                    </p>
                   </div>
                   {(type === "kpi" || isChart) && (
                     <div className="grid grid-cols-2 gap-2">

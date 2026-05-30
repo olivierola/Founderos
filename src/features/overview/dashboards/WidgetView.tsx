@@ -168,7 +168,7 @@ export function WidgetView({
     return <div className="flex h-full items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
   }
   if (error) {
-    return <div className="flex h-full items-center justify-center px-2 text-center text-xs text-destructive">{(error as Error).message}</div>;
+    return <WidgetError error={error as Error} source={widget.config.source} />;
   }
 
   const rows = data ?? [];
@@ -310,4 +310,66 @@ export function WidgetView({
 
 function Empty() {
   return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No data</div>;
+}
+
+/* Friendly error rendering — turn PostgREST / edge errors into readable hints
+   instead of dumping raw JSON. */
+function WidgetError({ error, source }: { error: Error; source?: WidgetSource }) {
+  const msg = error?.message ?? "Unknown error";
+  const parsed = parsePostgrestError(msg);
+
+  if (parsed) {
+    const isClient = source?.kind === "project_db";
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center text-xs text-destructive">
+        <span className="font-medium">Table not found: {parsed.missing ?? source?.table ?? "?"}</span>
+        {parsed.hint && (
+          <span className="text-muted-foreground">
+            Did you mean <span className="font-mono">{parsed.hint}</span>?
+          </span>
+        )}
+        <span className="text-[11px] text-muted-foreground">
+          {isClient
+            ? "Searched the connected project DB (PostgREST exposes only schema `public`)."
+            : "Searched FounderOS internal tables."}
+        </span>
+        <span className="text-[10px] text-muted-foreground">Edit the widget to fix the table name.</span>
+      </div>
+    );
+  }
+
+  // Generic fallback — show a one-liner, not raw JSON.
+  let display = msg;
+  try {
+    const j = JSON.parse(msg);
+    display = j.message ?? j.error ?? display;
+  } catch {
+    /* keep as-is */
+  }
+  return (
+    <div className="flex h-full items-center justify-center px-3 text-center text-xs text-destructive">
+      {display}
+    </div>
+  );
+}
+
+interface WidgetSource {
+  kind?: string;
+  table?: string;
+}
+
+function parsePostgrestError(raw: string): { missing?: string; hint?: string } | null {
+  // The edge wraps errors as `project_db query failed: {json}` — strip the prefix.
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  try {
+    const j = JSON.parse(jsonMatch[0]);
+    if (typeof j.message !== "string") return null;
+    if (j.code !== "PGRST205" && !/Could not find the table/i.test(j.message)) return null;
+    const miss = j.message.match(/'public\.([^']+)'/);
+    const hint = typeof j.hint === "string" ? (j.hint.match(/'public\.([^']+)'/) ?? [])[1] : undefined;
+    return { missing: miss?.[1], hint };
+  } catch {
+    return null;
+  }
 }
