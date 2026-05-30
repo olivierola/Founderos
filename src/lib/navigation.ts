@@ -1,10 +1,8 @@
 import {
   LayoutDashboard,
   LineChart,
-  Users,
   Megaphone,
   Code2,
-  Activity,
   Zap,
   Sparkle,
   Bot,
@@ -18,6 +16,8 @@ export interface SubNavItem {
   slug: string;
   /** Optional section label. When set, the SecondarySidebar renders a divider + label above this item. */
   group?: string;
+  /** Optional slug of the parent sub-item; when set, this item is a nested child rendered inside an accordion. */
+  parent?: string;
 }
 
 export interface ModuleNavItem {
@@ -69,22 +69,6 @@ export const MODULES: ModuleNavItem[] = [
     ],
   },
   {
-    slug: "users",
-    label: "Users",
-    icon: Users,
-    color: "text-indigo-400/55",
-    subItems: [
-      { label: "All Users", slug: "all-users" },
-      { label: "Segments", slug: "segments" },
-      { label: "Cohorts & LTV", slug: "cohorts-ltv" },
-      { label: "User 360", slug: "user-360" },
-      { label: "Engagement", slug: "engagement" },
-      { label: "Health Scores", slug: "health-scores" },
-      { label: "Churn Risk", slug: "churn-risk" },
-      { label: "Funnels", slug: "funnels" },
-    ],
-  },
-  {
     slug: "marketing",
     label: "Marketing",
     icon: Megaphone,
@@ -123,27 +107,33 @@ export const MODULES: ModuleNavItem[] = [
     ],
   },
   {
-    slug: "health",
-    label: "Health",
-    icon: Activity,
-    color: "text-teal-500/55",
-    subItems: [
-      { label: "Status", slug: "status" },
-      { label: "Uptime", slug: "uptime" },
-      { label: "Errors", slug: "errors" },
-      { label: "Performance", slug: "performance" },
-      { label: "Deployments", slug: "deployments" },
-      { label: "Incidents", slug: "incidents" },
-    ],
-  },
-  {
     slug: "actions",
     label: "Actions",
     icon: Zap,
     color: "text-slate-400",
     subItems: [
       { label: "Actions Center", slug: "quick-actions" },
+
+      // SaaS Analytics parent + nested tabs (rendered as accordion in the sidebar).
       { label: "SaaS Analytics", slug: "saas-analytics" },
+      { label: "All Users",         slug: "users-all",            parent: "saas-analytics" },
+      { label: "User 360",          slug: "users-360",            parent: "saas-analytics" },
+      { label: "Per-User Analytics", slug: "users-per-user",      parent: "saas-analytics" },
+      { label: "Group Analytics",   slug: "users-groups",         parent: "saas-analytics" },
+      { label: "Segments",          slug: "users-segments",       parent: "saas-analytics" },
+      { label: "Cohorts & LTV",     slug: "users-cohorts",        parent: "saas-analytics" },
+      { label: "Journeys",          slug: "users-journeys",       parent: "saas-analytics" },
+      { label: "Engagement",        slug: "users-engagement",     parent: "saas-analytics" },
+      { label: "Health Scores",     slug: "users-health-scores",  parent: "saas-analytics" },
+      { label: "Churn Risk",        slug: "users-churn",          parent: "saas-analytics" },
+      { label: "Funnels",           slug: "users-funnels",        parent: "saas-analytics" },
+      { label: "App Status",        slug: "health-status",        parent: "saas-analytics" },
+      { label: "Uptime",            slug: "health-uptime",        parent: "saas-analytics" },
+      { label: "Errors",            slug: "health-errors",        parent: "saas-analytics" },
+      { label: "Performance",       slug: "health-performance",   parent: "saas-analytics" },
+      { label: "Deployments",       slug: "health-deployments",   parent: "saas-analytics" },
+      { label: "Incidents",         slug: "health-incidents",     parent: "saas-analytics" },
+
       { label: "Approvals", slug: "approvals" },
       { label: "User Management", slug: "user-management" },
       { label: "Billing Operations", slug: "stripe-operations" },

@@ -107,6 +107,9 @@ import {
 } from "@/features/actions/Extra";
 import { RunbooksPage } from "@/features/actions/Runbooks";
 import { SaasAnalyticsPage } from "@/features/actions/SaasAnalytics";
+import { PerUserAnalyticsPage } from "@/features/actions/PerUserAnalytics";
+import { GroupAnalyticsPage } from "@/features/actions/GroupAnalytics";
+import { UserJourneysPage } from "@/features/actions/UserJourneys";
 
 // AI Agent
 import { AiChatPage } from "@/features/ai-agent/Chat";
@@ -165,14 +168,18 @@ const PAGES: Record<string, PageEl> = {
   "finance/costs-budgets": <BudgetsPage />,
   "finance/costs-invoices": <InvoicesPage />,
 
-  "users/all-users": <AllUsersPage />,
-  "users/segments": <SegmentsPage />,
-  "users/cohorts-ltv": <UserCohortsPage />,
-  "users/user-360": <User360Page />,
-  "users/engagement": <EngagementPage />,
-  "users/health-scores": <HealthScoresPage />,
-  "users/churn-risk": <ChurnRiskPage />,
-  "users/funnels": <FunnelsPage />,
+  // Users sub-tabs nested under Actions → SaaS Analytics
+  "actions/users-all": <AllUsersPage />,
+  "actions/users-segments": <SegmentsPage />,
+  "actions/users-cohorts": <UserCohortsPage />,
+  "actions/users-360": <User360Page />,
+  "actions/users-engagement": <EngagementPage />,
+  "actions/users-health-scores": <HealthScoresPage />,
+  "actions/users-churn": <ChurnRiskPage />,
+  "actions/users-funnels": <FunnelsPage />,
+  "actions/users-per-user": <PerUserAnalyticsPage />,
+  "actions/users-groups": <GroupAnalyticsPage />,
+  "actions/users-journeys": <UserJourneysPage />,
 
   "agent/agents": <RagAgentsPage />,
 
@@ -202,13 +209,14 @@ const PAGES: Record<string, PageEl> = {
   "code/security-license-audit": <LicenseAuditPage />,
   "code/security-compliance": <ComplianceWatchPage />,
 
-  "health/status": <HealthStatusPage />,
-  "health/uptime": <UptimePage />,
-  "health/errors": <ErrorsPage />,
-  "health/performance": <PerformancePage />,
-  "health/deployments": <DeploymentsPage />,
-  "health/incidents": <IncidentsPage />,
-  "health/database": <DatabasePage />,
+  // Health sub-tabs nested under Actions → SaaS Analytics
+  "actions/health-status": <HealthStatusPage />,
+  "actions/health-uptime": <UptimePage />,
+  "actions/health-errors": <ErrorsPage />,
+  "actions/health-performance": <PerformancePage />,
+  "actions/health-deployments": <DeploymentsPage />,
+  "actions/health-incidents": <IncidentsPage />,
+  "actions/health-database": <DatabasePage />,
 
   "actions/quick-actions": <QuickActionsPage />,
   "actions/saas-analytics": <SaasAnalyticsPage />,
