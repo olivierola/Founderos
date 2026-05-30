@@ -114,8 +114,8 @@ export function SecondarySidebar() {
             <div key={sub.slug + "-grouped"}>
               <div
                 className={cn(
-                  "px-3 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
-                  i > 0 && "mt-1 border-t border-border/60 pt-3",
+                  "px-3 pb-2 pt-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
+                  i > 0 && "mt-4 border-t border-border/60 pt-5",
                 )}
               >
                 {sub.group}
