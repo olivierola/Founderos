@@ -152,10 +152,6 @@ export const MODULES: ModuleNavItem[] = [
     subItems: [
       { label: "Agents", slug: "agents" },
       { label: "Onboarding", slug: "onboarding" },
-      { label: "Flows",     slug: "onboarding-flows",     parent: "onboarding" },
-      { label: "Tours",     slug: "onboarding-tours",     parent: "onboarding" },
-      { label: "Checklist", slug: "onboarding-checklist", parent: "onboarding" },
-      { label: "Analytics", slug: "onboarding-analytics", parent: "onboarding" },
     ],
   },
   {
