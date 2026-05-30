@@ -6,7 +6,6 @@ import {
   Workflow,
   BarChart3,
   Layers,
-  Copy,
   Check,
   Code2,
   Loader2,
@@ -117,39 +116,6 @@ export function OnboardingOverviewPage() {
 
   if (!workspaceId || !projectId) return <PageHeader title="Onboarding" />;
 
-  const integrationSnippet = agent?.public_key
-    ? `await fetch("https://your-supabase.functions.supabase.co/rag-onboarding-next-step", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    agent_public_key: "${agent.public_key}",
-    external_user_id: currentUser.id,
-    event: { type: "user.signup" },        // or { type: "project.created", data: {...} }
-  }),
-})`
-    : null;
-
-  // Dynamic onboarding SDK embed snippet — points at the deployed SDK and the
-  // orchestrate endpoint that lets the agent drive the UI live.
-  const dynamicSnippet = agent?.public_key
-    ? `<!-- 1. Embed the FounderOS Onboarding SDK -->
-<script src="https://founderos-peach.vercel.app/founderos-onboarding.js"></script>
-<script>
-  FounderOS.init({
-    agentPublicKey: "${agent.public_key}",
-    endpoint: "https://your-supabase.functions.supabase.co/rag-onboarding-orchestrate",
-    userId: window.currentUser?.id, // optional
-  });
-
-  // 2. Notify the agent when key things happen
-  FounderOS.emit("project.created", { id: project.id });
-  FounderOS.emit("payment.first_success");
-
-  // 3. Or let the user ask explicitly
-  // FounderOS.ask("How do I invite my team?");
-</script>`
-    : null;
-
   return (
     <div>
       <PageHeader
@@ -247,45 +213,14 @@ export function OnboardingOverviewPage() {
             </CardContent>
           </Card>
 
-          {/* Dynamic onboarding SDK */}
-          <Card>
-            <CardContent className="space-y-3 p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold">Dynamic onboarding (SDK)</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Drop the SDK into your SaaS. The agent will decide live what to highlight,
-                    pop up, scroll to or navigate to — using the app structure above.
-                  </p>
-                </div>
-                <Badge variant="outline" className="text-[10px]">Recommended</Badge>
-              </div>
-              {dynamicSnippet ? (
-                <CodeBlock code={dynamicSnippet} />
-              ) : (
-                <p className="text-xs text-muted-foreground">Pick an agent to see the embed snippet.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Integration (server-side, scripted flows) */}
-          <Card>
-            <CardContent className="space-y-3 p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold">Scripted flows (server API)</h2>
-                  <p className="text-xs text-muted-foreground">
-                    For predefined flows you built in the Flows / Tours / Checklist tabs, call this
-                    endpoint from your server to step through them.
-                  </p>
-                </div>
-                <Badge variant="outline" className="font-mono text-[10px]">POST</Badge>
-              </div>
-              {integrationSnippet ? (
-                <CodeBlock code={integrationSnippet} />
-              ) : (
-                <p className="text-xs text-muted-foreground">Pick an agent to see its public key.</p>
-              )}
+          {/* Reminder: embed lives in the agent Widget tab */}
+          <Card className="border-dashed">
+            <CardContent className="flex items-start justify-between gap-3 p-4 text-xs text-muted-foreground">
+              <p>
+                The widget snippet that ships onboarding to your SaaS lives in the
+                <span className="mx-1 font-medium text-foreground">agent's Widget tab</span>
+                — open the agent and copy the embed code from there.
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -315,34 +250,6 @@ function KpiTile({ icon: Icon, label, value }: { icon: React.ComponentType<{ cla
         <div className="text-2xl font-semibold tabular-nums">{formatCompact(value)}</div>
       </CardContent>
     </Card>
-  );
-}
-
-function CodeBlock({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* ignore */
-    }
-  }
-  return (
-    <div className="relative">
-      <pre className="overflow-x-auto rounded-md border border-border bg-secondary p-3 text-[11px] leading-relaxed">
-        {code}
-      </pre>
-      <button
-        type="button"
-        onClick={copy}
-        className="absolute right-2 top-2 inline-flex h-7 items-center gap-1 rounded border border-border bg-card px-2 text-[10px] text-muted-foreground hover:text-foreground"
-      >
-        {copied ? <Check className="h-3 w-3 text-[hsl(var(--accent-2))]" /> : <Copy className="h-3 w-3" />}
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
   );
 }
 

@@ -613,16 +613,78 @@ function WidgetTab({ agent }: { agent: Agent }) {
 
   function set<K extends string>(k: K, v: any) { setCfg((c) => ({ ...c, [k]: v })); }
 
-  const base = (import.meta as any).env?.VITE_SUPABASE_URL ?? "https://YOUR_PROJECT.supabase.co";
-  const snippet = `<script>
-  window.FounderOSAgent = {
-    key: "${agent.public_key}",
-    endpoint: "${base}/functions/v1/rag-chat",
-    welcome: ${JSON.stringify(agent.welcome_message ?? "Hi! How can I help you today?")},
-    config: ${JSON.stringify(cfg, null, 2).replace(/\n/g, "\n    ")}
+  // The widget is served as a single script tag with attributes — works in
+  // every framework. Build the embed snippets per framework.
+  const WIDGET_URL = "https://founderos-peach.vercel.app/widget.js";
+  const oneLiner = `<script src="${WIDGET_URL}" data-agent="${agent.public_key}" defer></script>`;
+  const reactSnippet = `import { useEffect } from "react";
+
+export function FounderOSAgent() {
+  useEffect(() => {
+    const s = document.createElement("script");
+    s.src = "${WIDGET_URL}";
+    s.dataset.agent = "${agent.public_key}";
+    s.defer = true;
+    document.body.appendChild(s);
+    return () => { s.remove(); };
+  }, []);
+  return null;
+}`;
+  const vueSnippet = `<!-- App.vue -->
+<script setup>
+import { onMounted } from "vue";
+onMounted(() => {
+  const s = document.createElement("script");
+  s.src = "${WIDGET_URL}";
+  s.dataset.agent = "${agent.public_key}";
+  s.defer = true;
+  document.body.appendChild(s);
+});
+</script>`;
+  const angularSnippet = `// app.component.ts
+ngOnInit() {
+  const s = document.createElement("script");
+  s.src = "${WIDGET_URL}";
+  s.dataset["agent"] = "${agent.public_key}";
+  s.defer = true;
+  document.body.appendChild(s);
+}`;
+  const nextSnippet = `// app/layout.tsx (Next.js 13+ App Router)
+import Script from "next/script";
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <Script
+          src="${WIDGET_URL}"
+          data-agent="${agent.public_key}"
+          strategy="afterInteractive"
+        />
+      </body>
+    </html>
+  );
+}`;
+  const phpSnippet = `<!-- footer.php (WordPress / Laravel / any PHP template) -->
+<script src="${WIDGET_URL}" data-agent="${agent.public_key}" defer></script>`;
+  const wpSnippet = `// functions.php — enqueue the widget on every page
+add_action("wp_footer", function () {
+  echo '<script src="${WIDGET_URL}" data-agent="${agent.public_key}" defer></script>';
+});`;
+  const SNIPPETS: Record<string, string> = {
+    HTML: oneLiner,
+    React: reactSnippet,
+    "Next.js": nextSnippet,
+    Vue: vueSnippet,
+    Angular: angularSnippet,
+    PHP: phpSnippet,
+    WordPress: wpSnippet,
   };
-</script>
-<script src="${base}/functions/v1/rag-widget" async></script>`;
+  const FRAMEWORKS = Object.keys(SNIPPETS);
+  // Use cfg to keep the existing save flow working (currently unused for embed
+  // since the widget now auto-fetches its config from the server).
+  void cfg;
 
   async function save() {
     setSaving(true); setSaved(false);
@@ -645,16 +707,37 @@ function WidgetTab({ agent }: { agent: Agent }) {
       {/* Setup / Embed */}
       <Section title="Setup" desc="Attach the widget on your website.">
         <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">
-          The agent answers from its knowledge base. Paste the embed code on the pages where you want the chat widget.
+          Drop a single tag in your site. The widget will fetch its config from
+          the server and start the conversation. Onboarding is included
+          automatically when enabled on this agent.
         </div>
+
+        {/* One-liner — the headline */}
         <div>
-          <div className="mb-1.5 text-sm font-medium">Embed code</div>
-          <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-secondary/50 p-3 font-mono text-xs leading-relaxed text-foreground/90">{snippet}</pre>
-          <Button variant="outline" size="sm" className="mt-2" onClick={() => { navigator.clipboard.writeText(snippet); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-            {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />} Copy snippet
+          <div className="mb-1.5 text-sm font-medium">One-line embed (HTML)</div>
+          <pre className="overflow-x-auto whitespace-pre rounded-md bg-secondary/50 p-3 font-mono text-xs leading-relaxed text-foreground/90">{oneLiner}</pre>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() => {
+              navigator.clipboard.writeText(oneLiner);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+            {copied ? "Copied" : "Copy embed"}
           </Button>
-          <p className="mt-2 text-xs text-muted-foreground">Public key: <code className="rounded bg-secondary/60 px-1.5 py-0.5 text-foreground">{agent.public_key}</code></p>
         </div>
+
+        {/* Framework-specific variants */}
+        <FrameworkSnippets snippets={SNIPPETS} frameworks={FRAMEWORKS} />
+
+        <p className="text-xs text-muted-foreground">
+          Public key:{" "}
+          <code className="rounded bg-secondary/60 px-1.5 py-0.5 text-foreground">{agent.public_key}</code>
+        </p>
         <Toggle label="Feedback collection" desc="Visitors can rate their satisfaction from 1 to 5 after the conversation." checked={cfg.feedback} onChange={(v) => set("feedback", v)} />
       </Section>
 
@@ -1015,5 +1098,49 @@ function SettingsTab({ agent }: { agent: Agent }) {
         <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : <Check className="h-4 w-4" />} {saved ? "Saved" : "Save settings"}</Button>
       </CardContent>
     </Card>
+  );
+}
+
+function FrameworkSnippets({ snippets, frameworks }: { snippets: Record<string, string>; frameworks: string[] }) {
+  const [active, setActive] = useState<string>(frameworks[1] ?? frameworks[0]);
+  const [copied, setCopied] = useState(false);
+  const code = snippets[active] ?? "";
+  return (
+    <div>
+      <div className="mb-1.5 text-sm font-medium">For your framework</div>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {frameworks.map((fw) => (
+          <button
+            key={fw}
+            type="button"
+            onClick={() => setActive(fw)}
+            className={
+              "rounded-md border px-2.5 py-1 text-xs transition-colors " +
+              (active === fw
+                ? "border-primary/40 bg-primary/15 text-primary"
+                : "border-border text-muted-foreground hover:bg-secondary")
+            }
+          >
+            {fw}
+          </button>
+        ))}
+      </div>
+      <pre className="max-h-72 overflow-y-auto whitespace-pre rounded-md bg-secondary/50 p-3 font-mono text-xs leading-relaxed text-foreground/90">
+        {code}
+      </pre>
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-2"
+        onClick={() => {
+          navigator.clipboard.writeText(code);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+      >
+        {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+        {copied ? "Copied" : `Copy ${active}`}
+      </Button>
+    </div>
   );
 }
