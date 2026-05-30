@@ -62,15 +62,35 @@ export function SecondarySidebar() {
         <div className="text-base font-semibold text-foreground">{module.label}</div>
       </div>
       <nav className="flex-1 overflow-y-auto p-2">
-        {module.subItems.map((sub) => {
+        {module.subItems.map((sub, i) => {
           const to = `${base}/${module.slug}/${sub.slug}`;
-          if (module.slug === "ai" && sub.slug === "chat") {
-            return <ChatConversationsItem key={sub.slug} to={to} label={sub.label} />;
-          }
+          // Group divider: rendered when this item carries a `group` label and
+          // either it's the first item, or the previous item had a different group.
+          const prevGroup = i > 0 ? module.subItems[i - 1].group : undefined;
+          const showDivider = sub.group && sub.group !== prevGroup;
+
+          const node =
+            module.slug === "ai" && sub.slug === "chat" ? (
+              <ChatConversationsItem key={sub.slug} to={to} label={sub.label} />
+            ) : (
+              <NavLink key={sub.slug} to={to} className={linkClass}>
+                {sub.label}
+              </NavLink>
+            );
+
+          if (!showDivider) return node;
           return (
-            <NavLink key={sub.slug} to={to} className={linkClass}>
-              {sub.label}
-            </NavLink>
+            <div key={sub.slug + "-grouped"}>
+              <div
+                className={cn(
+                  "px-3 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
+                  i > 0 && "mt-1 border-t border-border/60 pt-3",
+                )}
+              >
+                {sub.group}
+              </div>
+              {node}
+            </div>
           );
         })}
       </nav>

@@ -106,6 +106,7 @@ import {
   ApprovalsPage,
 } from "@/features/actions/Extra";
 import { RunbooksPage } from "@/features/actions/Runbooks";
+import { SaasAnalyticsPage } from "@/features/actions/SaasAnalytics";
 
 // AI Agent
 import { AiChatPage } from "@/features/ai-agent/Chat";
@@ -155,13 +156,14 @@ const PAGES: Record<string, PageEl> = {
   "finance/investor-metrics": <InvestorMetricsPage />,
   "finance/reports": <FinanceReportsPage />,
 
-  "costs/overview": <CostsOverviewPage />,
-  "costs/providers": <CostsProvidersPage />,
-  "costs/llm-costs": <LlmCostsPage />,
-  "costs/optimization": <OptimizationPage />,
-  "costs/cost-per-user": <CostPerUserPage />,
-  "costs/budgets": <BudgetsPage />,
-  "costs/invoices": <InvoicesPage />,
+  // Costs (merged under Finance module — same components, new slugs)
+  "finance/costs-overview": <CostsOverviewPage />,
+  "finance/costs-providers": <CostsProvidersPage />,
+  "finance/costs-llm": <LlmCostsPage />,
+  "finance/costs-optimization": <OptimizationPage />,
+  "finance/costs-per-user": <CostPerUserPage />,
+  "finance/costs-budgets": <BudgetsPage />,
+  "finance/costs-invoices": <InvoicesPage />,
 
   "users/all-users": <AllUsersPage />,
   "users/segments": <SegmentsPage />,
@@ -192,12 +194,13 @@ const PAGES: Record<string, PageEl> = {
   "code/database-schema": <DatabaseSchemaPage />,
   "code/tech-debt": <TechDebtPage />,
 
-  "security/overview": <SecurityFindingsPage filter="all" />,
-  "security/cve-alerts": <CveAlertsPage />,
-  "security/secrets-detection": <SecretsDetectionPage />,
-  "security/risk-score": <RiskScorePage />,
-  "security/license-audit": <LicenseAuditPage />,
-  "security/compliance-watch": <ComplianceWatchPage />,
+  // Security (merged under Code module — same components, new slugs)
+  "code/security-overview": <SecurityFindingsPage filter="all" />,
+  "code/security-cve-alerts": <CveAlertsPage />,
+  "code/security-secrets": <SecretsDetectionPage />,
+  "code/security-risk-score": <RiskScorePage />,
+  "code/security-license-audit": <LicenseAuditPage />,
+  "code/security-compliance": <ComplianceWatchPage />,
 
   "health/status": <HealthStatusPage />,
   "health/uptime": <UptimePage />,
@@ -208,6 +211,7 @@ const PAGES: Record<string, PageEl> = {
   "health/database": <DatabasePage />,
 
   "actions/quick-actions": <QuickActionsPage />,
+  "actions/saas-analytics": <SaasAnalyticsPage />,
   "actions/approvals": <ApprovalsPage />,
   "actions/user-management": <UserManagementPage />,
   "actions/stripe-operations": <StripeOperationsPage />,

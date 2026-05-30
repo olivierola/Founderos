@@ -1,11 +1,9 @@
 import {
   LayoutDashboard,
   LineChart,
-  CreditCard,
   Users,
   Megaphone,
   Code2,
-  Shield,
   Activity,
   Zap,
   Sparkle,
@@ -18,6 +16,8 @@ import {
 export interface SubNavItem {
   label: string;
   slug: string;
+  /** Optional section label. When set, the SecondarySidebar renders a divider + label above this item. */
+  group?: string;
 }
 
 export interface ModuleNavItem {
@@ -50,7 +50,7 @@ export const MODULES: ModuleNavItem[] = [
     icon: LineChart,
     color: "text-emerald-500/55",
     subItems: [
-      { label: "Revenue", slug: "revenue" },
+      { label: "Revenue", slug: "revenue", group: "Revenue" },
       { label: "Transactions", slug: "transactions" },
       { label: "MRR Movement", slug: "mrr-movement" },
       { label: "Subscriptions", slug: "subscriptions" },
@@ -59,21 +59,13 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Forecasting", slug: "forecasting" },
       { label: "Investor Metrics", slug: "investor-metrics" },
       { label: "Reports", slug: "reports" },
-    ],
-  },
-  {
-    slug: "costs",
-    label: "Costs",
-    icon: CreditCard,
-    color: "text-amber-500/55",
-    subItems: [
-      { label: "Overview", slug: "overview" },
-      { label: "Providers", slug: "providers" },
-      { label: "LLM Costs", slug: "llm-costs" },
-      { label: "Cost per User", slug: "cost-per-user" },
-      { label: "Budgets", slug: "budgets" },
-      { label: "Optimization", slug: "optimization" },
-      { label: "Invoices", slug: "invoices" },
+      { label: "Overview", slug: "costs-overview", group: "Costs" },
+      { label: "Providers", slug: "costs-providers" },
+      { label: "LLM Costs", slug: "costs-llm" },
+      { label: "Cost per User", slug: "costs-per-user" },
+      { label: "Budgets", slug: "costs-budgets" },
+      { label: "Optimization", slug: "costs-optimization" },
+      { label: "Invoices", slug: "costs-invoices" },
     ],
   },
   {
@@ -113,7 +105,7 @@ export const MODULES: ModuleNavItem[] = [
     icon: Code2,
     color: "text-sky-500/55",
     subItems: [
-      { label: "Overview", slug: "overview" },
+      { label: "Overview", slug: "overview", group: "Code" },
       { label: "Repositories", slug: "repositories" },
       { label: "Scan Results", slug: "scan-results" },
       { label: "Compare Scans", slug: "compare-scans" },
@@ -122,20 +114,12 @@ export const MODULES: ModuleNavItem[] = [
       { label: "API Usage", slug: "api-usage" },
       { label: "Database Schema", slug: "database-schema" },
       { label: "Tech Debt", slug: "tech-debt" },
-    ],
-  },
-  {
-    slug: "security",
-    label: "Security",
-    icon: Shield,
-    color: "text-rose-500/55",
-    subItems: [
-      { label: "Overview", slug: "overview" },
-      { label: "Risk Score", slug: "risk-score" },
-      { label: "CVE Alerts", slug: "cve-alerts" },
-      { label: "Secrets Detection", slug: "secrets-detection" },
-      { label: "License Audit", slug: "license-audit" },
-      { label: "Compliance Watch", slug: "compliance-watch" },
+      { label: "Overview", slug: "security-overview", group: "Security" },
+      { label: "Risk Score", slug: "security-risk-score" },
+      { label: "CVE Alerts", slug: "security-cve-alerts" },
+      { label: "Secrets Detection", slug: "security-secrets" },
+      { label: "License Audit", slug: "security-license-audit" },
+      { label: "Compliance Watch", slug: "security-compliance" },
     ],
   },
   {
@@ -159,6 +143,7 @@ export const MODULES: ModuleNavItem[] = [
     color: "text-slate-400",
     subItems: [
       { label: "Actions Center", slug: "quick-actions" },
+      { label: "SaaS Analytics", slug: "saas-analytics" },
       { label: "Approvals", slug: "approvals" },
       { label: "User Management", slug: "user-management" },
       { label: "Billing Operations", slug: "stripe-operations" },
