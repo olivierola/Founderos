@@ -184,12 +184,12 @@ export const MODULES: ModuleNavItem[] = [
     icon: Sparkle,
     color: "text-primary/60",
     subItems: [
-      { label: "Chat", slug: "chat" },
       { label: "Insights", slug: "insights" },
       { label: "Reports", slug: "reports" },
       { label: "Workflows", slug: "workflows" },
       { label: "Prompt Templates", slug: "prompt-templates" },
       { label: "Guardrails", slug: "guardrails" },
+      { label: "Chat", slug: "chat" },
     ],
   },
   {

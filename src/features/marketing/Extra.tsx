@@ -371,7 +371,7 @@ export function MarketingCalendarPage() {
                           title={p.content}
                           onClick={() => setSelectedPost(p)}
                           className={`flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-80 ${
-                            p.status === "published" ? "bg-emerald-500/15 text-emerald-300" : "bg-info/15 text-info"
+                            p.status === "published" ? "bg-[hsl(var(--accent-2)/0.22)] text-[hsl(var(--accent-2))]" : "bg-info/15 text-info"
                           }`}
                         >
                           {platformDot(p.platform)}

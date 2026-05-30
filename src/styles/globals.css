@@ -8,7 +8,8 @@
      Accent info     #BBE0EF (sky)     -> 200 58% 84%
      Deep surface    #161E54 (navy)    -> 232 59% 21%
      Base is a zinc-950-ish neutral kept slightly warm-neutral, never #000. */
-  :root {
+  :root,
+  .dark {
     --background: 240 6% 8%;           /* zinc dark, not pure black */
     --foreground: 240 5% 96%;          /* ~zinc-100 */
 
@@ -20,6 +21,12 @@
 
     --primary: 231 100% 36%;           /* #001BB7 deep blue */
     --primary-foreground: 0 0% 100%;   /* white text on deep blue */
+
+    /* Soft blue used for text/icons/links where deep blue would feel harsh. */
+    --primary-soft: 220 90% 72%;
+    /* Secondary accent — soft sage green (matches reference badges). */
+    --accent-2: 140 40% 65%;
+    --accent-2-foreground: 140 35% 18%;
 
     --secondary: 240 4% 16%;           /* ~zinc-800 */
     --secondary-foreground: 240 5% 96%;
@@ -51,6 +58,51 @@
     --radius: 0.3rem;                  /* tighter corners, sharper/sober */
   }
 
+  /* Light mode — soft warm-neutral surfaces, keep deep-blue accent for brand continuity. */
+  .light {
+    --background: 0 0% 100%;           /* pure white for content area */
+    --foreground: 240 8% 20%;          /* softer than near-black */
+
+    --card: 0 0% 100%;                 /* cards on white */
+    --card-foreground: 240 8% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 8% 20%;
+
+    --primary: 231 100% 36%;           /* #001BB7 deep blue, unchanged */
+    --primary-foreground: 0 0% 100%;
+
+    /* Soft blue for inline text/icons in light mode — darker so it stays readable on white. */
+    --primary-soft: 220 75% 48%;
+    --accent-2: 140 40% 50%;
+    --accent-2-foreground: 0 0% 100%;
+
+    --secondary: 240 8% 96%;           /* very light grey */
+    --secondary-foreground: 240 8% 20%;
+
+    --muted: 240 8% 96%;
+    --muted-foreground: 240 5% 45%;
+
+    --accent: 240 8% 96%;
+    --accent-foreground: 240 8% 20%;
+
+    --info: 200 58% 84%;
+    --info-foreground: 232 59% 21%;
+
+    --surface-deep: 232 59% 21%;
+
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 6% 92%;              /* very soft border */
+    --input: 240 6% 92%;
+    --ring: 231 100% 36%;
+
+    --sidebar: 0 0% 99%;               /* nearly white, lifts off content */
+    --sidebar-foreground: 240 5% 45%;
+    --sidebar-accent: 240 8% 95%;
+  }
+
   * {
     @apply border-border;
   }
@@ -66,6 +118,52 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+/* PrimarySidebar in light mode — deep dark grey rail, contrasts with light content. */
+.light [data-primary-sidebar] {
+  --sidebar: 240 5% 12%;               /* deep dark grey */
+  --sidebar-foreground: 240 5% 80%;
+  --sidebar-accent: 240 5% 20%;
+  --border: 240 5% 22%;
+  --secondary: 240 5% 20%;
+  --foreground: 240 5% 98%;
+  color-scheme: dark;
+}
+
+/* Boost icon visibility on the dark rail in light mode — Tailwind's text-*-500/55 etc.
+   relies on opacity that washes out on this background. Bump saturation/opacity. */
+.light [data-primary-sidebar] .text-slate-400 { color: rgb(203 213 225); }       /* slate-300 */
+.light [data-primary-sidebar] .text-emerald-500\/55 { color: rgb(52 211 153); }  /* emerald-400 */
+.light [data-primary-sidebar] .text-amber-500\/55 { color: rgb(251 191 36); }    /* amber-400 */
+.light [data-primary-sidebar] .text-indigo-400\/55 { color: rgb(165 180 252); }  /* indigo-300 */
+.light [data-primary-sidebar] .text-fuchsia-400\/55 { color: rgb(240 171 252); } /* fuchsia-300 */
+.light [data-primary-sidebar] .text-sky-500\/55 { color: rgb(56 189 248); }      /* sky-400 */
+.light [data-primary-sidebar] .text-rose-500\/55 { color: rgb(251 113 133); }    /* rose-400 */
+.light [data-primary-sidebar] .text-teal-500\/55 { color: rgb(45 212 191); }     /* teal-400 */
+.light [data-primary-sidebar] .text-cyan-500\/55 { color: rgb(34 211 238); }     /* cyan-400 */
+.light [data-primary-sidebar] .text-primary\/60 { color: rgb(196 181 253); }     /* violet-300 */
+
+/* Inactive nav items use opacity-60; bump it in light mode so colors don't fade. */
+.light [data-primary-sidebar] nav a.opacity-60 { opacity: 0.9; }
+
+/* Soften `text-primary` (and its opacity variants) globally — the raw #001BB7 deep
+   blue is too saturated for inline text, links and small icons. Solid backgrounds
+   (`bg-primary`, buttons) still use the original deep blue. */
+.text-primary { color: hsl(var(--primary-soft)) !important; }
+.text-primary\/90 { color: hsl(var(--primary-soft) / 0.9) !important; }
+.text-primary\/80 { color: hsl(var(--primary-soft) / 0.8) !important; }
+.text-primary\/70 { color: hsl(var(--primary-soft) / 0.7) !important; }
+.text-primary\/60 { color: hsl(var(--primary-soft) / 0.85) !important; }
+.text-primary\/50 { color: hsl(var(--primary-soft) / 0.75) !important; }
+.text-primary\/40 { color: hsl(var(--primary-soft) / 0.65) !important; }
+
+/* Accent-2 utility classes (soft sage green) — usable as bg/text/border. */
+.bg-accent-2 { background-color: hsl(var(--accent-2)); }
+.bg-accent-2\/20 { background-color: hsl(var(--accent-2) / 0.2); }
+.bg-accent-2\/30 { background-color: hsl(var(--accent-2) / 0.3); }
+.text-accent-2 { color: hsl(var(--accent-2)); }
+.text-accent-2-foreground { color: hsl(var(--accent-2-foreground)); }
+.border-accent-2 { border-color: hsl(var(--accent-2)); }
 
 /* react-grid-layout theming */
 .react-grid-item.react-grid-placeholder {

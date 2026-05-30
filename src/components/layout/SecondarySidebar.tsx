@@ -2,6 +2,7 @@ import { NavLink, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { findModule } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import { ChatConversationsItem } from "./ChatConversationsItem";
 
 // Agent builder sub-tabs, shown in the secondary sidebar once an agent is opened.
 const AGENT_TABS = [
@@ -61,11 +62,17 @@ export function SecondarySidebar() {
         <div className="text-base font-semibold text-foreground">{module.label}</div>
       </div>
       <nav className="flex-1 overflow-y-auto p-2">
-        {module.subItems.map((sub) => (
-          <NavLink key={sub.slug} to={`${base}/${module.slug}/${sub.slug}`} className={linkClass}>
-            {sub.label}
-          </NavLink>
-        ))}
+        {module.subItems.map((sub) => {
+          const to = `${base}/${module.slug}/${sub.slug}`;
+          if (module.slug === "ai" && sub.slug === "chat") {
+            return <ChatConversationsItem key={sub.slug} to={to} label={sub.label} />;
+          }
+          return (
+            <NavLink key={sub.slug} to={to} className={linkClass}>
+              {sub.label}
+            </NavLink>
+          );
+        })}
       </nav>
     </aside>
   );

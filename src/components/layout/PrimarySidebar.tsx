@@ -19,7 +19,7 @@ export function PrimarySidebar() {
 
   return (
     <TooltipProvider delayDuration={100}>
-      <aside className="flex h-full w-16 flex-col items-center justify-between border-r border-border bg-sidebar">
+      <aside data-primary-sidebar className="flex h-full w-16 flex-col items-center justify-between border-r border-border bg-sidebar">
         <div className="flex w-full flex-col items-center">
           <div className="flex h-14 w-full items-center justify-center border-b border-border">
             <Tooltip>

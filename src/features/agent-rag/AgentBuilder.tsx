@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Loader2, Bot, BarChart3,
+  Loader2, Bot, BarChart3,
   Plus, Trash2, Send, FileText, Link2, LayoutGrid, Check, Copy, Sparkles, BookOpen, Search,
   Globe, FileUp, Type, RotateCcw,
 } from "lucide-react";
@@ -29,8 +29,7 @@ interface Source { id: string; type: string; title: string; status: string; chun
 const VALID_TABS: Tab[] = ["knowledge", "playground", "widget", "analytics", "settings"];
 
 export function AgentBuilderPage() {
-  const navigate = useNavigate();
-  const { workspaceSlug, projectSlug, agentId, tab: tabParam } = useParams();
+  const { agentId, tab: tabParam } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
   const tab: Tab = VALID_TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "playground";
 
@@ -48,19 +47,6 @@ export function AgentBuilderPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/agents`)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-          <Bot className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{agent.name}</h1>
-          {agent.description && <p className="text-sm text-muted-foreground">{agent.description}</p>}
-        </div>
-      </div>
-
       {tab === "knowledge" && <KnowledgeTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "playground" && <PlaygroundTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "widget" && <WidgetTab agent={agent} />}
