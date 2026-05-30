@@ -111,13 +111,47 @@ export function CredentialsVaultPage() {
     return m;
   }, [propagated]);
 
-  // Union of (detected) + (already pushed) keys → that's the default vault view.
+  // 3b) Catalog connectors that already store secrets in the vault — exposed
+  //     as virtual entries so the user sees them even when no scan / no
+  //     propagation has happened yet.
+  const catalogSecrets = useMemo(() => {
+    const out: Array<{
+      key: string;
+      provider: string;
+      field: string;
+      provider_name: string;
+    }> = [];
+    (connectors ?? []).forEach((c) => {
+      const def = findProvider(c.provider);
+      if (!def) return;
+      def.fields.filter((f) => f.secret).forEach((f) => {
+        // Synthetic env-var name: STRIPE_SECRET_KEY, GITHUB_TOKEN, ...
+        const synthetic = `${c.provider.toUpperCase().replace(/-/g, "_")}_${f.key.toUpperCase()}`;
+        out.push({
+          key: synthetic,
+          provider: c.provider,
+          field: f.key,
+          provider_name: def.name,
+        });
+      });
+    });
+    return out;
+  }, [connectors]);
+
+  const catalogKeyMap = useMemo(() => {
+    const m = new Map<string, (typeof catalogSecrets)[number]>();
+    catalogSecrets.forEach((s) => m.set(s.key, s));
+    return m;
+  }, [catalogSecrets]);
+
+  // Union of (detected) + (already pushed) + (catalog-stored) keys → vault view.
   const allKnownKeys = useMemo(() => {
     const set = new Set<string>();
     (detectedEnvs ?? []).forEach((e) => set.add(e.key));
     (propagated ?? []).forEach((p) => set.add(p.key));
+    catalogSecrets.forEach((c) => set.add(c.key));
     return Array.from(set).sort();
-  }, [detectedEnvs, propagated]);
+  }, [detectedEnvs, propagated, catalogSecrets]);
 
   // Map detected → metadata for display.
   const detectedMap = useMemo(() => {
@@ -205,27 +239,37 @@ export function CredentialsVaultPage() {
               <tbody className="divide-y divide-border">
                 {allKnownKeys.map((k) => {
                   const detected = detectedMap.get(k);
+                  const fromCatalog = catalogKeyMap.get(k);
                   const rows = byKey.get(k) ?? [];
                   const lastSync = rows
                     .map((r) => r.last_synced_at)
                     .filter(Boolean)
                     .sort()
                     .at(-1);
-                  const detectedService = detected?.detected_service;
+                  const detectedService = detected?.detected_service ?? fromCatalog?.provider;
                   const reusable = detectedService && configuredSlugs.has(detectedService);
 
                   return (
                     <tr key={k} className="hover:bg-secondary/30">
                       <td className="px-4 py-3">
                         <div className="font-mono text-xs">{k}</div>
-                        {detected && (
-                          <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                            <Code2 className="h-3 w-3" /> detected in code
-                            {detected.sensitivity === "secret" && (
-                              <Badge variant="outline" className="ml-1 text-[10px]">secret</Badge>
-                            )}
-                          </div>
-                        )}
+                        <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                          {detected && (
+                            <>
+                              <Code2 className="h-3 w-3" />
+                              <span>detected in code</span>
+                              {detected.sensitivity === "secret" && (
+                                <Badge variant="outline" className="ml-1 text-[10px]">secret</Badge>
+                              )}
+                            </>
+                          )}
+                          {fromCatalog && !detected && (
+                            <>
+                              <ShieldCheck className="h-3 w-3 text-[hsl(var(--accent-2))]" />
+                              <span>stored in vault</span>
+                            </>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         {detectedService ? (
