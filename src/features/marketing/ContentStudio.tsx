@@ -29,6 +29,7 @@ interface PostRow {
   cta: string | null;
   source: string;
   created_at: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export function ContentStudioPage() {
@@ -310,6 +311,7 @@ function DraftCard({
 }) {
   const [text, setText] = useState(post.content);
   const [visualOpen, setVisualOpen] = useState(false);
+  const { workspaceId, projectId } = useCurrentContext();
   const dirty = text !== post.content;
   return (
     <Card>
@@ -364,6 +366,33 @@ function DraftCard({
           title: text.split("\n")[0]?.slice(0, 80),
           body: text,
           handle: post.platform ? `@${post.platform}` : undefined,
+        }}
+        persistKey={"post-" + post.id}
+        onPublish={async (pngBlob) => {
+          if (!projectId) throw new Error("No active project");
+          // 1. Upload PNG to Supabase Storage
+          const path = `${projectId}/${post.id}-${Date.now()}.png`;
+          const { error: upErr } = await supabase.storage
+            .from("marketing-visuals")
+            .upload(path, pngBlob, { contentType: "image/png", upsert: true });
+          if (upErr) throw new Error("Upload failed: " + upErr.message);
+          const { data: publicUrl } = supabase.storage
+            .from("marketing-visuals")
+            .getPublicUrl(path);
+          // 2. Attach to the post metadata.
+          await supabase
+            .from("marketing_posts")
+            .update({
+              metadata: { ...(post.metadata ?? {}), visual_url: publicUrl.publicUrl },
+            })
+            .eq("id", post.id);
+          // 3. Trigger the publish edge function.
+          await callEdge("marketing-publish", {
+            workspace_id: workspaceId,
+            project_id: projectId,
+            post_id: post.id,
+          });
+          setVisualOpen(false);
         }}
       />
     </Card>

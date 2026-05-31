@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FONTS, familyCss, ensureFontLoaded, preloadAllFonts } from "./fonts";
@@ -22,6 +23,25 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState<string>("all");
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; openUp: boolean } | null>(null);
+
+  // Compute popover position whenever it opens; flip up when there isn't
+  // enough space below.
+  useLayoutEffect(() => {
+    if (!open || !ref.current) {
+      setPos(null);
+      return;
+    }
+    const r = ref.current.getBoundingClientRect();
+    const POPOVER_HEIGHT = 380;
+    const spaceBelow = window.innerHeight - r.bottom;
+    const openUp = spaceBelow < POPOVER_HEIGHT && r.top > spaceBelow;
+    setPos({
+      left: Math.max(8, Math.min(window.innerWidth - 296, r.left)),
+      top: openUp ? Math.max(8, r.top - POPOVER_HEIGHT - 4) : r.bottom + 4,
+      openUp,
+    });
+  }, [open]);
 
   // Preload all font CSS lazily once the dropdown is first opened, so the
   // preview in the list actually renders in the proper face.
@@ -51,6 +71,81 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
 
   const activeFont = FONTS.find((f) => f.family === value) ?? FONTS[0];
 
+  const popover =
+    open && pos ? (
+      <div
+        style={{
+          position: "fixed",
+          left: pos.left,
+          top: pos.top,
+          width: 288,
+          zIndex: 1000,
+        }}
+        className="overflow-hidden rounded-md border border-border bg-popover shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="space-y-2 border-b border-border p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search font…"
+              className="h-7 w-full rounded border border-input bg-background pl-6 pr-2 text-xs"
+              autoFocus
+            />
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setCat(c.id)}
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px] transition",
+                  cat === c.id
+                    ? "border-[hsl(var(--primary-soft))] bg-[hsl(var(--primary-soft)/0.12)] text-[hsl(var(--primary-soft))]"
+                    : "border-border text-muted-foreground hover:bg-secondary",
+                )}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {filtered.map((f) => (
+            <button
+              key={f.family}
+              type="button"
+              onClick={() => {
+                ensureFontLoaded(f.family);
+                onChange(f.family);
+                setOpen(false);
+              }}
+              className={cn(
+                "flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-secondary",
+                value === f.family && "bg-secondary/60",
+              )}
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm" style={{ fontFamily: familyCss(f.family) }}>
+                  {f.family}
+                </div>
+                <div className="truncate text-[10px] text-muted-foreground">
+                  The quick brown fox jumps over the lazy dog
+                </div>
+              </div>
+              {value === f.family && <Check className="h-3.5 w-3.5 text-[hsl(var(--primary-soft))]" />}
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <p className="px-3 py-6 text-center text-xs text-muted-foreground">No font matches.</p>
+          )}
+        </div>
+      </div>
+    ) : null;
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -63,69 +158,7 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
         </span>
         <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
       </button>
-
-      {open && (
-        <div className="absolute right-0 top-9 z-50 w-72 overflow-hidden rounded-md border border-border bg-popover shadow-2xl">
-          <div className="space-y-2 border-b border-border p-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search font…"
-                className="h-7 w-full rounded border border-input bg-background pl-6 pr-2 text-xs"
-                autoFocus
-              />
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setCat(c.id)}
-                  className={cn(
-                    "rounded-full border px-2 py-0.5 text-[10px] transition",
-                    cat === c.id
-                      ? "border-[hsl(var(--primary-soft))] bg-[hsl(var(--primary-soft)/0.12)] text-[hsl(var(--primary-soft))]"
-                      : "border-border text-muted-foreground hover:bg-secondary",
-                  )}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="max-h-72 overflow-y-auto">
-            {filtered.map((f) => (
-              <button
-                key={f.family}
-                type="button"
-                onClick={() => {
-                  ensureFontLoaded(f.family);
-                  onChange(f.family);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-secondary",
-                  value === f.family && "bg-secondary/60",
-                )}
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm" style={{ fontFamily: familyCss(f.family) }}>
-                    {f.family}
-                  </div>
-                  <div className="truncate text-[10px] text-muted-foreground">
-                    The quick brown fox jumps over the lazy dog
-                  </div>
-                </div>
-                {value === f.family && <Check className="h-3.5 w-3.5 text-[hsl(var(--primary-soft))]" />}
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <p className="px-3 py-6 text-center text-xs text-muted-foreground">No font matches.</p>
-            )}
-          </div>
-        </div>
-      )}
+      {popover && createPortal(popover, document.body)}
     </div>
   );
 }
