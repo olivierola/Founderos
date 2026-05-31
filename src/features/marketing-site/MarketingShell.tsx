@@ -16,7 +16,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground">
+    <div className="dark marketing min-h-screen bg-background text-foreground">
       {/* Top nav */}
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">

@@ -165,6 +165,57 @@
 .text-accent-2-foreground { color: hsl(var(--accent-2-foreground)); }
 .border-accent-2 { border-color: hsl(var(--accent-2)); }
 
+/* Marketing site — darker canvas + animations */
+.marketing {
+  --background: 240 10% 4%;
+  --card: 240 8% 7%;
+  --secondary: 240 6% 11%;
+  --border: 240 6% 14%;
+  --muted-foreground: 240 5% 60%;
+  color-scheme: dark;
+}
+
+@keyframes mkt-fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes mkt-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes mkt-pulse-ring {
+  0% { transform: scale(0.7); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes mkt-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(20px, -30px) scale(1.05); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+}
+@keyframes mkt-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+@keyframes mkt-rise {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes mkt-dash {
+  to { stroke-dashoffset: -40; }
+}
+
+.mkt-fade-up { animation: mkt-fade-up 600ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.mkt-marquee { animation: mkt-marquee 35s linear infinite; }
+.mkt-pulse-ring { animation: mkt-pulse-ring 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.mkt-blob { animation: mkt-blob 18s ease-in-out infinite; }
+.mkt-shimmer {
+  background-image: linear-gradient(110deg, transparent 30%, hsl(var(--primary-soft) / 0.18) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: mkt-shimmer 3s ease-in-out infinite;
+}
+.mkt-rise { animation: mkt-rise 800ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.mkt-dash { stroke-dasharray: 4 4; animation: mkt-dash 1.6s linear infinite; }
+
 /* react-grid-layout theming */
 .react-grid-item.react-grid-placeholder {
   background: hsl(var(--primary) / 0.2) !important;
