@@ -7,13 +7,16 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 interface PermissionsCtx {
   permissions: Set<string>;
   loading: boolean;
+  /** True when the permission set has loaded but is empty (no project_members row yet). */
+  unmemberized: boolean;
   can: (permission: string) => boolean;
 }
 
 const PermissionsContext = createContext<PermissionsCtx>({
   permissions: new Set(),
   loading: false,
-  can: () => false,
+  unmemberized: false,
+  can: () => true,
 });
 
 /** Bootstraps the permission set for the current (user, project) pair. */
@@ -36,10 +39,16 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<PermissionsCtx>(() => {
     const set = data ?? new Set<string>();
+    const isEmpty = !isLoading && set.size === 0;
     return {
       permissions: set,
       loading: isLoading,
-      can: (perm: string) => set.has(perm),
+      unmemberized: isEmpty,
+      // While loading OR when the user has no membership row yet (legacy
+      // project that pre-dates RBAC), assume the user can do everything.
+      // This is a safe default for the project creator and matches the
+      // behaviour they had before RBAC shipped.
+      can: (perm: string) => (isLoading || isEmpty ? true : set.has(perm)),
     };
   }, [data, isLoading]);
 
