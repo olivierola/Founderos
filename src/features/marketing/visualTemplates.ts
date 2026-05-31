@@ -19,7 +19,8 @@ export interface TemplateDef {
     | "minimal"
     | "abstract"
     | "vintage"
-    | "tech";
+    | "tech"
+    | "premium";
   /** Default palette — the editor lets the user override every color. */
   defaultColors: TemplateColors;
   /** Render the background as SVG markup. Use percentages so any aspect ratio works. */
@@ -354,6 +355,280 @@ export const VISUAL_TEMPLATES: TemplateDef[] = [
       <rect width="100%" height="100%" fill="url(#g)"/>
       <rect width="100%" height="100%" filter="url(#n)"/>`,
   },
+
+  /* ==================== PREMIUM ==================== */
+  {
+    id: "premium-glass",
+    name: "Glassmorphism",
+    category: "premium",
+    defaultColors: { c1: "#7C3AED", c2: "#06B6D4", c3: "#FFFFFF", c4: "#1E1B26" },
+    render: (c) => `
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${c.c1}"/><stop offset="100%" stop-color="${c.c2}"/>
+        </linearGradient>
+        <filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="40"/></filter>
+      </defs>
+      <rect width="100%" height="100%" fill="${c.c4 ?? "#1E1B26"}"/>
+      <g filter="url(#b)" opacity="0.85">
+        <circle cx="20%" cy="30%" r="22%" fill="${c.c1}"/>
+        <circle cx="78%" cy="65%" r="26%" fill="${c.c2}"/>
+      </g>
+      <rect x="10%" y="55%" width="80%" height="35%" rx="20" fill="${c.c3 ?? "#fff"}" fill-opacity="0.1" stroke="${c.c3 ?? "#fff"}" stroke-opacity="0.18" stroke-width="1.5"/>
+      <rect x="10%" y="55%" width="80%" height="35%" rx="20" fill="url(#g)" fill-opacity="0.05"/>`,
+  },
+  {
+    id: "premium-holographic",
+    name: "Holographic",
+    category: "premium",
+    defaultColors: { c1: "#FF6EC7", c2: "#7873F5", c3: "#4ADE80", c4: "#000000" },
+    render: (c) => `
+      <defs>
+        <linearGradient id="h" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${c.c1}"/>
+          <stop offset="33%" stop-color="${c.c2}"/>
+          <stop offset="66%" stop-color="${c.c3 ?? c.c2}"/>
+          <stop offset="100%" stop-color="${c.c1}"/>
+        </linearGradient>
+        <filter id="b"><feGaussianBlur stdDeviation="80"/></filter>
+      </defs>
+      <rect width="100%" height="100%" fill="${c.c4 ?? "#000"}"/>
+      <g filter="url(#b)" opacity="0.85">
+        <rect width="100%" height="100%" fill="url(#h)"/>
+      </g>
+      <rect width="100%" height="100%" fill="url(#h)" fill-opacity="0.15"/>`,
+  },
+  {
+    id: "premium-frosted",
+    name: "Frosted glass",
+    category: "premium",
+    defaultColors: { c1: "#3B82F6", c2: "#EC4899", c3: "#FFFFFF", c4: "#0F172A" },
+    render: (c) => `
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${c.c1}"/><stop offset="100%" stop-color="${c.c2}"/>
+        </linearGradient>
+        <filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="80"/></filter>
+      </defs>
+      <rect width="100%" height="100%" fill="${c.c4 ?? "#0F172A"}"/>
+      <g filter="url(#b)" opacity="0.8">
+        <ellipse cx="30%" cy="40%" rx="35%" ry="30%" fill="${c.c1}"/>
+        <ellipse cx="70%" cy="70%" rx="40%" ry="35%" fill="${c.c2}"/>
+      </g>
+      <rect width="100%" height="100%" fill="${c.c3 ?? "#fff"}" fill-opacity="0.04"/>`,
+  },
+  {
+    id: "premium-neon-glow",
+    name: "Neon glow",
+    category: "premium",
+    defaultColors: { c1: "#06B6D4", c2: "#F472B6", c3: "#FACC15", c4: "#020617" },
+    render: (c) => `
+      <defs>
+        <filter id="b"><feGaussianBlur stdDeviation="30"/></filter>
+      </defs>
+      <rect width="100%" height="100%" fill="${c.c4 ?? "#020617"}"/>
+      <g filter="url(#b)" opacity="0.9">
+        <rect x="10%" y="20%" width="80%" height="3" fill="${c.c1}"/>
+        <rect x="20%" y="40%" width="60%" height="3" fill="${c.c2}"/>
+        <rect x="15%" y="60%" width="70%" height="3" fill="${c.c3 ?? c.c2}"/>
+      </g>
+      <rect x="10%" y="20%" width="80%" height="1" fill="${c.c1}"/>
+      <rect x="20%" y="40%" width="60%" height="1" fill="${c.c2}"/>
+      <rect x="15%" y="60%" width="70%" height="1" fill="${c.c3 ?? c.c2}"/>`,
+  },
+  {
+    id: "premium-isometric",
+    name: "Isometric grid",
+    category: "premium",
+    defaultColors: { c1: "#1E1B4B", c2: "#312E81", c3: "#A78BFA", c4: "#0F0E2A" },
+    render: (c) => `
+      <defs>
+        <pattern id="p" width="60" height="104" patternUnits="userSpaceOnUse">
+          <path d="M0 0 L30 52 L60 0 M0 104 L30 52 L60 104" stroke="${c.c3 ?? "#A78BFA"}" stroke-opacity="0.18" stroke-width="1" fill="none"/>
+        </pattern>
+        <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${c.c1}"/><stop offset="100%" stop-color="${c.c2}"/>
+        </linearGradient>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+      <rect width="100%" height="100%" fill="url(#p)"/>`,
+  },
+  {
+    id: "premium-paper",
+    name: "Premium paper",
+    category: "premium",
+    defaultColors: { c1: "#FAF7F2", c2: "#E8E2D8", c3: "#1F1B16", c4: "#FAF7F2" },
+    render: (c) => `
+      <defs>
+        <radialGradient id="g" cx="50%" cy="40%" r="80%">
+          <stop offset="0%" stop-color="${c.c1}"/><stop offset="100%" stop-color="${c.c2}"/>
+        </radialGradient>
+        <filter id="n">
+          <feTurbulence baseFrequency="0.85" numOctaves="2"/>
+          <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0"/>
+        </filter>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+      <rect width="100%" height="100%" filter="url(#n)"/>
+      <rect x="3%" y="3%" width="94%" height="94%" fill="none" stroke="${c.c3 ?? "#1F1B16"}" stroke-opacity="0.12" stroke-width="2"/>`,
+  },
+  {
+    id: "premium-magazine",
+    name: "Magazine layout",
+    category: "premium",
+    defaultColors: { c1: "#000000", c2: "#EF4444", c3: "#FFFFFF", c4: "#1A1A1A" },
+    render: (c) => `
+      <rect width="100%" height="100%" fill="${c.c1}"/>
+      <rect x="0" y="0" width="40%" height="100%" fill="${c.c2}"/>
+      <line x1="40%" y1="0" x2="40%" y2="100%" stroke="${c.c3 ?? "#fff"}" stroke-width="2"/>
+      <rect x="42%" y="10%" width="3" height="80%" fill="${c.c3 ?? "#fff"}" opacity="0.3"/>
+      <rect x="48%" y="10%" width="3" height="80%" fill="${c.c3 ?? "#fff"}" opacity="0.15"/>`,
+  },
+  {
+    id: "premium-watercolor",
+    name: "Watercolor",
+    category: "premium",
+    defaultColors: { c1: "#FDA4AF", c2: "#FBCFE8", c3: "#A5F3FC", c4: "#FFF1F2" },
+    render: (c) => `
+      <defs>
+        <filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="50"/></filter>
+        <filter id="n"><feTurbulence baseFrequency="0.6" numOctaves="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.03 0"/></filter>
+      </defs>
+      <rect width="100%" height="100%" fill="${c.c4 ?? "#FFF1F2"}"/>
+      <g filter="url(#b)" opacity="0.6">
+        <circle cx="25%" cy="35%" r="30%" fill="${c.c1}"/>
+        <circle cx="75%" cy="55%" r="35%" fill="${c.c2}"/>
+        <circle cx="50%" cy="80%" r="25%" fill="${c.c3 ?? c.c1}"/>
+      </g>
+      <rect width="100%" height="100%" filter="url(#n)"/>`,
+  },
+  {
+    id: "premium-retro-80s",
+    name: "Retro 80s",
+    category: "premium",
+    defaultColors: { c1: "#FF006E", c2: "#8338EC", c3: "#3A86FF", c4: "#000010" },
+    render: (c) => `
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${c.c4 ?? "#000010"}"/>
+          <stop offset="60%" stop-color="${c.c2}"/>
+          <stop offset="100%" stop-color="${c.c1}"/>
+        </linearGradient>
+        <linearGradient id="grid" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${c.c3 ?? c.c1}" stop-opacity="0"/>
+          <stop offset="100%" stop-color="${c.c3 ?? c.c1}" stop-opacity="0.6"/>
+        </linearGradient>
+        <pattern id="gp" width="80" height="60" patternUnits="userSpaceOnUse">
+          <path d="M0 60 L40 0 L80 60" stroke="${c.c3 ?? c.c1}" stroke-opacity="0.4" stroke-width="1" fill="none"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#sky)"/>
+      <circle cx="50%" cy="55%" r="18%" fill="${c.c2}"/>
+      <rect x="0" y="60%" width="100%" height="40%" fill="url(#gp)"/>
+      <rect x="0" y="60%" width="100%" height="40%" fill="url(#grid)"/>`,
+  },
+  {
+    id: "premium-bauhaus",
+    name: "Bauhaus",
+    category: "premium",
+    defaultColors: { c1: "#E63946", c2: "#F1C40F", c3: "#3498DB", c4: "#FCFAF4" },
+    render: (c) => `
+      <rect width="100%" height="100%" fill="${c.c4 ?? "#FCFAF4"}"/>
+      <circle cx="25%" cy="30%" r="20%" fill="${c.c1}"/>
+      <rect x="55%" y="20%" width="30%" height="30%" fill="${c.c3 ?? c.c1}"/>
+      <polygon points="20%,70% 50%,70% 35%,95%" fill="${c.c2}"/>
+      <line x1="0" y1="50%" x2="100%" y2="50%" stroke="${c.c1}" stroke-width="2"/>
+      <line x1="50%" y1="0" x2="50%" y2="100%" stroke="${c.c1}" stroke-width="2"/>`,
+  },
+  {
+    id: "premium-brutalist",
+    name: "Brutalist blocks",
+    category: "premium",
+    defaultColors: { c1: "#000000", c2: "#FFD60A", c3: "#FFFFFF", c4: "#0A0A0A" },
+    render: (c) => `
+      <rect width="100%" height="100%" fill="${c.c4 ?? "#0A0A0A"}"/>
+      <rect x="-2%" y="40%" width="105%" height="40%" fill="${c.c2}"/>
+      <rect x="0" y="35%" width="100%" height="2" fill="${c.c3 ?? "#fff"}"/>
+      <rect x="0" y="85%" width="100%" height="2" fill="${c.c3 ?? "#fff"}"/>
+      <rect x="10%" y="10%" width="40%" height="22%" fill="${c.c1}" stroke="${c.c2}" stroke-width="3"/>
+      <rect x="55%" y="60%" width="35%" height="18%" fill="${c.c1}" stroke="${c.c3 ?? "#fff"}" stroke-width="3"/>`,
+  },
+  {
+    id: "premium-photo-tint",
+    name: "Photo tint",
+    category: "premium",
+    defaultColors: { c1: "#0F172A", c2: "#1E293B", c3: "#06B6D4", c4: "#020617" },
+    render: (c) => `
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${c.c1}" stop-opacity="0.3"/>
+          <stop offset="100%" stop-color="${c.c2}"/>
+        </linearGradient>
+        <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+          <stop offset="60%" stop-color="${c.c1}" stop-opacity="0"/>
+          <stop offset="100%" stop-color="${c.c4 ?? "#000"}"/>
+        </radialGradient>
+        <filter id="b"><feGaussianBlur stdDeviation="60"/></filter>
+      </defs>
+      <rect width="100%" height="100%" fill="${c.c1}"/>
+      <g filter="url(#b)" opacity="0.6">
+        <circle cx="70%" cy="30%" r="25%" fill="${c.c3 ?? c.c2}"/>
+      </g>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+      <rect width="100%" height="100%" fill="url(#vignette)"/>`,
+  },
+  {
+    id: "premium-scribble",
+    name: "Scribble layer",
+    category: "premium",
+    defaultColors: { c1: "#FDE68A", c2: "#000000", c3: "#EC4899", c4: "#FDE68A" },
+    render: (c) => `
+      <rect width="100%" height="100%" fill="${c.c1}"/>
+      <g stroke="${c.c2}" stroke-width="2" fill="none" stroke-linecap="round">
+        <path d="M 50 80 Q 120 60 180 100 T 320 90"/>
+        <path d="M 380 130 Q 450 100 520 140 T 700 130"/>
+        <circle cx="450" cy="80" r="20" stroke-dasharray="5 5"/>
+        <path d="M 100 200 L 180 220 L 160 280"/>
+      </g>
+      <g stroke="${c.c3 ?? c.c1}" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.85">
+        <path d="M 600 60 L 650 110 L 700 80"/>
+        <path d="M 80 350 Q 200 380 320 340"/>
+      </g>`,
+  },
+  {
+    id: "premium-dotted-sphere",
+    name: "Dotted sphere",
+    category: "premium",
+    defaultColors: { c1: "#0F172A", c2: "#1E40AF", c3: "#FBBF24", c4: "#020617" },
+    render: (c) => `
+      <defs>
+        <radialGradient id="g" cx="50%" cy="50%" r="60%">
+          <stop offset="0%" stop-color="${c.c2}"/><stop offset="100%" stop-color="${c.c4 ?? c.c1}"/>
+        </radialGradient>
+        <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
+          <circle cx="10" cy="10" r="1" fill="${c.c3 ?? "#FBBF24"}" opacity="0.7"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+      <circle cx="70%" cy="35%" r="25%" fill="url(#dots)"/>
+      <circle cx="70%" cy="35%" r="25%" fill="none" stroke="${c.c3 ?? "#FBBF24"}" stroke-opacity="0.3" stroke-width="1"/>`,
+  },
+  {
+    id: "premium-spotlight",
+    name: "Spotlight",
+    category: "premium",
+    defaultColors: { c1: "#FFFFFF", c2: "#FBBF24", c3: "#0F172A", c4: "#000000" },
+    render: (c) => `
+      <defs>
+        <radialGradient id="g" cx="30%" cy="30%" r="50%">
+          <stop offset="0%" stop-color="${c.c1}"/>
+          <stop offset="40%" stop-color="${c.c2}" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="${c.c4 ?? "#000"}" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="100%" height="100%" fill="${c.c3 ?? c.c4 ?? "#0F172A"}"/>
+      <rect width="100%" height="100%" fill="url(#g)"/>`,
+  },
   {
     id: "tech-circuit",
     name: "Circuit lines",
@@ -372,6 +647,8 @@ export const VISUAL_TEMPLATES: TemplateDef[] = [
       <rect width="100%" height="100%" fill="url(#p)"/>`,
   },
 ];
+
+export const PALETTES_EXPORT = PALETTES;
 
 export const TEMPLATE_CATEGORIES = Array.from(
   new Set(VISUAL_TEMPLATES.map((t) => t.category)),

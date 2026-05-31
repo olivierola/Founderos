@@ -12,7 +12,24 @@ import {
   Bold,
   Italic,
   Layers,
+  Eye,
+  EyeOff,
+  Lock,
+  Unlock,
+  Copy as CopyIcon,
+  ChevronUp,
+  ChevronDown,
+  Square,
+  Circle as CircleIcon,
+  Star,
+  Minus,
+  Shapes,
+  Check,
+  Loader2,
+  Send,
 } from "lucide-react";
+import { FontPicker } from "./FontPicker";
+import { familyCss } from "./fonts";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +43,6 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ToastProvider";
 import {
   CANVAS_FORMATS,
-  FONT_OPTIONS,
   TEMPLATE_CATEGORIES,
   VISUAL_TEMPLATES,
   type CanvasFormat,
@@ -34,16 +50,22 @@ import {
   type TemplateDef,
 } from "./visualTemplates";
 
-interface TextLayer {
+interface BaseLayer {
   id: string;
-  text: string;
-  /** 0..1 of the canvas width */
+  /** 0..1 of canvas width / height */
   x: number;
-  /** 0..1 of the canvas height */
   y: number;
-  /** Width in 0..1 — height adjusts to content */
   w: number;
-  /** font-size in px (sized in canvas units, scaled by display) */
+  opacity: number;
+  rotation: number;
+  hidden?: boolean;
+  locked?: boolean;
+}
+
+interface TextLayer extends BaseLayer {
+  kind: "text";
+  text: string;
+  /** font-size in canvas units */
   fontSize: number;
   color: string;
   font: string;
@@ -52,14 +74,33 @@ interface TextLayer {
   align: "left" | "center" | "right";
 }
 
+export type ShapeKind = "rect" | "circle" | "line" | "star" | "badge" | "arrow";
+
+interface ShapeLayer extends BaseLayer {
+  kind: "shape";
+  shape: ShapeKind;
+  /** Height in 0..1 (rect/ellipse/line) */
+  h: number;
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  radius?: number; // for rect rounded corners
+}
+
+type Layer = TextLayer | ShapeLayer;
+
 interface VisualGeneratorProps {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   /** Default content seeded from the post (title / body / handle). */
   initialContent?: { title?: string; body?: string; handle?: string };
+  /** Persistence key — when set, the editor autosaves into localStorage. */
+  persistKey?: string;
+  /** Optional publish handler (e.g. uploads PNG + triggers the social post). */
+  onPublish?: (pngBlob: Blob) => Promise<void> | void;
 }
 
-export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGeneratorProps) {
+export function VisualGenerator({ open, onOpenChange, initialContent, persistKey, onPublish }: VisualGeneratorProps) {
   const [format, setFormat] = useState<CanvasFormat>(CANVAS_FORMATS[0]);
   const [customW, setCustomW] = useState(1200);
   const [customH, setCustomH] = useState(800);
@@ -67,7 +108,7 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
   const [colors, setColors] = useState<TemplateColors>(VISUAL_TEMPLATES[0].defaultColors);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
-  const [layers, setLayers] = useState<TextLayer[]>([]);
+  const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const toast = useToast();
@@ -75,6 +116,56 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
 
   const canvasW = format.id === "custom" ? customW : format.width;
   const canvasH = format.id === "custom" ? customH : format.height;
+
+  // Load persisted state on open (per persistKey).
+  useEffect(() => {
+    if (!open || !persistKey) return;
+    try {
+      const raw = localStorage.getItem("founderos.visual." + persistKey);
+      if (!raw) return;
+      const snap = JSON.parse(raw) as {
+        formatId?: string;
+        templateId?: string;
+        colors?: TemplateColors;
+        layers?: Layer[];
+        customW?: number;
+        customH?: number;
+      };
+      if (snap.formatId) {
+        const f = CANVAS_FORMATS.find((x) => x.id === snap.formatId);
+        if (f) setFormat(f);
+      }
+      if (snap.templateId) {
+        const t = VISUAL_TEMPLATES.find((x) => x.id === snap.templateId);
+        if (t) setTemplate(t);
+      }
+      if (snap.colors) setColors(snap.colors);
+      if (snap.layers && snap.layers.length > 0) setLayers(snap.layers);
+      if (snap.customW) setCustomW(snap.customW);
+      if (snap.customH) setCustomH(snap.customH);
+    } catch {
+      /* ignore corrupted state */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, persistKey]);
+
+  // Autosave whenever editable state changes.
+  useEffect(() => {
+    if (!open || !persistKey) return;
+    const snap = {
+      formatId: format.id,
+      templateId: template.id,
+      colors,
+      layers,
+      customW,
+      customH,
+    };
+    try {
+      localStorage.setItem("founderos.visual." + persistKey, JSON.stringify(snap));
+    } catch {
+      /* ignore quota */
+    }
+  }, [open, persistKey, format, template, colors, layers, customW, customH]);
 
   // Seed text layers from the initial post content the first time the dialog
   // opens. Re-seed when the dialog is reopened with new content.
@@ -102,68 +193,56 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
       }
     }
 
-    const seeds: TextLayer[] = [];
+    const seeds: Layer[] = [];
+    const baseTextProps = { kind: "text" as const, opacity: 1, rotation: 0 };
     if (titleText) {
-      // Auto-size based on title length: short -> larger, long -> smaller.
       const titleLen = titleText.length;
       const titleSize = titleLen < 30 ? canvasW / 12 : titleLen < 60 ? canvasW / 16 : canvasW / 22;
       seeds.push({
+        ...baseTextProps,
         id: "l-title",
         text: titleText,
-        x: 0.06,
-        y: 0.22,
-        w: 0.88,
+        x: 0.06, y: 0.22, w: 0.88,
         fontSize: Math.round(titleSize),
         color: "#ffffff",
-        font: FONT_OPTIONS[0].value,
-        bold: true,
-        italic: false,
-        align: "left",
+        font: "Inter",
+        bold: true, italic: false, align: "left",
       });
     }
     if (bodyText) {
       seeds.push({
+        ...baseTextProps,
         id: "l-body",
         text: bodyText.slice(0, 180),
-        x: 0.06,
-        y: 0.52,
-        w: 0.82,
+        x: 0.06, y: 0.52, w: 0.82,
         fontSize: Math.round(canvasW / 38),
         color: "#e5e7eb",
-        font: FONT_OPTIONS[0].value,
-        bold: false,
-        italic: false,
-        align: "left",
+        font: "Inter",
+        bold: false, italic: false, align: "left",
       });
     }
     if (initialContent?.handle) {
       seeds.push({
+        ...baseTextProps,
         id: "l-handle",
         text: initialContent.handle,
-        x: 0.06,
-        y: 0.9,
-        w: 0.5,
+        x: 0.06, y: 0.9, w: 0.5,
         fontSize: Math.round(canvasW / 56),
         color: "#cbd5e1",
-        font: FONT_OPTIONS[0].value,
-        bold: false,
-        italic: false,
-        align: "left",
+        font: "Inter",
+        bold: false, italic: false, align: "left",
       });
     }
     if (seeds.length === 0) {
       seeds.push({
+        ...baseTextProps,
         id: "l-title",
         text: "Your headline goes here.",
-        x: 0.06,
-        y: 0.4,
-        w: 0.88,
+        x: 0.06, y: 0.4, w: 0.88,
         fontSize: Math.round(canvasW / 14),
         color: "#ffffff",
-        font: FONT_OPTIONS[0].value,
-        bold: true,
-        italic: false,
-        align: "left",
+        font: "Inter",
+        bold: true, italic: false, align: "left",
       });
     }
     setLayers(seeds);
@@ -171,13 +250,14 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialContent?.title, initialContent?.body]);
 
-  // Reset state when closing.
+  // Clear layers ONLY when there's no persistence and the dialog is closed.
+  // With persistKey we keep state so the user resumes where they left off.
   useEffect(() => {
-    if (!open) {
+    if (!open && !persistKey) {
       setLayers([]);
       setSelectedLayer(null);
     }
-  }, [open]);
+  }, [open, persistKey]);
 
   // Sync colors with template selection.
   function pickTemplate(t: TemplateDef) {
@@ -195,24 +275,39 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
 
   const selectedLayerObj = layers.find((l) => l.id === selectedLayer) ?? null;
 
-  function updateLayer(id: string, patch: Partial<TextLayer>) {
-    setLayers((arr) => arr.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  function updateLayer(id: string, patch: Partial<Layer>) {
+    setLayers((arr) => arr.map((l) => (l.id === id ? ({ ...l, ...patch } as Layer) : l)));
   }
 
-  function addLayer() {
+  function addTextLayer() {
     const id = "l-" + Math.random().toString(36).slice(2, 7);
     const newLayer: TextLayer = {
+      kind: "text",
       id,
       text: "New text",
-      x: 0.1,
-      y: 0.5,
-      w: 0.6,
+      x: 0.1, y: 0.5, w: 0.6,
       fontSize: Math.round(canvasW / 20),
       color: "#ffffff",
-      font: FONT_OPTIONS[0].value,
-      bold: false,
-      italic: false,
-      align: "left",
+      font: "Inter",
+      bold: false, italic: false, align: "left",
+      opacity: 1, rotation: 0,
+    };
+    setLayers((arr) => [...arr, newLayer]);
+    setSelectedLayer(id);
+  }
+
+  function addShape(shape: ShapeKind) {
+    const id = "s-" + Math.random().toString(36).slice(2, 7);
+    const newLayer: ShapeLayer = {
+      kind: "shape",
+      shape,
+      id,
+      x: 0.3, y: 0.4, w: 0.4, h: 0.2,
+      fill: "#7C3AED",
+      stroke: "#FFFFFF",
+      strokeWidth: 0,
+      radius: shape === "rect" ? 12 : 0,
+      opacity: 1, rotation: 0,
     };
     setLayers((arr) => [...arr, newLayer]);
     setSelectedLayer(id);
@@ -223,45 +318,39 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
     if (selectedLayer === id) setSelectedLayer(null);
   }
 
+  function moveLayer(id: string, dir: "up" | "down") {
+    setLayers((arr) => {
+      const i = arr.findIndex((l) => l.id === id);
+      if (i < 0) return arr;
+      const next = [...arr];
+      const j = dir === "up" ? Math.min(arr.length - 1, i + 1) : Math.max(0, i - 1);
+      if (i === j) return arr;
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+
+  function duplicateLayer(id: string) {
+    setLayers((arr) => {
+      const l = arr.find((x) => x.id === id);
+      if (!l) return arr;
+      const copy: Layer = { ...l, id: l.kind[0] + "-" + Math.random().toString(36).slice(2, 7), x: Math.min(l.x + 0.04, 0.9), y: Math.min(l.y + 0.04, 0.9) };
+      return [...arr, copy];
+    });
+  }
+
   /* Build the SVG markup that combines the template background and the text
    * layers. Used both for live preview (innerHTML) and for export. */
   function buildSvg(): string {
     const bg = template.render(colors);
     const safeText = (t: string) =>
-      t
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+      t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
     const layerSvgs = layers
+      .filter((l) => !l.hidden)
       .map((l) => {
-        const anchor = l.align === "center" ? "middle" : l.align === "right" ? "end" : "start";
-        const xAbs = (l.x + (l.align === "center" ? l.w / 2 : l.align === "right" ? l.w : 0)) * canvasW;
-        const yAbs = l.y * canvasH;
-        const weight = l.bold ? 700 : 400;
-        const style = l.italic ? "italic" : "normal";
-        // Wrap by char width approximation
-        const widthPx = l.w * canvasW;
-        const approxCharsPerLine = Math.max(8, Math.floor(widthPx / (l.fontSize * 0.55)));
-        const words = l.text.split(/\s+/);
-        const lines: string[] = [];
-        let line = "";
-        for (const w of words) {
-          if ((line + " " + w).trim().length > approxCharsPerLine) {
-            if (line) lines.push(line);
-            line = w;
-          } else {
-            line = line ? line + " " + w : w;
-          }
-        }
-        if (line) lines.push(line);
-        const lineHeight = l.fontSize * 1.15;
-        const tspans = lines
-          .map(
-            (ln, i) =>
-              `<tspan x="${xAbs}" dy="${i === 0 ? 0 : lineHeight}">${safeText(ln)}</tspan>`,
-          )
-          .join("");
-        return `<text x="${xAbs}" y="${yAbs}" fill="${l.color}" font-family="${l.font}" font-size="${l.fontSize}" font-weight="${weight}" font-style="${style}" text-anchor="${anchor}" dominant-baseline="hanging">${tspans}</text>`;
+        if (l.kind === "text") return renderTextSvg(l, canvasW, canvasH, safeText);
+        return renderShapeSvg(l, canvasW, canvasH);
       })
       .join("");
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasW} ${canvasH}" width="${canvasW}" height="${canvasH}">${bg}${layerSvgs}</svg>`;
@@ -311,11 +400,63 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
     toast.success("SVG downloaded");
   }
 
+  // Render the visual to a PNG blob and hand it off to the host (publish flow).
+  const [publishing, setPublishing] = useState(false);
+  async function publish() {
+    if (!onPublish) return;
+    setPublishing(true);
+    try {
+      const svg = buildSvg();
+      const svgBlob = new Blob([svg], { type: "image/svg+xml" });
+      const url = URL.createObjectURL(svgBlob);
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Could not render preview"));
+        img.src = url;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("No canvas context");
+      ctx.drawImage(img, 0, 0, canvasW, canvasH);
+      URL.revokeObjectURL(url);
+      const pngBlob: Blob = await new Promise((res, rej) => {
+        canvas.toBlob((b) => (b ? res(b) : rej(new Error("Empty blob"))), "image/png");
+      });
+      await onPublish(pngBlob);
+      toast.success("Visual published");
+      // Clear the autosave once published so the next opening starts fresh.
+      if (persistKey) {
+        try {
+          localStorage.removeItem("founderos.visual." + persistKey);
+        } catch {}
+      }
+    } catch (e) {
+      toast.error("Publish failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   /* Snap guides shown while dragging. */
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
 
+  /* Measured stage width — used to scale fontSize for HTML overlays. */
+  const [stageWidth, setStageWidth] = useState(0);
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const update = () => setStageWidth(el.getBoundingClientRect().width);
+    update();
+    const obs = new ResizeObserver(update);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [open]);
+
   /* Drag / resize handlers for text layers with snap to center and edges. */
-  function handleDrag(layer: TextLayer, e: React.MouseEvent) {
+  function handleDrag(layer: Layer, e: React.MouseEvent) {
     e.stopPropagation();
     setSelectedLayer(layer.id);
     const stage = stageRef.current;
@@ -379,9 +520,9 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid flex-1 grid-cols-[260px_1fr_300px] overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr_300px] overflow-hidden">
           {/* Left rail: templates */}
-          <aside className="flex flex-col border-r border-border bg-card/40">
+          <aside className="flex min-h-0 flex-col border-r border-border bg-card/40">
             <div className="space-y-2 border-b border-border p-3">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -432,7 +573,7 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
           </aside>
 
           {/* Center: canvas */}
-          <main className="flex flex-col overflow-hidden bg-secondary/30">
+          <main className="flex min-h-0 flex-col overflow-hidden bg-secondary/30">
             <div className="flex items-center justify-between gap-2 border-b border-border bg-card/40 px-4 py-3">
               <div className="flex items-center gap-2">
                 <select
@@ -464,31 +605,44 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
                     />
                   </>
                 )}
-                <Button size="sm" variant="outline" onClick={addLayer}>
+                <Button size="sm" variant="outline" onClick={addTextLayer}>
                   <Plus className="h-3.5 w-3.5" /> Text
                 </Button>
+                <ShapesMenu onPick={addShape} />
+                {persistKey && (
+                  <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Check className="h-3 w-3 text-[hsl(var(--accent-2))]" /> Autosaved
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" onClick={downloadSvg}>
                   <Download className="h-3.5 w-3.5" /> SVG
                 </Button>
-                <Button size="sm" onClick={downloadPng} disabled={downloading}>
+                <Button size="sm" variant="outline" onClick={downloadPng} disabled={downloading}>
                   <Download className="h-3.5 w-3.5" /> {downloading ? "Exporting…" : "PNG"}
                 </Button>
+                {onPublish && (
+                  <Button size="sm" onClick={publish} disabled={publishing}>
+                    {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    {publishing ? "Publishing…" : "Publish"}
+                  </Button>
+                )}
               </div>
             </div>
-            <div className="relative flex-1 overflow-hidden">
-              <StageWrapper canvasW={canvasW} canvasH={canvasH}>
-                {(displayW) => (
-                  <div
-                    ref={stageRef}
-                    onClick={() => setSelectedLayer(null)}
-                    className="relative overflow-hidden rounded-lg shadow-2xl"
-                    style={{
-                      width: displayW,
-                      height: (displayW * canvasH) / canvasW,
-                    }}
-                  >
+            <div className="relative flex flex-1 items-center justify-center overflow-hidden p-6">
+              <div
+                ref={stageRef}
+                onClick={() => setSelectedLayer(null)}
+                className="relative overflow-hidden rounded-lg shadow-2xl"
+                style={{
+                  aspectRatio: `${canvasW} / ${canvasH}`,
+                  // Pick the smaller of width-available and height-available so
+                  // the stage never overflows in either axis.
+                  width: "min(100%, calc((100vh - 220px) * " + canvasW / canvasH + "))",
+                  maxHeight: "calc(100vh - 220px)",
+                }}
+              >
                     <svg
                       viewBox={`0 0 ${canvasW} ${canvasH}`}
                       className="absolute inset-0 h-full w-full"
@@ -510,45 +664,69 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
                       />
                     )}
 
-                    {/* Overlay text layers (HTML, interactive). The export rebuilds them as <text> in SVG. */}
-                    {layers.map((l) => {
+                    {/* Overlay layers (HTML for text, SVG for shapes). The export rebuilds them in SVG. */}
+                    {layers.filter((l) => !l.hidden).map((l) => {
                       const isSelected = selectedLayer === l.id;
-                      const scale = displayW / canvasW;
+                      const scale = stageWidth > 0 ? stageWidth / canvasW : 1;
+                      const commonStyle: React.CSSProperties = {
+                        left: `${l.x * 100}%`,
+                        top: `${l.y * 100}%`,
+                        opacity: l.opacity,
+                        transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,
+                        transformOrigin: "top left",
+                      };
+                      const outlineCls = cn(
+                        "absolute select-none",
+                        l.locked ? "cursor-default" : "cursor-move",
+                        isSelected && "outline outline-2 outline-[hsl(var(--primary-soft))] outline-offset-2",
+                      );
+
+                      if (l.kind === "text") {
+                        return (
+                          <div
+                            key={l.id}
+                            onMouseDown={(e) => !l.locked && handleDrag(l, e)}
+                            className={outlineCls}
+                            style={{
+                              ...commonStyle,
+                              width: `${l.w * 100}%`,
+                              color: l.color,
+                              fontFamily: familyCss(l.font),
+                              fontSize: `${l.fontSize * scale}px`,
+                              fontWeight: l.bold ? 700 : 400,
+                              fontStyle: l.italic ? "italic" : "normal",
+                              textAlign: l.align,
+                              lineHeight: 1.15,
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {l.text}
+                          </div>
+                        );
+                      }
+                      // shape
+                      const shapeSvg = renderShapePreview(l);
                       return (
                         <div
                           key={l.id}
-                          onMouseDown={(e) => handleDrag(l, e)}
-                          className={cn(
-                            "absolute cursor-move select-none",
-                            isSelected && "outline outline-2 outline-[hsl(var(--primary-soft))] outline-offset-2",
-                          )}
+                          onMouseDown={(e) => !l.locked && handleDrag(l, e)}
+                          className={outlineCls}
                           style={{
-                            left: `${l.x * 100}%`,
-                            top: `${l.y * 100}%`,
+                            ...commonStyle,
                             width: `${l.w * 100}%`,
-                            color: l.color,
-                            fontFamily: l.font,
-                            fontSize: `${l.fontSize * scale}px`,
-                            fontWeight: l.bold ? 700 : 400,
-                            fontStyle: l.italic ? "italic" : "normal",
-                            textAlign: l.align,
-                            lineHeight: 1.15,
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
+                            height: `${l.h * 100}%`,
                           }}
-                        >
-                          {l.text}
-                        </div>
+                          dangerouslySetInnerHTML={{ __html: shapeSvg }}
+                        />
                       );
                     })}
-                  </div>
-                )}
-              </StageWrapper>
+              </div>
             </div>
           </main>
 
           {/* Right rail: inspector */}
-          <aside className="flex flex-col overflow-y-auto border-l border-border bg-card/40 p-4">
+          <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-border bg-card/40 p-4">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <Palette className="mr-1 inline h-3 w-3" /> Colors
             </h3>
@@ -563,38 +741,53 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
               <Layers className="mr-1 inline h-3 w-3" /> Layers
             </h3>
             <ul className="mb-4 space-y-1">
-              {layers.map((l) => (
-                <li
-                  key={l.id}
-                  onClick={() => setSelectedLayer(l.id)}
-                  className={cn(
-                    "flex cursor-pointer items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-xs",
-                    selectedLayer === l.id ? "border-[hsl(var(--primary-soft))] bg-[hsl(var(--primary-soft)/0.1)]" : "border-border",
-                  )}
-                >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <Type className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{l.text || "Empty"}</span>
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeLayer(l.id);
-                    }}
-                    className="opacity-50 hover:opacity-100"
+              {[...layers].reverse().map((l, idx) => {
+                const realIdx = layers.length - 1 - idx;
+                const label = l.kind === "text" ? l.text || "Empty" : `Shape · ${l.shape}`;
+                return (
+                  <li
+                    key={l.id}
+                    onClick={() => setSelectedLayer(l.id)}
+                    className={cn(
+                      "group flex cursor-pointer items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-xs",
+                      selectedLayer === l.id ? "border-[hsl(var(--primary-soft))] bg-[hsl(var(--primary-soft)/0.1)]" : "border-border",
+                    )}
                   >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </li>
-              ))}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Type className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{label}</span>
+                    </span>
+                    <span className="flex items-center gap-0.5 opacity-50 group-hover:opacity-100">
+                      <button onClick={(e) => { e.stopPropagation(); moveLayer(l.id, "up"); }} title="Bring forward" disabled={realIdx === layers.length - 1}>
+                        <ChevronUp className="h-3 w-3" />
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); moveLayer(l.id, "down"); }} title="Send back" disabled={realIdx === 0}>
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); updateLayer(l.id, { hidden: !l.hidden } as Partial<Layer>); }} title="Visibility">
+                        {l.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); updateLayer(l.id, { locked: !l.locked } as Partial<Layer>); }} title="Lock">
+                        {l.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); duplicateLayer(l.id); }} title="Duplicate">
+                        <CopyIcon className="h-3 w-3" />
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); removeLayer(l.id); }} title="Delete">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
               {layers.length === 0 && (
                 <p className="rounded-md border border-dashed border-border p-2 text-center text-[11px] text-muted-foreground">
-                  No text. Click "Text" to add one.
+                  No layers yet. Add text or a shape from the toolbar.
                 </p>
               )}
             </ul>
 
-            {selectedLayerObj && (
+            {selectedLayerObj && selectedLayerObj.kind === "text" && (
               <div className="space-y-3 border-t border-border pt-3">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <Type className="mr-1 inline h-3 w-3" /> Selected text
@@ -605,112 +798,259 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
                   rows={3}
                   className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
                 />
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <label className="space-y-1">
-                    <span className="text-muted-foreground">Font</span>
-                    <select
+                <div className="space-y-2 text-xs">
+                  <label className="block space-y-1">
+                    <span className="text-muted-foreground">Font family</span>
+                    <FontPicker
                       value={selectedLayerObj.font}
-                      onChange={(e) => updateLayer(selectedLayerObj.id, { font: e.target.value })}
-                      className="h-7 w-full rounded border border-input bg-background px-1"
-                    >
-                      {FONT_OPTIONS.map((f) => (
-                        <option key={f.value} value={f.value}>{f.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-muted-foreground">Size</span>
-                    <Input
-                      type="number"
-                      value={selectedLayerObj.fontSize}
-                      onChange={(e) => updateLayer(selectedLayerObj.id, { fontSize: Number(e.target.value) || 24 })}
-                      className="h-7 text-xs"
+                      onChange={(family) => updateLayer(selectedLayerObj.id, { font: family })}
                     />
                   </label>
-                  <label className="space-y-1 col-span-2">
-                    <span className="text-muted-foreground">Color</span>
-                    <input
-                      type="color"
-                      value={selectedLayerObj.color}
-                      onChange={(e) => updateLayer(selectedLayerObj.id, { color: e.target.value })}
-                      className="h-7 w-full rounded border border-input"
-                    />
-                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="space-y-1">
+                      <span className="text-muted-foreground">Size</span>
+                      <Input
+                        type="number"
+                        value={selectedLayerObj.fontSize}
+                        onChange={(e) => updateLayer(selectedLayerObj.id, { fontSize: Number(e.target.value) || 24 })}
+                        className="h-7 text-xs"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-muted-foreground">Color</span>
+                      <input
+                        type="color"
+                        value={selectedLayerObj.color}
+                        onChange={(e) => updateLayer(selectedLayerObj.id, { color: e.target.value })}
+                        className="h-7 w-full rounded border border-input"
+                      />
+                    </label>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <ToggleBtn
-                    active={selectedLayerObj.bold}
-                    onClick={() => updateLayer(selectedLayerObj.id, { bold: !selectedLayerObj.bold })}
-                  >
+                  <ToggleBtn active={selectedLayerObj.bold} onClick={() => updateLayer(selectedLayerObj.id, { bold: !selectedLayerObj.bold })}>
                     <Bold className="h-3 w-3" />
                   </ToggleBtn>
-                  <ToggleBtn
-                    active={selectedLayerObj.italic}
-                    onClick={() => updateLayer(selectedLayerObj.id, { italic: !selectedLayerObj.italic })}
-                  >
+                  <ToggleBtn active={selectedLayerObj.italic} onClick={() => updateLayer(selectedLayerObj.id, { italic: !selectedLayerObj.italic })}>
                     <Italic className="h-3 w-3" />
                   </ToggleBtn>
                   <span className="mx-1 h-4 w-px bg-border" />
-                  <ToggleBtn
-                    active={selectedLayerObj.align === "left"}
-                    onClick={() => updateLayer(selectedLayerObj.id, { align: "left" })}
-                  >
+                  <ToggleBtn active={selectedLayerObj.align === "left"} onClick={() => updateLayer(selectedLayerObj.id, { align: "left" })}>
                     <AlignLeft className="h-3 w-3" />
                   </ToggleBtn>
-                  <ToggleBtn
-                    active={selectedLayerObj.align === "center"}
-                    onClick={() => updateLayer(selectedLayerObj.id, { align: "center" })}
-                  >
+                  <ToggleBtn active={selectedLayerObj.align === "center"} onClick={() => updateLayer(selectedLayerObj.id, { align: "center" })}>
                     <AlignCenter className="h-3 w-3" />
                   </ToggleBtn>
-                  <ToggleBtn
-                    active={selectedLayerObj.align === "right"}
-                    onClick={() => updateLayer(selectedLayerObj.id, { align: "right" })}
-                  >
+                  <ToggleBtn active={selectedLayerObj.align === "right"} onClick={() => updateLayer(selectedLayerObj.id, { align: "right" })}>
                     <AlignRight className="h-3 w-3" />
                   </ToggleBtn>
                 </div>
+                <CommonTransform layer={selectedLayerObj} updateLayer={updateLayer} />
+              </div>
+            )}
+
+            {selectedLayerObj && selectedLayerObj.kind === "shape" && (
+              <div className="space-y-3 border-t border-border pt-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Selected shape — {selectedLayerObj.shape}
+                </h3>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <label className="space-y-1">
-                    <span className="text-muted-foreground">X position</span>
-                    <Input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={selectedLayerObj.x}
-                      onChange={(e) => updateLayer(selectedLayerObj.id, { x: Number(e.target.value) })}
-                    />
+                    <span className="text-muted-foreground">Fill</span>
+                    <input type="color" value={selectedLayerObj.fill} onChange={(e) => updateLayer(selectedLayerObj.id, { fill: e.target.value } as Partial<Layer>)} className="h-7 w-full rounded border border-input" />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-muted-foreground">Y position</span>
-                    <Input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={selectedLayerObj.y}
-                      onChange={(e) => updateLayer(selectedLayerObj.id, { y: Number(e.target.value) })}
-                    />
+                    <span className="text-muted-foreground">Stroke</span>
+                    <input type="color" value={selectedLayerObj.stroke} onChange={(e) => updateLayer(selectedLayerObj.id, { stroke: e.target.value } as Partial<Layer>)} className="h-7 w-full rounded border border-input" />
                   </label>
                   <label className="space-y-1 col-span-2">
-                    <span className="text-muted-foreground">Width</span>
-                    <Input
-                      type="range"
-                      min={0.1}
-                      max={1}
-                      step={0.01}
-                      value={selectedLayerObj.w}
-                      onChange={(e) => updateLayer(selectedLayerObj.id, { w: Number(e.target.value) })}
-                    />
+                    <span className="text-muted-foreground">Stroke width: {selectedLayerObj.strokeWidth}</span>
+                    <Input type="range" min={0} max={20} step={1} value={selectedLayerObj.strokeWidth} onChange={(e) => updateLayer(selectedLayerObj.id, { strokeWidth: Number(e.target.value) } as Partial<Layer>)} />
                   </label>
+                  {selectedLayerObj.shape === "rect" && (
+                    <label className="space-y-1 col-span-2">
+                      <span className="text-muted-foreground">Corner radius: {selectedLayerObj.radius ?? 0}</span>
+                      <Input type="range" min={0} max={100} step={2} value={selectedLayerObj.radius ?? 0} onChange={(e) => updateLayer(selectedLayerObj.id, { radius: Number(e.target.value) } as Partial<Layer>)} />
+                    </label>
+                  )}
                 </div>
+                <CommonTransform layer={selectedLayerObj} updateLayer={updateLayer} />
               </div>
             )}
           </aside>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ====== Shape rendering helpers ====== */
+
+function shapeToSvgEls(l: ShapeLayer, w: number, h: number): string {
+  const sw = l.strokeWidth;
+  const stroke = sw > 0 ? `stroke="${l.stroke}" stroke-width="${sw}"` : "";
+  switch (l.shape) {
+    case "rect":
+      return `<rect x="0" y="0" width="${w}" height="${h}" rx="${l.radius ?? 0}" fill="${l.fill}" ${stroke}/>`;
+    case "circle": {
+      const r = Math.min(w, h) / 2;
+      return `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2}" ry="${h / 2}" fill="${l.fill}" ${stroke}/>` +
+        (sw > 0 ? "" : `<!-- r=${r} -->`);
+    }
+    case "line":
+      return `<line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="${l.fill}" stroke-width="${Math.max(2, sw)}" stroke-linecap="round"/>`;
+    case "arrow": {
+      const head = Math.min(h * 0.6, w * 0.18);
+      return `<line x1="0" y1="${h / 2}" x2="${w - head}" y2="${h / 2}" stroke="${l.fill}" stroke-width="${Math.max(3, sw)}" stroke-linecap="round"/>
+              <polygon points="${w - head},${h / 2 - head / 2} ${w},${h / 2} ${w - head},${h / 2 + head / 2}" fill="${l.fill}"/>`;
+    }
+    case "star": {
+      const cx = w / 2, cy = h / 2;
+      const R = Math.min(w, h) / 2;
+      const r = R * 0.45;
+      const pts: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const ang = (Math.PI / 5) * i - Math.PI / 2;
+        const rad = i % 2 === 0 ? R : r;
+        pts.push(`${cx + Math.cos(ang) * rad},${cy + Math.sin(ang) * rad}`);
+      }
+      return `<polygon points="${pts.join(" ")}" fill="${l.fill}" ${stroke}/>`;
+    }
+    case "badge":
+      return `<rect x="0" y="0" width="${w}" height="${h}" rx="${h / 2}" fill="${l.fill}" ${stroke}/>`;
+  }
+}
+
+function renderShapePreview(l: ShapeLayer): string {
+  // Internal viewBox 100x100, scaled to layer w/h by the parent div.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%;display:block">${shapeToSvgEls(l, 100, 100)}</svg>`;
+}
+
+function renderShapeSvg(l: ShapeLayer, canvasW: number, canvasH: number): string {
+  const w = l.w * canvasW;
+  const h = l.h * canvasH;
+  const x = l.x * canvasW;
+  const y = l.y * canvasH;
+  const transform = l.rotation ? `transform="rotate(${l.rotation} ${x + w / 2} ${y + h / 2})"` : "";
+  return `<g ${transform} opacity="${l.opacity}"><g transform="translate(${x} ${y})">${shapeToSvgEls(l, w, h)}</g></g>`;
+}
+
+function renderTextSvg(
+  l: TextLayer,
+  canvasW: number,
+  canvasH: number,
+  safeText: (s: string) => string,
+): string {
+  const anchor = l.align === "center" ? "middle" : l.align === "right" ? "end" : "start";
+  const xAbs = (l.x + (l.align === "center" ? l.w / 2 : l.align === "right" ? l.w : 0)) * canvasW;
+  const yAbs = l.y * canvasH;
+  const weight = l.bold ? 700 : 400;
+  const style = l.italic ? "italic" : "normal";
+  const widthPx = l.w * canvasW;
+  const approxCharsPerLine = Math.max(8, Math.floor(widthPx / (l.fontSize * 0.55)));
+  const words = l.text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const w of words) {
+    if ((line + " " + w).trim().length > approxCharsPerLine) {
+      if (line) lines.push(line);
+      line = w;
+    } else {
+      line = line ? line + " " + w : w;
+    }
+  }
+  if (line) lines.push(line);
+  const lineHeight = l.fontSize * 1.15;
+  const tspans = lines
+    .map((ln, i) => `<tspan x="${xAbs}" dy="${i === 0 ? 0 : lineHeight}">${safeText(ln)}</tspan>`)
+    .join("");
+  const rotation = l.rotation ? `transform="rotate(${l.rotation} ${xAbs} ${yAbs})"` : "";
+  return `<text x="${xAbs}" y="${yAbs}" fill="${l.color}" font-family='${l.font}, sans-serif' font-size="${l.fontSize}" font-weight="${weight}" font-style="${style}" text-anchor="${anchor}" dominant-baseline="hanging" opacity="${l.opacity}" ${rotation}>${tspans}</text>`;
+}
+
+function CommonTransform({ layer, updateLayer }: { layer: Layer; updateLayer: (id: string, patch: Partial<Layer>) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 text-xs">
+      <label className="space-y-1">
+        <span className="text-muted-foreground">X</span>
+        <Input type="range" min={0} max={1} step={0.01} value={layer.x} onChange={(e) => updateLayer(layer.id, { x: Number(e.target.value) })} />
+      </label>
+      <label className="space-y-1">
+        <span className="text-muted-foreground">Y</span>
+        <Input type="range" min={0} max={1} step={0.01} value={layer.y} onChange={(e) => updateLayer(layer.id, { y: Number(e.target.value) })} />
+      </label>
+      <label className="space-y-1">
+        <span className="text-muted-foreground">Width</span>
+        <Input type="range" min={0.05} max={1} step={0.01} value={layer.w} onChange={(e) => updateLayer(layer.id, { w: Number(e.target.value) })} />
+      </label>
+      {"h" in layer && (
+        <label className="space-y-1">
+          <span className="text-muted-foreground">Height</span>
+          <Input type="range" min={0.05} max={1} step={0.01} value={(layer as ShapeLayer).h} onChange={(e) => updateLayer(layer.id, { h: Number(e.target.value) } as Partial<Layer>)} />
+        </label>
+      )}
+      <label className="space-y-1">
+        <span className="text-muted-foreground">Opacity</span>
+        <Input type="range" min={0} max={1} step={0.05} value={layer.opacity} onChange={(e) => updateLayer(layer.id, { opacity: Number(e.target.value) })} />
+      </label>
+      <label className="space-y-1">
+        <span className="text-muted-foreground">Rotate</span>
+        <Input type="range" min={-180} max={180} step={1} value={layer.rotation} onChange={(e) => updateLayer(layer.id, { rotation: Number(e.target.value) })} />
+      </label>
+    </div>
+  );
+}
+
+function ShapesMenu({ onPick }: { onPick: (s: ShapeKind) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const shapes: { kind: ShapeKind; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { kind: "rect", label: "Rectangle", icon: Square },
+    { kind: "circle", label: "Ellipse", icon: CircleIcon },
+    { kind: "badge", label: "Pill / badge", icon: Square },
+    { kind: "line", label: "Line", icon: Minus },
+    { kind: "arrow", label: "Arrow", icon: Minus },
+    { kind: "star", label: "Star", icon: Star },
+  ];
+
+  return (
+    <div ref={ref} className="relative">
+      <Button size="sm" variant="outline" onClick={() => setOpen((v) => !v)}>
+        <Shapes className="h-3.5 w-3.5" /> Shape
+        <ChevronDown className="h-3 w-3 opacity-60" />
+      </Button>
+      {open && (
+        <div className="absolute left-0 top-9 z-50 min-w-[160px] overflow-hidden rounded-md border border-border bg-popover shadow-2xl">
+          {shapes.map((s) => {
+            const I = s.icon;
+            return (
+              <button
+                key={s.kind}
+                type="button"
+                onClick={() => {
+                  onPick(s.kind);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-secondary"
+              >
+                <I className="h-3.5 w-3.5 text-muted-foreground" />
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -755,43 +1095,3 @@ function ToggleBtn({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
-/* Sizing wrapper that measures its available box and fits the stage so it
- * never overflows in width or height — both dimensions respect the canvas
- * aspect ratio. */
-function StageWrapper({
-  canvasW,
-  canvasH,
-  children,
-}: {
-  canvasW: number;
-  canvasH: number;
-  children: (displayW: number) => React.ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    const update = () => {
-      if (!ref.current) return;
-      const r = ref.current.getBoundingClientRect();
-      setBox({ w: r.width, h: r.height });
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, []);
-
-  // Fit the canvas aspect ratio inside the available (width, height) box.
-  // displayW = min(box.w, box.h * aspect) — guarantees no overflow in either
-  // axis even when the editor is resized live.
-  const aspect = canvasW / canvasH;
-  const displayW = box ? Math.max(0, Math.min(box.w, box.h * aspect)) : 0;
-
-  return (
-    <div ref={ref} className="absolute inset-6 flex items-center justify-center">
-      {displayW > 0 && children(displayW)}
-    </div>
-  );
-}
