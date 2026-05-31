@@ -18,7 +18,7 @@ import {
   Brain,
 } from "lucide-react";
 import { MarketingShell, DotGrid } from "./MarketingShell";
-import { CockpitMockup, ArchitectureDiagram } from "./Illustrations";
+import { ArchitectureDiagram } from "./Illustrations";
 
 const STATS = [
   { value: "57", label: "Integrations" },
@@ -66,53 +66,62 @@ const FAQ = [
 export function HomePage() {
   return (
     <MarketingShell>
-      {/* ====== Hero — épuré, pas d'orbs ====== */}
+      {/* ====== Hero centré ====== */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 opacity-40">
-          <DotGrid />
-        </div>
-        <div className="relative mx-auto max-w-5xl px-4 pb-12 pt-20 sm:px-6 lg:pb-16 lg:pt-28">
-          <div className="max-w-3xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-1 text-xs text-muted-foreground">
-              <Building2 className="h-3 w-3" />
-              For technical agencies
-            </span>
-            <h1 className="mt-6 text-balance text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-              The cockpit agencies run on.
-            </h1>
-            <p className="mt-6 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg">
-              Manage every client SaaS from one panel — billing, infra, deploys, secrets, support
-              and AI agents. Replace 12 dashboards with one.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-2">
-              <Link
-                to="/signup"
-                className="group inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
-              >
-                Start free
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-              </Link>
-              <Link
-                to="/features"
-                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/60 px-5 py-2.5 text-sm transition-colors hover:bg-secondary"
-              >
-                See features
-              </Link>
-              <span className="ml-1 text-xs text-muted-foreground">
-                No credit card · 14-day Pro trial
-              </span>
-            </div>
+        <DotGrid className="[mask-image:radial-gradient(ellipse_at_top,rgba(0,0,0,1),transparent_75%)]" />
+        <div className="relative mx-auto max-w-4xl px-4 pb-12 pt-20 text-center sm:px-6 lg:pb-16 lg:pt-28">
+          <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-1 text-xs text-muted-foreground">
+            <Building2 className="h-3 w-3" />
+            For technical agencies
+          </span>
+          <h1 className="mx-auto mt-6 max-w-3xl text-balance text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
+            The cockpit agencies run on.
+          </h1>
+          <p className="mx-auto mt-6 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg">
+            Manage every client SaaS from one panel — billing, infra, deploys, secrets, support
+            and AI agents. Replace 12 dashboards with one.
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+            <Link
+              to="/signup"
+              className="group inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              Start free
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+            <Link
+              to="/features"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/60 px-5 py-2.5 text-sm transition-colors hover:bg-secondary"
+            >
+              See features
+            </Link>
+          </div>
+          <div className="mt-3 text-xs text-muted-foreground">
+            No credit card · 14-day Pro trial
           </div>
         </div>
       </section>
 
-      {/* ====== Cockpit mockup débordant + stats embedded ====== */}
+      {/* ====== Vraie capture dashboard + stats ====== */}
       <section className="relative">
         <div className="mx-auto max-w-7xl px-4 pb-24 sm:px-6">
           <div className="grid items-end gap-6 lg:grid-cols-[1.5fr_1fr]">
             <div className="relative">
-              <div className="absolute -inset-4 -z-10 rounded-3xl bg-gradient-to-tr from-[hsl(var(--primary-soft)/0.15)] via-transparent to-[hsl(var(--accent-2)/0.15)] blur-3xl" />
-              <CockpitMockup className="w-full rounded-xl border border-border bg-card shadow-2xl mkt-rise" />
+              {/* Glow doux derrière */}
+              <div className="absolute -inset-4 -z-10 rounded-3xl bg-gradient-to-tr from-[hsl(var(--primary-soft)/0.12)] via-transparent to-[hsl(var(--accent-2)/0.12)] blur-3xl" />
+              <div className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-2xl mkt-rise">
+                <img
+                  src="/cockpit.png"
+                  alt="FounderOS cockpit"
+                  className="w-full select-none"
+                  draggable={false}
+                />
+                {/* Vignette + overlay sombre subtil pour donner l'effet "screenshot encadré" */}
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background/40" />
+                <div className="pointer-events-none absolute inset-0 [box-shadow:inset_0_0_120px_rgba(0,0,0,0.55)]" />
+                {/* Highlight subtil sur les bords sup */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+              </div>
             </div>
             <div className="space-y-3">
               {STATS.map((s) => (
