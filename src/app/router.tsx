@@ -139,6 +139,17 @@ import { SettingsDataPrivacyPage } from "@/features/settings/DataPrivacy";
 import { GenericSubPage } from "@/features/GenericSubPage";
 import { MODULES } from "@/lib/navigation";
 
+// Marketing site
+import { HomePage } from "@/features/marketing-site/HomePage";
+import {
+  FeaturesPage,
+  PricingPage,
+  IntegrationsPage,
+  ChangelogPage,
+  DocsPage,
+  ContactPage,
+} from "@/features/marketing-site/OtherPages";
+
 type PageEl = JSX.Element;
 
 const PAGES: Record<string, PageEl> = {
@@ -272,7 +283,15 @@ function buildModuleRoutes() {
 }
 
 export const router = createBrowserRouter([
-  { path: "/", element: <Navigate to="/login" replace /> },
+  // Public marketing site
+  { path: "/", element: <HomePage /> },
+  { path: "/features", element: <FeaturesPage /> },
+  { path: "/pricing", element: <PricingPage /> },
+  { path: "/integrations", element: <IntegrationsPage /> },
+  { path: "/changelog", element: <ChangelogPage /> },
+  { path: "/docs", element: <DocsPage /> },
+  { path: "/contact", element: <ContactPage /> },
+  // Auth
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },
   { path: "/onboarding", element: <OnboardingPage /> },
@@ -321,5 +340,5 @@ export const router = createBrowserRouter([
       ...buildModuleRoutes(),
     ],
   },
-  { path: "*", element: <Navigate to="/login" replace /> },
+  { path: "*", element: <Navigate to="/" replace /> },
 ]);
