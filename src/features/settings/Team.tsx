@@ -390,7 +390,13 @@ function InviteDialog({
     try {
       const res = await toast.run(
         () =>
-          callEdge<{ kind: string; token?: string }>("project-invite-member", {
+          callEdge<{
+            kind: string;
+            token?: string;
+            email_sent?: boolean;
+            email_error?: string | null;
+            from?: string;
+          }>("project-invite-member", {
             workspace_id: workspaceId,
             project_id: projectId,
             email: email.trim(),
@@ -398,7 +404,11 @@ function InviteDialog({
           }),
         {
           loading: "Sending invitation…",
-          success: (r) => (r.kind === "added" ? "Member added" : "Invitation created"),
+          success: (r) => {
+            if (r.kind === "added") return "Member added";
+            if (r.email_sent) return `Invitation sent to ${email.trim()}`;
+            return "Invitation created — email not sent";
+          },
           error: "Invitation failed",
         },
       );
@@ -406,7 +416,14 @@ function InviteDialog({
         const url = `${location.origin}/accept-invite?token=${res.token}`;
         try {
           await navigator.clipboard.writeText(url);
-          toast.info("Invitation link copied", url);
+          if (!res.email_sent) {
+            toast.info(
+              "Email not sent — link copied",
+              res.email_error ?? "RESEND_API_KEY is not configured. Share the copied link manually.",
+            );
+          } else {
+            toast.info("Invitation link also copied", url);
+          }
         } catch {
           /* ignore */
         }
