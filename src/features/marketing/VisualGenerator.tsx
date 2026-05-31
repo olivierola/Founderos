@@ -81,15 +81,39 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
   useEffect(() => {
     if (!open) return;
     if (layers.length > 0) return;
+
+    // Extract a sensible title (first sentence or first 50 chars), then the
+    // body as everything after.
+    const raw = (initialContent?.title || initialContent?.body || "").trim();
+    let titleText = "";
+    let bodyText = "";
+    if (raw) {
+      const firstLineBreak = raw.indexOf("\n");
+      const firstSentence = raw.match(/^[^.!?]{5,80}[.!?]/);
+      if (firstLineBreak > 0 && firstLineBreak <= 80) {
+        titleText = raw.slice(0, firstLineBreak).trim();
+        bodyText = raw.slice(firstLineBreak + 1).trim();
+      } else if (firstSentence) {
+        titleText = firstSentence[0].trim();
+        bodyText = raw.slice(firstSentence[0].length).trim();
+      } else {
+        titleText = raw.slice(0, 50).trim();
+        bodyText = raw.length > 50 ? raw.slice(50, 250).trim() : "";
+      }
+    }
+
     const seeds: TextLayer[] = [];
-    if (initialContent?.title) {
+    if (titleText) {
+      // Auto-size based on title length: short -> larger, long -> smaller.
+      const titleLen = titleText.length;
+      const titleSize = titleLen < 30 ? canvasW / 12 : titleLen < 60 ? canvasW / 16 : canvasW / 22;
       seeds.push({
         id: "l-title",
-        text: initialContent.title,
+        text: titleText,
         x: 0.06,
-        y: 0.18,
+        y: 0.22,
         w: 0.88,
-        fontSize: Math.round(canvasW / 12),
+        fontSize: Math.round(titleSize),
         color: "#ffffff",
         font: FONT_OPTIONS[0].value,
         bold: true,
@@ -97,14 +121,14 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
         align: "left",
       });
     }
-    if (initialContent?.body) {
+    if (bodyText) {
       seeds.push({
         id: "l-body",
-        text: initialContent.body.slice(0, 220),
+        text: bodyText.slice(0, 180),
         x: 0.06,
-        y: 0.5,
-        w: 0.78,
-        fontSize: Math.round(canvasW / 32),
+        y: 0.52,
+        w: 0.82,
+        fontSize: Math.round(canvasW / 38),
         color: "#e5e7eb",
         font: FONT_OPTIONS[0].value,
         bold: false,
@@ -117,9 +141,9 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
         id: "l-handle",
         text: initialContent.handle,
         x: 0.06,
-        y: 0.88,
+        y: 0.9,
         w: 0.5,
-        fontSize: Math.round(canvasW / 48),
+        fontSize: Math.round(canvasW / 56),
         color: "#cbd5e1",
         font: FONT_OPTIONS[0].value,
         bold: false,
@@ -132,9 +156,9 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
         id: "l-title",
         text: "Your headline goes here.",
         x: 0.06,
-        y: 0.35,
+        y: 0.4,
         w: 0.88,
-        fontSize: Math.round(canvasW / 11),
+        fontSize: Math.round(canvasW / 14),
         color: "#ffffff",
         font: FONT_OPTIONS[0].value,
         bold: true,
@@ -287,7 +311,10 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
     toast.success("SVG downloaded");
   }
 
-  /* Drag / resize handlers for text layers. */
+  /* Snap guides shown while dragging. */
+  const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
+
+  /* Drag / resize handlers for text layers with snap to center and edges. */
   function handleDrag(layer: TextLayer, e: React.MouseEvent) {
     e.stopPropagation();
     setSelectedLayer(layer.id);
@@ -298,17 +325,45 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
     const startY = e.clientY;
     const baseX = layer.x;
     const baseY = layer.y;
+    const SNAP_THRESHOLD = 0.02; // 2% of canvas
+
+    function snap(value: number, anchors: number[]): { v: number; hit: number | null } {
+      for (const a of anchors) {
+        if (Math.abs(value - a) < SNAP_THRESHOLD) return { v: a, hit: a };
+      }
+      return { v: value, hit: null };
+    }
+
     function onMove(ev: MouseEvent) {
       const dx = (ev.clientX - startX) / rect.width;
       const dy = (ev.clientY - startY) / rect.height;
-      updateLayer(layer.id, {
-        x: Math.max(0, Math.min(1 - layer.w, baseX + dx)),
-        y: Math.max(0, Math.min(0.98, baseY + dy)),
+      let newX = Math.max(0, Math.min(1 - layer.w, baseX + dx));
+      let newY = Math.max(0, Math.min(0.98, baseY + dy));
+
+      // Horizontal snap: left edge, center, right edge
+      const centerX = newX + layer.w / 2;
+      const sx = snap(centerX, [0.5]);
+      if (sx.hit !== null) newX = sx.v - layer.w / 2;
+      else {
+        const sxLeft = snap(newX, [0.06, 0]);
+        if (sxLeft.hit !== null) newX = sxLeft.v;
+      }
+
+      // Vertical snap: center, thirds
+      const sy = snap(newY, [0.06, 0.22, 0.5, 0.78, 0.9]);
+      if (sy.hit !== null) newY = sy.v;
+
+      setGuides({
+        x: Math.abs(newX + layer.w / 2 - 0.5) < SNAP_THRESHOLD ? 0.5 : undefined,
+        y: [0.22, 0.5, 0.78].find((a) => Math.abs(newY - a) < SNAP_THRESHOLD),
       });
+
+      updateLayer(layer.id, { x: newX, y: newY });
     }
     function onUp() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      setGuides({});
     }
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -422,52 +477,73 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
                 </Button>
               </div>
             </div>
-            <div className="flex flex-1 items-center justify-center overflow-auto p-6">
-              <div
-                ref={stageRef}
-                onClick={() => setSelectedLayer(null)}
-                className="relative max-h-full max-w-full overflow-hidden rounded-lg shadow-2xl"
-                style={{
-                  aspectRatio: `${canvasW}/${canvasH}`,
-                  width: "min(100%, 800px)",
-                }}
-              >
-                <svg
-                  viewBox={`0 0 ${canvasW} ${canvasH}`}
-                  className="absolute inset-0 h-full w-full"
-                  preserveAspectRatio="xMidYMid slice"
-                  dangerouslySetInnerHTML={{ __html: template.render(colors) }}
-                />
-                {/* Overlay text layers (HTML, interactive). The export rebuilds them as <text> in SVG. */}
-                {layers.map((l) => {
-                  const isSelected = selectedLayer === l.id;
-                  return (
-                    <div
-                      key={l.id}
-                      onMouseDown={(e) => handleDrag(l, e)}
-                      className={cn(
-                        "absolute cursor-move select-none",
-                        isSelected && "outline outline-2 outline-[hsl(var(--primary-soft))] outline-offset-2",
-                      )}
-                      style={{
-                        left: `${l.x * 100}%`,
-                        top: `${l.y * 100}%`,
-                        width: `${l.w * 100}%`,
-                        color: l.color,
-                        fontFamily: l.font,
-                        fontSize: `${(l.fontSize / canvasW) * 100}cqi`,
-                        fontWeight: l.bold ? 700 : 400,
-                        fontStyle: l.italic ? "italic" : "normal",
-                        textAlign: l.align,
-                        lineHeight: 1.15,
-                        containerType: "inline-size",
-                      } as React.CSSProperties}
-                    >
-                      {l.text}
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="relative flex flex-1 items-center justify-center overflow-hidden p-6">
+              <StageWrapper canvasW={canvasW} canvasH={canvasH}>
+                {(displayW) => (
+                  <div
+                    ref={stageRef}
+                    onClick={() => setSelectedLayer(null)}
+                    className="relative overflow-hidden rounded-lg shadow-2xl"
+                    style={{
+                      width: displayW,
+                      height: (displayW * canvasH) / canvasW,
+                    }}
+                  >
+                    <svg
+                      viewBox={`0 0 ${canvasW} ${canvasH}`}
+                      className="absolute inset-0 h-full w-full"
+                      preserveAspectRatio="xMidYMid slice"
+                      dangerouslySetInnerHTML={{ __html: template.render(colors) }}
+                    />
+
+                    {/* Snap guides (visible only while dragging) */}
+                    {guides.x !== undefined && (
+                      <div
+                        className="pointer-events-none absolute inset-y-0 w-px bg-[hsl(var(--primary-soft))]"
+                        style={{ left: `${guides.x * 100}%` }}
+                      />
+                    )}
+                    {guides.y !== undefined && (
+                      <div
+                        className="pointer-events-none absolute inset-x-0 h-px bg-[hsl(var(--primary-soft))]"
+                        style={{ top: `${guides.y * 100}%` }}
+                      />
+                    )}
+
+                    {/* Overlay text layers (HTML, interactive). The export rebuilds them as <text> in SVG. */}
+                    {layers.map((l) => {
+                      const isSelected = selectedLayer === l.id;
+                      const scale = displayW / canvasW;
+                      return (
+                        <div
+                          key={l.id}
+                          onMouseDown={(e) => handleDrag(l, e)}
+                          className={cn(
+                            "absolute cursor-move select-none",
+                            isSelected && "outline outline-2 outline-[hsl(var(--primary-soft))] outline-offset-2",
+                          )}
+                          style={{
+                            left: `${l.x * 100}%`,
+                            top: `${l.y * 100}%`,
+                            width: `${l.w * 100}%`,
+                            color: l.color,
+                            fontFamily: l.font,
+                            fontSize: `${l.fontSize * scale}px`,
+                            fontWeight: l.bold ? 700 : 400,
+                            fontStyle: l.italic ? "italic" : "normal",
+                            textAlign: l.align,
+                            lineHeight: 1.15,
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {l.text}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </StageWrapper>
             </div>
           </main>
 
@@ -676,5 +752,42 @@ function ToggleBtn({ active, onClick, children }: { active: boolean; onClick: ()
     >
       {children}
     </button>
+  );
+}
+
+/* Sizing wrapper that measures its available box and fits the stage so it
+ * never overflows in width or height — both dimensions respect the canvas
+ * aspect ratio. */
+function StageWrapper({
+  canvasW,
+  canvasH,
+  children,
+}: {
+  canvasW: number;
+  canvasH: number;
+  children: (displayW: number) => React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const observer = new ResizeObserver((entries) => {
+      const r = entries[0].contentRect;
+      setBox({ w: r.width, h: r.height });
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Pick the larger of width/height constraint to keep the stage inside both.
+  const fromW = box.w;
+  const fromH = (box.h * canvasW) / canvasH;
+  const displayW = Math.max(0, Math.min(fromW, fromH));
+
+  return (
+    <div ref={ref} className="flex h-full w-full items-center justify-center">
+      {displayW > 0 && children(displayW)}
+    </div>
   );
 }
