@@ -1,5 +1,5 @@
 import { useSearchParams } from "react-router-dom";
-import { LayoutDashboard, Workflow, Route, ListChecks, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Workflow, Route, ListChecks, BarChart3, FolderTree } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   OnboardingOverviewPage,
@@ -8,8 +8,9 @@ import {
   OnboardingChecklistPage,
   OnboardingAnalyticsPage,
 } from "./OnboardingPages";
+import { OnboardingTreePage } from "./OnboardingTreePage";
 
-type Tab = "overview" | "flows" | "tours" | "checklist" | "analytics";
+type Tab = "overview" | "flows" | "tours" | "checklist" | "analytics" | "tree";
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -17,6 +18,7 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: "tours", label: "Tours", icon: Route },
   { id: "checklist", label: "Checklist", icon: ListChecks },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "tree", label: "Tree", icon: FolderTree },
 ];
 
 export function OnboardingPage() {
@@ -64,6 +66,7 @@ export function OnboardingPage() {
       {tab === "tours" && <OnboardingToursPage />}
       {tab === "checklist" && <OnboardingChecklistPage />}
       {tab === "analytics" && <OnboardingAnalyticsPage />}
+      {tab === "tree" && <OnboardingTreePage />}
     </div>
   );
 }
