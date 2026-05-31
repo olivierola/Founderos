@@ -27,6 +27,8 @@ import {
   Check,
   Loader2,
   Send,
+  FileJson,
+  Upload,
 } from "lucide-react";
 import { FontPicker } from "./FontPicker";
 import { familyCss } from "./fonts";
@@ -113,45 +115,67 @@ export function VisualGenerator({ open, onOpenChange, initialContent, persistKey
   const [downloading, setDownloading] = useState(false);
   const toast = useToast();
   const stageRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const canvasW = format.id === "custom" ? customW : format.width;
   const canvasH = format.id === "custom" ? customH : format.height;
 
+  // Tracks whether we already attempted to load the saved snapshot for the
+  // current (open, persistKey) pair. Until this flips true the save effect
+  // stays silent, so it cannot overwrite the snapshot with the empty initial
+  // state before the load effect has had a chance to populate it.
+  const [hydrated, setHydrated] = useState(false);
+  const [restoredSnapshot, setRestoredSnapshot] = useState(false);
+
   // Load persisted state on open (per persistKey).
   useEffect(() => {
-    if (!open || !persistKey) return;
+    if (!open) {
+      setHydrated(false);
+      setRestoredSnapshot(false);
+      return;
+    }
+    if (!persistKey) {
+      setHydrated(true);
+      return;
+    }
     try {
       const raw = localStorage.getItem("founderos.visual." + persistKey);
-      if (!raw) return;
-      const snap = JSON.parse(raw) as {
-        formatId?: string;
-        templateId?: string;
-        colors?: TemplateColors;
-        layers?: Layer[];
-        customW?: number;
-        customH?: number;
-      };
-      if (snap.formatId) {
-        const f = CANVAS_FORMATS.find((x) => x.id === snap.formatId);
-        if (f) setFormat(f);
+      if (raw) {
+        const snap = JSON.parse(raw) as {
+          formatId?: string;
+          templateId?: string;
+          colors?: TemplateColors;
+          layers?: Layer[];
+          customW?: number;
+          customH?: number;
+        };
+        if (snap.formatId) {
+          const f = CANVAS_FORMATS.find((x) => x.id === snap.formatId);
+          if (f) setFormat(f);
+        }
+        if (snap.templateId) {
+          const t = VISUAL_TEMPLATES.find((x) => x.id === snap.templateId);
+          if (t) setTemplate(t);
+        }
+        if (snap.colors) setColors(snap.colors);
+        if (snap.layers && snap.layers.length > 0) {
+          setLayers(snap.layers);
+          setRestoredSnapshot(true);
+        }
+        if (snap.customW) setCustomW(snap.customW);
+        if (snap.customH) setCustomH(snap.customH);
       }
-      if (snap.templateId) {
-        const t = VISUAL_TEMPLATES.find((x) => x.id === snap.templateId);
-        if (t) setTemplate(t);
-      }
-      if (snap.colors) setColors(snap.colors);
-      if (snap.layers && snap.layers.length > 0) setLayers(snap.layers);
-      if (snap.customW) setCustomW(snap.customW);
-      if (snap.customH) setCustomH(snap.customH);
     } catch {
       /* ignore corrupted state */
     }
+    setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, persistKey]);
 
-  // Autosave whenever editable state changes.
+  // Autosave whenever editable state changes — but only after the load
+  // effect ran, to avoid wiping the snapshot with the initial empty state.
   useEffect(() => {
-    if (!open || !persistKey) return;
+    if (!open || !persistKey || !hydrated) return;
     const snap = {
       formatId: format.id,
       templateId: template.id,
@@ -165,12 +189,14 @@ export function VisualGenerator({ open, onOpenChange, initialContent, persistKey
     } catch {
       /* ignore quota */
     }
-  }, [open, persistKey, format, template, colors, layers, customW, customH]);
+  }, [open, persistKey, hydrated, format, template, colors, layers, customW, customH]);
 
   // Seed text layers from the initial post content the first time the dialog
   // opens. Re-seed when the dialog is reopened with new content.
   useEffect(() => {
     if (!open) return;
+    if (!hydrated) return;       // wait for the load effect
+    if (restoredSnapshot) return; // user already has saved layers
     if (layers.length > 0) return;
 
     // Extract a sensible title (first sentence or first 50 chars), then the
@@ -400,6 +426,63 @@ export function VisualGenerator({ open, onOpenChange, initialContent, persistKey
     toast.success("SVG downloaded");
   }
 
+  /* Export the full editor state as a portable JSON file. The user can
+   * download it, share it, or re-import it later — even on another device. */
+  function exportJson() {
+    const snap = {
+      $type: "founderos-visual/v1",
+      formatId: format.id,
+      customW,
+      customH,
+      templateId: template.id,
+      colors,
+      layers,
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `founderos-visual-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Project saved", `${layers.length} layer${layers.length === 1 ? "" : "s"} exported`);
+  }
+
+  async function importJson(file: File) {
+    try {
+      const text = await file.text();
+      const snap = JSON.parse(text) as {
+        $type?: string;
+        formatId?: string;
+        templateId?: string;
+        colors?: TemplateColors;
+        layers?: Layer[];
+        customW?: number;
+        customH?: number;
+      };
+      if (snap.$type && snap.$type !== "founderos-visual/v1") {
+        throw new Error("Unsupported file version");
+      }
+      if (snap.formatId) {
+        const f = CANVAS_FORMATS.find((x) => x.id === snap.formatId);
+        if (f) setFormat(f);
+      }
+      if (snap.templateId) {
+        const t = VISUAL_TEMPLATES.find((x) => x.id === snap.templateId);
+        if (t) setTemplate(t);
+      }
+      if (snap.colors) setColors(snap.colors);
+      if (Array.isArray(snap.layers)) setLayers(snap.layers);
+      if (snap.customW) setCustomW(snap.customW);
+      if (snap.customH) setCustomH(snap.customH);
+      setRestoredSnapshot(true);
+      toast.success("Project loaded", `${(snap.layers ?? []).length} layer(s) restored`);
+    } catch (e) {
+      toast.error("Could not load file", e instanceof Error ? e.message : String(e));
+    }
+  }
+
   // Render the visual to a PNG blob and hand it off to the host (publish flow).
   const [publishing, setPublishing] = useState(false);
   async function publish() {
@@ -622,6 +705,23 @@ export function VisualGenerator({ open, onOpenChange, initialContent, persistKey
                 <Button size="sm" variant="outline" onClick={downloadPng} disabled={downloading}>
                   <Download className="h-3.5 w-3.5" /> {downloading ? "Exporting…" : "PNG"}
                 </Button>
+                <Button size="sm" variant="outline" onClick={exportJson} title="Save current state as JSON">
+                  <FileJson className="h-3.5 w-3.5" /> Save
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => importInputRef.current?.click()} title="Load a previously saved state">
+                  <Upload className="h-3.5 w-3.5" /> Load
+                </Button>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) importJson(f);
+                    e.target.value = "";
+                  }}
+                />
                 {onPublish && (
                   <Button size="sm" onClick={publish} disabled={publishing}>
                     {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
