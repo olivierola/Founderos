@@ -132,6 +132,7 @@ import { SettingsProfilePage } from "@/features/settings/Profile";
 import { SettingsWorkspacePage } from "@/features/settings/Workspace";
 import { SettingsProjectsPage, SettingsNotificationsPage } from "@/features/settings/Extra";
 import { SettingsTeamPage } from "@/features/settings/Team";
+import { SettingsRolesPage } from "@/features/settings/Roles";
 import { SettingsBillingPage } from "@/features/settings/Billing";
 import { SettingsSecurityPage } from "@/features/settings/Security2FA";
 import { SettingsDataPrivacyPage } from "@/features/settings/DataPrivacy";
@@ -259,6 +260,7 @@ const PAGES: Record<string, PageEl> = {
   "settings/workspace": <SettingsWorkspacePage />,
   "settings/projects": <SettingsProjectsPage />,
   "settings/team": <SettingsTeamPage />,
+  "settings/roles": <SettingsRolesPage />,
   "settings/billing": <SettingsBillingPage />,
   "settings/notifications": <SettingsNotificationsPage />,
   "settings/security": <SettingsSecurityPage />,

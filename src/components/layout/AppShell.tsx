@@ -4,6 +4,7 @@ import { PrimarySidebar } from "./PrimarySidebar";
 import { SecondarySidebar } from "./SecondarySidebar";
 import { Topbar } from "./Topbar";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { PermissionsProvider } from "@/lib/permissions";
 
 interface ShellNavCtx {
   mobileOpen: boolean;
@@ -41,6 +42,7 @@ export function AppShell() {
 
   return (
     <ShellNavContext.Provider value={{ mobileOpen, setMobileOpen }}>
+      <PermissionsProvider>
       <div className="flex h-screen w-screen overflow-hidden bg-background">
         {/* Desktop sidebars */}
         <div className="hidden md:flex">
@@ -72,6 +74,7 @@ export function AppShell() {
           </main>
         </div>
       </div>
+      </PermissionsProvider>
     </ShellNavContext.Provider>
   );
 }

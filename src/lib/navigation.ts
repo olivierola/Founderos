@@ -196,6 +196,7 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Workspace", slug: "workspace" },
       { label: "Projects", slug: "projects" },
       { label: "Team", slug: "team" },
+      { label: "Roles & permissions", slug: "roles" },
       { label: "Billing", slug: "billing" },
       { label: "Notifications", slug: "notifications" },
       { label: "Security", slug: "security" },
