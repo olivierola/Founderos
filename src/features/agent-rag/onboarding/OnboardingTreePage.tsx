@@ -13,6 +13,12 @@ import {
   FolderTree,
   FileCode,
   FileJson,
+  FileText,
+  Folder,
+  Globe,
+  MousePointerClick,
+  Link2,
+  FormInput,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,6 +36,313 @@ interface ScanRow {
   created_at: string;
   app_structure: Record<string, unknown> | null;
   repositories: { full_name: string } | null;
+}
+
+/* ============================================================ */
+/*  Visual Tree view — file explorer-like, with connector lines  */
+/* ============================================================ */
+
+interface TreeNode {
+  id: string;
+  label: string;
+  kind: "root" | "section" | "page" | "route" | "element" | "intent" | "summary";
+  meta?: string;
+  children?: TreeNode[];
+}
+
+/** Convert the app_structure object into a renderable tree of nodes. */
+function buildTreeFromScan(data: unknown): TreeNode {
+  const struct = (data ?? {}) as {
+    pages?: Array<{ name?: string; path?: string; elements?: Array<{ type?: string; label?: string; action?: string }> }>;
+    routes?: string[];
+    element_count?: number;
+    enriched?: {
+      pages?: Array<{
+        name?: string;
+        route?: string;
+        description?: string;
+        intents?: string[];
+        primary_actions?: Array<{ label?: string; selector_hint?: string; target_route?: string; intent?: string }>;
+        related_routes?: string[];
+      }>;
+      navigation?: { entry_routes?: string[]; common_journeys?: Array<{ name?: string; route_sequence?: string[]; description?: string }> };
+      summary?: string;
+    };
+  };
+
+  const root: TreeNode = { id: "root", label: "app_structure", kind: "root", children: [] };
+
+  // --- Pages (raw scan)
+  if (struct.pages && struct.pages.length > 0) {
+    const pagesSection: TreeNode = {
+      id: "raw-pages",
+      label: "Pages",
+      kind: "section",
+      meta: `${struct.pages.length} scanned`,
+      children: struct.pages.map((p, i) => ({
+        id: "raw-page-" + i,
+        label: p.name ?? "(unnamed)",
+        kind: "page",
+        meta: p.path,
+        children: (p.elements ?? []).map((el, ei) => ({
+          id: "raw-page-" + i + "-el-" + ei,
+          label: el.label || "(unlabeled)",
+          kind: "element",
+          meta: el.action ?? el.type,
+        })),
+      })),
+    };
+    root.children!.push(pagesSection);
+  }
+
+  // --- Routes
+  if (struct.routes && struct.routes.length > 0) {
+    root.children!.push({
+      id: "routes",
+      label: "Routes",
+      kind: "section",
+      meta: `${struct.routes.length} routes`,
+      children: struct.routes.map((r, i) => ({
+        id: "route-" + i,
+        label: r,
+        kind: "route",
+      })),
+    });
+  }
+
+  // --- Enriched (semantic map)
+  if (struct.enriched) {
+    const enrichedSection: TreeNode = {
+      id: "enriched",
+      label: "Enriched (AI semantic map)",
+      kind: "section",
+      meta: struct.enriched.summary ? "with summary" : undefined,
+      children: [],
+    };
+    if (struct.enriched.summary) {
+      enrichedSection.children!.push({ id: "summary", label: "Summary", kind: "summary", meta: struct.enriched.summary });
+    }
+    if (struct.enriched.pages && struct.enriched.pages.length > 0) {
+      enrichedSection.children!.push({
+        id: "enriched-pages",
+        label: "Pages",
+        kind: "section",
+        meta: `${struct.enriched.pages.length} enriched`,
+        children: struct.enriched.pages.map((p, i) => {
+          const pageChildren: TreeNode[] = [];
+          if (p.intents && p.intents.length > 0) {
+            pageChildren.push({
+              id: "epage-" + i + "-intents",
+              label: "User intents",
+              kind: "section",
+              children: p.intents.map((intent, ii) => ({ id: "epage-" + i + "-int-" + ii, label: intent, kind: "intent" })),
+            });
+          }
+          if (p.primary_actions && p.primary_actions.length > 0) {
+            pageChildren.push({
+              id: "epage-" + i + "-actions",
+              label: "Primary actions",
+              kind: "section",
+              children: p.primary_actions.map((a, ai) => ({
+                id: "epage-" + i + "-act-" + ai,
+                label: a.label ?? "(action)",
+                kind: "element",
+                meta: a.target_route ?? a.intent,
+              })),
+            });
+          }
+          if (p.related_routes && p.related_routes.length > 0) {
+            pageChildren.push({
+              id: "epage-" + i + "-related",
+              label: "Related routes",
+              kind: "section",
+              children: p.related_routes.map((r, ri) => ({ id: "epage-" + i + "-rel-" + ri, label: r, kind: "route" })),
+            });
+          }
+          return {
+            id: "enriched-page-" + i,
+            label: p.name ?? "(unnamed)",
+            kind: "page",
+            meta: p.route ?? p.description?.slice(0, 80),
+            children: pageChildren,
+          };
+        }),
+      });
+    }
+    if (struct.enriched.navigation?.common_journeys) {
+      enrichedSection.children!.push({
+        id: "journeys",
+        label: "Common journeys",
+        kind: "section",
+        meta: `${struct.enriched.navigation.common_journeys.length} journeys`,
+        children: struct.enriched.navigation.common_journeys.map((j, i) => ({
+          id: "journey-" + i,
+          label: j.name ?? "(unnamed)",
+          kind: "intent",
+          meta: (j.route_sequence ?? []).join(" → "),
+        })),
+      });
+    }
+    if (enrichedSection.children!.length > 0) root.children!.push(enrichedSection);
+  }
+
+  return root;
+}
+
+function nodeIcon(kind: TreeNode["kind"]) {
+  switch (kind) {
+    case "root":
+    case "section":
+      return Folder;
+    case "page":
+      return FileText;
+    case "route":
+      return Globe;
+    case "element":
+      return MousePointerClick;
+    case "intent":
+      return Link2;
+    case "summary":
+      return Sparkles;
+    default:
+      return FormInput;
+  }
+}
+
+function nodeColor(kind: TreeNode["kind"]) {
+  switch (kind) {
+    case "root":
+      return "hsl(var(--primary-soft))";
+    case "section":
+      return "hsl(var(--accent-2))";
+    case "page":
+      return "#7dd3fc";
+    case "route":
+      return "#86efac";
+    case "element":
+      return "#fcd34d";
+    case "intent":
+      return "#a78bfa";
+    case "summary":
+      return "#f472b6";
+    default:
+      return "#9ca3af";
+  }
+}
+
+function nodeMatches(node: TreeNode, q: string): boolean {
+  if (!q) return true;
+  const t = q.toLowerCase();
+  if (node.label.toLowerCase().includes(t)) return true;
+  if (node.meta && node.meta.toLowerCase().includes(t)) return true;
+  return (node.children ?? []).some((c) => nodeMatches(c, t));
+}
+
+function TreeNodeRow({
+  node,
+  depth,
+  isLast,
+  parentPrefix,
+  query,
+}: {
+  node: TreeNode;
+  depth: number;
+  isLast: boolean;
+  parentPrefix: boolean[];
+  query: string;
+}) {
+  const [open, setOpen] = useState(depth < 2);
+  const hasChildren = (node.children ?? []).length > 0;
+  const Icon = nodeIcon(node.kind);
+  const color = nodeColor(node.kind);
+
+  if (!nodeMatches(node, query)) return null;
+
+  return (
+    <div className="font-mono text-xs">
+      <div className="relative flex items-center gap-1 py-1 hover:bg-secondary/30">
+        {/* Vertical guide lines from ancestors */}
+        {parentPrefix.map((show, i) => (
+          <span
+            key={i}
+            className="inline-block w-5 shrink-0 self-stretch"
+            style={{
+              borderLeft: show ? "1px solid hsl(var(--border))" : "none",
+              marginLeft: 2,
+            }}
+          />
+        ))}
+
+        {/* L-connector to this node */}
+        {depth > 0 && (
+          <span className="relative inline-block w-5 shrink-0 self-stretch">
+            <span
+              className="absolute left-0 top-0 inline-block h-1/2 w-full"
+              style={{ borderLeft: "1px solid hsl(var(--border))" }}
+            />
+            <span
+              className="absolute left-0 inline-block w-full"
+              style={{ top: "50%", borderTop: "1px solid hsl(var(--border))" }}
+            />
+            {/* Hide the rest of the vertical line when this is the last sibling */}
+            {!isLast && (
+              <span
+                className="absolute left-0 top-1/2 inline-block h-1/2 w-full"
+                style={{ borderLeft: "1px solid hsl(var(--border))" }}
+              />
+            )}
+          </span>
+        )}
+
+        {/* Caret */}
+        {hasChildren ? (
+          <button onClick={() => setOpen((v) => !v)} className="text-muted-foreground hover:text-foreground">
+            {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </button>
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+
+        {/* Icon */}
+        <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
+
+        {/* Label + meta */}
+        <span className="font-medium" style={{ color }}>
+          {node.label}
+        </span>
+        {node.meta && (
+          <span className="ml-2 truncate text-[10px] text-muted-foreground">
+            {node.meta.length > 80 ? node.meta.slice(0, 80) + "…" : node.meta}
+          </span>
+        )}
+        {hasChildren && (
+          <span className="ml-auto text-[10px] text-muted-foreground">
+            {node.children!.length}
+          </span>
+        )}
+      </div>
+
+      {hasChildren && open && (
+        <div>
+          {node.children!.map((c, i) => (
+            <TreeNodeRow
+              key={c.id}
+              node={c}
+              depth={depth + 1}
+              isLast={i === node.children!.length - 1}
+              parentPrefix={[...parentPrefix, !isLast]}
+              query={query}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TreeView({ data, query }: { data: unknown; query: string }) {
+  const tree = useMemo(() => buildTreeFromScan(data), [data]);
+  return <TreeNodeRow node={tree} depth={0} isLast parentPrefix={[]} query={query} />;
 }
 
 /** Recursive JSON tree node. */
@@ -135,7 +448,7 @@ function renderPrimitive(v: unknown): string {
 
 export function OnboardingTreePage() {
   const { projectId } = useCurrentContext();
-  const [view, setView] = useState<"tree" | "raw">("tree");
+  const [view, setView] = useState<"tree" | "json" | "raw">("tree");
   const [scope, setScope] = useState<"all" | "raw" | "enriched">("all");
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState(false);
@@ -219,6 +532,9 @@ export function OnboardingTreePage() {
               <ViewBtn active={view === "tree"} onClick={() => setView("tree")}>
                 <FolderTree className="h-3 w-3" /> Tree
               </ViewBtn>
+              <ViewBtn active={view === "json"} onClick={() => setView("json")}>
+                <FileCode className="h-3 w-3" /> JSON
+              </ViewBtn>
               <ViewBtn active={view === "raw"} onClick={() => setView("raw")}>
                 <FileJson className="h-3 w-3" /> Raw
               </ViewBtn>
@@ -270,13 +586,13 @@ export function OnboardingTreePage() {
           </div>
 
           {/* Search */}
-          {view === "tree" && (
+          {view !== "raw" && (
             <div className="relative mb-3">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search the tree (key, value, path)…"
+                placeholder={view === "tree" ? "Search nodes (name, route, label)…" : "Search the JSON (key, value, path)…"}
                 className="pl-8"
               />
             </div>
@@ -285,6 +601,10 @@ export function OnboardingTreePage() {
           <Card>
             <CardContent className="p-3">
               {view === "tree" ? (
+                <div className="max-h-[70vh] overflow-auto rounded bg-secondary/30 p-4">
+                  <TreeView data={tree} query={search} />
+                </div>
+              ) : view === "json" ? (
                 <div className="max-h-[60vh] overflow-y-auto rounded bg-secondary/30 p-3">
                   <JsonNode
                     k="app_structure"
