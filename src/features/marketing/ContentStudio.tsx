@@ -379,14 +379,16 @@ function DraftCard({
           const { data: publicUrl } = supabase.storage
             .from("marketing-visuals")
             .getPublicUrl(path);
-          // 2. Attach to the post (both columns for forward compat).
-          await supabase
+          // 2. Attach to the post — surface DB errors so we don't ship a
+          //    silently empty media_url to the publish step.
+          const { error: updErr } = await supabase
             .from("marketing_posts")
             .update({
               media_url: publicUrl.publicUrl,
               metadata: { ...(post.metadata ?? {}), visual_url: publicUrl.publicUrl },
             })
             .eq("id", post.id);
+          if (updErr) throw new Error("Could not attach the image to the post: " + updErr.message);
           // 3. Trigger the publish edge function.
           await callEdge("marketing-publish", {
             workspace_id: workspaceId,

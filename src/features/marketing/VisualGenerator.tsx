@@ -657,7 +657,7 @@ export function VisualGenerator({ open, onOpenChange, initialContent, persistKey
 
           {/* Center: canvas */}
           <main className="flex min-h-0 flex-col overflow-hidden bg-secondary/30">
-            <div className="flex items-center justify-between gap-2 border-b border-border bg-card/40 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 border-b border-border bg-card/40 px-4 py-3">
               <div className="flex items-center gap-2">
                 <select
                   value={format.id}
