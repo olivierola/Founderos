@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sparkles, Loader2, Send, Trash2, Copy, Check, Wand2, CalendarDays } from "lucide-react";
+import { Sparkles, Loader2, Send, Trash2, Copy, Check, Wand2, CalendarDays, Image } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { PublishedPostCard, PostDetailDialog, markDueAsPublished } from "./Extra";
+import { VisualGenerator } from "./VisualGenerator";
 
 const PLATFORMS = ["twitter", "linkedin", "facebook", "instagram", "threads"];
 const OBJECTIVES = ["awareness", "launch", "feature", "educational", "engagement", "conversion"];
@@ -308,6 +309,7 @@ function DraftCard({
   onSchedule: () => void;
 }) {
   const [text, setText] = useState(post.content);
+  const [visualOpen, setVisualOpen] = useState(false);
   const dirty = text !== post.content;
   return (
     <Card>
@@ -342,6 +344,9 @@ function DraftCard({
             <Button size="sm" variant="ghost" onClick={onRemove} title="Delete" className="text-muted-foreground hover:text-destructive">
               <Trash2 className="h-4 w-4" />
             </Button>
+            <Button size="sm" variant="outline" onClick={() => setVisualOpen(true)} title="Create visual">
+              <Image className="h-4 w-4" /> Visual
+            </Button>
             <Button size="sm" variant="outline" onClick={onSchedule} title="Schedule">
               <CalendarDays className="h-4 w-4" /> Schedule
             </Button>
@@ -352,6 +357,15 @@ function DraftCard({
           </div>
         </div>
       </CardContent>
+      <VisualGenerator
+        open={visualOpen}
+        onOpenChange={setVisualOpen}
+        initialContent={{
+          title: text.split("\n")[0]?.slice(0, 80),
+          body: text,
+          handle: post.platform ? `@${post.platform}` : undefined,
+        }}
+      />
     </Card>
   );
 }
