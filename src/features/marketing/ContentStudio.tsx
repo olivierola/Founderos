@@ -379,10 +379,11 @@ function DraftCard({
           const { data: publicUrl } = supabase.storage
             .from("marketing-visuals")
             .getPublicUrl(path);
-          // 2. Attach to the post metadata.
+          // 2. Attach to the post (both columns for forward compat).
           await supabase
             .from("marketing_posts")
             .update({
+              media_url: publicUrl.publicUrl,
               metadata: { ...(post.metadata ?? {}), visual_url: publicUrl.publicUrl },
             })
             .eq("id", post.id);

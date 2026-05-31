@@ -23,7 +23,13 @@ async function bufferGraphql(token: string, query: string, variables: Record<str
   return json;
 }
 
-async function publishViaBuffer(token: string, channelIds: string[], text: string, scheduleAt?: string) {
+async function publishViaBuffer(
+  token: string,
+  channelIds: string[],
+  text: string,
+  scheduleAt?: string,
+  imageUrl?: string,
+) {
   if (channelIds.length === 0) throw new Error("No Buffer channels connected for this project.");
   const mutation =
     "mutation Create($input: CreatePostInput!){ createPost(input: $input){ __typename } }";
@@ -32,10 +38,18 @@ async function publishViaBuffer(token: string, channelIds: string[], text: strin
     const input: Record<string, unknown> = {
       channelId,
       text,
-      assets: [],
       schedulingType: "automatic",
       mode: scheduled ? "customScheduled" : "shareNow",
     };
+    // Attach the visual when one was uploaded for this post. Buffer accepts
+    // either media.picture (Twitter/LinkedIn/FB) or assets[].url depending on
+    // channel; we pass both so the API picks whichever it supports.
+    if (imageUrl) {
+      input.media = { picture: imageUrl, thumbnail: imageUrl };
+      input.assets = [{ url: imageUrl, type: "image" }];
+    } else {
+      input.assets = [];
+    }
     if (scheduled) input.dueAt = new Date(scheduleAt!).toISOString();
     await bufferGraphql(token, mutation, { input });
   }
@@ -91,6 +105,12 @@ Deno.serve(async (req) => {
       .filter(Boolean)
       .join("\n\n");
 
+    // Pick the generated visual (uploaded by VisualGenerator) when present.
+    // Prefer the top-level media_url column, fall back to metadata.visual_url.
+    const visualUrl =
+      (post.media_url as string | null | undefined) ||
+      ((post.metadata as Record<string, unknown> | null)?.visual_url as string | undefined);
+
     await admin.from("marketing_posts").update({ status: "publishing", error_message: null }).eq("id", post_id);
 
     // Resolve a publishing channel: Buffer first, else social-webhook.
@@ -112,7 +132,7 @@ Deno.serve(async (req) => {
         const all = (channels ?? []).filter((c: any) => c.external_id);
         const matched = all.filter((c: any) => c.platform === post.platform);
         const channelIds = (matched.length > 0 ? matched : all).map((c: any) => c.external_id);
-        const r = await publishViaBuffer(buffer.payload.access_token, channelIds, fullText, schedule_at);
+        const r = await publishViaBuffer(buffer.payload.access_token, channelIds, fullText, schedule_at, visualUrl);
         externalId = r.externalId;
       } else {
         let hook: { payload: Record<string, string> } | null = null;
@@ -128,6 +148,8 @@ Deno.serve(async (req) => {
         await publishViaWebhook(hook.payload.webhook_url, {
           platform: post.platform,
           content: fullText,
+          image_url: visualUrl ?? null,
+          attachments: visualUrl ? [{ url: visualUrl, type: "image" }] : [],
           schedule_at: schedule_at ?? null,
         });
       }
