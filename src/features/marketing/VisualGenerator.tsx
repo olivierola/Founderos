@@ -477,7 +477,7 @@ export function VisualGenerator({ open, onOpenChange, initialContent }: VisualGe
                 </Button>
               </div>
             </div>
-            <div className="relative flex flex-1 items-center justify-center overflow-hidden p-6">
+            <div className="relative flex-1 overflow-hidden">
               <StageWrapper canvasW={canvasW} canvasH={canvasH}>
                 {(displayW) => (
                   <div
@@ -768,25 +768,29 @@ function StageWrapper({
   children: (displayW: number) => React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [box, setBox] = useState({ w: 0, h: 0 });
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
-    const observer = new ResizeObserver((entries) => {
-      const r = entries[0].contentRect;
+    const update = () => {
+      if (!ref.current) return;
+      const r = ref.current.getBoundingClientRect();
       setBox({ w: r.width, h: r.height });
-    });
+    };
+    update();
+    const observer = new ResizeObserver(update);
     observer.observe(ref.current);
     return () => observer.disconnect();
   }, []);
 
-  // Pick the larger of width/height constraint to keep the stage inside both.
-  const fromW = box.w;
-  const fromH = (box.h * canvasW) / canvasH;
-  const displayW = Math.max(0, Math.min(fromW, fromH));
+  // Fit the canvas aspect ratio inside the available (width, height) box.
+  // displayW = min(box.w, box.h * aspect) — guarantees no overflow in either
+  // axis even when the editor is resized live.
+  const aspect = canvasW / canvasH;
+  const displayW = box ? Math.max(0, Math.min(box.w, box.h * aspect)) : 0;
 
   return (
-    <div ref={ref} className="flex h-full w-full items-center justify-center">
+    <div ref={ref} className="absolute inset-6 flex items-center justify-center">
       {displayW > 0 && children(displayW)}
     </div>
   );
