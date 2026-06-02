@@ -188,9 +188,13 @@ interface EdgeData {
   isHighlighted?: boolean;
 }
 
+// Fallback used whenever the AI emits an edge kind we don't know about. Keeps
+// the diagram rendering instead of crashing inside React Flow's renderer.
+const FALLBACK_EDGE_STYLE = { color: "#94a3b8" } as const;
+
 function ArchEdge(props: EdgeProps<EdgeData>) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd } = props;
-  const s = EDGE_STYLES[data?.kind ?? "tcp"];
+  const s = EDGE_STYLES[data?.kind ?? "tcp"] ?? FALLBACK_EDGE_STYLE;
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
   });
@@ -434,7 +438,12 @@ function InnerView({ topology, summary, className }: ArchitectureViewProps) {
             nodeColor={(n) => {
               if (n.type === "group") return "transparent";
               const kind = (n.data as NodeData)?.kind;
-              return kind ? KIND_STYLES[kind]?.color.replace("text-", "#") ?? "#444" : "#444";
+              // KIND_STYLES.color is a tailwind class string ("text-slate-200"),
+              // not a hex value — the previous replace("text-", "#") produced
+              // invalid colors. Just return a stable neutral grey for the minimap;
+              // node identification is by position, not color.
+              if (kind && KIND_STYLES[kind]) return "#475569";
+              return "#334155";
             }}
           />
         </ReactFlow>
