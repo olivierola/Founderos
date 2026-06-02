@@ -1,0 +1,19 @@
+{
+  "name": "founderos-ops-runner",
+  "version": "0.1.0",
+  "description": "Polls FounderOS for Ops jobs and executes them over SSH.",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "ssh2": "^1.16.0"
+  }
+}

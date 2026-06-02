@@ -51,6 +51,15 @@ import { EngagementPage } from "@/features/users/Engagement";
 
 import { RagAgentsPage } from "@/features/agent-rag/Agents";
 import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
+import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
+import { InternalAgentDetailPage } from "@/features/internal-agents/InternalAgentDetail";
+import { OpsOverviewPage } from "@/features/ops/OverviewPage";
+import { OpsServersPage } from "@/features/ops/ServersPage";
+import { OpsServerDetailPage } from "@/features/ops/ServerDetailPage";
+import { OpsWorkflowsPage } from "@/features/ops/WorkflowsPage";
+import { OpsChecksPage } from "@/features/ops/ChecksPage";
+import { OpsJobsPage } from "@/features/ops/JobsPage";
+import { OpsSettingsPage } from "@/features/ops/SettingsPage";
 import { OnboardingPage as RagOnboardingPage } from "@/features/agent-rag/onboarding/OnboardingPage";
 
 import { ContentStudioPage } from "@/features/marketing/ContentStudio";
@@ -194,7 +203,15 @@ const PAGES: Record<string, PageEl> = {
   "actions/users-journeys": <UserJourneysPage />,
 
   "agent/agents": <RagAgentsPage />,
+  "agent/internal-agents": <InternalAgentsListPage />,
   "agent/onboarding": <RagOnboardingPage />,
+
+  "ops/overview": <OpsOverviewPage />,
+  "ops/servers": <OpsServersPage />,
+  "ops/workflows": <OpsWorkflowsPage />,
+  "ops/checks": <OpsChecksPage />,
+  "ops/jobs": <OpsJobsPage />,
+  "ops/settings": <OpsSettingsPage />,
 
   "marketing/overview": <MarketingOverviewPage />,
   "marketing/content-studio": <ContentStudioPage />,
@@ -336,6 +353,22 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <AgentBuilderPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "agent/internal/:agentId/:tab?",
+        element: (
+          <ErrorBoundary>
+            <InternalAgentDetailPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "ops/servers/:serverId",
+        element: (
+          <ErrorBoundary>
+            <OpsServerDetailPage />
           </ErrorBoundary>
         ),
       },

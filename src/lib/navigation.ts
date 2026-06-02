@@ -8,6 +8,7 @@ import {
   MessageSquareText,
   Plug2,
   Cog,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -132,12 +133,27 @@ export const MODULES: ModuleNavItem[] = [
     ],
   },
   {
+    slug: "ops",
+    label: "Ops",
+    icon: Wrench,
+    color: "text-emerald-500/70",
+    subItems: [
+      { label: "Overview", slug: "overview" },
+      { label: "Servers", slug: "servers" },
+      { label: "Workflows", slug: "workflows" },
+      { label: "Checks", slug: "checks" },
+      { label: "Jobs & Audit", slug: "jobs" },
+      { label: "Settings", slug: "settings" },
+    ],
+  },
+  {
     slug: "agent",
     label: "RAG Agent",
     icon: MessageSquareText,
     color: "text-white",
     subItems: [
       { label: "Agents", slug: "agents" },
+      { label: "Internal agents", slug: "internal-agents" },
       { label: "Onboarding", slug: "onboarding" },
     ],
   },

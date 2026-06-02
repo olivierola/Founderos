@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/PageHeader";
 import { ChatComposer } from "@/components/ui/chat-composer";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { DocumentCanvas } from "./DocumentCanvas";
 
 interface AiMessage {
   id: string;
@@ -32,6 +34,7 @@ export function AiChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [docMarkdown, setDocMarkdown] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -139,7 +142,7 @@ export function AiChatPage() {
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
             {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
+              <MessageBubble key={m.id} message={m} onOpenAsDocument={(md) => setDocMarkdown(md)} />
             ))}
             {sending && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -163,12 +166,35 @@ export function AiChatPage() {
           {error && <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-destructive">{error}</p>}
         </div>
       )}
+
+      <DocumentCanvas
+        open={docMarkdown !== null}
+        onOpenChange={(o) => { if (!o) setDocMarkdown(null); }}
+        initialMarkdown={docMarkdown ?? ""}
+      />
     </div>
   );
 }
 
-function MessageBubble({ message }: { message: AiMessage }) {
+/** Heuristic: detect when an assistant reply is structured enough to warrant
+ *  being opened in a dedicated document canvas. */
+function looksLikeDocument(content: string): boolean {
+  if (!content) return false;
+  const hasHeading = /^#{1,3}\s+\S/m.test(content);
+  const wordCount = content.trim().split(/\s+/).length;
+  // Heading + body OR a clearly long structured answer.
+  return hasHeading || wordCount > 250;
+}
+
+function MessageBubble({
+  message,
+  onOpenAsDocument,
+}: {
+  message: AiMessage;
+  onOpenAsDocument?: (markdown: string) => void;
+}) {
   const isUser = message.role === "user";
+  const isDocLike = !isUser && looksLikeDocument(message.content);
 
   if (isUser) {
     return (
@@ -183,6 +209,19 @@ function MessageBubble({ message }: { message: AiMessage }) {
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[95%]">
+        {isDocLike && onOpenAsDocument && (
+          <div className="mb-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onOpenAsDocument(message.content)}
+              className="gap-1.5"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Open as document
+            </Button>
+          </div>
+        )}
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{

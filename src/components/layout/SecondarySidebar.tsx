@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
 import { useMemo } from "react";
+import { INTERNAL_AGENT_TABS } from "@/features/internal-agents/InternalAgentDetail";
 
 // Agent builder sub-tabs, shown in the secondary sidebar once an agent is opened.
 const AGENT_TABS = [
@@ -50,6 +51,32 @@ export function SecondarySidebar() {
               {t.label}
             </NavLink>
           ))}
+        </nav>
+      </aside>
+    );
+  }
+
+  // Internal agent detail → show the agent's own tabs.
+  // Path: /app/:ws/:proj/agent/internal/:agentId/:tab?
+  if (moduleSlug === "agent" && segments[appIdx + 4] === "internal") {
+    const agentId = segments[appIdx + 5];
+    return (
+      <aside className="flex h-full w-56 flex-col border-r border-border bg-sidebar">
+        <div className="flex h-14 items-center border-b border-border px-4">
+          <NavLink to={`${base}/agent/internal-agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> Internal agents
+          </NavLink>
+        </div>
+        <nav className="flex-1 overflow-y-auto p-2">
+          {INTERNAL_AGENT_TABS.map((t) => {
+            const Icon = t.icon;
+            return (
+              <NavLink key={t.slug} end to={`${base}/agent/internal/${agentId}/${t.slug}`} className={linkClass}>
+                <Icon className="mr-2 h-4 w-4" />
+                {t.label}
+              </NavLink>
+            );
+          })}
         </nav>
       </aside>
     );
