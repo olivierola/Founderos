@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import type { SubNavItem } from "@/lib/navigation";
 
 interface Props {
-  /** Path to the parent page (e.g. /app/ws/proj/actions/saas-analytics) */
+  /** Path to the parent page (e.g. /app/ws/proj/<module>/<parent-slug>) */
   parentTo: string;
   parentLabel: string;
   items: SubNavItem[];

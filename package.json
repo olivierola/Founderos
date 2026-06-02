@@ -44,6 +44,8 @@
     "reactflow": "^11.11.4",
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
+    "rrweb": "^2.0.0",
+    "rrweb-player": "^2.0.0",
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7",
     "turndown": "^7.2.4",

@@ -118,6 +118,7 @@ import {
 } from "@/features/actions/Extra";
 import { RunbooksPage } from "@/features/actions/Runbooks";
 import { SaasAnalyticsPage } from "@/features/actions/SaasAnalytics";
+import { SessionReplayPage } from "@/features/saas-analytics/SessionReplay";
 import { PerUserAnalyticsPage } from "@/features/actions/PerUserAnalytics";
 import { GroupAnalyticsPage } from "@/features/actions/GroupAnalytics";
 import { UserJourneysPage } from "@/features/actions/UserJourneys";
@@ -191,18 +192,20 @@ const PAGES: Record<string, PageEl> = {
   "finance/costs-budgets": <BudgetsPage />,
   "finance/costs-invoices": <InvoicesPage />,
 
-  // Users sub-tabs nested under Actions → SaaS Analytics
-  "actions/users-all": <AllUsersPage />,
-  "actions/users-segments": <SegmentsPage />,
-  "actions/users-cohorts": <UserCohortsPage />,
-  "actions/users-360": <User360Page />,
-  "actions/users-engagement": <EngagementPage />,
-  "actions/users-health-scores": <HealthScoresPage />,
-  "actions/users-churn": <ChurnRiskPage />,
-  "actions/users-funnels": <UserJourneysPage />,
-  "actions/users-per-user": <PerUserAnalyticsPage />,
-  "actions/users-groups": <GroupAnalyticsPage />,
-  "actions/users-journeys": <UserJourneysPage />,
+  // SaaS Analytics module (standalone) — overview + user & health sub-tabs
+  "saas-analytics/overview": <SaasAnalyticsPage />,
+  "saas-analytics/session-replay": <SessionReplayPage />,
+  "saas-analytics/users-all": <AllUsersPage />,
+  "saas-analytics/users-segments": <SegmentsPage />,
+  "saas-analytics/users-cohorts": <UserCohortsPage />,
+  "saas-analytics/users-360": <User360Page />,
+  "saas-analytics/users-engagement": <EngagementPage />,
+  "saas-analytics/users-health-scores": <HealthScoresPage />,
+  "saas-analytics/users-churn": <ChurnRiskPage />,
+  "saas-analytics/users-funnels": <UserJourneysPage />,
+  "saas-analytics/users-per-user": <PerUserAnalyticsPage />,
+  "saas-analytics/users-groups": <GroupAnalyticsPage />,
+  "saas-analytics/users-journeys": <UserJourneysPage />,
 
   "agent/agents": <RagAgentsPage />,
   "agent/internal-agents": <InternalAgentsListPage />,
@@ -241,17 +244,16 @@ const PAGES: Record<string, PageEl> = {
   "code/security-license-audit": <LicenseAuditPage />,
   "code/security-compliance": <ComplianceWatchPage />,
 
-  // Health sub-tabs nested under Actions → SaaS Analytics
-  "actions/health-status": <HealthStatusPage />,
-  "actions/health-uptime": <UptimePage />,
-  "actions/health-errors": <ErrorsPage />,
-  "actions/health-performance": <PerformancePage />,
-  "actions/health-deployments": <DeploymentsPage />,
-  "actions/health-incidents": <IncidentsPage />,
-  "actions/health-database": <DatabasePage />,
+  // Health sub-tabs under SaaS Analytics
+  "saas-analytics/health-status": <HealthStatusPage />,
+  "saas-analytics/health-uptime": <UptimePage />,
+  "saas-analytics/health-errors": <ErrorsPage />,
+  "saas-analytics/health-performance": <PerformancePage />,
+  "saas-analytics/health-deployments": <DeploymentsPage />,
+  "saas-analytics/health-incidents": <IncidentsPage />,
+  "saas-analytics/health-database": <DatabasePage />,
 
   "actions/quick-actions": <QuickActionsPage />,
-  "actions/saas-analytics": <SaasAnalyticsPage />,
   "actions/approvals": <ApprovalsPage />,
   "actions/user-management": <UserManagementPage />,
   "actions/stripe-operations": <StripeOperationsPage />,

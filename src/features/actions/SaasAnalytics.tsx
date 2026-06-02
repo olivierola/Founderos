@@ -160,21 +160,21 @@ export function SaasAnalyticsPage() {
               value={formatCompact(snapshot.total_users)}
               icon={Users}
               actionLabel="All users"
-              actionTo={`${base}/users/all-users`}
+              actionTo={`${base}/saas-analytics/users-all`}
             />
             <KpiTile
               label="Active 30d"
               value={formatCompact(snapshot.active_users_30d)}
               icon={Users}
               actionLabel="Engagement"
-              actionTo={`${base}/users/engagement`}
+              actionTo={`${base}/saas-analytics/users-engagement`}
             />
             <KpiTile
               label="Signups 7d"
               value={formatCompact(snapshot.new_signups_7d)}
               icon={UserPlus}
               actionLabel="Funnels"
-              actionTo={`${base}/users/funnels`}
+              actionTo={`${base}/saas-analytics/users-funnels`}
             />
             <KpiTile
               label="Churn rate 30d"
@@ -186,7 +186,7 @@ export function SaasAnalyticsPage() {
               tone={(snapshot.churn_rate_30d ?? 0) > 0.05 ? "warn" : "default"}
               icon={UserMinus}
               actionLabel="Churn risk"
-              actionTo={`${base}/users/churn-risk`}
+              actionTo={`${base}/saas-analytics/users-churn`}
             />
           </div>
 
@@ -212,7 +212,7 @@ export function SaasAnalyticsPage() {
                   />
                 </div>
                 <Link
-                  to={`${base}/users/funnels`}
+                  to={`${base}/saas-analytics/users-funnels`}
                   className="inline-flex items-center gap-1 text-xs text-[hsl(var(--primary-soft))] hover:underline"
                 >
                   Inspect activation funnel <ArrowUpRight className="h-3 w-3" />
@@ -225,7 +225,7 @@ export function SaasAnalyticsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Top features (30d)</span>
                   <Link
-                    to={`${base}/users/engagement`}
+                    to={`${base}/saas-analytics/users-engagement`}
                     className="text-xs text-[hsl(var(--primary-soft))] hover:underline"
                   >
                     See all engagement →
@@ -279,7 +279,7 @@ export function SaasAnalyticsPage() {
                 icon={ShieldAlert}
                 tone={snapshot.open_incidents > 0 ? "danger" : "calm"}
                 actionLabel="Open incidents"
-                actionTo={`${base}/health/incidents`}
+                actionTo={`${base}/saas-analytics/health-incidents`}
               />
               <ActionTile
                 label="Failed payments 7d"
@@ -484,7 +484,7 @@ function suggestActions(s: Snapshot, base: string) {
     out.push({
       label: `${s.open_incidents} open incident${s.open_incidents > 1 ? "s" : ""}`,
       detail: "Communicate status to users and resolve incidents.",
-      to: `${base}/health/incidents`,
+      to: `${base}/saas-analytics/health-incidents`,
       icon: ShieldAlert,
       tone: "danger",
     });
