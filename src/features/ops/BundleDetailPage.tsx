@@ -265,6 +265,18 @@ export function OpsBundleDetailPage() {
                       // ops-generate-topology with an edit prompt.
                       return `(coming soon) The AI will modify the infra based on: "${msg}"`;
                     }}
+                    onTopologyChange={async (next) => {
+                      if (!topologyRow?.id) return;
+                      const { error } = await supabase
+                        .from("ops_topologies")
+                        .update({ topology: next })
+                        .eq("id", topologyRow.id);
+                      if (error) {
+                        alert("Could not save topology change: " + error.message);
+                        return;
+                      }
+                      queryClient.invalidateQueries({ queryKey: ["ops_topology", bundleId] });
+                    }}
                   />
                 )
                 : (

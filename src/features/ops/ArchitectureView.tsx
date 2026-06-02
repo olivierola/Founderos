@@ -14,10 +14,11 @@ import {
   Wrench, MessageCircle, X, Send, Loader2, LayoutGrid,
   ChevronLeft, ChevronRight as ChevronRightIcon,
   Activity, Play as PlayIcon, ShieldAlert as ShieldAlertIcon,
-  RefreshCw as RefreshCwIcon,
+  RefreshCw as RefreshCwIcon, Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { NodeConfigDialog } from "./NodeConfigDialog";
 
 // ============================================================================
 // Topology data model — must stay in sync with ops_topologies.topology JSON.
@@ -454,6 +455,15 @@ interface ServerOption {
   environment: string;
 }
 
+/** Patch applied to the topology when the user edits / adds / removes a node
+ *  or zone from the canvas. The parent persists the new topology via the
+ *  ops_topologies table. */
+export interface TopologyPatch {
+  nodes?: TopologyNode[];
+  edges?: TopologyEdge[];
+  groups?: TopologyGroup[];
+}
+
 interface ArchitectureViewProps {
   topology: Topology;
   summary?: string | null;
@@ -478,6 +488,11 @@ interface ArchitectureViewProps {
   infraProjectId?: string | null;
   /** When provided, called on right-click → returns live metrics for the node. */
   onNodeProbe?: (nodeId: string) => Promise<NodeLiveData | null>;
+
+  /** ---- Editing ---- */
+  /** Called with the next full topology whenever the user edits, adds, or
+   *  removes a node/zone from the canvas. Parent persists it. */
+  onTopologyChange?: (next: Topology) => void | Promise<void>;
 }
 
 export interface NodeLiveData {
@@ -502,7 +517,7 @@ export function ArchitectureView(props: ArchitectureViewProps) {
 function InnerView({
   topology, summary, className, title, headerActions, onAiMessage,
   servers, serverId, onServerChange, onApply, applying, canApply,
-  infraProjectId: _infraProjectId, onNodeProbe,
+  infraProjectId: _infraProjectId, onNodeProbe, onTopologyChange,
 }: ArchitectureViewProps) {
   // Initial layout from dagre. After this, the user can drag nodes around and
   // we keep their positions thanks to useNodesState.
@@ -515,6 +530,65 @@ function InnerView({
   // Drag-and-drop state. Reset whenever the underlying topology changes.
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   useEffect(() => { setNodes(initialNodes); }, [initialNodes, setNodes]);
+
+  // Auto-grow zones to fit their member nodes whenever any of them moves.
+  // The groups (zones) are NOT React Flow parents of the inner nodes — they
+  // are pure visual rectangles. This effect adjusts their position + size so
+  // they always enclose the right members with a small padding.
+  useEffect(() => {
+    if (!topology.groups || topology.groups.length === 0) return;
+    setNodes((current) => {
+      let dirty = false;
+      const PADDING = 36;
+      const TOP_PAD = PADDING + 16; // extra room above for the label pill
+
+      const nodeById = new Map(current.map((n) => [n.id, n]));
+      const next = current.map((n) => {
+        if (n.type !== "group") return n;
+        const grpId = n.id.replace(/^group_/, "");
+        const grp = topology.groups!.find((g) => g.id === grpId);
+        if (!grp) return n;
+
+        // Measure member bounds.
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const memberId of grp.contains) {
+          const m = nodeById.get(memberId);
+          if (!m || m.type === "group") continue;
+          const w = (m.width ?? 200);
+          const h = (m.height ?? 80);
+          minX = Math.min(minX, m.position.x);
+          minY = Math.min(minY, m.position.y);
+          maxX = Math.max(maxX, m.position.x + w);
+          maxY = Math.max(maxY, m.position.y + h);
+        }
+        if (minX === Infinity) return n;
+
+        const targetX = minX - PADDING;
+        const targetY = minY - TOP_PAD;
+        const targetW = (maxX - minX) + PADDING * 2;
+        const targetH = (maxY - minY) + TOP_PAD + PADDING;
+
+        const curW = (n.style?.width as number | undefined) ?? 0;
+        const curH = (n.style?.height as number | undefined) ?? 0;
+        const epsilon = 1;
+        if (
+          Math.abs(n.position.x - targetX) < epsilon &&
+          Math.abs(n.position.y - targetY) < epsilon &&
+          Math.abs(curW - targetW) < epsilon &&
+          Math.abs(curH - targetH) < epsilon
+        ) return n;
+
+        dirty = true;
+        return {
+          ...n,
+          position: { x: targetX, y: targetY },
+          style: { ...(n.style ?? {}), width: targetW, height: targetH, zIndex: -1 },
+        };
+      });
+
+      return dirty ? next : current;
+    });
+  }, [nodes, topology.groups, setNodes]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -533,6 +607,17 @@ function InnerView({
 
   // Action bar (Target server + Plan & apply) is also closable.
   const [actionBarOpen, setActionBarOpen] = useState<boolean>(true);
+
+  // Zones are hidden by default (the schema lands directly on the canvas).
+  // The user opts in via the Toolkit. Preference is remembered per browser.
+  const [showZones, setShowZones] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("ops.archview.showZones") === "true";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("ops.archview.showZones", String(showZones));
+  }, [showZones]);
 
   // Right-click context menu state.
   const [contextMenu, setContextMenu] = useState<
@@ -558,17 +643,21 @@ function InnerView({
   }, [selectedId, topology.edges]);
 
   // Inject selection + highlight flags into node data without losing positions.
-  const renderedNodes = useMemo(() => nodes.map((n) => {
-    if (n.type === "group") return n;
-    return {
-      ...n,
-      data: {
-        ...(n.data as NodeData),
-        isSelected: n.id === selectedId,
-        isHighlighted: highlightSet ? highlightSet.has(n.id) : undefined,
-      } as NodeData,
-    };
-  }), [nodes, selectedId, highlightSet]);
+  // Zones are filtered out entirely when the user has them hidden — that's
+  // also why the schema appears "directly on the canvas" by default.
+  const renderedNodes = useMemo(() => nodes
+    .filter((n) => n.type !== "group" || showZones)
+    .map((n) => {
+      if (n.type === "group") return n;
+      return {
+        ...n,
+        data: {
+          ...(n.data as NodeData),
+          isSelected: n.id === selectedId,
+          isHighlighted: highlightSet ? highlightSet.has(n.id) : undefined,
+        } as NodeData,
+      };
+    }), [nodes, selectedId, highlightSet, showZones]);
 
   const edges = useMemo(() => baseEdges.map((e) => ({
     ...e,
@@ -582,8 +671,14 @@ function InnerView({
 
   const onNodeClick = useCallback((_: any, node: Node) => {
     if (node.type === "group") return;
-    setSelectedId((prev) => prev === node.id ? null : node.id);
-  }, []);
+    // If the canvas is editable, open the config dialog. Otherwise fall back
+    // to the side inspector behaviour.
+    if (onTopologyChange) {
+      setEditingNodeId(node.id);
+    } else {
+      setSelectedId((prev) => prev === node.id ? null : node.id);
+    }
+  }, [onTopologyChange]);
 
   const onPaneClick = useCallback(() => {
     setSelectedId(null);
@@ -623,6 +718,75 @@ function InnerView({
   const relayout = useCallback(() => {
     setNodes(layoutNodes(topology.nodes, topology.edges, topology.groups));
   }, [topology, setNodes]);
+
+  // ---- Editing handlers ----
+  // We open the config dialog when the user single-clicks a node. The right-
+  // click context menu still lets them inspect or probe.
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const editingNode = editingNodeId ? topology.nodes.find((n) => n.id === editingNodeId) ?? null : null;
+
+  function commitTopology(next: Topology) {
+    onTopologyChange?.(next);
+  }
+
+  function addNodeOfKind(kind: NodeKind) {
+    if (!onTopologyChange) return;
+    // Generate a stable id from the kind + a count suffix.
+    const base = kind.replace(/_/g, "-");
+    let i = 1;
+    while (topology.nodes.some((n) => n.id === `${base}-${i}`)) i++;
+    const id = `${base}-${i}`;
+    const newNode: TopologyNode = {
+      id,
+      kind,
+      label: `${kind.replace(/_/g, " ")} ${i}`,
+    };
+    const next: Topology = { ...topology, nodes: [...topology.nodes, newNode] };
+    commitTopology(next);
+    // Open the dialog right away so the user can fill the details.
+    setTimeout(() => setEditingNodeId(id), 100);
+  }
+
+  function addZoneAround() {
+    if (!onTopologyChange) return;
+    let i = 1;
+    while ((topology.groups ?? []).some((g) => g.id === `zone-${i}`)) i++;
+    const id = `zone-${i}`;
+    const newGroup: TopologyGroup = {
+      id,
+      label: `Zone ${i}`,
+      kind: "server",
+      contains: [], // user adds members manually for now
+    };
+    const next: Topology = { ...topology, groups: [...(topology.groups ?? []), newGroup] };
+    commitTopology(next);
+    // Surface the new zone immediately even if zones are hidden.
+    setShowZones(true);
+  }
+
+  function saveNode(patched: TopologyNode) {
+    if (!onTopologyChange) return;
+    const next: Topology = {
+      ...topology,
+      nodes: topology.nodes.map((n) => n.id === editingNodeId ? patched : n),
+    };
+    commitTopology(next);
+  }
+
+  function deleteEditingNode() {
+    if (!onTopologyChange || !editingNodeId) return;
+    const id = editingNodeId;
+    const next: Topology = {
+      ...topology,
+      nodes: topology.nodes.filter((n) => n.id !== id),
+      // Drop any edges that referenced it.
+      edges: topology.edges.filter((e) => e.source !== id && e.target !== id),
+      // Drop it from group memberships.
+      groups: (topology.groups ?? []).map((g) => ({ ...g, contains: g.contains.filter((c) => c !== id) })),
+    };
+    commitTopology(next);
+    setEditingNodeId(null);
+  }
 
   return (
     <div className={cn("relative flex h-full w-full overflow-hidden bg-background", className)}>
@@ -687,7 +851,13 @@ function InnerView({
         )}
 
         {/* Floating toolkit panel — left side, collapsible. */}
-        <Toolkit onRelayout={relayout} />
+        <Toolkit
+          onRelayout={relayout}
+          showZones={showZones}
+          onToggleZones={() => setShowZones((v) => !v)}
+          onAddNode={onTopologyChange ? addNodeOfKind : undefined}
+          onAddZone={onTopologyChange ? addZoneAround : undefined}
+        />
 
         {/* Floating AI chat — right side, collapsible. */}
         {onAiMessage && <AiChat onSend={onAiMessage} />}
@@ -804,6 +974,15 @@ function InnerView({
           onClose={() => setSelectedId(null)}
         />
       )}
+
+      <NodeConfigDialog
+        open={editingNode !== null}
+        onOpenChange={(o) => { if (!o) setEditingNodeId(null); }}
+        node={editingNode}
+        otherNodeIds={topology.nodes.map((n) => n.id)}
+        onSave={saveNode}
+        onDelete={editingNode ? deleteEditingNode : undefined}
+      />
     </div>
   );
 }
@@ -933,9 +1112,60 @@ function LivePanel({
 // Floating Toolkit panel — left side, collapsible.
 // ============================================================================
 
-function Toolkit({ onRelayout }: { onRelayout: () => void }) {
+// Equipment catalog — what the user can add to the canvas. Grouped for the UI.
+const EQUIPMENT_GROUPS: Array<{
+  label: string;
+  items: Array<{ kind: NodeKind; label: string }>;
+}> = [
+  {
+    label: "Servers",
+    items: [
+      { kind: "server", label: "Server / VPS" },
+      { kind: "network", label: "Network" },
+      { kind: "load_balancer", label: "Load balancer" },
+      { kind: "reverse_proxy", label: "Reverse proxy" },
+    ],
+  },
+  {
+    label: "Workloads",
+    items: [
+      { kind: "container", label: "Container" },
+      { kind: "service", label: "Service" },
+      { kind: "scheduler", label: "Scheduler / Worker" },
+    ],
+  },
+  {
+    label: "Data",
+    items: [
+      { kind: "database", label: "Database" },
+      { kind: "cache", label: "Cache" },
+      { kind: "queue", label: "Queue" },
+      { kind: "object_storage", label: "Object storage" },
+    ],
+  },
+  {
+    label: "Edge & Secrets",
+    items: [
+      { kind: "cdn", label: "CDN" },
+      { kind: "dns", label: "DNS" },
+      { kind: "secret_store", label: "Secret store" },
+      { kind: "external", label: "External service" },
+    ],
+  },
+];
+
+function Toolkit({
+  onRelayout, showZones, onToggleZones, onAddNode, onAddZone,
+}: {
+  onRelayout: () => void;
+  showZones: boolean;
+  onToggleZones: () => void;
+  onAddNode?: (kind: NodeKind) => void;
+  onAddZone?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [equipOpen, setEquipOpen] = useState(false);
 
   if (!open) {
     return (
@@ -950,7 +1180,7 @@ function Toolkit({ onRelayout }: { onRelayout: () => void }) {
   }
 
   return (
-    <div className="absolute left-3 top-16 z-10 w-64 rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur">
+    <div className="absolute left-3 top-16 z-10 w-72 rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold">
           <Wrench className="h-3.5 w-3.5" /> Toolkit
@@ -963,7 +1193,9 @@ function Toolkit({ onRelayout }: { onRelayout: () => void }) {
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
       </div>
-      <div className="space-y-1 p-2 text-xs">
+
+      <div className="max-h-[60vh] space-y-1 overflow-y-auto p-2 text-xs">
+        {/* Layout */}
         <button
           onClick={onRelayout}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
@@ -971,6 +1203,90 @@ function Toolkit({ onRelayout }: { onRelayout: () => void }) {
           <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
           Re-layout (auto-arrange)
         </button>
+
+        {/* Zones toggle + add */}
+        <div className="flex items-center justify-between rounded px-2 py-1.5 hover:bg-muted">
+          <span className="flex items-center gap-2 text-foreground">
+            <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+            Show zones
+          </span>
+          <button
+            onClick={onToggleZones}
+            className={cn(
+              "relative inline-flex h-4 w-7 items-center rounded-full transition-colors",
+              showZones ? "bg-emerald-500" : "bg-muted-foreground/30",
+            )}
+            title="Toggle zone visibility"
+          >
+            <span
+              className={cn(
+                "inline-block h-3 w-3 transform rounded-full bg-white transition-transform",
+                showZones ? "translate-x-3.5" : "translate-x-0.5",
+              )}
+            />
+          </button>
+        </div>
+        {onAddZone && (
+          <button
+            onClick={onAddZone}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+          >
+            <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+            Add zone
+          </button>
+        )}
+
+        {/* Equipment catalog */}
+        {onAddNode && (
+          <>
+            <button
+              onClick={() => setEquipOpen((v) => !v)}
+              className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <span className="flex items-center gap-2">
+                <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                Add equipment
+              </span>
+              <ChevronRightIcon className={cn("h-3 w-3 transition-transform", equipOpen && "rotate-90")} />
+            </button>
+            {equipOpen && (
+              <div className="space-y-2 rounded border border-border bg-background/40 p-2">
+                {EQUIPMENT_GROUPS.map((grp) => (
+                  <div key={grp.label}>
+                    <div className="mb-1 text-[9px] uppercase tracking-wider text-muted-foreground">
+                      {grp.label}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {grp.items.map((eq) => {
+                        const s = KIND_STYLES[eq.kind];
+                        const Icon = s.icon;
+                        const accent = accentFor(s.hue);
+                        return (
+                          <button
+                            key={eq.kind}
+                            onClick={() => onAddNode(eq.kind)}
+                            className="flex items-center gap-1.5 rounded border border-border bg-card px-1.5 py-1 text-left text-[10px] hover:border-foreground/30"
+                            title={`Add a ${eq.label} node`}
+                          >
+                            <div
+                              className="flex h-4 w-4 items-center justify-center rounded"
+                              style={{ background: accent.softBg, color: accent.iconColor }}
+                            >
+                              <Icon className="h-2.5 w-2.5" />
+                            </div>
+                            <span className="truncate">{eq.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Legend */}
         <button
           onClick={() => setLegendOpen(!legendOpen)}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
@@ -983,8 +1299,9 @@ function Toolkit({ onRelayout }: { onRelayout: () => void }) {
             <LegendContent />
           </div>
         )}
+
         <p className="px-2 pt-1 text-[10px] text-muted-foreground">
-          Tip: drag nodes to rearrange. Click a node to inspect it.
+          Tip: drag nodes to rearrange. Click a node to configure it.
         </p>
       </div>
     </div>

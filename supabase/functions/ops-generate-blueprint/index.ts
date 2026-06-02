@@ -203,10 +203,7 @@ Schema:
       "encrypted": true,
       "meta": {} }
   ],
-  "groups": [
-    { "id": "vps", "label": "VPS prod-01", "kind": "server|cluster|cloud|local",
-      "contains": ["node_id_1", "node_id_2"] }
-  ],
+  "groups": [],
   "notes": [
     { "node_id": "optional", "edge_id": "optional", "text": "explanation", "severity": "info|warn|critical" }
   ]
@@ -220,7 +217,11 @@ Valid node kinds:
 Be exhaustive but accurate: every container in docker-compose becomes a node,
 nginx upstream blocks become edges, env vars referenced from one service to
 another become "env" edges, external services (Stripe, Supabase, GitHub) are
-"external" nodes outside any group. Group containers under the host server.`;
+"external" nodes.
+
+Do NOT emit any groups by default — keep the "groups" array empty. The user
+will create zones manually from the canvas toolkit if they want to cluster
+nodes visually.`;
 
 interface Topology {
   summary?: string;

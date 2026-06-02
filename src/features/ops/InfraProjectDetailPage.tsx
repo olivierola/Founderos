@@ -556,6 +556,18 @@ export function OpsInfraProjectDetailPage() {
                             return `(coming soon) Will modify the "${activeLayer.label}" layer based on: "${msg}"`;
                           }}
                           onNodeProbe={nodeProbe}
+                          onTopologyChange={async (next) => {
+                            if (!topologyRow?.id) return;
+                            const { error } = await supabase
+                              .from("ops_topologies")
+                              .update({ topology: next })
+                              .eq("id", topologyRow.id);
+                            if (error) {
+                              alert("Could not save topology change: " + error.message);
+                              return;
+                            }
+                            queryClient.invalidateQueries({ queryKey: ["ops_layer_topology", activeLayer?.bundle_id] });
+                          }}
                         />
                       : (
                         <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-8 text-center">

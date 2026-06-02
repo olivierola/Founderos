@@ -27,16 +27,16 @@ Schema:
       "label": "optional", "port": "optional", "protocol": "optional",
       "encrypted": true, "meta": {} }
   ],
-  "groups": [
-    { "id": "vps", "label": "VPS prod-01", "kind": "server|cluster|cloud|local",
-      "contains": ["node_id_1"] }
-  ],
+  "groups": [],
   "notes": [{ "node_id": "optional", "edge_id": "optional", "text": "...", "severity": "info|warn|critical" }]
 }
 
 Valid node kinds: server, container, service, database, cache, queue,
   reverse_proxy, load_balancer, cdn, object_storage, external, dns,
-  secret_store, scheduler, network.`;
+  secret_store, scheduler, network.
+
+Do NOT emit any groups by default — keep the "groups" array empty. Users
+create zones manually from the canvas toolkit.`;
 
 Deno.serve(async (req) => {
   const corsResp = handleCors(req);
