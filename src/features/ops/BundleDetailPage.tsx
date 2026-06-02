@@ -251,6 +251,12 @@ export function OpsBundleDetailPage() {
                     topology={topologyRow.topology}
                     summary={topologyRow.summary}
                     title={label}
+                    serverId={serverId || null}
+                    onServerChange={setServerId}
+                    servers={servers}
+                    onApply={apply}
+                    applying={applying}
+                    canApply={files.length > 0}
                     headerActions={archHeaderActions}
                     onAiMessage={async (msg) => {
                       // Placeholder: the AI-driven topology edit endpoint isn't
@@ -274,28 +280,30 @@ export function OpsBundleDetailPage() {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <ShieldAlert className="h-4 w-4 text-amber-500" />
-          <span className="text-xs text-muted-foreground">High-risk action. Requires approval after queueing.</span>
+      {view === "files" && (
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-amber-500" />
+            <span className="text-xs text-muted-foreground">High-risk action. Requires approval after queueing.</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={serverId}
+              onChange={(e) => setServerId(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">Target server…</option>
+              {servers?.map((s) => (
+                <option key={s.id} value={s.id}>{s.name} ({s.environment})</option>
+              ))}
+            </select>
+            <Button onClick={apply} disabled={!serverId || applying} className="gap-1.5">
+              {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              Plan & apply
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={serverId}
-            onChange={(e) => setServerId(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">Target server…</option>
-            {servers?.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.environment})</option>
-            ))}
-          </select>
-          <Button onClick={apply} disabled={!serverId || applying} className="gap-1.5">
-            {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            Plan & apply
-          </Button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

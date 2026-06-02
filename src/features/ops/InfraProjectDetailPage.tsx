@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Loader2, RefreshCw, Network, FileText, Layers,
   CheckCircle2, XCircle, Clock, AlertTriangle, Play, ShieldAlert, Download,
+  Camera, History, RotateCcw,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
-import { ArchitectureView, type Topology } from "./ArchitectureView";
+import { ArchitectureView, type Topology, type NodeLiveData } from "./ArchitectureView";
 import { useOpsUrl } from "./hooks";
 import type { OpsGeneratedFile, OpsServer } from "./types";
 import type { Plan } from "./NewInfraDialog";
@@ -67,6 +68,11 @@ export function OpsInfraProjectDetailPage() {
   const [regeneratingLayerId, setRegeneratingLayerId] = useState<string | null>(null);
   const [serverId, setServerId] = useState("");
   const [applying, setApplying] = useState(false);
+
+  // Versioning state
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   // Poll while any layer is generating.
   const { data: infra, isLoading } = useQuery({
@@ -150,6 +156,106 @@ export function OpsInfraProjectDetailPage() {
       return (data ?? []) as Pick<OpsServer, "id" | "name" | "environment" | "status">[];
     },
   });
+
+  // Snapshot history (versioning)
+  const { data: snapshots } = useQuery({
+    queryKey: ["ops_infra_snapshots", infraId],
+    enabled: !!infraId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ops_infra_snapshots")
+        .select("id, label, version, message, created_at, created_by")
+        .eq("infra_project_id", infraId!)
+        .order("version", { ascending: false });
+      return (data ?? []) as Array<{
+        id: string; label: string; version: number; message: string | null;
+        created_at: string; created_by: string | null;
+      }>;
+    },
+  });
+
+  async function saveSnapshot() {
+    if (!infraId) return;
+    const message = window.prompt("Optional message for this snapshot:") ?? null;
+    setSavingSnapshot(true);
+    try {
+      const result = await callEdge<{ ok: boolean; version: number; message?: string }>("ops-snapshot-create", {
+        infra_id: infraId,
+        message,
+      });
+      if (!result.ok) throw new Error(result.message ?? "Snapshot failed");
+      queryClient.invalidateQueries({ queryKey: ["ops_infra_snapshots", infraId] });
+    } catch (e: any) {
+      alert("Could not save snapshot: " + (e?.message ?? "edge not deployed"));
+    } finally {
+      setSavingSnapshot(false);
+    }
+  }
+
+  async function restoreSnapshot(snapshotId: string, version: number) {
+    if (!confirm(`Restore snapshot v${version}? Current state will be auto-checkpointed first.`)) return;
+    setRestoringId(snapshotId);
+    try {
+      await callEdge("ops-snapshot-restore", { snapshot_id: snapshotId });
+      queryClient.invalidateQueries({ queryKey: ["ops_infra_project", infraId] });
+      queryClient.invalidateQueries({ queryKey: ["ops_infra_layers", infraId] });
+      queryClient.invalidateQueries({ queryKey: ["ops_infra_snapshots", infraId] });
+      queryClient.invalidateQueries({ queryKey: ["ops_layer_files"] });
+      queryClient.invalidateQueries({ queryKey: ["ops_layer_topology"] });
+      setHistoryOpen(false);
+    } catch (e: any) {
+      alert("Could not restore: " + (e?.message ?? "edge not deployed"));
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
+  // Right-click live data — hits ops-node-probe, then polls the metrics cache.
+  async function nodeProbe(nodeKey: string): Promise<NodeLiveData | null> {
+    if (!serverId || !activeLayer?.bundle_id) {
+      throw new Error("Pick a target server before probing nodes.");
+    }
+    // First we need the topology id (we have its bundle_id).
+    const { data: topo } = await supabase
+      .from("ops_topologies")
+      .select("id")
+      .eq("bundle_id", activeLayer.bundle_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!topo) throw new Error("No topology row for this layer.");
+
+    const probeResult = await callEdge<{
+      ok: boolean; cached: boolean; metrics?: Record<string, unknown>;
+      raw?: string; status?: string; fetched_at?: string; message?: string;
+    }>("ops-node-probe", {
+      topology_id: topo.id, node_key: nodeKey, server_id: serverId,
+    });
+    if (!probeResult.ok) throw new Error(probeResult.message ?? "Probe failed");
+
+    // If cached, return immediately.
+    if (probeResult.cached && probeResult.metrics) {
+      return toLiveData(probeResult.metrics, probeResult.raw, probeResult.fetched_at);
+    }
+
+    // Otherwise poll ops_node_metrics for ~20s waiting for the runner to write.
+    const start = Date.now();
+    while (Date.now() - start < 20_000) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const { data: row } = await supabase
+        .from("ops_node_metrics")
+        .select("metrics, raw, status, created_at")
+        .eq("topology_id", topo.id)
+        .eq("node_key", nodeKey)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (row && new Date(row.created_at).getTime() > Date.now() - 30_000) {
+        return toLiveData(row.metrics, row.raw, row.created_at);
+      }
+    }
+    throw new Error("Probe timed out — is the Ops Runner online?");
+  }
 
   const file = useMemo(() => {
     if (!files || files.length === 0) return null;
@@ -391,8 +497,44 @@ export function OpsInfraProjectDetailPage() {
                           topology={topologyRow.topology}
                           summary={topologyRow.summary}
                           title={`${activeLayer.label} · ${activeLayer.tool.replace(/_/g, " ")}`}
+                          infraProjectId={infraId ?? null}
+                          serverId={serverId || null}
+                          onServerChange={setServerId}
+                          servers={servers}
+                          onApply={applyLayer}
+                          applying={applying}
+                          canApply={activeLayer.status === "ready"}
                           headerActions={
                             <div className="flex items-center gap-2">
+                              <Button
+                                size="sm" variant="outline"
+                                onClick={saveSnapshot}
+                                disabled={savingSnapshot}
+                                className="gap-1.5 bg-card/90 backdrop-blur"
+                                title="Save current state without deploying"
+                              >
+                                {savingSnapshot ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
+                                Save
+                              </Button>
+                              <div className="relative">
+                                <Button
+                                  size="sm" variant="outline"
+                                  onClick={() => setHistoryOpen((o) => !o)}
+                                  className="gap-1.5 bg-card/90 backdrop-blur"
+                                  title="Version history"
+                                >
+                                  <History className="h-3 w-3" />
+                                  {snapshots?.length ?? 0}
+                                </Button>
+                                {historyOpen && (
+                                  <HistoryPopover
+                                    snapshots={snapshots ?? []}
+                                    restoringId={restoringId}
+                                    onRestore={restoreSnapshot}
+                                    onClose={() => setHistoryOpen(false)}
+                                  />
+                                )}
+                              </div>
                               <Button
                                 size="sm" variant="outline"
                                 onClick={() => regenerateLayer(activeLayer.layer_key)}
@@ -413,6 +555,7 @@ export function OpsInfraProjectDetailPage() {
                             // Placeholder until ai-edit endpoint ships.
                             return `(coming soon) Will modify the "${activeLayer.label}" layer based on: "${msg}"`;
                           }}
+                          onNodeProbe={nodeProbe}
                         />
                       : (
                         <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-8 text-center">
@@ -431,34 +574,38 @@ export function OpsInfraProjectDetailPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-4 py-3">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <ShieldAlert className="h-4 w-4 text-amber-500" />
-          {activeLayer
-            ? <>Apply the active layer ({activeLayer.label}) to a server. Requires approval.</>
-            : <>Pick a ready layer to apply it.</>}
+      {/* Footer bar is only shown in Files view. In Architecture view, the
+          same controls live as floating pills inside the canvas. */}
+      {view === "files" && (
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-4 py-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <ShieldAlert className="h-4 w-4 text-amber-500" />
+            {activeLayer
+              ? <>Apply the active layer ({activeLayer.label}) to a server. Requires approval.</>
+              : <>Pick a ready layer to apply it.</>}
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={serverId}
+              onChange={(e) => setServerId(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">Target server…</option>
+              {servers?.map((s) => (
+                <option key={s.id} value={s.id}>{s.name} ({s.environment})</option>
+              ))}
+            </select>
+            <Button
+              onClick={applyLayer}
+              disabled={!serverId || applying || activeLayer?.status !== "ready"}
+              className="gap-1.5"
+            >
+              {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              Plan & apply layer
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={serverId}
-            onChange={(e) => setServerId(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">Target server…</option>
-            {servers?.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.environment})</option>
-            ))}
-          </select>
-          <Button
-            onClick={applyLayer}
-            disabled={!serverId || applying || activeLayer?.status !== "ready"}
-            className="gap-1.5"
-          >
-            {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            Plan & apply layer
-          </Button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -494,6 +641,86 @@ function LayerStatusIcon({ status }: { status: InfraLayer["status"] }) {
 
 function LayerStatusBadge({ status }: { status: InfraLayer["status"] }) {
   return <Badge variant="outline" className="text-[10px] capitalize">{status}</Badge>;
+}
+
+/** Floating popover listing every snapshot with a Restore button. */
+function HistoryPopover({
+  snapshots,
+  restoringId,
+  onRestore,
+  onClose,
+}: {
+  snapshots: Array<{ id: string; label: string; version: number; message: string | null; created_at: string }>;
+  restoringId: string | null;
+  onRestore: (id: string, version: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="absolute right-0 top-full z-30 mt-1 w-80 max-h-[60vh] overflow-y-auto rounded-md border border-border bg-card shadow-lg"
+    >
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold">
+          <History className="h-3.5 w-3.5" /> Snapshots ({snapshots.length})
+        </div>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <XCircle className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {snapshots.length === 0 ? (
+        <p className="p-3 text-xs text-muted-foreground">
+          No snapshots yet. Click <strong>Save</strong> to checkpoint the current state.
+        </p>
+      ) : (
+        <div className="divide-y divide-border">
+          {snapshots.map((s) => (
+            <div key={s.id} className="flex items-start justify-between gap-2 p-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" className="text-[10px]">v{s.version}</Badge>
+                  <span className="truncate text-xs font-medium">{s.label}</span>
+                </div>
+                <div className="mt-0.5 text-[10px] text-muted-foreground">
+                  {new Date(s.created_at).toLocaleString()}
+                </div>
+                {s.message && (
+                  <p className="mt-1 text-[11px] text-muted-foreground line-clamp-2">{s.message}</p>
+                )}
+              </div>
+              <Button
+                size="sm" variant="ghost"
+                onClick={() => onRestore(s.id, s.version)}
+                disabled={restoringId === s.id}
+                className="shrink-0 gap-1"
+              >
+                {restoringId === s.id
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <RotateCcw className="h-3 w-3" />}
+                Restore
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Convert a free-form metrics object returned by the runner into the
+ *  structured NodeLiveData shape the canvas Live panel expects. */
+function toLiveData(metrics: unknown, raw?: string, fetched_at?: string): NodeLiveData {
+  const rows: Array<{ label: string; value: string; status?: "ok" | "warn" | "error" }> = [];
+  if (metrics && typeof metrics === "object") {
+    for (const [k, v] of Object.entries(metrics as Record<string, unknown>)) {
+      rows.push({ label: k, value: typeof v === "string" ? v : JSON.stringify(v) });
+    }
+  }
+  return {
+    fetched_at: fetched_at ?? new Date().toISOString(),
+    metrics: rows,
+    raw,
+  };
 }
 
 function ViewSwitcher({ view, onChange }: { view: "files" | "architecture"; onChange: (v: "files" | "architecture") => void }) {

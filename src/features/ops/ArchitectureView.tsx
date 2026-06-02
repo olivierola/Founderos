@@ -13,6 +13,8 @@ import {
   Network, Shield, HardDrive, Workflow,
   Wrench, MessageCircle, X, Send, Loader2, LayoutGrid,
   ChevronLeft, ChevronRight as ChevronRightIcon,
+  Activity, Play as PlayIcon, ShieldAlert as ShieldAlertIcon,
+  RefreshCw as RefreshCwIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -278,6 +280,28 @@ function ArchEdge(props: EdgeProps<EdgeData>) {
           opacity: dimmed ? 0.15 : 1,
         }}
       />
+      {/* Animated flow particles for edges that represent live traffic
+          (http/https/webhook). A second dashed stroke layered on top, animated
+          via stroke-dashoffset, gives the impression of data flowing. */}
+      {s.animated && !dimmed && (
+        <path
+          d={edgePath}
+          fill="none"
+          stroke={s.color}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeDasharray="2 14"
+          style={{ filter: `drop-shadow(0 0 2px ${s.color})` }}
+        >
+          <animate
+            attributeName="stroke-dashoffset"
+            from="0"
+            to="-32"
+            dur="1.2s"
+            repeatCount="indefinite"
+          />
+        </path>
+      )}
       {(data?.label || data?.port) && (
         <EdgeLabelRenderer>
           <div
@@ -404,6 +428,12 @@ function topologyToEdges(edges: TopologyEdge[]): Edge[] {
 // Main view — orchestrates nodes / edges / inspector / legend.
 // ============================================================================
 
+interface ServerOption {
+  id: string;
+  name: string;
+  environment: string;
+}
+
 interface ArchitectureViewProps {
   topology: Topology;
   summary?: string | null;
@@ -414,6 +444,28 @@ interface ArchitectureViewProps {
   headerActions?: React.ReactNode;
   /** When provided, the floating AI chat will send messages here. */
   onAiMessage?: (message: string) => Promise<string> | string;
+
+  /** ---- Deploy/Apply floating bar (bottom-right) ---- */
+  servers?: ServerOption[];
+  serverId?: string | null;
+  onServerChange?: (id: string) => void;
+  onApply?: () => void | Promise<void>;
+  applying?: boolean;
+  canApply?: boolean;
+
+  /** ---- Versioning / live data ---- */
+  /** When set, enables the version history sidebar and "Save snapshot" button. */
+  infraProjectId?: string | null;
+  /** When provided, called on right-click → returns live metrics for the node. */
+  onNodeProbe?: (nodeId: string) => Promise<NodeLiveData | null>;
+}
+
+export interface NodeLiveData {
+  fetched_at: string;
+  /** Free-form key/value table the inspector renders as a list. */
+  metrics: Array<{ label: string; value: string; status?: "ok" | "warn" | "error" }>;
+  /** Optional raw command output (e.g. last journalctl lines). */
+  raw?: string;
 }
 
 const nodeTypes = { arch: ArchNode, group: GroupNode };
@@ -427,7 +479,11 @@ export function ArchitectureView(props: ArchitectureViewProps) {
   );
 }
 
-function InnerView({ topology, summary, className, title, headerActions, onAiMessage }: ArchitectureViewProps) {
+function InnerView({
+  topology, summary, className, title, headerActions, onAiMessage,
+  servers, serverId, onServerChange, onApply, applying, canApply,
+  infraProjectId: _infraProjectId, onNodeProbe,
+}: ArchitectureViewProps) {
   // Initial layout from dagre. After this, the user can drag nodes around and
   // we keep their positions thanks to useNodesState.
   const initialNodes = useMemo(
@@ -441,6 +497,34 @@ function InnerView({ topology, summary, className, title, headerActions, onAiMes
   useEffect(() => { setNodes(initialNodes); }, [initialNodes, setNodes]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Overview is closable. We default to OPEN (matches previous behaviour) and
+  // remember the user's last choice in localStorage so toggling the page
+  // doesn't keep re-opening it for them.
+  const [overviewOpen, setOverviewOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const stored = window.localStorage.getItem("ops.archview.overviewOpen");
+    return stored === null ? true : stored === "true";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("ops.archview.overviewOpen", String(overviewOpen));
+  }, [overviewOpen]);
+
+  // Action bar (Target server + Plan & apply) is also closable.
+  const [actionBarOpen, setActionBarOpen] = useState<boolean>(true);
+
+  // Right-click context menu state.
+  const [contextMenu, setContextMenu] = useState<
+    | { x: number; y: number; nodeId: string }
+    | null
+  >(null);
+  // Live-data panel — populated when the user picks "Show live data" in the
+  // context menu (or when we wire auto-refresh in the future).
+  const [liveData, setLiveData] = useState<
+    | { nodeId: string; loading: boolean; data: NodeLiveData | null; error?: string }
+    | null
+  >(null);
 
   // Highlight set: when a node is selected, dim everything not connected to it.
   const highlightSet = useMemo(() => {
@@ -481,7 +565,33 @@ function InnerView({ topology, summary, className, title, headerActions, onAiMes
     setSelectedId((prev) => prev === node.id ? null : node.id);
   }, []);
 
-  const onPaneClick = useCallback(() => setSelectedId(null), []);
+  const onPaneClick = useCallback(() => {
+    setSelectedId(null);
+    setContextMenu(null);
+  }, []);
+
+  // Right-click on a node opens a small context menu anchored at the cursor.
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    if (node.type === "group") return;
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+  }, []);
+
+  // Triggered from the context menu — fetches live data and opens the panel.
+  const probeNode = useCallback(async (nodeId: string) => {
+    setContextMenu(null);
+    if (!onNodeProbe) {
+      setLiveData({ nodeId, loading: false, data: null, error: "Live probe is not wired for this view." });
+      return;
+    }
+    setLiveData({ nodeId, loading: true, data: null });
+    try {
+      const data = await onNodeProbe(nodeId);
+      setLiveData({ nodeId, loading: false, data });
+    } catch (e: any) {
+      setLiveData({ nodeId, loading: false, data: null, error: e?.message ?? "Probe failed" });
+    }
+  }, [onNodeProbe]);
 
   const selectedNode = selectedId ? topology.nodes.find((n) => n.id === selectedId) : null;
   const selectedNotes = useMemo(
@@ -504,6 +614,7 @@ function InnerView({ topology, summary, className, title, headerActions, onAiMes
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onNodeClick={onNodeClick}
+          onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
           nodesDraggable
           fitView
@@ -561,9 +672,105 @@ function InnerView({ topology, summary, className, title, headerActions, onAiMes
         {/* Floating AI chat — right side, collapsible. */}
         {onAiMessage && <AiChat onSend={onAiMessage} />}
 
-        {/* Architecture overview floats in the top-right when nothing is selected. */}
-        {summary && !selectedNode && (
-          <SummaryCard summary={summary} notes={topology.notes ?? []} hasHeader={!!title} />
+        {/* Architecture overview floats in the top-right when nothing is
+            selected. Closable via the X button (state persisted to localStorage). */}
+        {summary && !selectedNode && overviewOpen && (
+          <SummaryCard
+            summary={summary}
+            notes={topology.notes ?? []}
+            hasHeader={!!title}
+            onClose={() => setOverviewOpen(false)}
+          />
+        )}
+
+        {/* When overview is closed, drop a tiny pill to reopen it. */}
+        {summary && !selectedNode && !overviewOpen && (
+          <button
+            onClick={() => setOverviewOpen(true)}
+            className={cn(
+              "pointer-events-auto absolute right-3 z-10 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur hover:text-foreground",
+              title ? "top-16" : "top-3",
+            )}
+            title="Show architecture overview"
+          >
+            <Shield className="h-3 w-3" /> Overview
+          </button>
+        )}
+
+        {/* Bottom-right floating action bar — Target server + Plan & apply,
+            closable. Pill-only when closed so the canvas stays unobstructed. */}
+        {onApply && (
+          actionBarOpen ? (
+            <div className="pointer-events-auto absolute bottom-3 left-3 z-10 inline-flex items-center gap-2 rounded-lg border border-border bg-card/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
+              <ShieldAlertIcon className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-muted-foreground">High-risk · approval required</span>
+              <span className="mx-1 h-3 w-px bg-border" />
+              <select
+                value={serverId ?? ""}
+                onChange={(e) => onServerChange?.(e.target.value)}
+                className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="">Target server…</option>
+                {servers?.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.environment})</option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                onClick={() => onApply()}
+                disabled={!serverId || applying || canApply === false}
+                className="gap-1.5"
+              >
+                {applying ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
+                Plan & apply
+              </Button>
+              <button
+                onClick={() => setActionBarOpen(false)}
+                className="ml-1 text-muted-foreground hover:text-foreground"
+                title="Collapse"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setActionBarOpen(true)}
+              className="pointer-events-auto absolute bottom-3 left-3 z-10 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-sm backdrop-blur hover:bg-muted"
+              title="Show deploy controls"
+            >
+              <PlayIcon className="h-3 w-3" /> Deploy
+            </button>
+          )
+        )}
+
+        {/* Right-click context menu at cursor position. */}
+        {contextMenu && (
+          <NodeContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            nodeId={contextMenu.nodeId}
+            node={topology.nodes.find((n) => n.id === contextMenu.nodeId) ?? null}
+            onClose={() => setContextMenu(null)}
+            onShowDetails={() => {
+              setSelectedId(contextMenu.nodeId);
+              setContextMenu(null);
+            }}
+            onShowLive={() => probeNode(contextMenu.nodeId)}
+            liveAvailable={!!onNodeProbe}
+          />
+        )}
+
+        {/* Floating live-data panel — appears bottom-center when the user picks
+            "Show live data" in the context menu. */}
+        {liveData && (
+          <LivePanel
+            nodeLabel={topology.nodes.find((n) => n.id === liveData.nodeId)?.label ?? liveData.nodeId}
+            loading={liveData.loading}
+            data={liveData.data}
+            error={liveData.error}
+            onRefresh={() => probeNode(liveData.nodeId)}
+            onClose={() => setLiveData(null)}
+          />
         )}
       </div>
 
@@ -577,6 +784,127 @@ function InnerView({ topology, summary, className, title, headerActions, onAiMes
           onClose={() => setSelectedId(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Right-click context menu on a node.
+// ============================================================================
+
+function NodeContextMenu({
+  x, y, nodeId: _nodeId, node, onClose, onShowDetails, onShowLive, liveAvailable,
+}: {
+  x: number; y: number;
+  nodeId: string;
+  node: TopologyNode | null;
+  onClose: () => void;
+  onShowDetails: () => void;
+  onShowLive: () => void;
+  liveAvailable: boolean;
+}) {
+  // Close on Escape or click outside.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    function onClickAway() { onClose(); }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onClickAway);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onClickAway);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      className="fixed z-50 min-w-[180px] overflow-hidden rounded-md border border-border bg-card shadow-lg"
+      style={{ left: x, top: y }}
+    >
+      <div className="border-b border-border px-2 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+        {node?.label ?? "Node"}
+      </div>
+      <button
+        onClick={onShowDetails}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted"
+      >
+        <Info className="h-3.5 w-3.5 text-muted-foreground" /> Show details
+      </button>
+      <button
+        onClick={onShowLive}
+        disabled={!liveAvailable}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-50"
+      >
+        <Activity className="h-3.5 w-3.5 text-emerald-500" />
+        {liveAvailable ? "Show live data" : "Live data (not available)"}
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// Floating live-data panel (bottom-center).
+// ============================================================================
+
+function LivePanel({
+  nodeLabel, loading, data, error, onRefresh, onClose,
+}: {
+  nodeLabel: string;
+  loading: boolean;
+  data: NodeLiveData | null;
+  error?: string;
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="pointer-events-auto absolute bottom-3 left-1/2 z-20 w-[min(560px,90%)] -translate-x-1/2 rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold">
+          <Activity className="h-3.5 w-3.5 text-emerald-500" />
+          Live · {nodeLabel}
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={onRefresh} className="text-muted-foreground hover:text-foreground" title="Refresh">
+            <RefreshCwIcon className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" title="Close">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+      <div className="max-h-64 overflow-y-auto p-3 text-xs">
+        {loading && (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Probing…
+          </div>
+        )}
+        {!loading && error && (
+          <div className="rounded bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">{error}</div>
+        )}
+        {!loading && !error && data && (
+          <>
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              {data.metrics.map((m, i) => (
+                <div key={i} className="flex items-center justify-between rounded border border-border bg-muted/30 px-2 py-1">
+                  <span className="text-muted-foreground">{m.label}</span>
+                  <span className={cn(
+                    "font-mono text-[11px]",
+                    m.status === "error" && "text-destructive",
+                    m.status === "warn" && "text-amber-500",
+                    m.status === "ok" && "text-emerald-500",
+                  )}>{m.value}</span>
+                </div>
+              ))}
+            </div>
+            {data.raw && (
+              <pre className="mt-2 max-h-32 overflow-auto rounded bg-muted/30 p-2 font-mono text-[10px]">{data.raw}</pre>
+            )}
+            <div className="mt-2 text-[10px] text-muted-foreground">
+              Fetched {new Date(data.fetched_at).toLocaleTimeString()}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -882,7 +1210,14 @@ function NoteRow({ note }: { note: TopologyNote }) {
 // Top-left summary + global notes when no node is selected.
 // ============================================================================
 
-function SummaryCard({ summary, notes, hasHeader }: { summary: string; notes: TopologyNote[]; hasHeader?: boolean }) {
+function SummaryCard({
+  summary, notes, hasHeader, onClose,
+}: {
+  summary: string;
+  notes: TopologyNote[];
+  hasHeader?: boolean;
+  onClose?: () => void;
+}) {
   const globalNotes = notes.filter((n) => !n.node_id && !n.edge_id);
   // When the canvas has a floating header, push the summary down so they don't
   // collide with the right-side actions.
@@ -892,8 +1227,15 @@ function SummaryCard({ summary, notes, hasHeader }: { summary: string; notes: To
       "pointer-events-auto absolute right-3 z-10 max-w-sm rounded-lg border border-border bg-card/95 p-3 text-xs text-foreground shadow-lg backdrop-blur",
       topOffset,
     )}>
-      <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-        <Shield className="h-3 w-3" /> Architecture overview
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <Shield className="h-3 w-3" /> Architecture overview
+        </div>
+        {onClose && (
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" title="Hide">
+            <X className="h-3 w-3" />
+          </button>
+        )}
       </div>
       <p className="text-[11px] leading-relaxed text-foreground">{summary}</p>
       {globalNotes.length > 0 && (

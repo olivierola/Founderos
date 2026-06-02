@@ -40,4 +40,16 @@ export const api = {
     call({ mode: "update_server", server_id: serverId, patch }),
   credential: (serverId) =>
     call({ mode: "credential", server_id: serverId }),
+  // Push node-probe results back to the live metrics cache.
+  writeNodeMetrics: (topologyId, nodeKey, serverId, metrics, raw, status, durationMs) =>
+    call({
+      mode: "write_node_metrics",
+      topology_id: topologyId,
+      node_key: nodeKey,
+      server_id: serverId,
+      metrics: metrics ?? {},
+      raw: raw ?? null,
+      status: status ?? "ok",
+      duration_ms: durationMs ?? null,
+    }),
 };

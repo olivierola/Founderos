@@ -131,6 +131,34 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (mode === "write_node_metrics") {
+      const { topology_id, node_key, server_id, metrics, raw, status, duration_ms } = body;
+      if (!topology_id || !node_key) {
+        return jsonResponse({ ok: false, message: "topology_id and node_key required" }, { status: 400 });
+      }
+      // Scope check: topology must belong to this runner's project.
+      const { data: topo } = await admin
+        .from("ops_topologies")
+        .select("workspace_id, project_id")
+        .eq("id", topology_id)
+        .maybeSingle();
+      if (!topo || topo.project_id !== projectId) {
+        return jsonResponse({ ok: false, message: "Topology not in this project" }, { status: 403 });
+      }
+      await admin.from("ops_node_metrics").insert({
+        workspace_id: topo.workspace_id,
+        project_id: topo.project_id,
+        topology_id,
+        node_key,
+        server_id: server_id ?? null,
+        metrics: metrics ?? {},
+        raw: raw ?? null,
+        status: status ?? "ok",
+        duration_ms: duration_ms ?? null,
+      });
+      return jsonResponse({ ok: true });
+    }
+
     return jsonResponse({ ok: false, message: "Unknown mode" }, { status: 400 });
   } catch (e: any) {
     return jsonResponse({ ok: false, message: e?.message ?? "Internal error" }, { status: 500 });

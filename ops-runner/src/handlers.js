@@ -149,7 +149,33 @@ async function handleSshExec({ job, api, log }) {
     return { status: "failed", error: "ssh_exec requires input.commands array" };
   }
   const { connection } = await api.credential(job.server_id);
+  const start = Date.now();
   const result = await execOverSsh(connection, commands, log);
+  const duration = Date.now() - start;
+
+  // Side-effect: if this job is a "node_probe", push the parsed output into
+  // the live metrics cache so the UI's Live panel can render it.
+  if (job.input?.kind === "node_probe" && job.input?.topology_id && job.input?.node_key) {
+    const metrics = {};
+    for (const out of result.outputs ?? []) {
+      const v = (out.stdout ?? "").trim();
+      if (v) metrics[out.step] = v;
+    }
+    try {
+      await api.writeNodeMetrics(
+        job.input.topology_id,
+        job.input.node_key,
+        job.server_id,
+        metrics,
+        (result.outputs ?? []).map((o) => `=== ${o.step} ===\n${o.stdout ?? ""}\n${o.stderr ?? ""}`).join("\n").slice(0, 4000),
+        result.ok ? "ok" : "error",
+        duration,
+      );
+    } catch (e) {
+      await log("warn", "node_probe", `Could not write metrics: ${e.message}`);
+    }
+  }
+
   return result.ok
     ? { status: "succeeded", result: { outputs: result.outputs } }
     : { status: "failed", error: result.error, result: { outputs: result.outputs } };
