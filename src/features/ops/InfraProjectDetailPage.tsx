@@ -557,7 +557,7 @@ export function OpsInfraProjectDetailPage() {
                           }}
                           onNodeProbe={nodeProbe}
                           onTopologyChange={async (next) => {
-                            if (!topologyRow?.id) return;
+                            if (!topologyRow?.id || !activeLayer?.bundle_id) return;
                             const { error } = await supabase
                               .from("ops_topologies")
                               .update({ topology: next })
@@ -566,6 +566,10 @@ export function OpsInfraProjectDetailPage() {
                               alert("Could not save topology change: " + error.message);
                               return;
                             }
+                            // Patch the bundle files in the background; failure
+                            // is non-fatal so the canvas stays responsive.
+                            try { await syncFilesFromTopology(activeLayer.bundle_id, next, queryClient); }
+                            catch (e) { console.error("File sync failed:", e); }
                             queryClient.invalidateQueries({ queryKey: ["ops_layer_topology", activeLayer?.bundle_id] });
                           }}
                         />
@@ -717,6 +721,34 @@ function HistoryPopover({
       )}
     </div>
   );
+}
+
+/** Re-patch every file in a bundle to reflect a new topology. Pulls the files,
+ *  runs the deterministic patchers, then UPDATEs only the files whose content
+ *  actually changed. Invalidates the cache so the Files view picks it up. */
+async function syncFilesFromTopology(
+  bundleId: string,
+  topology: Topology,
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  const { data: files } = await supabase
+    .from("ops_generated_files")
+    .select("id, file_path, file_type, content")
+    .eq("bundle_id", bundleId);
+  if (!files || files.length === 0) return;
+
+  const { patchBundle } = await import("./filePatchers");
+  const { patched } = patchBundle(files as any, topology);
+  if (patched.size === 0) return;
+
+  // Apply updates in parallel.
+  await Promise.all(
+    Array.from(patched.entries()).map(([id, content]) =>
+      supabase.from("ops_generated_files").update({ content }).eq("id", id),
+    ),
+  );
+  queryClient.invalidateQueries({ queryKey: ["ops_layer_files", bundleId] });
+  queryClient.invalidateQueries({ queryKey: ["ops_bundle_files", bundleId] });
 }
 
 /** Convert a free-form metrics object returned by the runner into the

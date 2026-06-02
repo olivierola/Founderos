@@ -266,7 +266,7 @@ export function OpsBundleDetailPage() {
                       return `(coming soon) The AI will modify the infra based on: "${msg}"`;
                     }}
                     onTopologyChange={async (next) => {
-                      if (!topologyRow?.id) return;
+                      if (!topologyRow?.id || !bundleId) return;
                       const { error } = await supabase
                         .from("ops_topologies")
                         .update({ topology: next })
@@ -274,6 +274,23 @@ export function OpsBundleDetailPage() {
                       if (error) {
                         alert("Could not save topology change: " + error.message);
                         return;
+                      }
+                      try {
+                        const { patchBundle } = await import("./filePatchers");
+                        const fileRows = (files ?? []).map((f) => ({
+                          id: f.id, file_path: f.file_path, file_type: f.file_type, content: f.content,
+                        }));
+                        const { patched } = patchBundle(fileRows, next);
+                        await Promise.all(
+                          Array.from(patched.entries()).map(([id, content]) =>
+                            supabase.from("ops_generated_files").update({ content }).eq("id", id),
+                          ),
+                        );
+                        if (patched.size > 0) {
+                          queryClient.invalidateQueries({ queryKey: ["ops_bundle_files", bundleId] });
+                        }
+                      } catch (e) {
+                        console.error("File sync failed:", e);
                       }
                       queryClient.invalidateQueries({ queryKey: ["ops_topology", bundleId] });
                     }}

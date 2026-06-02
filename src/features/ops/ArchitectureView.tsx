@@ -15,6 +15,12 @@ import {
   ChevronLeft, ChevronRight as ChevronRightIcon,
   Activity, Play as PlayIcon, ShieldAlert as ShieldAlertIcon,
   RefreshCw as RefreshCwIcon, Plus,
+  // Extended kind icons
+  Boxes, Cog, Container, GitBranch, GlobeLock, LineChart,
+  Monitor, Radio, Rocket, Search as SearchIcon, ShieldQuestion,
+  Smartphone, Sparkles as SparklesIcon, Terminal, UserCheck,
+  Webhook, ChartScatter, FileText as FileIcon, Brain, Bot,
+  Flame, Zap, BarChart3, Bell, ScrollText, Microscope,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,9 +31,23 @@ import { NodeConfigDialog } from "./NodeConfigDialog";
 // ============================================================================
 
 export type NodeKind =
-  | "server" | "container" | "service" | "database" | "cache" | "queue"
-  | "reverse_proxy" | "load_balancer" | "cdn" | "object_storage"
-  | "external" | "dns" | "secret_store" | "scheduler" | "network";
+  // Compute
+  | "server" | "container" | "service" | "scheduler"
+  | "vm" | "function" | "edge_function" | "k8s_cluster" | "k8s_pod" | "k8s_deployment"
+  // Data
+  | "database" | "cache" | "queue" | "object_storage" | "data_warehouse" | "vector_db"
+  // Networking
+  | "reverse_proxy" | "load_balancer" | "cdn" | "dns" | "network" | "firewall" | "vpn" | "api_gateway"
+  // Observability & ops
+  | "monitoring" | "logging" | "tracing" | "metrics" | "alerting"
+  // Auth & secrets
+  | "auth" | "secret_store" | "identity_provider"
+  // Edges
+  | "external" | "third_party_api" | "browser" | "mobile_app" | "iot_device"
+  // Pipelines
+  | "ci_cd" | "build_pipeline" | "etl_pipeline"
+  // AI/ML
+  | "llm" | "embedding_model" | "ml_model";
 
 export type EdgeKind =
   | "http" | "https" | "tcp" | "ssh" | "env" | "webhook"
@@ -98,22 +118,62 @@ interface KindStyle {
 }
 
 const KIND_STYLES: Record<NodeKind, KindStyle> = {
-  server:         { icon: Server,         hue: 220 }, // neutral steel
-  container:      { icon: Box,            hue: 215 }, // blue
-  service:        { icon: Workflow,       hue: 265 }, // violet
-  database:       { icon: Database,       hue: 35  }, // amber
-  cache:          { icon: Cpu,            hue: 0   }, // rose
-  queue:          { icon: Layers,         hue: 320 }, // pink
-  reverse_proxy:  { icon: ArrowRightLeft, hue: 150 }, // emerald
-  load_balancer:  { icon: Network,        hue: 160 }, // teal-emerald
-  cdn:            { icon: Cloud,          hue: 200 }, // sky
-  object_storage: { icon: HardDrive,      hue: 50  }, // yellow
-  external:       { icon: Globe,          hue: 240 }, // muted indigo-grey
-  dns:            { icon: Globe,          hue: 190 }, // cyan
-  secret_store:   { icon: KeyRound,       hue: 290 }, // fuchsia
-  scheduler:      { icon: Clock,          hue: 250 }, // indigo
-  network:        { icon: Network,        hue: 175 }, // teal
+  // Compute
+  server:           { icon: Server,         hue: 220 },
+  container:        { icon: Container,      hue: 215 },
+  service:          { icon: Workflow,       hue: 265 },
+  scheduler:        { icon: Clock,          hue: 250 },
+  vm:               { icon: Monitor,        hue: 230 },
+  function:         { icon: Zap,            hue: 50  },
+  edge_function:    { icon: Zap,            hue: 195 },
+  k8s_cluster:      { icon: Boxes,          hue: 215 },
+  k8s_pod:          { icon: Box,            hue: 220 },
+  k8s_deployment:   { icon: Rocket,         hue: 210 },
+  // Data
+  database:         { icon: Database,       hue: 35  },
+  cache:            { icon: Cpu,            hue: 0   },
+  queue:            { icon: Layers,         hue: 320 },
+  object_storage:   { icon: HardDrive,      hue: 50  },
+  data_warehouse:   { icon: ChartScatter,   hue: 285 },
+  vector_db:        { icon: Microscope,     hue: 275 },
+  // Networking
+  reverse_proxy:    { icon: ArrowRightLeft, hue: 150 },
+  load_balancer:    { icon: Network,        hue: 160 },
+  cdn:              { icon: Cloud,          hue: 200 },
+  dns:              { icon: Globe,          hue: 190 },
+  network:          { icon: Network,        hue: 175 },
+  firewall:         { icon: Flame,          hue: 10  },
+  vpn:              { icon: GlobeLock,      hue: 240 },
+  api_gateway:      { icon: Webhook,        hue: 270 },
+  // Observability
+  monitoring:       { icon: Activity,       hue: 130 },
+  logging:          { icon: ScrollText,     hue: 110 },
+  tracing:          { icon: LineChart,      hue: 170 },
+  metrics:          { icon: BarChart3,      hue: 140 },
+  alerting:         { icon: Bell,           hue: 25  },
+  // Auth & secrets
+  auth:             { icon: UserCheck,      hue: 280 },
+  secret_store:     { icon: KeyRound,       hue: 290 },
+  identity_provider:{ icon: ShieldQuestion, hue: 295 },
+  // Edges (clients)
+  external:         { icon: Globe,          hue: 240 },
+  third_party_api:  { icon: Cog,            hue: 235 },
+  browser:          { icon: Monitor,        hue: 200 },
+  mobile_app:       { icon: Smartphone,     hue: 205 },
+  iot_device:       { icon: Radio,          hue: 25  },
+  // Pipelines
+  ci_cd:            { icon: GitBranch,      hue: 90  },
+  build_pipeline:   { icon: Terminal,       hue: 85  },
+  etl_pipeline:     { icon: SearchIcon,     hue: 95  },
+  // AI/ML
+  llm:              { icon: SparklesIcon,   hue: 290 },
+  embedding_model:  { icon: Brain,          hue: 280 },
+  ml_model:         { icon: Bot,            hue: 285 },
 };
+
+// Suppress "imported but unused" — these icons are referenced by KIND_STYLES
+// via runtime lookup so TS doesn't see them as used.
+void FileIcon;
 
 /** Returns inline styles for a node's accent strip + icon tint, using HSL so
  *  it adapts to the current foreground (light vs dark theme). */
@@ -982,6 +1042,7 @@ function InnerView({
         otherNodeIds={topology.nodes.map((n) => n.id)}
         onSave={saveNode}
         onDelete={editingNode ? deleteEditingNode : undefined}
+        autoSave
       />
     </div>
   );
@@ -1118,38 +1179,92 @@ const EQUIPMENT_GROUPS: Array<{
   items: Array<{ kind: NodeKind; label: string }>;
 }> = [
   {
-    label: "Servers",
+    label: "Compute",
     items: [
-      { kind: "server", label: "Server / VPS" },
-      { kind: "network", label: "Network" },
-      { kind: "load_balancer", label: "Load balancer" },
-      { kind: "reverse_proxy", label: "Reverse proxy" },
+      { kind: "server",          label: "Server / VPS" },
+      { kind: "vm",              label: "VM" },
+      { kind: "container",       label: "Container" },
+      { kind: "service",         label: "Service" },
+      { kind: "scheduler",       label: "Scheduler / Worker" },
+      { kind: "function",        label: "Function" },
+      { kind: "edge_function",   label: "Edge function" },
     ],
   },
   {
-    label: "Workloads",
+    label: "Kubernetes",
     items: [
-      { kind: "container", label: "Container" },
-      { kind: "service", label: "Service" },
-      { kind: "scheduler", label: "Scheduler / Worker" },
+      { kind: "k8s_cluster",     label: "Cluster" },
+      { kind: "k8s_deployment",  label: "Deployment" },
+      { kind: "k8s_pod",         label: "Pod" },
     ],
   },
   {
     label: "Data",
     items: [
-      { kind: "database", label: "Database" },
-      { kind: "cache", label: "Cache" },
-      { kind: "queue", label: "Queue" },
-      { kind: "object_storage", label: "Object storage" },
+      { kind: "database",        label: "Database" },
+      { kind: "cache",           label: "Cache" },
+      { kind: "queue",           label: "Queue / Broker" },
+      { kind: "object_storage",  label: "Object storage" },
+      { kind: "data_warehouse",  label: "Data warehouse" },
+      { kind: "vector_db",       label: "Vector DB" },
     ],
   },
   {
-    label: "Edge & Secrets",
+    label: "Networking",
     items: [
-      { kind: "cdn", label: "CDN" },
-      { kind: "dns", label: "DNS" },
-      { kind: "secret_store", label: "Secret store" },
-      { kind: "external", label: "External service" },
+      { kind: "reverse_proxy",   label: "Reverse proxy" },
+      { kind: "load_balancer",   label: "Load balancer" },
+      { kind: "api_gateway",     label: "API gateway" },
+      { kind: "cdn",             label: "CDN" },
+      { kind: "dns",             label: "DNS" },
+      { kind: "network",         label: "Network" },
+      { kind: "firewall",        label: "Firewall" },
+      { kind: "vpn",             label: "VPN" },
+    ],
+  },
+  {
+    label: "Observability",
+    items: [
+      { kind: "monitoring",      label: "Monitoring" },
+      { kind: "metrics",         label: "Metrics" },
+      { kind: "logging",         label: "Logging" },
+      { kind: "tracing",         label: "Tracing" },
+      { kind: "alerting",        label: "Alerting" },
+    ],
+  },
+  {
+    label: "Auth & Secrets",
+    items: [
+      { kind: "auth",            label: "Auth service" },
+      { kind: "identity_provider", label: "IdP / SSO" },
+      { kind: "secret_store",    label: "Secret store" },
+    ],
+  },
+  {
+    label: "Clients & Edge",
+    items: [
+      { kind: "browser",         label: "Browser" },
+      { kind: "mobile_app",      label: "Mobile app" },
+      { kind: "iot_device",      label: "IoT device" },
+      { kind: "external",        label: "External service" },
+      { kind: "third_party_api", label: "3rd-party API" },
+    ],
+  },
+  {
+    label: "Pipelines",
+    items: [
+      { kind: "ci_cd",           label: "CI/CD" },
+      { kind: "build_pipeline",  label: "Build pipeline" },
+      { kind: "etl_pipeline",    label: "ETL pipeline" },
+    ],
+  },
+  {
+    label: "AI / ML",
+    items: [
+      { kind: "llm",             label: "LLM" },
+      { kind: "embedding_model", label: "Embedding model" },
+      { kind: "ml_model",        label: "ML model" },
+      { kind: "vector_db",       label: "Vector store" },
     ],
   },
 ];
