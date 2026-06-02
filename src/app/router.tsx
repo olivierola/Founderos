@@ -57,6 +57,7 @@ import { OpsOverviewPage } from "@/features/ops/OverviewPage";
 import { OpsServersPage } from "@/features/ops/ServersPage";
 import { OpsServerDetailPage } from "@/features/ops/ServerDetailPage";
 import { OpsWorkflowsPage } from "@/features/ops/WorkflowsPage";
+import { OpsBundleDetailPage } from "@/features/ops/BundleDetailPage";
 import { OpsChecksPage } from "@/features/ops/ChecksPage";
 import { OpsJobsPage } from "@/features/ops/JobsPage";
 import { OpsSettingsPage } from "@/features/ops/SettingsPage";
@@ -369,6 +370,14 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <OpsServerDetailPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "ops/workflows/:bundleId",
+        element: (
+          <ErrorBoundary>
+            <OpsBundleDetailPage />
           </ErrorBoundary>
         ),
       },
