@@ -119,6 +119,9 @@ import {
 import { RunbooksPage } from "@/features/actions/Runbooks";
 import { SaasAnalyticsPage } from "@/features/actions/SaasAnalytics";
 import { SessionReplayPage } from "@/features/saas-analytics/SessionReplay";
+import { EventsPage } from "@/features/saas-analytics/Events";
+import { FunnelsPage as AnalyticsFunnelsPage } from "@/features/saas-analytics/Funnels";
+import { RetentionPage } from "@/features/saas-analytics/Retention";
 import { PerUserAnalyticsPage } from "@/features/actions/PerUserAnalytics";
 import { GroupAnalyticsPage } from "@/features/actions/GroupAnalytics";
 import { UserJourneysPage } from "@/features/actions/UserJourneys";
@@ -195,6 +198,9 @@ const PAGES: Record<string, PageEl> = {
   // SaaS Analytics module (standalone) — overview + user & health sub-tabs
   "saas-analytics/overview": <SaasAnalyticsPage />,
   "saas-analytics/session-replay": <SessionReplayPage />,
+  "saas-analytics/events": <EventsPage />,
+  "saas-analytics/funnels": <AnalyticsFunnelsPage />,
+  "saas-analytics/retention": <RetentionPage />,
   "saas-analytics/users-all": <AllUsersPage />,
   "saas-analytics/users-segments": <SegmentsPage />,
   "saas-analytics/users-cohorts": <UserCohortsPage />,
