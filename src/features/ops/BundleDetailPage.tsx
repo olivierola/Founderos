@@ -158,18 +158,47 @@ export function OpsBundleDetailPage() {
     }
   }
 
+  // Floating actions that live INSIDE the architecture canvas (when it's the
+  // active view). Keeps the user-facing controls but lets the canvas be fullbleed.
+  const archHeaderActions = (
+    <div className="flex items-center gap-2">
+      <Link
+        to={url("/ops/workflows")}
+        className="inline-flex items-center gap-1 rounded-lg border border-border bg-card/90 px-2 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+      >
+        <ArrowLeft className="h-3 w-3" /> Workflows
+      </Link>
+      <Button
+        size="sm" variant="outline"
+        onClick={regenerateTopology}
+        disabled={regenerating}
+        className="gap-1.5 bg-card/90 backdrop-blur"
+      >
+        {regenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+        {topologyRow ? "Regenerate" : "Generate"}
+      </Button>
+      <div className="rounded-lg bg-card/90 backdrop-blur">
+        <ViewSwitcher view={view} onChange={setView} />
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col">
-      <div className="space-y-3 border-b border-border pb-3">
-        <Link to={url("/ops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3 w-3" /> Back to workflows
-        </Link>
-        <PageHeader
-          title={label}
-          description={`${files.length} files · created ${new Date(createdAt).toLocaleString()}${applied ? " · applied" : ""}`}
-          actions={<ViewSwitcher view={view} onChange={setView} />}
-        />
-      </div>
+      {/* In Files mode we keep a normal page header. In Architecture mode the
+          canvas is fullbleed — header floats inside it. */}
+      {view === "files" && (
+        <div className="space-y-3 border-b border-border pb-3">
+          <Link to={url("/ops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-3 w-3" /> Back to workflows
+          </Link>
+          <PageHeader
+            title={label}
+            description={`${files.length} files · created ${new Date(createdAt).toLocaleString()}${applied ? " · applied" : ""}`}
+            actions={<ViewSwitcher view={view} onChange={setView} />}
+          />
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col">
         {view === "files" && (
@@ -215,26 +244,29 @@ export function OpsBundleDetailPage() {
 
         {view === "architecture" && (
           <div className="relative flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between border-b border-border bg-muted/20 px-4 py-2">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Network className="h-3.5 w-3.5" />
-                {topologyRow
-                  ? <>Architecture · last computed {new Date(topologyRow.created_at).toLocaleString()} · {topologyRow.source}</>
-                  : <>No architecture computed yet for this bundle.</>}
-              </div>
-              <Button size="sm" variant="outline" onClick={regenerateTopology} disabled={regenerating} className="gap-1.5">
-                {regenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                {topologyRow ? "Regenerate" : "Generate"}
-              </Button>
-            </div>
             <div className="min-h-0 flex-1">
               {topologyRow?.topology
-                ? <ArchitectureView topology={topologyRow.topology} summary={topologyRow.summary} />
+                ? (
+                  <ArchitectureView
+                    topology={topologyRow.topology}
+                    summary={topologyRow.summary}
+                    title={label}
+                    headerActions={archHeaderActions}
+                    onAiMessage={async (msg) => {
+                      // Placeholder: the AI-driven topology edit endpoint isn't
+                      // shipped yet. We surface the planned behaviour so the user
+                      // can validate the UX; future PR will route this through
+                      // ops-generate-topology with an edit prompt.
+                      return `(coming soon) The AI will modify the infra based on: "${msg}"`;
+                    }}
+                  />
+                )
                 : (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 bg-slate-950 p-8 text-center">
-                    <Network className="h-10 w-10 text-slate-600" />
-                    <p className="text-sm text-slate-300">No architecture diagram for this bundle yet.</p>
-                    <p className="text-xs text-slate-500">Click "Generate" to ask the AI to extract the topology from the files.</p>
+                  <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-8 text-center">
+                    <Network className="h-10 w-10 text-muted-foreground" />
+                    <p className="text-sm text-foreground">No architecture diagram for this bundle yet.</p>
+                    <p className="text-xs text-muted-foreground">Click "Generate" to ask the AI to extract the topology from the files.</p>
+                    <div className="mt-2">{archHeaderActions}</div>
                   </div>
                 )}
             </div>

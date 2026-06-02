@@ -226,16 +226,20 @@ export function OpsInfraProjectDetailPage() {
 
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col">
-      <div className="space-y-3 border-b border-border pb-3">
-        <Link to={url("/ops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3 w-3" /> Back to workflows
-        </Link>
-        <PageHeader
-          title={infra.name}
-          description={infra.brief ? infra.brief.slice(0, 140) + (infra.brief.length > 140 ? "…" : "") : undefined}
-          actions={<StatusBadge status={infra.plan_status} />}
-        />
-      </div>
+      {/* In Files mode we keep a normal page header. In Architecture mode the
+          right pane is fullbleed; navigation lives in the floating canvas bar. */}
+      {view === "files" && (
+        <div className="space-y-3 border-b border-border pb-3">
+          <Link to={url("/ops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-3 w-3" /> Back to workflows
+          </Link>
+          <PageHeader
+            title={infra.name}
+            description={infra.brief ? infra.brief.slice(0, 140) + (infra.brief.length > 140 ? "…" : "") : undefined}
+            actions={<StatusBadge status={infra.plan_status} />}
+          />
+        </div>
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-[280px_1fr]">
         {/* Left: layer list */}
@@ -291,35 +295,40 @@ export function OpsInfraProjectDetailPage() {
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between border-b border-border bg-muted/20 px-4 py-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
-                      TOOL_COLOR[activeLayer.tool] ?? TOOL_COLOR.other)}>
-                      {activeLayer.tool.replace(/_/g, " ")}
-                    </span>
-                    <span className="text-sm font-semibold">{activeLayer.label}</span>
-                    <LayerStatusBadge status={activeLayer.status} />
+              {/* In Files mode keep the in-pane header bar. In Architecture mode
+                  it would steal canvas space — the floating header inside the
+                  canvas carries the same info. */}
+              {view === "files" && (
+                <div className="flex items-center justify-between border-b border-border bg-muted/20 px-4 py-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                        TOOL_COLOR[activeLayer.tool] ?? TOOL_COLOR.other)}>
+                        {activeLayer.tool.replace(/_/g, " ")}
+                      </span>
+                      <span className="text-sm font-semibold">{activeLayer.label}</span>
+                      <LayerStatusBadge status={activeLayer.status} />
+                    </div>
+                    {activeLayer.purpose && (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{activeLayer.purpose}</p>
+                    )}
                   </div>
-                  {activeLayer.purpose && (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{activeLayer.purpose}</p>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <ViewSwitcher view={view} onChange={setView} />
+                    <Button
+                      size="sm" variant="outline"
+                      onClick={() => regenerateLayer(activeLayer.layer_key)}
+                      disabled={regeneratingLayerId === activeLayer.layer_key || activeLayer.status === "generating"}
+                      className="gap-1.5"
+                    >
+                      {regeneratingLayerId === activeLayer.layer_key
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <RefreshCw className="h-3 w-3" />}
+                      Regenerate
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <ViewSwitcher view={view} onChange={setView} />
-                  <Button
-                    size="sm" variant="outline"
-                    onClick={() => regenerateLayer(activeLayer.layer_key)}
-                    disabled={regeneratingLayerId === activeLayer.layer_key || activeLayer.status === "generating"}
-                    className="gap-1.5"
-                  >
-                    {regeneratingLayerId === activeLayer.layer_key
-                      ? <Loader2 className="h-3 w-3 animate-spin" />
-                      : <RefreshCw className="h-3 w-3" />}
-                    Regenerate
-                  </Button>
-                </div>
-              </div>
+              )}
 
               <div className="min-h-0 flex-1">
                 {activeLayer.status === "failed" && (
@@ -378,12 +387,38 @@ export function OpsInfraProjectDetailPage() {
                 {activeLayer.status === "ready" && activeLayer.bundle_id && view === "architecture" && (
                   <>
                     {topologyRow?.topology
-                      ? <ArchitectureView topology={topologyRow.topology} summary={topologyRow.summary} />
+                      ? <ArchitectureView
+                          topology={topologyRow.topology}
+                          summary={topologyRow.summary}
+                          title={`${activeLayer.label} · ${activeLayer.tool.replace(/_/g, " ")}`}
+                          headerActions={
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm" variant="outline"
+                                onClick={() => regenerateLayer(activeLayer.layer_key)}
+                                disabled={regeneratingLayerId === activeLayer.layer_key}
+                                className="gap-1.5 bg-card/90 backdrop-blur"
+                              >
+                                {regeneratingLayerId === activeLayer.layer_key
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <RefreshCw className="h-3 w-3" />}
+                                Regenerate
+                              </Button>
+                              <div className="rounded-lg bg-card/90 backdrop-blur">
+                                <ViewSwitcher view={view} onChange={setView} />
+                              </div>
+                            </div>
+                          }
+                          onAiMessage={async (msg) => {
+                            // Placeholder until ai-edit endpoint ships.
+                            return `(coming soon) Will modify the "${activeLayer.label}" layer based on: "${msg}"`;
+                          }}
+                        />
                       : (
-                        <div className="flex h-full flex-col items-center justify-center gap-3 bg-slate-950 p-8 text-center">
-                          <Network className="h-10 w-10 text-slate-600" />
-                          <p className="text-sm text-slate-300">No architecture diagram for this layer yet.</p>
-                          <p className="text-xs text-slate-500">
+                        <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-8 text-center">
+                          <Network className="h-10 w-10 text-muted-foreground" />
+                          <p className="text-sm text-foreground">No architecture diagram for this layer yet.</p>
+                          <p className="text-xs text-muted-foreground">
                             The topology is generated on the first bundle creation. Use Regenerate to recompute it.
                           </p>
                         </div>

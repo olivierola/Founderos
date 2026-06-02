@@ -1,9 +1,9 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useEffect } from "react";
 import ReactFlow, {
-  Background, Controls, MiniMap, Handle, Position,
+  Background, BackgroundVariant, Controls, MiniMap, Handle, Position,
   type Node, type Edge, type NodeProps, type EdgeProps,
   MarkerType, BaseEdge, EdgeLabelRenderer, getBezierPath,
-  ReactFlowProvider,
+  ReactFlowProvider, useNodesState,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import dagre from "dagre";
@@ -11,7 +11,10 @@ import {
   Server, Box, Database, Globe, Lock, Cloud, Cpu,
   Layers, KeyRound, Clock, ArrowRightLeft, AlertTriangle, Info,
   Network, Shield, HardDrive, Workflow,
+  Wrench, MessageCircle, X, Send, Loader2, LayoutGrid,
+  ChevronLeft, ChevronRight as ChevronRightIcon,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -75,37 +78,63 @@ export interface Topology {
 }
 
 // ============================================================================
-// Per-kind visual styles — colors, icons, default port.
+// Per-kind visual styles.
+//
+// We use the design-system tokens (bg-card, border-border, text-foreground)
+// as the base so the diagram inherits the SaaS palette and adapts to the
+// light/dark theme switch. Each node is identified by:
+//   - an icon
+//   - a coloured accent strip + icon tint, expressed as a hue (0-360) so it
+//     reads in both modes without hard-coding tailwind classes.
 // ============================================================================
 
-const KIND_STYLES: Record<NodeKind, { icon: any; color: string; bg: string; ring: string }> = {
-  server:         { icon: Server,    color: "text-slate-200",   bg: "bg-slate-800",    ring: "ring-slate-500/50" },
-  container:      { icon: Box,       color: "text-blue-100",    bg: "bg-blue-900/70",  ring: "ring-blue-500/50" },
-  service:        { icon: Workflow,  color: "text-violet-100",  bg: "bg-violet-900/70", ring: "ring-violet-500/50" },
-  database:       { icon: Database,  color: "text-amber-100",   bg: "bg-amber-900/70", ring: "ring-amber-500/50" },
-  cache:          { icon: Cpu,       color: "text-rose-100",    bg: "bg-rose-900/70",  ring: "ring-rose-500/50" },
-  queue:          { icon: Layers,    color: "text-pink-100",    bg: "bg-pink-900/70",  ring: "ring-pink-500/50" },
-  reverse_proxy:  { icon: ArrowRightLeft, color: "text-emerald-100", bg: "bg-emerald-900/70", ring: "ring-emerald-500/50" },
-  load_balancer:  { icon: Network,   color: "text-emerald-100", bg: "bg-emerald-900/70", ring: "ring-emerald-500/50" },
-  cdn:            { icon: Cloud,     color: "text-sky-100",     bg: "bg-sky-900/70",   ring: "ring-sky-500/50" },
-  object_storage: { icon: HardDrive, color: "text-yellow-100",  bg: "bg-yellow-900/70", ring: "ring-yellow-500/50" },
-  external:       { icon: Globe,     color: "text-zinc-100",    bg: "bg-zinc-800",     ring: "ring-zinc-500/50" },
-  dns:            { icon: Globe,     color: "text-cyan-100",    bg: "bg-cyan-900/70",  ring: "ring-cyan-500/50" },
-  secret_store:   { icon: KeyRound,  color: "text-fuchsia-100", bg: "bg-fuchsia-900/70", ring: "ring-fuchsia-500/50" },
-  scheduler:      { icon: Clock,     color: "text-indigo-100",  bg: "bg-indigo-900/70", ring: "ring-indigo-500/50" },
-  network:        { icon: Network,   color: "text-teal-100",    bg: "bg-teal-900/70",  ring: "ring-teal-500/50" },
+interface KindStyle {
+  icon: any;
+  /** HSL hue used to tint the accent strip and icon. */
+  hue: number;
+}
+
+const KIND_STYLES: Record<NodeKind, KindStyle> = {
+  server:         { icon: Server,         hue: 220 }, // neutral steel
+  container:      { icon: Box,            hue: 215 }, // blue
+  service:        { icon: Workflow,       hue: 265 }, // violet
+  database:       { icon: Database,       hue: 35  }, // amber
+  cache:          { icon: Cpu,            hue: 0   }, // rose
+  queue:          { icon: Layers,         hue: 320 }, // pink
+  reverse_proxy:  { icon: ArrowRightLeft, hue: 150 }, // emerald
+  load_balancer:  { icon: Network,        hue: 160 }, // teal-emerald
+  cdn:            { icon: Cloud,          hue: 200 }, // sky
+  object_storage: { icon: HardDrive,      hue: 50  }, // yellow
+  external:       { icon: Globe,          hue: 240 }, // muted indigo-grey
+  dns:            { icon: Globe,          hue: 190 }, // cyan
+  secret_store:   { icon: KeyRound,       hue: 290 }, // fuchsia
+  scheduler:      { icon: Clock,          hue: 250 }, // indigo
+  network:        { icon: Network,        hue: 175 }, // teal
 };
 
+/** Returns inline styles for a node's accent strip + icon tint, using HSL so
+ *  it adapts to the current foreground (light vs dark theme). */
+function accentFor(hue: number) {
+  return {
+    stripBg: `hsl(${hue} 75% 60%)`,
+    iconColor: `hsl(${hue} 75% 60%)`,
+    softBg: `hsl(${hue} 75% 60% / 0.10)`,
+    softBorder: `hsl(${hue} 70% 55% / 0.45)`,
+  };
+}
+
+// Edge colors. Slightly desaturated and a bit lighter than node hues so the
+// lines read on both light and dark backgrounds.
 const EDGE_STYLES: Record<EdgeKind, { color: string; strokeDasharray?: string; animated?: boolean }> = {
-  http:          { color: "#3b82f6" },
-  https:         { color: "#10b981", animated: true },
-  tcp:           { color: "#8b5cf6" },
-  ssh:           { color: "#f59e0b", strokeDasharray: "4 2" },
-  env:           { color: "#a3a3a3", strokeDasharray: "2 2" },
-  webhook:       { color: "#ec4899", animated: true },
-  volume_mount:  { color: "#facc15", strokeDasharray: "6 3" },
-  depends_on:    { color: "#6b7280", strokeDasharray: "1 3" },
-  network_link:  { color: "#06b6d4" },
+  http:          { color: "hsl(215 75% 60%)" },
+  https:         { color: "hsl(150 65% 50%)", animated: true },
+  tcp:           { color: "hsl(265 65% 65%)" },
+  ssh:           { color: "hsl(35 85% 55%)", strokeDasharray: "4 2" },
+  env:           { color: "hsl(220 8% 60%)", strokeDasharray: "2 2" },
+  webhook:       { color: "hsl(320 70% 60%)", animated: true },
+  volume_mount:  { color: "hsl(50 85% 55%)", strokeDasharray: "6 3" },
+  depends_on:    { color: "hsl(220 8% 55%)", strokeDasharray: "1 3" },
+  network_link:  { color: "hsl(190 75% 55%)" },
 };
 
 // ============================================================================
@@ -120,37 +149,74 @@ interface NodeData extends TopologyNode {
 function ArchNode({ data }: NodeProps<NodeData>) {
   const s = KIND_STYLES[data.kind] ?? KIND_STYLES.service;
   const Icon = s.icon;
+  const accent = accentFor(s.hue);
   const dimmed = data.isHighlighted === false;
+
   return (
     <div
       className={cn(
-        "relative rounded-lg border border-white/10 px-3 py-2 text-xs shadow-md transition-opacity",
-        s.bg, s.color,
-        data.isSelected && `ring-2 ${s.ring}`,
+        "relative overflow-hidden rounded-lg border border-border bg-card text-xs text-card-foreground shadow-sm transition-opacity",
+        data.isSelected && "ring-2",
         dimmed && "opacity-30",
       )}
-      style={{ minWidth: 160 }}
+      style={{
+        minWidth: 170,
+        // selected ring colour follows the node's accent hue, not a hardcoded slate.
+        ...(data.isSelected ? { boxShadow: `0 0 0 2px ${accent.stripBg}` } : {}),
+      }}
     >
-      <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-white/40 !bg-white/40" />
-      <div className="flex items-center gap-2">
-        <Icon className="h-3.5 w-3.5 shrink-0" />
+      {/* coloured accent strip on the left identifies the kind */}
+      <span className="absolute inset-y-0 left-0 w-1" style={{ background: accent.stripBg }} />
+
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!h-2 !w-2 !border-border !bg-muted-foreground/60"
+      />
+
+      <div className="flex items-center gap-2 px-3 py-2 pl-4">
+        <div
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
+          style={{ background: accent.softBg, color: accent.iconColor }}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </div>
         <div className="min-w-0">
-          <div className="truncate font-semibold leading-tight">{data.label}</div>
-          <div className="text-[10px] uppercase tracking-wider opacity-70">{data.kind.replace(/_/g, " ")}</div>
+          <div className="truncate font-semibold leading-tight text-foreground">{data.label}</div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            {data.kind.replace(/_/g, " ")}
+          </div>
         </div>
       </div>
-      {data.ports && data.ports.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {data.ports.slice(0, 4).map((p) => (
-            <span key={p} className="rounded bg-black/30 px-1 py-0.5 font-mono text-[9px]">:{p}</span>
-          ))}
-          {data.ports.length > 4 && <span className="text-[9px] opacity-60">+{data.ports.length - 4}</span>}
+
+      {(data.ports?.length || data.image) && (
+        <div className="border-t border-border bg-muted/40 px-3 py-1.5 pl-4">
+          {data.ports && data.ports.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {data.ports.slice(0, 4).map((p) => (
+                <span
+                  key={p}
+                  className="rounded bg-background/80 px-1 py-0.5 font-mono text-[9px] text-muted-foreground"
+                >
+                  :{p}
+                </span>
+              ))}
+              {data.ports.length > 4 && (
+                <span className="text-[9px] text-muted-foreground">+{data.ports.length - 4}</span>
+              )}
+            </div>
+          )}
+          {data.image && (
+            <div className="mt-1 truncate font-mono text-[9px] text-muted-foreground">{data.image}</div>
+          )}
         </div>
       )}
-      {data.image && (
-        <div className="mt-1 truncate font-mono text-[9px] opacity-60">{data.image}</div>
-      )}
-      <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-white/40 !bg-white/40" />
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!h-2 !w-2 !border-border !bg-muted-foreground/60"
+      />
     </div>
   );
 }
@@ -167,8 +233,8 @@ interface GroupData {
 
 function GroupNode({ data }: NodeProps<GroupData>) {
   return (
-    <div className="relative h-full w-full rounded-xl border border-dashed border-white/20 bg-white/[0.02] p-3">
-      <div className="absolute left-3 top-2 flex items-center gap-1 rounded bg-background/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
+    <div className="relative h-full w-full rounded-xl border border-dashed border-border bg-muted/30 p-3">
+      <div className="absolute left-3 top-2 flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {data.kind === "server" ? <Server className="h-3 w-3" /> : <Cloud className="h-3 w-3" />}
         {data.label}
       </div>
@@ -221,7 +287,7 @@ function ArchEdge(props: EdgeProps<EdgeData>) {
               pointerEvents: "all",
             }}
             className={cn(
-              "rounded bg-background/90 px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm backdrop-blur",
+              "rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm",
               dimmed && "opacity-30",
             )}
           >
@@ -342,25 +408,37 @@ interface ArchitectureViewProps {
   topology: Topology;
   summary?: string | null;
   className?: string;
+  /** Title shown in the floating header bar inside the canvas. */
+  title?: string;
+  /** Right-aligned actions in the floating header bar (e.g. Regenerate button). */
+  headerActions?: React.ReactNode;
+  /** When provided, the floating AI chat will send messages here. */
+  onAiMessage?: (message: string) => Promise<string> | string;
 }
 
 const nodeTypes = { arch: ArchNode, group: GroupNode };
 const edgeTypes = { arch: ArchEdge };
 
-export function ArchitectureView({ topology, summary, className }: ArchitectureViewProps) {
+export function ArchitectureView(props: ArchitectureViewProps) {
   return (
     <ReactFlowProvider>
-      <InnerView topology={topology} summary={summary} className={className} />
+      <InnerView {...props} />
     </ReactFlowProvider>
   );
 }
 
-function InnerView({ topology, summary, className }: ArchitectureViewProps) {
-  const baseNodes = useMemo(
+function InnerView({ topology, summary, className, title, headerActions, onAiMessage }: ArchitectureViewProps) {
+  // Initial layout from dagre. After this, the user can drag nodes around and
+  // we keep their positions thanks to useNodesState.
+  const initialNodes = useMemo(
     () => layoutNodes(topology.nodes, topology.edges, topology.groups),
     [topology.nodes, topology.edges, topology.groups],
   );
   const baseEdges = useMemo(() => topologyToEdges(topology.edges), [topology.edges]);
+
+  // Drag-and-drop state. Reset whenever the underlying topology changes.
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  useEffect(() => { setNodes(initialNodes); }, [initialNodes, setNodes]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -375,17 +453,18 @@ function InnerView({ topology, summary, className }: ArchitectureViewProps) {
     return ids;
   }, [selectedId, topology.edges]);
 
-  const nodes = useMemo(() => baseNodes.map((n) => {
+  // Inject selection + highlight flags into node data without losing positions.
+  const renderedNodes = useMemo(() => nodes.map((n) => {
     if (n.type === "group") return n;
     return {
       ...n,
       data: {
-        ...n.data,
+        ...(n.data as NodeData),
         isSelected: n.id === selectedId,
         isHighlighted: highlightSet ? highlightSet.has(n.id) : undefined,
       } as NodeData,
     };
-  }), [baseNodes, selectedId, highlightSet]);
+  }), [nodes, selectedId, highlightSet]);
 
   const edges = useMemo(() => baseEdges.map((e) => ({
     ...e,
@@ -410,45 +489,82 @@ function InnerView({ topology, summary, className }: ArchitectureViewProps) {
     [selectedId, topology.notes],
   );
 
+  // Re-layout = recompute initial positions and reset the drag state.
+  const relayout = useCallback(() => {
+    setNodes(layoutNodes(topology.nodes, topology.edges, topology.groups));
+  }, [topology, setNodes]);
+
   return (
-    <div className={cn("relative flex h-full w-full overflow-hidden bg-slate-950", className)}>
-      <div className="min-w-0 flex-1">
+    <div className={cn("relative flex h-full w-full overflow-hidden bg-background", className)}>
+      <div className="relative min-w-0 flex-1">
         <ReactFlow
-          nodes={nodes}
+          nodes={renderedNodes}
           edges={edges}
+          onNodesChange={onNodesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
+          nodesDraggable
           fitView
           fitViewOptions={{ padding: 0.15 }}
           proOptions={{ hideAttribution: true }}
           minZoom={0.2}
           maxZoom={1.5}
         >
-          <Background gap={20} size={1} color="rgba(255,255,255,0.05)" />
+          {/* True dotted background, themed via the design system tokens. */}
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={22}
+            size={1.5}
+            color="hsl(var(--muted-foreground) / 0.35)"
+          />
           <Controls
             showInteractive={false}
-            className="!border-white/10 !bg-slate-900/80 [&>button]:!border-white/10 [&>button]:!bg-slate-900 [&>button]:!text-white"
+            position="bottom-right"
+            className="!border-border !bg-card/90 backdrop-blur [&>button]:!border-border [&>button]:!bg-card [&>button]:!text-foreground"
           />
           <MiniMap
             pannable zoomable
-            className="!border-white/10 !bg-slate-900"
-            nodeStrokeColor="rgba(255,255,255,0.4)"
+            position="bottom-right"
+            className="!border-border !bg-card"
+            style={{ marginBottom: 100 }}
+            maskColor="hsl(var(--background) / 0.6)"
+            nodeStrokeColor="hsl(var(--border))"
             nodeColor={(n) => {
               if (n.type === "group") return "transparent";
               const kind = (n.data as NodeData)?.kind;
-              // KIND_STYLES.color is a tailwind class string ("text-slate-200"),
-              // not a hex value — the previous replace("text-", "#") produced
-              // invalid colors. Just return a stable neutral grey for the minimap;
-              // node identification is by position, not color.
-              if (kind && KIND_STYLES[kind]) return "#475569";
-              return "#334155";
+              const hue = (kind && KIND_STYLES[kind]?.hue) ?? 220;
+              return `hsl(${hue} 60% 55%)`;
             }}
           />
         </ReactFlow>
 
-        <Legend />
+        {/* Floating top-bar with title + actions; lives inside the canvas so the
+            content above doesn't take a strip of header. */}
+        {(title || headerActions) && (
+          <div className="pointer-events-none absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-2">
+            {title && (
+              <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur">
+                <Network className="h-3 w-3 text-muted-foreground" /> {title}
+              </div>
+            )}
+            <div className="pointer-events-auto flex items-center gap-2">
+              {headerActions}
+            </div>
+          </div>
+        )}
+
+        {/* Floating toolkit panel — left side, collapsible. */}
+        <Toolkit onRelayout={relayout} />
+
+        {/* Floating AI chat — right side, collapsible. */}
+        {onAiMessage && <AiChat onSend={onAiMessage} />}
+
+        {/* Architecture overview floats in the top-right when nothing is selected. */}
+        {summary && !selectedNode && (
+          <SummaryCard summary={summary} notes={topology.notes ?? []} hasHeader={!!title} />
+        )}
       </div>
 
       {selectedNode && (
@@ -461,13 +577,168 @@ function InnerView({ topology, summary, className }: ArchitectureViewProps) {
           onClose={() => setSelectedId(null)}
         />
       )}
-
-      {summary && !selectedNode && (
-        <SummaryCard summary={summary} notes={topology.notes ?? []} />
-      )}
     </div>
   );
 }
+
+// ============================================================================
+// Floating Toolkit panel — left side, collapsible.
+// ============================================================================
+
+function Toolkit({ onRelayout }: { onRelayout: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="absolute left-3 top-16 z-10 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur hover:bg-muted"
+        title="Open toolkit"
+      >
+        <Wrench className="h-3.5 w-3.5" /> Toolkit
+      </button>
+    );
+  }
+
+  return (
+    <div className="absolute left-3 top-16 z-10 w-64 rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold">
+          <Wrench className="h-3.5 w-3.5" /> Toolkit
+        </div>
+        <button
+          onClick={() => setOpen(false)}
+          className="text-muted-foreground hover:text-foreground"
+          title="Collapse"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="space-y-1 p-2 text-xs">
+        <button
+          onClick={onRelayout}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+        >
+          <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
+          Re-layout (auto-arrange)
+        </button>
+        <button
+          onClick={() => setLegendOpen(!legendOpen)}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+        >
+          <Info className="h-3.5 w-3.5 text-muted-foreground" />
+          {legendOpen ? "Hide legend" : "Show legend"}
+        </button>
+        {legendOpen && (
+          <div className="rounded border border-border bg-background/40 p-2">
+            <LegendContent />
+          </div>
+        )}
+        <p className="px-2 pt-1 text-[10px] text-muted-foreground">
+          Tip: drag nodes to rearrange. Click a node to inspect it.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Floating AI chat — right side, collapsible.
+// ============================================================================
+
+interface ChatMsg { role: "user" | "assistant"; text: string; }
+
+function AiChat({ onSend }: { onSend: (msg: string) => Promise<string> | string }) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [sending, setSending] = useState(false);
+
+  async function submit() {
+    const text = input.trim();
+    if (!text || sending) return;
+    setMessages((m) => [...m, { role: "user", text }]);
+    setInput("");
+    setSending(true);
+    try {
+      const reply = await onSend(text);
+      setMessages((m) => [...m, { role: "assistant", text: reply }]);
+    } catch (e: any) {
+      setMessages((m) => [...m, { role: "assistant", text: `Error: ${e?.message ?? "unknown"}` }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="absolute right-3 top-16 z-10 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur hover:bg-muted"
+        title="Ask the AI to modify this infra"
+      >
+        <MessageCircle className="h-3.5 w-3.5" /> Ask AI
+      </button>
+    );
+  }
+
+  return (
+    <div className="absolute right-3 top-16 z-10 flex w-80 flex-col rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur" style={{ maxHeight: "calc(100% - 96px)" }}>
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold">
+          <MessageCircle className="h-3.5 w-3.5" /> Ask AI
+        </div>
+        <button
+          onClick={() => setOpen(false)}
+          className="text-muted-foreground hover:text-foreground"
+          title="Collapse"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+        {messages.length === 0 ? (
+          <p className="rounded border border-dashed border-border bg-background/40 p-2 text-[11px] text-muted-foreground">
+            Describe a change ("Add Redis cache", "Use Caddy instead of Nginx") and the AI will update the infra.
+          </p>
+        ) : (
+          messages.map((m, i) => (
+            <div
+              key={i}
+              className={cn(
+                "rounded-md px-2 py-1.5 text-[11px] leading-snug",
+                m.role === "user"
+                  ? "ml-6 bg-primary/10 text-foreground"
+                  : "mr-6 bg-muted text-foreground",
+              )}
+            >
+              {m.text}
+            </div>
+          ))
+        )}
+      </div>
+      <div className="flex items-center gap-1 border-t border-border p-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+          placeholder="Ask for a change…"
+          className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] focus:outline-none focus:ring-1 focus:ring-ring"
+          disabled={sending}
+        />
+        <Button size="sm" variant="ghost" onClick={submit} disabled={sending || !input.trim()}>
+          {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Re-exported chevron so the JSX above can use it without a name clash with
+// the icon already imported as ChevronRightIcon at the top.
+const _unusedChevron = ChevronRightIcon;
+void _unusedChevron;
 
 // ============================================================================
 // Right-side inspector panel — details for the selected node.
@@ -490,19 +761,25 @@ function Inspector({
 }) {
   const s = KIND_STYLES[node.kind] ?? KIND_STYLES.service;
   const Icon = s.icon;
+  const accent = accentFor(s.hue);
   const labelOf = (id: string) => allNodes.find((n) => n.id === id)?.label ?? id;
 
   return (
-    <div className="flex w-80 shrink-0 flex-col border-l border-white/10 bg-slate-900/95 text-slate-100">
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+    <div className="flex w-80 shrink-0 flex-col border-l border-border bg-card text-foreground">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <Icon className={cn("h-4 w-4", s.color.replace("100", "300"))} />
+          <div
+            className="flex h-6 w-6 items-center justify-center rounded"
+            style={{ background: accent.softBg, color: accent.iconColor }}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </div>
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">{node.label}</div>
-            <div className="text-[10px] uppercase tracking-wide text-slate-400">{node.kind.replace(/_/g, " ")}</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{node.kind.replace(/_/g, " ")}</div>
           </div>
         </div>
-        <button onClick={onClose} className="text-slate-400 hover:text-slate-100">✕</button>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">✕</button>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-3 text-xs">
@@ -513,7 +790,7 @@ function Inspector({
         {node.ports && node.ports.length > 0 && (
           <Field label="Ports" value={
             <div className="flex flex-wrap gap-1">
-              {node.ports.map((p) => <span key={p} className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px]">{p}</span>)}
+              {node.ports.map((p) => <span key={p} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{p}</span>)}
             </div>
           } />
         )}
@@ -521,7 +798,7 @@ function Inspector({
         {node.env && node.env.length > 0 && (
           <Field label={`Env vars (${node.env.length})`} value={
             <div className="space-y-0.5">
-              {node.env.map((e) => <div key={e} className="font-mono text-[10px] text-slate-400">{e}</div>)}
+              {node.env.map((e) => <div key={e} className="font-mono text-[10px] text-muted-foreground">{e}</div>)}
             </div>
           } />
         )}
@@ -529,7 +806,7 @@ function Inspector({
         {node.volumes && node.volumes.length > 0 && (
           <Field label="Volumes" value={
             <div className="space-y-0.5">
-              {node.volumes.map((v) => <div key={v} className="font-mono text-[10px] text-slate-400">{v}</div>)}
+              {node.volumes.map((v) => <div key={v} className="font-mono text-[10px] text-muted-foreground">{v}</div>)}
             </div>
           } />
         )}
@@ -569,7 +846,7 @@ function Inspector({
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div>{value}</div>
     </div>
   );
@@ -578,9 +855,9 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 function ConnRow({ edge, otherLabel, direction }: { edge: TopologyEdge; otherLabel: string; direction: "in" | "out" }) {
   const color = EDGE_STYLES[edge.kind]?.color ?? "#94a3b8";
   return (
-    <div className="flex items-center gap-1.5 rounded bg-slate-800/50 px-2 py-1">
+    <div className="flex items-center gap-1.5 rounded bg-muted px-2 py-1">
       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-      <span className="text-[10px] uppercase text-slate-400">{edge.kind}</span>
+      <span className="text-[10px] uppercase text-muted-foreground">{edge.kind}</span>
       <span className="ml-auto truncate text-[11px]">
         {direction === "in" ? "← " : "→ "}{otherLabel}
       </span>
@@ -592,11 +869,11 @@ function NoteRow({ note }: { note: TopologyNote }) {
   const Icon = note.severity === "critical" || note.severity === "warn" ? AlertTriangle : Info;
   const color = note.severity === "critical" ? "text-rose-400"
     : note.severity === "warn" ? "text-amber-400"
-    : "text-slate-400";
+    : "text-muted-foreground";
   return (
-    <div className="flex items-start gap-1.5 rounded bg-slate-800/50 px-2 py-1.5">
+    <div className="flex items-start gap-1.5 rounded bg-muted px-2 py-1.5">
       <Icon className={cn("mt-0.5 h-3 w-3 shrink-0", color)} />
-      <span className="text-[11px] text-slate-200">{note.text}</span>
+      <span className="text-[11px] text-foreground">{note.text}</span>
     </div>
   );
 }
@@ -605,16 +882,22 @@ function NoteRow({ note }: { note: TopologyNote }) {
 // Top-left summary + global notes when no node is selected.
 // ============================================================================
 
-function SummaryCard({ summary, notes }: { summary: string; notes: TopologyNote[] }) {
+function SummaryCard({ summary, notes, hasHeader }: { summary: string; notes: TopologyNote[]; hasHeader?: boolean }) {
   const globalNotes = notes.filter((n) => !n.node_id && !n.edge_id);
+  // When the canvas has a floating header, push the summary down so they don't
+  // collide with the right-side actions.
+  const topOffset = hasHeader ? "top-16" : "top-3";
   return (
-    <div className="pointer-events-auto absolute right-3 top-3 max-w-sm rounded-lg border border-white/10 bg-slate-900/90 p-3 text-xs text-slate-100 shadow-lg backdrop-blur">
-      <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-400">
+    <div className={cn(
+      "pointer-events-auto absolute right-3 z-10 max-w-sm rounded-lg border border-border bg-card/95 p-3 text-xs text-foreground shadow-lg backdrop-blur",
+      topOffset,
+    )}>
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
         <Shield className="h-3 w-3" /> Architecture overview
       </div>
-      <p className="text-[11px] leading-relaxed text-slate-200">{summary}</p>
+      <p className="text-[11px] leading-relaxed text-foreground">{summary}</p>
       {globalNotes.length > 0 && (
-        <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
+        <div className="mt-2 space-y-1 border-t border-border pt-2">
           {globalNotes.map((n, i) => <NoteRow key={i} note={n} />)}
         </div>
       )}
@@ -623,64 +906,56 @@ function SummaryCard({ summary, notes }: { summary: string; notes: TopologyNote[
 }
 
 // ============================================================================
-// Legend — pinned bottom-left, lists kind colors + edge styles.
+// Legend content — rendered inside the Toolkit popover.
 // ============================================================================
 
-function Legend() {
-  const [open, setOpen] = useState(false);
-
+function LegendContent() {
   // Pick the kinds the user is most likely to see.
   const nodeKinds: NodeKind[] = ["container", "service", "database", "cache", "queue", "reverse_proxy", "external", "secret_store"];
   const edgeKinds: EdgeKind[] = ["http", "https", "tcp", "ssh", "env", "webhook", "depends_on"];
 
   return (
-    <div className="absolute bottom-3 left-3 z-10">
-      <button
-        onClick={() => setOpen(!open)}
-        className="rounded-lg border border-white/10 bg-slate-900/90 px-2.5 py-1 text-[10px] font-medium text-slate-200 backdrop-blur hover:bg-slate-800"
-      >
-        {open ? "Hide legend" : "Show legend"}
-      </button>
-      {open && (
-        <div className="mt-2 w-64 rounded-lg border border-white/10 bg-slate-900/95 p-3 text-[10px] text-slate-200 shadow-lg backdrop-blur">
-          <div className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">Node kinds</div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {nodeKinds.map((k) => {
-              const s = KIND_STYLES[k];
-              const Icon = s.icon;
-              return (
-                <div key={k} className="flex items-center gap-1.5">
-                  <div className={cn("flex h-4 w-4 items-center justify-center rounded", s.bg)}>
-                    <Icon className={cn("h-2.5 w-2.5", s.color)} />
-                  </div>
-                  <span className="text-[10px] capitalize">{k.replace(/_/g, " ")}</span>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-3 mb-1.5 text-[10px] uppercase tracking-wider text-slate-500">Edge kinds</div>
-          <div className="space-y-1">
-            {edgeKinds.map((k) => {
-              const s = EDGE_STYLES[k];
-              return (
-                <div key={k} className="flex items-center gap-2">
-                  <svg width="28" height="6">
-                    <line
-                      x1="0" y1="3" x2="28" y2="3"
-                      stroke={s.color}
-                      strokeWidth="2"
-                      strokeDasharray={s.strokeDasharray}
-                    />
-                  </svg>
-                  <span className="text-[10px] capitalize">{k.replace(/_/g, " ")}</span>
-                  {s.animated && <span className="text-[9px] text-slate-500">(animated)</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+    <>
+      <div className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">Node kinds</div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {nodeKinds.map((k) => {
+          const s = KIND_STYLES[k];
+          const Icon = s.icon;
+          const accent = accentFor(s.hue);
+          return (
+            <div key={k} className="flex items-center gap-1.5">
+              <div
+                className="flex h-4 w-4 items-center justify-center rounded"
+                style={{ background: accent.softBg, color: accent.iconColor }}
+              >
+                <Icon className="h-2.5 w-2.5" />
+              </div>
+              <span className="text-[10px] capitalize">{k.replace(/_/g, " ")}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">Edge kinds</div>
+      <div className="space-y-1">
+        {edgeKinds.map((k) => {
+          const s = EDGE_STYLES[k];
+          return (
+            <div key={k} className="flex items-center gap-2">
+              <svg width="28" height="6">
+                <line
+                  x1="0" y1="3" x2="28" y2="3"
+                  stroke={s.color}
+                  strokeWidth="2"
+                  strokeDasharray={s.strokeDasharray}
+                />
+              </svg>
+              <span className="text-[10px] capitalize">{k.replace(/_/g, " ")}</span>
+              {s.animated && <span className="text-[9px] text-muted-foreground">(animated)</span>}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
