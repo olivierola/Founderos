@@ -12,6 +12,12 @@ export interface OpsServer {
   project_id: string;
   name: string;
   description: string | null;
+  /** "server" = VPS managed via SSH/Ansible. "managed" = PaaS via connector API. */
+  target_kind: "server" | "managed";
+  /** When target_kind = "managed", the connectors row id holding credentials. */
+  connector_id: string | null;
+  /** When target_kind = "managed", denormalised provider name (vercel, netlify…). */
+  managed_provider: string | null;
   provider: OpsServerProvider;
   ip_address: string;
   ssh_port: number;

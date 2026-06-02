@@ -46,6 +46,28 @@ export function OpsOverviewPage() {
     refetchInterval: 5000,
   });
 
+  // Unified deployments — external sync + FounderOS-driven. This makes the
+  // Ops Overview the single source of truth for "what shipped recently".
+  const { data: recentDeployments } = useQuery({
+    queryKey: ["ops_overview_deployments", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("deployments")
+        .select("id, provider, environment, state, url, sha, created_at_provider, created_at, source, ops_job_id")
+        .eq("project_id", projectId!)
+        .order("created_at", { ascending: false })
+        .limit(8);
+      return (data ?? []) as Array<{
+        id: string; provider: string; environment: string | null; state: string | null;
+        url: string | null; sha: string | null;
+        created_at_provider: string | null; created_at: string;
+        source: string | null; ops_job_id: string | null;
+      }>;
+    },
+    refetchInterval: 8000,
+  });
+
   const { data: jobStats } = useQuery({
     queryKey: ["ops_jobs_stats", projectId],
     enabled: !!projectId,
@@ -144,6 +166,53 @@ export function OpsOverviewPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardContent className="p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Recent deployments</h3>
+            <span className="text-[10px] text-muted-foreground">Unified · external syncs + FounderOS-driven</span>
+          </div>
+          {!recentDeployments || recentDeployments.length === 0 ? (
+            <p className="py-8 text-center text-xs text-muted-foreground">No deployments tracked yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {recentDeployments.map((d) => (
+                <div key={d.id} className="flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm hover:bg-muted/40">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Badge variant="outline" className="text-[10px] capitalize">{d.provider}</Badge>
+                    <span className="truncate text-xs text-muted-foreground">{d.environment ?? "?"}</span>
+                    {d.url && (
+                      <a
+                        href={d.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="truncate text-xs text-blue-500 hover:underline"
+                      >
+                        {d.url.replace(/^https?:\/\//, "")}
+                      </a>
+                    )}
+                  </div>
+                  <div className="ml-3 flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                    {d.source === "founderos_ops" && (
+                      <Badge variant="outline" className="text-[9px] text-blue-500">ops</Badge>
+                    )}
+                    {d.state && (
+                      <span className={cn(
+                        "capitalize",
+                        ["ready", "succeeded", "ok", "success"].includes(d.state.toLowerCase()) && "text-emerald-500",
+                        ["error", "failed", "errored"].includes(d.state.toLowerCase()) && "text-destructive",
+                        ["building", "queued", "pending"].includes(d.state.toLowerCase()) && "text-blue-500",
+                      )}>{d.state}</span>
+                    )}
+                    <span>{new Date(d.created_at_provider ?? d.created_at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
