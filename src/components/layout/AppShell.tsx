@@ -67,14 +67,33 @@ export function AppShell() {
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <Topbar />
-          <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-12 xl:px-20">
-            <div className="mx-auto w-full max-w-6xl">
+          {/* Pages that render a large interactive canvas need the full content
+              width with no horizontal padding and no max-width cap. The pages
+              themselves still scroll/lay out their inner content, so we just
+              relax the wrapper here. */}
+          {isFullbleedRoute(pathname) ? (
+            <main className="flex flex-1 flex-col overflow-hidden">
               <Outlet />
-            </div>
-          </main>
+            </main>
+          ) : (
+            <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-12 xl:px-20">
+              <div className="mx-auto w-full max-w-6xl">
+                <Outlet />
+              </div>
+            </main>
+          )}
         </div>
       </div>
       </PermissionsProvider>
     </ShellNavContext.Provider>
   );
+}
+
+/** Pages that should render edge-to-edge inside the content area, without the
+ *  default px-* / py-* and max-w-6xl wrapper. Add new routes here when they
+ *  embed a large interactive canvas. */
+function isFullbleedRoute(pathname: string): boolean {
+  // Match /app/<ws>/<proj>/ops/infra/<id> and /app/<ws>/<proj>/ops/workflows/<id>
+  // — both render the architecture canvas inside the page.
+  return /\/app\/[^/]+\/[^/]+\/ops\/(infra|workflows)\/[^/]+/.test(pathname);
 }

@@ -184,7 +184,7 @@ export function OpsBundleDetailPage() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       {/* In Files mode we keep a normal page header. In Architecture mode the
           canvas is fullbleed — header floats inside it. */}
       {view === "files" && (

@@ -225,7 +225,7 @@ export function OpsInfraProjectDetailPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       {/* In Files mode we keep a normal page header. In Architecture mode the
           right pane is fullbleed; navigation lives in the floating canvas bar. */}
       {view === "files" && (
