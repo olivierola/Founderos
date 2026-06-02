@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { NodeConfigDialog } from "./NodeConfigDialog";
+import { EdgeConfigDialog } from "./EdgeConfigDialog";
 
 // ============================================================================
 // Topology data model — must stay in sync with ops_topologies.topology JSON.
@@ -855,18 +856,49 @@ function InnerView({
     commitTopology(next);
   }, [onTopologyChange, topology]);
 
-  // Click an edge → ask to delete it (Alt+Click deletes without confirm for
-  // power users; plain click confirms).
+  // Edge editing state — clicking an edge opens the dialog. Alt+Click is a
+  // power-user shortcut to delete without going through the dialog.
+  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
+  const editingEdge = editingEdgeId
+    ? topology.edges.find((e) => e.id === editingEdgeId) ?? null
+    : null;
+
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     if (!onTopologyChange) return;
-    const skipConfirm = event.altKey;
-    if (!skipConfirm && !window.confirm(`Delete edge ${edge.id}?`)) return;
+    if (event.altKey) {
+      // Alt+Click → instant delete, no dialog.
+      if (!window.confirm(`Delete edge ${edge.id}?`)) return;
+      const next: Topology = {
+        ...topology,
+        edges: topology.edges.filter((e) => e.id !== edge.id),
+      };
+      commitTopology(next);
+      return;
+    }
+    setEditingEdgeId(edge.id);
+  }, [onTopologyChange, topology]);
+
+  function saveEdge(patched: TopologyEdge) {
+    if (!onTopologyChange) return;
+    // The id may have changed if source/target were re-routed — but our patched
+    // copy keeps the original id. We just replace by id.
     const next: Topology = {
       ...topology,
-      edges: topology.edges.filter((e) => e.id !== edge.id),
+      edges: topology.edges.map((e) => e.id === editingEdgeId ? patched : e),
     };
     commitTopology(next);
-  }, [onTopologyChange, topology]);
+  }
+
+  function deleteEditingEdge() {
+    if (!onTopologyChange || !editingEdgeId) return;
+    const id = editingEdgeId;
+    const next: Topology = {
+      ...topology,
+      edges: topology.edges.filter((e) => e.id !== id),
+    };
+    commitTopology(next);
+    setEditingEdgeId(null);
+  }
 
   function deleteEditingNode() {
     if (!onTopologyChange || !editingNodeId) return;
@@ -1082,6 +1114,18 @@ function InnerView({
         otherNodeIds={topology.nodes.map((n) => n.id)}
         onSave={saveNode}
         onDelete={editingNode ? deleteEditingNode : undefined}
+        autoSave
+      />
+
+      <EdgeConfigDialog
+        open={editingEdge !== null}
+        onOpenChange={(o) => { if (!o) setEditingEdgeId(null); }}
+        edge={editingEdge}
+        sourceNode={editingEdge ? topology.nodes.find((n) => n.id === editingEdge.source) ?? null : null}
+        targetNode={editingEdge ? topology.nodes.find((n) => n.id === editingEdge.target) ?? null : null}
+        allNodes={topology.nodes}
+        onSave={saveEdge}
+        onDelete={editingEdge ? deleteEditingEdge : undefined}
         autoSave
       />
     </div>
