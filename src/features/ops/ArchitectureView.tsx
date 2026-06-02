@@ -3,7 +3,7 @@ import ReactFlow, {
   Background, BackgroundVariant, Controls, MiniMap, Handle, Position,
   type Node, type Edge, type NodeProps, type EdgeProps,
   MarkerType, BaseEdge, EdgeLabelRenderer, getBezierPath,
-  ReactFlowProvider, useNodesState,
+  ReactFlowProvider, useNodesState, NodeResizer,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import dagre from "dagre";
@@ -224,8 +224,12 @@ function ArchNode({ data }: NodeProps<NodeData>) {
 }
 
 // ============================================================================
-// Group / cluster node — visually contains other nodes.
-// React Flow handles parent/child via parentNode + extent: "parent".
+// Group / cluster zone — a *purely visual* container drawn beneath the nodes.
+//
+// Important: contrary to a vanilla React Flow group, this is NOT a parent of
+// the nodes it visually contains. Nodes stay top-level so the user can drag
+// them anywhere (including outside the zone). The zone is just a movable +
+// resizable hint rectangle that the user can also push around independently.
 // ============================================================================
 
 interface GroupData {
@@ -233,10 +237,27 @@ interface GroupData {
   kind: string;
 }
 
-function GroupNode({ data }: NodeProps<GroupData>) {
+function GroupNode({ data, selected }: NodeProps<GroupData>) {
   return (
-    <div className="relative h-full w-full rounded-xl border border-dashed border-border bg-muted/30 p-3">
-      <div className="absolute left-3 top-2 flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+    <div className="relative h-full w-full">
+      {/* NodeResizer adds 8 invisible handles around the node; visible only when selected. */}
+      <NodeResizer
+        minWidth={120}
+        minHeight={80}
+        isVisible={selected}
+        lineStyle={{ borderColor: "hsl(var(--primary-soft))", borderWidth: 1 }}
+        handleStyle={{
+          width: 8, height: 8, borderRadius: 2,
+          background: "hsl(var(--card))",
+          border: "1px solid hsl(var(--primary-soft))",
+        }}
+      />
+      {/* Subtle zone tint — no thick rectangle, just a discrete hint that these
+          things belong together. */}
+      <div className="pointer-events-none absolute inset-0 rounded-xl border border-dashed border-border/60 bg-muted/15" />
+      {/* Floating label pinned top-left. pointer-events: auto so the user can
+          drag the zone by grabbing its label without fighting child nodes. */}
+      <div className="pointer-events-auto absolute left-2 top-2 inline-flex items-center gap-1 rounded border border-border bg-card/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
         {data.kind === "server" ? <Server className="h-3 w-3" /> : <Cloud className="h-3 w-3" />}
         {data.label}
       </div>
@@ -353,8 +374,11 @@ function layoutNodes(
 
   // Compute group bounding boxes from contained nodes' positions.
   const out: Node[] = [];
-  const groupBounds = new Map<string, { x: number; y: number; w: number; h: number }>();
 
+  // 1. Zone nodes (groups). They are NOT parents of the architecture nodes —
+  //    they are independent, movable, resizable rectangles that visually hint
+  //    at clustering. Drawn first with low zIndex so they sit behind the
+  //    actual nodes.
   if (groups) {
     for (const grp of groups) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -368,39 +392,35 @@ function layoutNodes(
       }
       if (minX !== Infinity) {
         const padding = 36;
-        const x = minX - padding;
-        const y = minY - padding - 16; // extra top room for label
-        const w = (maxX - minX) + padding * 2;
-        const h = (maxY - minY) + padding * 2 + 16;
-        groupBounds.set(grp.id, { x, y, w, h });
         out.push({
           id: `group_${grp.id}`,
           type: "group",
-          position: { x, y },
+          position: { x: minX - padding, y: minY - padding - 16 },
           data: { label: grp.label, kind: grp.kind } as GroupData,
-          style: { width: w, height: h, zIndex: 0 } as any,
-          selectable: false,
-          draggable: false,
+          style: {
+            width: (maxX - minX) + padding * 2,
+            height: (maxY - minY) + padding * 2 + 16,
+            zIndex: -1, // behind the actual nodes
+          } as any,
+          // Zones are independently draggable and selectable so the user can
+          // move them and resize them via the NodeResizer handles. But they
+          // are NOT parents of anything — no constraint on their contents.
+          draggable: true,
+          selectable: true,
         });
       }
     }
   }
 
+  // 2. Architecture nodes — all top-level (no parentNode), so they can be
+  //    dragged anywhere on the canvas without being clamped by a parent zone.
   for (const n of nodes) {
     const p = g.node(n.id);
     if (!p) continue;
-    // Find which group this node belongs to.
-    const grp = groups?.find((g) => g.contains.includes(n.id));
-    const gb = grp ? groupBounds.get(grp.id) : null;
     out.push({
       id: n.id,
       type: "arch",
-      // If in a group, position is relative to the group's top-left.
-      position: gb
-        ? { x: p.x - p.width / 2 - gb.x, y: p.y - p.height / 2 - gb.y }
-        : { x: p.x - p.width / 2, y: p.y - p.height / 2 },
-      parentNode: grp ? `group_${grp.id}` : undefined,
-      extent: grp ? "parent" : undefined,
+      position: { x: p.x - p.width / 2, y: p.y - p.height / 2 },
       data: n as NodeData,
     });
   }
