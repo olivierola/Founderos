@@ -218,7 +218,7 @@ function ArchNode({ data }: NodeProps<NodeData>) {
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-lg border border-border bg-card text-xs text-card-foreground shadow-sm transition-opacity",
+        "group relative rounded-lg border border-border bg-card text-xs text-card-foreground shadow-sm transition-opacity",
         data.isSelected && "ring-2",
         dimmed && "opacity-30",
       )}
@@ -229,12 +229,14 @@ function ArchNode({ data }: NodeProps<NodeData>) {
       }}
     >
       {/* coloured accent strip on the left identifies the kind */}
-      <span className="absolute inset-y-0 left-0 w-1" style={{ background: accent.stripBg }} />
+      <span className="absolute inset-y-0 left-0 w-1 rounded-l-lg" style={{ background: accent.stripBg }} />
 
       <Handle
         type="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-border !bg-muted-foreground/60"
+        isConnectable
+        className="!h-3 !w-3 !border-2 !border-card !bg-primary opacity-0 transition-opacity group-hover:opacity-100"
+        style={{ left: -6 }}
       />
 
       <div className="flex items-center gap-2 px-3 py-2 pl-4">
@@ -253,7 +255,7 @@ function ArchNode({ data }: NodeProps<NodeData>) {
       </div>
 
       {(data.ports?.length || data.image) && (
-        <div className="border-t border-border bg-muted/40 px-3 py-1.5 pl-4">
+        <div className="rounded-b-lg border-t border-border bg-muted/40 px-3 py-1.5 pl-4">
           {data.ports && data.ports.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {data.ports.slice(0, 4).map((p) => (
@@ -278,7 +280,9 @@ function ArchNode({ data }: NodeProps<NodeData>) {
       <Handle
         type="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-border !bg-muted-foreground/60"
+        isConnectable
+        className="!h-3 !w-3 !border-2 !border-card !bg-primary opacity-0 transition-opacity group-hover:opacity-100"
+        style={{ right: -6 }}
       />
     </div>
   );
@@ -833,6 +837,37 @@ function InnerView({
     commitTopology(next);
   }
 
+  // ---- Edge creation / deletion ----
+  // ReactFlow's onConnect fires when the user drops a connection on a target
+  // handle. We turn that into a new TopologyEdge with a sensible default kind
+  // and persist via onTopologyChange.
+  const onConnect = useCallback((params: { source: string | null; target: string | null }) => {
+    if (!onTopologyChange) return;
+    if (!params.source || !params.target || params.source === params.target) return;
+    // Avoid duplicate edges between the same pair.
+    const exists = topology.edges.some((e) => e.source === params.source && e.target === params.target);
+    if (exists) return;
+    const id = `${params.source}-to-${params.target}`;
+    const newEdge: TopologyEdge = {
+      id, source: params.source, target: params.target, kind: "tcp",
+    };
+    const next: Topology = { ...topology, edges: [...topology.edges, newEdge] };
+    commitTopology(next);
+  }, [onTopologyChange, topology]);
+
+  // Click an edge → ask to delete it (Alt+Click deletes without confirm for
+  // power users; plain click confirms).
+  const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
+    if (!onTopologyChange) return;
+    const skipConfirm = event.altKey;
+    if (!skipConfirm && !window.confirm(`Delete edge ${edge.id}?`)) return;
+    const next: Topology = {
+      ...topology,
+      edges: topology.edges.filter((e) => e.id !== edge.id),
+    };
+    commitTopology(next);
+  }, [onTopologyChange, topology]);
+
   function deleteEditingNode() {
     if (!onTopologyChange || !editingNodeId) return;
     const id = editingNodeId;
@@ -860,7 +895,12 @@ function InnerView({
           onNodeClick={onNodeClick}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
+          onConnect={onConnect}
+          onEdgeClick={onEdgeClick}
           nodesDraggable
+          nodesConnectable={!!onTopologyChange}
+          edgesUpdatable
+          connectionRadius={30}
           fitView
           fitViewOptions={{ padding: 0.15 }}
           proOptions={{ hideAttribution: true }}
