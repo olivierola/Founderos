@@ -5,7 +5,8 @@ import {
   Loader2, Bot, Plus, Trash2, Save, Check, FileText, Target,
   Wrench, Users as UsersIcon, BarChart3, Settings as SettingsIcon,
   MessageSquare, Globe, Database, Zap, KeyRound, Play, Clock,
-  CheckCircle2, XCircle, AlertCircle, Download,
+  CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
+  CalendarClock, Repeat, UserCircle2,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,10 +24,19 @@ import { callEdge } from "@/lib/edge";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
+import { InstructionsEditor } from "./InstructionsEditor";
+import { DeliverablesHub } from "./DeliverablesHub";
+import { MissionWizard, type MissionDraft } from "./MissionWizard";
+import {
+  type InternalAgent, type Mission, type MissionRun, type Deliverable,
+  type WorkspaceMemberRow, PRIORITY_META, loadWorkspaceMembers, memberLabel,
+  dueDateMeta, downloadDeliverable,
+} from "./shared";
 
 export type InternalAgentTab =
   | "chat"
   | "mission"
+  | "deliverables"
   | "instructions"
   | "tools"
   | "members"
@@ -34,27 +44,8 @@ export type InternalAgentTab =
   | "settings";
 
 const VALID_TABS: InternalAgentTab[] = [
-  "chat", "mission", "instructions", "tools", "members", "analytics", "settings",
+  "chat", "mission", "deliverables", "instructions", "tools", "members", "analytics", "settings",
 ];
-
-interface InternalAgent {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  name: string;
-  description: string | null;
-  avatar_emoji: string | null;
-  accent_color: string | null;
-  persona: string | null;
-  instructions: string | null;
-  model: string;
-  temperature: number;
-  chat_enabled: boolean;
-  mission_enabled: boolean;
-  created_by: string;
-  is_archived: boolean;
-  created_at: string;
-}
 
 export function InternalAgentDetailPage() {
   const { agentId, tab: tabParam } = useParams();
@@ -89,7 +80,8 @@ export function InternalAgentDetailPage() {
     <div>
       {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-      {tab === "instructions" && <InstructionsTab agent={agent} />}
+      {tab === "deliverables" && <DeliverablesHub agent={agent} />}
+      {tab === "instructions" && <InstructionsEditor agent={agent} />}
       {tab === "tools" && <ToolsTab agent={agent} />}
       {tab === "members" && <MembersTab agent={agent} />}
       {tab === "analytics" && <AnalyticsTab agent={agent} />}
@@ -278,43 +270,6 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
 // MISSION TAB — give the agent a structured task with deliverables
 // ============================================================================
 
-interface Mission {
-  id: string;
-  agent_id: string;
-  title: string;
-  brief: string | null;
-  acceptance_criteria: string | null;
-  expected_deliverables: Array<{ kind: string; name: string; description?: string }>;
-  status: "draft" | "active" | "archived";
-  created_at: string;
-}
-
-interface MissionRun {
-  id: string;
-  mission_id: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-  started_at: string | null;
-  finished_at: string | null;
-  tokens_in: number;
-  tokens_out: number;
-  cost_usd: number;
-  action_count: number;
-  final_output: string | null;
-  error_message: string | null;
-  created_at: string;
-}
-
-interface Deliverable {
-  id: string;
-  run_id: string;
-  mission_id: string;
-  kind: string;
-  name: string;
-  content: string | null;
-  file_url: string | null;
-  created_at: string;
-}
-
 function MissionTab({
   agent,
   workspaceId,
@@ -327,31 +282,48 @@ function MissionTab({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | Mission["status"]>("all");
 
   const { data: missions } = useQuery({
     queryKey: ["internal_agent_missions", agent.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agent_missions")
-        .select("id, agent_id, title, brief, acceptance_criteria, expected_deliverables, status, created_at")
+        .select("id, agent_id, title, brief, acceptance_criteria, expected_deliverables, status, priority, due_date, assigned_to, tags, schedule, created_at")
         .eq("agent_id", agent.id)
         .order("created_at", { ascending: false });
       return (data ?? []) as Mission[];
     },
   });
 
+  const { data: members } = useQuery({
+    queryKey: ["ws_members_for_assign", agent.workspace_id],
+    enabled: !!agent.workspace_id,
+    queryFn: () => loadWorkspaceMembers(agent.workspace_id),
+  });
+  const memberById = useMemo(() => {
+    const m: Record<string, WorkspaceMemberRow> = {};
+    (members ?? []).forEach((x) => { m[x.user_id] = x; });
+    return m;
+  }, [members]);
+
   // Auto-select first mission once loaded.
   useEffect(() => {
     if (!selectedId && missions && missions.length > 0) setSelectedId(missions[0].id);
   }, [missions, selectedId]);
+
+  const visible = useMemo(
+    () => (missions ?? []).filter((m) => statusFilter === "all" || m.status === statusFilter),
+    [missions, statusFilter],
+  );
 
   const selected = useMemo(
     () => missions?.find((m) => m.id === selectedId) ?? null,
     [missions, selectedId],
   );
 
-  async function createMission(title: string, brief: string) {
+  async function createMission(draft: MissionDraft) {
     if (!user || !workspaceId || !projectId) return;
     const { data, error } = await supabase
       .from("internal_agent_missions")
@@ -359,9 +331,16 @@ function MissionTab({
         agent_id: agent.id,
         workspace_id: workspaceId,
         project_id: projectId,
-        title,
-        brief,
-        status: "draft",
+        title: draft.title,
+        brief: draft.brief || null,
+        acceptance_criteria: draft.acceptance_criteria || null,
+        expected_deliverables: draft.expected_deliverables,
+        priority: draft.priority,
+        due_date: draft.due_date,
+        assigned_to: draft.assigned_to,
+        tags: draft.tags,
+        schedule: draft.schedule,
+        status: "active",
         created_by: user.id,
       })
       .select("id")
@@ -371,38 +350,46 @@ function MissionTab({
       return;
     }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_missions", agent.id] });
-    setCreateOpen(false);
+    setWizardOpen(false);
     if (data) setSelectedId(data.id);
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-      <Card>
+    <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
+      <Card className="flex max-h-[calc(100vh-12rem)] flex-col">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm">Missions</CardTitle>
-          <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-3.5 w-3.5" />
+          <Button size="sm" onClick={() => setWizardOpen(true)}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Assign
           </Button>
         </CardHeader>
-        <CardContent className="p-2">
-          {!missions || missions.length === 0 ? (
-            <p className="px-2 py-4 text-center text-xs text-muted-foreground">No missions yet</p>
+        <div className="flex gap-1 px-3 pb-2">
+          {(["all", "active", "draft", "archived"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={cn(
+                "rounded px-2 py-0.5 text-[11px] capitalize transition-colors",
+                statusFilter === s ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
+              )}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        <CardContent className="min-h-0 flex-1 overflow-y-auto p-2">
+          {visible.length === 0 ? (
+            <p className="px-2 py-4 text-center text-xs text-muted-foreground">No missions</p>
           ) : (
             <div className="space-y-1">
-              {missions.map((m) => (
-                <button
+              {visible.map((m) => (
+                <MissionListItem
                   key={m.id}
+                  m={m}
+                  selected={selectedId === m.id}
+                  assignee={m.assigned_to ? memberById[m.assigned_to] : undefined}
                   onClick={() => setSelectedId(m.id)}
-                  className={cn(
-                    "w-full rounded px-2 py-1.5 text-left text-sm transition-colors",
-                    selectedId === m.id
-                      ? "bg-foreground/10 text-foreground"
-                      : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-                  )}
-                >
-                  <div className="truncate font-medium">{m.title}</div>
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{m.status}</div>
-                </button>
+                />
               ))}
             </div>
           )}
@@ -413,81 +400,79 @@ function MissionTab({
         {!selected ? (
           <EmptyState
             icon={Target}
-            title="Pick a mission"
-            description="Or create one to give this agent a structured task."
-            action={<Button onClick={() => setCreateOpen(true)}><Plus className="mr-1.5 h-3.5 w-3.5" /> New mission</Button>}
+            title="Assign a mission"
+            description="Give this agent a structured task with a brief, expected deliverables, an owner and a deadline."
+            action={<Button onClick={() => setWizardOpen(true)}><Plus className="mr-1.5 h-3.5 w-3.5" /> Assign mission</Button>}
           />
         ) : (
-          <MissionDetail mission={selected} agent={agent} />
+          <MissionDetail mission={selected} agent={agent} members={members ?? []} />
         )}
       </div>
 
-      <CreateMissionDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreate={createMission}
+      <MissionWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        workspaceId={workspaceId}
+        onSubmit={createMission}
       />
     </div>
   );
 }
 
-function CreateMissionDialog({
-  open,
-  onOpenChange,
-  onCreate,
+function MissionListItem({
+  m, selected, assignee, onClick,
 }: {
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  onCreate: (title: string, brief: string) => void | Promise<void>;
+  m: Mission;
+  selected: boolean;
+  assignee?: WorkspaceMemberRow;
+  onClick: () => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [brief, setBrief] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) { setTitle(""); setBrief(""); }
-  }, [open]);
-
-  async function submit() {
-    if (!title.trim()) return;
-    setSaving(true);
-    try { await onCreate(title.trim(), brief.trim()); }
-    finally { setSaving(false); }
-  }
-
+  const pr = PRIORITY_META[m.priority];
+  const due = dueDateMeta(m.due_date);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>New mission</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Title</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus placeholder="e.g. Weekly competitor digest" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Brief</label>
-            <textarea
-              value={brief}
-              onChange={(e) => setBrief(e.target.value)}
-              rows={6}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Describe the task in detail. What inputs, what outputs, what tone, what constraints?"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={saving || !title.trim()}>
-              {saving && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
-              Create
-            </Button>
-          </div>
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full rounded-md px-2.5 py-2 text-left transition-colors",
+        selected ? "bg-foreground/10" : "hover:bg-foreground/5",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", pr.dot)} title={pr.label} />
+        <span className="truncate text-sm font-medium">{m.title}</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+        <span className="uppercase tracking-wide">{m.status}</span>
+        {m.schedule && (
+          <span className="inline-flex items-center gap-0.5"><Repeat className="h-2.5 w-2.5" />{m.schedule}</span>
+        )}
+        {due && (
+          <span className={cn("inline-flex items-center gap-0.5", due.overdue && "text-destructive")}>
+            <CalendarClock className="h-2.5 w-2.5" />{due.label}
+          </span>
+        )}
+        {assignee && (
+          <span className="inline-flex items-center gap-0.5"><UserCircle2 className="h-2.5 w-2.5" />{memberLabel(assignee)}</span>
+        )}
+      </div>
+      {m.tags.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {m.tags.slice(0, 3).map((t) => (
+            <span key={t} className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{t}</span>
+          ))}
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+    </button>
   );
 }
 
-function MissionDetail({ mission, agent }: { mission: Mission; agent: InternalAgent }) {
+function MissionDetail({
+  mission, agent, members,
+}: {
+  mission: Mission;
+  agent: InternalAgent;
+  members: WorkspaceMemberRow[];
+}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState(mission.title);
@@ -497,6 +482,11 @@ function MissionDetail({ mission, agent }: { mission: Mission; agent: InternalAg
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const assignee = mission.assigned_to ? members.find((m) => m.user_id === mission.assigned_to) : undefined;
+  const due = dueDateMeta(mission.due_date);
+  const pr = PRIORITY_META[mission.priority];
 
   // Hydrate fields when switching mission.
   useEffect(() => {
@@ -505,6 +495,28 @@ function MissionDetail({ mission, agent }: { mission: Mission; agent: InternalAg
     setAcceptance(mission.acceptance_criteria ?? "");
     setDeliverables(mission.expected_deliverables ?? []);
   }, [mission.id]);
+
+  async function saveFromWizard(draft: MissionDraft) {
+    const { error } = await supabase
+      .from("internal_agent_missions")
+      .update({
+        title: draft.title,
+        brief: draft.brief || null,
+        acceptance_criteria: draft.acceptance_criteria || null,
+        expected_deliverables: draft.expected_deliverables,
+        priority: draft.priority,
+        due_date: draft.due_date,
+        assigned_to: draft.assigned_to,
+        tags: draft.tags,
+        schedule: draft.schedule,
+        updated_by: user?.id ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", mission.id);
+    if (error) { alert(error.message); return; }
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_missions", agent.id] });
+    setEditOpen(false);
+  }
 
   async function save() {
     setSaving(true);
@@ -586,6 +598,9 @@ function MissionDetail({ mission, agent }: { mission: Mission; agent: InternalAg
               {savedAt && Date.now() - savedAt < 4000 && (
                 <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Saved</span>
               )}
+              <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                <Pencil className="h-3 w-3" /><span className="ml-1">Edit</span>
+              </Button>
               <Button size="sm" variant="outline" onClick={save} disabled={saving}>
                 {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                 <span className="ml-1">Save</span>
@@ -595,6 +610,31 @@ function MissionDetail({ mission, agent }: { mission: Mission; agent: InternalAg
                 <span className="ml-1">Run mission</span>
               </Button>
             </div>
+          </div>
+          {/* Assignment metadata strip */}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5", pr.color)}>
+              <span className={cn("h-2 w-2 rounded-full", pr.dot)} /> {pr.label}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-muted-foreground">
+              <UserCircle2 className="h-3 w-3" /> {assignee ? memberLabel(assignee) : "Unassigned"}
+            </span>
+            {due && (
+              <span className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
+                due.overdue ? "border-destructive/40 text-destructive" : "border-border text-muted-foreground",
+              )}>
+                <CalendarClock className="h-3 w-3" /> {due.label}
+              </span>
+            )}
+            {mission.schedule && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 capitalize text-muted-foreground">
+                <Repeat className="h-3 w-3" /> {mission.schedule}
+              </span>
+            )}
+            {mission.tags.map((t) => (
+              <span key={t} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{t}</span>
+            ))}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -638,6 +678,24 @@ function MissionDetail({ mission, agent }: { mission: Mission; agent: InternalAg
           )}
         </CardContent>
       </Card>
+
+      <MissionWizard
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        workspaceId={agent.workspace_id}
+        initial={{
+          title: mission.title,
+          brief: mission.brief ?? "",
+          acceptance_criteria: mission.acceptance_criteria ?? "",
+          expected_deliverables: mission.expected_deliverables ?? [],
+          priority: mission.priority,
+          due_date: mission.due_date,
+          assigned_to: mission.assigned_to,
+          tags: mission.tags,
+          schedule: mission.schedule,
+        }}
+        onSubmit={saveFromWizard}
+      />
     </div>
   );
 }
@@ -766,15 +824,6 @@ function RunCard({ run }: { run: MissionRun }) {
 }
 
 function DeliverableItem({ d }: { d: Deliverable }) {
-  function download() {
-    const blob = new Blob([d.content ?? ""], { type: d.kind === "json" ? "application/json" : "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${d.name}.${d.kind === "markdown" ? "md" : d.kind === "json" ? "json" : "txt"}`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
   return (
     <div className="rounded border border-border bg-muted/30 p-2">
       <div className="flex items-center justify-between">
@@ -788,7 +837,7 @@ function DeliverableItem({ d }: { d: Deliverable }) {
             <Button size="sm" variant="ghost"><Download className="h-3 w-3" /></Button>
           </a>
         ) : d.content ? (
-          <Button size="sm" variant="ghost" onClick={download}><Download className="h-3 w-3" /></Button>
+          <Button size="sm" variant="ghost" onClick={() => downloadDeliverable(d)}><Download className="h-3 w-3" /></Button>
         ) : null}
       </div>
       {d.content && d.kind === "markdown" && (
@@ -800,73 +849,6 @@ function DeliverableItem({ d }: { d: Deliverable }) {
         <pre className="mt-2 max-h-64 overflow-auto rounded bg-background/60 p-2 text-[11px]">{d.content}</pre>
       )}
     </div>
-  );
-}
-
-// ============================================================================
-// INSTRUCTIONS TAB
-// ============================================================================
-
-function InstructionsTab({ agent }: { agent: InternalAgent }) {
-  const queryClient = useQueryClient();
-  const [persona, setPersona] = useState(agent.persona ?? "");
-  const [instructions, setInstructions] = useState(agent.instructions ?? "");
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-
-  async function save() {
-    setSaving(true);
-    try {
-      const { error } = await supabase
-        .from("internal_agents")
-        .update({ persona, instructions, updated_at: new Date().toISOString() })
-        .eq("id", agent.id);
-      if (error) throw error;
-      setSavedAt(Date.now());
-      queryClient.invalidateQueries({ queryKey: ["internal_agent", agent.id] });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Instructions</CardTitle>
-          <div className="flex items-center gap-2">
-            {savedAt && Date.now() - savedAt < 4000 && (
-              <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Saved</span>
-            )}
-            <Button size="sm" onClick={save} disabled={saving}>
-              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-              <span className="ml-1">Save</span>
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">Persona</label>
-          <Input
-            value={persona}
-            onChange={(e) => setPersona(e.target.value)}
-            placeholder="e.g. Senior product analyst"
-          />
-          <p className="mt-1 text-[11px] text-muted-foreground">Short role description used in the system prompt.</p>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">Detailed instructions</label>
-          <textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            rows={16}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            placeholder={`Detail how the agent should behave.\n\n- Tone & voice\n- Steps to take when receiving a task\n- Constraints / things to avoid\n- Output format`}
-          />
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -1068,11 +1050,6 @@ interface AgentMember {
   added_at: string;
 }
 
-interface WorkspaceMemberRow {
-  user_id: string;
-  email: string | null;
-  full_name: string | null;
-}
 
 function MembersTab({ agent }: { agent: InternalAgent }) {
   const { user } = useAuth();
@@ -1461,6 +1438,7 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
 export const INTERNAL_AGENT_TABS: { slug: InternalAgentTab; label: string; icon: any }[] = [
   { slug: "chat", label: "Chat", icon: MessageSquare },
   { slug: "mission", label: "Missions", icon: Target },
+  { slug: "deliverables", label: "Deliverables", icon: Package },
   { slug: "instructions", label: "Instructions", icon: FileText },
   { slug: "tools", label: "Tools", icon: Wrench },
   { slug: "members", label: "Members", icon: UsersIcon },

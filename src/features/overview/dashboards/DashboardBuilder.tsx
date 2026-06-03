@@ -29,8 +29,10 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { WidgetView, type CrossFilter } from "./WidgetView";
 import { WidgetConfigDialog } from "./WidgetConfigDialog";
 import { WidgetCatalogDialog } from "./WidgetCatalogDialog";
+import { WidgetLibraryDropdown } from "./WidgetLibraryDropdown";
 import { exportDashboardPdf } from "./exportPdf";
 import type { CatalogWidget } from "./widgetCatalog";
+import { moduleWidgetDefaultSize, type ModuleWidgetEntry } from "./moduleWidgetRegistry";
 import { LayoutGrid } from "lucide-react";
 import type { Widget, WidgetConfig, WidgetType } from "./types";
 
@@ -45,6 +47,7 @@ const DEFAULT_SIZE: Record<WidgetType, { w: number; h: number }> = {
   pie: { w: 4, h: 4 },
   table: { w: 6, h: 5 },
   markdown: { w: 4, h: 2 },
+  module: { w: 4, h: 3 },
 };
 
 export function DashboardBuilderPage() {
@@ -107,15 +110,19 @@ export function DashboardBuilderPage() {
 
   const layout: GridItem[] = useMemo(
     () =>
-      widgets.map((w, i) => ({
-        i: w.id,
-        x: w.position?.x ?? (i * 3) % COLS,
-        y: w.position?.y ?? Math.floor(i / 4) * 2,
-        w: w.position?.w ?? DEFAULT_SIZE[w.type].w,
-        h: w.position?.h ?? DEFAULT_SIZE[w.type].h,
-        minW: 2,
-        minH: 2,
-      })),
+      widgets.map((w, i) => {
+        const fallback =
+          w.type === "module" ? moduleWidgetDefaultSize(w.config?.moduleWidgetId) : DEFAULT_SIZE[w.type];
+        return {
+          i: w.id,
+          x: w.position?.x ?? (i * 3) % COLS,
+          y: w.position?.y ?? Math.floor(i / 4) * 2,
+          w: w.position?.w ?? fallback.w,
+          h: w.position?.h ?? fallback.h,
+          minW: 2,
+          minH: 2,
+        };
+      }),
     [widgets],
   );
 
@@ -150,6 +157,20 @@ export function DashboardBuilderPage() {
       type: cw.type,
       title: cw.title,
       config: cw.config,
+      position: { x: 0, y: 0, w: size.w, h: size.h },
+    });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-widgets", dashboardId] });
+  }
+
+  async function addFromModule(mw: ModuleWidgetEntry) {
+    if (!workspaceId || !dashboardId) return;
+    const size = moduleWidgetDefaultSize(mw.id);
+    await supabase.from("dashboard_widgets").insert({
+      dashboard_id: dashboardId,
+      workspace_id: workspaceId,
+      type: "module",
+      title: mw.title,
+      config: { moduleWidgetId: mw.id },
       position: { x: 0, y: 0, w: size.w, h: size.h },
     });
     queryClient.invalidateQueries({ queryKey: ["dashboard-widgets", dashboardId] });
@@ -228,6 +249,7 @@ export function DashboardBuilderPage() {
           <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting || widgets.length === 0} title="Export to PDF">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF
           </Button>
+          <WidgetLibraryDropdown onPick={addFromModule} />
           <Button variant="outline" size="sm" onClick={() => setCatalogOpen(true)} title="Browse pre-configured widgets">
             <LayoutGrid className="h-4 w-4" /> From catalog
           </Button>
@@ -271,6 +293,7 @@ export function DashboardBuilderPage() {
           description="Add KPI cards, charts, tables or notes. Drag to arrange, resize from the corner."
           action={
             <div className="flex flex-wrap items-center justify-center gap-2">
+              <WidgetLibraryDropdown onPick={addFromModule} />
               <Button onClick={() => setCatalogOpen(true)}>
                 <LayoutGrid className="h-4 w-4" /> Pick from catalog
               </Button>
@@ -308,9 +331,12 @@ export function DashboardBuilderPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => { setEditingWidget(w); setConfigOpen(true); }}>
-                        <Pencil className="h-4 w-4" /> Edit
-                      </DropdownMenuItem>
+                      {/* Module widgets mirror their source module and aren't configurable here. */}
+                      {w.type !== "module" && (
+                        <DropdownMenuItem onClick={() => { setEditingWidget(w); setConfigOpen(true); }}>
+                          <Pencil className="h-4 w-4" /> Edit
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem destructive onClick={() => deleteWidget(w.id)}>
                         <Trash2 className="h-4 w-4" /> Delete
                       </DropdownMenuItem>

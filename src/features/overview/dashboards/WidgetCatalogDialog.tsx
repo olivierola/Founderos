@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Search, Plus, BarChart3, LineChart, PieChart, Hash, Table as TableIcon, FileText } from "lucide-react";
+import { Search, Plus, BarChart3, LineChart, PieChart, Hash, Table as TableIcon, FileText, LayoutGrid } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ const TYPE_ICON: Record<WidgetType, React.ComponentType<{ className?: string }>>
   pie: PieChart,
   table: TableIcon,
   markdown: FileText,
+  module: LayoutGrid,
 };
 
 interface Props {

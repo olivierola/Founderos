@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 import {
   Megaphone, Loader2, Send, BarChart3, CalendarDays, Plug, Plus, RefreshCw,
   Sparkles, Lightbulb, TrendingUp, Heart, Eye, Trash2,
-  MessageCircle, Repeat2, MousePointerClick, ChevronLeft, ChevronRight, Check, X,
+  MessageCircle, Repeat2, MousePointerClick, ChevronLeft, ChevronRight, Check, X, Wand2,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -19,6 +19,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { AiSchedulePlanner } from "./AiSchedulePlanner";
 
 interface Post {
   id: string;
@@ -156,8 +157,11 @@ export function PublishedPostCard({ post, metric }: { post: Post; metric?: Metri
 // --- Overview -----------------------------------------------------------
 export function MarketingOverviewPage() {
   const { workspaceSlug, projectSlug } = useParams();
+  const { workspaceId, projectId } = useCurrentContext();
+  const queryClient = useQueryClient();
   const { data: posts, isLoading } = usePosts();
   const { data: metrics } = useMetrics();
+  const [aiOpen, setAiOpen] = useState(false);
 
   const metricById = useMemo(() => new Map((metrics ?? []).map((m) => [m.post_id, m])), [metrics]);
 
@@ -193,7 +197,22 @@ export function MarketingOverviewPage() {
 
   return (
     <div>
-      <PageHeader title="Marketing Overview" description="Your social presence at a glance — generated from your SaaS understanding." />
+      <PageHeader
+        title="Marketing Overview"
+        description="Your social presence at a glance — generated from your SaaS understanding."
+        actions={
+          <Button size="sm" onClick={() => setAiOpen(true)}>
+            <Wand2 className="h-4 w-4" /> Programmer avec l'IA
+          </Button>
+        }
+      />
+      <AiSchedulePlanner
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        workspaceId={workspaceId}
+        projectId={projectId}
+        onScheduled={() => queryClient.invalidateQueries({ queryKey: ["mkt_posts", projectId] })}
+      />
       {isLoading ? (
         <EmptyState icon={Loader2} title="Loading…" />
       ) : (
@@ -273,6 +292,7 @@ export function MarketingCalendarPage() {
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [scheduleDay, setScheduleDay] = useState<Date | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
 
   // Map posts (scheduled or published) to their day key.
   const postsByDay = useMemo(() => {
@@ -321,6 +341,10 @@ export function MarketingCalendarPage() {
         description="Schedule posts to specific dates. Scheduled and published posts appear as badges in their day."
         actions={
           <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => setAiOpen(true)}>
+              <Wand2 className="h-4 w-4" /> Programmer avec l'IA
+            </Button>
+            <span className="mx-1 h-5 w-px bg-border" />
             <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -410,6 +434,14 @@ export function MarketingCalendarPage() {
         }}
         workspaceId={workspaceId}
         projectId={projectId}
+      />
+
+      <AiSchedulePlanner
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        workspaceId={workspaceId}
+        projectId={projectId}
+        onScheduled={() => queryClient.invalidateQueries({ queryKey: ["mkt_posts", projectId] })}
       />
     </div>
   );

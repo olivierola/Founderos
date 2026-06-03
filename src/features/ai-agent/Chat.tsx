@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, FileText } from "lucide-react";
@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { DocumentCanvas } from "./DocumentCanvas";
+import { MessageArtifacts, type AiArtifact } from "./Artifacts";
 
 interface AiMessage {
   id: string;
@@ -21,10 +22,10 @@ interface AiMessage {
 }
 
 const STARTERS = [
-  "What's my MRR and how did it evolve?",
-  "Which services in my stack look risky?",
-  "Where can I cut LLM costs?",
-  "Summarize my latest scan in 3 bullets.",
+  "Rédige un rapport hebdo de mes métriques en document.",
+  "Fais-moi un tableau des alertes ouvertes par sévérité.",
+  "Lis cette page et résume-la : https://…",
+  "Exporte mes connecteurs en JSON.",
 ];
 
 export function AiChatPage() {
@@ -35,8 +36,14 @@ export function AiChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [docMarkdown, setDocMarkdown] = useState<string | null>(null);
+  const [docTitle, setDocTitle] = useState<string | undefined>(undefined);
   const queryClient = useQueryClient();
   const scrollerRef = useRef<HTMLDivElement>(null);
+
+  function openDocument(markdown: string, title?: string) {
+    setDocTitle(title);
+    setDocMarkdown(markdown);
+  }
 
   // Prefill from a prompt template (?prompt=...), then clear the param.
   useEffect(() => {
@@ -69,6 +76,28 @@ export function AiChatPage() {
     },
   });
 
+  // Artifacts produced by the assistant across this conversation, grouped by message.
+  const { data: artifacts } = useQuery({
+    queryKey: ["ai_artifacts", currentConvoId],
+    enabled: !!currentConvoId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ai_artifacts")
+        .select("id, message_id, kind, title, content, data, language, created_at")
+        .eq("conversation_id", currentConvoId!)
+        .order("created_at", { ascending: true });
+      return (data ?? []) as AiArtifact[];
+    },
+  });
+
+  const artifactsByMessage = useMemo(() => {
+    const map: Record<string, AiArtifact[]> = {};
+    for (const a of artifacts ?? []) {
+      (map[a.message_id] ??= []).push(a);
+    }
+    return map;
+  }, [artifacts]);
+
   useEffect(() => {
     if (scrollerRef.current) {
       scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
@@ -95,6 +124,7 @@ export function AiChatPage() {
       }
       await queryClient.invalidateQueries({ queryKey: ["sidebar_ai_conversations", projectId] });
       await queryClient.invalidateQueries({ queryKey: ["ai_messages", res.conversation_id] });
+      await queryClient.invalidateQueries({ queryKey: ["ai_artifacts", res.conversation_id] });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -112,9 +142,10 @@ export function AiChatPage() {
         {isEmpty ? (
           <div className="mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center px-6 py-12">
             <div className="mb-8 text-center">
-              <h1 className="text-3xl font-semibold tracking-tight">Ask anything about your SaaS.</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Votre assistant interne.</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                The agent reads your metrics, latest scan, connectors and open alerts.
+                Il analyse vos données, rédige des documents, produit des tableaux, du JSON et du code —
+                dans la limite de vos droits d'accès.
               </p>
             </div>
 
@@ -142,7 +173,12 @@ export function AiChatPage() {
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
             {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} onOpenAsDocument={(md) => setDocMarkdown(md)} />
+              <MessageBubble
+                key={m.id}
+                message={m}
+                artifacts={artifactsByMessage[m.id] ?? []}
+                onOpenAsDocument={(md, title) => openDocument(md, title)}
+              />
             ))}
             {sending && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -169,8 +205,9 @@ export function AiChatPage() {
 
       <DocumentCanvas
         open={docMarkdown !== null}
-        onOpenChange={(o) => { if (!o) setDocMarkdown(null); }}
+        onOpenChange={(o) => { if (!o) { setDocMarkdown(null); setDocTitle(undefined); } }}
         initialMarkdown={docMarkdown ?? ""}
+        title={docTitle}
       />
     </div>
   );
@@ -188,13 +225,17 @@ function looksLikeDocument(content: string): boolean {
 
 function MessageBubble({
   message,
+  artifacts = [],
   onOpenAsDocument,
 }: {
   message: AiMessage;
-  onOpenAsDocument?: (markdown: string) => void;
+  artifacts?: AiArtifact[];
+  onOpenAsDocument?: (markdown: string, title?: string) => void;
 }) {
   const isUser = message.role === "user";
-  const isDocLike = !isUser && looksLikeDocument(message.content);
+  // Only offer the inline "open as document" affordance when the message has no
+  // structured artifact already (artifacts carry their own open/download UI).
+  const isDocLike = !isUser && artifacts.length === 0 && looksLikeDocument(message.content);
 
   if (isUser) {
     return (
@@ -276,6 +317,9 @@ function MessageBubble({
         >
           {message.content}
         </ReactMarkdown>
+        {artifacts.length > 0 && onOpenAsDocument && (
+          <MessageArtifacts artifacts={artifacts} onOpenDocument={onOpenAsDocument} />
+        )}
         {message.metadata?.provider && (
           <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
             {message.metadata.provider} · {message.metadata.model}

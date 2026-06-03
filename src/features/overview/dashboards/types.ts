@@ -1,4 +1,4 @@
-export type WidgetType = "kpi" | "line" | "bar" | "area" | "pie" | "table" | "markdown";
+export type WidgetType = "kpi" | "line" | "bar" | "area" | "pie" | "table" | "markdown" | "module";
 
 export interface WidgetSource {
   kind: "internal" | "metrics" | "static" | "project_db";
@@ -40,6 +40,9 @@ export interface WidgetConfig {
   // chart appearance: explicit colors (hex). For single-series charts colors[0] is used;
   // pie/multi-series cycle through the array. Empty = default palette.
   colors?: string[];
+  /** For type "module": the id of a real module widget in the moduleWidgetRegistry.
+   *  When set, the widget renders the actual module component (same data + look). */
+  moduleWidgetId?: string;
 }
 
 export interface Widget {

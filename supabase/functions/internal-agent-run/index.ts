@@ -198,15 +198,19 @@ the deliverables you produced. Each entry: { "kind": "markdown"|"json"|"code", "
       cost_usd: estimateCost(result.usage, result.provider),
     });
 
-    // Materialise each deliverable.
+    // Materialise each deliverable. Derive a short plain-text summary so the
+    // deliverables hub can show a useful snippet without rendering the body.
     for (const d of deliverables) {
+      const content = d.content || "";
+      const summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
       await admin.from("internal_agent_deliverables").insert({
         run_id: runId,
         mission_id: run.mission_id,
         agent_id: agent.id,
         kind: d.kind || "markdown",
         name: d.name || "Output",
-        content: d.content || "",
+        content,
+        summary,
       });
     }
     // If no deliverables were declared, store the whole answer as a single markdown deliverable.
@@ -218,6 +222,7 @@ the deliverables you produced. Each entry: { "kind": "markdown"|"json"|"code", "
         kind: "markdown",
         name: "Mission output",
         content: finalOutput,
+        summary: finalOutput.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null,
       });
     }
 

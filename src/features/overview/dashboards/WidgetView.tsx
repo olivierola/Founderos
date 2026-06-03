@@ -21,6 +21,7 @@ import {
 import { callEdge } from "@/lib/edge";
 import { formatCurrency } from "@/lib/utils";
 import { CHART_COLORS, type Widget } from "./types";
+import { getModuleWidget } from "./moduleWidgetRegistry";
 
 function applyFormula(value: number, formula?: string): number {
   if (!formula) return value;
@@ -64,7 +65,7 @@ export function WidgetView({
   refreshKey?: number;
   onSegmentClick?: (filter: CrossFilter) => void;
 }) {
-  const needsData = widget.type !== "markdown";
+  const needsData = widget.type !== "markdown" && widget.type !== "module";
 
   // Merge an active cross-filter into this widget's source filters (if its source
   // is on the same kind/table and the filter column isn't what this widget emits).
@@ -87,6 +88,19 @@ export function WidgetView({
       return res.rows ?? [];
     },
   });
+
+  if (widget.type === "module") {
+    const entry = getModuleWidget(widget.config.moduleWidgetId);
+    if (!entry) {
+      return (
+        <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
+          Unknown module widget.
+        </div>
+      );
+    }
+    const Component = entry.component;
+    return <Component workspaceId={workspaceId} projectId={projectId} refreshKey={refreshKey} />;
+  }
 
   if (widget.type === "markdown") {
     const text = widget.config.text ?? "";
