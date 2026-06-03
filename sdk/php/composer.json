@@ -1,0 +1,16 @@
+{
+  "name": "founderos/analytics",
+  "description": "FounderOS analytics SDK — product event tracking (server-side).",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=7.4",
+    "ext-curl": "*",
+    "ext-json": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "FounderOS\\": "."
+    }
+  }
+}

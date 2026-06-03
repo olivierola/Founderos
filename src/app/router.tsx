@@ -219,6 +219,7 @@ const PAGES: Record<string, PageEl> = {
 
   "ops/overview": <OpsOverviewPage />,
   "ops/servers": <OpsServersPage />,
+  "ops/deployments": <DeploymentsPage />,
   "ops/workflows": <OpsWorkflowsPage />,
   "ops/checks": <OpsChecksPage />,
   "ops/jobs": <OpsJobsPage />,
@@ -255,7 +256,6 @@ const PAGES: Record<string, PageEl> = {
   "saas-analytics/health-uptime": <UptimePage />,
   "saas-analytics/health-errors": <ErrorsPage />,
   "saas-analytics/health-performance": <PerformancePage />,
-  "saas-analytics/health-deployments": <DeploymentsPage />,
   "saas-analytics/health-incidents": <IncidentsPage />,
   "saas-analytics/health-database": <DatabasePage />,
 

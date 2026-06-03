@@ -94,7 +94,6 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Uptime",             slug: "health-uptime" },
       { label: "Errors",             slug: "health-errors" },
       { label: "Performance",        slug: "health-performance" },
-      { label: "Deployments",        slug: "health-deployments" },
       { label: "Incidents",          slug: "health-incidents" },
     ],
   },
@@ -153,6 +152,7 @@ export const MODULES: ModuleNavItem[] = [
     subItems: [
       { label: "Overview", slug: "overview" },
       { label: "Servers", slug: "servers" },
+      { label: "Deployments", slug: "deployments" },
       { label: "Workflows", slug: "workflows" },
       { label: "Checks", slug: "checks" },
       { label: "Jobs & Audit", slug: "jobs" },

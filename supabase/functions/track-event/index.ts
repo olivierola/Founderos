@@ -1,9 +1,54 @@
-// track-event — ingests a product event for engagement analytics.
-// Anonymous: only needs an API key OR a workspace_id (for browser SDK use).
-// Body: { workspace_id, project_id, event_name, customer_external_id?, user_email?, properties? }
+// track-event — ingests product event(s) for engagement analytics.
+//
+// Auth (two modes, in priority order):
+//   1. API key: header `Authorization: Bearer fos_...`. The key resolves the
+//      workspace; project_id must still be supplied (a workspace can hold many
+//      projects). Used by the server SDKs (Node/Python/PHP/Go).
+//   2. Anonymous: no key — caller passes workspace_id + project_id directly.
+//      Used by the browser SDK (the anon Supabase key gates the function).
+//
+// Body — single event:
+//   { workspace_id?, project_id, event_name, distinct_id?, user_email?,
+//     customer_external_id?, properties?, occurred_at? }
+// Body — batch (server SDKs):
+//   { workspace_id?, project_id, batch: [ { event_name, ... }, ... ] }
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+
+async function sha256(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+interface IncomingEvent {
+  event_name?: string;
+  // distinct_id is the SDK-friendly alias; it maps to user_email when it looks
+  // like an email, otherwise to customer_external_id.
+  distinct_id?: string;
+  user_email?: string;
+  customer_external_id?: string;
+  properties?: Record<string, unknown>;
+  occurred_at?: string;
+}
+
+function normalize(ev: IncomingEvent, projectId: string, workspaceId: string) {
+  let email = ev.user_email ?? null;
+  let external = ev.customer_external_id ?? null;
+  if (ev.distinct_id && !email && !external) {
+    if (ev.distinct_id.includes("@")) email = ev.distinct_id;
+    else external = ev.distinct_id;
+  }
+  return {
+    workspace_id: workspaceId,
+    project_id: projectId,
+    event_name: String(ev.event_name).slice(0, 120),
+    customer_external_id: external,
+    user_email: email,
+    properties: ev.properties ?? {},
+    occurred_at: ev.occurred_at ?? new Date().toISOString(),
+  };
+}
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -11,21 +56,63 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    if (!body.workspace_id || !body.project_id || !body.event_name) {
-      return jsonResponse({ error: "workspace_id, project_id, event_name required" }, { status: 400 });
-    }
     const admin = createServiceClient();
-    const { error } = await admin.from("product_events").insert({
-      workspace_id: body.workspace_id,
-      project_id: body.project_id,
-      event_name: String(body.event_name).slice(0, 120),
-      customer_external_id: body.customer_external_id ?? null,
-      user_email: body.user_email ?? null,
-      properties: body.properties ?? {},
-      occurred_at: body.occurred_at ?? new Date().toISOString(),
-    });
+
+    // ── Resolve workspace ──
+    let workspaceId: string | null = body.workspace_id ?? null;
+
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    if (bearer.startsWith("fos_")) {
+      const keyHash = await sha256(bearer);
+      const { data: key } = await admin
+        .from("founder_api_keys")
+        .select("id, workspace_id")
+        .eq("key_hash", keyHash)
+        .maybeSingle();
+      if (!key) return jsonResponse({ error: "Invalid API key" }, { status: 401 });
+      workspaceId = key.workspace_id;
+      // Best-effort touch; ignore failures.
+      admin.from("founder_api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", key.id).then(() => {});
+    }
+
+    const projectId = body.project_id;
+    if (!workspaceId || !projectId) {
+      return jsonResponse({ error: "project_id and an API key (or workspace_id) are required" }, { status: 400 });
+    }
+
+    // If a workspace_id was passed alongside an API key, they must match.
+    if (bearer.startsWith("fos_") && body.workspace_id && body.workspace_id !== workspaceId) {
+      return jsonResponse({ error: "workspace_id does not match API key" }, { status: 403 });
+    }
+
+    // Guard: the project must belong to the resolved workspace.
+    const { data: proj } = await admin
+      .from("projects")
+      .select("id")
+      .eq("id", projectId)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (!proj) return jsonResponse({ error: "project_id not in workspace" }, { status: 403 });
+
+    // ── Build rows (single or batch) ──
+    const incoming: IncomingEvent[] = Array.isArray(body.batch)
+      ? body.batch
+      : [body as IncomingEvent];
+
+    const rows = incoming
+      .filter((e) => e && typeof e.event_name === "string" && e.event_name.trim())
+      .slice(0, 500) // hard cap per request
+      .map((e) => normalize(e, projectId, workspaceId!));
+
+    if (rows.length === 0) {
+      return jsonResponse({ error: "no valid events (event_name required)" }, { status: 400 });
+    }
+
+    const { error } = await admin.from("product_events").insert(rows);
     if (error) return jsonResponse({ error: error.message }, { status: 500 });
-    return jsonResponse({ ok: true });
+
+    return jsonResponse({ ok: true, ingested: rows.length });
   } catch (err) {
     return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

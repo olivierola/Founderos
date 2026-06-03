@@ -1,0 +1,19 @@
+{
+  "name": "@founderos/analytics",
+  "version": "0.1.0",
+  "description": "FounderOS analytics SDK — product event tracking + rrweb session replay (browser & server).",
+  "type": "module",
+  "main": "founderos.ts",
+  "types": "founderos.ts",
+  "exports": {
+    ".": "./founderos.ts"
+  },
+  "keywords": ["analytics", "events", "session-replay", "founderos"],
+  "peerDependencies": {
+    "rrweb": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "rrweb": { "optional": true }
+  },
+  "license": "MIT"
+}
