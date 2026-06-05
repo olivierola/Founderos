@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { PrimarySidebar } from "./PrimarySidebar";
 import { SecondarySidebar } from "./SecondarySidebar";
+import { SubTabBar } from "./SubTabBar";
 import { Topbar } from "./Topbar";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { PermissionsProvider } from "@/lib/permissions";
@@ -67,6 +68,9 @@ export function AppShell() {
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <Topbar />
+          {/* SaaS Analytics renders its in-group pages as horizontal tabs here;
+              null for every other module. */}
+          <SubTabBar />
           {/* Pages that render a large interactive canvas need the full content
               width with no horizontal padding and no max-width cap. The pages
               themselves still scroll/lay out their inner content, so we just

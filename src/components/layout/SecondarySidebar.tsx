@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { findModule, type SubNavItem } from "@/lib/navigation";
+import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
@@ -99,6 +99,51 @@ export function SecondarySidebar() {
   }, [module]);
 
   if (!module) return null;
+
+  // ── Groups-as-tabs mode (SaaS Analytics): the sidebar lists groups; each
+  // group links to its first item, and a horizontal SubTabBar (rendered by the
+  // page chrome) shows the items within the active group. ──
+  if (module.groupsAsTabs) {
+    const groups = moduleGroups(module);
+    const activeSlug = segments[appIdx + 4];
+    const activeGroup = groups.find((g) =>
+      itemsInGroup(module, g).some((it) => it.slug === activeSlug),
+    );
+    return (
+      <aside className="flex h-full w-56 flex-col border-r border-border bg-sidebar">
+        <div className="flex h-14 items-center border-b border-border px-4">
+          <div className="text-base font-semibold text-foreground">{module.label}</div>
+        </div>
+        <nav className="flex-1 overflow-y-auto p-2">
+          {groups.map((g) => {
+            const items = itemsInGroup(module, g);
+            const first = items[0];
+            if (!first) return null;
+            const isActive = g === activeGroup;
+            return (
+              <NavLink
+                key={g}
+                to={`${base}/${module.slug}/${first.slug}`}
+                className={cn(
+                  "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
+                  isActive
+                    ? "bg-sidebar-accent font-medium text-foreground"
+                    : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+                )}
+              >
+                <span>{g}</span>
+                {items.length > 1 && (
+                  <span className="ml-2 rounded-full bg-sidebar-foreground/10 px-1.5 text-[10px] tabular-nums text-muted-foreground">
+                    {items.length}
+                  </span>
+                )}
+              </NavLink>
+            );
+          })}
+        </nav>
+      </aside>
+    );
+  }
 
   const topLevel = module.subItems.filter((s) => !s.parent);
 

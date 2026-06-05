@@ -1,4 +1,15 @@
-/**
+// Canonical FounderOS SDK sources, embedded server-side.
+//
+// WHY: the install_sdk agent tool must inject the REAL SDK, byte-for-byte — not
+// whatever a small model might hallucinate (e.g. a non-existent `git clone
+// founderos/sdk` or `founderos.configure(api_secret=...)`). The LLM only supplies
+// configuration (host, project_id, where to initialize); the file contents come
+// from here.
+//
+// Keep these in sync with /sdk/js/founderos.ts (the published source of truth).
+
+/** The full JS/TS analytics SDK — identical to sdk/js/founderos.ts. */
+export const SDK_JS_FOUNDEROS_TS = String.raw`/**
  * FounderOS analytics SDK — JavaScript / TypeScript.
  *
  * Works in two runtimes from one file:
@@ -9,7 +20,7 @@
  *   POST {host}/functions/v1/track-event           — product events
  *   POST {host}/functions/v1/ingest-session-replay  — rrweb batches (browser)
  *
- * Browser auth uses the anon key + workspaceId. Server auth uses an `fos_` API
+ * Browser auth uses the anon key + workspaceId. Server auth uses an \`fos_\` API
  * key (issued in Integrations → API Keys) via the Authorization header; the
  * workspace is then resolved from the key, so only projectId is required.
  */
@@ -23,7 +34,7 @@ export interface FounderOSConfig {
   workspaceId?: string;
   /** Supabase anon key — required in the browser. */
   anonKey?: string;
-  /** Server API key (`fos_...`) — server only; never expose in the browser. */
+  /** Server API key (\`fos_...\`) — server only; never expose in the browser. */
   apiKey?: string;
   /** Flush the queue automatically every N ms (default 5000). 0 disables. */
   flushIntervalMs?: number;
@@ -98,9 +109,9 @@ export class FounderOS {
 
   /**
    * Browser-only: lightweight auto-capture. Tracks:
-   *   - `page_view` on initial load and on SPA navigations (history API + popstate)
-   *   - clicks on elements annotated with `data-fos-event="name"` (plus optional
-   *     `data-fos-*` attributes folded into properties)
+   *   - \`page_view\` on initial load and on SPA navigations (history API + popstate)
+   *   - clicks on elements annotated with \`data-fos-event="name"\` (plus optional
+   *     \`data-fos-*\` attributes folded into properties)
    * Returns a stop function. Safe no-op on the server.
    */
   autocapture(opts: { pageViews?: boolean; clicks?: boolean } = {}): () => void {
@@ -161,13 +172,14 @@ export class FounderOS {
   /**
    * Load the project's feature flags (evaluated for the current user) and cache
    * them. Call once after identify(); then use isFeatureEnabled(key) synchronously.
+   * Returns the flag map.
    */
   async loadFlags(): Promise<Record<string, boolean>> {
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (this.cfg.apiKey) headers["Authorization"] = `Bearer ${this.cfg.apiKey}`;
+      if (this.cfg.apiKey) headers["Authorization"] = \`Bearer \${this.cfg.apiKey}\`;
       if (this.cfg.anonKey) headers["apikey"] = this.cfg.anonKey;
-      const res = await fetch(`${this.cfg.host}/functions/v1/public-feature-flags`, {
+      const res = await fetch(\`\${this.cfg.host}/functions/v1/public-feature-flags\`, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -181,13 +193,13 @@ export class FounderOS {
         this.flagsCache = data.flags ?? {};
       }
     } catch (err) {
-      this.log(`loadFlags failed: ${(err as Error).message}`);
+      this.log(\`loadFlags failed: \${(err as Error).message}\`);
     }
     return this.flagsCache ?? {};
   }
 
   /**
-   * Synchronous flag check. Returns `fallback` (default false) until loadFlags()
+   * Synchronous flag check. Returns \`fallback\` (default false) until loadFlags()
    * has resolved. Call loadFlags() early (e.g. after identify) to populate.
    */
   isFeatureEnabled(flagKey: string, fallback = false): boolean {
@@ -195,7 +207,7 @@ export class FounderOS {
     return this.flagsCache[flagKey] ?? fallback;
   }
 
-  /** Send all queued events now. `keepalive` uses fetch keepalive for unloads. */
+  /** Send all queued events now. \`keepalive\` uses fetch keepalive for unloads. */
   async flush(keepalive = false): Promise<void> {
     if (this.queue.length === 0) return;
     const batch = this.queue.splice(0, this.queue.length);
@@ -205,17 +217,17 @@ export class FounderOS {
         { project_id: this.cfg.projectId, workspace_id: this.cfg.workspaceId, batch },
         keepalive,
       );
-      this.log(`flushed ${batch.length} events`);
+      this.log(\`flushed \${batch.length} events\`);
     } catch (err) {
       // Re-queue on failure so events aren't lost (bounded to avoid unbounded growth).
       this.queue = [...batch, ...this.queue].slice(0, 1000);
-      this.log(`flush failed, re-queued: ${(err as Error).message}`);
+      this.log(\`flush failed, re-queued: \${(err as Error).message}\`);
     }
   }
 
   /**
    * Browser-only: start recording a session replay with rrweb. Pass the rrweb
-   * `record` function (so the host app controls the rrweb version/bundle):
+   * \`record\` function (so the host app controls the rrweb version/bundle):
    *
    *   import { record } from "rrweb";
    *   fos.startSessionRecording(record, { maskAllInputs: true });
@@ -263,7 +275,7 @@ export class FounderOS {
           signals: { rage_clicks: rageClicks, errors, pages: 1 },
         },
         final,
-      ).catch((e) => this.log(`replay ship failed: ${(e as Error).message}`));
+      ).catch((e) => this.log(\`replay ship failed: \${(e as Error).message}\`));
       rageClicks = 0;
       errors = 0;
     };
@@ -323,9 +335,9 @@ export class FounderOS {
   // ── internals ──
   private async post(fn: string, body: unknown, keepalive = false): Promise<void> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (this.cfg.apiKey) headers["Authorization"] = `Bearer ${this.cfg.apiKey}`;
+    if (this.cfg.apiKey) headers["Authorization"] = \`Bearer \${this.cfg.apiKey}\`;
     if (this.cfg.anonKey) headers["apikey"] = this.cfg.anonKey;
-    const res = await fetch(`${this.cfg.host}/functions/v1/${fn}`, {
+    const res = await fetch(\`\${this.cfg.host}/functions/v1/\${fn}\`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -333,7 +345,7 @@ export class FounderOS {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`${fn} ${res.status}: ${text.slice(0, 200)}`);
+      throw new Error(\`\${fn} \${res.status}: \${text.slice(0, 200)}\`);
     }
   }
 
@@ -353,11 +365,124 @@ export class FounderOS {
   }
 
   private log(msg: string): void {
-    if (this.cfg.debug) console.log(`[founderos] ${msg}`);
+    if (this.cfg.debug) console.log(\`[founderos] \${msg}\`);
   }
 }
 
 /** Convenience factory. */
 export function createClient(config: FounderOSConfig): FounderOS {
   return new FounderOS(config);
+}
+`;
+
+export interface SdkFileChange {
+  path: string;
+  content: string;
+}
+
+export interface InstallSdkParams {
+  sdk: "analytics" | "rag";
+  runtime: "browser" | "server";
+  host: string;
+  projectId: string;
+  /** Browser only. */
+  workspaceId?: string;
+  anonKeyExpr?: string; // e.g. "import.meta.env.VITE_SUPABASE_ANON_KEY"
+  apiKeyExpr?: string; // server, e.g. "process.env.FOUNDEROS_API_KEY"
+  /** Where to drop the SDK + init module (repo-relative dir). Default "src/lib". */
+  libDir?: string;
+}
+
+/**
+ * Build the real file set for an SDK install. Returns the canonical SDK file(s)
+ * plus a small init module wired to the caller's config. The LLM never provides
+ * the SDK body — only the config that feeds this generator.
+ */
+export function buildSdkInstall(p: InstallSdkParams): { files: SdkFileChange[]; notes: string } {
+  const dir = (p.libDir || "src/lib").replace(/\/+$/, "");
+
+  if (p.sdk === "rag") {
+    // The RAG agent ships as a hosted widget script, not a copied SDK file.
+    const notes =
+      "The RAG agent is embedded via the hosted widget script (no SDK file is copied). " +
+      "Add the snippet below to your app shell; set the data-* attributes to your agent's public config.";
+    const snippet = `<!-- FounderOS RAG agent widget -->
+<script
+  src="${p.host}/functions/v1/rag-widget"
+  data-project-id="${p.projectId}"
+  defer
+></script>`;
+    return {
+      files: [{ path: `${dir}/founderos-rag-widget.html`, content: snippet + "\n" }],
+      notes,
+    };
+  }
+
+  // analytics
+  const sdkPath = `${dir}/founderos.ts`;
+  const initPath = `${dir}/analytics.ts`;
+
+  let initContent: string;
+  let notes: string;
+
+  if (p.runtime === "browser") {
+    const anon = p.anonKeyExpr || "import.meta.env.VITE_SUPABASE_ANON_KEY";
+    initContent = `// FounderOS analytics — browser init. Import \`analytics\` and call
+// analytics.track("event_name", { properties }) anywhere in the app.
+import { createClient } from "./founderos";
+
+export const analytics = createClient({
+  host: "${p.host}",
+  projectId: "${p.projectId}",
+  workspaceId: "${p.workspaceId ?? "<workspace-uuid>"}",
+  anonKey: ${anon},
+});
+
+// Lightweight auto-capture: page_view on every (SPA) navigation, and clicks on
+// any element annotated with data-fos-event="name". Add data-fos-* attributes
+// to fold extra properties in, e.g.:
+//   <button data-fos-event="cta_click" data-fos-location="hero">Start</button>
+analytics.autocapture();
+
+// Load feature flags so analytics.isFeatureEnabled("flag_key") works synchronously.
+// Re-call analytics.loadFlags() after identify(email) to get per-user flag state.
+void analytics.loadFlags();
+
+// Identify the signed-in user once you know who they are (call after login):
+//   analytics.identify(user.email);
+//   await analytics.loadFlags();
+//
+// Feature flagging in components:
+//   if (analytics.isFeatureEnabled("new_onboarding")) { /* render new flow */ }
+`;
+    notes =
+      "Browser analytics installed with auto-capture (page_view + [data-fos-event] clicks). " +
+      `Ensure ${anon.includes("env") ? anon : "your anon key env var"} is set. ` +
+      'Call analytics.identify(email) after login. Tag key buttons with data-fos-event="name" and add explicit analytics.track(...) on important business actions (signup, checkout, activation).';
+  } else {
+    const apiKey = p.apiKeyExpr || "process.env.FOUNDEROS_API_KEY!";
+    initContent = `// FounderOS analytics — server init. Never expose the API key to the browser.
+import { createClient } from "./founderos";
+
+export const analytics = createClient({
+  host: "${p.host}",
+  projectId: "${p.projectId}",
+  apiKey: ${apiKey},
+});
+
+// Flush on shutdown so no events are lost.
+// process.on("beforeExit", () => analytics.shutdown());
+`;
+    notes =
+      "Server analytics installed. Set FOUNDEROS_API_KEY (issued in Integrations → API Keys) " +
+      "in your secret manager — never commit it. Call analytics.shutdown() on process exit.";
+  }
+
+  return {
+    files: [
+      { path: sdkPath, content: SDK_JS_FOUNDEROS_TS },
+      { path: initPath, content: initContent },
+    ],
+    notes,
+  };
 }

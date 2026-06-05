@@ -245,6 +245,138 @@ async function summary(ctx: Ctx) {
   };
 }
 
+// ── Growth / engagement metrics ─────────────────────────────────────────────
+// One round-trip that computes the high-value marketing/growth KPIs:
+//   * DAU / WAU / MAU + stickiness (DAU/MAU, WAU/MAU)
+//   * WAU series over the last `weeks` weeks with week-over-week growth
+//   * new vs returning users this week
+//   * power users (>= powerThreshold active days in the last 28 days)
+//   * activation rate: of users first seen in the last `activationDays`, the
+//     share who performed any of `keyEvents` within their activation window.
+async function growth(
+  ctx: Ctx,
+  opts: { weeks: number; powerThreshold: number; activationDays: number; keyEvents: string[] },
+) {
+  const base = windowClause(ctx);
+
+  // 1. Rolling DAU/WAU/MAU + stickiness (point-in-time, relative to now()).
+  const sticky = (await ctx.runSelect(`
+    select
+      count(distinct ${ACTOR}) filter (where occurred_at >= now() - interval '1 day')  as dau,
+      count(distinct ${ACTOR}) filter (where occurred_at >= now() - interval '7 days')  as wau,
+      count(distinct ${ACTOR}) filter (where occurred_at >= now() - interval '30 days') as mau
+    from product_events
+    where ${base} and ${ACTOR} is not null
+  `)) as Record<string, number>[];
+  const dau = Number(sticky[0]?.dau ?? 0);
+  const wau = Number(sticky[0]?.wau ?? 0);
+  const mau = Number(sticky[0]?.mau ?? 0);
+
+  // 2. WAU per week over the last `weeks` weeks (oldest → newest).
+  const wauRows = (await ctx.runSelect(`
+    select to_char(date_trunc('week', occurred_at), 'YYYY-MM-DD') as bucket,
+           count(distinct ${ACTOR}) as users
+    from product_events
+    where ${base} and ${ACTOR} is not null
+      and occurred_at >= date_trunc('week', now()) - (${opts.weeks - 1} * interval '1 week')
+    group by 1 order by 1
+  `)) as { bucket: string; users: number }[];
+  const wauSeries = wauRows.map((r, i) => {
+    const users = Number(r.users);
+    const prev = i > 0 ? Number(wauRows[i - 1]!.users) : 0;
+    return { bucket: r.bucket, users, growth_pct: prev ? ((users - prev) / prev) * 100 : 0 };
+  });
+
+  // 3. New vs returning this week: a user is "new" if their first-ever event in
+  //    this project falls in the current week.
+  const nr = (await ctx.runSelect(`
+    with firsts as (
+      select ${ACTOR} as actor, min(occurred_at) as first_seen
+      from product_events
+      where ${base} and ${ACTOR} is not null
+      group by actor
+    ),
+    this_week as (
+      select distinct ${ACTOR} as actor
+      from product_events
+      where ${base} and ${ACTOR} is not null
+        and occurred_at >= date_trunc('week', now())
+    )
+    select
+      count(*) filter (where f.first_seen >= date_trunc('week', now())) as new_users,
+      count(*) filter (where f.first_seen <  date_trunc('week', now())) as returning_users
+    from this_week t join firsts f on f.actor = t.actor
+  `)) as Record<string, number>[];
+  const newUsers = Number(nr[0]?.new_users ?? 0);
+  const returningUsers = Number(nr[0]?.returning_users ?? 0);
+
+  // 4. Power users: distinct active days in the last 28 days >= threshold.
+  const power = (await ctx.runSelect(`
+    with active_days as (
+      select ${ACTOR} as actor, count(distinct date_trunc('day', occurred_at)) as days
+      from product_events
+      where ${base} and ${ACTOR} is not null and occurred_at >= now() - interval '28 days'
+      group by actor
+    )
+    select
+      count(*) as active_users,
+      count(*) filter (where days >= ${opts.powerThreshold}) as power_users
+    from active_days
+  `)) as Record<string, number>[];
+  const activeUsers28 = Number(power[0]?.active_users ?? 0);
+  const powerUsers = Number(power[0]?.power_users ?? 0);
+
+  // 5. Activation rate over users first seen in the last `activationDays` days.
+  let activation = { cohort: 0, activated: 0, rate: 0, key_events: opts.keyEvents };
+  if (opts.keyEvents.length > 0) {
+    const keyList = opts.keyEvents.map((e) => lit(e)).join(", ");
+    const act = (await ctx.runSelect(`
+      with firsts as (
+        select ${ACTOR} as actor, min(occurred_at) as first_seen
+        from product_events
+        where ${base} and ${ACTOR} is not null
+        group by actor
+      ),
+      recent as (
+        select * from firsts
+        where first_seen >= now() - (${opts.activationDays} * interval '1 day')
+      ),
+      activated as (
+        select distinct r.actor
+        from recent r
+        join product_events e
+          on coalesce(e.user_email, e.customer_external_id) = r.actor
+         and e.project_id = ${lit(ctx.projectId)}
+         and e.event_name in (${keyList})
+         and e.occurred_at >= r.first_seen
+         and e.occurred_at <= r.first_seen + (${opts.activationDays} * interval '1 day')
+      )
+      select
+        (select count(*) from recent) as cohort,
+        (select count(*) from activated) as activated
+    `)) as Record<string, number>[];
+    const cohort = Number(act[0]?.cohort ?? 0);
+    const activated = Number(act[0]?.activated ?? 0);
+    activation = { cohort, activated, rate: cohort ? (activated / cohort) * 100 : 0, key_events: opts.keyEvents };
+  }
+
+  return {
+    dau,
+    wau,
+    mau,
+    stickiness_dau_mau: mau ? (dau / mau) * 100 : 0,
+    stickiness_wau_mau: mau ? (wau / mau) * 100 : 0,
+    wau_series: wauSeries,
+    new_users: newUsers,
+    returning_users: returningUsers,
+    power_users: powerUsers,
+    active_users_28d: activeUsers28,
+    power_user_rate: activeUsers28 ? (powerUsers / activeUsers28) * 100 : 0,
+    power_threshold: opts.powerThreshold,
+    activation,
+  };
+}
+
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -316,6 +448,16 @@ Deno.serve(async (req) => {
         break;
       case "summary":
         result = await summary(ctx);
+        break;
+      case "growth":
+        result = await growth(ctx, {
+          weeks: clampInt(body.weeks, 12, 4, 52),
+          powerThreshold: clampInt(body.power_threshold, 4, 1, 28),
+          activationDays: clampInt(body.activation_days, 7, 1, 90),
+          keyEvents: Array.isArray(body.key_events)
+            ? (body.key_events as unknown[]).filter((e): e is string => typeof e === "string" && e.trim().length > 0).slice(0, 20)
+            : [],
+        });
         break;
       default:
         return jsonResponse({ error: `Unknown kind ${kind}` }, { status: 400 });

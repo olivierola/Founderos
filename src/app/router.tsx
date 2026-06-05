@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ProtectedRoute } from "./ProtectedRoute";
@@ -120,6 +120,7 @@ import { RunbooksPage } from "@/features/actions/Runbooks";
 import { SaasAnalyticsPage } from "@/features/actions/SaasAnalytics";
 import { SessionReplayPage } from "@/features/saas-analytics/SessionReplay";
 import { EventsPage } from "@/features/saas-analytics/Events";
+import { GrowthPage } from "@/features/saas-analytics/Growth";
 import { FunnelsPage as AnalyticsFunnelsPage } from "@/features/saas-analytics/Funnels";
 import { RetentionPage } from "@/features/saas-analytics/Retention";
 import { PerUserAnalyticsPage } from "@/features/actions/PerUserAnalytics";
@@ -176,29 +177,31 @@ const PAGES: Record<string, PageEl> = {
   "overview/daily-briefing": <DailyBriefingPage />,
   "overview/multi-projects": <MultiProjectsPage />,
 
-  "finance/revenue": <RevenuePage />,
-  "finance/transactions": <TransactionsPage />,
-  "finance/mrr-movement": <MrrMovementPage />,
-  "finance/customers": <CustomersPage />,
-  "finance/subscriptions": <SubscriptionsPage />,
-  "finance/cohorts": <CohortsPage />,
-  "finance/forecasting": <ForecastingPage />,
-  "finance/investor-metrics": <InvestorMetricsPage />,
-  "finance/reports": <FinanceReportsPage />,
+  // Finance was merged into SaaS Analytics (Revenue + Costs groups). The pages
+  // are unchanged; only their route prefix moved to saas-analytics/*.
+  "saas-analytics/revenue": <RevenuePage />,
+  "saas-analytics/transactions": <TransactionsPage />,
+  "saas-analytics/mrr-movement": <MrrMovementPage />,
+  "saas-analytics/customers": <CustomersPage />,
+  "saas-analytics/subscriptions": <SubscriptionsPage />,
+  "saas-analytics/cohorts": <CohortsPage />,
+  "saas-analytics/forecasting": <ForecastingPage />,
+  "saas-analytics/investor-metrics": <InvestorMetricsPage />,
+  "saas-analytics/reports": <FinanceReportsPage />,
 
-  // Costs (merged under Finance module — same components, new slugs)
-  "finance/costs-overview": <CostsOverviewPage />,
-  "finance/costs-providers": <CostsProvidersPage />,
-  "finance/costs-llm": <LlmCostsPage />,
-  "finance/costs-optimization": <OptimizationPage />,
-  "finance/costs-per-user": <CostPerUserPage />,
-  "finance/costs-budgets": <BudgetsPage />,
-  "finance/costs-invoices": <InvoicesPage />,
+  "saas-analytics/costs-overview": <CostsOverviewPage />,
+  "saas-analytics/costs-providers": <CostsProvidersPage />,
+  "saas-analytics/costs-llm": <LlmCostsPage />,
+  "saas-analytics/costs-optimization": <OptimizationPage />,
+  "saas-analytics/costs-per-user": <CostPerUserPage />,
+  "saas-analytics/costs-budgets": <BudgetsPage />,
+  "saas-analytics/costs-invoices": <InvoicesPage />,
 
-  // SaaS Analytics module (standalone) — overview + user & health sub-tabs
+  // SaaS Analytics module — overview + user & health sub-tabs
   "saas-analytics/overview": <SaasAnalyticsPage />,
   "saas-analytics/session-replay": <SessionReplayPage />,
   "saas-analytics/events": <EventsPage />,
+  "saas-analytics/growth": <GrowthPage />,
   "saas-analytics/funnels": <AnalyticsFunnelsPage />,
   "saas-analytics/retention": <RetentionPage />,
   "saas-analytics/users-all": <AllUsersPage />,
@@ -293,6 +296,13 @@ const PAGES: Record<string, PageEl> = {
   "settings/security": <SettingsSecurityPage />,
   "settings/data-privacy": <SettingsDataPrivacyPage />,
 };
+
+/** Redirects an old /finance/:sub path to /saas-analytics/:sub (same suffix).
+ *  Two `..` segments climb out of `finance/:sub` back to the project root. */
+function LegacyFinanceRedirect() {
+  const { sub } = useParams();
+  return <Navigate to={`../../saas-analytics/${sub}`} replace />;
+}
 
 function buildModuleRoutes() {
   return MODULES.flatMap((mod) => {
@@ -398,6 +408,10 @@ export const router = createBrowserRouter([
           </ErrorBoundary>
         ),
       },
+      // Legacy redirects: Finance was merged into SaaS Analytics. Old
+      // /finance/* deep links (incl. /finance/costs-*) map 1:1 to the new slug.
+      { path: "finance", element: <Navigate to="../saas-analytics/revenue" replace /> },
+      { path: "finance/:sub", element: <LegacyFinanceRedirect /> },
       ...buildModuleRoutes(),
     ],
   },

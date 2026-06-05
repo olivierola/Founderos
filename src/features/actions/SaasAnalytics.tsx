@@ -128,28 +128,28 @@ export function SaasAnalyticsPage() {
               trend={snapshot.mrr_growth_pct}
               icon={TrendingUp}
               actionLabel="Open Revenue"
-              actionTo={`${base}/finance/revenue`}
+              actionTo={`${base}/saas-analytics/revenue`}
             />
             <KpiTile
               label="ARR"
               value={formatCurrency(snapshot.arr_cents / 100)}
               icon={TrendingUp}
               actionLabel="Investor metrics"
-              actionTo={`${base}/finance/investor-metrics`}
+              actionTo={`${base}/saas-analytics/investor-metrics`}
             />
             <KpiTile
               label="Net new MRR (30d)"
               value={formatCurrency(snapshot.net_new_mrr_cents / 100)}
               icon={UserPlus}
               actionLabel="Subscriptions"
-              actionTo={`${base}/finance/subscriptions`}
+              actionTo={`${base}/saas-analytics/subscriptions`}
             />
             <KpiTile
               label="Paying users"
               value={formatCompact(snapshot.paying_users)}
               icon={CreditCard}
               actionLabel="Customers"
-              actionTo={`${base}/finance/customers`}
+              actionTo={`${base}/saas-analytics/customers`}
             />
           </div>
 

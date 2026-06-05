@@ -17,6 +17,9 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import type { ToolDef } from "./ai.ts";
+import { fetchFileContent, listRepoTree, getDefaultBranch, listUserRepos } from "./github.ts";
+import { decryptSecret } from "./crypto.ts";
+import { buildSdkInstall } from "./sdk-sources.ts";
 
 export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
 
@@ -508,6 +511,790 @@ const createCode: AssistantTool = {
   },
 };
 
+// ===========================================================================
+// CODE INSTRUMENTATION TOOLS — let the agent read a connected GitHub repo and
+// PROPOSE changes (analytics events, feature flags, SDK install). Writes are
+// never applied directly: each tool creates a *pending* admin_action that an
+// owner/admin approves, after which execute-admin-action performs the GitHub
+// write (PR by default). All gated to member+ (proposals) — execution itself
+// is gated to owner/admin by the admin-action approval flow.
+// ===========================================================================
+
+interface RepoHandle {
+  token: string;
+  full_name: string;
+  default_branch: string;
+  repository_id: string | null;
+  writable: boolean;
+}
+
+/** Resolve the project's GitHub connector → decrypted token + a target repo. */
+async function resolveRepo(ctx: ToolContext, preferredFullName?: string): Promise<RepoHandle> {
+  const { data: connector } = await ctx.admin
+    .from("connectors")
+    .select("id, permissions")
+    .eq("workspace_id", ctx.workspaceId)
+    .eq("project_id", ctx.projectId)
+    .eq("provider", "github")
+    .maybeSingle();
+  if (!connector) throw new Error("GitHub is not connected for this project.");
+
+  const { data: cred } = await ctx.admin
+    .from("encrypted_credentials")
+    .select("encrypted_payload, iv")
+    .eq("connector_id", connector.id)
+    .maybeSingle();
+  if (!cred) throw new Error("GitHub credential missing.");
+  const plaintext = await decryptSecret(cred.encrypted_payload, cred.iv);
+  let token = plaintext;
+  try {
+    const parsed = JSON.parse(plaintext);
+    token = parsed.token ?? parsed.secret_key ?? parsed.pat ?? plaintext;
+  } catch {
+    /* raw PAT */
+  }
+
+  // Pick the repo: caller preference, else the most recently scanned repo.
+  let repoQuery = ctx.admin
+    .from("repositories")
+    .select("id, full_name, default_branch")
+    .eq("project_id", ctx.projectId)
+    .eq("provider", "github")
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (preferredFullName) repoQuery = repoQuery.eq("full_name", preferredFullName) as typeof repoQuery;
+  const { data: repo } = await repoQuery.maybeSingle();
+
+  let full_name = preferredFullName ?? repo?.full_name ?? "";
+  if (!full_name) throw new Error("No repository known for this project. Scan a repo first, or pass full_name as 'owner/repo'.");
+
+  // A connected repo must be addressed as "owner/repo". If we only have the
+  // short name (e.g. the repo was never scanned, or someone passed "dotmesh"),
+  // resolve the full slug from the GitHub account the PAT belongs to.
+  if (!full_name.includes("/")) {
+    const short = full_name.toLowerCase();
+    const repos = await listUserRepos(token).catch(() => []);
+    const match =
+      repos.find((r) => r.name.toLowerCase() === short) ??
+      repos.find((r) => r.full_name.toLowerCase().endsWith(`/${short}`));
+    if (!match) {
+      throw new Error(
+        `Could not resolve "${full_name}" to an owner/repo on the connected GitHub account. ` +
+          `Pass full_name as "owner/repo" (e.g. "your-org/${short}").`,
+      );
+    }
+    full_name = match.full_name;
+  }
+
+  const default_branch =
+    (full_name === repo?.full_name ? repo?.default_branch : undefined) ??
+    (await getDefaultBranch(token, full_name).catch(() => "main"));
+
+  return {
+    token,
+    full_name,
+    default_branch,
+    repository_id: repo?.full_name === full_name ? repo?.id ?? null : null,
+    writable: connector.permissions === "write_enabled",
+  };
+}
+
+/** Create a pending code.apply_changes admin_action + an instrumentation audit row. */
+async function proposeApply(
+  ctx: ToolContext,
+  repo: RepoHandle,
+  opts: {
+    changes: { path: string; content: string }[];
+    commit_message: string;
+    mode: "pull_request" | "direct";
+    pr_title?: string;
+    pr_body?: string;
+    instrumentation: {
+      kind: "event" | "journey" | "feature_flag" | "sdk_install" | "custom";
+      event_definition_id?: string | null;
+      journey_id?: string | null;
+      nl_spec?: string;
+      plan?: Record<string, unknown>;
+    };
+  },
+): Promise<{ action_id: string; instrumentation_id: string }> {
+  const payload = {
+    full_name: repo.full_name,
+    base_branch: repo.default_branch,
+    mode: opts.mode,
+    commit_message: opts.commit_message,
+    pr_title: opts.pr_title,
+    pr_body: opts.pr_body,
+    changes: opts.changes,
+  };
+
+  const { data: action, error: aErr } = await ctx.admin
+    .from("admin_actions")
+    .insert({
+      workspace_id: ctx.workspaceId,
+      project_id: ctx.projectId,
+      actor_user_id: ctx.userId,
+      action_type: "code.apply_changes",
+      target_type: "github_repo",
+      target_id: repo.full_name,
+      payload,
+      status: "pending",
+      risk_level: "high",
+      requires_approval: true,
+    })
+    .select("id")
+    .single();
+  if (aErr || !action) throw new Error(`Could not create pending action: ${aErr?.message}`);
+
+  const { data: instr } = await ctx.admin
+    .from("analytics_instrumentation")
+    .insert({
+      workspace_id: ctx.workspaceId,
+      project_id: ctx.projectId,
+      kind: opts.instrumentation.kind,
+      event_definition_id: opts.instrumentation.event_definition_id ?? null,
+      journey_id: opts.instrumentation.journey_id ?? null,
+      repository_id: repo.repository_id,
+      full_name: repo.full_name,
+      targets: opts.changes.map((c) => ({ path: c.path })),
+      admin_action_id: action.id,
+      status: "proposed",
+      nl_spec: opts.instrumentation.nl_spec ?? null,
+      plan: opts.instrumentation.plan ?? {},
+      created_by: ctx.userId,
+    })
+    .select("id")
+    .single();
+
+  return { action_id: action.id, instrumentation_id: instr?.id ?? "" };
+}
+
+const listEventDefinitions: AssistantTool = {
+  name: "list_event_definitions",
+  minRole: "member",
+  scope: "List the analytics events already defined in the FounderOS UI (taxonomy).",
+  def: {
+    name: "list_event_definitions",
+    description:
+      "List the analytics event definitions configured for THIS project in the FounderOS UI (Events catalog): event_name, display_name, category, whether it is a key action, value_type, declared property_schema, and instrumentation_status. ALWAYS prefer instrumenting THESE existing events over inventing new ones. Use before instrument_event so the code emits the exact event_name + properties the user already defined.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async (_args, ctx) => {
+    const { data } = await ctx.admin
+      .from("event_definitions")
+      .select("event_name, display_name, category, is_key_action, value_type, property_schema, description, instrumentation_status")
+      .eq("project_id", ctx.projectId)
+      .order("is_key_action", { ascending: false })
+      .order("event_name", { ascending: true });
+    if (!data || data.length === 0) {
+      return "No event definitions yet. The user can define them in SaaS Analytics → Events, or you can create them with define_custom_event.";
+    }
+    return JSON.stringify({ count: data.length, events: data });
+  },
+};
+
+const listFeatureFlags: AssistantTool = {
+  name: "list_feature_flags",
+  minRole: "member",
+  scope: "List the feature flags already defined in the FounderOS UI.",
+  def: {
+    name: "list_feature_flags",
+    description:
+      "List the feature flags configured for THIS project in FounderOS: flag_key, enabled, rollout_percent, description, variants, whether they're already instrumented, and target_email (null = project-wide). ALWAYS prefer gating code behind THESE existing flags (use the exact flag_key) over inventing new ones. The SDK reads flag state at runtime via analytics.isFeatureEnabled(flag_key).",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async (_args, ctx) => {
+    const { data } = await ctx.admin
+      .from("feature_flags")
+      .select("flag_key, enabled, rollout_percent, description, variants, instrumented, target_email")
+      .eq("project_id", ctx.projectId)
+      .order("flag_key", { ascending: true });
+    if (!data || data.length === 0) {
+      return "No feature flags yet. The user can define them, or you can create one with add_feature_flag.";
+    }
+    // Collapse per-user overrides into a readable shape.
+    return JSON.stringify({ count: data.length, flags: data });
+  },
+};
+
+const analyzeRepoStructure: AssistantTool = {
+  name: "analyze_repo_structure",
+  minRole: "member",
+  scope: "Analyze the target repo (scan + app structure) before instrumenting.",
+  def: {
+    name: "analyze_repo_structure",
+    description:
+      "Return a structured analysis of the connected repo to plan analytics instrumentation: detected framework/stack, third-party services, and the app structure (pages, routes, interactive elements like buttons/forms/links with their labels) from the latest code scan. Also reports whether the FounderOS analytics SDK is already installed. ALWAYS call this (and read_repo_file on the key files it surfaces) BEFORE proposing SDK install or tracking — never instrument blind.",
+    parameters: {
+      type: "object",
+      properties: {
+        full_name: { type: "string", description: "Optional owner/repo override." },
+      },
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const repo = await resolveRepo(ctx, str(args.full_name) || undefined);
+
+    // Latest scan for this project (architecture, services, app_structure).
+    const { data: scan } = await ctx.admin
+      .from("scan_results")
+      .select("summary, services, architecture, app_structure, dependencies, created_at, repositories(full_name)")
+      .eq("project_id", ctx.projectId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // Events + feature flags defined in the FounderOS UI — the agent must reuse these.
+    const [{ data: defs }, { data: flags }] = await Promise.all([
+      ctx.admin
+        .from("event_definitions")
+        .select("event_name, display_name, category, is_key_action, value_type, property_schema, instrumentation_status")
+        .eq("project_id", ctx.projectId)
+        .order("is_key_action", { ascending: false }),
+      ctx.admin
+        .from("feature_flags")
+        .select("flag_key, enabled, rollout_percent, description, instrumented, target_email")
+        .eq("project_id", ctx.projectId),
+    ]);
+    const definedEvents = defs ?? [];
+    const definedFlags = flags ?? [];
+
+    // Is the analytics SDK already in the tree? (cheap check on the file list)
+    let sdkInstalled = false;
+    let hint = "";
+    try {
+      const tree = await listRepoTree(repo.token, repo.full_name, repo.default_branch);
+      sdkInstalled = tree.some((p) => /founderos\.(ts|js)$/.test(p) || /(^|\/)analytics\.(ts|js)$/.test(p));
+    } catch {
+      hint = "Could not list the repo tree (token scope?). Use read_repo_file on specific paths.";
+    }
+
+    if (!scan) {
+      return JSON.stringify({
+        repo: repo.full_name,
+        default_branch: repo.default_branch,
+        writable: repo.writable,
+        sdk_installed: sdkInstalled,
+        defined_events: definedEvents,
+        defined_feature_flags: definedFlags,
+        scan: null,
+        note:
+          "No code scan found. Run a scan from Code → Repositories for a richer analysis, " +
+          "or use list_repo_files + read_repo_file to inspect the code directly. " +
+          "Instrument the defined_events above (exact event_name) and gate code behind defined_feature_flags. " + hint,
+      });
+    }
+
+    const appStructure = (scan as any).app_structure ?? { pages: [], routes: [], element_count: 0 };
+    // Surface likely instrumentation targets from page/element labels.
+    const KEY_HINTS = /(sign\s?up|signin|log\s?in|register|checkout|subscribe|upgrade|pay|purchase|buy|onboard|invite|create|start|trial)/i;
+    const candidates: Array<{ page: string; path: string; element: string; suggested_event: string }> = [];
+    for (const pg of appStructure.pages ?? []) {
+      for (const el of pg.elements ?? []) {
+        const label = String(el.label ?? "");
+        if (KEY_HINTS.test(label) || KEY_HINTS.test(pg.name ?? "")) {
+          candidates.push({
+            page: pg.name,
+            path: pg.path,
+            element: `${el.type}: ${label}`.slice(0, 80),
+            suggested_event: label
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_|_$/g, "")
+              .slice(0, 40) || "cta_click",
+          });
+        }
+      }
+    }
+
+    return JSON.stringify({
+      repo: repo.full_name,
+      default_branch: repo.default_branch,
+      writable: repo.writable,
+      sdk_installed: sdkInstalled,
+      stack: {
+        frontend: (scan as any).architecture?.frontend ?? (scan as any).summary?.detected_frontend ?? null,
+        backend: (scan as any).architecture?.backend ?? (scan as any).summary?.backend_framework ?? null,
+      },
+      services: (scan as any).services ?? [],
+      routes: (appStructure.routes ?? []).slice(0, 40),
+      pages: (appStructure.pages ?? [])
+        .slice(0, 25)
+        .map((p: any) => ({ name: p.name, path: p.path, elements: (p.elements ?? []).slice(0, 12) })),
+      // Reuse these — the user already defined them in the FounderOS UI.
+      defined_events: definedEvents,
+      defined_feature_flags: definedFlags,
+      instrumentation_candidates: candidates.slice(0, 30),
+      next_steps:
+        "Map each defined_event to the right page/call-site and emit it with the EXACT event_name (analytics.track or data-fos-event). " +
+        "Gate features page-by-page behind defined_feature_flags using analytics.isFeatureEnabled(flag_key). " +
+        "Read candidate files with read_repo_file, install_sdk if not installed, then propose changes (full file content) via instrument_event / add_feature_flag / propose_code_changes.",
+    });
+  },
+};
+
+const readRepoFile: AssistantTool = {
+  name: "read_repo_file",
+  minRole: "member",
+  scope: "Read a file from the connected GitHub repo (to plan instrumentation).",
+  def: {
+    name: "read_repo_file",
+    description:
+      "Read the content of a file from the project's connected GitHub repository. Use to inspect code before proposing changes. Returns up to ~16k chars.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Repo-relative path, e.g. 'src/main.tsx'." },
+        full_name: { type: "string", description: "Optional owner/repo override." },
+      },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const repo = await resolveRepo(ctx, str(args.full_name) || undefined);
+    const path = str(args.path);
+    if (!path) return "ERROR: path is required.";
+    const content = await fetchFileContent(repo.token, repo.full_name, repo.default_branch, path);
+    if (content === null) return `File not found: ${path}`;
+    return content.slice(0, 16000);
+  },
+};
+
+const listRepoFiles: AssistantTool = {
+  name: "list_repo_files",
+  minRole: "member",
+  scope: "List files in the connected GitHub repo (to locate where to instrument).",
+  def: {
+    name: "list_repo_files",
+    description:
+      "List file paths in the project's connected GitHub repository (default branch). Optionally filter by a path prefix or substring. Use to find where to add tracking/flags/SDK.",
+    parameters: {
+      type: "object",
+      properties: {
+        filter: { type: "string", description: "Optional substring to filter paths (e.g. 'src/', '.tsx')." },
+        full_name: { type: "string", description: "Optional owner/repo override." },
+        limit: { type: "number", description: "Max paths to return (default 200, max 800)." },
+      },
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const repo = await resolveRepo(ctx, str(args.full_name) || undefined);
+    const all = await listRepoTree(repo.token, repo.full_name, repo.default_branch);
+    const filter = str(args.filter).toLowerCase();
+    const limit = Math.min(Math.max(Number(args.limit ?? 200) || 200, 1), 800);
+    const filtered = filter ? all.filter((p) => p.toLowerCase().includes(filter)) : all;
+    return JSON.stringify({ repo: repo.full_name, count: filtered.length, paths: filtered.slice(0, limit) });
+  },
+};
+
+const PROPOSE_CHANGES_NOTE =
+  "Each file change must be the FULL new content of that file (not a diff). Read the file first with read_repo_file when modifying existing code.";
+
+const proposeCodeChanges: AssistantTool = {
+  name: "propose_code_changes",
+  minRole: "member",
+  scope: "Propose file changes to the GitHub repo (pending owner/admin approval).",
+  def: {
+    name: "propose_code_changes",
+    description:
+      `Propose one or more file changes to the connected GitHub repo. This does NOT write immediately — it creates a PENDING change that an owner/admin must approve, then a pull request (default) or direct commit is created. ${PROPOSE_CHANGES_NOTE}`,
+    parameters: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "Short human summary of what this change does." },
+        commit_message: { type: "string", description: "Git commit message." },
+        mode: { type: "string", enum: ["pull_request", "direct"], description: "Default pull_request (safer)." },
+        changes: {
+          type: "array",
+          description: "Files to write. Each is the full new content.",
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string" },
+              content: { type: "string" },
+            },
+            required: ["path", "content"],
+            additionalProperties: false,
+          },
+        },
+        full_name: { type: "string", description: "Optional owner/repo override." },
+      },
+      required: ["summary", "commit_message", "changes"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const repo = await resolveRepo(ctx, str(args.full_name) || undefined);
+    const changes = Array.isArray(args.changes) ? (args.changes as { path: string; content: string }[]) : [];
+    if (changes.length === 0) return "ERROR: changes must be a non-empty array.";
+    const mode = args.mode === "direct" ? "direct" : "pull_request";
+    const summary = str(args.summary, "Code changes");
+    const { action_id } = await proposeApply(ctx, repo, {
+      changes,
+      commit_message: str(args.commit_message, summary),
+      mode,
+      pr_title: summary,
+      pr_body: `${summary}\n\nProposed by the FounderOS agent.`,
+      instrumentation: { kind: "custom", nl_spec: summary, plan: { files: changes.map((c) => c.path) } },
+    });
+    return `Proposed ${changes.length} file change(s) on ${repo.full_name} as a ${mode} (pending approval, action_id=${action_id}). ${
+      repo.writable ? "" : "NOTE: the GitHub connector is read-only; an admin must enable write access before approval can apply it."
+    }`;
+  },
+};
+
+const defineCustomEvent: AssistantTool = {
+  name: "define_custom_event",
+  minRole: "member",
+  scope: "Create/refine a custom analytics event from a natural-language description.",
+  def: {
+    name: "define_custom_event",
+    description:
+      "Define a custom analytics event in the project's taxonomy from a natural-language description. Creates/updates an event_definition (name, display name, category, property schema, value type, advanced config). Does NOT touch code — pair with instrument_event to add tracking calls.",
+    parameters: {
+      type: "object",
+      properties: {
+        event_name: { type: "string", description: "Stable snake_case event name, e.g. 'checkout_completed'." },
+        display_name: { type: "string" },
+        description: { type: "string", description: "What the event means / when it fires." },
+        nl_spec: { type: "string", description: "The user's natural-language request, kept for traceability." },
+        category: {
+          type: "string",
+          enum: ["product", "lifecycle", "revenue", "marketing", "system", "custom"],
+        },
+        value_type: { type: "string", enum: ["none", "count", "sum", "duration", "revenue"] },
+        is_key_action: { type: "boolean", description: "Whether this is an activation/key action." },
+        property_schema: {
+          type: "array",
+          description: "Declared properties: [{ key, type, required? }].",
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string" },
+              type: { type: "string" },
+              required: { type: "boolean" },
+            },
+            required: ["key", "type"],
+            additionalProperties: false,
+          },
+        },
+        config: { description: "Advanced config object (unit, currency, dedupe_window_s, sampling, alias[]...)." },
+      },
+      required: ["event_name", "description"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const event_name = str(args.event_name).trim();
+    if (!/^[a-z][a-z0-9_]*$/.test(event_name)) {
+      return "ERROR: event_name must be snake_case (lowercase letters, digits, underscores).";
+    }
+    const row = {
+      workspace_id: ctx.workspaceId,
+      project_id: ctx.projectId,
+      event_name,
+      display_name: str(args.display_name) || event_name,
+      description: str(args.description),
+      nl_spec: str(args.nl_spec) || null,
+      category: str(args.category, "custom"),
+      value_type: str(args.value_type, "count"),
+      is_key_action: Boolean(args.is_key_action),
+      property_schema: Array.isArray(args.property_schema) ? args.property_schema : [],
+      config: args.config && typeof args.config === "object" ? args.config : {},
+      created_by: ctx.userId,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await ctx.admin
+      .from("event_definitions")
+      .upsert(row, { onConflict: "project_id,event_name" })
+      .select("id, event_name")
+      .single();
+    if (error) return `ERROR: could not save event definition: ${error.message}`;
+    return JSON.stringify({ ok: true, event_definition_id: data.id, event_name: data.event_name });
+  },
+};
+
+const instrumentEvent: AssistantTool = {
+  name: "instrument_event",
+  minRole: "member",
+  scope: "Propose code changes that emit an analytics event (pending approval).",
+  def: {
+    name: "instrument_event",
+    description:
+      `Propose code changes that INSTRUMENT an analytics event using the FounderOS SDK (fos.track('event_name', { ... })) at the right place(s) in the connected repo. Creates a pending change (PR by default) for owner/admin approval, and links it to the event definition. ${PROPOSE_CHANGES_NOTE} Call define_custom_event first if the event isn't defined yet.`,
+    parameters: {
+      type: "object",
+      properties: {
+        event_name: { type: "string", description: "The event to emit (should match an event definition)." },
+        nl_spec: { type: "string", description: "Natural-language description of when/where to track it." },
+        commit_message: { type: "string" },
+        mode: { type: "string", enum: ["pull_request", "direct"] },
+        changes: {
+          type: "array",
+          description: "Full new content of each file that emits the event.",
+          items: {
+            type: "object",
+            properties: { path: { type: "string" }, content: { type: "string" } },
+            required: ["path", "content"],
+            additionalProperties: false,
+          },
+        },
+        full_name: { type: "string" },
+      },
+      required: ["event_name", "changes"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const repo = await resolveRepo(ctx, str(args.full_name) || undefined);
+    const event_name = str(args.event_name);
+    const changes = Array.isArray(args.changes) ? (args.changes as { path: string; content: string }[]) : [];
+    if (!event_name) return "ERROR: event_name is required.";
+    if (changes.length === 0) return "ERROR: changes must be a non-empty array.";
+
+    // Link to an existing event definition if present.
+    const { data: def } = await ctx.admin
+      .from("event_definitions")
+      .select("id")
+      .eq("project_id", ctx.projectId)
+      .eq("event_name", event_name)
+      .maybeSingle();
+
+    const mode = args.mode === "direct" ? "direct" : "pull_request";
+    const summary = `Instrument analytics event '${event_name}'`;
+    const { action_id } = await proposeApply(ctx, repo, {
+      changes,
+      commit_message: str(args.commit_message, summary),
+      mode,
+      pr_title: summary,
+      pr_body: `${summary}\n\n${str(args.nl_spec)}\n\nProposed by the FounderOS agent.`,
+      instrumentation: {
+        kind: "event",
+        event_definition_id: def?.id ?? null,
+        nl_spec: str(args.nl_spec),
+        plan: { event_name, files: changes.map((c) => c.path) },
+      },
+    });
+
+    if (def?.id) {
+      await ctx.admin.from("event_definitions").update({ instrumentation_status: "proposed" }).eq("id", def.id);
+    }
+    return `Proposed instrumentation for '${event_name}' on ${repo.full_name} (${mode}, pending approval, action_id=${action_id}).`;
+  },
+};
+
+const addFeatureFlag: AssistantTool = {
+  name: "add_feature_flag",
+  minRole: "member",
+  scope: "Create a feature flag and propose gating code (pending approval).",
+  def: {
+    name: "add_feature_flag",
+    description:
+      `Create/update a feature flag and propose the code that gates a feature behind it. Creates the feature_flag config row immediately and a PENDING code change (PR by default) for the gating logic. ${PROPOSE_CHANGES_NOTE}`,
+    parameters: {
+      type: "object",
+      properties: {
+        flag_key: { type: "string", description: "snake_case flag key, e.g. 'new_onboarding'." },
+        description: { type: "string" },
+        enabled: { type: "boolean", description: "Default enabled state (default false)." },
+        rollout_percent: { type: "number", description: "0-100 rollout (default 100)." },
+        changes: {
+          type: "array",
+          description: "Full new content of each file that reads the flag. Omit to only create the flag config.",
+          items: {
+            type: "object",
+            properties: { path: { type: "string" }, content: { type: "string" } },
+            required: ["path", "content"],
+            additionalProperties: false,
+          },
+        },
+        full_name: { type: "string" },
+      },
+      required: ["flag_key"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const flag_key = str(args.flag_key).trim();
+    if (!/^[a-z][a-z0-9_]*$/.test(flag_key)) return "ERROR: flag_key must be snake_case.";
+    const enabled = Boolean(args.enabled);
+    const rollout = Math.min(Math.max(Number(args.rollout_percent ?? 100) || 100, 0), 100);
+
+    const { error: fErr } = await ctx.admin.from("feature_flags").upsert(
+      {
+        workspace_id: ctx.workspaceId,
+        project_id: ctx.projectId,
+        flag_key,
+        target_email: null,
+        enabled,
+        description: str(args.description) || null,
+        rollout_percent: rollout,
+      },
+      { onConflict: "project_id,flag_key,target_email" },
+    );
+    if (fErr) return `ERROR: could not save feature flag: ${fErr.message}`;
+
+    const changes = Array.isArray(args.changes) ? (args.changes as { path: string; content: string }[]) : [];
+    if (changes.length === 0) {
+      return JSON.stringify({ ok: true, flag_key, enabled, rollout_percent: rollout, code_change: "none (config only)" });
+    }
+    const repo = await resolveRepo(ctx, str(args.full_name) || undefined);
+    const summary = `Add feature flag '${flag_key}' gating`;
+    const { action_id } = await proposeApply(ctx, repo, {
+      changes,
+      commit_message: summary,
+      mode: "pull_request",
+      pr_title: summary,
+      pr_body: `${summary}\n\nProposed by the FounderOS agent.`,
+      instrumentation: { kind: "feature_flag", nl_spec: str(args.description), plan: { flag_key, files: changes.map((c) => c.path) } },
+    });
+    await ctx.admin.from("feature_flags").update({ instrumented: true }).eq("project_id", ctx.projectId).eq("flag_key", flag_key);
+    return `Feature flag '${flag_key}' created and gating change proposed on ${repo.full_name} (pending approval, action_id=${action_id}).`;
+  },
+};
+
+const installSdk: AssistantTool = {
+  name: "install_sdk",
+  minRole: "member",
+  scope: "Propose installing the REAL FounderOS analytics/RAG SDK in the repo (pending approval).",
+  def: {
+    name: "install_sdk",
+    description:
+      "Propose installing a FounderOS SDK in the connected repo. The SDK file content is INJECTED BY THE SERVER from the canonical source — you must NOT invent SDK code, a git URL, or an API. You only choose: which SDK ('analytics' tracking/session-replay, or 'rag' agent widget), the runtime ('browser' or 'server'), where to put it (lib_dir), and which env expression holds the key. The server returns the real files; a PENDING pull request is created for approval. " +
+      "Optionally pass `extra_changes` for additional call sites you wrote yourself (e.g. importing `analytics` and calling analytics.track(...) — full file content, not a diff). " +
+      "Important: there is NO `founderos.configure(api_key, api_secret)` API and NO `git clone founderos/sdk` — auth uses a single `fos_` API key (server) or anon key + workspaceId (browser).",
+    parameters: {
+      type: "object",
+      properties: {
+        sdk: { type: "string", enum: ["analytics", "rag"], description: "Which SDK to install." },
+        runtime: { type: "string", enum: ["browser", "server"], description: "Target runtime (analytics)." },
+        lib_dir: { type: "string", description: "Repo-relative dir for the SDK + init module. Default 'src/lib'." },
+        anon_key_expr: {
+          type: "string",
+          description: "Browser: code expression for the anon key, e.g. 'import.meta.env.VITE_SUPABASE_ANON_KEY'.",
+        },
+        api_key_expr: {
+          type: "string",
+          description: "Server: code expression for the API key, e.g. 'process.env.FOUNDEROS_API_KEY!'.",
+        },
+        extra_changes: {
+          type: "array",
+          description: "Optional additional files you author (call sites). Full new content each.",
+          items: {
+            type: "object",
+            properties: { path: { type: "string" }, content: { type: "string" } },
+            required: ["path", "content"],
+            additionalProperties: false,
+          },
+        },
+        full_name: { type: "string" },
+      },
+      required: ["sdk"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const sdk = str(args.sdk);
+    if (sdk !== "analytics" && sdk !== "rag") return "ERROR: sdk must be 'analytics' or 'rag'.";
+    const runtime = str(args.runtime) === "server" ? "server" : "browser";
+    const repo = await resolveRepo(ctx, str(args.full_name) || undefined);
+
+    // Resolve host/projectId from the project's Supabase config so the init
+    // module is wired correctly. Host comes from env; project_id is the cockpit id.
+    const host = Deno.env.get("SUPABASE_URL") ?? "https://<your-project>.supabase.co";
+
+    const { files, notes } = buildSdkInstall({
+      sdk,
+      runtime,
+      host,
+      projectId: ctx.projectId,
+      workspaceId: ctx.workspaceId,
+      libDir: str(args.lib_dir) || undefined,
+      anonKeyExpr: str(args.anon_key_expr) || undefined,
+      apiKeyExpr: str(args.api_key_expr) || undefined,
+    });
+
+    // Append any author-provided call sites (validated shape).
+    const extra = Array.isArray(args.extra_changes)
+      ? (args.extra_changes as { path: string; content: string }[]).filter(
+          (c) => c && typeof c.path === "string" && typeof c.content === "string",
+        )
+      : [];
+    const changes = [...files, ...extra];
+
+    const summary = `Install FounderOS ${sdk} SDK (${runtime})`;
+    const { action_id } = await proposeApply(ctx, repo, {
+      changes,
+      commit_message: summary,
+      mode: "pull_request",
+      pr_title: summary,
+      pr_body: `${summary}\n\n${notes}\n\nProposed by the FounderOS agent. SDK content is the canonical FounderOS source.`,
+      instrumentation: { kind: "sdk_install", nl_spec: notes, plan: { sdk, runtime, files: changes.map((c) => c.path) } },
+    });
+    return `Proposed ${sdk} SDK install (${runtime}) on ${repo.full_name}: ${changes
+      .map((c) => c.path)
+      .join(", ")} — pending approval (action_id=${action_id}). ${notes}`;
+  },
+};
+
+const defineJourney: AssistantTool = {
+  name: "define_journey",
+  minRole: "member",
+  scope: "Define a user journey (ordered events) for analytics.",
+  def: {
+    name: "define_journey",
+    description:
+      "Define a user journey to track: an ordered sequence of events (e.g. landing → signup → activation → purchase) from a natural-language description. Creates an analytics_journey config. Pair with instrument_event for each step that isn't yet emitted.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        description: { type: "string" },
+        nl_spec: { type: "string", description: "Natural-language description of the journey." },
+        steps: {
+          type: "array",
+          description: "Ordered steps: [{ event_name, label, optional? }].",
+          items: {
+            type: "object",
+            properties: {
+              event_name: { type: "string" },
+              label: { type: "string" },
+              optional: { type: "boolean" },
+            },
+            required: ["event_name"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["name", "steps"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const name = str(args.name);
+    const steps = Array.isArray(args.steps) ? args.steps : [];
+    if (!name || steps.length === 0) return "ERROR: name and a non-empty steps array are required.";
+    const { data, error } = await ctx.admin
+      .from("analytics_journeys")
+      .insert({
+        workspace_id: ctx.workspaceId,
+        project_id: ctx.projectId,
+        name,
+        description: str(args.description) || null,
+        nl_spec: str(args.nl_spec) || null,
+        steps,
+        created_by: ctx.userId,
+      })
+      .select("id")
+      .single();
+    if (error) return `ERROR: could not save journey: ${error.message}`;
+    return JSON.stringify({ ok: true, journey_id: data.id, name, step_count: steps.length });
+  },
+};
+
 // ---------------------------------------------------------------------------
 
 const ALL_TOOLS: AssistantTool[] = [
@@ -523,6 +1310,18 @@ const ALL_TOOLS: AssistantTool[] = [
   createJson,
   createTable,
   createCode,
+  // Code instrumentation / advanced analytics
+  listEventDefinitions,
+  listFeatureFlags,
+  analyzeRepoStructure,
+  readRepoFile,
+  listRepoFiles,
+  proposeCodeChanges,
+  defineCustomEvent,
+  instrumentEvent,
+  addFeatureFlag,
+  installSdk,
+  defineJourney,
 ];
 
 /** Tools the given role is allowed to use. */

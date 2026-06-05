@@ -100,6 +100,23 @@ export interface SummaryResult {
   active_30d: number;
 }
 
+export interface GrowthResult {
+  ok: boolean;
+  dau: number;
+  wau: number;
+  mau: number;
+  stickiness_dau_mau: number;
+  stickiness_wau_mau: number;
+  wau_series: Array<{ bucket: string; users: number; growth_pct: number }>;
+  new_users: number;
+  returning_users: number;
+  power_users: number;
+  active_users_28d: number;
+  power_user_rate: number;
+  power_threshold: number;
+  activation: { cohort: number; activated: number; rate: number; key_events: string[] };
+}
+
 export const CATEGORY_META: Record<EventCategory, { label: string; tone: string }> = {
   product: { label: "Product", tone: "text-sky-400" },
   lifecycle: { label: "Lifecycle", tone: "text-violet-400" },
@@ -175,6 +192,29 @@ export function useObservedEventNames() {
       });
       return res.events.map((e) => e.event_name);
     },
+  });
+}
+
+// Growth / engagement metrics. Key events (is_key_action) drive the activation
+// rate; we pass them from the catalog so activation reflects the user's own
+// definition of "activated".
+export function useGrowth(opts?: { weeks?: number; powerThreshold?: number; activationDays?: number }) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const defs = useEventDefinitions();
+  const keyEvents = (defs.data ?? []).filter((d) => d.is_key_action).map((d) => d.event_name);
+  return useQuery({
+    queryKey: ["analytics_growth", projectId, keyEvents.join(","), opts?.weeks, opts?.powerThreshold, opts?.activationDays],
+    enabled: !!workspaceId && !!projectId && !defs.isLoading,
+    queryFn: () =>
+      callEdge<GrowthResult>("analytics-query", {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        kind: "growth",
+        weeks: opts?.weeks ?? 12,
+        power_threshold: opts?.powerThreshold ?? 4,
+        activation_days: opts?.activationDays ?? 7,
+        key_events: keyEvents,
+      }),
   });
 }
 

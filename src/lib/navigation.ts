@@ -1,6 +1,5 @@
 import {
   LayoutDashboard,
-  Wallet,
   Rocket,
   Braces,
   ShieldCheck,
@@ -31,6 +30,47 @@ export interface ModuleNavItem {
   subItems: SubNavItem[];
   /** When true, the PrimarySidebar pushes this module to a separate bottom group. */
   pinBottom?: boolean;
+  /**
+   * When true, the SecondarySidebar renders one entry per `group` (a top-level
+   * "section" tab pointing at the group's first item), and a horizontal SubTabBar
+   * renders the items inside the active group. Used by SaaS Analytics, where the
+   * groups are the primary axis and the pages are tabs within each group.
+   */
+  groupsAsTabs?: boolean;
+}
+
+/** Ordered, de-duplicated list of group labels for a module (skips ungrouped items). */
+export function moduleGroups(module: ModuleNavItem): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of module.subItems) {
+    if (s.group && !seen.has(s.group)) {
+      seen.add(s.group);
+      out.push(s.group);
+    }
+  }
+  return out;
+}
+
+/** The group a given sub-slug belongs to (carrying forward the last seen group). */
+export function groupOfSlug(module: ModuleNavItem, slug: string): string | undefined {
+  let current: string | undefined;
+  for (const s of module.subItems) {
+    if (s.group) current = s.group;
+    if (s.slug === slug) return current;
+  }
+  return undefined;
+}
+
+/** All sub-items belonging to a group (items inherit the last declared group). */
+export function itemsInGroup(module: ModuleNavItem, group: string): SubNavItem[] {
+  const out: SubNavItem[] = [];
+  let current: string | undefined;
+  for (const s of module.subItems) {
+    if (s.group) current = s.group;
+    if (current === group) out.push(s);
+  }
+  return out;
 }
 
 export const MODULES: ModuleNavItem[] = [
@@ -70,13 +110,19 @@ export const MODULES: ModuleNavItem[] = [
     label: "SaaS Analytics",
     icon: BarChart3,
     color: "text-violet-400/60",
+    // The `group` is the primary nav axis (rendered as sidebar sections); the
+    // items within each group are the horizontal tabs.
+    groupsAsTabs: true,
     subItems: [
+      // Overview and Session Replay are single-tab groups.
       { label: "Overview", slug: "overview", group: "Overview" },
-      { label: "Session Replay", slug: "session-replay" },
+      { label: "Session Replay", slug: "session-replay", group: "Session Replay" },
 
-      { label: "Events",             slug: "events",               group: "Events & Behavior" },
+      { label: "Events",             slug: "events",               group: "Behavior" },
+      { label: "Growth",             slug: "growth" },
       { label: "Funnels",            slug: "funnels" },
       { label: "Cohorts & Retention", slug: "retention" },
+      { label: "Journeys",           slug: "users-journeys" },
 
       { label: "All Users",          slug: "users-all",            group: "Users" },
       { label: "User 360",           slug: "users-360" },
@@ -86,39 +132,33 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Engagement",         slug: "users-engagement" },
       { label: "Health Scores",      slug: "users-health-scores" },
       { label: "Churn Risk",         slug: "users-churn" },
+
+      // ── merged from the former Finance module ──
+      { label: "Revenue",            slug: "revenue",              group: "Revenue" },
+      { label: "Transactions",       slug: "transactions" },
+      { label: "MRR Movement",       slug: "mrr-movement" },
+      { label: "Subscriptions",      slug: "subscriptions" },
+      { label: "Customers",          slug: "customers" },
+      { label: "Cohorts",            slug: "cohorts" },
       { label: "LTV by cohort",      slug: "users-cohorts" },
+      { label: "Forecasting",        slug: "forecasting" },
+      { label: "Investor Metrics",   slug: "investor-metrics" },
       { label: "Billing funnel",     slug: "users-funnels" },
-      { label: "Journeys",           slug: "users-journeys" },
+      { label: "Reports",            slug: "reports" },
+
+      { label: "Overview",           slug: "costs-overview",       group: "Costs" },
+      { label: "Providers",          slug: "costs-providers" },
+      { label: "LLM Costs",          slug: "costs-llm" },
+      { label: "Cost per User",      slug: "costs-per-user" },
+      { label: "Budgets",            slug: "costs-budgets" },
+      { label: "Optimization",       slug: "costs-optimization" },
+      { label: "Invoices",           slug: "costs-invoices" },
 
       { label: "App Status",         slug: "health-status",        group: "App Health" },
       { label: "Uptime",             slug: "health-uptime" },
       { label: "Errors",             slug: "health-errors" },
       { label: "Performance",        slug: "health-performance" },
       { label: "Incidents",          slug: "health-incidents" },
-    ],
-  },
-  {
-    slug: "finance",
-    label: "Finance",
-    icon: Wallet,
-    color: "text-emerald-500/55",
-    subItems: [
-      { label: "Revenue", slug: "revenue", group: "Revenue" },
-      { label: "Transactions", slug: "transactions" },
-      { label: "MRR Movement", slug: "mrr-movement" },
-      { label: "Subscriptions", slug: "subscriptions" },
-      { label: "Customers", slug: "customers" },
-      { label: "Cohorts", slug: "cohorts" },
-      { label: "Forecasting", slug: "forecasting" },
-      { label: "Investor Metrics", slug: "investor-metrics" },
-      { label: "Reports", slug: "reports" },
-      { label: "Overview", slug: "costs-overview", group: "Costs" },
-      { label: "Providers", slug: "costs-providers" },
-      { label: "LLM Costs", slug: "costs-llm" },
-      { label: "Cost per User", slug: "costs-per-user" },
-      { label: "Budgets", slug: "costs-budgets" },
-      { label: "Optimization", slug: "costs-optimization" },
-      { label: "Invoices", slug: "costs-invoices" },
     ],
   },
   {

@@ -32,6 +32,9 @@ enable_confirmations = false
 secure_password_change = false
 
 # All Edge Functions deployed with --no-verify-jwt per user request.
+[functions.public-feature-flags]
+verify_jwt = false
+
 [functions.connect-github]
 verify_jwt = false
 

@@ -16,6 +16,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { getConnectorCredential } from "../_shared/credentials.ts";
+import { applyChanges, listUserRepos, type FileChange } from "../_shared/github.ts";
 import {
   refundCharge,
   refundInvoice,
@@ -60,6 +61,8 @@ const REGISTRY: Record<string, ActionMeta> = {
   "user.export_data": { risk: "low", requires_confirm: false, target_type: "auth_user" },
   "feature.grant": { risk: "low", requires_confirm: false, target_type: "feature_flag" },
   "feature.revoke": { risk: "low", requires_confirm: false, target_type: "feature_flag" },
+  // Code instrumentation (agent writes to a connected GitHub repo)
+  "code.apply_changes": { risk: "high", requires_confirm: true, target_type: "github_repo" },
   // Ops / maintenance
   "ops.resync_billing": { risk: "low", requires_confirm: false, target_type: "project" },
   "ops.recalc_metrics": { risk: "low", requires_confirm: false, target_type: "project" },
@@ -328,6 +331,57 @@ async function runAction(
     const out = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(out?.message ?? `Twilio HTTP ${res.status}`);
     return { result: { sid: out?.sid }, target_id: to };
+  }
+
+  // --- Code instrumentation: write changes to a connected GitHub repo ---
+  if (type === "code.apply_changes") {
+    const { connector, payload: cred } = await getConnectorCredential(workspaceId, projectId, "github");
+    // github connector stores the raw PAT (legacy) → { token }, or { token: "..." }.
+    const token = cred.token ?? cred.secret_key ?? cred.pat;
+    if (!token) throw new Error("GitHub token missing on the github connector");
+    if (connector.permissions !== "write_enabled") {
+      throw new Error(
+        "GitHub connector is read-only. Enable write access in Integrations before the agent can modify the repo.",
+      );
+    }
+
+    let fullName = String(payload.full_name ?? "").trim();
+    // Tolerate a short repo name on existing proposals: resolve "repo" → "owner/repo"
+    // against the account the PAT belongs to.
+    if (fullName && !fullName.includes("/")) {
+      const short = fullName.toLowerCase();
+      const repos = await listUserRepos(token).catch(() => []);
+      const match =
+        repos.find((r) => r.name.toLowerCase() === short) ??
+        repos.find((r) => r.full_name.toLowerCase().endsWith(`/${short}`));
+      if (match) fullName = match.full_name;
+    }
+    if (!fullName.includes("/")) {
+      throw new Error(
+        `payload.full_name must be "owner/repo" (got "${fullName || "empty"}"). ` +
+          "Re-ask the agent to propose the change, or scan the repo first.",
+      );
+    }
+
+    const changes = Array.isArray(payload.changes) ? (payload.changes as FileChange[]) : [];
+    if (changes.length === 0) throw new Error("payload.changes must be a non-empty array of { path, content }");
+    for (const c of changes) {
+      if (!c || typeof c.path !== "string" || typeof c.content !== "string") {
+        throw new Error("each change must be { path: string, content: string }");
+      }
+    }
+
+    const mode = payload.mode === "direct" ? "direct" : "pull_request";
+    const result = await applyChanges(token, fullName, {
+      changes,
+      commitMessage: String(payload.commit_message ?? "chore: automated changes by FounderOS agent"),
+      mode,
+      baseBranch: payload.base_branch ? String(payload.base_branch) : undefined,
+      headBranch: payload.head_branch ? String(payload.head_branch) : undefined,
+      prTitle: payload.pr_title ? String(payload.pr_title) : undefined,
+      prBody: payload.pr_body ? String(payload.pr_body) : undefined,
+    });
+    return { result, target_id: result.pull_request?.html_url ?? fullName };
   }
 
   throw new Error(`Unknown action_type ${type}`);

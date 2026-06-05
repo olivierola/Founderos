@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Trash2, Plug } from "lucide-react";
+import { Loader2, Trash2, Plug, ShieldCheck, ShieldAlert } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,33 @@ export function ConnectedPage() {
       return (data ?? []) as ConnectorRow[];
     },
   });
+
+  const [togglingWrite, setTogglingWrite] = useState<string | null>(null);
+
+  // Providers for which the agent can perform writes (currently GitHub code instrumentation).
+  const WRITABLE_PROVIDERS = new Set(["github"]);
+
+  async function toggleWriteAccess(c: ConnectorRow) {
+    if (!projectId) return;
+    const enabling = c.permissions !== "write_enabled";
+    if (
+      enabling &&
+      !confirm(
+        "Enable WRITE access for the agent on this repository?\n\nThe agent will be able to PROPOSE code changes (events, feature flags, SDK). Nothing is written without an owner/admin approving each change.",
+      )
+    )
+      return;
+    setTogglingWrite(c.id);
+    try {
+      await supabase
+        .from("connectors")
+        .update({ permissions: enabling ? "write_enabled" : "read_only" })
+        .eq("id", c.id);
+      await queryClient.invalidateQueries({ queryKey: ["connectors", projectId] });
+    } finally {
+      setTogglingWrite(null);
+    }
+  }
 
   async function handleDisconnect(provider: string) {
     if (!workspaceId || !projectId) return;
@@ -92,11 +119,31 @@ export function ConnectedPage() {
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{def?.name ?? c.provider}</span>
                       <Badge variant={c.status === "connected" ? "success" : "warning"}>{c.status}</Badge>
-                      <Badge variant="outline">{c.permissions}</Badge>
+                      <Badge variant={c.permissions === "write_enabled" ? "warning" : "outline"}>
+                        {c.permissions === "write_enabled" ? "write enabled" : c.permissions}
+                      </Badge>
                     </div>
+                    {WRITABLE_PROVIDERS.has(c.provider) && (
+                      <button
+                        type="button"
+                        onClick={() => toggleWriteAccess(c)}
+                        disabled={togglingWrite === c.id}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+                        title="Allow the agent to propose code changes to this repo (each change still needs approval)"
+                      >
+                        {togglingWrite === c.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : c.permissions === "write_enabled" ? (
+                          <ShieldCheck className="h-3.5 w-3.5 text-amber-400" />
+                        ) : (
+                          <ShieldAlert className="h-3.5 w-3.5" />
+                        )}
+                        {c.permissions === "write_enabled" ? "Agent write: ON — click to disable" : "Enable agent write access"}
+                      </button>
+                    )}
                     {Object.entries(c.metadata ?? {}).length > 0 && (
                       <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
                         {Object.entries(c.metadata).slice(0, 4).map(([k, v]) => (

@@ -76,29 +76,84 @@ export function ApprovalsPage() {
         <div className="space-y-2">
           {pending.map((a) => (
             <Card key={a.id}>
-              <CardContent className="flex flex-wrap items-center gap-3 p-3">
-                <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm">{a.action_type}</span>
-                    <Badge variant={["high", "critical"].includes(a.risk_level) ? "destructive" : "warning"}>{a.risk_level}</Badge>
-                    {a.target_id && <span className="font-mono text-xs text-muted-foreground">{a.target_id}</span>}
+              <CardContent className="p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm">{a.action_type}</span>
+                      <Badge variant={["high", "critical"].includes(a.risk_level) ? "destructive" : "warning"}>{a.risk_level}</Badge>
+                      {a.target_id && <span className="truncate font-mono text-xs text-muted-foreground">{a.target_id}</span>}
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {new Date(a.created_at).toLocaleString()}
+                    </div>
                   </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    {new Date(a.created_at).toLocaleString()}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}>
+                      <X className="h-4 w-4" /> Reject
+                    </Button>
+                    <Button size="sm" disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}>
+                      {busyId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve & run
+                    </Button>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}>
-                    <X className="h-4 w-4" /> Reject
-                  </Button>
-                  <Button size="sm" disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}>
-                    {busyId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve & run
-                  </Button>
-                </div>
+                {a.action_type === "code.apply_changes" && <CodeChangePreview payload={a.payload} />}
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Preview of an agent-proposed code change inside the approvals queue.
+function CodeChangePreview({ payload }: { payload: Record<string, unknown> }) {
+  const [open, setOpen] = useState(false);
+  const changes = Array.isArray(payload.changes)
+    ? (payload.changes as { path: string; content: string }[])
+    : [];
+  const mode = String(payload.mode ?? "pull_request");
+  const fullName = String(payload.full_name ?? "");
+  const commitMessage = String(payload.commit_message ?? "");
+  if (changes.length === 0) return null;
+
+  return (
+    <div className="mt-3 rounded-md border border-border bg-secondary/30 p-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge variant={mode === "direct" ? "destructive" : "info"}>
+          {mode === "direct" ? "direct commit" : "pull request"}
+        </Badge>
+        <span className="font-mono text-muted-foreground">{fullName}</span>
+        <span className="text-muted-foreground">·</span>
+        <span className="text-muted-foreground">{changes.length} file(s)</span>
+        {commitMessage && (
+          <>
+            <span className="text-muted-foreground">·</span>
+            <span className="truncate text-muted-foreground">{commitMessage}</span>
+          </>
+        )}
+        <button onClick={() => setOpen((o) => !o)} className="ml-auto text-primary hover:underline">
+          {open ? "Hide diff" : "Review files"}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {changes.map((c, i) => (
+            <div key={i}>
+              <div className="mb-1 font-mono text-xs text-foreground/80">{c.path}</div>
+              <pre className="max-h-64 overflow-auto rounded border border-border bg-background p-2 font-mono text-[11px] leading-relaxed">
+                {c.content.slice(0, 4000)}
+                {c.content.length > 4000 ? "\n… (truncated)" : ""}
+              </pre>
+            </div>
+          ))}
+          {mode === "direct" && (
+            <p className="text-xs text-destructive">
+              ⚠ This is a DIRECT commit to the base branch — it does not go through a pull request.
+            </p>
+          )}
         </div>
       )}
     </div>

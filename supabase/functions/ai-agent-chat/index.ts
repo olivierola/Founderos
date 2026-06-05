@@ -20,20 +20,51 @@ Règles:
 - Quand l'utilisateur demande un livrable (document, rapport, tableau, JSON, code), utilise l'outil de création correspondant (create_document, create_table, create_json, create_code). Le livrable s'affiche comme un artefact téléchargeable — ne recopie pas son contenu intégral dans la réponse, résume-le brièvement.
 - Ne réalise jamais d'action irréversible sans validation explicite de l'utilisateur.
 - Réponds en markdown concis et actionnable, dans la langue de l'utilisateur.
-- Respecte strictement ton périmètre d'accès décrit ci-dessous.`;
+- Respecte strictement ton périmètre d'accès décrit ci-dessous.
+
+INSTRUMENTATION DU CODE & ANALYTICS AVANCÉE:
+Tu peux instrumenter le dépôt GitHub connecté du projet : poser du tracking d'events, du feature flagging, installer les SDK FounderOS (analytics & RAG), et définir une analytics avancée à partir d'une description en langage naturel.
+- Tu ne MODIFIES JAMAIS le dépôt directement. Chaque outil d'écriture (propose_code_changes, instrument_event, add_feature_flag, install_sdk) crée une proposition EN ATTENTE qu'un owner/admin doit approuver ; l'application réelle (Pull Request par défaut, ou commit direct si demandé) se fait après approbation. Annonce toujours clairement qu'une approbation humaine est requise.
+
+FLUX OBLIGATOIRE POUR INSTALLER LE SDK / BALISER (NE JAMAIS SAUTER D'ÉTAPE):
+  1) ANALYSER d'abord: appelle analyze_repo_structure. Il renvoie la stack, les services, les pages/routes/éléments, si le SDK est installé, ET surtout: defined_events (la taxonomie d'events que l'utilisateur a saisie dans l'UI FounderOS) + defined_feature_flags (les flags définis dans l'UI). (Tu peux aussi appeler list_event_definitions / list_feature_flags séparément.) N'installe/ne balise JAMAIS à l'aveugle.
+  2) RÉUTILISER L'EXISTANT — RÈGLE CLÉ: tu dois prioritairement instrumenter les defined_events (avec le event_name EXACT et les propriétés déclarées) et gater le code derrière les defined_feature_flags (flag_key EXACT). N'invente un nouvel event/flag (define_custom_event / add_feature_flag) que si rien d'existant ne convient, et explique pourquoi.
+  3) LIRE les fichiers cibles: pour CHAQUE page/call-site à instrumenter (entrée d'app, login/auth, signup, checkout/paiement, onboarding, actions métier, et chaque page concernée par un flag), lis-le avec read_repo_file (list_repo_files pour localiser). Comprends le code réel avant de le modifier. Tu peux toucher le code en PROFONDEUR si nécessaire (créer des hooks/wrappers, modifier le routing, envelopper des composants), tant que chaque "change" contient le CONTENU COMPLET du fichier.
+  4) SDK + IDENTIFY + FLAGS: si le SDK n'est pas présent, propose install_sdk (contenu réel injecté par le serveur). L'init navigateur active déjà l'auto-capture (page_view + clics [data-fos-event]) et charge les flags (analytics.loadFlags()). Ajoute analytics.identify(email) après le login, puis re-appelle analytics.loadFlags() pour l'état par utilisateur.
+  5) BALISER PAGE PAR PAGE: pour chaque page pertinente, pose les analytics.track('event_defini', { properties }) (logique métier: succès paiement, fin d'onboarding…) et/ou tague les CTA en JSX data-fos-event="event_defini". Pour le FEATURE FLAGGING page par page: enveloppe/branche le rendu avec if (analytics.isFeatureEnabled("flag_key")) { … } aux bons endroits, en utilisant les flag_key définis. Utilise instrument_event (events) et add_feature_flag (gating) — ou propose_code_changes pour des modifications de fond.
+  6) PROPOSER LA/LES PR: regroupe les changements et crée la proposition (PR par défaut). Résume ce que tu as balisé/flaggé, page par page, et quels events/flags définis tu as utilisés.
+- Avant de modifier un fichier existant, LIS-LE avec read_repo_file (et localise les bons fichiers avec list_repo_files). Chaque "change" doit contenir le CONTENU COMPLET du nouveau fichier, pas un diff.
+- Pour un nouvel event analytics : d'abord define_custom_event (taxonomie + schéma de propriétés + config avancée), puis instrument_event pour poser les appels fos.track(...) au bon endroit. Pour un parcours : define_journey, puis instrument chaque étape.
+- Le tracking utilise le SDK FounderOS (fos.track('event_name', { properties })). Propose d'abord install_sdk si le SDK n'est pas encore présent.
+- SDK — RÈGLE STRICTE: n'INVENTE JAMAIS le contenu d'un SDK, ni une commande "git clone github.com/founderos/sdk", ni une API "founderos.configure(api_key, api_secret)". Ces choses N'EXISTENT PAS. Le vrai SDK est servi par l'outil install_sdk (le contenu réel est injecté côté serveur) : tu choisis seulement sdk ('analytics'|'rag'), runtime ('browser'|'server'), lib_dir et l'expression d'environnement de la clé. L'auth réelle = UNE clé 'fos_' (serveur) OU anon key + workspaceId (navigateur). En JS: import { createClient } from "./founderos"; const analytics = createClient({ host, projectId, apiKey|anonKey }). Pour ajouter des appels track au bon endroit, passe-les dans extra_changes (contenu complet du fichier).
+- Si le connecteur GitHub est en lecture seule, explique qu'un admin doit activer l'accès en écriture dans Integrations avant que la proposition puisse être appliquée.`;
 
 // Lightweight, non-sensitive identity context only. Everything sensitive
 // (metrics, scan, finance, alerts) is fetched on demand by role-gated tools.
 async function buildContext(projectId: string) {
   const admin = createServiceClient();
-  const [{ data: project }, { data: connectors }] = await Promise.all([
+  const [{ data: project }, { data: connectors }, { data: repos }] = await Promise.all([
     admin.from("projects").select("id, name, slug, detected_stack").eq("id", projectId).maybeSingle(),
-    admin.from("connectors").select("provider, status").eq("project_id", projectId),
+    admin.from("connectors").select("provider, status, permissions").eq("project_id", projectId),
+    admin
+      .from("repositories")
+      .select("full_name, default_branch, updated_at")
+      .eq("project_id", projectId)
+      .eq("provider", "github")
+      .order("updated_at", { ascending: false })
+      .limit(5),
   ]);
 
+  const github = (connectors ?? []).find((c) => c.provider === "github");
   return {
     project: project ? { name: project.name, slug: project.slug, stack: (project as any).detected_stack ?? null } : null,
     connectors: (connectors ?? []).map((c) => ({ provider: c.provider, status: c.status })),
+    // Repo context for code instrumentation: what the agent can read/write.
+    code: {
+      github_connected: !!github,
+      github_writable: github?.permissions === "write_enabled",
+      repositories: (repos ?? []).map((r) => ({ full_name: r.full_name, default_branch: r.default_branch })),
+    },
   };
 }
 
@@ -119,7 +150,7 @@ Deno.serve(async (req) => {
 ${accessScopeSummary(userRole)}
 
 --- CONTEXTE PROJET (non sensible) ---
-${JSON.stringify({ project: context.project, connectors: context.connectors }, null, 2)}`;
+${JSON.stringify({ project: context.project, connectors: context.connectors, code: context.code }, null, 2)}`;
 
     // Assemble the message list from history.
     const chatMessages: ChatMessage[] = [

@@ -10,6 +10,9 @@ import {
   Star,
   Send,
   Tag,
+  Users,
+  Zap,
+  Sparkles,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
@@ -32,6 +35,7 @@ import { cn } from "@/lib/utils";
 import {
   CATEGORY_META,
   useEventDefinitions,
+  useGrowth,
   type BreakdownResult,
   type EventCategory,
   type EventDefinition,
@@ -79,6 +83,9 @@ export function EventsPage() {
         kind: "summary",
       }),
   });
+
+  // High-value engagement KPIs for the headline (detail lives in the Growth tab).
+  const growth = useGrowth();
 
   const breakdown = useQuery({
     queryKey: ["analytics_breakdown", projectId],
@@ -158,6 +165,7 @@ export function EventsPage() {
   }
 
   const s = summary.data;
+  const g = growth.data;
 
   return (
     <div>
@@ -178,10 +186,31 @@ export function EventsPage() {
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Events tracked" value={s ? s.total_events.toLocaleString() : "—"} icon={Activity} />
-        <MetricCard label="Distinct events" value={s ? String(s.distinct_events) : "—"} icon={Tag} />
-        <MetricCard label="Active users (7d)" value={s ? s.active_7d.toLocaleString() : "—"} hint={s ? `${s.active_30d} in 30d` : ""} />
-        <MetricCard label="Active today" value={s ? s.active_1d.toLocaleString() : "—"} />
+        <MetricCard
+          label="Active users (7d)"
+          value={s ? s.active_7d.toLocaleString() : "—"}
+          hint={s ? `${s.active_30d} in 30d` : ""}
+          icon={Users}
+        />
+        <MetricCard
+          label="Stickiness (DAU/MAU)"
+          value={g ? `${g.stickiness_dau_mau.toFixed(0)}%` : "—"}
+          hint="Daily/monthly engagement"
+          icon={Zap}
+          trend={g ? (g.stickiness_dau_mau >= 20 ? "up" : g.stickiness_dau_mau >= 10 ? "flat" : "down") : "flat"}
+        />
+        <MetricCard
+          label="Activation rate"
+          value={g && g.activation.cohort > 0 ? `${g.activation.rate.toFixed(0)}%` : "—"}
+          hint={g && g.activation.cohort > 0 ? `${g.activation.activated}/${g.activation.cohort} new users` : "Mark a key event"}
+          icon={Sparkles}
+        />
+        <MetricCard
+          label="Power users"
+          value={g ? `${g.power_user_rate.toFixed(0)}%` : "—"}
+          hint={g ? `${g.power_users} users · ${g.power_threshold}+ days/28d` : ""}
+          icon={Star}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
