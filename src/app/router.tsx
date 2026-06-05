@@ -220,13 +220,14 @@ const PAGES: Record<string, PageEl> = {
   "agent/internal-agents": <InternalAgentsListPage />,
   "agent/onboarding": <RagOnboardingPage />,
 
-  "ops/overview": <OpsOverviewPage />,
-  "ops/servers": <OpsServersPage />,
-  "ops/deployments": <DeploymentsPage />,
-  "ops/workflows": <OpsWorkflowsPage />,
-  "ops/checks": <OpsChecksPage />,
-  "ops/jobs": <OpsJobsPage />,
-  "ops/settings": <OpsSettingsPage />,
+  // Ops group (under the merged DevOps module)
+  "devops/ops-overview": <OpsOverviewPage />,
+  "devops/servers": <OpsServersPage />,
+  "devops/deployments": <DeploymentsPage />,
+  "devops/workflows": <OpsWorkflowsPage />,
+  "devops/checks": <OpsChecksPage />,
+  "devops/jobs": <OpsJobsPage />,
+  "devops/settings": <OpsSettingsPage />,
 
   "marketing/overview": <MarketingOverviewPage />,
   "marketing/content-studio": <ContentStudioPage />,
@@ -236,23 +237,24 @@ const PAGES: Record<string, PageEl> = {
   "marketing/analytics": <MarketingAnalyticsPage />,
   "marketing/advisor": <MarketingAdvisorPage />,
 
-  "code/overview": <CodeOverviewPage />,
-  "code/repositories": <RepositoriesPage />,
-  "code/scan-results": <ScanResultsPage />,
-  "code/compare-scans": <ScanComparePage />,
-  "code/architecture-map": <ArchitectureMapPage />,
-  "code/dependencies": <DependenciesPage />,
-  "code/api-usage": <ApiUsagePage />,
-  "code/database-schema": <DatabaseSchemaPage />,
-  "code/tech-debt": <TechDebtPage />,
+  // Code group (under the merged DevOps module)
+  "devops/overview": <CodeOverviewPage />,
+  "devops/repositories": <RepositoriesPage />,
+  "devops/scan-results": <ScanResultsPage />,
+  "devops/compare-scans": <ScanComparePage />,
+  "devops/architecture-map": <ArchitectureMapPage />,
+  "devops/dependencies": <DependenciesPage />,
+  "devops/api-usage": <ApiUsagePage />,
+  "devops/database-schema": <DatabaseSchemaPage />,
+  "devops/tech-debt": <TechDebtPage />,
 
-  // Security (merged under Code module — same components, new slugs)
-  "code/security-overview": <SecurityFindingsPage filter="all" />,
-  "code/security-cve-alerts": <CveAlertsPage />,
-  "code/security-secrets": <SecretsDetectionPage />,
-  "code/security-risk-score": <RiskScorePage />,
-  "code/security-license-audit": <LicenseAuditPage />,
-  "code/security-compliance": <ComplianceWatchPage />,
+  // Security group
+  "devops/security-overview": <SecurityFindingsPage filter="all" />,
+  "devops/security-cve-alerts": <CveAlertsPage />,
+  "devops/security-secrets": <SecretsDetectionPage />,
+  "devops/security-risk-score": <RiskScorePage />,
+  "devops/security-license-audit": <LicenseAuditPage />,
+  "devops/security-compliance": <ComplianceWatchPage />,
 
   // Health sub-tabs under SaaS Analytics
   "saas-analytics/health-status": <HealthStatusPage />,
@@ -302,6 +304,23 @@ const PAGES: Record<string, PageEl> = {
 function LegacyFinanceRedirect() {
   const { sub } = useParams();
   return <Navigate to={`../../saas-analytics/${sub}`} replace />;
+}
+
+/** Code + Ops were merged into the DevOps module. Old /code/:sub and /ops/:sub
+ *  deep links map to /devops/:sub, except the Ops overview which was renamed. */
+function LegacyCodeRedirect() {
+  const { sub } = useParams();
+  return <Navigate to={`../../devops/${sub}`} replace />;
+}
+function LegacyOpsRedirect() {
+  const { sub } = useParams();
+  const target = sub === "overview" ? "ops-overview" : sub;
+  return <Navigate to={`../../devops/${target}`} replace />;
+}
+/** Ops detail pages: /ops/<kind>/:id → /devops/<kind>/:id (three segments up). */
+function LegacyOpsDetailRedirect({ kind }: { kind: "servers" | "workflows" | "infra" }) {
+  const { id } = useParams();
+  return <Navigate to={`../../../devops/${kind}/${id}`} replace />;
 }
 
 function buildModuleRoutes() {
@@ -385,7 +404,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: "ops/servers/:serverId",
+        path: "devops/servers/:serverId",
         element: (
           <ErrorBoundary>
             <OpsServerDetailPage />
@@ -393,7 +412,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: "ops/workflows/:bundleId",
+        path: "devops/workflows/:bundleId",
         element: (
           <ErrorBoundary>
             <OpsBundleDetailPage />
@@ -401,7 +420,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: "ops/infra/:infraId",
+        path: "devops/infra/:infraId",
         element: (
           <ErrorBoundary>
             <OpsInfraProjectDetailPage />
@@ -412,6 +431,14 @@ export const router = createBrowserRouter([
       // /finance/* deep links (incl. /finance/costs-*) map 1:1 to the new slug.
       { path: "finance", element: <Navigate to="../saas-analytics/revenue" replace /> },
       { path: "finance/:sub", element: <LegacyFinanceRedirect /> },
+      // Legacy redirects: Code + Ops were merged into DevOps.
+      { path: "code", element: <Navigate to="../devops/overview" replace /> },
+      { path: "code/:sub", element: <LegacyCodeRedirect /> },
+      { path: "ops", element: <Navigate to="../devops/ops-overview" replace /> },
+      { path: "ops/servers/:id", element: <LegacyOpsDetailRedirect kind="servers" /> },
+      { path: "ops/workflows/:id", element: <LegacyOpsDetailRedirect kind="workflows" /> },
+      { path: "ops/infra/:id", element: <LegacyOpsDetailRedirect kind="infra" /> },
+      { path: "ops/:sub", element: <LegacyOpsRedirect /> },
       ...buildModuleRoutes(),
     ],
   },

@@ -23,6 +23,23 @@ import {
   PiggyBank,
   Cpu,
   FileText,
+  LayoutDashboard,
+  GitBranch,
+  ScanLine,
+  GitCompare,
+  Network,
+  Package,
+  Plug,
+  Database,
+  Bug,
+  ShieldAlert,
+  KeyRound,
+  ScrollText,
+  Workflow,
+  CheckSquare,
+  ListChecks,
+  Settings as SettingsIcon,
+  Rocket,
   type LucideIcon,
 } from "lucide-react";
 import { findModule, groupOfSlug, itemsInGroup } from "@/lib/navigation";
@@ -72,6 +89,32 @@ const TAB_ICONS: Record<string, LucideIcon> = {
   "health-errors": AlertTriangle,
   "health-performance": Gauge,
   "health-incidents": AlertTriangle,
+
+  // ── DevOps: Code ──
+  overview: LayoutDashboard,
+  repositories: GitBranch,
+  "scan-results": ScanLine,
+  "compare-scans": GitCompare,
+  "architecture-map": Network,
+  dependencies: Package,
+  "api-usage": Plug,
+  "database-schema": Database,
+  "tech-debt": Bug,
+  // ── DevOps: Security ──
+  "security-overview": ShieldAlert,
+  "security-risk-score": Gauge,
+  "security-cve-alerts": AlertTriangle,
+  "security-secrets": KeyRound,
+  "security-license-audit": ScrollText,
+  "security-compliance": FileText,
+  // ── DevOps: Ops ──
+  "ops-overview": LayoutDashboard,
+  servers: Server,
+  deployments: Rocket,
+  workflows: Workflow,
+  checks: CheckSquare,
+  jobs: ListChecks,
+  settings: SettingsIcon,
 };
 
 /**

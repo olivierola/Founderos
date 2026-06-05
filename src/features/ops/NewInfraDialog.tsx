@@ -115,7 +115,7 @@ export function NewInfraDialog({ open, onOpenChange }: Props) {
       queryClient.invalidateQueries({ queryKey: ["ops_infra_projects", projectId] });
       reset();
       onOpenChange(false);
-      navigate(url(`/ops/infra/${infraId}`));
+      navigate(url(`/devops/infra/${infraId}`));
     } catch (e: any) {
       setPlanError(e?.message ?? "Generation failed");
       setStep("plan");

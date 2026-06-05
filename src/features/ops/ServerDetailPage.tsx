@@ -52,7 +52,7 @@ export function OpsServerDetailPage() {
 
   return (
     <div className="space-y-4">
-      <Link to={url("/ops/servers")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+      <Link to={url("/devops/servers")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-3 w-3" /> Back to servers
       </Link>
 

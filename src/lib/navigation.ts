@@ -7,7 +7,6 @@ import {
   MessageSquareText,
   Plug2,
   Cog,
-  Wrench,
   BarChart3,
   type LucideIcon,
 } from "lucide-react";
@@ -162,11 +161,14 @@ export const MODULES: ModuleNavItem[] = [
     ],
   },
   {
-    slug: "code",
-    label: "Code",
+    slug: "devops",
+    label: "DevOps",
     icon: Braces,
     color: "text-sky-500/55",
+    // Code, Security and Ops are sidebar sections; their pages are tabs.
+    groupsAsTabs: true,
     subItems: [
+      // ── Code ──
       { label: "Overview", slug: "overview", group: "Code" },
       { label: "Repositories", slug: "repositories" },
       { label: "Scan Results", slug: "scan-results" },
@@ -176,21 +178,17 @@ export const MODULES: ModuleNavItem[] = [
       { label: "API Usage", slug: "api-usage" },
       { label: "Database Schema", slug: "database-schema" },
       { label: "Tech Debt", slug: "tech-debt" },
+
+      // ── Security ──
       { label: "Overview", slug: "security-overview", group: "Security" },
       { label: "Risk Score", slug: "security-risk-score" },
       { label: "CVE Alerts", slug: "security-cve-alerts" },
       { label: "Secrets Detection", slug: "security-secrets" },
       { label: "License Audit", slug: "security-license-audit" },
       { label: "Compliance Watch", slug: "security-compliance" },
-    ],
-  },
-  {
-    slug: "ops",
-    label: "Ops",
-    icon: Wrench,
-    color: "text-emerald-500/70",
-    subItems: [
-      { label: "Overview", slug: "overview" },
+
+      // ── Ops (merged from the former Ops module) ──
+      { label: "Overview", slug: "ops-overview", group: "Ops" },
       { label: "Servers", slug: "servers" },
       { label: "Deployments", slug: "deployments" },
       { label: "Workflows", slug: "workflows" },

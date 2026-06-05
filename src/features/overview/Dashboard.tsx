@@ -106,7 +106,7 @@ export function OverviewDashboard() {
         title="Dashboard"
         description="Aggregated health, revenue, costs and alerts for this project."
         actions={
-          <Button size="sm" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/code/repositories`)}>
+          <Button size="sm" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/devops/repositories`)}>
             <ScanLine className="h-4 w-4" /> Run scan
           </Button>
         }
@@ -154,7 +154,7 @@ export function OverviewDashboard() {
                 title="No analysis yet"
                 description="Run a code scan to get AI recommendations for this project."
                 action={
-                  <Button size="sm" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/code/repositories`)}>
+                  <Button size="sm" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/devops/repositories`)}>
                     <ScanLine className="h-4 w-4" /> Run scan
                   </Button>
                 }

@@ -97,7 +97,7 @@ export function AppShell() {
  *  default px-* / py-* and max-w-6xl wrapper. Add new routes here when they
  *  embed a large interactive canvas. */
 function isFullbleedRoute(pathname: string): boolean {
-  // Match /app/<ws>/<proj>/ops/infra/<id> and /app/<ws>/<proj>/ops/workflows/<id>
+  // Match /app/<ws>/<proj>/devops/infra/<id> and .../devops/workflows/<id>
   // — both render the architecture canvas inside the page.
-  return /\/app\/[^/]+\/[^/]+\/ops\/(infra|workflows)\/[^/]+/.test(pathname);
+  return /\/app\/[^/]+\/[^/]+\/devops\/(infra|workflows)\/[^/]+/.test(pathname);
 }

@@ -97,7 +97,7 @@ export function OpsBundleDetailPage() {
   if (!files || files.length === 0) {
     return (
       <div className="space-y-4">
-        <Link to={url("/ops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link to={url("/devops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Back to workflows
         </Link>
         <EmptyState title="Bundle not found" description="It may have been deleted." />
@@ -150,7 +150,7 @@ export function OpsBundleDetailPage() {
         input: { bundle_id: bundleId },
       });
       alert("Job created and awaiting approval. Review it in Jobs & Audit.");
-      navigate(url("/ops/jobs"));
+      navigate(url("/devops/jobs"));
     } catch (e: any) {
       alert("Could not enqueue: " + (e?.message ?? "edge not deployed"));
     } finally {
@@ -163,7 +163,7 @@ export function OpsBundleDetailPage() {
   const archHeaderActions = (
     <div className="flex items-center gap-2">
       <Link
-        to={url("/ops/workflows")}
+        to={url("/devops/workflows")}
         className="inline-flex items-center gap-1 rounded-lg border border-border bg-card/90 px-2 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
       >
         <ArrowLeft className="h-3 w-3" /> Workflows
@@ -189,7 +189,7 @@ export function OpsBundleDetailPage() {
           canvas is fullbleed — header floats inside it. */}
       {view === "files" && (
         <div className="space-y-3 border-b border-border pb-3">
-          <Link to={url("/ops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Link to={url("/devops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-3 w-3" /> Back to workflows
           </Link>
           <PageHeader

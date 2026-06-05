@@ -175,7 +175,7 @@ export function OpsWorkflowsPage() {
               </div>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {infraProjects.map((p) => (
-                  <Link key={p.id} to={url(`/ops/infra/${p.id}`)}>
+                  <Link key={p.id} to={url(`/devops/infra/${p.id}`)}>
                     <Card className="cursor-pointer transition-colors hover:border-foreground/30">
                       <CardContent className="space-y-2 p-4">
                         <div className="flex items-start justify-between">
@@ -214,7 +214,7 @@ export function OpsWorkflowsPage() {
               </div>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {bundles.map((b) => (
-                  <Link key={b.bundle_id} to={url(`/ops/workflows/${b.bundle_id}`)}>
+                  <Link key={b.bundle_id} to={url(`/devops/workflows/${b.bundle_id}`)}>
                     <Card className="cursor-pointer transition-colors hover:border-foreground/30">
                       <CardContent className="space-y-2 p-4">
                         <div className="flex items-start justify-between">

@@ -304,7 +304,7 @@ export function OpsInfraProjectDetailPage() {
         input: { bundle_id: activeLayer.bundle_id, layer: activeLayer.layer_key },
       });
       alert("Job created and awaiting approval. Review it in Jobs & Audit.");
-      navigate(url("/ops/jobs"));
+      navigate(url("/devops/jobs"));
     } catch (e: any) {
       alert("Could not enqueue: " + (e?.message ?? "edge not deployed"));
     } finally {
@@ -322,7 +322,7 @@ export function OpsInfraProjectDetailPage() {
   if (!infra) {
     return (
       <div className="space-y-4">
-        <Link to={url("/ops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link to={url("/devops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Back to workflows
         </Link>
         <EmptyState title="Infra project not found" description="It may have been deleted." />
@@ -336,7 +336,7 @@ export function OpsInfraProjectDetailPage() {
           right pane is fullbleed; navigation lives in the floating canvas bar. */}
       {view === "files" && (
         <div className="space-y-3 border-b border-border pb-3">
-          <Link to={url("/ops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Link to={url("/devops/workflows")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-3 w-3" /> Back to workflows
           </Link>
           <PageHeader

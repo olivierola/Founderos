@@ -108,7 +108,7 @@ export function OpsOverviewPage() {
         title="Ops Overview"
         description="Bird's-eye view of your infrastructure: servers, jobs, checks, and approvals waiting."
         actions={
-          <Link to={url("/ops/servers")}>
+          <Link to={url("/devops/servers")}>
             <Button size="sm" className="gap-1.5">
               <Server className="h-4 w-4" /> Manage servers
             </Button>
@@ -122,7 +122,7 @@ export function OpsOverviewPage() {
           label="Servers online"
           value={loadingServers ? "—" : `${onlineCount} / ${servers?.length ?? 0}`}
           hint={servers?.length ? `${servers.length} registered` : "No server yet"}
-          to={url("/ops/servers")}
+          to={url("/devops/servers")}
         />
         <StatCard
           icon={ShieldCheck}
@@ -136,7 +136,7 @@ export function OpsOverviewPage() {
           label="Jobs (7d)"
           value={jobStats?.total?.toString() ?? "—"}
           hint={`${jobStats?.succeeded ?? 0} ok · ${jobStats?.failed ?? 0} failed`}
-          to={url("/ops/jobs")}
+          to={url("/devops/jobs")}
         />
         <StatCard
           icon={Activity}
@@ -144,7 +144,7 @@ export function OpsOverviewPage() {
           value={`${checkStats?.passed ?? 0} / ${(checkStats?.passed ?? 0) + (checkStats?.failed ?? 0)}`}
           hint={checkStats?.failed ? `${checkStats.failed} failing` : "All passing"}
           tone={checkStats?.failed ? "warn" : "good"}
-          to={url("/ops/checks")}
+          to={url("/devops/checks")}
         />
       </div>
 
@@ -158,7 +158,7 @@ export function OpsOverviewPage() {
                 <div className="text-xs text-muted-foreground">Approvals pending, queued, or running.</div>
               </div>
             </div>
-            <Link to={url("/ops/jobs")}>
+            <Link to={url("/devops/jobs")}>
               <Button size="sm" variant="outline" className="gap-1">
                 Review <ArrowRight className="h-3 w-3" />
               </Button>
@@ -219,7 +219,7 @@ export function OpsOverviewPage() {
           <CardContent className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">Servers</h3>
-              <Link to={url("/ops/servers")} className="text-xs text-muted-foreground hover:text-foreground">
+              <Link to={url("/devops/servers")} className="text-xs text-muted-foreground hover:text-foreground">
                 See all →
               </Link>
             </div>
@@ -232,7 +232,7 @@ export function OpsOverviewPage() {
             ) : (
               <div className="space-y-2">
                 {servers.slice(0, 5).map((s) => (
-                  <Link key={s.id} to={url(`/ops/servers/${s.id}`)} className="block">
+                  <Link key={s.id} to={url(`/devops/servers/${s.id}`)} className="block">
                     <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 hover:bg-muted/40">
                       <div className="flex min-w-0 items-center gap-2">
                         <ServerStatusDot status={s.status} />
@@ -260,7 +260,7 @@ export function OpsOverviewPage() {
           <CardContent className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">Recent jobs</h3>
-              <Link to={url("/ops/jobs")} className="text-xs text-muted-foreground hover:text-foreground">
+              <Link to={url("/devops/jobs")} className="text-xs text-muted-foreground hover:text-foreground">
                 See all →
               </Link>
             </div>
@@ -370,7 +370,7 @@ function EmptyServersHint() {
       <Server className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
       <p className="text-sm font-medium">No server connected</p>
       <p className="mt-1 text-xs text-muted-foreground">Connect a VPS to start generating infra and deploying.</p>
-      <Link to={url("/ops/servers")}>
+      <Link to={url("/devops/servers")}>
         <Button size="sm" className="mt-3 gap-1.5">
           <Server className="h-3.5 w-3.5" /> Add a server
         </Button>

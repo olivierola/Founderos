@@ -87,7 +87,7 @@ export function OpsServersPage() {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {servers.map((s) => (
-            <Link key={s.id} to={url(`/ops/servers/${s.id}`)}>
+            <Link key={s.id} to={url(`/devops/servers/${s.id}`)}>
               <ServerCard server={s} />
             </Link>
           ))}

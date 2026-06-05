@@ -383,7 +383,7 @@ export function RepositoriesPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
                                 onClick={() =>
-                                  navigate(`/app/${workspaceSlug}/${projectSlug}/code/scan-results`)
+                                  navigate(`/app/${workspaceSlug}/${projectSlug}/devops/scan-results`)
                                 }
                               >
                                 <FileSearch className="h-4 w-4" /> View scan results
