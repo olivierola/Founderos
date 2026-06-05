@@ -68,9 +68,6 @@ export function AppShell() {
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <Topbar />
-          {/* SaaS Analytics renders its in-group pages as horizontal tabs here;
-              null for every other module. */}
-          <SubTabBar />
           {/* Pages that render a large interactive canvas need the full content
               width with no horizontal padding and no max-width cap. The pages
               themselves still scroll/lay out their inner content, so we just
@@ -82,6 +79,9 @@ export function AppShell() {
           ) : (
             <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-12 xl:px-20">
               <div className="mx-auto w-full max-w-6xl">
+                {/* SaaS Analytics renders its in-group pages as compact tabs,
+                    aligned with the page content; null for other modules. */}
+                <SubTabBar />
                 <Outlet />
               </div>
             </main>
