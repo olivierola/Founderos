@@ -78,8 +78,12 @@ export function chunkText(text: string, maxChars = 1200, overlap = 150): string[
       if (lastBreak > maxChars * 0.5) end = i + lastBreak + 1;
     }
     chunks.push(clean.slice(i, end).trim());
-    i = end - overlap;
-    if (i < 0) i = 0;
+    if (end >= clean.length) break; // reached the end — done
+    // Advance with overlap, but ALWAYS make forward progress. Without this guard
+    // a short break point could leave `next <= i`, looping forever (→ CPU/OOM,
+    // surfaced as a 546 "function failed" with no app error).
+    const next = end - overlap;
+    i = next > i ? next : end;
   }
   return chunks.filter(Boolean);
 }
