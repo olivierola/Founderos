@@ -81,20 +81,38 @@ Deno.serve(async (req) => {
       const { data: file, error: dlErr } = await admin.storage.from("rag-docs").download(storage_path);
       if (dlErr || !file) throw new Error(`Download failed: ${dlErr?.message ?? "no file"}`);
       const buf = await file.arrayBuffer();
+      // Guard against very large files that would blow the function's memory/CPU.
+      const MAX_BYTES = 15 * 1024 * 1024;
+      if (buf.byteLength > MAX_BYTES) {
+        throw new Error(`File is too large (${(buf.byteLength / 1048576).toFixed(1)} MB). Max is 15 MB.`);
+      }
       const name = String(title ?? storage_path).toLowerCase();
       const type = String(mime ?? "");
 
       let raw = "";
-      if (name.endsWith(".pdf") || type.includes("pdf")) raw = await extractPdf(buf);
-      else if (name.endsWith(".docx") || type.includes("word") || type.includes("officedocument")) raw = await extractDocx(buf);
-      else if (name.endsWith(".html") || type.includes("html")) raw = htmlToText(decode(buf));
-      else raw = decode(buf); // txt / md / csv / json / plain
+      try {
+        if (name.endsWith(".pdf") || type.includes("pdf")) raw = await extractPdf(buf);
+        else if (name.endsWith(".docx") || type.includes("word") || type.includes("officedocument")) raw = await extractDocx(buf);
+        else if (name.endsWith(".html") || type.includes("html")) raw = htmlToText(decode(buf));
+        else raw = decode(buf); // txt / md / csv / json / plain
+      } catch (parseErr) {
+        const ext = name.split(".").pop() ?? "file";
+        throw new Error(`Could not parse this ${ext.toUpperCase()} file: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
+      }
 
       raw = normalize(raw);
-      if (!raw) throw new Error("No extractable text found in the document.");
+      if (!raw) {
+        throw new Error(
+          name.endsWith(".pdf")
+            ? "No text could be extracted — this PDF may be a scanned image (OCR is not supported)."
+            : "No extractable text found in the document.",
+        );
+      }
 
-      const chunks = chunkText(raw);
+      let chunks = chunkText(raw);
       if (chunks.length === 0) throw new Error("Nothing to chunk");
+      const MAX_CHUNKS = 400;
+      if (chunks.length > MAX_CHUNKS) chunks = chunks.slice(0, MAX_CHUNKS);
 
       const rows: Record<string, unknown>[] = [];
       const batchSize = 32;

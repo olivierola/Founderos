@@ -232,7 +232,11 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
                     </Button>
                   </div>
                   <div className="mt-3 truncate font-medium" title={s.title}>{s.title}</div>
-                  {s.error_message && <div className="mt-0.5 truncate text-xs text-destructive">{s.error_message}</div>}
+                  {s.error_message && (
+                    <div className="mt-0.5 line-clamp-2 text-xs text-destructive" title={s.error_message}>
+                      {s.error_message}
+                    </div>
+                  )}
                   <div className="mt-3 flex items-center justify-between">
                     <Badge variant="outline" className="capitalize">{s.type.replace("_", " ")}</Badge>
                     <Badge variant={s.status === "ready" ? "success" : s.status === "failed" ? "destructive" : "secondary"}>

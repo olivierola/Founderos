@@ -4,6 +4,18 @@
 const JINA_URL = "https://api.jina.ai/v1/embeddings";
 const MODEL = "jina-embeddings-v3";
 
+// One network attempt with a hard timeout, so a hung request can never leave an
+// ingestion stuck "processing" — it aborts and surfaces an error.
+export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function embedTexts(
   texts: string[],
   task: "retrieval.query" | "retrieval.passage" = "retrieval.passage",
@@ -12,23 +24,42 @@ export async function embedTexts(
   if (!apiKey) throw new Error("JINA_API_KEY is not configured");
   if (texts.length === 0) return [];
 
-  const res = await fetch(JINA_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      task,
-      dimensions: 1024,
-      input: texts,
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Jina ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const body = JSON.stringify({ model: MODEL, task, dimensions: 1024, input: texts });
+
+  // Retry transient failures (timeouts, 429, 5xx) a couple of times with backoff.
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 800 * attempt));
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(
+        JINA_URL,
+        { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body },
+        30_000,
+      );
+    } catch (e) {
+      lastErr = e instanceof Error && e.name === "AbortError" ? "request timed out after 30s" : String(e);
+      continue; // retry network/timeout errors
+    }
+    if (res.ok) {
+      const json = await res.json();
+      const data = (json.data ?? []).sort((a: any, b: any) => a.index - b.index);
+      const vectors = data.map((d: any) => d.embedding as number[]);
+      if (vectors.length !== texts.length) {
+        throw new Error(`Jina returned ${vectors.length} vectors for ${texts.length} inputs`);
+      }
+      return vectors;
+    }
+    const detail = (await res.text()).slice(0, 200);
+    lastErr = `Jina ${res.status}: ${detail}`;
+    // 4xx other than 429 are not retryable (bad key, quota, bad input).
+    if (res.status !== 429 && res.status < 500) {
+      if (res.status === 401 || res.status === 403) throw new Error(`Jina auth failed (check JINA_API_KEY): ${detail}`);
+      if (res.status === 402) throw new Error(`Jina quota exhausted (402): ${detail}`);
+      throw new Error(lastErr);
+    }
   }
-  const json = await res.json();
-  // Sort by index to keep alignment with the input order.
-  const data = (json.data ?? []).sort((a: any, b: any) => a.index - b.index);
-  return data.map((d: any) => d.embedding as number[]);
+  throw new Error(`Jina embedding failed after retries — ${lastErr}`);
 }
 
 // Naive token-ish chunker: split text into ~maxChars chunks on paragraph/sentence

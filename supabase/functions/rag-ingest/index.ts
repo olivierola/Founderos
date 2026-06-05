@@ -5,7 +5,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { embedTexts, chunkText, toVectorLiteral } from "../_shared/jina.ts";
+import { embedTexts, chunkText, toVectorLiteral, fetchWithTimeout } from "../_shared/jina.ts";
 
 // Strip HTML to readable text (lightweight).
 function htmlToText(html: string): string {
@@ -19,23 +19,81 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+// Fetch a URL as readable text. Uses a browser-like UA (many sites 403 generic
+// agents), a hard timeout, and validates the response is HTML/text with usable
+// content so we fail loudly instead of ingesting an empty/blocked page.
+async function scrapeUrl(url: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      url,
+      {
+        redirect: "follow",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 FounderOS-RAG/1.0",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
+          "Accept-Language": "en,fr;q=0.8",
+        },
+      },
+      20_000,
+    );
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") throw new Error(`Fetching ${url} timed out after 20s`);
+    throw new Error(`Could not reach ${url}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!res.ok) {
+    throw new Error(
+      res.status === 403 || res.status === 401
+        ? `${url} blocked the request (HTTP ${res.status}). The site may require auth or block bots.`
+        : `Fetching ${url} → HTTP ${res.status}`,
+    );
+  }
+  const ctype = res.headers.get("content-type") ?? "";
+  const body = await res.text();
+  if (/json/i.test(ctype) && !/html/i.test(ctype)) {
+    // A JSON endpoint — keep it raw (already structured text).
+    return body.slice(0, 200_000);
+  }
+  const text = htmlToText(body);
+  if (text.length < 50) {
+    throw new Error(
+      "The page returned almost no readable text — it may be a JavaScript app that renders client-side, or content is behind a login.",
+    );
+  }
+  return text;
+}
+
 // Turn the SaaS structure JSON (pages/buttons/interactive elements) into prose
-// the agent can use for onboarding guidance.
+// the agent can use for onboarding guidance. Defensive against varied shapes
+// produced by the scanner (arrays vs objects, alternate field names).
 function structureToText(structure: any): string {
   const lines: string[] = [];
-  const pages = structure?.pages ?? structure?.routes ?? [];
+  const rawPages = structure?.pages ?? structure?.routes ?? structure?.screens ?? [];
+  const pages = Array.isArray(rawPages) ? rawPages : Object.values(rawPages ?? {});
+
+  if (structure?.app_name || structure?.name) lines.push(`Application: ${structure.app_name ?? structure.name}.`);
+  if (structure?.description) lines.push(String(structure.description));
+
   for (const p of pages) {
-    const name = p.name ?? p.path ?? p.title ?? "page";
-    lines.push(`Page: ${name}${p.path ? ` (route ${p.path})` : ""}.`);
-    if (p.description) lines.push(p.description);
-    const els = p.elements ?? p.interactive ?? p.buttons ?? [];
+    if (!p || typeof p !== "object") continue;
+    const name = p.name ?? p.path ?? p.title ?? p.route ?? "page";
+    const path = p.path ?? p.route ?? "";
+    lines.push(`\nPage: ${name}${path ? ` (route ${path})` : ""}.`);
+    if (p.description) lines.push(String(p.description));
+    if (p.purpose) lines.push(`Purpose: ${p.purpose}`);
+    const rawEls = p.elements ?? p.interactive ?? p.buttons ?? p.actions ?? [];
+    const els = Array.isArray(rawEls) ? rawEls : Object.values(rawEls ?? {});
     for (const e of els) {
-      const label = e.label ?? e.text ?? e.name ?? "element";
-      const kind = e.type ?? "button";
-      lines.push(`- ${kind} "${label}"${e.action ? ` → ${e.action}` : ""}.`);
+      if (!e) continue;
+      if (typeof e === "string") { lines.push(`- ${e}`); continue; }
+      const label = e.label ?? e.text ?? e.name ?? e.title ?? "element";
+      const kind = e.type ?? e.kind ?? "action";
+      const action = e.action ?? e.target ?? e.href ?? "";
+      lines.push(`- ${kind} "${label}"${action ? ` → ${action}` : ""}.`);
     }
   }
-  return lines.join("\n");
+  return lines.join("\n").trim();
 }
 
 Deno.serve(async (req) => {
@@ -82,9 +140,9 @@ Deno.serve(async (req) => {
         raw = String(content ?? "");
       } else if (type === "url") {
         if (!url) throw new Error("url required for type=url");
-        const res = await fetch(url, { headers: { "User-Agent": "FounderOS-RAG/1.0" } });
-        if (!res.ok) throw new Error(`Fetch ${url} → HTTP ${res.status}`);
-        raw = htmlToText(await res.text());
+        let target = url.trim();
+        if (!/^https?:\/\//i.test(target)) target = `https://${target}`;
+        raw = await scrapeUrl(target);
       } else if (type === "saas_structure") {
         // Prefer the provided structure; otherwise read the latest scan's structure.
         let struct = structure;
@@ -104,8 +162,12 @@ Deno.serve(async (req) => {
 
       if (!raw.trim()) throw new Error("No content to ingest");
 
-      const chunks = chunkText(raw);
+      let chunks = chunkText(raw);
       if (chunks.length === 0) throw new Error("Nothing to chunk");
+      // Cap chunks so a huge page can't exceed the function's CPU/time budget
+      // (which would otherwise kill it and leave the source stuck "processing").
+      const MAX_CHUNKS = 400;
+      if (chunks.length > MAX_CHUNKS) chunks = chunks.slice(0, MAX_CHUNKS);
 
       // Embed in batches (Jina handles arrays; keep batches modest).
       const batchSize = 32;
