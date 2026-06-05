@@ -110,15 +110,46 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
   async function onFiles(files: FileList | null) {
     if (!files || !workspaceId || !projectId) return;
     setUploading(true); setUploadErr(null);
+    const MAX_BYTES = 15 * 1024 * 1024; // keep in sync with rag-extract-file
     try {
       for (const file of Array.from(files)) {
+        // Validate client-side so oversized files fail with a clear message
+        // instead of a generic network "Failed to fetch" mid-upload.
+        if (file.size > MAX_BYTES) {
+          throw new Error(`"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB — the limit is 15 MB.`);
+        }
+
         const path = `${projectId}/${agent.id}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
-        const { error: upErr } = await supabase.storage.from("rag-docs").upload(path, file, { upsert: false });
-        if (upErr) throw new Error(upErr.message);
-        await callEdge("rag-extract-file", {
-          workspace_id: workspaceId, project_id: projectId, agent_id: agent.id,
-          title: file.name, storage_path: path, mime: file.type,
-        });
+
+        // 1) Upload to Storage.
+        try {
+          const { error: upErr } = await supabase.storage
+            .from("rag-docs")
+            .upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
+          if (upErr) throw new Error(upErr.message);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(
+            /failed to fetch|networkerror|load failed/i.test(msg)
+              ? `Upload of "${file.name}" was blocked by the network (CORS or connection). Check your connection and that this domain is allowed in Supabase Storage CORS.`
+              : `Upload failed for "${file.name}": ${msg}`,
+          );
+        }
+
+        // 2) Server-side extraction + embedding.
+        try {
+          await callEdge("rag-extract-file", {
+            workspace_id: workspaceId, project_id: projectId, agent_id: agent.id,
+            title: file.name, storage_path: path, mime: file.type,
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(
+            /failed to fetch|networkerror|load failed/i.test(msg)
+              ? `Extraction request for "${file.name}" could not reach the server (network/CORS). The file did upload — retry to process it.`
+              : `Could not process "${file.name}": ${msg}`,
+          );
+        }
       }
       queryClient.invalidateQueries({ queryKey: ["rag_sources", agent.id] });
     } catch (e) {

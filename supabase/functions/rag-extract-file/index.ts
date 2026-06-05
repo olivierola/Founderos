@@ -6,8 +6,13 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { embedTexts, chunkText, toVectorLiteral } from "../_shared/jina.ts";
-import { unzip } from "https://deno.land/x/zipjs@v2.7.45/index.js";
-import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
+
+// NOTE: the PDF (unpdf) and DOCX (zip.js) parsers are imported *dynamically*,
+// inside the handlers below — never at the top level. A failing CDN import at
+// module load would otherwise crash the whole function at boot (HTTP 503 on
+// every request, surfaced in the browser as "Failed to fetch"). Loading them
+// lazily means text/markdown/csv/json/html uploads never touch them, and a
+// parser that fails to load only breaks that one file type, with a clear error.
 
 function decode(buf: ArrayBuffer): string {
   return new TextDecoder("utf-8").decode(new Uint8Array(buf));
@@ -24,23 +29,34 @@ function htmlToText(html: string): string {
 }
 
 async function extractPdf(buf: ArrayBuffer): Promise<string> {
+  // Dynamic import — see note at top of file.
+  const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
   const pdf = await getDocumentProxy(new Uint8Array(buf));
   const { text } = await extractText(pdf, { mergePages: true });
   return Array.isArray(text) ? text.join("\n") : String(text);
 }
 
-// DOCX is a zip; the document text lives in word/document.xml.
+// DOCX is a zip; the document text lives in word/document.xml. We read the zip
+// with the standard-library-friendly zip reader from jsr/deno.land, loaded lazily.
 async function extractDocx(buf: ArrayBuffer): Promise<string> {
-  const entries = await unzip(new Uint8Array(buf));
-  const docXml = entries["word/document.xml"];
-  if (!docXml) return "";
-  const xml = new TextDecoder().decode(await docXml.arrayBuffer());
-  return xml
-    .replace(/<\/w:p>/g, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
+  const { ZipReader, Uint8ArrayReader, TextWriter } = await import(
+    "https://deno.land/x/zipjs@v2.7.45/index.js"
+  );
+  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(buf)));
+  try {
+    const entries = await reader.getEntries();
+    const docEntry = entries.find((e: { filename: string }) => e.filename === "word/document.xml");
+    if (!docEntry || !docEntry.getData) return "";
+    const xml: string = await docEntry.getData(new TextWriter());
+    return xml
+      .replace(/<\/w:p>/g, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&")
+      .replace(/[ \t]+\n/g, "\n")
+      .trim();
+  } finally {
+    await reader.close();
+  }
 }
 
 // Normalize non-breaking spaces (char 160) and collapse whitespace runs.
