@@ -2,8 +2,12 @@
 // Uses the project's own URL + service_role key stored in the supabase connector.
 // Body: { workspace_id, project_id, op, ...args }
 //
+// A `provider` field in the body selects which connected DB to operate on when
+// several are connected (defaults to the first CRUD-ready one, i.e. Supabase).
+//
 // ops:
-//   detect                      -> { configured, project_url }
+//   list_db_providers           -> { providers: [{ provider, label, crud_ready }] }
+//   detect  { provider? }       -> { configured, provider, crud_ready, project_url, providers }
 //   list_tables                 -> { tables: [{ name, columns:[{name,type,nullable,is_identity}] }] }
 //   list_rows  { table, limit } -> { rows: [...] }
 //   insert_row { table, values }-> { row }
@@ -16,37 +20,63 @@ import { createServiceClient, createUserClient } from "../_shared/supabase-admin
 import { getConnectorCredential } from "../_shared/credentials.ts";
 
 interface TargetCreds {
-  provider: "supabase";
+  provider: string;
   url: string;
   serviceKey: string;
 }
 
-// Detect which database provider is connected and return its access info.
-// Today: Supabase (Postgres/PostgREST). Firebase / Neon / PlanetScale slots
-// are recognised so the UI can adapt, even before full CRUD is wired.
-async function getTarget(workspaceId: string, projectId: string): Promise<TargetCreds | null> {
+// Database-capable providers we recognise. Only those flagged crudReady have a
+// working visual browser/CRUD today; the rest surface in the picker as "detected
+// but not yet supported" so the user understands what's connected.
+const DB_PROVIDERS = ["supabase", "firebase", "neon", "planetscale", "upstash", "mongodb", "postgres"] as const;
+const CRUD_PROVIDERS = new Set(["supabase"]);
+
+const PROVIDER_LABELS: Record<string, string> = {
+  supabase: "Supabase",
+  firebase: "Firebase",
+  neon: "Neon",
+  planetscale: "PlanetScale",
+  upstash: "Upstash",
+  mongodb: "MongoDB",
+  postgres: "Postgres",
+};
+
+// Resolve the connection for a specific DB provider (defaults to supabase).
+// Returns null if the provider isn't connected or lacks the fields we need.
+async function getTarget(
+  workspaceId: string,
+  projectId: string,
+  provider = "supabase",
+): Promise<TargetCreds | null> {
+  if (!CRUD_PROVIDERS.has(provider)) return null; // only CRUD-capable providers resolve a target
   try {
-    const { payload } = await getConnectorCredential(workspaceId, projectId, "supabase");
+    const { payload } = await getConnectorCredential(workspaceId, projectId, provider);
     if (!payload.project_url || !payload.service_role_key) return null;
-    return { provider: "supabase", url: payload.project_url.replace(/\/$/, ""), serviceKey: payload.service_role_key };
+    return { provider, url: payload.project_url.replace(/\/$/, ""), serviceKey: payload.service_role_key };
   } catch {
     return null;
   }
 }
 
-// Which DB-capable provider is connected (for UI adaptation messaging).
-async function detectDbProvider(
+// List every DB-capable connector on the project so the UI can let the user
+// choose which one to operate on when several are connected.
+async function listDbProviders(
   admin: ReturnType<typeof createServiceClient>,
   projectId: string,
-): Promise<{ provider: string | null; crudReady: boolean }> {
+): Promise<Array<{ provider: string; label: string; crud_ready: boolean }>> {
   const { data } = await admin
     .from("connectors")
-    .select("provider, metadata")
+    .select("provider")
     .eq("project_id", projectId)
-    .in("provider", ["supabase", "firebase", "neon", "planetscale", "upstash"]);
-  const dbConn = (data ?? [])[0];
-  if (!dbConn) return { provider: null, crudReady: false };
-  return { provider: dbConn.provider, crudReady: dbConn.provider === "supabase" };
+    .in("provider", DB_PROVIDERS as unknown as string[]);
+  // De-dupe while preserving order, supabase first (it's the CRUD-ready one).
+  const seen = new Set<string>();
+  const list = (data ?? [])
+    .map((r) => r.provider as string)
+    .filter((p) => (seen.has(p) ? false : (seen.add(p), true)))
+    .map((p) => ({ provider: p, label: PROVIDER_LABELS[p] ?? p, crud_ready: CRUD_PROVIDERS.has(p) }));
+  list.sort((a, b) => Number(b.crud_ready) - Number(a.crud_ready));
+  return list;
 }
 
 function restHeaders(key: string): Record<string, string> {
@@ -106,14 +136,28 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Not authorized" }, { status: 403 });
     }
 
-    const target = await getTarget(workspace_id, project_id);
+    // The UI may pick a specific DB connector when several are connected.
+    const providers = await listDbProviders(admin, project_id);
+
+    if (op === "list_db_providers") {
+      return jsonResponse({ providers });
+    }
+
+    // Selected provider: explicit from body, else the first CRUD-ready one, else
+    // the first connected DB provider (so messaging still reflects what's there).
+    const requested = typeof body.provider === "string" ? body.provider : undefined;
+    const selected =
+      requested ?? providers.find((p) => p.crud_ready)?.provider ?? providers[0]?.provider ?? "supabase";
+
+    const target = await getTarget(workspace_id, project_id, selected);
     if (op === "detect") {
-      const det = await detectDbProvider(admin, project_id);
+      const selProvider = providers.find((p) => p.provider === selected) ?? providers[0] ?? null;
       return jsonResponse({
         configured: !!target,
-        provider: det.provider,
-        crud_ready: det.crudReady && !!target,
+        provider: selProvider?.provider ?? null,
+        crud_ready: !!target,
         project_url: target?.url ?? null,
+        providers, // full list so the UI can render a picker
       });
     }
     if (!target) {

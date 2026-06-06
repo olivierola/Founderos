@@ -42,11 +42,17 @@ interface TableDef {
   name: string;
   columns: Column[];
 }
+interface DbProvider {
+  provider: string;
+  label: string;
+  crud_ready: boolean;
+}
 interface DetectResult {
   configured: boolean;
   provider: string | null;
   crud_ready: boolean;
   project_url: string | null;
+  providers?: DbProvider[];
 }
 
 export function DatabaseConsolePage() {
@@ -59,25 +65,45 @@ export function DatabaseConsolePage() {
   const [activeTable, setActiveTable] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteRow, setDeleteRow] = useState<{ pkCol: string; pkVal: string } | null>(null);
+  // Which connected DB the console operates on (null until detect resolves a default).
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
 
   const detect = useQuery({
-    queryKey: ["dbc-detect", projectId],
+    queryKey: ["dbc-detect", projectId, selectedProvider],
     enabled: !!projectId,
     queryFn: async () =>
-      callEdge<DetectResult>("db-admin", { workspace_id: workspaceId, project_id: projectId, op: "detect" }),
+      callEdge<DetectResult>("db-admin", {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        op: "detect",
+        provider: selectedProvider ?? undefined,
+      }),
   });
 
+  const providers = detect.data?.providers ?? [];
   const provider = detect.data?.provider;
   const crudReady = detect.data?.crud_ready;
 
+  // Adopt the backend's default provider once detect resolves, so subsequent
+  // calls are explicit and the selector reflects the active connection.
+  useEffect(() => {
+    if (!selectedProvider && provider) setSelectedProvider(provider);
+  }, [provider, selectedProvider]);
+
+  function switchProvider(p: string) {
+    setSelectedProvider(p);
+    setActiveTable(null); // tables differ per database
+  }
+
   const tablesQuery = useQuery({
-    queryKey: ["dbc-tables", projectId],
+    queryKey: ["dbc-tables", projectId, provider],
     enabled: !!projectId && !!crudReady,
     queryFn: async () => {
       const res = await callEdge<{ tables: TableDef[] }>("db-admin", {
         workspace_id: workspaceId,
         project_id: projectId,
         op: "list_tables",
+        provider: provider ?? undefined,
       });
       return res.tables;
     },
@@ -88,7 +114,7 @@ export function DatabaseConsolePage() {
   }, [tablesQuery.data, activeTable]);
 
   const rowsQuery = useQuery({
-    queryKey: ["dbc-rows", projectId, activeTable],
+    queryKey: ["dbc-rows", projectId, provider, activeTable],
     enabled: !!projectId && !!crudReady && !!activeTable && tab === "browse",
     queryFn: async () => {
       const res = await callEdge<{ rows: Record<string, unknown>[] }>("db-admin", {
@@ -97,6 +123,7 @@ export function DatabaseConsolePage() {
         op: "list_rows",
         table: activeTable,
         limit: 50,
+        provider: provider ?? undefined,
       });
       return res.rows;
     },
@@ -120,15 +147,28 @@ export function DatabaseConsolePage() {
 
   // Not configured / unsupported provider → adaptive guidance
   if (!detect.data?.configured || !crudReady) {
-    const label = provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : null;
+    const selMeta = providers.find((p) => p.provider === provider);
+    const label = selMeta?.label ?? (provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : null);
     return (
       <div>
-        <PageHeader title="Database Console" description="Browse and query your connected database — no SQL." />
+        <PageHeader
+          title="Database Console"
+          description="Browse and query your connected database — no SQL."
+          actions={
+            providers.length > 1 ? (
+              <ProviderSelector providers={providers} value={provider ?? ""} onChange={switchProvider} />
+            ) : undefined
+          }
+        />
         {provider && !crudReady ? (
           <EmptyState
             icon={Database}
             title={`${label} detected — CRUD not available yet`}
-            description={`Your project uses ${label}. Visual browsing currently supports Supabase. ${label} read/write support is on the way.`}
+            description={
+              providers.some((p) => p.crud_ready)
+                ? `${label} read/write support is on the way. You have a supported database connected — pick it from the selector above.`
+                : `Your project uses ${label}. Visual browsing currently supports Supabase. ${label} read/write support is on the way.`
+            }
           />
         ) : (
           <EmptyState
@@ -152,9 +192,12 @@ export function DatabaseConsolePage() {
     <div>
       <PageHeader
         title="Database Console"
-        description={`Connected via ${provider} · ${detect.data.project_url}`}
+        description={`Connected via ${providers.find((p) => p.provider === provider)?.label ?? provider} · ${detect.data.project_url}`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {providers.length > 1 && (
+              <ProviderSelector providers={providers} value={provider ?? ""} onChange={switchProvider} />
+            )}
             <Button
               size="sm"
               variant="outline"
@@ -222,6 +265,7 @@ export function DatabaseConsolePage() {
               table={currentTableDef}
               workspaceId={workspaceId!}
               projectId={projectId!}
+              provider={provider ?? undefined}
             />
           )}
         </div>
@@ -237,6 +281,7 @@ export function DatabaseConsolePage() {
               workspace_id: workspaceId,
               project_id: projectId,
               op: "insert_row",
+              provider: provider ?? undefined,
               table: currentTableDef.name,
               values,
             });
@@ -257,6 +302,7 @@ export function DatabaseConsolePage() {
             workspace_id: workspaceId,
             project_id: projectId,
             op: "delete_row",
+            provider: provider ?? undefined,
             table: activeTable,
             pk_col: deleteRow.pkCol,
             pk_val: deleteRow.pkVal,
@@ -264,6 +310,37 @@ export function DatabaseConsolePage() {
           queryClient.invalidateQueries({ queryKey: ["dbc-rows", projectId, activeTable] });
         }}
       />
+    </div>
+  );
+}
+
+// Dropdown shown when several DB providers are connected — lets the user pick
+// which database the console operates on.
+function ProviderSelector({
+  providers,
+  value,
+  onChange,
+}: {
+  providers: DbProvider[];
+  value: string;
+  onChange: (provider: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 rounded-md border border-input bg-background pl-2 pr-1">
+      <Database className="h-3.5 w-3.5 text-muted-foreground" />
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8 bg-transparent pr-1 text-xs font-medium focus:outline-none"
+        aria-label="Select database"
+      >
+        {providers.map((p) => (
+          <option key={p.provider} value={p.provider}>
+            {p.label}
+            {p.crud_ready ? "" : " (read-only soon)"}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -363,10 +440,12 @@ function QueryBuilder({
   table,
   workspaceId,
   projectId,
+  provider,
 }: {
   table: TableDef | null;
   workspaceId: string;
   projectId: string;
+  provider?: string;
 }) {
   const queryClient = useQueryClient();
   const [selectedCols, setSelectedCols] = useState<string[]>([]);
@@ -414,6 +493,7 @@ function QueryBuilder({
         workspace_id: workspaceId,
         project_id: projectId,
         op: "query",
+        provider,
         table: table.name,
         columns: selectedCols,
         filters: filters.filter((f) => f.column && f.op),
