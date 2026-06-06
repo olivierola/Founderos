@@ -48,6 +48,15 @@ async function bearer(
   return ok(meta, perm);
 }
 
+// Normalise a PostHog host: default to EU cloud, strip a trailing slash, and
+// accept a bare hostname (no scheme) by prefixing https://.
+export function normalizePosthogHost(raw?: string): string {
+  let host = (raw ?? "").trim();
+  if (!host) return "https://eu.i.posthog.com";
+  if (!/^https?:\/\//.test(host)) host = `https://${host}`;
+  return host.replace(/\/+$/, "");
+}
+
 // Validate an outgoing webhook by sending a lightweight ping.
 async function pingWebhook(url: string, body: unknown): Promise<ProviderValidationResult> {
   try {
@@ -237,6 +246,26 @@ export async function validateProvider(
         });
         if (r.status === 400 || r.status === 403) return fail("Invalid Amplitude API key");
         return ok({});
+      }
+      case "posthog": {
+        // Read access (importing events) needs a personal API key + project id.
+        // Write/mirror (project_api_key) is optional.
+        if (!payload.personal_api_key || !payload.project_id) {
+          return fail("personal_api_key + project_id required");
+        }
+        const host = normalizePosthogHost(payload.host);
+        const r = await fetchJson(`${host}/api/projects/${encodeURIComponent(payload.project_id)}/`, {
+          headers: { Authorization: `Bearer ${payload.personal_api_key}` },
+        });
+        if (r.status === 401 || r.status === 403) return fail("Invalid PostHog personal API key");
+        if (r.status === 404) return fail("PostHog project not found — check the project ID and host");
+        if (!r.ok) return fail(`PostHog rejected the request (HTTP ${r.status})`);
+        const name = (r.body as { name?: string } | null)?.name ?? null;
+        // write_enabled when a capture key is supplied (we can mirror events out).
+        return ok(
+          { host, project_id: payload.project_id, project_name: name, can_mirror: !!payload.project_api_key },
+          payload.project_api_key ? "write_enabled" : "read_only",
+        );
       }
 
       // --- Monitoring ---

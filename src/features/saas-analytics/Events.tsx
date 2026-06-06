@@ -31,6 +31,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { useProjectConnectors } from "@/hooks/useConnectors";
 import { cn } from "@/lib/utils";
 import {
   CATEGORY_META,
@@ -98,6 +99,34 @@ export function EventsPage() {
         limit: 100,
       }),
   });
+
+  // PostHog import: only surfaced when a connected PostHog connector exists.
+  const connectors = useProjectConnectors(projectId);
+  const posthog = (connectors.data ?? []).find((c) => c.provider === "posthog" && c.status === "connected");
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  async function syncPosthog() {
+    if (!workspaceId || !projectId) return;
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await callEdge<{ imported: number; skipped: number }>("sync-posthog", {
+        workspace_id: workspaceId,
+        project_id: projectId,
+      });
+      setSyncMsg(`Imported ${res.imported} event${res.imported === 1 ? "" : "s"} from PostHog${res.skipped ? ` (${res.skipped} already in sync)` : ""}.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["recent_product_events", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["analytics_summary", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["analytics_breakdown", projectId] }),
+      ]);
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   // Live tail of recent raw events.
   const recent = useQuery({
@@ -174,6 +203,12 @@ export function EventsPage() {
         description="Define your event taxonomy, track custom events and watch them flow in live. The catalog drives funnels, cohorts and activation metrics."
         actions={
           <div className="flex items-center gap-2">
+            {posthog && (
+              <Button size="sm" variant="outline" onClick={syncPosthog} disabled={syncing} title="Import recent events from your connected PostHog project">
+                {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+                Sync from PostHog
+              </Button>
+            )}
             <ExportMenu
               rows={(breakdown.data?.events ?? []).map((e) => ({ event: e.event_name, events: e.events, users: e.users }))}
               filename="events"
@@ -184,6 +219,9 @@ export function EventsPage() {
           </div>
         }
       />
+      {syncMsg && (
+        <p className="mb-3 text-xs text-muted-foreground">{syncMsg}</p>
+      )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard

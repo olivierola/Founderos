@@ -320,6 +320,44 @@ export const PROVIDERS: ProviderDef[] = [
     mvp: true,
     fields: [apiKeyField("API key", "…", "https://amplitude.com")],
   },
+  {
+    slug: "posthog",
+    name: "PostHog",
+    category: "analytics",
+    icon: BarChart3,
+    description: "Use PostHog as your external analytics: import events into FounderOS and mirror tracked events back to PostHog.",
+    mvp: true,
+    fields: [
+      {
+        key: "host",
+        label: "Host",
+        placeholder: "https://eu.i.posthog.com (or us.i.posthog.com / your self-hosted URL)",
+        secret: false,
+        helpUrl: "https://posthog.com/docs/api",
+      },
+      {
+        key: "project_id",
+        label: "Project ID",
+        placeholder: "12345",
+        secret: false,
+        helpUrl: "https://app.posthog.com/settings/project#variables",
+      },
+      {
+        key: "personal_api_key",
+        label: "Personal API key (read — for importing events)",
+        placeholder: "phx_…",
+        secret: true,
+        helpUrl: "https://app.posthog.com/settings/user-api-keys",
+      },
+      {
+        key: "project_api_key",
+        label: "Project API key (write — optional, to mirror events to PostHog)",
+        placeholder: "phc_…",
+        secret: false,
+        helpUrl: "https://app.posthog.com/settings/project#variables",
+      },
+    ],
+  },
 
   // --- Monitoring ---
   {

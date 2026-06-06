@@ -256,6 +256,16 @@ function opsActions(): { cfg: AdminActionConfig; icon: any }[] {
       },
     },
     {
+      icon: RotateCcw,
+      cfg: {
+        action_type: "ops.sync_posthog",
+        title: "Import events from PostHog",
+        description: "Pull recent events from your connected PostHog project into FounderOS analytics.",
+        risk: "low",
+        fields: [],
+      },
+    },
+    {
       icon: ShieldAlert,
       cfg: {
         action_type: "ops.create_alert",

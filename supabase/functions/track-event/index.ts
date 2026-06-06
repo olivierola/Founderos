@@ -15,6 +15,58 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { getConnectorCredential } from "../_shared/credentials.ts";
+import { normalizePosthogHost } from "../_shared/providers.ts";
+
+// Normalized product_events row shape (subset we forward).
+interface EventRow {
+  event_name: string;
+  user_email: string | null;
+  customer_external_id: string | null;
+  properties: Record<string, unknown>;
+  occurred_at: string;
+}
+
+// Forward freshly-ingested events to PostHog's capture API so the user's
+// external analytics stays in sync. Skips events that were themselves imported
+// from PostHog (avoids echo loops). Best-effort: any error is swallowed.
+async function mirrorToPosthog(
+  admin: ReturnType<typeof createServiceClient>,
+  workspaceId: string,
+  projectId: string,
+  rows: EventRow[],
+): Promise<void> {
+  // Cheap existence check before decrypting credentials.
+  const { data: connector } = await admin
+    .from("connectors")
+    .select("id, status")
+    .eq("workspace_id", workspaceId)
+    .eq("project_id", projectId)
+    .eq("provider", "posthog")
+    .maybeSingle();
+  if (!connector || connector.status !== "connected") return;
+
+  const { payload } = await getConnectorCredential(workspaceId, projectId, "posthog");
+  const captureKey = payload.project_api_key;
+  if (!captureKey) return; // mirroring is opt-in via the project (capture) key
+  const host = normalizePosthogHost(payload.host);
+
+  const batch = rows
+    .filter((r) => r.properties?.$ph_imported !== true) // don't echo imports back
+    .map((r) => ({
+      event: r.event_name,
+      distinct_id: r.user_email ?? r.customer_external_id ?? "anonymous",
+      timestamp: r.occurred_at,
+      properties: { ...r.properties, $source: "founderos" },
+    }));
+  if (batch.length === 0) return;
+
+  await fetch(`${host}/batch/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: captureKey, batch }),
+  });
+}
 
 async function sha256(text: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -111,6 +163,10 @@ Deno.serve(async (req) => {
 
     const { error } = await admin.from("product_events").insert(rows);
     if (error) return jsonResponse({ error: error.message }, { status: 500 });
+
+    // Best-effort mirror to PostHog when the project has a PostHog connector with
+    // a capture (project) API key. Never blocks or fails ingestion.
+    mirrorToPosthog(admin, workspaceId, projectId, rows).catch(() => {});
 
     return jsonResponse({ ok: true, ingested: rows.length });
   } catch (err) {

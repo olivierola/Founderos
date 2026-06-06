@@ -66,6 +66,7 @@ const REGISTRY: Record<string, ActionMeta> = {
   // Ops / maintenance
   "ops.resync_billing": { risk: "low", requires_confirm: false, target_type: "project" },
   "ops.recalc_metrics": { risk: "low", requires_confirm: false, target_type: "project" },
+  "ops.sync_posthog": { risk: "low", requires_confirm: false, target_type: "project" },
   "ops.create_alert": { risk: "low", requires_confirm: false, target_type: "alert" },
   "ops.create_announcement": { risk: "medium", requires_confirm: false, target_type: "announcement" },
   // Communication
@@ -244,10 +245,13 @@ async function runAction(
   }
 
   // --- Ops / maintenance (re-dispatch to existing edges via service key) ---
-  if (type === "ops.resync_billing" || type === "ops.recalc_metrics") {
+  if (type === "ops.resync_billing" || type === "ops.recalc_metrics" || type === "ops.sync_posthog") {
     const projectUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const fn = type === "ops.resync_billing" ? "sync-stripe-data" : "calculate-metrics";
+    const fn =
+      type === "ops.resync_billing" ? "sync-stripe-data"
+      : type === "ops.sync_posthog" ? "sync-posthog"
+      : "calculate-metrics";
     const res = await fetch(`${projectUrl}/functions/v1/${fn}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", apikey: serviceKey },
