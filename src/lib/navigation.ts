@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Rocket,
   Braces,
-  ShieldCheck,
   Brain,
   MessageSquareText,
   Plug2,
@@ -74,26 +73,18 @@ export function itemsInGroup(module: ModuleNavItem, group: string): SubNavItem[]
 
 export const MODULES: ModuleNavItem[] = [
   {
-    slug: "overview",
-    label: "Overview",
+    slug: "actions",
+    label: "Admin panel",
     icon: LayoutDashboard,
     color: "text-slate-400",
     subItems: [
-      { label: "Dashboard", slug: "dashboard" },
+      // Kept from the former Overview module.
+      { label: "Dashboard", slug: "dashboard", group: "Overview" },
       { label: "Custom Dashboards", slug: "custom-dashboards" },
       { label: "Alerts", slug: "alerts" },
-      { label: "Daily Briefing", slug: "daily-briefing" },
-      { label: "Activity Feed", slug: "activity-feed" },
-      { label: "Multi-projects", slug: "multi-projects" },
-    ],
-  },
-  {
-    slug: "actions",
-    label: "Admin panel",
-    icon: ShieldCheck,
-    color: "text-slate-400",
-    subItems: [
-      { label: "Actions Center", slug: "quick-actions" },
+
+      // Admin tools.
+      { label: "Actions Center", slug: "quick-actions", group: "Admin" },
       { label: "Approvals", slug: "approvals" },
       { label: "User Management", slug: "user-management" },
       { label: "Billing Operations", slug: "stripe-operations" },

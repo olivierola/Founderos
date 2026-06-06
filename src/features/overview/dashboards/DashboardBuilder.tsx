@@ -219,7 +219,7 @@ export function DashboardBuilderPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/overview/custom-dashboards`)}
+            onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/actions/custom-dashboards`)}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>

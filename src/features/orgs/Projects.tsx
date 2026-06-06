@@ -136,7 +136,7 @@ export function ProjectsPage() {
                   <Card
                     key={p.id}
                     className="group cursor-pointer transition-colors hover:border-primary/40"
-                    onClick={() => navigate(`/app/${ws!.slug}/${p.slug}/overview/dashboard`)}
+                    onClick={() => navigate(`/app/${ws!.slug}/${p.slug}/actions/dashboard`)}
                   >
                     <CardContent className="p-5">
                       <div className="flex items-start justify-between">
@@ -202,7 +202,7 @@ export function ProjectsPage() {
           if (!ws) return;
           const p = await createProject(ws.id, name);
           refresh();
-          navigate(`/app/${ws.slug}/${p.slug}/overview/dashboard`);
+          navigate(`/app/${ws.slug}/${p.slug}/actions/dashboard`);
         }}
       />
 

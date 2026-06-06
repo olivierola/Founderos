@@ -130,7 +130,7 @@ export function CustomDashboardsPage() {
             <Card
               key={d.id}
               className="group cursor-pointer transition-colors hover:border-primary/40"
-              onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/overview/dashboard-builder/${d.id}`)}
+              onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/actions/dashboard-builder/${d.id}`)}
             >
               <CardContent className="p-5">
                 <div className="flex items-start justify-between">
@@ -188,7 +188,7 @@ export function CustomDashboardsPage() {
             .select()
             .single();
           refresh();
-          if (created) navigate(`/app/${workspaceSlug}/${projectSlug}/overview/dashboard-builder/${created.id}`);
+          if (created) navigate(`/app/${workspaceSlug}/${projectSlug}/actions/dashboard-builder/${created.id}`);
         }}
       />
 

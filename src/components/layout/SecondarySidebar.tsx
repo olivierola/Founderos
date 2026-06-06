@@ -82,7 +82,7 @@ export function SecondarySidebar() {
     );
   }
 
-  const module = findModule(moduleSlug ?? "overview");
+  const module = findModule(moduleSlug ?? "actions");
 
   // Group children by parent slug. Top-level items = those without a parent.
   const childrenByParent = useMemo(() => {

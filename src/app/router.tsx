@@ -9,12 +9,9 @@ import { AcceptInvitePage } from "@/features/auth/AcceptInvite";
 import { OrganisationsPage } from "@/features/orgs/Organisations";
 import { ProjectsPage } from "@/features/orgs/Projects";
 
-// Overview
+// Overview (merged into Admin panel — kept tabs only)
 import { OverviewDashboard } from "@/features/overview/Dashboard";
 import { AlertsPage } from "@/features/overview/Alerts";
-import { ActivityFeedPage } from "@/features/overview/ActivityFeed";
-import { DailyBriefingPage } from "@/features/overview/DailyBriefing";
-import { MultiProjectsPage } from "@/features/overview/MultiProjects";
 import { CustomDashboardsPage } from "@/features/overview/dashboards/CustomDashboards";
 import { DashboardBuilderPage } from "@/features/overview/dashboards/DashboardBuilder";
 
@@ -170,12 +167,10 @@ import {
 type PageEl = JSX.Element;
 
 const PAGES: Record<string, PageEl> = {
-  "overview/dashboard": <OverviewDashboard />,
-  "overview/custom-dashboards": <CustomDashboardsPage />,
-  "overview/alerts": <AlertsPage />,
-  "overview/activity-feed": <ActivityFeedPage />,
-  "overview/daily-briefing": <DailyBriefingPage />,
-  "overview/multi-projects": <MultiProjectsPage />,
+  // Overview was merged into the Admin panel — these three tabs were kept.
+  "actions/dashboard": <OverviewDashboard />,
+  "actions/custom-dashboards": <CustomDashboardsPage />,
+  "actions/alerts": <AlertsPage />,
 
   // Finance was merged into SaaS Analytics (Revenue + Costs groups). The pages
   // are unchanged; only their route prefix moved to saas-analytics/*.
@@ -323,6 +318,21 @@ function LegacyOpsDetailRedirect({ kind }: { kind: "servers" | "workflows" | "in
   return <Navigate to={`../../../devops/${kind}/${id}`} replace />;
 }
 
+/** Overview was merged into the Admin panel. Kept tabs map 1:1 to actions/*;
+ *  dropped tabs (daily-briefing, activity-feed, multi-projects) fall back to the
+ *  dashboard. */
+const KEPT_OVERVIEW = new Set(["dashboard", "custom-dashboards", "alerts"]);
+function LegacyOverviewRedirect() {
+  const { sub } = useParams();
+  const target = sub && KEPT_OVERVIEW.has(sub) ? sub : "dashboard";
+  return <Navigate to={`../../actions/${target}`} replace />;
+}
+/** Old /overview/dashboard-builder/:id → /actions/dashboard-builder/:id (3 up). */
+function LegacyBuilderRedirect() {
+  const { dashboardId } = useParams();
+  return <Navigate to={`../../../actions/dashboard-builder/${dashboardId}`} replace />;
+}
+
 function buildModuleRoutes() {
   return MODULES.flatMap((mod) => {
     const subRoutes = mod.subItems.map((sub) => {
@@ -378,9 +388,9 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <Navigate to="overview/dashboard" replace /> },
+      { index: true, element: <Navigate to="actions/dashboard" replace /> },
       {
-        path: "overview/dashboard-builder/:dashboardId",
+        path: "actions/dashboard-builder/:dashboardId",
         element: (
           <ErrorBoundary>
             <DashboardBuilderPage />
@@ -439,6 +449,10 @@ export const router = createBrowserRouter([
       { path: "ops/workflows/:id", element: <LegacyOpsDetailRedirect kind="workflows" /> },
       { path: "ops/infra/:id", element: <LegacyOpsDetailRedirect kind="infra" /> },
       { path: "ops/:sub", element: <LegacyOpsRedirect /> },
+      // Legacy redirects: Overview was merged into the Admin panel.
+      { path: "overview", element: <Navigate to="../actions/dashboard" replace /> },
+      { path: "overview/dashboard-builder/:dashboardId", element: <LegacyBuilderRedirect /> },
+      { path: "overview/:sub", element: <LegacyOverviewRedirect /> },
       ...buildModuleRoutes(),
     ],
   },
