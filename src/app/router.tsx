@@ -111,7 +111,6 @@ import {
   DatabaseConsolePage,
   EmailSenderPage,
   ActionsWebhooksPage,
-  ApprovalsPage,
 } from "@/features/actions/Extra";
 import { RunbooksPage } from "@/features/actions/Runbooks";
 import { SaasAnalyticsPage } from "@/features/actions/SaasAnalytics";
@@ -120,6 +119,7 @@ import { EventsPage } from "@/features/saas-analytics/Events";
 import { GrowthPage } from "@/features/saas-analytics/Growth";
 import { FunnelsPage as AnalyticsFunnelsPage } from "@/features/saas-analytics/Funnels";
 import { RetentionPage } from "@/features/saas-analytics/Retention";
+import { ActivationPage } from "@/features/saas-analytics/Activation";
 import { PerUserAnalyticsPage } from "@/features/actions/PerUserAnalytics";
 import { GroupAnalyticsPage } from "@/features/actions/GroupAnalytics";
 import { UserJourneysPage } from "@/features/actions/UserJourneys";
@@ -197,6 +197,7 @@ const PAGES: Record<string, PageEl> = {
   "saas-analytics/session-replay": <SessionReplayPage />,
   "saas-analytics/events": <EventsPage />,
   "saas-analytics/growth": <GrowthPage />,
+  "saas-analytics/activation": <ActivationPage />,
   "saas-analytics/funnels": <AnalyticsFunnelsPage />,
   "saas-analytics/retention": <RetentionPage />,
   "saas-analytics/users-all": <AllUsersPage />,
@@ -260,7 +261,6 @@ const PAGES: Record<string, PageEl> = {
   "saas-analytics/health-database": <DatabasePage />,
 
   "actions/quick-actions": <QuickActionsPage />,
-  "actions/approvals": <ApprovalsPage />,
   "actions/user-management": <UserManagementPage />,
   "actions/stripe-operations": <StripeOperationsPage />,
   "actions/database-console": <DatabaseConsolePage />,

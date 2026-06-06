@@ -18,6 +18,9 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { getConnectorCredential } from "../_shared/credentials.ts";
+import { getGoogleAccessToken, FIRESTORE_SCOPES } from "../_shared/google-auth.ts";
+import { firestoreOp } from "./firestore.ts";
+import { postgresOp } from "./postgres.ts";
 
 interface TargetCreds {
   provider: string;
@@ -25,11 +28,11 @@ interface TargetCreds {
   serviceKey: string;
 }
 
-// Database-capable providers we recognise. Only those flagged crudReady have a
-// working visual browser/CRUD today; the rest surface in the picker as "detected
-// but not yet supported" so the user understands what's connected.
+// Database-capable providers we recognise. Those in CRUD_PROVIDERS have a
+// working visual browser/CRUD; the rest surface in the picker so the user sees
+// what's connected.
 const DB_PROVIDERS = ["supabase", "firebase", "neon", "planetscale", "upstash", "mongodb", "postgres"] as const;
-const CRUD_PROVIDERS = new Set(["supabase"]);
+const CRUD_PROVIDERS = new Set(["supabase", "firebase", "neon", "postgres"]);
 
 const PROVIDER_LABELS: Record<string, string> = {
   supabase: "Supabase",
@@ -149,6 +152,49 @@ Deno.serve(async (req) => {
     const selected =
       requested ?? providers.find((p) => p.crud_ready)?.provider ?? providers[0]?.provider ?? "supabase";
 
+    // ── Non-Supabase CRUD providers: dispatch to their adapters ──
+    if (selected === "firebase") {
+      try {
+        const { payload } = await getConnectorCredential(workspace_id, project_id, "firebase");
+        if (!payload.project_id || !payload.service_account) {
+          if (op === "detect") return jsonResponse({ configured: false, provider: "firebase", crud_ready: false, project_url: null, providers });
+          return jsonResponse({ error: "Firebase not configured (project_id + service_account required)" }, { status: 400 });
+        }
+        const { token } = await getGoogleAccessToken(payload.service_account, FIRESTORE_SCOPES);
+        if (op === "detect") {
+          return jsonResponse({
+            configured: true, provider: "firebase", crud_ready: true,
+            project_url: `firestore:${payload.project_id}`, providers,
+          });
+        }
+        return await firestoreOp({ projectId: payload.project_id, token, op, body });
+      } catch (e) {
+        if (op === "detect") return jsonResponse({ configured: false, provider: "firebase", crud_ready: false, project_url: null, providers });
+        return jsonResponse({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+      }
+    }
+
+    if (selected === "neon" || selected === "postgres") {
+      try {
+        const { payload } = await getConnectorCredential(workspace_id, project_id, selected);
+        // Accept a full connection string, or assemble from parts.
+        const connStr = payload.connection_string || payload.database_url || "";
+        if (!connStr) {
+          if (op === "detect") return jsonResponse({ configured: false, provider: selected, crud_ready: false, project_url: null, providers });
+          return jsonResponse({ error: `${selected} needs a connection_string` }, { status: 400 });
+        }
+        if (op === "detect") {
+          const host = (() => { try { return new URL(connStr).host; } catch { return selected; } })();
+          return jsonResponse({ configured: true, provider: selected, crud_ready: true, project_url: host, providers });
+        }
+        return await postgresOp({ connStr, op, body });
+      } catch (e) {
+        if (op === "detect") return jsonResponse({ configured: false, provider: selected, crud_ready: false, project_url: null, providers });
+        return jsonResponse({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+      }
+    }
+
+    // ── Supabase (PostgREST) ──
     const target = await getTarget(workspace_id, project_id, selected);
     if (op === "detect") {
       const selProvider = providers.find((p) => p.provider === selected) ?? providers[0] ?? null;

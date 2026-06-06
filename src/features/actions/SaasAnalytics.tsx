@@ -294,8 +294,8 @@ export function SaasAnalyticsPage() {
                 value={snapshot.pending_approvals}
                 icon={ClipboardCheck}
                 tone={snapshot.pending_approvals > 0 ? "warn" : "calm"}
-                actionLabel="Approvals"
-                actionTo={`${base}/actions/approvals`}
+                actionLabel="Actions Center"
+                actionTo={`${base}/actions/quick-actions`}
               />
             </div>
           </div>
@@ -475,7 +475,7 @@ function suggestActions(s: Snapshot, base: string) {
     out.push({
       label: `${s.pending_approvals} pending approval${s.pending_approvals > 1 ? "s" : ""}`,
       detail: "Review and approve admin actions awaiting validation.",
-      to: `${base}/actions/approvals`,
+      to: `${base}/actions/quick-actions`,
       icon: ClipboardCheck,
       tone: "info",
     });

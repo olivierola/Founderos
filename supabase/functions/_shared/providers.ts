@@ -1,6 +1,8 @@
 // Provider validation: hits each provider's API (or pings its webhook) with the
 // supplied credentials and returns a small metadata object.
 
+import { getGoogleAccessToken, FIRESTORE_SCOPES } from "./google-auth.ts";
+
 export type Provider = string;
 
 export interface ProviderValidationResult {
@@ -143,8 +145,38 @@ export async function validateProvider(
         return payload.api_key ? bearer("https://api.cloudflare.com/client/v4/user/tokens/verify", payload.api_key) : fail("api_key required");
       case "clerk":
         return payload.api_key ? bearer("https://api.clerk.com/v1/users?limit=1", payload.api_key) : fail("api_key required");
-      case "neon":
-        return payload.api_key ? bearer("https://console.neon.tech/api/v2/projects", payload.api_key) : fail("api_key required");
+      case "neon": {
+        // A connection string enables the visual DB console; the API key (optional)
+        // is validated if provided.
+        if (payload.api_key) {
+          const r = await fetchJson("https://console.neon.tech/api/v2/projects", {
+            headers: { Authorization: `Bearer ${payload.api_key}` },
+          });
+          if (!r.ok) return fail("Invalid Neon API key");
+        }
+        if (!payload.connection_string && !payload.api_key) return fail("connection_string or api_key required");
+        return ok({ crud: !!payload.connection_string }, payload.connection_string ? "write_enabled" : "read_only");
+      }
+      case "postgres": {
+        const cs = payload.connection_string || payload.database_url;
+        if (!cs || !/^postgres(ql)?:\/\//.test(cs)) return fail("A valid postgresql:// connection string is required");
+        return ok({ crud: true }, "write_enabled");
+      }
+      case "firebase": {
+        if (!payload.project_id || !payload.service_account) return fail("project_id + service_account JSON required");
+        try {
+          const { token } = await getGoogleAccessToken(payload.service_account, FIRESTORE_SCOPES);
+          // Probe Firestore: list root collections (cheap, confirms project + perms).
+          const r = await fetchJson(
+            `https://firestore.googleapis.com/v1/projects/${payload.project_id}/databases/(default)/documents:listCollectionIds`,
+            { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" },
+          );
+          if (!r.ok) return fail(`Firestore rejected the service account (HTTP ${r.status}). Check the project ID and that Firestore is enabled.`);
+          return ok({ project_id: payload.project_id, crud: true }, "write_enabled");
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : "Invalid service account");
+        }
+      }
       case "planetscale":
         return payload.api_key && payload.service_token_id
           ? bearer("https://api.planetscale.com/v1/organizations", payload.api_key, {}, "read_only", {
@@ -184,12 +216,28 @@ export async function validateProvider(
         return payload.api_key
           ? bearer("https://plausible.io/api/v1/sites?limit=1", payload.api_key)
           : fail("api_key required");
-      case "mixpanel":
-        return payload.api_secret
-          ? ok({ project_token: payload.project_token ?? null })
-          : fail("api_secret required");
-      case "amplitude":
-        return payload.api_key ? ok({}) : fail("api_key required");
+      case "mixpanel": {
+        // Validate the service-account/secret via the project events API (HTTP Basic).
+        const secret = payload.api_secret || payload.api_key;
+        if (!secret) return fail("api_secret required");
+        const auth = btoa(`${secret}:`);
+        const r = await fetchJson("https://mixpanel.com/api/2.0/engage?limit=1", {
+          headers: { Authorization: `Basic ${auth}` },
+        });
+        if (!r.ok && r.status === 401) return fail("Invalid Mixpanel secret");
+        return ok({ project_token: payload.project_token ?? null });
+      }
+      case "amplitude": {
+        // Amplitude validates by posting an identify with the API key.
+        if (!payload.api_key) return fail("api_key required");
+        const r = await fetchJson("https://api2.amplitude.com/identify", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ api_key: payload.api_key, identification: "[]" }).toString(),
+        });
+        if (r.status === 400 || r.status === 403) return fail("Invalid Amplitude API key");
+        return ok({});
+      }
 
       // --- Monitoring ---
       case "sentry":
@@ -247,8 +295,18 @@ export async function validateProvider(
         return payload.access_key_id && payload.secret_access_key
           ? ok({ region: payload.region ?? null }) // credentials stored; signed requests done at use-time
           : fail("access_key_id + secret_access_key required");
-      case "cloudinary":
-        return payload.api_key ? ok({}) : fail("api_key required");
+      case "cloudinary": {
+        // Expects cloud_name + api_key + api_secret; ping the usage endpoint.
+        if (!payload.api_key) return fail("api_key required");
+        if (payload.cloud_name && payload.api_secret) {
+          const auth = btoa(`${payload.api_key}:${payload.api_secret}`);
+          const r = await fetchJson(`https://api.cloudinary.com/v1_1/${payload.cloud_name}/usage`, {
+            headers: { Authorization: `Basic ${auth}` },
+          });
+          if (!r.ok) return fail("Invalid Cloudinary credentials");
+        }
+        return ok({ cloud_name: payload.cloud_name ?? null });
+      }
 
       // --- Automation (webhook ping) ---
       case "n8n":
@@ -332,19 +390,45 @@ export async function validateProvider(
       case "typefully":
       case "hypefury":
         return payload.api_key ? ok({}, "write_enabled") : fail("api_key required");
-      case "x":
-        return payload.bearer_token ? ok({}, "write_enabled") : fail("bearer_token required");
-      case "linkedin":
-        return payload.access_token ? ok({}, "write_enabled") : fail("access_token required");
+      case "x": {
+        // Validate the bearer token against the X API v2 (me endpoint may be
+        // restricted on some tiers; fall back to a tweets lookup which is broadly allowed).
+        const t = payload.bearer_token;
+        if (!t) return fail("bearer_token required");
+        const r = await fetchJson("https://api.twitter.com/2/users/me", { headers: { Authorization: `Bearer ${t}` } });
+        if (r.status === 401) return fail("Invalid X bearer token");
+        return ok({}, "write_enabled");
+      }
+      case "linkedin": {
+        const t = payload.access_token;
+        if (!t) return fail("access_token required");
+        const r = await fetchJson("https://api.linkedin.com/v2/userinfo", { headers: { Authorization: `Bearer ${t}` } });
+        if (r.status === 401) return fail("Invalid or expired LinkedIn access token");
+        return ok({}, "write_enabled");
+      }
       case "social-webhook":
         return payload.webhook_url ? ok({ webhook: true }, "write_enabled") : fail("webhook_url required");
 
       case "segment":
-        return payload.api_key ? ok({}, "write_enabled") : fail("write key required");
-      case "upstash":
-        return payload.api_key ? ok({}) : fail("api_key required");
+        // A write key is used to POST events; validate format (no cheap read API).
+        return payload.api_key && payload.api_key.length >= 10
+          ? ok({}, "write_enabled")
+          : fail("A valid Segment write key is required");
+      case "upstash": {
+        // Upstash Redis REST: api_key is the REST token, host is the REST URL.
+        if (!payload.api_key) return fail("api_key required");
+        if (payload.host) {
+          const r = await fetchJson(`${payload.host.replace(/\/$/, "")}/ping`, {
+            headers: { Authorization: `Bearer ${payload.api_key}` },
+          });
+          if (!r.ok) return fail(`Upstash rejected the token (HTTP ${r.status})`);
+        }
+        return ok({ host: payload.host ?? null });
+      }
       case "inngest":
-        return payload.api_key ? ok({}, "write_enabled") : fail("event key required");
+        return payload.api_key && payload.api_key.length >= 8
+          ? ok({}, "write_enabled")
+          : fail("A valid Inngest event key is required");
 
       default:
         // Unknown provider: accept if it has any field, store as-is (best effort).

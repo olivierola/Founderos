@@ -439,7 +439,11 @@ export const PROVIDERS: ProviderDef[] = [
     icon: Box,
     description: "Media storage and transformation.",
     mvp: true,
-    fields: [apiKeyField("API key", "…", "https://cloudinary.com/console")],
+    fields: [
+      { key: "cloud_name", label: "Cloud name", placeholder: "my-cloud", secret: false },
+      apiKeyField("API key", "…", "https://cloudinary.com/console"),
+      { key: "api_secret", label: "API secret", placeholder: "…", secret: true },
+    ],
   },
 
   // --- Hosting (more) ---
@@ -497,10 +501,17 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Firebase",
     category: "backend",
     icon: Cloud,
-    description: "Hosting + Functions releases.",
+    description: "Browse and edit Firestore collections; read Auth users.",
     mvp: true,
     fields: [
-      apiKeyField("Access token (OAuth)", "…", "https://firebase.google.com/docs/cli#cli-ci-systems"),
+      { key: "project_id", label: "Project ID", placeholder: "my-app-prod", secret: false, helpUrl: "https://console.firebase.google.com/" },
+      {
+        key: "service_account",
+        label: "Service account JSON",
+        placeholder: '{ "type": "service_account", "project_id": "…", "private_key": "…", "client_email": "…" }',
+        secret: true,
+        helpUrl: "https://console.firebase.google.com/project/_/settings/serviceaccounts/adminsdk",
+      },
     ],
   },
   {
@@ -541,9 +552,34 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Neon",
     category: "backend",
     icon: Database,
-    description: "Serverless Postgres metrics.",
+    description: "Serverless Postgres — browse & edit tables, run visual queries.",
     mvp: true,
-    fields: [apiKeyField("API key", "…", "https://console.neon.tech/app/settings/api-keys")],
+    fields: [
+      {
+        key: "connection_string",
+        label: "Connection string",
+        placeholder: "postgresql://user:pass@ep-xxx.neon.tech/db?sslmode=require",
+        secret: true,
+        helpUrl: "https://console.neon.tech/app/projects",
+      },
+      apiKeyField("API key (optional, for metrics)", "…", "https://console.neon.tech/app/settings/api-keys"),
+    ],
+  },
+  {
+    slug: "postgres",
+    name: "Postgres",
+    category: "backend",
+    icon: Database,
+    description: "Any Postgres database — browse & edit tables, run visual queries.",
+    mvp: true,
+    fields: [
+      {
+        key: "connection_string",
+        label: "Connection string",
+        placeholder: "postgresql://user:pass@host:5432/db?sslmode=require",
+        secret: true,
+      },
+    ],
   },
   {
     slug: "planetscale",
@@ -676,7 +712,10 @@ export const PROVIDERS: ProviderDef[] = [
     icon: Database,
     description: "Serverless Redis and Kafka.",
     mvp: true,
-    fields: [apiKeyField("API key", "…", "https://console.upstash.com")],
+    fields: [
+      { key: "host", label: "REST URL", placeholder: "https://xxx.upstash.io", secret: false, helpUrl: "https://console.upstash.com" },
+      apiKeyField("REST token", "…", "https://console.upstash.com"),
+    ],
   },
   {
     slug: "inngest",

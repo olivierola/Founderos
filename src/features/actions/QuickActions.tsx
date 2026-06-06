@@ -12,11 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/EmptyState";
+import { Clock, Check, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { callEdge } from "@/lib/edge";
 import { formatCurrency } from "@/lib/utils";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useCapabilities, providerLabel } from "@/hooks/useConnectors";
 import { AdminActionModal, type AdminActionConfig } from "./AdminActionModal";
+import { CodeChangePreview } from "./Extra";
 
 interface Customer {
   external_id: string;
@@ -414,6 +417,10 @@ export function QuickActionsPage() {
         </div>
       )}
 
+      {/* Pending approvals are surfaced inline here, where actions are run —
+          there is no separate Approvals tab. Owners/admins act in context. */}
+      <PendingApprovals workspaceId={workspaceId} projectId={projectId} />
+
       {/* Customer picker */}
       <Card className="mb-6">
         <CardContent className="p-4">
@@ -578,6 +585,95 @@ export function QuickActionsPage() {
         initialValues={initialValues}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["admin_actions_recent", projectId] })}
       />
+    </div>
+  );
+}
+
+interface PendingAction {
+  id: string;
+  action_type: string;
+  target_id: string | null;
+  risk_level: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+// Inline approvals queue, rendered at the top of the Actions Center so approvers
+// decide right where actions are run (no dedicated Approvals tab). High-risk
+// actions submitted "for approval" land here for an owner/admin to run or reject.
+function PendingApprovals({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
+  const queryClient = useQueryClient();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: pending } = useQuery({
+    queryKey: ["admin_actions_pending", projectId],
+    enabled: !!projectId,
+    refetchInterval: 8000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("admin_actions")
+        .select("id, action_type, target_id, risk_level, payload, created_at")
+        .eq("project_id", projectId)
+        .eq("status", "pending")
+        .eq("requires_approval", true)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return (data ?? []) as PendingAction[];
+    },
+  });
+
+  async function decide(id: string, decision: "approve" | "reject") {
+    setBusyId(id);
+    setError(null);
+    try {
+      await callEdge("admin-action-approve", { workspace_id: workspaceId, action_id: id, decision });
+      queryClient.invalidateQueries({ queryKey: ["admin_actions_pending", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["admin_actions_recent", projectId] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (!pending || pending.length === 0) return null;
+
+  return (
+    <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-300">
+        <ShieldAlert className="h-4 w-4" />
+        {pending.length} action{pending.length > 1 ? "s" : ""} awaiting your approval
+      </div>
+      {error && <p className="mb-2 text-sm text-destructive">{error}</p>}
+      <div className="space-y-2">
+        {pending.map((a) => (
+          <Card key={a.id}>
+            <CardContent className="p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm">{a.action_type}</span>
+                    <Badge variant={["high", "critical"].includes(a.risk_level) ? "destructive" : "warning"}>{a.risk_level}</Badge>
+                    {a.target_id && <span className="truncate font-mono text-xs text-muted-foreground">{a.target_id}</span>}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}>
+                    <X className="h-4 w-4" /> Reject
+                  </Button>
+                  <Button size="sm" disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}>
+                    {busyId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve &amp; run
+                  </Button>
+                </div>
+              </div>
+              {a.action_type === "code.apply_changes" && <CodeChangePreview payload={a.payload} />}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

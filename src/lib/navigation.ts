@@ -85,7 +85,6 @@ export const MODULES: ModuleNavItem[] = [
 
       // Admin tools.
       { label: "Actions Center", slug: "quick-actions", group: "Admin" },
-      { label: "Approvals", slug: "approvals" },
       { label: "User Management", slug: "user-management" },
       { label: "Billing Operations", slug: "stripe-operations" },
       { label: "Database Console", slug: "database-console" },
@@ -110,6 +109,7 @@ export const MODULES: ModuleNavItem[] = [
 
       { label: "Events",             slug: "events",               group: "Behavior" },
       { label: "Growth",             slug: "growth" },
+      { label: "Activation",         slug: "activation" },
       { label: "Funnels",            slug: "funnels" },
       { label: "Cohorts & Retention", slug: "retention" },
       { label: "Journeys",           slug: "users-journeys" },

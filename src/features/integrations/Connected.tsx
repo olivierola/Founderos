@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Trash2, Plug, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Loader2, Trash2, Plug, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Zap } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,9 +39,35 @@ export function ConnectedPage() {
   });
 
   const [togglingWrite, setTogglingWrite] = useState<string | null>(null);
+  const [testing, setTesting] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
 
   // Providers for which the agent can perform writes (currently GitHub code instrumentation).
   const WRITABLE_PROVIDERS = new Set(["github"]);
+
+  async function testConnection(provider: string) {
+    if (!workspaceId || !projectId) return;
+    setTesting(provider);
+    setTestResult((r) => ({ ...r, [provider]: undefined as never }));
+    try {
+      const res = await callEdge<{ ok: boolean; permissions?: string; error?: string }>("test-connection", {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        provider,
+      });
+      setTestResult((r) => ({
+        ...r,
+        [provider]: res.ok
+          ? { ok: true, message: `Connection OK${res.permissions ? ` · ${res.permissions}` : ""}` }
+          : { ok: false, message: res.error ?? "Validation failed" },
+      }));
+      await queryClient.invalidateQueries({ queryKey: ["connectors", projectId] });
+    } catch (e) {
+      setTestResult((r) => ({ ...r, [provider]: { ok: false, message: e instanceof Error ? e.message : String(e) } }));
+    } finally {
+      setTesting(null);
+    }
+  }
 
   async function toggleWriteAccess(c: ConnectorRow) {
     if (!projectId) return;
@@ -155,6 +181,24 @@ export function ConnectedPage() {
                     )}
                     <div className="mt-2 text-xs text-muted-foreground">
                       connected {new Date(c.created_at).toLocaleString()}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => testConnection(c.provider)}
+                        disabled={testing === c.provider}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+                        title="Re-validate the stored credentials against the provider's API"
+                      >
+                        {testing === c.provider ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                        Test connection
+                      </button>
+                      {testResult[c.provider] && (
+                        <span className={`inline-flex items-center gap-1 text-xs ${testResult[c.provider].ok ? "text-emerald-400" : "text-destructive"}`}>
+                          {testResult[c.provider].ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+                          {testResult[c.provider].message}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
