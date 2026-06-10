@@ -7,7 +7,7 @@ import {
   MessageSquare, Globe, Database, Zap, KeyRound, Play, Clock,
   CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
   CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
-  ListTree, Gauge,
+  ListTree, Gauge, Brain, Pin, PinOff,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -31,7 +31,8 @@ import { MissionWizard, type MissionDraft } from "./MissionWizard";
 import {
   type InternalAgent, type Mission, type MissionRun, type Deliverable,
   type WorkspaceMemberRow, type RunEvent, type AgentApproval,
-  PRIORITY_META, loadWorkspaceMembers, memberLabel,
+  type AgentConversation, type AgentMemory, type MemoryKind,
+  PRIORITY_META, MEMORY_KIND_META, loadWorkspaceMembers, memberLabel,
   dueDateMeta, downloadDeliverable, relativeDate,
 } from "./shared";
 
@@ -39,6 +40,7 @@ export type InternalAgentTab =
   | "chat"
   | "mission"
   | "deliverables"
+  | "memory"
   | "approvals"
   | "instructions"
   | "tools"
@@ -47,7 +49,7 @@ export type InternalAgentTab =
   | "settings";
 
 const VALID_TABS: InternalAgentTab[] = [
-  "chat", "mission", "deliverables", "approvals", "instructions", "tools", "members", "analytics", "settings",
+  "chat", "mission", "deliverables", "memory", "approvals", "instructions", "tools", "members", "analytics", "settings",
 ];
 
 export function InternalAgentDetailPage() {
@@ -84,6 +86,7 @@ export function InternalAgentDetailPage() {
       {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "deliverables" && <DeliverablesHub agent={agent} />}
+      {tab === "memory" && <MemoryTab agent={agent} />}
       {tab === "approvals" && <ApprovalsTab agent={agent} />}
       {tab === "instructions" && <InstructionsEditor agent={agent} />}
       {tab === "tools" && <ToolsTab agent={agent} />}
@@ -118,10 +121,40 @@ function ChatTab({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [convoId, setConvoId] = useState<string | null>(null);
+  // null convoId + started=false → resume the latest session; once the user
+  // clicks "New session" we stay on the blank state until they send.
+  const [startedFresh, setStartedFresh] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+
+  const { data: conversations } = useQuery({
+    queryKey: ["internal_agent_conversations", agent.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("internal_agent_conversations")
+        .select("id, agent_id, title, user_id, created_at, updated_at")
+        .eq("agent_id", agent.id)
+        .order("updated_at", { ascending: false })
+        .limit(50);
+      return (data ?? []) as AgentConversation[];
+    },
+  });
+
+  // Resume the most recent session by default.
+  useEffect(() => {
+    if (!convoId && !startedFresh && conversations && conversations.length > 0) {
+      setConvoId(conversations[0].id);
+    }
+  }, [conversations, convoId, startedFresh]);
+
+  async function deleteConversation(id: string) {
+    if (!confirm("Delete this session and its messages?")) return;
+    await supabase.from("internal_agent_conversations").delete().eq("id", id);
+    if (convoId === id) { setConvoId(null); setStartedFresh(true); }
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_conversations", agent.id] });
+  }
 
   const { data: messages } = useQuery({
     queryKey: ["internal_agent_messages", convoId],
@@ -177,6 +210,7 @@ function ChatTab({
         conversation_id: cid,
       });
       queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
+      queryClient.invalidateQueries({ queryKey: ["internal_agent_conversations", agent.id] });
     } catch (e: any) {
       setError(e?.message ?? "Failed to send");
     } finally {
@@ -187,7 +221,55 @@ function ChatTab({
   const isEmpty = !messages || messages.length === 0;
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] flex-col">
+    <div className="grid h-[calc(100vh-12rem)] gap-4 lg:grid-cols-[240px_1fr]">
+      {/* Session list */}
+      <Card className="hidden max-h-full flex-col lg:flex">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 py-3">
+          <CardTitle className="text-xs">Sessions</CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { setConvoId(null); setStartedFresh(true); setError(null); }}
+          >
+            <Plus className="mr-1 h-3 w-3" /> New
+          </Button>
+        </CardHeader>
+        <CardContent className="min-h-0 flex-1 overflow-y-auto p-2">
+          {!conversations || conversations.length === 0 ? (
+            <p className="px-2 py-4 text-center text-[11px] text-muted-foreground">No sessions yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {conversations.map((c) => (
+                <div
+                  key={c.id}
+                  className={cn(
+                    "group flex items-center gap-1 rounded-md px-2 py-1.5",
+                    convoId === c.id ? "bg-foreground/10" : "hover:bg-foreground/5",
+                  )}
+                >
+                  <button
+                    onClick={() => { setConvoId(c.id); setStartedFresh(false); setError(null); }}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <div className="truncate text-xs font-medium">{c.title || "Untitled session"}</div>
+                    <div className="text-[10px] text-muted-foreground">{relativeDate(c.updated_at)}</div>
+                  </button>
+                  <button
+                    onClick={() => deleteConversation(c.id)}
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                    title="Delete session"
+                  >
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Conversation pane */}
+      <div className="flex min-h-0 flex-col">
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto px-1">
         {isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
@@ -228,6 +310,7 @@ function ChatTab({
           placeholder={`Message ${agent.name}…`}
         />
         {error && <p className="mt-2 text-center text-xs text-destructive">{error}</p>}
+      </div>
       </div>
     </div>
   );
@@ -1292,6 +1375,197 @@ function RawJsonConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<s
 }
 
 // ============================================================================
+// MEMORY TAB — the agent's persistent cross-session knowledge store
+// ============================================================================
+
+const MEMORY_KINDS: MemoryKind[] = ["fact", "preference", "learning", "context"];
+
+function MemoryTab({ agent }: { agent: InternalAgent }) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [kindFilter, setKindFilter] = useState<MemoryKind | "all">("all");
+  const [search, setSearch] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [newKind, setNewKind] = useState<MemoryKind>("fact");
+  const [newImportance, setNewImportance] = useState(3);
+  const [adding, setAdding] = useState(false);
+
+  const { data: memories } = useQuery({
+    queryKey: ["internal_agent_memories", agent.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("internal_agent_memories")
+        .select("*")
+        .eq("agent_id", agent.id)
+        .order("is_pinned", { ascending: false })
+        .order("importance", { ascending: false })
+        .order("updated_at", { ascending: false })
+        .limit(300);
+      return (data ?? []) as AgentMemory[];
+    },
+  });
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_memories", agent.id] });
+
+  async function addMemory() {
+    const content = newContent.trim();
+    if (!content || !user) return;
+    setAdding(true);
+    try {
+      const { error } = await supabase.from("internal_agent_memories").insert({
+        agent_id: agent.id,
+        workspace_id: agent.workspace_id,
+        project_id: agent.project_id,
+        kind: newKind,
+        content: content.slice(0, 600),
+        importance: newImportance,
+        source: "user",
+        created_by: user.id,
+      });
+      if (error) { alert(error.message); return; }
+      setNewContent("");
+      invalidate();
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function togglePin(m: AgentMemory) {
+    await supabase
+      .from("internal_agent_memories")
+      .update({ is_pinned: !m.is_pinned, updated_at: new Date().toISOString() })
+      .eq("id", m.id);
+    invalidate();
+  }
+
+  async function removeMemory(id: string) {
+    if (!confirm("Forget this memory? The agent will no longer see it.")) return;
+    await supabase.from("internal_agent_memories").delete().eq("id", id);
+    invalidate();
+  }
+
+  const visible = (memories ?? []).filter((m) => {
+    if (kindFilter !== "all" && m.kind !== kindFilter) return false;
+    if (search && !m.content.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Brain className="h-4 w-4 text-muted-foreground" /> Memory
+            <Badge variant="outline" className="text-[10px]">{memories?.length ?? 0} / 300</Badge>
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Durable knowledge the agent carries into every chat session and mission run. The agent writes here
+            itself (save_memory); pinned entries are always injected into its prompt.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Add memory */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addMemory(); }}
+              placeholder="Teach the agent something durable… (e.g. 'Our ICP is B2B agencies of 5-50 people')"
+              className="h-8 min-w-[260px] flex-1 text-sm"
+            />
+            <select
+              value={newKind}
+              onChange={(e) => setNewKind(e.target.value as MemoryKind)}
+              className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+            >
+              {MEMORY_KINDS.map((k) => (
+                <option key={k} value={k}>{MEMORY_KIND_META[k].emoji} {MEMORY_KIND_META[k].label}</option>
+              ))}
+            </select>
+            <select
+              value={newImportance}
+              onChange={(e) => setNewImportance(Number(e.target.value))}
+              className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+              title="Importance (drives prompt priority)"
+            >
+              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>★ {n}</option>)}
+            </select>
+            <Button size="sm" onClick={addMemory} disabled={adding || !newContent.trim()}>
+              {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+              <span className="ml-1">Add</span>
+            </Button>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-1">
+              {(["all", ...MEMORY_KINDS] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setKindFilter(k as MemoryKind | "all")}
+                  className={cn(
+                    "rounded px-2 py-0.5 text-[11px] capitalize transition-colors",
+                    kindFilter === k ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
+                  )}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search memories…"
+              className="h-7 max-w-[200px] text-xs"
+            />
+          </div>
+
+          {/* List */}
+          {visible.length === 0 ? (
+            <p className="py-6 text-center text-xs text-muted-foreground">
+              {memories && memories.length > 0 ? "No memories match the filters." : "No memories yet. The agent saves them as it works, or add one above."}
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {visible.map((m) => {
+                const meta = MEMORY_KIND_META[m.kind];
+                return (
+                  <div key={m.id} className="group flex items-start gap-2 rounded-md border border-border p-2.5">
+                    <span className={cn("mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", meta.cls)}>
+                      {meta.emoji} {meta.label}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm">{m.content}</p>
+                      <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                        <span title="Importance">{"★".repeat(m.importance)}</span>
+                        <span>{m.source === "agent" ? "saved by agent" : "added by team"}</span>
+                        <span>{relativeDate(m.updated_at)}</span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button onClick={() => togglePin(m)} title={m.is_pinned ? "Unpin" : "Pin (always in prompt)"}>
+                        {m.is_pinned
+                          ? <PinOff className="h-3.5 w-3.5 text-muted-foreground" />
+                          : <Pin className="h-3.5 w-3.5 text-muted-foreground" />}
+                      </button>
+                      <button onClick={() => removeMemory(m.id)} title="Forget">
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </button>
+                    </div>
+                    {m.is_pinned && <Pin className="h-3 w-3 shrink-0 text-amber-500 group-hover:hidden" />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
 // APPROVALS TAB — human-in-the-loop queue for sensitive agent actions
 // ============================================================================
 
@@ -1880,6 +2154,7 @@ export const INTERNAL_AGENT_TABS: { slug: InternalAgentTab; label: string; icon:
   { slug: "chat", label: "Chat", icon: MessageSquare },
   { slug: "mission", label: "Missions", icon: Target },
   { slug: "deliverables", label: "Deliverables", icon: Package },
+  { slug: "memory", label: "Memory", icon: Brain },
   { slug: "approvals", label: "Approvals", icon: ShieldCheck },
   { slug: "instructions", label: "Instructions", icon: FileText },
   { slug: "tools", label: "Tools", icon: Wrench },

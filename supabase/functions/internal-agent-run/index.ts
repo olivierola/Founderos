@@ -61,11 +61,23 @@ function providerFor(agent: AgentRow): "groq" | "deepseek" {
   return agent.model === "deepseek" ? "deepseek" : "groq";
 }
 
-function buildSystemPrompt(agent: AgentRow, capabilitySummary: string, mode: "chat" | "mission"): string {
+function buildSystemPrompt(
+  agent: AgentRow,
+  capabilitySummary: string,
+  mode: "chat" | "mission",
+  memorySection: string,
+): string {
   const lines: string[] = [];
   lines.push(`You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`);
   if (agent.instructions) {
     lines.push("", "Your detailed instructions:", agent.instructions);
+  }
+  if (memorySection) {
+    lines.push(
+      "",
+      "Your persistent memory (knowledge carried over from previous sessions and runs):",
+      memorySection,
+    );
   }
   lines.push(
     "",
@@ -76,6 +88,7 @@ function buildSystemPrompt(agent: AgentRow, capabilitySummary: string, mode: "ch
     "- Use your tools to gather real data — never invent numbers or facts.",
     "- Some tools require human approval: calling them queues the action for review. Acknowledge the pending approval and keep going.",
     "- If a tool errors, adapt: try another approach or state the limitation clearly.",
+    "- When you discover a durable fact, preference or lesson worth keeping, save it with save_memory (no transient details, no duplicates of the memory above).",
   );
   if (mode === "mission") {
     lines.push(
@@ -106,6 +119,33 @@ async function loadAgentAndTools(agentId: string) {
   return { agent: agent as AgentRow, tools: (tools ?? []) as AgentToolRow[] };
 }
 
+// Top-of-mind memory injected into every prompt: pinned first, then by
+// importance and recency, capped so it can't crowd out the context window.
+// The agent reaches older entries through search_memory.
+async function loadMemorySection(
+  admin: ReturnType<typeof createServiceClient>,
+  agentId: string,
+): Promise<string> {
+  const { data } = await admin
+    .from("internal_agent_memories")
+    .select("kind, content, importance, is_pinned")
+    .eq("agent_id", agentId)
+    .order("is_pinned", { ascending: false })
+    .order("importance", { ascending: false })
+    .order("updated_at", { ascending: false })
+    .limit(25);
+  if (!data || data.length === 0) return "";
+  const lines: string[] = [];
+  let budget = 3500;
+  for (const m of data as Array<{ kind: string; content: string; importance: number; is_pinned: boolean }>) {
+    const line = `- [${m.kind}${m.is_pinned ? ", pinned" : ""}] ${m.content}`;
+    if (line.length > budget) break;
+    budget -= line.length;
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
 function nextRunAt(schedule: string, from: Date): string {
   const d = new Date(from);
   if (schedule === "daily") d.setDate(d.getDate() + 1);
@@ -123,6 +163,7 @@ function makeToolContext(opts: {
   agent: AgentRow;
   runId: string | null;
   missionId: string | null;
+  conversationId?: string | null;
 }): InternalToolContext {
   const { admin, agent, runId, missionId } = opts;
   let lastCancelCheck = 0;
@@ -133,6 +174,7 @@ function makeToolContext(opts: {
     projectId: agent.project_id,
     agentId: agent.id,
     runId,
+    conversationId: opts.conversationId ?? null,
     createDeliverable: async (d) => {
       await admin.from("internal_agent_deliverables").insert({
         run_id: runId,
@@ -202,11 +244,12 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
     .order("created_at", { ascending: true })
     .limit(30);
 
-  const ctx = makeToolContext({ admin, agent, runId: null, missionId: null });
+  const ctx = makeToolContext({ admin, agent, runId: null, missionId: null, conversationId });
   const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
+  const memorySection = await loadMemorySection(admin, agent.id);
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "chat") },
+    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "chat", memorySection) },
     ...(history ?? [])
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
@@ -235,6 +278,12 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
     tokens_out: result.usage?.completion_tokens ?? 0,
     cost_usd: cost,
   });
+
+  // Bump the session so the conversation list sorts by recency.
+  await admin
+    .from("internal_agent_conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
 
   await logLlmUsage({
     workspace_id: agent.workspace_id,
@@ -283,6 +332,24 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
   const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
   await ctx.logEvent("log", { message: `Run started — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
 
+  const memorySection = await loadMemorySection(admin, agent.id);
+
+  // Continuity for re-runs (especially scheduled missions): show the agent
+  // what its last successful run produced so it builds on it instead of
+  // starting from scratch.
+  const { data: prevRun } = await admin
+    .from("internal_agent_runs")
+    .select("finished_at, final_output")
+    .eq("mission_id", mission.id)
+    .eq("status", "succeeded")
+    .neq("id", runId)
+    .order("finished_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const previousRunSection = prevRun?.final_output
+    ? `\n## Previous run (${prevRun.finished_at})\nYour last successful report for this mission, for continuity — focus on what changed since:\n${String(prevRun.final_output).slice(0, 2500)}\n`
+    : "";
+
   const deliverablesSpec = (Array.isArray(mission.expected_deliverables) ? mission.expected_deliverables : [])
     .map((d: { kind: string; name: string; description?: string }) =>
       `- ${d.kind}: ${d.name}${d.description ? ` — ${d.description}` : ""}`)
@@ -294,7 +361,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
 ${mission.brief ?? "(no brief provided)"}
 
 ${mission.acceptance_criteria ? `## Acceptance criteria\n${mission.acceptance_criteria}\n` : ""}
-${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}
+${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}${previousRunSection}
 Execute this mission now. Use your tools to gather what you need, save each expected deliverable with create_deliverable, then write your final mission report.`;
 
   const provider = providerFor(agent);
@@ -302,7 +369,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     const result = await callAiWithTools({
       provider,
       messages: [
-        { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission") },
+        { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection) },
         { role: "user", content: userPrompt },
       ],
       tools: defs,

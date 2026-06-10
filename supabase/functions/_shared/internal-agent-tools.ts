@@ -66,6 +66,8 @@ export interface InternalToolContext {
   projectId: string;
   agentId: string;
   runId: string | null;
+  /** Originating chat session, when running in chat mode. */
+  conversationId?: string | null;
   /** Persist a deliverable produced by the agent. */
   createDeliverable: (d: DeliverableDraft) => Promise<void>;
   /** Queue a sensitive action for human approval. Returns the approval id. */
@@ -376,6 +378,83 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- create_deliverable: save your outputs as durable deliverables (always available).");
+
+  // Always-on: persistent memory. The agent reads its memory from the system
+  // prompt and writes back through these tools.
+  tools.set("save_memory", {
+    def: {
+      name: "save_memory",
+      description:
+        "Persist a durable memory you will see in every future session: a stable fact, a team preference, a lesson learned, or background context. Use it when you discover something worth remembering beyond this session. Don't save transient details or duplicates of what's already in your memory.",
+      parameters: {
+        type: "object",
+        properties: {
+          content: { type: "string", description: "The memory, one self-contained statement (max ~500 chars)." },
+          kind: { type: "string", enum: ["fact", "preference", "learning", "context"], description: "Type of memory (default fact)." },
+          importance: { type: "number", description: "1 (minor) to 5 (critical). Default 3." },
+        },
+        required: ["content"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const content = str(args.content).trim().slice(0, 600);
+      if (!content) return "ERROR: content is required.";
+      const kind = ["fact", "preference", "learning", "context"].includes(str(args.kind)) ? str(args.kind) : "fact";
+      const importance = Math.min(Math.max(Math.round(Number(args.importance ?? 3)) || 3, 1), 5);
+      // Bound the store: beyond the cap the agent must consolidate, not hoard.
+      const { count } = await ctx.admin
+        .from("internal_agent_memories")
+        .select("id", { count: "exact", head: true })
+        .eq("agent_id", ctx.agentId);
+      if ((count ?? 0) >= 300) {
+        return "ERROR: memory store is full (300 entries). Ask the team to prune the Memory tab before saving more.";
+      }
+      const { error } = await ctx.admin.from("internal_agent_memories").insert({
+        agent_id: ctx.agentId,
+        workspace_id: ctx.workspaceId,
+        project_id: ctx.projectId,
+        kind,
+        content,
+        importance,
+        source: "agent",
+        source_run_id: ctx.runId,
+        source_conversation_id: ctx.conversationId ?? null,
+      });
+      if (error) return `ERROR: ${error.message}`;
+      return `Memory saved (${kind}, importance ${importance}).`;
+    },
+  });
+  tools.set("search_memory", {
+    def: {
+      name: "search_memory",
+      description:
+        "Search your full persistent memory by keyword. Your system prompt only shows the top memories — use this when you need older or less prominent ones.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Keyword(s) to search for." },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const query = str(args.query).trim();
+      if (!query) return "ERROR: query is required.";
+      const { data } = await ctx.admin
+        .from("internal_agent_memories")
+        .select("kind, content, importance, created_at")
+        .eq("agent_id", ctx.agentId)
+        .ilike("content", `%${query.slice(0, 60)}%`)
+        .order("importance", { ascending: false })
+        .order("updated_at", { ascending: false })
+        .limit(10);
+      if (!data || data.length === 0) return "No matching memories.";
+      return JSON.stringify(data);
+    },
+  });
+  summaryLines.push("- save_memory / search_memory: your persistent cross-session memory (always available).");
 
   const enabled = rows.filter((r) => r.enabled);
   const hasKind = (k: AgentToolRow["kind"]) => enabled.some((r) => r.kind === k);

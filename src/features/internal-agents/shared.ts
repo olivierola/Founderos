@@ -97,6 +97,39 @@ export interface RunEvent {
   created_at: string;
 }
 
+export interface AgentConversation {
+  id: string;
+  agent_id: string;
+  title: string | null;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MemoryKind = "fact" | "preference" | "learning" | "context";
+
+export interface AgentMemory {
+  id: string;
+  agent_id: string;
+  kind: MemoryKind;
+  content: string;
+  source: "agent" | "user";
+  source_run_id: string | null;
+  source_conversation_id: string | null;
+  importance: number;
+  is_pinned: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const MEMORY_KIND_META: Record<MemoryKind, { label: string; emoji: string; cls: string }> = {
+  fact: { label: "Fact", emoji: "📌", cls: "bg-sky-500/15 text-sky-600" },
+  preference: { label: "Preference", emoji: "⚙️", cls: "bg-violet-500/15 text-violet-600" },
+  learning: { label: "Learning", emoji: "💡", cls: "bg-amber-500/15 text-amber-600" },
+  context: { label: "Context", emoji: "📚", cls: "bg-emerald-500/15 text-emerald-600" },
+};
+
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
 
 export interface AgentApproval {
