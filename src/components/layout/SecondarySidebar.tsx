@@ -68,15 +68,11 @@ export function SecondarySidebar() {
           </NavLink>
         </div>
         <nav className="flex-1 overflow-y-auto p-2">
-          {INTERNAL_AGENT_TABS.map((t) => {
-            const Icon = t.icon;
-            return (
-              <NavLink key={t.slug} end to={`${base}/agent/internal/${agentId}/${t.slug}`} className={linkClass}>
-                <Icon className="mr-2 h-4 w-4" />
-                {t.label}
-              </NavLink>
-            );
-          })}
+          {INTERNAL_AGENT_TABS.map((t) => (
+            <NavLink key={t.slug} end to={`${base}/agent/internal/${agentId}/${t.slug}`} className={linkClass}>
+              {t.label}
+            </NavLink>
+          ))}
         </nav>
       </aside>
     );
