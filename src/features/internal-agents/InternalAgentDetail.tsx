@@ -1031,13 +1031,24 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
             {tools.map((t) => {
               const def = TOOL_CATALOGUE.find((d) => d.kind === t.kind);
               const Icon = def?.icon ?? Wrench;
+              const configIssue = toolConfigIssue(t);
               return (
                 <div key={t.id} className="rounded-md border border-border p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Icon className="h-4 w-4 text-muted-foreground" />
                       <div>
-                        <div className="text-sm font-medium">{t.name}</div>
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          {t.name}
+                          {configIssue && t.enabled && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+                              title={configIssue}
+                            >
+                              <AlertCircle className="h-2.5 w-2.5" /> Needs configuration
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-muted-foreground">{def?.description ?? t.description}</div>
                       </div>
                     </div>
@@ -1102,6 +1113,22 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
       </Dialog>
     </Card>
   );
+}
+
+// A tool whose required config is missing is silently skipped by the worker —
+// surface that in the UI so the user knows why the agent can't use it.
+function toolConfigIssue(t: AgentTool): string | null {
+  if (t.kind === "db_read") {
+    const tables = Array.isArray(t.config?.tables) ? t.config.tables : [];
+    if (tables.length === 0) return "No tables allowed yet — the agent can't read anything. Configure the table allowlist.";
+  }
+  if (t.kind === "edge_function" && !/^[a-z0-9-]+$/.test(String(t.config?.slug ?? ""))) {
+    return "No function slug configured — the worker skips this tool. Set the slug.";
+  }
+  if (t.kind === "custom" && !/^https?:\/\//.test(String(t.config?.webhook_url ?? ""))) {
+    return "No webhook URL configured — the worker skips this tool. Set the URL.";
+  }
+  return null;
 }
 
 // Structured configuration per tool kind. Kinds without options (web_search,

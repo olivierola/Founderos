@@ -135,14 +135,42 @@ async function webSearch(query: string, maxResults: number): Promise<string> {
       return JSON.stringify({ provider: "tavily", results });
     }
   }
-  // Keyless fallback: DuckDuckGo HTML endpoint.
-  const res = await fetch(
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-    { headers: { "User-Agent": "Mozilla/5.0 (compatible; FounderOSAgent/1.0)" } },
-  );
-  if (!res.ok) return `ERROR: web search failed (${res.status}).`;
-  const html = await res.text();
-  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  // Keyless fallbacks: DuckDuckGo HTML endpoint, then the lite variant (the
+  // full endpoint sometimes serves an anomaly page to datacenter IPs).
+  const html = await fetchDdg(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`);
+  let results = html ? parseDdgHtml(html, maxResults) : [];
+  if (results.length === 0) {
+    const lite = await fetchDdg(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`);
+    if (lite) results = parseDdgLite(lite, maxResults);
+  }
+  if (results.length === 0) {
+    return "ERROR: web search returned no results (search providers unreachable). Try read_url on a known site, or ask the team to configure TAVILY_API_KEY.";
+  }
+  return JSON.stringify({ provider: "duckduckgo", results });
+}
+
+async function fetchDdg(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; FounderOSAgent/1.0)" },
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+interface SearchHit { title: string; url: string; snippet: string }
+
+// Unwrap DDG redirect links: //duckduckgo.com/l/?uddg=<encoded>
+function unwrapDdgUrl(url: string): string {
+  const uddg = url.match(/uddg=([^&]+)/);
+  return uddg ? decodeURIComponent(uddg[1]) : url;
+}
+
+function parseDdgHtml(html: string, maxResults: number): SearchHit[] {
+  const results: SearchHit[] = [];
   const linkRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
   const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
   const snippets: string[] = [];
@@ -151,18 +179,29 @@ async function webSearch(query: string, maxResults: number): Promise<string> {
     snippets.push(decodeEntities(m[1].replace(/<[^>]+>/g, "")).trim());
   }
   while ((m = linkRe.exec(html)) && results.length < maxResults) {
-    let url = m[1];
-    // DDG wraps results: //duckduckgo.com/l/?uddg=<encoded>
-    const uddg = url.match(/uddg=([^&]+)/);
-    if (uddg) url = decodeURIComponent(uddg[1]);
     results.push({
       title: decodeEntities(m[2].replace(/<[^>]+>/g, "")).trim(),
-      url,
+      url: unwrapDdgUrl(m[1]),
       snippet: snippets[results.length] ?? "",
     });
   }
-  if (results.length === 0) return "No results found.";
-  return JSON.stringify({ provider: "duckduckgo", results });
+  return results;
+}
+
+function parseDdgLite(html: string, maxResults: number): SearchHit[] {
+  const results: SearchHit[] = [];
+  const linkRe = /<a[^>]+rel="nofollow"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let m: RegExpExecArray | null;
+  while ((m = linkRe.exec(html)) && results.length < maxResults) {
+    const url = unwrapDdgUrl(m[1]);
+    if (!/^https?:\/\//i.test(url)) continue;
+    results.push({
+      title: decodeEntities(m[2].replace(/<[^>]+>/g, "")).trim(),
+      url,
+      snippet: "",
+    });
+  }
+  return results;
 }
 
 async function readUrl(url: string): Promise<string> {

@@ -283,7 +283,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
   const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
   await ctx.logEvent("log", { message: `Run started — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
 
-  const deliverablesSpec = (mission.expected_deliverables ?? [])
+  const deliverablesSpec = (Array.isArray(mission.expected_deliverables) ? mission.expected_deliverables : [])
     .map((d: { kind: string; name: string; description?: string }) =>
       `- ${d.kind}: ${d.name}${d.description ? ` — ${d.description}` : ""}`)
     .join("\n");
