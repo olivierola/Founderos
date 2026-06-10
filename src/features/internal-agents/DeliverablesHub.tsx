@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Star, Download, ExternalLink, FileText, FileJson, FileCode,
-  Link2, Paperclip, Package, Filter, X, Target,
+  Link2, Paperclip, Package, Filter, X, Target, ArrowLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,9 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import {
@@ -35,7 +32,8 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
   const [kindFilter, setKindFilter] = useState<string | null>(null);
   const [missionFilter, setMissionFilter] = useState<string | null>(null);
   const [pinnedOnly, setPinnedOnly] = useState(false);
-  const [preview, setPreview] = useState<Deliverable | null>(null);
+  // Selected deliverable opens inline (replaces the grid), not in a modal.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: deliverables, isLoading } = useQuery({
     queryKey: ["internal_agent_all_deliverables", agent.id],
@@ -101,6 +99,20 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
   }
 
   const hasFilters = !!(kindFilter || missionFilter || pinnedOnly || search.trim());
+
+  // Resolve from the live list so pin/unpin updates reflect immediately.
+  const selected = selectedId ? (deliverables ?? []).find((d) => d.id === selectedId) ?? null : null;
+
+  if (selected) {
+    return (
+      <DeliverableDetail
+        d={selected}
+        missionTitle={missionTitle[selected.mission_id]}
+        onBack={() => setSelectedId(null)}
+        onTogglePin={() => togglePin(selected)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -172,19 +184,12 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
               key={d.id}
               d={d}
               missionTitle={missionTitle[d.mission_id]}
-              onOpen={() => setPreview(d)}
+              onOpen={() => setSelectedId(d.id)}
               onTogglePin={() => togglePin(d)}
             />
           ))}
         </div>
       )}
-
-      <DeliverablePreviewDialog
-        d={preview}
-        missionTitle={preview ? missionTitle[preview.mission_id] : undefined}
-        onOpenChange={(o) => !o && setPreview(null)}
-        onTogglePin={preview ? () => togglePin(preview) : undefined}
-      />
     </div>
   );
 }
@@ -252,33 +257,54 @@ function DeliverableCard({
   );
 }
 
-function DeliverablePreviewDialog({
-  d, missionTitle, onOpenChange, onTogglePin,
+// Full-width inline reader — replaces the grid inside the tab (no modal).
+function DeliverableDetail({
+  d, missionTitle, onBack, onTogglePin,
 }: {
-  d: Deliverable | null;
+  d: Deliverable;
   missionTitle?: string;
-  onOpenChange: (o: boolean) => void;
-  onTogglePin?: () => void;
+  onBack: () => void;
+  onTogglePin: () => void;
 }) {
-  if (!d) return null;
   const Icon = KIND_ICON[d.kind] ?? FileText;
   return (
-    <Dialog open={!!d} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 pr-8">
-            <Icon className="h-4 w-4 text-muted-foreground" />
-            <span className="truncate">{d.name}</span>
-            <Badge variant="outline" className="text-[10px]">{d.kind}</Badge>
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {missionTitle && <span><Target className="mr-1 inline h-3 w-3" />{missionTitle}</span>}
-          <span>· {relativeDate(d.created_at)}</span>
+    <div className="space-y-3">
+      {/* Header bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={onBack}>
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Deliverables
+        </Button>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="truncate text-sm font-semibold">{d.name}</span>
+          <Badge variant="outline" className="shrink-0 text-[10px]">{d.kind}</Badge>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="outline" onClick={onTogglePin}>
+            <Star className={cn("mr-1 h-3.5 w-3.5", d.is_pinned && "fill-current text-amber-500")} />
+            {d.is_pinned ? "Pinned" : "Pin"}
+          </Button>
+          {d.file_url && (
+            <a href={d.file_url} target="_blank" rel="noreferrer">
+              <Button size="sm" variant="outline"><ExternalLink className="mr-1 h-3.5 w-3.5" /> Open</Button>
+            </a>
+          )}
+          {d.content && (
+            <Button size="sm" onClick={() => downloadDeliverable(d)}>
+              <Download className="mr-1 h-3.5 w-3.5" /> Download
+            </Button>
+          )}
+        </div>
+      </div>
 
-        <div className="max-h-[60vh] overflow-y-auto rounded-md border border-border bg-muted/20 p-4">
+      <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+        {missionTitle && <span><Target className="mr-1 inline h-3 w-3" />{missionTitle}</span>}
+        <span>{missionTitle ? "· " : ""}{relativeDate(d.created_at)}</span>
+      </div>
+
+      {/* Content */}
+      <Card>
+        <CardContent className="p-5">
           {d.kind === "markdown" ? (
             <div className="prose prose-sm max-w-none dark:prose-invert">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{d.content ?? "_Empty_"}</ReactMarkdown>
@@ -288,31 +314,10 @@ function DeliverablePreviewDialog({
               {d.content ?? d.file_url}
             </a>
           ) : (
-            <pre className="whitespace-pre-wrap break-words text-xs">{d.content ?? "(no inline content)"}</pre>
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted/20 p-3 text-xs">{d.content ?? "(no inline content)"}</pre>
           )}
-        </div>
-
-        <div className="flex items-center justify-between border-t border-border pt-3">
-          {onTogglePin && (
-            <Button size="sm" variant="outline" onClick={onTogglePin}>
-              <Star className={cn("mr-1 h-3.5 w-3.5", d.is_pinned && "fill-current text-amber-500")} />
-              {d.is_pinned ? "Pinned" : "Pin"}
-            </Button>
-          )}
-          <div className="ml-auto flex gap-2">
-            {d.file_url && (
-              <a href={d.file_url} target="_blank" rel="noreferrer">
-                <Button size="sm" variant="outline"><ExternalLink className="mr-1 h-3.5 w-3.5" /> Open</Button>
-              </a>
-            )}
-            {d.content && (
-              <Button size="sm" onClick={() => downloadDeliverable(d)}>
-                <Download className="mr-1 h-3.5 w-3.5" /> Download
-              </Button>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
