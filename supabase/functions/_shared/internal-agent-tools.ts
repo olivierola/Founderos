@@ -456,6 +456,69 @@ export function buildInternalToolset(
   });
   summaryLines.push("- save_memory / search_memory: your persistent cross-session memory (always available).");
 
+  // Always-on: the agent manages its own kanban board.
+  const BOARD_COLUMNS = ["backlog", "todo", "in_progress", "review", "done"];
+  tools.set("list_missions", {
+    def: {
+      name: "list_missions",
+      description:
+        "List your missions and their kanban position (backlog → todo → in_progress → review → done), priority and due date.",
+      parameters: {
+        type: "object",
+        properties: {
+          column: { type: "string", enum: BOARD_COLUMNS, description: "Optional: only this board column." },
+        },
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      let q = ctx.admin
+        .from("internal_agent_missions")
+        .select("id, title, board_column, status, priority, due_date, schedule, last_run_at")
+        .eq("agent_id", ctx.agentId)
+        .neq("status", "archived")
+        .order("updated_at", { ascending: false })
+        .limit(50);
+      if (BOARD_COLUMNS.includes(str(args.column))) q = q.eq("board_column", str(args.column));
+      const { data, error } = await q;
+      if (error) return `ERROR: ${error.message}`;
+      if (!data || data.length === 0) return "No missions on the board.";
+      return JSON.stringify(data);
+    },
+  });
+  tools.set("move_mission", {
+    def: {
+      name: "move_mission",
+      description:
+        "Move one of your missions to another kanban column (e.g. to 'review' when its output is ready for a human, or 'done' once validated). Use list_missions to get mission ids.",
+      parameters: {
+        type: "object",
+        properties: {
+          mission_id: { type: "string", description: "Mission id (uuid)." },
+          column: { type: "string", enum: BOARD_COLUMNS, description: "Target column." },
+        },
+        required: ["mission_id", "column"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const missionId = str(args.mission_id);
+      const column = str(args.column);
+      if (!BOARD_COLUMNS.includes(column)) return "ERROR: invalid column.";
+      const { data, error } = await ctx.admin
+        .from("internal_agent_missions")
+        .update({ board_column: column, updated_at: new Date().toISOString() })
+        .eq("id", missionId)
+        .eq("agent_id", ctx.agentId)
+        .select("id, title")
+        .maybeSingle();
+      if (error) return `ERROR: ${error.message}`;
+      if (!data) return "ERROR: mission not found (or it belongs to another agent).";
+      return `Mission "${(data as { title: string }).title}" moved to ${column}.`;
+    },
+  });
+  summaryLines.push("- list_missions / move_mission: inspect and move missions on your kanban board (always available).");
+
   const enabled = rows.filter((r) => r.enabled);
   const hasKind = (k: AgentToolRow["kind"]) => enabled.some((r) => r.kind === k);
 

@@ -327,6 +327,12 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
     .from("internal_agent_runs")
     .update({ status: "running", started_at: new Date().toISOString() })
     .eq("id", runId);
+  // Kanban: a running mission sits in "in_progress".
+  await admin
+    .from("internal_agent_missions")
+    .update({ board_column: "in_progress" })
+    .eq("id", run.mission_id)
+    .in("board_column", ["backlog", "todo"]);
 
   const ctx = makeToolContext({ admin, agent, runId, missionId: mission.id });
   const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
@@ -427,10 +433,16 @@ Execute this mission now. Use your tools to gather what you need, save each expe
       })
       .eq("id", runId);
 
-    // Scheduling bookkeeping.
+    // Scheduling + kanban bookkeeping: output ready → "review" awaits a human
+    // (unless the agent explicitly moved the card itself during the run).
     const missionUpdate: Record<string, unknown> = { last_run_at: new Date().toISOString() };
     if (mission.schedule) missionUpdate.next_run_at = nextRunAt(mission.schedule, new Date());
     await admin.from("internal_agent_missions").update(missionUpdate).eq("id", mission.id);
+    await admin
+      .from("internal_agent_missions")
+      .update({ board_column: "review" })
+      .eq("id", mission.id)
+      .eq("board_column", "in_progress");
 
     await logLlmUsage({
       workspace_id: agent.workspace_id,
@@ -457,6 +469,12 @@ Execute this mission now. Use your tools to gather what you need, save each expe
       .from("internal_agent_runs")
       .update({ status: "failed", finished_at: new Date().toISOString(), error_message: msg })
       .eq("id", runId);
+    // Kanban: failed run → back to "todo" so it's visibly awaiting action.
+    await admin
+      .from("internal_agent_missions")
+      .update({ board_column: "todo" })
+      .eq("id", run.mission_id)
+      .eq("board_column", "in_progress");
     await admin.from("internal_agent_run_events").insert({
       run_id: runId,
       agent_id: agent.id,

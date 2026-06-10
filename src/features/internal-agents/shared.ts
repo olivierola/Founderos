@@ -64,10 +64,21 @@ export interface Mission {
   assigned_to: string | null;
   tags: string[];
   schedule: MissionSchedule;
+  board_column: BoardColumn;
   last_run_at: string | null;
   next_run_at: string | null;
   created_at: string;
 }
+
+export type BoardColumn = "backlog" | "todo" | "in_progress" | "review" | "done";
+
+export const BOARD_COLUMNS: { key: BoardColumn; label: string; accent: string }[] = [
+  { key: "backlog", label: "Backlog", accent: "bg-muted-foreground/40" },
+  { key: "todo", label: "To do", accent: "bg-sky-500" },
+  { key: "in_progress", label: "In progress", accent: "bg-amber-500" },
+  { key: "review", label: "Review", accent: "bg-violet-500" },
+  { key: "done", label: "Done", accent: "bg-emerald-500" },
+];
 
 export interface MissionRun {
   id: string;

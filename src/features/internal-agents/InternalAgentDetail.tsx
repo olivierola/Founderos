@@ -7,7 +7,7 @@ import {
   MessageSquare, Globe, Database, Zap, KeyRound, Play, Clock,
   CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
   CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
-  ListTree, Gauge, Brain, Pin, PinOff,
+  ListTree, Gauge, Brain, Pin, PinOff, ArrowLeft, ChevronDown, History,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -18,6 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/EmptyState";
 import { ChatComposer } from "@/components/ui/chat-composer";
 import { supabase } from "@/lib/supabase";
@@ -31,8 +35,8 @@ import { MissionWizard, type MissionDraft } from "./MissionWizard";
 import {
   type InternalAgent, type Mission, type MissionRun, type Deliverable,
   type WorkspaceMemberRow, type RunEvent, type AgentApproval,
-  type AgentConversation, type AgentMemory, type MemoryKind,
-  PRIORITY_META, MEMORY_KIND_META, loadWorkspaceMembers, memberLabel,
+  type AgentConversation, type AgentMemory, type MemoryKind, type BoardColumn,
+  PRIORITY_META, MEMORY_KIND_META, BOARD_COLUMNS, loadWorkspaceMembers, memberLabel,
   dueDateMeta, downloadDeliverable, relativeDate,
 } from "./shared";
 
@@ -219,57 +223,64 @@ function ChatTab({
   }
 
   const isEmpty = !messages || messages.length === 0;
+  const currentConvo = conversations?.find((c) => c.id === convoId) ?? null;
 
   return (
-    <div className="grid h-[calc(100vh-12rem)] gap-4 lg:grid-cols-[240px_1fr]">
-      {/* Session list */}
-      <Card className="hidden max-h-full flex-col lg:flex">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 py-3">
-          <CardTitle className="text-xs">Sessions</CardTitle>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => { setConvoId(null); setStartedFresh(true); setError(null); }}
-          >
-            <Plus className="mr-1 h-3 w-3" /> New
-          </Button>
-        </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto p-2">
-          {!conversations || conversations.length === 0 ? (
-            <p className="px-2 py-4 text-center text-[11px] text-muted-foreground">No sessions yet.</p>
-          ) : (
-            <div className="space-y-1">
-              {conversations.map((c) => (
-                <div
-                  key={c.id}
-                  className={cn(
-                    "group flex items-center gap-1 rounded-md px-2 py-1.5",
-                    convoId === c.id ? "bg-foreground/10" : "hover:bg-foreground/5",
-                  )}
-                >
-                  <button
+    <div className="flex h-[calc(100vh-12rem)] flex-col">
+      {/* Floating session switcher */}
+      <div className="flex items-center justify-between px-1 pb-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" className="max-w-[320px]">
+              <History className="mr-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">
+                {currentConvo ? (currentConvo.title || "Untitled session") : "New session"}
+              </span>
+              <ChevronDown className="ml-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-72">
+            <DropdownMenuItem
+              onClick={() => { setConvoId(null); setStartedFresh(true); setError(null); }}
+            >
+              <Plus className="mr-2 h-3.5 w-3.5" /> New session
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">
+              Recent sessions
+            </DropdownMenuLabel>
+            {!conversations || conversations.length === 0 ? (
+              <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">No sessions yet.</div>
+            ) : (
+              <div className="max-h-72 overflow-y-auto">
+                {conversations.map((c) => (
+                  <DropdownMenuItem
+                    key={c.id}
+                    className={cn("group flex items-center gap-2", convoId === c.id && "bg-foreground/5")}
                     onClick={() => { setConvoId(c.id); setStartedFresh(false); setError(null); }}
-                    className="min-w-0 flex-1 text-left"
                   >
-                    <div className="truncate text-xs font-medium">{c.title || "Untitled session"}</div>
-                    <div className="text-[10px] text-muted-foreground">{relativeDate(c.updated_at)}</div>
-                  </button>
-                  <button
-                    onClick={() => deleteConversation(c.id)}
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
-                    title="Delete session"
-                  >
-                    <Trash2 className="h-3 w-3 text-destructive" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium">{c.title || "Untitled session"}</div>
+                      <div className="text-[10px] text-muted-foreground">{relativeDate(c.updated_at)}</div>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }}
+                      className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                      title="Delete session"
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </button>
+                  </DropdownMenuItem>
+                ))}
+              </div>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {currentConvo && (
+          <span className="text-[10px] text-muted-foreground">{relativeDate(currentConvo.updated_at)}</span>
+        )}
+      </div>
 
-      {/* Conversation pane */}
-      <div className="flex min-h-0 flex-col">
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto px-1">
         {isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
@@ -310,7 +321,6 @@ function ChatTab({
           placeholder={`Message ${agent.name}…`}
         />
         {error && <p className="mt-2 text-center text-xs text-destructive">{error}</p>}
-      </div>
       </div>
     </div>
   );
@@ -359,18 +369,23 @@ function MissionTab({
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<"all" | Mission["status"]>("all");
+  const [dragOverCol, setDragOverCol] = useState<BoardColumn | null>(null);
 
   const { data: missions } = useQuery({
     queryKey: ["internal_agent_missions", agent.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agent_missions")
-        .select("id, agent_id, title, brief, acceptance_criteria, expected_deliverables, status, priority, due_date, assigned_to, tags, schedule, created_at")
+        .select("id, agent_id, title, brief, acceptance_criteria, expected_deliverables, status, priority, due_date, assigned_to, tags, schedule, board_column, last_run_at, next_run_at, created_at")
         .eq("agent_id", agent.id)
-        .order("created_at", { ascending: false });
+        .neq("status", "archived")
+        .order("updated_at", { ascending: false });
       return (data ?? []) as Mission[];
     },
+    // The agent moves cards itself (move_mission + worker auto-moves):
+    // refresh the board while any of its missions is being worked on.
+    refetchInterval: (q) =>
+      (q.state.data as Mission[] | undefined)?.some((m) => m.board_column === "in_progress") ? 4000 : false,
   });
 
   const { data: members } = useQuery({
@@ -384,20 +399,21 @@ function MissionTab({
     return m;
   }, [members]);
 
-  // Auto-select first mission once loaded.
-  useEffect(() => {
-    if (!selectedId && missions && missions.length > 0) setSelectedId(missions[0].id);
-  }, [missions, selectedId]);
-
-  const visible = useMemo(
-    () => (missions ?? []).filter((m) => statusFilter === "all" || m.status === statusFilter),
-    [missions, statusFilter],
-  );
-
   const selected = useMemo(
     () => missions?.find((m) => m.id === selectedId) ?? null,
     [missions, selectedId],
   );
+
+  async function moveMission(missionId: string, column: BoardColumn) {
+    // Optimistic: snap the card into place before the round-trip.
+    queryClient.setQueryData(["internal_agent_missions", agent.id], (old: Mission[] | undefined) =>
+      (old ?? []).map((m) => (m.id === missionId ? { ...m, board_column: column } : m)));
+    await supabase
+      .from("internal_agent_missions")
+      .update({ board_column: column, updated_at: new Date().toISOString() })
+      .eq("id", missionId);
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_missions", agent.id] });
+  }
 
   async function createMission(draft: MissionDraft) {
     if (!user || !workspaceId || !projectId) return;
@@ -433,60 +449,76 @@ function MissionTab({
     if (data) setSelectedId(data.id);
   }
 
-  return (
-    <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
-      <Card className="flex max-h-[calc(100vh-12rem)] flex-col">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm">Missions</CardTitle>
-          <Button size="sm" onClick={() => setWizardOpen(true)}>
-            <Plus className="mr-1 h-3.5 w-3.5" /> Assign
-          </Button>
-        </CardHeader>
-        <div className="flex gap-1 px-3 pb-2">
-          {(["all", "active", "draft", "archived"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={cn(
-                "rounded px-2 py-0.5 text-[11px] capitalize transition-colors",
-                statusFilter === s ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
-              )}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto p-2">
-          {visible.length === 0 ? (
-            <p className="px-2 py-4 text-center text-xs text-muted-foreground">No missions</p>
-          ) : (
-            <div className="space-y-1">
-              {visible.map((m) => (
-                <MissionListItem
-                  key={m.id}
-                  m={m}
-                  selected={selectedId === m.id}
-                  assignee={m.assigned_to ? memberById[m.assigned_to] : undefined}
-                  onClick={() => setSelectedId(m.id)}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div>
-        {!selected ? (
-          <EmptyState
-            icon={Target}
-            title="Assign a mission"
-            description="Give this agent a structured task with a brief, expected deliverables, an owner and a deadline."
-            action={<Button onClick={() => setWizardOpen(true)}><Plus className="mr-1.5 h-3.5 w-3.5" /> Assign mission</Button>}
-          />
-        ) : (
-          <MissionDetail mission={selected} agent={agent} members={members ?? []} />
-        )}
+  // Inline detail (no side-by-side): selecting a card swaps the board out.
+  if (selected) {
+    return (
+      <div className="space-y-3">
+        <Button size="sm" variant="ghost" onClick={() => setSelectedId(null)}>
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Board
+        </Button>
+        <MissionDetail mission={selected} agent={agent} members={members ?? []} />
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          Drag cards between columns — the agent moves them too as it works (running → In progress, output ready → Review).
+        </p>
+        <Button size="sm" onClick={() => setWizardOpen(true)}>
+          <Plus className="mr-1 h-3.5 w-3.5" /> Assign mission
+        </Button>
+      </div>
+
+      {(!missions || missions.length === 0) ? (
+        <EmptyState
+          icon={Target}
+          title="Assign a mission"
+          description="Give this agent a structured task with a brief, expected deliverables, an owner and a deadline."
+          action={<Button onClick={() => setWizardOpen(true)}><Plus className="mr-1.5 h-3.5 w-3.5" /> Assign mission</Button>}
+        />
+      ) : (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          {BOARD_COLUMNS.map((col) => {
+            const cards = (missions ?? []).filter((m) => (m.board_column ?? "todo") === col.key);
+            return (
+              <div
+                key={col.key}
+                onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.key); }}
+                onDragLeave={() => setDragOverCol((c) => (c === col.key ? null : c))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverCol(null);
+                  const id = e.dataTransfer.getData("text/mission-id");
+                  if (id) moveMission(id, col.key);
+                }}
+                className={cn(
+                  "flex min-h-[280px] flex-col rounded-lg border bg-muted/20 transition-colors",
+                  dragOverCol === col.key ? "border-primary/60 bg-primary/5" : "border-border",
+                )}
+              >
+                <div className="flex items-center gap-2 px-3 py-2.5">
+                  <span className={cn("h-2 w-2 rounded-full", col.accent)} />
+                  <span className="text-xs font-semibold">{col.label}</span>
+                  <span className="ml-auto rounded-full bg-foreground/10 px-1.5 text-[10px] text-muted-foreground">{cards.length}</span>
+                </div>
+                <div className="flex-1 space-y-2 px-2 pb-2">
+                  {cards.map((m) => (
+                    <KanbanCard
+                      key={m.id}
+                      m={m}
+                      assignee={m.assigned_to ? memberById[m.assigned_to] : undefined}
+                      onOpen={() => setSelectedId(m.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <MissionWizard
         open={wizardOpen}
@@ -498,30 +530,33 @@ function MissionTab({
   );
 }
 
-function MissionListItem({
-  m, selected, assignee, onClick,
+function KanbanCard({
+  m, assignee, onOpen,
 }: {
   m: Mission;
-  selected: boolean;
   assignee?: WorkspaceMemberRow;
-  onClick: () => void;
+  onOpen: () => void;
 }) {
   const pr = PRIORITY_META[m.priority];
   const due = dueDateMeta(m.due_date);
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full rounded-md px-2.5 py-2 text-left transition-colors",
-        selected ? "bg-foreground/10" : "hover:bg-foreground/5",
-      )}
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/mission-id", m.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onClick={onOpen}
+      className="cursor-grab rounded-md border border-border bg-background p-2.5 shadow-sm transition-colors hover:border-foreground/30 active:cursor-grabbing"
     >
       <div className="flex items-center gap-2">
         <span className={cn("h-2 w-2 shrink-0 rounded-full", pr.dot)} title={pr.label} />
-        <span className="truncate text-sm font-medium">{m.title}</span>
+        <span className="truncate text-xs font-medium">{m.title}</span>
+        {m.board_column === "in_progress" && (
+          <Loader2 className="ml-auto h-3 w-3 shrink-0 animate-spin text-amber-500" />
+        )}
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
-        <span className="uppercase tracking-wide">{m.status}</span>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
         {m.schedule && (
           <span className="inline-flex items-center gap-0.5"><Repeat className="h-2.5 w-2.5" />{m.schedule}</span>
         )}
@@ -531,17 +566,12 @@ function MissionListItem({
           </span>
         )}
         {assignee && (
-          <span className="inline-flex items-center gap-0.5"><UserCircle2 className="h-2.5 w-2.5" />{memberLabel(assignee)}</span>
+          <span className="inline-flex items-center gap-0.5">
+            <UserCircle2 className="h-2.5 w-2.5" />{memberLabel(assignee)}
+          </span>
         )}
       </div>
-      {m.tags.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {m.tags.slice(0, 3).map((t) => (
-            <span key={t} className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{t}</span>
-          ))}
-        </div>
-      )}
-    </button>
+    </div>
   );
 }
 
@@ -1036,14 +1066,30 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "web_fetch", label: "Fetch URL", icon: Globe, description: "Download and extract text from a URL." },
   { kind: "db_read", label: "Read project DB", icon: Database, description: "Read-only access to selected project tables." },
   { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed knowledge base." },
-  { kind: "edge_function", label: "Call edge function", icon: Zap, description: "Invoke an internal edge function." },
+  { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal FounderOS function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
   { kind: "custom", label: "Custom webhook tool", icon: Wrench, description: "Call an external webhook with model-provided arguments." },
+];
+
+// Curated internal connections the agent can be granted as edge_function
+// tools — pre-configured slug + description, one click to add.
+const EDGE_FUNCTION_CATALOGUE: Array<{ slug: string; label: string; description: string }> = [
+  { slug: "send-notification", label: "Send notification", description: "Send an in-app notification to the team." },
+  { slug: "send-email", label: "Send email", description: "Send a transactional email." },
+  { slug: "send-bulk-email", label: "Send bulk email", description: "Send an email campaign to a list of recipients." },
+  { slug: "marketing-generate", label: "Generate marketing content", description: "Draft marketing copy/visuals with the marketing engine." },
+  { slug: "marketing-publish", label: "Publish marketing post", description: "Publish a post through the connected marketing channels." },
+  { slug: "run-workflow", label: "Run ops workflow", description: "Trigger an automation workflow." },
+  { slug: "analytics-query", label: "Analytics query", description: "Run a product-analytics query on tracked events." },
+  { slug: "calculate-metrics", label: "Recompute metrics", description: "Recalculate the project metrics snapshot." },
+  { slug: "daily-briefing", label: "Daily briefing", description: "Generate the project's daily briefing." },
 ];
 
 function ToolsTab({ agent }: { agent: InternalAgent }) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  // Second step of the add dialog: pick a concrete connection from the catalogue.
+  const [addStep, setAddStep] = useState<"kinds" | "edge_function" | "vault_connector">("kinds");
 
   const { data: tools } = useQuery({
     queryKey: ["internal_agent_tools", agent.id],
@@ -1057,20 +1103,42 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
     },
   });
 
-  async function addTool(kind: AgentTool["kind"], name: string) {
+  // Live connections of the project, surfaced in the picker.
+  const { data: connectors } = useQuery({
+    queryKey: ["project_connectors_for_tools", agent.project_id],
+    enabled: addOpen,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("connectors")
+        .select("provider, status")
+        .eq("project_id", agent.project_id);
+      return (data ?? []) as Array<{ provider: string; status: string }>;
+    },
+  });
+
+  function closeAdd() {
+    setAddOpen(false);
+    setAddStep("kinds");
+  }
+
+  async function addTool(
+    kind: AgentTool["kind"],
+    name: string,
+    overrides?: { description?: string; config?: Record<string, any> },
+  ) {
     const def = TOOL_CATALOGUE.find((t) => t.kind === kind)!;
     const { error } = await supabase.from("internal_agent_tools").insert({
       agent_id: agent.id,
       kind,
       name: name || def.label,
-      description: def.description,
-      config: {},
+      description: overrides?.description ?? def.description,
+      config: overrides?.config ?? {},
       // Action tools start approval-gated — safe by default; owners can relax it.
       requires_approval: kind === "edge_function" || kind === "custom",
     });
     if (error) { alert(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
-    setAddOpen(false);
+    closeAdd();
   }
 
   async function toggle(tool: AgentTool) {
@@ -1171,27 +1239,98 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
         )}
       </CardContent>
 
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog open={addOpen} onOpenChange={(o) => { if (!o) closeAdd(); else setAddOpen(true); }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add a tool</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-1 gap-2">
-            {TOOL_CATALOGUE.map((t) => {
-              const Icon = t.icon;
-              return (
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {addStep !== "kinds" && (
+                <button onClick={() => setAddStep("kinds")} className="text-muted-foreground hover:text-foreground">
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+              )}
+              {addStep === "kinds" ? "Add a tool" : addStep === "edge_function" ? "Pick an internal action" : "Pick a connector"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {addStep === "kinds" && (
+            <div className="grid grid-cols-1 gap-2">
+              {TOOL_CATALOGUE.map((t) => {
+                const Icon = t.icon;
+                const hasCatalogue = t.kind === "edge_function" || t.kind === "vault_connector";
+                return (
+                  <button
+                    key={t.kind}
+                    onClick={() => (hasCatalogue ? setAddStep(t.kind as "edge_function" | "vault_connector") : addTool(t.kind, t.label))}
+                    className="flex items-start gap-3 rounded-md border border-border p-3 text-left transition-colors hover:bg-muted/40"
+                  >
+                    <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">{t.label}</div>
+                      <div className="text-xs text-muted-foreground">{t.description}</div>
+                    </div>
+                    {hasCatalogue && <ChevronDown className="mt-1 h-3.5 w-3.5 -rotate-90 text-muted-foreground" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {addStep === "edge_function" && (
+            <div className="max-h-[55vh] space-y-2 overflow-y-auto">
+              {EDGE_FUNCTION_CATALOGUE.map((fn) => (
                 <button
-                  key={t.kind}
-                  onClick={() => addTool(t.kind, t.label)}
-                  className="flex items-start gap-3 rounded-md border border-border p-3 text-left transition-colors hover:bg-muted/40"
+                  key={fn.slug}
+                  onClick={() => addTool("edge_function", fn.label, { description: fn.description, config: { slug: fn.slug } })}
+                  className="flex w-full items-start gap-3 rounded-md border border-border p-3 text-left transition-colors hover:bg-muted/40"
                 >
-                  <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                  <Zap className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   <div>
-                    <div className="text-sm font-medium">{t.label}</div>
-                    <div className="text-xs text-muted-foreground">{t.description}</div>
+                    <div className="text-sm font-medium">{fn.label}</div>
+                    <div className="text-xs text-muted-foreground">{fn.description}</div>
+                    <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">{fn.slug}</div>
                   </div>
                 </button>
-              );
-            })}
-          </div>
+              ))}
+              <button
+                onClick={() => addTool("edge_function", "Internal action")}
+                className="w-full rounded-md border border-dashed border-border p-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40"
+              >
+                Other function… (add empty, then set the slug in Configure)
+              </button>
+              <p className="px-1 text-[10px] text-muted-foreground">
+                Added actions are approval-gated by default — the agent's calls wait for a human until you switch them to auto-execute.
+              </p>
+            </div>
+          )}
+
+          {addStep === "vault_connector" && (
+            <div className="space-y-2">
+              {(connectors ?? []).length === 0 ? (
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  No connectors on this project yet. Connect one in Integrations first.
+                </p>
+              ) : (
+                (connectors ?? []).map((c) => (
+                  <button
+                    key={c.provider}
+                    onClick={() =>
+                      addTool("vault_connector", `Connector: ${c.provider}`, {
+                        description: `Visibility on the ${c.provider} connection (status, permissions — no secrets).`,
+                        config: { provider: c.provider },
+                      })
+                    }
+                    className="flex w-full items-center gap-3 rounded-md border border-border p-3 text-left transition-colors hover:bg-muted/40"
+                  >
+                    <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium capitalize">{c.provider}</div>
+                      <div className="text-xs text-muted-foreground">status: {c.status}</div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </Card>
