@@ -302,22 +302,24 @@ function DeliverableDetail({
         <span>{missionTitle ? "· " : ""}{relativeDate(d.created_at)}</span>
       </div>
 
-      {/* Content */}
-      <Card>
-        <CardContent className="p-5">
-          {d.kind === "markdown" ? (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{d.content ?? "_Empty_"}</ReactMarkdown>
-            </div>
-          ) : d.kind === "url" ? (
-            <a href={d.content ?? d.file_url ?? "#"} target="_blank" rel="noreferrer" className="break-all text-sm text-primary underline">
-              {d.content ?? d.file_url}
-            </a>
-          ) : (
-            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted/20 p-3 text-xs">{d.content ?? "(no inline content)"}</pre>
-          )}
-        </CardContent>
-      </Card>
+      {/* Content — rendered directly on the tab background, like a document. */}
+      <div className="px-1 pb-8 pt-2">
+        {d.kind === "url" ? (
+          <a href={d.content ?? d.file_url ?? "#"} target="_blank" rel="noreferrer" className="break-all text-sm text-primary underline">
+            {d.content ?? d.file_url}
+          </a>
+        ) : d.kind === "json" || d.kind === "code" ? (
+          <div className="prose prose-sm max-w-none dark:prose-invert">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {"```" + (d.kind === "json" ? "json" : "") + "\n" + (d.content ?? "(no inline content)") + "\n```"}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          <div className="prose prose-sm max-w-none dark:prose-invert">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{d.content ?? "_Empty_"}</ReactMarkdown>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
