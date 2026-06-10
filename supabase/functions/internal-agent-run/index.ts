@@ -1,23 +1,33 @@
-// internal-agent-run — execute an internal agent in either "chat" or "mission" mode.
+// internal-agent-run — execute an internal (autonomous) agent in "chat" or
+// "mission" mode.
 //
 // Body: { agent_id, mode: "chat" | "mission", conversation_id?, run_id? }
 //
-// Chat mode:
-//   - Loads the conversation history + the agent's persona/instructions/tools
-//   - Calls the LLM, persists the assistant message, returns it
+// v2: a real agentic loop. The agent's granted tools (internal_agent_tools)
+// are compiled into executable tool definitions and the LLM iterates —
+// searching the web, reading URLs, querying allowlisted project tables,
+// searching the RAG knowledge base, invoking edge functions / webhooks — until
+// the task is done or a budget is hit. Compared to v1:
 //
-// Mission mode:
-//   - Loads the mission brief + acceptance criteria + expected deliverables
-//   - Updates the run to "running", calls the LLM, writes events + final output
-//   - Materialises deliverables based on the LLM's structured response
-//
-// This is the v1 worker: a single-shot LLM call. Tool execution (web search,
-// DB read, edge function call) is left as a hook — when a tool is invoked
-// by the LLM, we record it as an event but don't yet execute it.
+//   - Tools are EXECUTED (v1 only mentioned them in the prompt).
+//   - Every step is appended to internal_agent_run_events → live timeline.
+//   - Runs can be cancelled mid-flight (status flips to 'cancelled').
+//   - Per-agent budgets: max_steps bounds the loop, max_run_cost_usd marks
+//     over-budget runs.
+//   - Sensitive tools (requires_approval) are queued as approvals instead of
+//     executing; internal-agent-approve runs them after a human decision.
+//   - Deliverables are materialised by the agent itself via create_deliverable.
+//   - Callers are authenticated: a user JWT must carry agent access; the
+//     scheduler authenticates with the service-role key.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient } from "../_shared/supabase-admin.ts";
-import { callAi } from "../_shared/ai.ts";
+import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { callAiWithTools, type ChatMessage } from "../_shared/ai.ts";
+import { logLlmUsage } from "../_shared/llm-tracking.ts";
+import {
+  buildInternalToolset, RunCancelledError,
+  type AgentToolRow, type InternalToolContext,
+} from "../_shared/internal-agent-tools.ts";
 
 interface AgentRow {
   id: string;
@@ -26,17 +36,11 @@ interface AgentRow {
   instructions: string | null;
   model: string;
   temperature: number;
+  max_steps: number;
+  max_run_cost_usd: number;
   workspace_id: string;
   project_id: string;
-}
-
-interface ToolRow {
-  id: string;
-  kind: string;
-  name: string;
-  description: string | null;
-  config: Record<string, unknown>;
-  enabled: boolean;
+  is_archived: boolean;
 }
 
 // Rough per-1k-token rates (USD). Adjust as providers change pricing.
@@ -44,31 +48,43 @@ const RATES: Record<string, { in: number; out: number }> = {
   groq: { in: 0.00005, out: 0.0001 },
   deepseek: { in: 0.00014, out: 0.00028 },
 };
-function estimateCost(usage: { prompt_tokens: number; completion_tokens: number } | undefined, provider: "groq" | "deepseek"): number {
+function estimateCost(
+  usage: { prompt_tokens: number; completion_tokens: number } | undefined,
+  provider: "groq" | "deepseek",
+): number {
   if (!usage) return 0;
   const r = RATES[provider] ?? { in: 0, out: 0 };
   return (usage.prompt_tokens * r.in + usage.completion_tokens * r.out) / 1000;
 }
 
-function buildSystemPrompt(agent: AgentRow, tools: ToolRow[]): string {
+function providerFor(agent: AgentRow): "groq" | "deepseek" {
+  return agent.model === "deepseek" ? "deepseek" : "groq";
+}
+
+function buildSystemPrompt(agent: AgentRow, capabilitySummary: string, mode: "chat" | "mission"): string {
   const lines: string[] = [];
-  lines.push(`You are ${agent.persona || agent.name}, an internal agent for a SaaS agency.`);
+  lines.push(`You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`);
   if (agent.instructions) {
-    lines.push("");
-    lines.push("Your detailed instructions:");
-    lines.push(agent.instructions);
+    lines.push("", "Your detailed instructions:", agent.instructions);
   }
-  const enabledTools = tools.filter((t) => t.enabled);
-  if (enabledTools.length > 0) {
-    lines.push("");
-    lines.push("Tools available to you (mention them by name when you need them):");
-    for (const t of enabledTools) {
-      lines.push(`- ${t.name} (${t.kind})${t.description ? ` — ${t.description}` : ""}`);
-    }
-    lines.push("Note: tool execution is not yet wired. Describe your intended tool calls in plain text and continue with your best reasoning.");
+  lines.push(
+    "",
+    "Your capabilities (real, executable tools):",
+    capabilitySummary,
+    "",
+    "Operating rules:",
+    "- Use your tools to gather real data — never invent numbers or facts.",
+    "- Some tools require human approval: calling them queues the action for review. Acknowledge the pending approval and keep going.",
+    "- If a tool errors, adapt: try another approach or state the limitation clearly.",
+  );
+  if (mode === "mission") {
+    lines.push(
+      "- Materialise every expected deliverable with create_deliverable before finishing.",
+      "- Your final message is a concise mission report (markdown): what you did, key findings, deliverables produced, pending approvals if any.",
+    );
+  } else {
+    lines.push("- Respond in concise markdown, in the user's language. Avoid filler.");
   }
-  lines.push("");
-  lines.push("Respond in concise markdown. Avoid filler.");
   return lines.join("\n");
 }
 
@@ -77,82 +93,199 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, model, temperature, workspace_id, project_id")
+      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived")
       .eq("id", agentId)
       .maybeSingle(),
     admin
       .from("internal_agent_tools")
-      .select("id, kind, name, description, config, enabled")
+      .select("id, kind, name, description, config, enabled, requires_approval")
       .eq("agent_id", agentId),
   ]);
   if (agentErr || !agent) throw new Error("Agent not found");
-  return { agent: agent as AgentRow, tools: (tools ?? []) as ToolRow[] };
+  if ((agent as AgentRow).is_archived) throw new Error("Agent is archived");
+  return { agent: agent as AgentRow, tools: (tools ?? []) as AgentToolRow[] };
 }
 
-async function runChat(agent: AgentRow, tools: ToolRow[], conversationId: string) {
+function nextRunAt(schedule: string, from: Date): string {
+  const d = new Date(from);
+  if (schedule === "daily") d.setDate(d.getDate() + 1);
+  else if (schedule === "weekly") d.setDate(d.getDate() + 7);
+  else d.setMonth(d.getMonth() + 1);
+  return d.toISOString();
+}
+
+// ---------------------------------------------------------------------------
+// Tool context wiring
+// ---------------------------------------------------------------------------
+
+function makeToolContext(opts: {
+  admin: ReturnType<typeof createServiceClient>;
+  agent: AgentRow;
+  runId: string | null;
+  missionId: string | null;
+}): InternalToolContext {
+  const { admin, agent, runId, missionId } = opts;
+  let lastCancelCheck = 0;
+  let cancelled = false;
+  return {
+    admin,
+    workspaceId: agent.workspace_id,
+    projectId: agent.project_id,
+    agentId: agent.id,
+    runId,
+    createDeliverable: async (d) => {
+      await admin.from("internal_agent_deliverables").insert({
+        run_id: runId,
+        mission_id: missionId,
+        agent_id: agent.id,
+        kind: d.kind,
+        name: d.name,
+        content: d.content,
+        summary: d.summary,
+      });
+    },
+    requestApproval: async (r) => {
+      const { data, error } = await admin
+        .from("internal_agent_approvals")
+        .insert({
+          agent_id: agent.id,
+          run_id: runId,
+          mission_id: missionId,
+          workspace_id: agent.workspace_id,
+          project_id: agent.project_id,
+          tool_name: r.tool_name,
+          action_kind: r.action_kind,
+          payload: r.payload,
+          reason: r.reason,
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(`Could not queue approval: ${error.message}`);
+      return (data as { id: string }).id;
+    },
+    logEvent: async (kind, payload) => {
+      if (!runId) return;
+      await admin.from("internal_agent_run_events").insert({
+        run_id: runId,
+        agent_id: agent.id,
+        kind,
+        payload,
+      });
+    },
+    isCancelled: async () => {
+      if (!runId || cancelled) return cancelled;
+      // Throttle: at most one status check per 2s.
+      const now = Date.now();
+      if (now - lastCancelCheck < 2000) return false;
+      lastCancelCheck = now;
+      const { data } = await admin
+        .from("internal_agent_runs")
+        .select("status")
+        .eq("id", runId)
+        .maybeSingle();
+      cancelled = data?.status === "cancelled";
+      return cancelled;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Chat mode
+// ---------------------------------------------------------------------------
+
+async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: string) {
   const admin = createServiceClient();
-  // Load the recent message history (last 20).
   const { data: history } = await admin
     .from("internal_agent_messages")
     .select("role, content")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true })
-    .limit(20);
+    .limit(30);
 
-  const systemPrompt = buildSystemPrompt(agent, tools);
-  const userMessages = (history ?? [])
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-    .join("\n\n");
+  const ctx = makeToolContext({ admin, agent, runId: null, missionId: null });
+  const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
 
-  const result = await callAi({
-    task: "chat_simple",
-    systemPrompt,
-    userPrompt: userMessages || "Greet the user.",
+  const messages: ChatMessage[] = [
+    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "chat") },
+    ...(history ?? [])
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+  ];
+  if (messages.length === 1) messages.push({ role: "user", content: "Greet the user." });
+
+  const provider = providerFor(agent);
+  const result = await callAiWithTools({
+    provider,
+    messages,
+    tools: defs,
+    executor,
     temperature: agent.temperature,
-    maxTokens: 1200,
+    maxTokens: 1500,
+    maxRounds: Math.min(agent.max_steps, 6),
   });
 
-  // Persist assistant reply with cost accounting.
+  const cost = estimateCost(result.usage, provider);
   await admin.from("internal_agent_messages").insert({
     conversation_id: conversationId,
     agent_id: agent.id,
     role: "assistant",
-    content: result.content,
+    content: result.content?.trim() || "(no reply)",
+    tool_calls: result.toolCalls,
     tokens_in: result.usage?.prompt_tokens ?? 0,
     tokens_out: result.usage?.completion_tokens ?? 0,
-    cost_usd: estimateCost(result.usage, result.provider),
+    cost_usd: cost,
   });
 
-  return jsonResponse({ ok: true, content: result.content });
+  await logLlmUsage({
+    workspace_id: agent.workspace_id,
+    project_id: agent.project_id,
+    provider: result.provider,
+    model: result.model,
+    task: "chat_simple",
+    feature: "internal-agent-chat",
+    usage: result.usage,
+  });
+
+  return jsonResponse({ ok: true, content: result.content, tool_calls: result.toolCalls.length });
 }
 
-async function runMission(agent: AgentRow, tools: ToolRow[], runId: string) {
-  const admin = createServiceClient();
-  const startedAt = new Date().toISOString();
-  await admin
-    .from("internal_agent_runs")
-    .update({ status: "running", started_at: startedAt })
-    .eq("id", runId);
+// ---------------------------------------------------------------------------
+// Mission mode
+// ---------------------------------------------------------------------------
 
-  // Load the mission.
+async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string) {
+  const admin = createServiceClient();
+
   const { data: run } = await admin
     .from("internal_agent_runs")
-    .select("mission_id")
+    .select("id, mission_id, status")
     .eq("id", runId)
     .maybeSingle();
   if (!run) throw new Error("Run not found");
+  // Idempotence: only a queued run may start (double invocations are no-ops).
+  if (run.status !== "queued") {
+    return jsonResponse({ ok: false, error: `Run is ${run.status}, not queued` }, { status: 409 });
+  }
 
   const { data: mission } = await admin
     .from("internal_agent_missions")
-    .select("title, brief, acceptance_criteria, expected_deliverables")
+    .select("id, title, brief, acceptance_criteria, expected_deliverables, schedule")
     .eq("id", run.mission_id)
     .maybeSingle();
   if (!mission) throw new Error("Mission not found");
 
-  const systemPrompt = buildSystemPrompt(agent, tools);
+  await admin
+    .from("internal_agent_runs")
+    .update({ status: "running", started_at: new Date().toISOString() })
+    .eq("id", runId);
+
+  const ctx = makeToolContext({ admin, agent, runId, missionId: mission.id });
+  const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
+  await ctx.logEvent("log", { message: `Run started — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
+
   const deliverablesSpec = (mission.expected_deliverables ?? [])
-    .map((d: any) => `- ${d.kind}: ${d.name}${d.description ? ` — ${d.description}` : ""}`)
+    .map((d: { kind: string; name: string; description?: string }) =>
+      `- ${d.kind}: ${d.name}${d.description ? ` — ${d.description}` : ""}`)
     .join("\n");
 
   const userPrompt = `# Mission: ${mission.title}
@@ -162,62 +295,49 @@ ${mission.brief ?? "(no brief provided)"}
 
 ${mission.acceptance_criteria ? `## Acceptance criteria\n${mission.acceptance_criteria}\n` : ""}
 ${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}
+Execute this mission now. Use your tools to gather what you need, save each expected deliverable with create_deliverable, then write your final mission report.`;
 
-Produce the mission output as a complete markdown document. After the document,
-add a separator line "---DELIVERABLES---" followed by a JSON array describing
-the deliverables you produced. Each entry: { "kind": "markdown"|"json"|"code", "name": string, "content": string }.`;
-
+  const provider = providerFor(agent);
   try {
-    const result = await callAi({
-      task: "content_generation",
-      systemPrompt,
-      userPrompt,
+    const result = await callAiWithTools({
+      provider,
+      messages: [
+        { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission") },
+        { role: "user", content: userPrompt },
+      ],
+      tools: defs,
+      executor,
       temperature: agent.temperature,
       maxTokens: 4000,
+      maxRounds: agent.max_steps,
     });
 
-    // Split final answer from deliverables block.
-    const parts = result.content.split(/---DELIVERABLES---/i);
-    const finalOutput = parts[0]?.trim() ?? result.content;
-    let deliverables: Array<{ kind: string; name: string; content: string }> = [];
-    if (parts.length > 1) {
-      const jsonMatch = parts[1].match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        try { deliverables = JSON.parse(jsonMatch[0]); } catch { /* ignore parse errors */ }
-      }
-    }
+    const cost = estimateCost(result.usage, provider);
+    const finalOutput = result.content?.trim() || "(no final report)";
 
-    // Record an LLM event.
     await admin.from("internal_agent_run_events").insert({
       run_id: runId,
       agent_id: agent.id,
       kind: "llm_call",
-      payload: { model: result.model ?? agent.model },
+      payload: {
+        model: result.model,
+        rounds: result.toolCalls.length,
+        over_budget: cost > Number(agent.max_run_cost_usd),
+      },
       tokens_in: result.usage?.prompt_tokens ?? 0,
       tokens_out: result.usage?.completion_tokens ?? 0,
-      cost_usd: estimateCost(result.usage, result.provider),
+      cost_usd: cost,
     });
 
-    // Materialise each deliverable. Derive a short plain-text summary so the
-    // deliverables hub can show a useful snippet without rendering the body.
-    for (const d of deliverables) {
-      const content = d.content || "";
-      const summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
+    // Safety net: if the agent produced no deliverable, persist the report as one.
+    const { count } = await admin
+      .from("internal_agent_deliverables")
+      .select("id", { count: "exact", head: true })
+      .eq("run_id", runId);
+    if (!count) {
       await admin.from("internal_agent_deliverables").insert({
         run_id: runId,
-        mission_id: run.mission_id,
-        agent_id: agent.id,
-        kind: d.kind || "markdown",
-        name: d.name || "Output",
-        content,
-        summary,
-      });
-    }
-    // If no deliverables were declared, store the whole answer as a single markdown deliverable.
-    if (deliverables.length === 0) {
-      await admin.from("internal_agent_deliverables").insert({
-        run_id: runId,
-        mission_id: run.mission_id,
+        mission_id: mission.id,
         agent_id: agent.id,
         kind: "markdown",
         name: "Mission output",
@@ -234,41 +354,90 @@ the deliverables you produced. Each entry: { "kind": "markdown"|"json"|"code", "
         final_output: finalOutput,
         tokens_in: result.usage?.prompt_tokens ?? 0,
         tokens_out: result.usage?.completion_tokens ?? 0,
-        cost_usd: estimateCost(result.usage, result.provider),
-        action_count: 1, // single LLM call for v1; will grow when tool loop lands
+        cost_usd: cost,
+        action_count: result.toolCalls.length,
+        steps: result.toolCalls.length,
       })
       .eq("id", runId);
 
-    return jsonResponse({ ok: true, run_id: runId });
-  } catch (e: any) {
+    // Scheduling bookkeeping.
+    const missionUpdate: Record<string, unknown> = { last_run_at: new Date().toISOString() };
+    if (mission.schedule) missionUpdate.next_run_at = nextRunAt(mission.schedule, new Date());
+    await admin.from("internal_agent_missions").update(missionUpdate).eq("id", mission.id);
+
+    await logLlmUsage({
+      workspace_id: agent.workspace_id,
+      project_id: agent.project_id,
+      provider: result.provider,
+      model: result.model,
+      task: "content_generation",
+      feature: "internal-agent-mission",
+      usage: result.usage,
+    });
+
+    return jsonResponse({ ok: true, run_id: runId, steps: result.toolCalls.length, cost_usd: cost });
+  } catch (e) {
+    if (e instanceof RunCancelledError) {
+      await admin
+        .from("internal_agent_runs")
+        .update({ status: "cancelled", finished_at: new Date().toISOString() })
+        .eq("id", runId);
+      await ctx.logEvent("status", { message: "Cancelled by user" }).catch(() => {});
+      return jsonResponse({ ok: false, cancelled: true });
+    }
+    const msg = e instanceof Error ? e.message : String(e);
     await admin
       .from("internal_agent_runs")
-      .update({
-        status: "failed",
-        finished_at: new Date().toISOString(),
-        error_message: e?.message ?? "Unknown error",
-      })
+      .update({ status: "failed", finished_at: new Date().toISOString(), error_message: msg })
       .eq("id", runId);
     await admin.from("internal_agent_run_events").insert({
       run_id: runId,
       agent_id: agent.id,
       kind: "error",
-      payload: { error: e?.message ?? String(e) },
+      payload: { error: msg },
     });
-    return jsonResponse({ ok: false, error: e?.message ?? "Run failed" }, { status: 500 });
+    return jsonResponse({ ok: false, error: msg }, { status: 500 });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
 
 Deno.serve(async (req) => {
   const corsResp = handleCors(req);
   if (corsResp) return corsResp;
 
   try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return jsonResponse({ error: "Missing Authorization header" }, { status: 401 });
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    const isService = token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
     const body = await req.json();
-    const { agent_id, mode, conversation_id, run_id } = body;
+    const { agent_id, mode, conversation_id, run_id } = body as {
+      agent_id?: string;
+      mode?: string;
+      conversation_id?: string;
+      run_id?: string;
+    };
     if (!agent_id || !mode) {
       return jsonResponse({ error: "Missing agent_id or mode" }, { status: 400 });
     }
+
+    // Authenticated users must have access to this agent (creator or member).
+    if (!isService) {
+      const userClient = createUserClient(authHeader);
+      const { data: userData, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+      const admin = createServiceClient();
+      const { data: allowed } = await admin.rpc("has_internal_agent_access", {
+        p_agent_id: agent_id,
+        p_user_id: userData.user.id,
+      });
+      if (!allowed) return jsonResponse({ error: "Not authorized for this agent" }, { status: 403 });
+    }
+
     const { agent, tools } = await loadAgentAndTools(agent_id);
 
     if (mode === "chat") {
@@ -280,7 +449,7 @@ Deno.serve(async (req) => {
       return await runMission(agent, tools, run_id);
     }
     return jsonResponse({ error: "Unknown mode" }, { status: 400 });
-  } catch (e: any) {
-    return jsonResponse({ error: e?.message ?? "Internal error" }, { status: 500 });
+  } catch (e) {
+    return jsonResponse({ error: e instanceof Error ? e.message : "Internal error" }, { status: 500 });
   }
 });

@@ -195,9 +195,7 @@ export const MODULES: ModuleNavItem[] = [
     color: "text-white",
     subItems: [
       { label: "Agents", slug: "agents" },
-      // Internal agents hidden for the first release — the AI Assistant ("AI Agent → Chat")
-      // serves as the internal agent. Route is still registered so deep links work.
-      // { label: "Internal agents", slug: "internal-agents" },
+      { label: "Autonomous agents", slug: "internal-agents" },
       { label: "Onboarding", slug: "onboarding" },
     ],
   },

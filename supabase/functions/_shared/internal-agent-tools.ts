@@ -1,0 +1,559 @@
+// Internal agent tool registry — the execution layer behind "autonomous agents".
+//
+// Each internal agent is granted tools as rows in internal_agent_tools. This
+// module turns those rows into real, executable tool definitions for the
+// callAiWithTools loop:
+//
+//   web_search      → web_search(query)            Tavily if key set, DuckDuckGo fallback
+//   web_fetch       → read_url(url)                Jina Reader extraction
+//   rag_search      → search_knowledge(query)      semantic search over project RAG chunks
+//   db_read         → query_table(table, …)        read-only, allowlisted tables, project-scoped
+//   vault_connector → list_connectors()            connector inventory (no secrets)
+//   edge_function   → one tool per row             invoke an internal edge function
+//   custom          → one tool per row             POST a webhook with model-provided args
+//
+// Cross-cutting concerns handled here:
+//
+//  1. HUMAN-IN-THE-LOOP. Rows flagged requires_approval never execute directly:
+//     the call is recorded as a pending internal_agent_approvals row and the
+//     model gets back an acknowledgement. internal-agent-approve executes it
+//     after a human decision.
+//  2. OBSERVABILITY. Every tool call/result is appended to
+//     internal_agent_run_events (when a run id is present) so the UI can render
+//     a live timeline.
+//  3. CANCELLATION. Before each tool execution the loop re-checks the run
+//     status; a cancelled run aborts with RunCancelledError.
+//  4. DELIVERABLES. create_deliverable is always available — the agent
+//     materialises outputs itself instead of relying on fragile text parsing.
+
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import type { ToolDef, ToolExecutor } from "./ai.ts";
+
+export interface AgentToolRow {
+  id: string;
+  kind:
+    | "web_search"
+    | "web_fetch"
+    | "db_read"
+    | "rag_search"
+    | "edge_function"
+    | "vault_connector"
+    | "custom";
+  name: string;
+  description: string | null;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  requires_approval: boolean;
+}
+
+export interface DeliverableDraft {
+  kind: string;
+  name: string;
+  content: string;
+  summary: string | null;
+}
+
+export interface ApprovalRequest {
+  tool_name: string;
+  action_kind: "edge_function" | "webhook";
+  payload: Record<string, unknown>;
+  reason: string | null;
+}
+
+export interface InternalToolContext {
+  admin: SupabaseClient;
+  workspaceId: string;
+  projectId: string;
+  agentId: string;
+  runId: string | null;
+  /** Persist a deliverable produced by the agent. */
+  createDeliverable: (d: DeliverableDraft) => Promise<void>;
+  /** Queue a sensitive action for human approval. Returns the approval id. */
+  requestApproval: (r: ApprovalRequest) => Promise<string>;
+  /** Append a run event (no-op when runId is null). */
+  logEvent: (kind: "tool_call" | "tool_result" | "status" | "log", payload: Record<string, unknown>) => Promise<void>;
+  /** Re-check whether the run was cancelled by a human. */
+  isCancelled: () => Promise<boolean>;
+}
+
+export class RunCancelledError extends Error {
+  constructor() {
+    super("Run cancelled by user");
+    this.name = "RunCancelledError";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+function cap(s: string, max = 8000): string {
+  return s.length > max ? s.slice(0, max) + "\n…(truncated)" : s;
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x?\d+;/g, " ");
+}
+
+function slugToToolName(prefix: string, slug: string): string {
+  return `${prefix}_${slug.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "")}`.slice(0, 60);
+}
+
+interface InternalTool {
+  def: ToolDef["function"];
+  run: (args: Record<string, unknown>) => Promise<string>;
+}
+
+// ---------------------------------------------------------------------------
+// built-in capability implementations
+// ---------------------------------------------------------------------------
+
+async function webSearch(query: string, maxResults: number): Promise<string> {
+  const tavilyKey = Deno.env.get("TAVILY_API_KEY");
+  if (tavilyKey) {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: tavilyKey, query, max_results: maxResults }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const results = (json.results ?? []).map((r: any) => ({
+        title: r.title,
+        url: r.url,
+        snippet: (r.content ?? "").slice(0, 300),
+      }));
+      return JSON.stringify({ provider: "tavily", results });
+    }
+  }
+  // Keyless fallback: DuckDuckGo HTML endpoint.
+  const res = await fetch(
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    { headers: { "User-Agent": "Mozilla/5.0 (compatible; FounderOSAgent/1.0)" } },
+  );
+  if (!res.ok) return `ERROR: web search failed (${res.status}).`;
+  const html = await res.text();
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  const linkRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+  const snippets: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = snippetRe.exec(html)) && snippets.length < maxResults) {
+    snippets.push(decodeEntities(m[1].replace(/<[^>]+>/g, "")).trim());
+  }
+  while ((m = linkRe.exec(html)) && results.length < maxResults) {
+    let url = m[1];
+    // DDG wraps results: //duckduckgo.com/l/?uddg=<encoded>
+    const uddg = url.match(/uddg=([^&]+)/);
+    if (uddg) url = decodeURIComponent(uddg[1]);
+    results.push({
+      title: decodeEntities(m[2].replace(/<[^>]+>/g, "")).trim(),
+      url,
+      snippet: snippets[results.length] ?? "",
+    });
+  }
+  if (results.length === 0) return "No results found.";
+  return JSON.stringify({ provider: "duckduckgo", results });
+}
+
+async function readUrl(url: string): Promise<string> {
+  if (!/^https?:\/\//i.test(url)) return "ERROR: url must be an absolute http(s) URL.";
+  // Jina Reader proxies and extracts readable content; no API key required.
+  const res = await fetch(`https://r.jina.ai/${url}`, {
+    headers: { "X-Return-Format": "markdown" },
+  });
+  if (!res.ok) return `ERROR: could not fetch (${res.status}).`;
+  return cap(await res.text());
+}
+
+async function searchKnowledge(
+  ctx: InternalToolContext,
+  query: string,
+  limit: number,
+): Promise<string> {
+  // Semantic search via the agent-scoped match RPC across the project's RAG
+  // agents; keyword fallback when embeddings are unavailable.
+  try {
+    const { embedTexts, toVectorLiteral } = await import("./jina.ts");
+    const [vec] = await embedTexts([query], "retrieval.query");
+    if (vec) {
+      const { data: agents } = await ctx.admin
+        .from("rag_agents")
+        .select("id")
+        .eq("project_id", ctx.projectId)
+        .limit(10);
+      const vecLiteral = toVectorLiteral(vec);
+      const hits: Array<{ similarity: number; text: string }> = [];
+      for (const a of agents ?? []) {
+        const { data, error } = await ctx.admin.rpc("match_rag_chunks", {
+          p_agent_id: (a as { id: string }).id,
+          p_query_embedding: vecLiteral,
+          p_match_count: limit,
+        });
+        if (!error && data) {
+          for (const d of data as Array<{ similarity?: number; content?: string }>) {
+            hits.push({ similarity: d.similarity ?? 0, text: (d.content ?? "").slice(0, 600) });
+          }
+        }
+      }
+      if (hits.length) {
+        hits.sort((x, y) => y.similarity - x.similarity);
+        return JSON.stringify(hits.slice(0, limit));
+      }
+    }
+  } catch {
+    // embeddings / rpc unavailable — fall through to keyword search
+  }
+  const { data } = await ctx.admin
+    .from("rag_chunks")
+    .select("content")
+    .eq("project_id", ctx.projectId)
+    .ilike("content", `%${query.slice(0, 60)}%`)
+    .limit(limit);
+  if (!data || data.length === 0) return "No matching knowledge found.";
+  return JSON.stringify(data.map((d: { content?: string }) => ({ text: (d.content ?? "").slice(0, 600) })));
+}
+
+async function queryTable(
+  ctx: InternalToolContext,
+  allowedTables: string[],
+  args: Record<string, unknown>,
+): Promise<string> {
+  const table = str(args.table);
+  if (!table) return "ERROR: table is required.";
+  if (!allowedTables.includes(table)) {
+    return `ERROR: table "${table}" is not allowed. Allowed tables: ${allowedTables.join(", ") || "(none configured)"}.`;
+  }
+  const columns = str(args.columns, "*");
+  const limit = Math.min(Math.max(Number(args.limit ?? 25) || 25, 1), 100);
+  const orderBy = str(args.order_by);
+  const filters = (args.filters && typeof args.filters === "object" ? args.filters : {}) as Record<string, unknown>;
+
+  // The query MUST stay inside the project: scope by project_id, falling back
+  // to workspace_id for workspace-level tables. Tables with neither column are
+  // refused — we never run an unscoped read with the service role.
+  for (const scopeCol of ["project_id", "workspace_id"] as const) {
+    let q = ctx.admin.from(table).select(columns).limit(limit);
+    q = q.eq(scopeCol, scopeCol === "project_id" ? ctx.projectId : ctx.workspaceId);
+    for (const [k, v] of Object.entries(filters)) {
+      if (/^[a-zA-Z0-9_]+$/.test(k)) q = q.eq(k, v as never);
+    }
+    if (orderBy && /^[a-zA-Z0-9_]+$/.test(orderBy)) {
+      q = q.order(orderBy, { ascending: args.descending !== true });
+    }
+    const { data, error } = await q;
+    if (!error) return cap(JSON.stringify(data ?? []));
+    // 42703 = undefined column → the scope column doesn't exist on this table.
+    if (error.code !== "42703") return `ERROR: ${error.message}`;
+  }
+  return `ERROR: table "${table}" has neither project_id nor workspace_id — it cannot be read safely.`;
+}
+
+async function listConnectors(ctx: InternalToolContext): Promise<string> {
+  const { data } = await ctx.admin
+    .from("connectors")
+    .select("provider, status, permissions")
+    .eq("project_id", ctx.projectId);
+  if (!data || data.length === 0) return "No connectors configured for this project.";
+  return JSON.stringify(data);
+}
+
+async function invokeEdgeFunction(slug: string, args: Record<string, unknown>): Promise<string> {
+  const base = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!base || !key) return "ERROR: edge function invocation is not configured.";
+  const res = await fetch(`${base}/functions/v1/${slug}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify(args ?? {}),
+  });
+  const text = await res.text();
+  return cap(`HTTP ${res.status}\n${text}`, 6000);
+}
+
+async function invokeWebhook(
+  url: string,
+  method: string,
+  args: Record<string, unknown>,
+  headers: Record<string, string>,
+): Promise<string> {
+  if (!/^https?:\/\//i.test(url)) return "ERROR: webhook url must be absolute http(s).";
+  const res = await fetch(url, {
+    method: method || "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: method === "GET" ? undefined : JSON.stringify(args ?? {}),
+  });
+  const text = await res.text();
+  return cap(`HTTP ${res.status}\n${text}`, 6000);
+}
+
+// ---------------------------------------------------------------------------
+// toolset assembly
+// ---------------------------------------------------------------------------
+
+const DELIVERABLE_KINDS = ["markdown", "json", "code", "url"];
+
+export function buildInternalToolset(
+  rows: AgentToolRow[],
+  ctx: InternalToolContext,
+): { defs: ToolDef[]; executor: ToolExecutor; capabilitySummary: string } {
+  const tools = new Map<string, InternalTool>();
+  const summaryLines: string[] = [];
+
+  // Always-on: deliverable materialisation.
+  tools.set("create_deliverable", {
+    def: {
+      name: "create_deliverable",
+      description:
+        "Save a finished deliverable (document, JSON, code or URL list). Call this once per expected deliverable — deliverables are the durable output of your work. Do not repeat the full content in your final answer; summarise instead.",
+      parameters: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: DELIVERABLE_KINDS, description: "Deliverable format." },
+          name: { type: "string", description: "Short human-readable name." },
+          content: { type: "string", description: "The full deliverable content." },
+        },
+        required: ["kind", "name", "content"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const kind = DELIVERABLE_KINDS.includes(str(args.kind)) ? str(args.kind) : "markdown";
+      const name = str(args.name, "Output").slice(0, 120);
+      const content = str(args.content);
+      if (!content) return "ERROR: content is required.";
+      const summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
+      await ctx.createDeliverable({ kind, name, content, summary });
+      return `Deliverable "${name}" (${kind}) saved.`;
+    },
+  });
+  summaryLines.push("- create_deliverable: save your outputs as durable deliverables (always available).");
+
+  const enabled = rows.filter((r) => r.enabled);
+  const hasKind = (k: AgentToolRow["kind"]) => enabled.some((r) => r.kind === k);
+
+  if (hasKind("web_search")) {
+    tools.set("web_search", {
+      def: {
+        name: "web_search",
+        description: "Search the web for fresh, public information. Returns titles, URLs and snippets.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query." },
+            max_results: { type: "number", description: "Max results (default 5, max 8)." },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+      run: (args) => {
+        const query = str(args.query);
+        if (!query) return Promise.resolve("ERROR: query is required.");
+        const max = Math.min(Math.max(Number(args.max_results ?? 5) || 5, 1), 8);
+        return webSearch(query, max);
+      },
+    });
+    summaryLines.push("- web_search: search the public web.");
+  }
+
+  if (hasKind("web_fetch")) {
+    tools.set("read_url", {
+      def: {
+        name: "read_url",
+        description: "Fetch a public web page and return its main text content as markdown.",
+        parameters: {
+          type: "object",
+          properties: { url: { type: "string", description: "Absolute http(s) URL." } },
+          required: ["url"],
+          additionalProperties: false,
+        },
+      },
+      run: (args) => readUrl(str(args.url)),
+    });
+    summaryLines.push("- read_url: read the content of a specific URL.");
+  }
+
+  if (hasKind("rag_search")) {
+    tools.set("search_knowledge", {
+      def: {
+        name: "search_knowledge",
+        description: "Semantic search across the project's indexed knowledge base (uploaded docs, notes).",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Natural-language query." },
+            limit: { type: "number", description: "Max results (default 5, max 10)." },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+      run: (args) => {
+        const query = str(args.query);
+        if (!query) return Promise.resolve("ERROR: query is required.");
+        const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 10);
+        return searchKnowledge(ctx, query, limit);
+      },
+    });
+    summaryLines.push("- search_knowledge: search the project's internal knowledge base.");
+  }
+
+  if (hasKind("db_read")) {
+    // Union of every db_read row's allowlist.
+    const allowedTables = [
+      ...new Set(
+        enabled
+          .filter((r) => r.kind === "db_read")
+          .flatMap((r) => (Array.isArray(r.config?.tables) ? (r.config.tables as string[]) : []))
+          .filter((t) => typeof t === "string" && /^[a-zA-Z0-9_]+$/.test(t)),
+      ),
+    ];
+    tools.set("query_table", {
+      def: {
+        name: "query_table",
+        description: `Read rows from an allowed project table (read-only). Allowed tables: ${allowedTables.join(", ") || "(none configured — ask the user to configure the Read project DB tool)"}.`,
+        parameters: {
+          type: "object",
+          properties: {
+            table: { type: "string", description: "Table name (must be in the allowed list)." },
+            columns: { type: "string", description: 'Comma-separated columns (default "*").' },
+            filters: { type: "object", description: "Optional equality filters, e.g. {\"status\":\"active\"}." },
+            order_by: { type: "string", description: "Optional column to sort by." },
+            descending: { type: "boolean", description: "Sort descending (default true when order_by is set)." },
+            limit: { type: "number", description: "Max rows (default 25, max 100)." },
+          },
+          required: ["table"],
+          additionalProperties: false,
+        },
+      },
+      run: (args) => queryTable(ctx, allowedTables, args),
+    });
+    summaryLines.push(`- query_table: read project data from: ${allowedTables.join(", ") || "(not configured)"}.`);
+  }
+
+  if (hasKind("vault_connector")) {
+    tools.set("list_connectors", {
+      def: {
+        name: "list_connectors",
+        description: "List the project's connected integrations (provider, status, permissions). No secrets.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      },
+      run: () => listConnectors(ctx),
+    });
+    summaryLines.push("- list_connectors: inventory of connected integrations.");
+  }
+
+  // edge_function rows: one tool per configured function.
+  for (const row of enabled.filter((r) => r.kind === "edge_function")) {
+    const slug = str(row.config?.slug);
+    if (!slug || !/^[a-z0-9-]+$/.test(slug)) continue;
+    const toolName = slugToToolName("call", slug);
+    tools.set(toolName, {
+      def: {
+        name: toolName,
+        description:
+          `${row.description || `Invoke the internal "${slug}" function.`}` +
+          (row.requires_approval ? " REQUIRES HUMAN APPROVAL: the call is queued for review, not executed immediately." : ""),
+        parameters: {
+          type: "object",
+          properties: {
+            args: { type: "object", description: "JSON body to send to the function." },
+            reason: { type: "string", description: "One-sentence justification for this action." },
+          },
+          required: ["args"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const fnArgs = (args.args && typeof args.args === "object" ? args.args : {}) as Record<string, unknown>;
+        if (row.requires_approval) {
+          const id = await ctx.requestApproval({
+            tool_name: toolName,
+            action_kind: "edge_function",
+            payload: { slug, args: fnArgs },
+            reason: str(args.reason) || null,
+          });
+          return `Action queued for human approval (approval ${id}). It will run once a team member approves it — continue with the rest of the mission and mention the pending approval in your final answer.`;
+        }
+        return invokeEdgeFunction(slug, fnArgs);
+      },
+    });
+    summaryLines.push(`- ${toolName}: ${row.description || `call the ${slug} function`}${row.requires_approval ? " (requires human approval)" : ""}.`);
+  }
+
+  // custom rows: webhook-backed tools with a model-facing JSON schema.
+  for (const row of enabled.filter((r) => r.kind === "custom")) {
+    const url = str(row.config?.webhook_url);
+    if (!url) continue;
+    const toolName = slugToToolName("tool", str(row.config?.tool_name) || row.name);
+    const method = str(row.config?.method, "POST").toUpperCase();
+    const headers = (row.config?.headers && typeof row.config.headers === "object"
+      ? row.config.headers
+      : {}) as Record<string, string>;
+    const parameters =
+      row.config?.parameters && typeof row.config.parameters === "object"
+        ? (row.config.parameters as Record<string, unknown>)
+        : {
+            type: "object",
+            properties: {
+              args: { type: "object", description: "JSON payload to send." },
+              reason: { type: "string", description: "One-sentence justification." },
+            },
+            required: ["args"],
+            additionalProperties: false,
+          };
+    tools.set(toolName, {
+      def: {
+        name: toolName,
+        description:
+          `${row.description || row.name}` +
+          (row.requires_approval ? " REQUIRES HUMAN APPROVAL: the call is queued for review, not executed immediately." : ""),
+        parameters,
+      },
+      run: async (args) => {
+        if (row.requires_approval) {
+          const id = await ctx.requestApproval({
+            tool_name: toolName,
+            action_kind: "webhook",
+            payload: { url, method, headers, args },
+            reason: str(args.reason) || null,
+          });
+          return `Action queued for human approval (approval ${id}). Continue with the rest of the mission and mention the pending approval in your final answer.`;
+        }
+        return invokeWebhook(url, method, args, headers);
+      },
+    });
+    summaryLines.push(`- ${toolName}: ${row.description || row.name}${row.requires_approval ? " (requires human approval)" : ""}.`);
+  }
+
+  const defs: ToolDef[] = [...tools.values()].map((t) => ({ type: "function", function: t.def }));
+
+  const executor: ToolExecutor = async (name, args) => {
+    if (await ctx.isCancelled()) throw new RunCancelledError();
+    const tool = tools.get(name);
+    if (!tool) return `ERROR: unknown tool "${name}".`;
+    await ctx.logEvent("tool_call", { tool: name, args });
+    try {
+      const result = await tool.run(args);
+      await ctx.logEvent("tool_result", { tool: name, ok: !result.startsWith("ERROR"), preview: result.slice(0, 500) });
+      return result;
+    } catch (e) {
+      if (e instanceof RunCancelledError) throw e;
+      const msg = e instanceof Error ? e.message : String(e);
+      await ctx.logEvent("tool_result", { tool: name, ok: false, preview: `ERROR: ${msg}`.slice(0, 500) });
+      return `ERROR: ${msg}`;
+    }
+  };
+
+  return { defs, executor, capabilitySummary: summaryLines.join("\n") };
+}

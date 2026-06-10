@@ -6,7 +6,8 @@ import {
   Wrench, Users as UsersIcon, BarChart3, Settings as SettingsIcon,
   MessageSquare, Globe, Database, Zap, KeyRound, Play, Clock,
   CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
-  CalendarClock, Repeat, UserCircle2,
+  CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
+  ListTree, Gauge,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -29,14 +30,16 @@ import { DeliverablesHub } from "./DeliverablesHub";
 import { MissionWizard, type MissionDraft } from "./MissionWizard";
 import {
   type InternalAgent, type Mission, type MissionRun, type Deliverable,
-  type WorkspaceMemberRow, PRIORITY_META, loadWorkspaceMembers, memberLabel,
-  dueDateMeta, downloadDeliverable,
+  type WorkspaceMemberRow, type RunEvent, type AgentApproval,
+  PRIORITY_META, loadWorkspaceMembers, memberLabel,
+  dueDateMeta, downloadDeliverable, relativeDate,
 } from "./shared";
 
 export type InternalAgentTab =
   | "chat"
   | "mission"
   | "deliverables"
+  | "approvals"
   | "instructions"
   | "tools"
   | "members"
@@ -44,7 +47,7 @@ export type InternalAgentTab =
   | "settings";
 
 const VALID_TABS: InternalAgentTab[] = [
-  "chat", "mission", "deliverables", "instructions", "tools", "members", "analytics", "settings",
+  "chat", "mission", "deliverables", "approvals", "instructions", "tools", "members", "analytics", "settings",
 ];
 
 export function InternalAgentDetailPage() {
@@ -81,6 +84,7 @@ export function InternalAgentDetailPage() {
       {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "deliverables" && <DeliverablesHub agent={agent} />}
+      {tab === "approvals" && <ApprovalsTab agent={agent} />}
       {tab === "instructions" && <InstructionsEditor agent={agent} />}
       {tab === "tools" && <ToolsTab agent={agent} />}
       {tab === "members" && <MembersTab agent={agent} />}
@@ -165,25 +169,14 @@ function ChatTab({
       setInput("");
       queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
 
-      // Call the worker edge in "chat" mode. If the function doesn't exist yet,
-      // surface a friendly placeholder reply so the UI keeps working.
-      try {
-        await callEdge("internal-agent-run", {
-          agent_id: agent.id,
-          mode: "chat",
-          conversation_id: cid,
-        });
-        queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
-      } catch (e: any) {
-        // Worker not deployed yet — leave a placeholder reply locally.
-        await supabase.from("internal_agent_messages").insert({
-          conversation_id: cid,
-          agent_id: agent.id,
-          role: "assistant",
-          content: `_(Agent worker not yet deployed.)_ I received: "${text}"`,
-        });
-        queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
-      }
+      // Call the worker edge in "chat" mode — it runs the agent's tool loop
+      // and persists the assistant reply.
+      await callEdge("internal-agent-run", {
+        agent_id: agent.id,
+        mode: "chat",
+        conversation_id: cid,
+      });
+      queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
     } catch (e: any) {
       setError(e?.message ?? "Failed to send");
     } finally {
@@ -340,6 +333,9 @@ function MissionTab({
         assigned_to: draft.assigned_to,
         tags: draft.tags,
         schedule: draft.schedule,
+        // Scheduled missions become due immediately; the scheduler then bumps
+        // next_run_at after each run.
+        next_run_at: draft.schedule ? new Date().toISOString() : null,
         status: "active",
         created_by: user.id,
       })
@@ -509,6 +505,7 @@ function MissionDetail({
         assigned_to: draft.assigned_to,
         tags: draft.tags,
         schedule: draft.schedule,
+        next_run_at: draft.schedule ? (mission.next_run_at ?? new Date().toISOString()) : null,
         updated_by: user?.id ?? null,
         updated_at: new Date().toISOString(),
       })
@@ -628,8 +625,14 @@ function MissionDetail({
               </span>
             )}
             {mission.schedule && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 capitalize text-muted-foreground">
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 capitalize text-muted-foreground"
+                title={mission.next_run_at ? `Next run: ${new Date(mission.next_run_at).toLocaleString()}` : undefined}
+              >
                 <Repeat className="h-3 w-3" /> {mission.schedule}
+                {mission.next_run_at && (
+                  <span className="normal-case">· next {new Date(mission.next_run_at).toLocaleDateString()}</span>
+                )}
               </span>
             )}
             {mission.tags.map((t) => (
@@ -758,7 +761,9 @@ function DeliverablesEditor({
 }
 
 function RunCard({ run }: { run: MissionRun }) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const isLive = run.status === "queued" || run.status === "running";
 
   const { data: deliverables } = useQuery({
     queryKey: ["internal_agent_deliverables", run.id],
@@ -773,6 +778,33 @@ function RunCard({ run }: { run: MissionRun }) {
     },
   });
 
+  // Live activity timeline: every tool call/result the agent performs lands in
+  // internal_agent_run_events; poll while the run is in flight.
+  const { data: events } = useQuery({
+    queryKey: ["internal_agent_run_events", run.id],
+    enabled: open || isLive,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("internal_agent_run_events")
+        .select("*")
+        .eq("run_id", run.id)
+        .order("created_at", { ascending: true })
+        .limit(200);
+      return (data ?? []) as RunEvent[];
+    },
+    refetchInterval: isLive ? 2500 : false,
+  });
+
+  async function cancelRun() {
+    if (!confirm("Cancel this run? The agent stops before its next action.")) return;
+    await supabase
+      .from("internal_agent_runs")
+      .update({ status: "cancelled", finished_at: new Date().toISOString() })
+      .eq("id", run.id)
+      .in("status", ["queued", "running"]);
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_runs", run.mission_id] });
+  }
+
   const statusIcon = {
     queued: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
     running: <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />,
@@ -783,20 +815,37 @@ function RunCard({ run }: { run: MissionRun }) {
 
   return (
     <div className="rounded-md border border-border">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-muted/40"
-      >
-        <div className="flex items-center gap-2 text-sm">
+      <div className="flex w-full items-center justify-between px-3 py-2 hover:bg-muted/40">
+        <button onClick={() => setOpen(!open)} className="flex flex-1 items-center gap-2 text-left text-sm">
           {statusIcon}
           <span className="font-medium capitalize">{run.status}</span>
+          {run.triggered_via === "schedule" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              <Repeat className="h-2.5 w-2.5" /> scheduled
+            </span>
+          )}
           <span className="text-xs text-muted-foreground">{new Date(run.created_at).toLocaleString()}</span>
-        </div>
+        </button>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span>{run.action_count} actions</span>
           <span>${run.cost_usd.toFixed(4)}</span>
+          {isLive && (
+            <Button size="sm" variant="ghost" onClick={cancelRun} title="Cancel run">
+              <Ban className="h-3 w-3 text-destructive" />
+            </Button>
+          )}
         </div>
-      </button>
+      </div>
+      {(open || isLive) && events && events.length > 0 && (
+        <div className="border-t border-border px-3 py-2">
+          <div className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+            <ListTree className="h-3 w-3" /> Activity
+          </div>
+          <div className="max-h-48 space-y-1 overflow-y-auto">
+            {events.map((ev) => <RunEventLine key={ev.id} ev={ev} />)}
+          </div>
+        </div>
+      )}
       {open && (
         <div className="border-t border-border px-3 py-3 text-sm">
           {run.error_message && (
@@ -821,6 +870,38 @@ function RunCard({ run }: { run: MissionRun }) {
       )}
     </div>
   );
+}
+
+function RunEventLine({ ev }: { ev: RunEvent }) {
+  const meta: Record<RunEvent["kind"], { icon: any; cls: string; text: string }> = {
+    tool_call: { icon: Wrench, cls: "text-sky-600", text: `${ev.payload?.tool ?? "tool"}(${summarizeArgs(ev.payload?.args)})` },
+    tool_result: {
+      icon: ev.payload?.ok === false ? XCircle : CheckCircle2,
+      cls: ev.payload?.ok === false ? "text-destructive" : "text-emerald-600",
+      text: String(ev.payload?.preview ?? "").slice(0, 140) || "(empty result)",
+    },
+    llm_call: { icon: Zap, cls: "text-violet-500", text: `LLM ${ev.payload?.model ?? ""} · ${(ev.tokens_in + ev.tokens_out).toLocaleString()} tokens` },
+    status: { icon: AlertCircle, cls: "text-muted-foreground", text: String(ev.payload?.message ?? "status") },
+    log: { icon: FileText, cls: "text-muted-foreground", text: String(ev.payload?.message ?? "log") },
+    error: { icon: XCircle, cls: "text-destructive", text: String(ev.payload?.error ?? "error") },
+  };
+  const m = meta[ev.kind] ?? meta.log;
+  const Icon = m.icon;
+  return (
+    <div className="flex items-start gap-1.5 text-[11px]">
+      <Icon className={cn("mt-0.5 h-3 w-3 shrink-0", m.cls)} />
+      <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground" title={m.text}>{m.text}</span>
+      <span className="shrink-0 text-[10px] text-muted-foreground/60">
+        {new Date(ev.created_at).toLocaleTimeString()}
+      </span>
+    </div>
+  );
+}
+
+function summarizeArgs(args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  const s = JSON.stringify(args);
+  return s.length > 80 ? s.slice(0, 80) + "…" : s;
 }
 
 function DeliverableItem({ d }: { d: Deliverable }) {
@@ -859,20 +940,22 @@ function DeliverableItem({ d }: { d: Deliverable }) {
 interface AgentTool {
   id: string;
   agent_id: string;
-  kind: "web_search" | "web_fetch" | "db_read" | "edge_function" | "vault_connector" | "custom";
+  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "custom";
   name: string;
   description: string | null;
   config: Record<string, any>;
   enabled: boolean;
+  requires_approval: boolean;
 }
 
 const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any; description: string }> = [
   { kind: "web_search", label: "Web search", icon: Globe, description: "Search the web for fresh information." },
   { kind: "web_fetch", label: "Fetch URL", icon: Globe, description: "Download and extract text from a URL." },
   { kind: "db_read", label: "Read project DB", icon: Database, description: "Read-only access to selected project tables." },
+  { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed knowledge base." },
   { kind: "edge_function", label: "Call edge function", icon: Zap, description: "Invoke an internal edge function." },
-  { kind: "vault_connector", label: "Use vault connector", icon: KeyRound, description: "Use a configured external connector (Buffer, Slack, GitHub…)." },
-  { kind: "custom", label: "Custom tool", icon: Wrench, description: "Custom tool driven by JSON config." },
+  { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
+  { kind: "custom", label: "Custom webhook tool", icon: Wrench, description: "Call an external webhook with model-provided arguments." },
 ];
 
 function ToolsTab({ agent }: { agent: InternalAgent }) {
@@ -899,6 +982,8 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
       name: name || def.label,
       description: def.description,
       config: {},
+      // Action tools start approval-gated — safe by default; owners can relax it.
+      requires_approval: kind === "edge_function" || kind === "custom",
     });
     if (error) { alert(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
@@ -918,6 +1003,14 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
 
   async function updateConfig(id: string, config: Record<string, any>) {
     await supabase.from("internal_agent_tools").update({ config }).eq("id", id);
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
+  }
+
+  async function toggleApproval(tool: AgentTool) {
+    await supabase
+      .from("internal_agent_tools")
+      .update({ requires_approval: !tool.requires_approval })
+      .eq("id", tool.id);
     queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
   }
 
@@ -949,6 +1042,19 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {(t.kind === "edge_function" || t.kind === "custom") && (
+                        <button
+                          onClick={() => toggleApproval(t)}
+                          title="When on, the agent's calls to this tool wait for human approval before executing."
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            t.requires_approval ? "bg-amber-500/15 text-amber-600" : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          <ShieldCheck className="h-2.5 w-2.5" />
+                          {t.requires_approval ? "Approval required" : "Auto-execute"}
+                        </button>
+                      )}
                       <button
                         onClick={() => toggle(t)}
                         className={cn(
@@ -998,7 +1104,130 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
   );
 }
 
+// Structured configuration per tool kind. Kinds without options (web_search,
+// web_fetch, rag_search, vault_connector) show nothing; the rest get focused
+// fields, with the raw JSON always available as an escape hatch.
 function ToolConfigEditor({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<string, any>) => void }) {
+  const [open, setOpen] = useState(false);
+  const hasConfig = tool.kind === "db_read" || tool.kind === "edge_function" || tool.kind === "custom";
+  if (!hasConfig) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-[11px] text-muted-foreground hover:text-foreground"
+      >
+        {open ? "Hide config" : "Configure"}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-3">
+          {tool.kind === "db_read" && <DbReadConfig tool={tool} onSave={onSave} />}
+          {tool.kind === "edge_function" && <EdgeFunctionConfig tool={tool} onSave={onSave} />}
+          {tool.kind === "custom" && <CustomToolConfig tool={tool} onSave={onSave} />}
+          <RawJsonConfig tool={tool} onSave={onSave} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DbReadConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<string, any>) => void }) {
+  const [tables, setTables] = useState(
+    Array.isArray(tool.config?.tables) ? (tool.config.tables as string[]).join(", ") : "",
+  );
+  return (
+    <div>
+      <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+        Allowed tables (comma-separated — the agent can only read these, scoped to this project)
+      </label>
+      <div className="flex gap-2">
+        <Input
+          value={tables}
+          onChange={(e) => setTables(e.target.value)}
+          placeholder="product_events, deals, marketing_posts"
+          className="h-7 flex-1 text-xs"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            onSave({
+              ...tool.config,
+              tables: tables.split(",").map((t) => t.trim()).filter((t) => /^[a-zA-Z0-9_]+$/.test(t)),
+            })
+          }
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function EdgeFunctionConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<string, any>) => void }) {
+  const [slug, setSlug] = useState(typeof tool.config?.slug === "string" ? tool.config.slug : "");
+  return (
+    <div>
+      <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+        Function slug (the agent gets one tool that POSTs to this function)
+      </label>
+      <div className="flex gap-2">
+        <Input
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          placeholder="send-notification"
+          className="h-7 flex-1 font-mono text-xs"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!/^[a-z0-9-]+$/.test(slug)}
+          onClick={() => onSave({ ...tool.config, slug })}
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CustomToolConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<string, any>) => void }) {
+  const [url, setUrl] = useState(typeof tool.config?.webhook_url === "string" ? tool.config.webhook_url : "");
+  const [method, setMethod] = useState(typeof tool.config?.method === "string" ? tool.config.method : "POST");
+  return (
+    <div className="space-y-2">
+      <label className="block text-[11px] font-medium text-muted-foreground">
+        Webhook URL (called with the agent's JSON arguments)
+      </label>
+      <div className="flex gap-2">
+        <select
+          value={method}
+          onChange={(e) => setMethod(e.target.value)}
+          className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+        >
+          {["POST", "GET", "PUT", "PATCH"].map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <Input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://hooks.example.com/agent"
+          className="h-7 flex-1 font-mono text-xs"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!/^https?:\/\//.test(url)}
+          onClick={() => onSave({ ...tool.config, webhook_url: url, method })}
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function RawJsonConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<string, any>) => void }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(JSON.stringify(tool.config ?? {}, null, 2));
   const [err, setErr] = useState<string | null>(null);
@@ -1015,15 +1244,12 @@ function ToolConfigEditor({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
   }
 
   return (
-    <div className="mt-2">
-      <button
-        onClick={() => setOpen(!open)}
-        className="text-[11px] text-muted-foreground hover:text-foreground"
-      >
-        {open ? "Hide config" : "Configure"}
+    <div>
+      <button onClick={() => setOpen(!open)} className="text-[10px] text-muted-foreground/70 hover:text-foreground">
+        {open ? "Hide advanced (raw JSON)" : "Advanced (raw JSON)"}
       </button>
       {open && (
-        <div className="mt-2 space-y-2">
+        <div className="mt-1 space-y-2">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -1032,6 +1258,152 @@ function ToolConfigEditor({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
           />
           {err && <p className="text-[11px] text-destructive">{err}</p>}
           <Button size="sm" variant="outline" onClick={save}>Save config</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// APPROVALS TAB — human-in-the-loop queue for sensitive agent actions
+// ============================================================================
+
+function ApprovalsTab({ agent }: { agent: InternalAgent }) {
+  const queryClient = useQueryClient();
+  const [deciding, setDeciding] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: approvals } = useQuery({
+    queryKey: ["internal_agent_approvals", agent.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("internal_agent_approvals")
+        .select("*")
+        .eq("agent_id", agent.id)
+        .order("requested_at", { ascending: false })
+        .limit(100);
+      return (data ?? []) as AgentApproval[];
+    },
+    refetchInterval: (q) => ((q.state.data as AgentApproval[] | undefined)?.some((a) => a.status === "pending") ? 5000 : false),
+  });
+
+  async function decide(approval: AgentApproval, decision: "approve" | "reject") {
+    setDeciding(approval.id);
+    setError(null);
+    try {
+      await callEdge("internal-agent-approve", { approval_id: approval.id, decision });
+      queryClient.invalidateQueries({ queryKey: ["internal_agent_approvals", agent.id] });
+    } catch (e: any) {
+      setError(e?.message ?? "Decision failed");
+    } finally {
+      setDeciding(null);
+    }
+  }
+
+  const pending = (approvals ?? []).filter((a) => a.status === "pending");
+  const decided = (approvals ?? []).filter((a) => a.status !== "pending");
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="h-4 w-4 text-amber-500" /> Pending approvals
+            {pending.length > 0 && <Badge className="bg-amber-500/15 text-amber-600">{pending.length}</Badge>}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Actions the agent wants to perform that are gated behind human review. Approving executes them immediately.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {error && <div className="mb-3 rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{error}</div>}
+          {pending.length === 0 ? (
+            <p className="py-6 text-center text-xs text-muted-foreground">Nothing waiting for approval.</p>
+          ) : (
+            <div className="space-y-2">
+              {pending.map((a) => (
+                <ApprovalCard key={a.id} approval={a} deciding={deciding === a.id} onDecide={decide} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {decided.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">History</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {decided.map((a) => (
+                <ApprovalCard key={a.id} approval={a} deciding={false} onDecide={decide} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+const APPROVAL_STATUS_META: Record<AgentApproval["status"], { label: string; cls: string }> = {
+  pending: { label: "Pending", cls: "bg-amber-500/15 text-amber-600" },
+  approved: { label: "Approved", cls: "bg-sky-500/15 text-sky-600" },
+  rejected: { label: "Rejected", cls: "bg-muted text-muted-foreground" },
+  executed: { label: "Executed", cls: "bg-emerald-500/15 text-emerald-600" },
+  failed: { label: "Failed", cls: "bg-destructive/15 text-destructive" },
+};
+
+function ApprovalCard({
+  approval, deciding, onDecide,
+}: {
+  approval: AgentApproval;
+  deciding: boolean;
+  onDecide: (a: AgentApproval, d: "approve" | "reject") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const meta = APPROVAL_STATUS_META[approval.status];
+  return (
+    <div className="rounded-md border border-border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <button onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", meta.cls)}>{meta.label}</span>
+          <span className="truncate font-mono text-xs">{approval.tool_name}</span>
+          <span className="shrink-0 text-[10px] text-muted-foreground">{relativeDate(approval.requested_at)}</span>
+        </button>
+        {approval.status === "pending" && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button size="sm" variant="outline" disabled={deciding} onClick={() => onDecide(approval, "reject")}>
+              <XCircle className="mr-1 h-3 w-3 text-destructive" /> Reject
+            </Button>
+            <Button size="sm" disabled={deciding} onClick={() => onDecide(approval, "approve")}>
+              {deciding ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CheckCircle2 className="mr-1 h-3 w-3" />}
+              Approve & run
+            </Button>
+          </div>
+        )}
+      </div>
+      {approval.reason && (
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          <span className="font-medium">Agent's justification:</span> {approval.reason}
+        </p>
+      )}
+      {open && (
+        <div className="mt-2 space-y-2">
+          <div>
+            <div className="text-[10px] font-medium uppercase text-muted-foreground">Action ({approval.action_kind})</div>
+            <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/40 p-2 text-[11px]">
+              {JSON.stringify(approval.payload, null, 2)}
+            </pre>
+          </div>
+          {approval.result?.detail && (
+            <div>
+              <div className="text-[10px] font-medium uppercase text-muted-foreground">Result</div>
+              <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/40 p-2 text-[11px]">{String(approval.result.detail)}</pre>
+            </div>
+          )}
+          {approval.error_message && (
+            <div className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{approval.error_message}</div>
+          )}
         </div>
       )}
     </div>
@@ -1310,6 +1682,8 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   const [temperature, setTemperature] = useState(agent.temperature);
   const [chatEnabled, setChatEnabled] = useState(agent.chat_enabled);
   const [missionEnabled, setMissionEnabled] = useState(agent.mission_enabled);
+  const [maxSteps, setMaxSteps] = useState(agent.max_steps ?? 8);
+  const [maxCost, setMaxCost] = useState(agent.max_run_cost_usd ?? 0.5);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
@@ -1325,6 +1699,8 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
           temperature,
           chat_enabled: chatEnabled,
           mission_enabled: missionEnabled,
+          max_steps: Math.min(Math.max(Math.round(maxSteps) || 8, 1), 30),
+          max_run_cost_usd: Math.max(Number(maxCost) || 0.5, 0),
           updated_at: new Date().toISOString(),
         })
         .eq("id", agent.id);
@@ -1420,6 +1796,44 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Gauge className="h-4 w-4 text-muted-foreground" /> Autonomy budget
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Hard limits applied to every run. The agent stops when it reaches the step budget; runs exceeding the
+            cost budget are flagged in the timeline.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Max steps per run (tool-call rounds, 1–30)
+              </label>
+              <Input
+                type="number" min={1} max={30}
+                value={maxSteps}
+                onChange={(e) => setMaxSteps(Number(e.target.value))}
+                disabled={!isOwner}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Max cost per run (USD)
+              </label>
+              <Input
+                type="number" min={0} step={0.05}
+                value={maxCost}
+                onChange={(e) => setMaxCost(Number(e.target.value))}
+                disabled={!isOwner}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {isOwner && (
         <Card>
           <CardHeader><CardTitle className="text-sm text-destructive">Danger zone</CardTitle></CardHeader>
@@ -1439,6 +1853,7 @@ export const INTERNAL_AGENT_TABS: { slug: InternalAgentTab; label: string; icon:
   { slug: "chat", label: "Chat", icon: MessageSquare },
   { slug: "mission", label: "Missions", icon: Target },
   { slug: "deliverables", label: "Deliverables", icon: Package },
+  { slug: "approvals", label: "Approvals", icon: ShieldCheck },
   { slug: "instructions", label: "Instructions", icon: FileText },
   { slug: "tools", label: "Tools", icon: Wrench },
   { slug: "members", label: "Members", icon: UsersIcon },

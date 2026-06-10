@@ -17,6 +17,8 @@ export interface InternalAgent {
   instruction_blocks: InstructionBlock[];
   model: string;
   temperature: number;
+  max_steps: number;
+  max_run_cost_usd: number;
   chat_enabled: boolean;
   mission_enabled: boolean;
   created_by: string;
@@ -62,6 +64,8 @@ export interface Mission {
   assigned_to: string | null;
   tags: string[];
   schedule: MissionSchedule;
+  last_run_at: string | null;
+  next_run_at: string | null;
   created_at: string;
 }
 
@@ -69,15 +73,48 @@ export interface MissionRun {
   id: string;
   mission_id: string;
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  triggered_via: "manual" | "schedule" | "api";
   started_at: string | null;
   finished_at: string | null;
   tokens_in: number;
   tokens_out: number;
   cost_usd: number;
   action_count: number;
+  steps: number;
   final_output: string | null;
   error_message: string | null;
   created_at: string;
+}
+
+export interface RunEvent {
+  id: string;
+  run_id: string;
+  kind: "llm_call" | "tool_call" | "tool_result" | "status" | "log" | "error";
+  payload: Record<string, any>;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number;
+  created_at: string;
+}
+
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
+
+export interface AgentApproval {
+  id: string;
+  agent_id: string;
+  run_id: string | null;
+  mission_id: string | null;
+  tool_name: string;
+  action_kind: "edge_function" | "webhook";
+  payload: Record<string, any>;
+  reason: string | null;
+  status: ApprovalStatus;
+  requested_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  executed_at: string | null;
+  result: Record<string, any> | null;
+  error_message: string | null;
 }
 
 export interface Deliverable {
