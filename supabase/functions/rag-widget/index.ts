@@ -112,6 +112,153 @@ const WIDGET_JS = `(function(){
     panel.appendChild(brand);
   }
   document.body.appendChild(btn); document.body.appendChild(panel);
+
+  // ── Activation engine (proactive) ────────────────────────────────────────
+  // Opt-in via config.proactive. Watches behaviour (idle / rage-click / route
+  // change), posts ticks to rag-activation-tick, and surfaces a proactive bubble
+  // when the backend rules fire. Reuses bubble()/panel/getVid() above.
+  if (c.proactive) (function(){
+    // Derive the tick / feedback endpoints from A.endpoint (which targets
+    // rag-chat) unless overridden explicitly.
+    function deriveFn(name){
+      try { return A.endpoint.replace(/\\/[a-z0-9-]+\\/?$/i, "/"+name); }
+      catch(e){ return null; }
+    }
+    var tickUrl = A.tick_endpoint || deriveFn("rag-activation-tick");
+    var fbUrl   = A.feedback_endpoint || deriveFn("rag-activation-feedback");
+    if (!tickUrl) return;
+
+    var idleMs = (c.proactive_idle_seconds != null ? c.proactive_idle_seconds : 90) * 1000;
+    var pageEnteredAt = Date.now();
+    var idleTimer = null, routeTimer = null;
+    var triggeredRoutes = {};          // route → true (don't re-proact same route)
+    var clickMap = {};                 // confusion detection
+    var proBubble = null;
+
+    function visibleElements(){
+      var out = [];
+      var els = document.querySelectorAll("button, a[href], [role='button'], [data-fos-onb]");
+      for (var i=0; i<els.length && out.length<20; i++){
+        var el = els[i];
+        var label = el.getAttribute("aria-label") || (el.textContent||"").trim().slice(0,40);
+        if (!label) continue;
+        var sel = el.id ? "#"+el.id
+          : el.getAttribute("data-fos-onb") ? '[data-fos-onb="'+el.getAttribute("data-fos-onb")+'"]'
+          : el.getAttribute("data-testid") ? '[data-testid="'+el.getAttribute("data-testid")+'"]'
+          : el.tagName.toLowerCase();
+        out.push({ label: label, selector: sel });
+      }
+      return out;
+    }
+
+    function ctx(){
+      return {
+        route: location.pathname,
+        page_title: document.title,
+        seconds_on_page: Math.round((Date.now()-pageEnteredAt)/1000),
+        visible_elements: visibleElements()
+      };
+    }
+
+    // Execute the orchestrate-schema UI actions the agent returns.
+    function runActions(actions){
+      (actions||[]).forEach(function(a){
+        try {
+          if (a.type === "navigate" && a.route) { location.href = a.route; return; }
+          var el = a.selector ? document.querySelector(a.selector) : null;
+          if ((a.type === "highlight" || a.type === "tooltip" || a.type === "scroll_to") && el) {
+            el.scrollIntoView({ behavior:"smooth", block:"center" });
+            if (a.type !== "scroll_to") {
+              var saved = el.style.outline;
+              el.style.outline = "3px solid "+accent; el.style.outlineOffset = "2px";
+              setTimeout(function(){ el.style.outline = saved; }, a.duration_ms || 3000);
+            }
+          }
+        } catch(e){}
+      });
+    }
+
+    function showProBubble(text, actions, interventionId){
+      if (proBubble) proBubble.remove();
+      var bub = document.createElement("div");
+      bub.style.cssText = "position:fixed;bottom:88px;"+pos+";z-index:2147483001;max-width:300px;background:"+baseBg+";color:"+baseText+";border:1px solid "+border+";border-radius:14px;padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-family:system-ui,-apple-system,sans-serif;cursor:pointer";
+      var msg = document.createElement("div");
+      msg.style.cssText = "font-size:13px;line-height:1.5"; msg.textContent = text;
+      var fb = document.createElement("div");
+      fb.style.cssText = "display:flex;gap:6px;margin-top:10px";
+      var up = document.createElement("button"), down = document.createElement("button");
+      up.textContent = "\\uD83D\\uDC4D"; down.textContent = "\\uD83D\\uDC4E";
+      [up,down].forEach(function(b){ b.style.cssText = "border:1px solid "+border+";border-radius:6px;background:transparent;cursor:pointer;font-size:12px;padding:2px 8px"; });
+      function sendOutcome(outcome, helpful){
+        if (!fbUrl || !interventionId) return;
+        fetch(fbUrl, { method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ public_key: A.key, intervention_id: interventionId, outcome: outcome, helpful: helpful }) }).catch(function(){});
+      }
+      up.onclick = function(e){ e.stopPropagation(); sendOutcome("accepted", true); bub.remove(); proBubble=null; };
+      down.onclick = function(e){ e.stopPropagation(); sendOutcome("dismissed", false); bub.remove(); proBubble=null; };
+      bub.onclick = function(){ runActions(actions); sendOutcome("accepted", true); bub.remove(); proBubble=null; };
+      fb.appendChild(up); fb.appendChild(down);
+      bub.appendChild(msg); bub.appendChild(fb);
+      document.body.appendChild(bub); proBubble = bub;
+      setTimeout(function(){ if (proBubble === bub) { sendOutcome("ignored"); bub.remove(); proBubble=null; } }, 15000);
+    }
+
+    function tick(signal){
+      if (open) return;                // don't interrupt an active conversation
+      fetch(tickUrl, { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ agent_public_key: A.key, visitor_id: getVid(), signal: signal, context: ctx() }) })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.proactive && d.proactive.text) {
+            triggeredRoutes[location.pathname] = true;
+            showProBubble(d.proactive.text, d.proactive.actions, d.proactive.intervention_id);
+          }
+        }).catch(function(){});
+    }
+
+    function resetIdle(){
+      if (idleTimer) clearTimeout(idleTimer);
+      if (open) return;
+      idleTimer = setTimeout(function(){ tick({ type:"idle" }); }, idleMs);
+    }
+
+    function onRoute(){
+      pageEnteredAt = Date.now(); clickMap = {};
+      if (routeTimer) clearTimeout(routeTimer);
+      if (!open && !triggeredRoutes[location.pathname]) {
+        routeTimer = setTimeout(function(){ tick({ type:"route_change" }); }, 4000);
+      }
+      resetIdle();
+    }
+
+    ["mousemove","keydown","scroll","touchstart"].forEach(function(ev){
+      document.addEventListener(ev, resetIdle, { passive:true });
+    });
+    document.addEventListener("click", function(e){
+      resetIdle();
+      var t = e.target;
+      var key = (t && (t.id || t.getAttribute && t.getAttribute("data-testid"))) ||
+                (t && t.tagName ? t.tagName+":"+((t.textContent||"").trim().slice(0,20)) : "");
+      if (!key) return;
+      var now = Date.now(); var entry = clickMap[key] || { count:0, ts:now };
+      if (now-entry.ts > 8000) { entry = { count:1, ts:now }; }
+      else { entry.count++; if (entry.count >= 4) { clickMap[key]=null; tick({ type:"rage_click", rage_clicks: entry.count }); return; } }
+      clickMap[key] = entry;
+    }, { passive:true });
+
+    var op = history.pushState;
+    history.pushState = function(){ var r = op.apply(this, arguments); setTimeout(onRoute, 100); return r; };
+    window.addEventListener("popstate", function(){ setTimeout(onRoute, 100); });
+
+    // Cancel proactivity while the panel is open; resume on close.
+    btn.addEventListener("click", function(){
+      if (open) { if (idleTimer) clearTimeout(idleTimer); if (routeTimer) clearTimeout(routeTimer); if (proBubble){ proBubble.remove(); proBubble=null; } }
+      else resetIdle();
+    });
+
+    tick({ type:"heartbeat" });        // register the session immediately
+    resetIdle();
+  })();
 })();`;
 
 Deno.serve(() => {

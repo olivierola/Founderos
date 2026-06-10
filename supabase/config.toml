@@ -130,3 +130,15 @@ verify_jwt = false
 
 [functions.automation-receiver]
 verify_jwt = false
+
+# Activation Engine + embeddable widget — public surfaces. The widget is loaded
+# via a plain <script> tag (no auth header), and the activation endpoints are
+# identified by the agent public_key, like the other rag-* public functions.
+[functions.rag-widget]
+verify_jwt = false
+
+[functions.rag-activation-tick]
+verify_jwt = false
+
+[functions.rag-activation-feedback]
+verify_jwt = false
