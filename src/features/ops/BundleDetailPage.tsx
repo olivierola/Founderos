@@ -259,11 +259,20 @@ export function OpsBundleDetailPage() {
                     canApply={files.length > 0}
                     headerActions={archHeaderActions}
                     onAiMessage={async (msg) => {
-                      // Placeholder: the AI-driven topology edit endpoint isn't
-                      // shipped yet. We surface the planned behaviour so the user
-                      // can validate the UX; future PR will route this through
-                      // ops-generate-topology with an edit prompt.
-                      return `(coming soon) The AI will modify the infra based on: "${msg}"`;
+                      const res = await callEdge<{ ok: boolean; summary?: string; changed?: number; message?: string }>(
+                        "ops-ai-edit",
+                        { bundle_id: bundleId, instruction: msg },
+                      );
+                      if (!res.ok) throw new Error(res.message ?? "Edit failed");
+                      queryClient.invalidateQueries({ queryKey: ["ops_bundle_files", bundleId] });
+                      if (res.changed) {
+                        // Files changed → recompute the architecture diagram.
+                        try {
+                          await callEdge("ops-generate-topology", { bundle_id: bundleId });
+                          queryClient.invalidateQueries({ queryKey: ["ops_topology", bundleId] });
+                        } catch { /* diagram refresh is non-fatal */ }
+                      }
+                      return res.summary ?? "Done.";
                     }}
                     onTopologyChange={async (next) => {
                       if (!topologyRow?.id || !bundleId) return;

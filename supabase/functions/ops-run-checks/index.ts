@@ -8,7 +8,7 @@
 // the runner.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 
 interface Probe {
   id: string;
@@ -154,6 +154,29 @@ Deno.serve(async (req) => {
     if (!project_id) return jsonResponse({ ok: false, message: "project_id required" }, { status: 400 });
 
     const admin = createServiceClient();
+
+    // Caller must be a member of the workspace owning the project (internal
+    // callers use the service-role key, which skips this path).
+    const authToken = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    if (authToken !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+      const userClient = createUserClient(req);
+      const { data: userInfo, error: authErr } = await userClient.auth.getUser();
+      if (authErr || !userInfo?.user) {
+        return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
+      }
+      const { data: proj } = await admin
+        .from("projects").select("workspace_id").eq("id", project_id).maybeSingle();
+      if (!proj) return jsonResponse({ ok: false, message: "Project not found" }, { status: 404 });
+      const { data: membership } = await admin
+        .from("workspace_members")
+        .select("user_id")
+        .eq("workspace_id", proj.workspace_id)
+        .eq("user_id", userInfo.user.id)
+        .maybeSingle();
+      if (!membership) {
+        return jsonResponse({ ok: false, message: "Not authorized for this workspace" }, { status: 403 });
+      }
+    }
 
     let q = admin.from("ops_check_definitions")
       .select("*")

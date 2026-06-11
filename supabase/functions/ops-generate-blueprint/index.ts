@@ -11,7 +11,7 @@
 // persisted as ops_generated_files rows sharing the same bundle_id.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { callAi } from "../_shared/ai.ts";
 
 const SYSTEM_PROMPT = `You are an expert DevOps engineer who produces production-ready infrastructure files.
@@ -67,7 +67,24 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, message: "Missing required fields" }, { status: 400 });
     }
 
+    const userClient = createUserClient(req);
+    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !userInfo?.user) {
+      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
+    }
+
     const admin = createServiceClient();
+
+    // Caller must be a member of the target workspace.
+    const { data: membership } = await admin
+      .from("workspace_members")
+      .select("user_id")
+      .eq("workspace_id", workspace_id)
+      .eq("user_id", userInfo.user.id)
+      .maybeSingle();
+    if (!membership) {
+      return jsonResponse({ ok: false, message: "Not authorized for this workspace" }, { status: 403 });
+    }
 
     // Load the latest scan for context.
     const { data: scan } = await admin

@@ -552,8 +552,30 @@ export function OpsInfraProjectDetailPage() {
                             </div>
                           }
                           onAiMessage={async (msg) => {
-                            // Placeholder until ai-edit endpoint ships.
-                            return `(coming soon) Will modify the "${activeLayer.label}" layer based on: "${msg}"`;
+                            if (!activeLayer?.bundle_id) return "This layer has no bundle yet — generate it first.";
+                            // Checkpoint before the AI touches anything (best-effort).
+                            try {
+                              await callEdge("ops-snapshot-create", {
+                                infra_id: infraId,
+                                label: "pre-ai-edit",
+                                message: `Before AI edit: ${msg.slice(0, 120)}`,
+                              });
+                              queryClient.invalidateQueries({ queryKey: ["ops_infra_snapshots", infraId] });
+                            } catch { /* snapshot failure must not block the edit */ }
+                            const res = await callEdge<{ ok: boolean; summary?: string; changed?: number; message?: string }>(
+                              "ops-ai-edit",
+                              { bundle_id: activeLayer.bundle_id, instruction: msg },
+                            );
+                            if (!res.ok) throw new Error(res.message ?? "Edit failed");
+                            queryClient.invalidateQueries({ queryKey: ["ops_layer_files", activeLayer.bundle_id] });
+                            if (res.changed) {
+                              // Files changed → recompute the architecture diagram.
+                              try {
+                                await callEdge("ops-generate-topology", { bundle_id: activeLayer.bundle_id });
+                                queryClient.invalidateQueries({ queryKey: ["ops_layer_topology", activeLayer.bundle_id] });
+                              } catch { /* diagram refresh is non-fatal */ }
+                            }
+                            return res.summary ?? "Done.";
                           }}
                           onNodeProbe={nodeProbe}
                           onTopologyChange={async (next) => {

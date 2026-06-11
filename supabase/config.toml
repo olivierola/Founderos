@@ -142,3 +142,8 @@ verify_jwt = false
 
 [functions.rag-activation-feedback]
 verify_jwt = false
+
+# The external Ops Runner authenticates with X-Runner-Token (hashed against
+# ops_settings.runner_token_hash) — it has no Supabase JWT.
+[functions.ops-runner-poll]
+verify_jwt = false

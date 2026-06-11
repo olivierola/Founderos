@@ -4,7 +4,7 @@
 // architecture" after editing files.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { callAi } from "../_shared/ai.ts";
 
 const TOPOLOGY_SYSTEM = `You extract structured infrastructure topologies from a set of generated
@@ -46,6 +46,12 @@ Deno.serve(async (req) => {
     const { bundle_id } = await req.json();
     if (!bundle_id) return jsonResponse({ ok: false, message: "bundle_id required" }, { status: 400 });
 
+    const userClient = createUserClient(req);
+    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !userInfo?.user) {
+      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
+    }
+
     const admin = createServiceClient();
     const { data: files } = await admin
       .from("ops_generated_files")
@@ -54,6 +60,17 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: true });
     if (!files || files.length === 0) {
       return jsonResponse({ ok: false, message: "No files for this bundle" }, { status: 404 });
+    }
+
+    // Caller must belong to the workspace that owns the bundle.
+    const { data: membership } = await admin
+      .from("workspace_members")
+      .select("user_id")
+      .eq("workspace_id", files[0].workspace_id)
+      .eq("user_id", userInfo.user.id)
+      .maybeSingle();
+    if (!membership) {
+      return jsonResponse({ ok: false, message: "Not authorized for this workspace" }, { status: 403 });
     }
 
     const trimmed = files.slice(0, 12).map((f) => ({
