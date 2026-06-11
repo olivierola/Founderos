@@ -175,7 +175,7 @@ export function PromptTemplatesPage() {
                 className="mt-3 self-start"
                 onClick={() =>
                   navigate(
-                    `/app/${workspaceSlug}/${projectSlug}/ai/chat?prompt=${encodeURIComponent(t.prompt)}`,
+                    `/app/${workspaceSlug}/${projectSlug}/agent/chat?prompt=${encodeURIComponent(t.prompt)}`,
                   )
                 }
               >

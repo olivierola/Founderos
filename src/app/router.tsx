@@ -269,6 +269,14 @@ const PAGES: Record<string, PageEl> = {
   "actions/runbooks": <RunbooksPage />,
   "actions/audit-log": <AuditLogPage />,
 
+  // AI Assistant pages live in the RAG Agent module ("agent/…") since the two
+  // modules were merged; the old "ai/…" paths stay registered for deep links.
+  "agent/chat": <AiChatPage />,
+  "agent/insights": <AiInsightsPage />,
+  "agent/reports": <AiReportsPage />,
+  "agent/workflows": <AiWorkflowsPage />,
+  "agent/prompt-templates": <PromptTemplatesPage />,
+  "agent/guardrails": <GuardrailsPage />,
   "ai/chat": <AiChatPage />,
   "ai/insights": <AiInsightsPage />,
   "ai/reports": <AiReportsPage />,

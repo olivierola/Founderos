@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Rocket,
   Braces,
-  Brain,
   MessageSquareText,
   Plug2,
   Cog,
@@ -194,23 +193,17 @@ export const MODULES: ModuleNavItem[] = [
     icon: MessageSquareText,
     color: "text-white",
     subItems: [
-      { label: "Agents", slug: "agents" },
+      { label: "Public agents", slug: "agents", group: "Agents" },
       { label: "Autonomous agents", slug: "internal-agents" },
       { label: "Onboarding", slug: "onboarding" },
-    ],
-  },
-  {
-    slug: "ai",
-    label: "AI Agent",
-    icon: Brain,
-    color: "text-primary/60",
-    subItems: [
+
+      // ── AI Assistant (merged from the former AI Agent module) ──
+      { label: "Chat", slug: "chat", group: "AI Assistant" },
       { label: "Insights", slug: "insights" },
       { label: "Reports", slug: "reports" },
       { label: "Workflows", slug: "workflows" },
       { label: "Prompt Templates", slug: "prompt-templates" },
       { label: "Guardrails", slug: "guardrails" },
-      { label: "Chat", slug: "chat" },
     ],
   },
   {

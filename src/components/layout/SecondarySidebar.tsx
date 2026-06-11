@@ -156,7 +156,7 @@ export function SecondarySidebar() {
           const kids = childrenByParent.get(sub.slug);
 
           const node = (() => {
-            if (module.slug === "ai" && sub.slug === "chat") {
+            if ((module.slug === "ai" || module.slug === "agent") && sub.slug === "chat") {
               return <ChatConversationsItem key={sub.slug} to={to} label={sub.label} />;
             }
             if (kids && kids.length > 0) {
