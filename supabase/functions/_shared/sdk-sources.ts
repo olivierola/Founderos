@@ -391,6 +391,10 @@ export interface InstallSdkParams {
   apiKeyExpr?: string; // server, e.g. "process.env.FOUNDEROS_API_KEY"
   /** Where to drop the SDK + init module (repo-relative dir). Default "src/lib". */
   libDir?: string;
+  /** RAG only: the agent's public key (rag_agents.public_key). */
+  agentPublicKey?: string;
+  /** RAG only: greeting bubble text. */
+  agentWelcome?: string;
 }
 
 /**
@@ -403,15 +407,26 @@ export function buildSdkInstall(p: InstallSdkParams): { files: SdkFileChange[]; 
 
   if (p.sdk === "rag") {
     // The RAG agent ships as a hosted widget script, not a copied SDK file.
+    // The edge-served widget reads window.FounderOSAgent (key + endpoint) —
+    // a bare script tag with data-* attributes would NOT boot it.
+    const key = p.agentPublicKey || "<AGENT_PUBLIC_KEY — copy it from RAG Agent → Agents → Widget>";
+    const welcome = (p.agentWelcome || "Hi! How can I help?").replace(/"/g, '\\"');
     const notes =
       "The RAG agent is embedded via the hosted widget script (no SDK file is copied). " +
-      "Add the snippet below to your app shell; set the data-* attributes to your agent's public config.";
+      "Paste the snippet below into the app shell (e.g. index.html before </body>). " +
+      "window.FounderOSAgent MUST be set before the script loads — key is the agent's public key, " +
+      "endpoint targets the public rag-chat function. config.proactive enables the activation engine " +
+      "(idle / rage-click / route-change interventions).";
     const snippet = `<!-- FounderOS RAG agent widget -->
-<script
-  src="${p.host}/functions/v1/rag-widget"
-  data-project-id="${p.projectId}"
-  defer
-></script>`;
+<script>
+  window.FounderOSAgent = {
+    key: "${key}",
+    endpoint: "${p.host}/functions/v1/rag-chat",
+    welcome: "${welcome}",
+    config: { proactive: true }
+  };
+</script>
+<script src="${p.host}/functions/v1/rag-widget" defer></script>`;
     return {
       files: [{ path: `${dir}/founderos-rag-widget.html`, content: snippet + "\n" }],
       notes,

@@ -14,6 +14,15 @@ import {
   Zap,
   Sparkles,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip as ChartTooltip,
+  CartesianGrid,
+} from "recharts";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -35,6 +44,7 @@ import { useProjectConnectors } from "@/hooks/useConnectors";
 import { cn } from "@/lib/utils";
 import {
   CATEGORY_META,
+  mergeEventNames,
   useEventDefinitions,
   useGrowth,
   type BreakdownResult,
@@ -42,6 +52,7 @@ import {
   type EventDefinition,
   type PropertySpec,
   type SummaryResult,
+  type TrendsResult,
 } from "./analytics";
 
 interface RawEvent {
@@ -251,6 +262,13 @@ export function EventsPage() {
         />
       </div>
 
+      {/* ── Volume over time ── */}
+      <VolumeTrends
+        workspaceId={workspaceId}
+        projectId={projectId}
+        eventOptions={mergeEventNames(defs, (breakdown.data?.events ?? []).map((e) => e.event_name))}
+      />
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* ── Catalog ── */}
         <Card className="lg:col-span-2">
@@ -395,6 +413,112 @@ export function EventsPage() {
         />
       )}
     </div>
+  );
+}
+
+// ── Volume over time (uses the engine's `trends` kind) ──────────────────────
+function VolumeTrends({
+  workspaceId,
+  projectId,
+  eventOptions,
+}: {
+  workspaceId: string | null;
+  projectId: string | null;
+  eventOptions: string[];
+}) {
+  const [period, setPeriod] = useState<"day" | "week">("day");
+  const [eventName, setEventName] = useState<string>("");
+
+  const trends = useQuery({
+    queryKey: ["analytics_trends", projectId, period, eventName],
+    enabled: !!workspaceId && !!projectId,
+    queryFn: () => {
+      // Bound the window so the axis stays readable: 30 days or 12 weeks.
+      const days = period === "day" ? 30 : 84;
+      const from = new Date(Date.now() - days * 86400000).toISOString();
+      return callEdge<TrendsResult>("analytics-query", {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        kind: "trends",
+        period,
+        event_name: eventName || undefined,
+        from,
+      });
+    },
+  });
+
+  const series = useMemo(
+    () =>
+      (trends.data?.series ?? []).map((s) => ({
+        ...s,
+        // "2026-06-01" → "06-01" keeps the axis compact.
+        label: s.bucket.length >= 10 ? s.bucket.slice(5, 10) : s.bucket,
+      })),
+    [trends.data],
+  );
+
+  return (
+    <Card className="mb-6">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardTitle>Volume over time</CardTitle>
+        <div className="flex items-center gap-2">
+          <select
+            value={eventName}
+            onChange={(e) => setEventName(e.target.value)}
+            className="h-8 max-w-[200px] rounded-md border border-input bg-background px-2 font-mono text-xs"
+          >
+            <option value="">All events</option>
+            {eventOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <div className="flex rounded-md border border-border p-0.5">
+            {(["day", "week"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={cn(
+                  "rounded px-2 py-1 text-[11px] capitalize transition-colors",
+                  period === p ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {trends.isLoading ? (
+          <div className="flex h-56 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : series.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">No events in this window yet.</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={series}>
+              <defs>
+                <linearGradient id="evGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(var(--primary-soft))" stopOpacity={0.5} />
+                  <stop offset="100%" stopColor="hsl(var(--primary-soft))" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} allowDecimals={false} />
+              <ChartTooltip
+                contentStyle={{
+                  background: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+                formatter={((v: unknown, name: unknown) => [Number(v).toLocaleString(), name === "events" ? "Events" : "Users"]) as never}
+              />
+              <Area type="monotone" dataKey="events" stroke="hsl(var(--primary-soft))" strokeWidth={2} fill="url(#evGrad)" />
+              <Area type="monotone" dataKey="users" stroke="#34d399" strokeWidth={1.5} fill="transparent" />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

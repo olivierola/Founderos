@@ -1206,6 +1206,25 @@ const installSdk: AssistantTool = {
     // module is wired correctly. Host comes from env; project_id is the cockpit id.
     const host = Deno.env.get("SUPABASE_URL") ?? "https://<your-project>.supabase.co";
 
+    // RAG installs need the agent's public key — the widget refuses to boot
+    // without it. Use the project's most recent agent.
+    let agentPublicKey: string | undefined;
+    let agentWelcome: string | undefined;
+    if (sdk === "rag") {
+      const { data: ragAgent } = await ctx.admin
+        .from("rag_agents")
+        .select("public_key, welcome_message")
+        .eq("project_id", ctx.projectId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!ragAgent) {
+        return "ERROR: this project has no RAG agent yet — create one in RAG Agent → Agents before installing the widget.";
+      }
+      agentPublicKey = (ragAgent as { public_key?: string }).public_key ?? undefined;
+      agentWelcome = (ragAgent as { welcome_message?: string }).welcome_message ?? undefined;
+    }
+
     const { files, notes } = buildSdkInstall({
       sdk,
       runtime,
@@ -1215,6 +1234,8 @@ const installSdk: AssistantTool = {
       libDir: str(args.lib_dir) || undefined,
       anonKeyExpr: str(args.anon_key_expr) || undefined,
       apiKeyExpr: str(args.api_key_expr) || undefined,
+      agentPublicKey,
+      agentWelcome,
     });
 
     // Append any author-provided call sites (validated shape).

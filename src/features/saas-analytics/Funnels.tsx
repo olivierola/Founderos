@@ -7,7 +7,8 @@ import {
   Trash2,
   Pencil,
   X,
-  GripVertical,
+  ChevronUp,
+  ChevronDown,
   TrendingDown,
   ArrowDown,
 } from "lucide-react";
@@ -140,6 +141,7 @@ export function FunnelsPage() {
 function FunnelResultView({ funnel, onEdit, onDelete }: { funnel: FunnelDef; onEdit: () => void; onDelete: () => void }) {
   const { workspaceId, projectId } = useCurrentContext();
   const stepNames = funnel.steps.map((s) => s.event_name).filter(Boolean);
+  const [view, setView] = useState<"funnel" | "bars">("funnel");
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["funnel_result", funnel.id, funnel.steps, funnel.window_days],
@@ -171,7 +173,21 @@ function FunnelResultView({ funnel, onEdit, onDelete }: { funnel: FunnelDef; onE
             {funnel.description && <p className="text-xs text-muted-foreground">{funnel.description}</p>}
             <p className="mt-1 text-xs text-muted-foreground">Conversion window: {funnel.window_days} days</p>
           </div>
-          <div className="flex shrink-0 gap-1">
+          <div className="flex shrink-0 items-center gap-1">
+            <div className="mr-2 flex rounded-md border border-border p-0.5">
+              {(["funnel", "bars"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={cn(
+                    "rounded px-2 py-1 text-[11px] capitalize transition-colors",
+                    view === v ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {v === "funnel" ? "Funnel" : "Bars"}
+                </button>
+              ))}
+            </div>
             <Button size="sm" variant="ghost" onClick={onEdit}><Pencil className="h-3.5 w-3.5" /></Button>
             <Button size="sm" variant="ghost" onClick={onDelete}><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>
@@ -193,47 +209,132 @@ function FunnelResultView({ funnel, onEdit, onDelete }: { funnel: FunnelDef; onE
               </div>
             </div>
 
-            <div className="space-y-1">
-              {data.steps.map((step, i) => (
-                <div key={i}>
-                  <div className="mb-1 flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-secondary text-[10px] tabular-nums">{i + 1}</span>
-                      {labelFor(step.event_name, i)}
-                    </span>
-                    <span className="text-muted-foreground">
-                      <span className="font-medium text-foreground tabular-nums">{step.count.toLocaleString()}</span>
-                      {" · "}{step.pct_of_top.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="h-7 overflow-hidden rounded-md bg-secondary">
-                    <div
-                      className="flex h-full items-center rounded-md bg-[hsl(var(--primary-soft))] px-2 text-[10px] font-medium text-background transition-all"
-                      style={{ width: `${Math.max(2, step.pct_of_top)}%` }}
-                    >
-                      {step.pct_of_top >= 12 ? `${step.pct_of_top.toFixed(0)}%` : ""}
-                    </div>
-                  </div>
-                  {i < data.steps.length - 1 && (
-                    <div className="flex items-center gap-1.5 py-1 pl-7 text-[11px]">
-                      <ArrowDown className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-muted-foreground">
-                        {data.steps[i + 1].step_conversion.toFixed(1)}% continue
+            {view === "funnel" ? (
+              <FunnelShape steps={data.steps} labelFor={labelFor} />
+            ) : (
+              <div className="space-y-1">
+                {data.steps.map((step, i) => (
+                  <div key={i}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-secondary text-[10px] tabular-nums">{i + 1}</span>
+                        {labelFor(step.event_name, i)}
                       </span>
-                      {data.steps[i + 1].dropoff > 0 && (
-                        <Badge variant="outline" className="border-destructive/30 text-[10px] text-destructive">
-                          −{data.steps[i + 1].dropoff.toLocaleString()} dropped
-                        </Badge>
-                      )}
+                      <span className="text-muted-foreground">
+                        <span className="font-medium text-foreground tabular-nums">{step.count.toLocaleString()}</span>
+                        {" · "}{step.pct_of_top.toFixed(1)}%
+                      </span>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                    <div className="h-7 overflow-hidden rounded-md bg-secondary">
+                      <div
+                        className="flex h-full items-center rounded-md bg-[hsl(var(--primary-soft))] px-2 text-[10px] font-medium text-background transition-all"
+                        style={{ width: `${Math.max(2, step.pct_of_top)}%` }}
+                      >
+                        {step.pct_of_top >= 12 ? `${step.pct_of_top.toFixed(0)}%` : ""}
+                      </div>
+                    </div>
+                    {i < data.steps.length - 1 && (
+                      <div className="flex items-center gap-1.5 py-1 pl-7 text-[11px]">
+                        <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground">
+                          {data.steps[i + 1].step_conversion.toFixed(1)}% continue
+                        </span>
+                        {data.steps[i + 1].dropoff > 0 && (
+                          <Badge variant="outline" className="border-destructive/30 text-[10px] text-destructive">
+                            −{data.steps[i + 1].dropoff.toLocaleString()} dropped
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ── Funnel shape (the "real" funnel visual) ─────────────────────────────────
+// A continuous, centered funnel: each step is a trapezoid whose top width is
+// the step's share of step-1 users and whose bottom width is the next step's —
+// the silhouette narrows exactly where users drop. The legend rows on the
+// right are height-aligned with the bands.
+function FunnelShape({
+  steps,
+  labelFor,
+}: {
+  steps: FunnelResult["steps"];
+  labelFor: (eventName: string, i: number) => string;
+}) {
+  const BAND_H = 72; // px per step
+  const MIN_W = 7; // % — keep tiny steps visible
+  const widthOf = (i: number) => Math.max(MIN_W, steps[i]?.pct_of_top ?? 0);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_260px]">
+      {/* The funnel silhouette */}
+      <div>
+        {steps.map((step, i) => {
+          const top = widthOf(i);
+          const bottom = i < steps.length - 1 ? widthOf(i + 1) : widthOf(i) * 0.82;
+          const opacity = Math.max(0.35, 0.95 - i * 0.13);
+          const clip = `polygon(${50 - top / 2}% 0, ${50 + top / 2}% 0, ${50 + bottom / 2}% 100%, ${50 - bottom / 2}% 100%)`;
+          return (
+            <div key={i} className="relative" style={{ height: BAND_H }}>
+              <div
+                className="absolute inset-0 transition-all"
+                style={{
+                  clipPath: clip,
+                  background: `hsl(var(--primary-soft) / ${opacity})`,
+                }}
+                title={`${labelFor(step.event_name, i)} — ${step.count.toLocaleString()} users (${step.pct_of_top.toFixed(1)}%)`}
+              />
+              {/* Centered % readout, readable at any band width */}
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className={cn("text-sm font-semibold tabular-nums", top >= 18 ? "text-background" : "text-foreground")}>
+                  {step.pct_of_top.toFixed(0)}%
+                </span>
+                {top >= 26 && (
+                  <span className="text-[10px] tabular-nums text-background/80">
+                    {step.count.toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Step legend, aligned band by band */}
+      <div>
+        {steps.map((step, i) => (
+          <div key={i} className="flex flex-col justify-center border-l-2 border-border pl-3" style={{ height: BAND_H }}>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] tabular-nums">{i + 1}</span>
+              <span className="truncate font-medium">{labelFor(step.event_name, i)}</span>
+            </div>
+            <div className="mt-0.5 pl-7 text-xs text-muted-foreground">
+              <span className="font-medium tabular-nums text-foreground">{step.count.toLocaleString()}</span> users
+              {" · "}{step.pct_of_top.toFixed(1)}% of top
+            </div>
+            {i > 0 && (
+              <div className="flex items-center gap-1.5 pl-7 text-[11px]">
+                <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                <span className="text-muted-foreground">{step.step_conversion.toFixed(1)}% from previous</span>
+                {step.dropoff > 0 && (
+                  <Badge variant="outline" className="border-destructive/30 text-[10px] text-destructive">
+                    −{step.dropoff.toLocaleString()}
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -327,8 +428,11 @@ function FunnelEditor({ value, onClose, onSaved }: { value: Partial<FunnelDef>; 
                   className="h-9 text-xs"
                 />
                 <div className="flex flex-col">
-                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
-                    <GripVertical className="h-3 w-3" />
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="Move up" className="text-muted-foreground hover:text-foreground disabled:opacity-30">
+                    <ChevronUp className="h-3 w-3" />
+                  </button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === steps.length - 1} title="Move down" className="text-muted-foreground hover:text-foreground disabled:opacity-30">
+                    <ChevronDown className="h-3 w-3" />
                   </button>
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => setSteps(steps.filter((_, j) => j !== i))} disabled={steps.length <= 2}>
