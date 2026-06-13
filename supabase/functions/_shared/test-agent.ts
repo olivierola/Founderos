@@ -12,6 +12,12 @@ import { createServiceClient } from "./supabase-admin.ts";
 
 type Admin = ReturnType<typeof createServiceClient>;
 
+// The agent needs strong reasoning to drive a browser. Use the most capable
+// Groq model available; override with E2E_AGENT_MODEL without redeploying.
+// Kimi K2 is purpose-built for agentic tool use and is strong at following a
+// directive and matching it to the right element.
+const AGENT_MODEL = Deno.env.get("E2E_AGENT_MODEL") || "moonshotai/kimi-k2-instruct";
+
 export interface BrowserAction {
   // What the runner should do next.
   type: "navigate" | "click" | "fill" | "select" | "scroll" | "press" | "wait"
@@ -85,13 +91,18 @@ Known fixtures (data you may use): ${JSON.stringify(ctx.fixtures ?? {})}
 Produce a concise ordered plan of high-level steps (intents) to execute this test in a browser.
 Respond as JSON: { "plan": ["...", "..."] }`;
   try {
-    const res = await callAi({
-      task: "json_extraction",
-      systemPrompt: "You plan browser E2E tests. Output strict JSON only.",
-      userPrompt,
-      jsonMode: true,
-      maxTokens: 600,
-    });
+    let res;
+    try {
+      res = await callAi({
+        task: "json_extraction", systemPrompt: "You plan browser E2E tests. Output strict JSON only.",
+        userPrompt, jsonMode: true, maxTokens: 600, model: AGENT_MODEL,
+      });
+    } catch (_e) {
+      res = await callAi({
+        task: "json_extraction", systemPrompt: "You plan browser E2E tests. Output strict JSON only.",
+        userPrompt, jsonMode: true, maxTokens: 600,
+      });
+    }
     logLlmUsage({ ...scope, provider: res.provider, model: res.model, task: "json_extraction", feature: "e2e_testing_plan", usage: res.usage });
     const parsed = safeParseJson<{ plan?: string[] }>(res.content);
     return Array.isArray(parsed?.plan) ? parsed!.plan!.slice(0, 20).map(String) : [];
@@ -120,14 +131,20 @@ Current page snapshot — interactive elements are numbered; act with "ref":
 """${dom || "(empty — page may not be loaded yet; consider navigate)"}"""
 
 Decide the single next action as strict JSON. When the user gave an instruction above, pick the ref whose label best matches it.`;
-  const res = await callAi({
-    task: "json_extraction",
-    systemPrompt: SYSTEM,
-    userPrompt,
-    jsonMode: true,
-    maxTokens: 400,
-    temperature: 0.1,
-  });
+  // Use the strong agent model; if it's unavailable on this account, fall back
+  // to the provider default so a run never hard-fails on the model name.
+  let res;
+  try {
+    res = await callAi({
+      task: "json_extraction", systemPrompt: SYSTEM, userPrompt,
+      jsonMode: true, maxTokens: 500, temperature: 0.1, model: AGENT_MODEL,
+    });
+  } catch (_e) {
+    res = await callAi({
+      task: "json_extraction", systemPrompt: SYSTEM, userPrompt,
+      jsonMode: true, maxTokens: 500, temperature: 0.1,
+    });
+  }
   logLlmUsage({ ...scope, provider: res.provider, model: res.model, task: "json_extraction", feature: "e2e_testing_action", usage: res.usage });
   const action = safeParseJson<BrowserAction>(res.content);
   if (!action || !action.type) {
@@ -145,16 +162,26 @@ Decide the single next action as strict JSON. When the user gave an instruction 
     };
   }
 
-  const recentAgent = ctx.history
+  // Loop guard — but ONLY count actions taken since the last user answer. A
+  // fresh directive resets the loop detector, so the agent gets to act on it
+  // instead of immediately re-asking the same "I'm stuck" question.
+  let lastAnswerIdx = -1;
+  for (let i = ctx.history.length - 1; i >= 0; i--) {
+    if (ctx.history[i].kind === "user_answer") { lastAnswerIdx = i; break; }
+  }
+  const sinceAnswer = ctx.history.slice(lastAnswerIdx + 1);
+  const recentAgent = sinceAnswer
     .filter((h) => ["fill", "click", "select", "press"].includes(h.kind))
-    .slice(-4);
-  const sameLabelRepeats = recentAgent.filter(
-    (h) => h.kind === action.type && (h.label ?? "") === (action.selector ?? action.reason ?? ""),
+    .slice(-5);
+  const sameRepeats = recentAgent.filter(
+    (h) => h.kind === action.type && (h.label ?? "") === (action.reason ?? action.selector ?? ""),
   ).length;
-  if ((recentAgent.length >= 4 && new Set(recentAgent.map((h) => h.kind)).size === 1) || sameLabelRepeats >= 3) {
+  // Only trip after the agent has actually tried several times on its own
+  // (i.e. not right after a user directive).
+  if (recentAgent.length >= 5 && (new Set(recentAgent.map((h) => h.label ?? h.kind)).size <= 1 || sameRepeats >= 4)) {
     return {
       type: "ask_user",
-      question: "I seem stuck repeating the same action. The page may not be responding as expected - what should I do?",
+      question: "I'm not making progress here. Can you tell me exactly which element to click or what to do next?",
       reason: "possible loop detected",
     };
   }

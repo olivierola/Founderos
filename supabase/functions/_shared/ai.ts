@@ -41,6 +41,8 @@ interface CallOpts {
   jsonMode?: boolean;
   maxTokens?: number;
   temperature?: number;
+  /** Override the model for this call (e.g. a stronger reasoning model). */
+  model?: string;
 }
 
 interface ChatResponse {
@@ -62,7 +64,7 @@ export async function callAi(opts: CallOpts): Promise<{ content: string; provide
     provider === "groq"
       ? "https://api.groq.com/openai/v1/chat/completions"
       : "https://api.deepseek.com/chat/completions";
-  const model = provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL;
+  const model = opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
 
   const body: Record<string, unknown> = {
     model,
