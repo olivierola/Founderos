@@ -333,17 +333,23 @@ function CaseDialog({
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
   const [expected, setExpected] = useState("");
-  const [fixtures, setFixtures] = useState("");
+  // Fixtures as repeatable key/value rows (e.g. email / password / plan).
+  const [fixtures, setFixtures] = useState<{ key: string; value: string }[]>([{ key: "", value: "" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const setRow = (i: number, patch: Partial<{ key: string; value: string }>) =>
+    setFixtures((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addRow = () => setFixtures((rows) => [...rows, { key: "", value: "" }]);
+  const removeRow = (i: number) => setFixtures((rows) => (rows.length === 1 ? rows : rows.filter((_, idx) => idx !== i)));
 
   async function save() {
     if (!workspaceId || !projectId || !suiteId) return;
     if (!name.trim() || !instructions.trim()) { setError("Name and instructions are required."); return; }
-    let parsedFixtures: Record<string, unknown> = {};
-    if (fixtures.trim()) {
-      try { parsedFixtures = JSON.parse(fixtures); }
-      catch { setError("Fixtures must be valid JSON (or leave it empty)."); return; }
+    const parsedFixtures: Record<string, string> = {};
+    for (const { key, value } of fixtures) {
+      const k = key.trim();
+      if (k) parsedFixtures[k] = value;
     }
     setSaving(true); setError(null);
     try {
@@ -353,7 +359,7 @@ function CaseDialog({
         expected_outcome: expected.trim() || null, fixtures: parsedFixtures,
       });
       if (error) throw new Error(error.message);
-      setName(""); setInstructions(""); setExpected(""); setFixtures("");
+      setName(""); setInstructions(""); setExpected(""); setFixtures([{ key: "", value: "" }]);
       onOpenChange(false); onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -376,8 +382,36 @@ function CaseDialog({
           <Field label="Expected outcome (optional)">
             <Input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="Onboarding screen is visible" />
           </Field>
-          <Field label="Fixtures — known data as JSON (optional)">
-            <Input value={fixtures} onChange={(e) => setFixtures(e.target.value)} placeholder='{ "email": "test+e2e@acme.com", "plan": "pro" }' />
+          <Field label="Test data (optional) — key / value the agent can use to fill forms">
+            <div className="space-y-2">
+              {fixtures.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={row.key}
+                    onChange={(e) => setRow(i, { key: e.target.value })}
+                    placeholder="key (e.g. email)"
+                    className="flex-1"
+                  />
+                  <Input
+                    value={row.value}
+                    onChange={(e) => setRow(i, { value: e.target.value })}
+                    placeholder="value (e.g. test@acme.com)"
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button" size="icon" variant="ghost"
+                    onClick={() => removeRow(i)}
+                    disabled={fixtures.length === 1}
+                    title="Remove"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button type="button" size="sm" variant="outline" onClick={addRow} className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" /> Add field
+              </Button>
+            </div>
           </Field>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

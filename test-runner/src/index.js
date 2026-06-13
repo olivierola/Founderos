@@ -112,36 +112,72 @@ async function waitForReady(page) {
   await page.waitForTimeout(400);
 }
 
-// A compact, agent-friendly DOM/accessibility excerpt: interactive elements
-// with their text + key attributes, plus visible headings.
+// Build an indexed, agent-friendly snapshot. Each VISIBLE interactive element
+// gets a stable ref number written onto the element as data-e2e-ref, so the
+// agent can act by ref (e.g. {"ref": 12}) instead of guessing CSS selectors.
+// Returns a numbered listing the agent reads.
 async function domExcerpt(page) {
   return await page.evaluate(() => {
-    const out = [];
-    const sel = "a,button,input,textarea,select,[role=button],[role=link],h1,h2,h3,label,[aria-label]";
-    const seen = new Set();
-    for (const el of Array.from(document.querySelectorAll(sel)).slice(0, 250)) {
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue; // skip hidden
+    // Clear previous refs so numbering is fresh each snapshot.
+    for (const el of document.querySelectorAll("[data-e2e-ref]")) el.removeAttribute("data-e2e-ref");
+
+    const interactive = "a,button,input,textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[onclick],[tabindex]";
+    const lines = [];
+    let ref = 0;
+    const isVisible = (el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+      const st = getComputedStyle(el);
+      return st.visibility !== "hidden" && st.display !== "none" && Number(st.opacity) !== 0;
+    };
+    const describe = (el) => {
       const tag = el.tagName.toLowerCase();
-      const text = (el.innerText || el.value || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").trim().slice(0, 80);
-      const id = el.id ? `#${el.id}` : "";
-      const name = el.getAttribute("name") ? `[name=${el.getAttribute("name")}]` : "";
-      const type = el.getAttribute("type") ? `type=${el.getAttribute("type")}` : "";
-      const line = `<${tag}${id}${name} ${type}> ${text}`.replace(/\s+/g, " ").trim();
-      if (!seen.has(line)) { seen.add(line); out.push(line); }
+      const role = el.getAttribute("role");
+      const type = el.getAttribute("type");
+      const label =
+        (el.getAttribute("aria-label") ||
+          el.getAttribute("placeholder") ||
+          (el.tagName === "INPUT" ? "" : el.innerText) ||
+          el.value ||
+          el.getAttribute("name") ||
+          el.getAttribute("title") ||
+          "").trim().replace(/\s+/g, " ").slice(0, 70);
+      const kind = type ? `${tag}:${type}` : role ? `${tag}[${role}]` : tag;
+      return `${kind} "${label}"`;
+    };
+
+    // Interactive elements → numbered refs.
+    for (const el of Array.from(document.querySelectorAll(interactive)).slice(0, 200)) {
+      if (!isVisible(el)) continue;
+      el.setAttribute("data-e2e-ref", String(ref));
+      lines.push(`[${ref}] ${describe(el)}`);
+      ref++;
     }
-    return out.join("\n").slice(0, 8000);
+
+    // A little page context: visible headings + a short text digest.
+    const headings = Array.from(document.querySelectorAll("h1,h2,h3"))
+      .filter(isVisible).slice(0, 8)
+      .map((h) => `# ${h.innerText.trim().slice(0, 80)}`);
+
+    const out = [];
+    if (headings.length) out.push("HEADINGS:", ...headings, "");
+    out.push("INTERACTIVE ELEMENTS (act with \"ref\"):", ...lines);
+    return out.join("\n").slice(0, 9000);
   });
 }
 
-// Resolve a selector that may be CSS or human text; fall back to text=.
-function locator(page, selector) {
-  if (!selector) return null;
-  // If it looks like CSS (starts with #/./[/tag), use it directly.
-  if (/^[#.\[a-zA-Z]/.test(selector) && /[#.\[\]=>:]/.test(selector)) {
-    try { return page.locator(selector).first(); } catch { /* fall through */ }
+// Resolve a target. Prefer the ref number (rock-solid); fall back to a CSS
+// selector or visible text only if no ref was given.
+function resolveTarget(page, action) {
+  if (action.ref !== undefined && action.ref !== null && action.ref !== "") {
+    return page.locator(`[data-e2e-ref="${String(action.ref).replace(/"/g, "")}"]`).first();
   }
-  return page.getByText(selector, { exact: false }).first();
+  const sel = action.selector;
+  if (!sel) return null;
+  if (/^[#.\[a-zA-Z]/.test(sel) && /[#.\[\]=>:]/.test(sel)) {
+    try { return page.locator(sel).first(); } catch { /* fall through */ }
+  }
+  return page.getByText(sel, { exact: false }).first();
 }
 
 async function execAction(page, action) {
@@ -150,22 +186,24 @@ async function execAction(page, action) {
       await page.goto(action.value, { waitUntil: "domcontentloaded", timeout: 30000 });
       break;
     case "click": {
-      const loc = locator(page, action.selector);
-      if (loc) await loc.click({ timeout: 10000 });
+      const loc = resolveTarget(page, action);
+      if (!loc) throw new Error("click: no ref or selector");
+      await loc.click({ timeout: 10000 });
       break;
     }
     case "fill": {
-      const loc = locator(page, action.selector);
-      if (loc) await loc.fill(String(action.value ?? ""), { timeout: 10000 });
+      const loc = resolveTarget(page, action);
+      await loc.fill(String(action.value ?? ""), { timeout: 10000 });
       break;
     }
     case "select": {
-      const loc = locator(page, action.selector);
-      if (loc) await loc.selectOption(String(action.value ?? ""));
+      const loc = resolveTarget(page, action);
+      if (!loc) throw new Error("select: no ref or selector");
+      await loc.selectOption(String(action.value ?? ""));
       break;
     }
     case "press": {
-      const loc = action.selector ? locator(page, action.selector) : page;
+      const loc = (action.ref !== undefined || action.selector) ? resolveTarget(page, action) : page;
       await loc.press(action.key || "Enter");
       break;
     }
@@ -186,8 +224,12 @@ async function execAction(page, action) {
 }
 
 async function runOne(claimed) {
+  if (!claimed || !claimed.id) {
+    console.warn(`[${ts()}] Claimed run missing id; skipping:`, JSON.stringify(claimed));
+    return;
+  }
   const { id: runId, app_url } = claimed;
-  console.log(`[${ts()}] Run ${runId.slice(0, 8)} — ${app_url}`);
+  console.log(`[${ts()}] Run ${String(runId).slice(0, 8)} — ${app_url}`);
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1280, height: 960 } });
   const page = await context.newPage();
@@ -252,12 +294,14 @@ async function runOne(claimed) {
 
 async function pollOnce() {
   try {
-    const { run } = await rpc({ mode: "claim", runner_id: RUNNER_ID });
+    const resp = await rpc({ mode: "claim", runner_id: RUNNER_ID });
+    const run = resp?.run ?? null;
     if (!run) return false;
     await runOne(run);
     return true;
   } catch (e) {
     console.error(`[${ts()}] Poll error: ${e.message}`);
+    if (e.stack) console.error(e.stack.split("\n").slice(1, 4).join("\n"));
     return false;
   }
 }

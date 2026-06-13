@@ -150,13 +150,18 @@ export function OpsTestRunPage() {
 
       {/* Body: large preview + timeline */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-6 lg:grid-cols-[1.7fr_1fr]">
-        {/* Streamed app view — large, rounded. */}
-        <div className="flex min-h-0 flex-col">
-          <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-secondary/30 shadow-sm">
+        {/* Streamed app view — full width, height follows the captured frame,
+            with an inner halo glow around the render. */}
+        <div className="flex min-h-0 flex-col overflow-y-auto">
+          <div className="relative w-full overflow-hidden rounded-xl border border-border bg-secondary/20 shadow-sm">
             {r?.last_screenshot_url ? (
-              <img src={r.last_screenshot_url} alt="App under test" className="h-full w-full object-contain" />
+              <img
+                src={r.last_screenshot_url}
+                alt="App under test"
+                className="block w-full h-auto select-none"
+              />
             ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 text-muted-foreground">
                 {r && ["queued", "planning", "running"].includes(r.status) ? (
                   <>
                     <Loader2 className="h-7 w-7 animate-spin" />
@@ -176,6 +181,14 @@ export function OpsTestRunPage() {
                 )}
               </div>
             )}
+            {/* Inner halo: soft inset glow framing the app render. */}
+            <div
+              className="pointer-events-none absolute inset-0 rounded-xl"
+              style={{
+                boxShadow:
+                  "inset 0 0 0 1px hsl(var(--border)), inset 0 0 40px 6px hsl(var(--primary) / 0.10), inset 0 0 120px 24px rgba(0,0,0,0.28)",
+              }}
+            />
           </div>
         </div>
 
