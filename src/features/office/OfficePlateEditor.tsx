@@ -59,12 +59,15 @@ export function OfficePlateEditor({
         body: { ...body, mode: "chat" },
       });
 
-      // Inline copilot autocomplete: plain-text stream.
+      // Inline copilot autocomplete: plain-text stream. callCompletionApi defaults
+      // to the AI-SDK "data" protocol, so we must opt into "text" to read our
+      // plain-text response.
       const copilotOpts = (editor.getOptions(CopilotPlugin) as any).completeOptions ?? {};
       editor.setOption(CopilotPlugin as any, "completeOptions", {
         ...copilotOpts,
         api: STREAM_URL,
         headers,
+        streamProtocol: "text",
         body: { ...copilotOpts.body, ...body, mode: "copilot" },
       });
     })();
