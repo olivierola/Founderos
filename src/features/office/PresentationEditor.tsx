@@ -104,8 +104,8 @@ export function PresentationEditorPage() {
   const contextText = slides.map((s, i) => `Slide ${i + 1} [${s.layout}]: ${s.title}\n${s.body}`).join("\n\n");
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col">
-      <div className="flex items-center gap-2 border-b border-border pb-3">
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+      <div className="flex items-center gap-2 border-b border-border px-4 pt-4 pb-3 sm:px-6">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4" /></Button>
         <span className="text-lg">{doc.emoji ?? "🖼️"}</span>
         <input

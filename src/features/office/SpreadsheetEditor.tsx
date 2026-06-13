@@ -110,8 +110,8 @@ export function SpreadsheetEditorPage() {
   const contextText = `Columns: ${columns.join(", ")}\nRows:\n${rows.slice(0, 30).map((r) => r.join(" | ")).join("\n")}`;
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col">
-      <div className="flex items-center gap-2 border-b border-border pb-3">
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+      <div className="flex items-center gap-2 border-b border-border px-4 pt-4 pb-3 sm:px-6">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4" /></Button>
         <span className="text-lg">{doc.emoji ?? "📊"}</span>
         <input
@@ -129,12 +129,12 @@ export function SpreadsheetEditorPage() {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2 sm:px-6">
             <Button size="sm" variant="outline" onClick={addRow}><Rows3 className="h-3.5 w-3.5" /> Row</Button>
             <Button size="sm" variant="outline" onClick={addColumn}><Columns3 className="h-3.5 w-3.5" /> Column</Button>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto p-3">
-            <table className="border-collapse text-sm">
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
                   <th className="sticky left-0 z-10 w-10 border border-border bg-muted/40" />

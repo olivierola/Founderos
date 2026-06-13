@@ -99,5 +99,8 @@ export function AppShell() {
 function isFullbleedRoute(pathname: string): boolean {
   // Match /app/<ws>/<proj>/devops/infra/<id> and .../devops/workflows/<id>
   // — both render the architecture canvas inside the page.
-  return /\/app\/[^/]+\/[^/]+\/devops\/(infra|workflows)\/[^/]+/.test(pathname);
+  if (/\/app\/[^/]+\/[^/]+\/devops\/(infra|workflows)\/[^/]+/.test(pathname)) return true;
+  // Office editors (document / spreadsheet / presentation) are full-bleed canvases.
+  if (/\/app\/[^/]+\/[^/]+\/office\/(document|spreadsheet|presentation)\/[^/]+/.test(pathname)) return true;
+  return false;
 }
