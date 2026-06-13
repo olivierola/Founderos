@@ -78,7 +78,12 @@ export function OfficePlateEditor({
     <TooltipProvider delayDuration={300}>
       <Plate editor={editor} onChange={({ value }) => onChange?.(value)}>
         <EditorContainer variant="default" className={cn("h-full", className)}>
-          <Editor variant="default" placeholder={placeholder ?? "Type / for commands…"} className={editorClassName} />
+          <Editor
+            variant="default"
+            placeholder={placeholder ?? "Type / for commands…"}
+            // Full-width: drop the variant's large centering side padding.
+            className={cn("px-6 pt-4 pb-24 sm:px-8", editorClassName)}
+          />
         </EditorContainer>
       </Plate>
     </TooltipProvider>
