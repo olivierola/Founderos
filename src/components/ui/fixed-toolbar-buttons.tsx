@@ -158,7 +158,7 @@ export function FixedToolbarButtons() {
         <MarkToolbarButton nodeType={KEYS.highlight} tooltip="Highlight">
           <HighlighterIcon />
         </MarkToolbarButton>
-        <CommentToolbarButton />
+        {/* Comment collaboration removed — no persistence backend. */}
       </ToolbarGroup>
 
       <ToolbarGroup>
