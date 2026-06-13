@@ -150,9 +150,9 @@ export function OpsTestRunPage() {
 
       {/* Body: full-width preview on top, timeline below. */}
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        {/* Streamed app view — full width, animated multicolour halo around it. */}
-        <div className="e2e-halo relative w-full overflow-hidden rounded-xl">
-          <div className="relative z-[1] overflow-hidden rounded-[10px] border border-border bg-secondary/20">
+        {/* Streamed app view — full width, with an animated multicolour glow
+            that fades inward over the render. */}
+        <div className="relative w-full overflow-hidden rounded-xl border border-border bg-secondary/20">
             {r?.last_screenshot_url ? (
               <img
                 src={r.last_screenshot_url}
@@ -180,12 +180,8 @@ export function OpsTestRunPage() {
                 )}
               </div>
             )}
-            {/* Inner vignette so the render sits softly inside the halo frame. */}
-            <div
-              className="pointer-events-none absolute inset-0 rounded-[10px]"
-              style={{ boxShadow: "inset 0 0 80px 14px rgba(0,0,0,0.22)" }}
-            />
-          </div>
+          {/* Multicolour glow fading INWARD over the render edges. */}
+          <div className="e2e-inner-halo pointer-events-none absolute inset-0 rounded-xl" />
         </div>
 
         {/* Ask-for-input — full width, right under the preview. */}

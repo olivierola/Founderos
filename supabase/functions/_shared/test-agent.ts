@@ -106,20 +106,20 @@ export async function decideNextAction(
   scope: { workspace_id: string; project_id: string },
 ): Promise<BrowserAction> {
   const dom = (ctx.dom_excerpt ?? "").slice(0, 8000);
+  const latestAnswer = ctx.user_answers.length ? ctx.user_answers[ctx.user_answers.length - 1] : null;
   const userPrompt = `Test instructions:
 """${ctx.instructions}"""
 Expected outcome: ${ctx.expected_outcome ?? "(infer)"}
-Fixtures: ${JSON.stringify(ctx.fixtures ?? {})}
-${ctx.user_answers.length ? `User-provided answers so far: ${JSON.stringify(ctx.user_answers)}` : ""}
-
+Test data (fixtures): ${JSON.stringify(ctx.fixtures ?? {})}
+${latestAnswer ? `\n>>> THE USER JUST TOLD YOU WHAT TO DO NEXT — FOLLOW THIS NOW:\n"${latestAnswer}"\nFind the element in the snapshot that matches this instruction (match by its visible label/text) and act on its ref. Do not ask again.\n` : ""}${ctx.user_answers.length > 1 ? `Earlier user answers: ${JSON.stringify(ctx.user_answers.slice(0, -1))}\n` : ""}
 Current URL: ${ctx.current_url ?? ctx.app_url}
 Steps already taken (most recent last):
 ${ctx.history.slice(-15).map((h, i) => `${i + 1}. ${h.kind}${h.label ? ` — ${h.label}` : ""}`).join("\n") || "(none yet)"}
 
-Current DOM / accessibility snapshot (trimmed):
+Current page snapshot — interactive elements are numbered; act with "ref":
 """${dom || "(empty — page may not be loaded yet; consider navigate)"}"""
 
-Decide the single next action as strict JSON.`;
+Decide the single next action as strict JSON. When the user gave an instruction above, pick the ref whose label best matches it.`;
   const res = await callAi({
     task: "json_extraction",
     systemPrompt: SYSTEM,

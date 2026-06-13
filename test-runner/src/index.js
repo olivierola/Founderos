@@ -118,43 +118,65 @@ async function waitForReady(page) {
 // Returns a numbered listing the agent reads.
 async function domExcerpt(page) {
   return await page.evaluate(() => {
-    // Clear previous refs so numbering is fresh each snapshot.
     for (const el of document.querySelectorAll("[data-e2e-ref]")) el.removeAttribute("data-e2e-ref");
 
-    const interactive = "a,button,input,textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[onclick],[tabindex]";
-    const lines = [];
-    let ref = 0;
+    const explicit = "a,button,input,textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[role=option],[onclick],[tabindex]";
     const isVisible = (el) => {
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return false;
+      if (r.bottom < 0 || r.top > (innerHeight + 1200)) return false; // skip far off-screen
       const st = getComputedStyle(el);
       return st.visibility !== "hidden" && st.display !== "none" && Number(st.opacity) !== 0;
     };
+    const labelOf = (el) =>
+      (el.getAttribute("aria-label") ||
+        el.getAttribute("placeholder") ||
+        (el.tagName === "INPUT" ? "" : el.innerText) ||
+        el.value ||
+        el.getAttribute("name") ||
+        el.getAttribute("title") ||
+        "").trim().replace(/\s+/g, " ").slice(0, 90);
+
+    // Candidate set: explicit controls + elements that LOOK clickable (React
+    // attaches onClick without an [onclick] attribute, so use cursor:pointer).
+    const candidates = new Set(document.querySelectorAll(explicit));
+    for (const el of document.querySelectorAll("div,li,article,section,span,label,tr")) {
+      if (getComputedStyle(el).cursor === "pointer") candidates.add(el);
+    }
+
+    // Keep only the OUTERMOST clickable in a nesting chain, and only visible
+    // ones with a usable label. Sort by document order.
+    const all = Array.from(candidates).filter(isVisible);
+    const chosen = [];
+    for (const el of all) {
+      // Drop if an ancestor is also a candidate (avoid duplicate inner refs)…
+      let p = el.parentElement, nestedInside = false;
+      while (p) { if (candidates.has(p)) { nestedInside = true; break; } p = p.parentElement; }
+      if (nestedInside) continue;
+      const label = labelOf(el);
+      if (!label && !["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) continue;
+      chosen.push(el);
+    }
+    chosen.sort((a, b) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1,
+    );
+
     const describe = (el) => {
       const tag = el.tagName.toLowerCase();
       const role = el.getAttribute("role");
       const type = el.getAttribute("type");
-      const label =
-        (el.getAttribute("aria-label") ||
-          el.getAttribute("placeholder") ||
-          (el.tagName === "INPUT" ? "" : el.innerText) ||
-          el.value ||
-          el.getAttribute("name") ||
-          el.getAttribute("title") ||
-          "").trim().replace(/\s+/g, " ").slice(0, 70);
       const kind = type ? `${tag}:${type}` : role ? `${tag}[${role}]` : tag;
-      return `${kind} "${label}"`;
+      return `${kind} "${labelOf(el)}"`;
     };
 
-    // Interactive elements → numbered refs.
-    for (const el of Array.from(document.querySelectorAll(interactive)).slice(0, 200)) {
-      if (!isVisible(el)) continue;
+    const lines = [];
+    let ref = 0;
+    for (const el of chosen.slice(0, 200)) {
       el.setAttribute("data-e2e-ref", String(ref));
       lines.push(`[${ref}] ${describe(el)}`);
       ref++;
     }
 
-    // A little page context: visible headings + a short text digest.
     const headings = Array.from(document.querySelectorAll("h1,h2,h3"))
       .filter(isVisible).slice(0, 8)
       .map((h) => `# ${h.innerText.trim().slice(0, 80)}`);
@@ -257,7 +279,7 @@ async function runOne(claimed) {
         dom_excerpt: dom,
         screenshot_url,
       });
-      console.log(`  → ${action?.type}${action?.selector ? ` ${action.selector}` : ""}`);
+      console.log(`  → ${action?.type}${action?.ref !== undefined ? ` ref=${action.ref}` : action?.selector ? ` ${action.selector}` : ""}${action?.reason ? `  (${action.reason})` : ""}`);
 
       if (terminal) break;
 
