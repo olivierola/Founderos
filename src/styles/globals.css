@@ -256,3 +256,50 @@
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Animated multicolour halo framing the E2E test preview. A rotating conic
+   gradient sits behind the render (via padding) and a soft blurred copy bleeds
+   outward as a glow. */
+@property --e2e-halo-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes e2e-halo-spin {
+  to { --e2e-halo-angle: 360deg; }
+}
+.e2e-halo {
+  --e2e-halo-grad: conic-gradient(
+    from var(--e2e-halo-angle),
+    #6366f1, #a855f7, #ec4899, #f59e0b, #10b981, #3b82f6, #6366f1
+  );
+  position: relative;
+  padding: 3px;
+  background: var(--e2e-halo-grad);
+  animation: e2e-halo-spin 6s linear infinite;
+  border-radius: 0.85rem;
+}
+/* Outer glow: a blurred, larger copy of the same gradient behind the frame. */
+.e2e-halo::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  z-index: 0;
+  border-radius: 1.1rem;
+  background: var(--e2e-halo-grad);
+  filter: blur(22px);
+  opacity: 0.55;
+  animation: e2e-halo-spin 6s linear infinite;
+}
+/* Fallback for browsers without @property: a static gentle multicolour ring. */
+@supports not (background: conic-gradient(from var(--e2e-halo-angle), red, blue)) {
+  .e2e-halo,
+  .e2e-halo::before {
+    background: linear-gradient(120deg, #6366f1, #a855f7, #ec4899, #f59e0b, #10b981, #3b82f6);
+    animation: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .e2e-halo,
+  .e2e-halo::before { animation: none; }
+}

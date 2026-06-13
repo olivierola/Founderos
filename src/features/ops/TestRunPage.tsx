@@ -148,12 +148,11 @@ export function OpsTestRunPage() {
         )}
       </div>
 
-      {/* Body: large preview + timeline */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-6 lg:grid-cols-[1.7fr_1fr]">
-        {/* Streamed app view — full width, height follows the captured frame,
-            with an inner halo glow around the render. */}
-        <div className="flex min-h-0 flex-col overflow-y-auto">
-          <div className="relative w-full overflow-hidden rounded-xl border border-border bg-secondary/20 shadow-sm">
+      {/* Body: full-width preview on top, timeline below. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        {/* Streamed app view — full width, animated multicolour halo around it. */}
+        <div className="e2e-halo relative w-full overflow-hidden rounded-xl">
+          <div className="relative z-[1] overflow-hidden rounded-[10px] border border-border bg-secondary/20">
             {r?.last_screenshot_url ? (
               <img
                 src={r.last_screenshot_url}
@@ -161,7 +160,7 @@ export function OpsTestRunPage() {
                 className="block w-full h-auto select-none"
               />
             ) : (
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 text-muted-foreground">
+              <div className="flex aspect-[16/9] w-full flex-col items-center justify-center gap-3 text-muted-foreground">
                 {r && ["queued", "planning", "running"].includes(r.status) ? (
                   <>
                     <Loader2 className="h-7 w-7 animate-spin" />
@@ -181,23 +180,46 @@ export function OpsTestRunPage() {
                 )}
               </div>
             )}
-            {/* Inner halo: soft inset glow framing the app render. */}
+            {/* Inner vignette so the render sits softly inside the halo frame. */}
             <div
-              className="pointer-events-none absolute inset-0 rounded-xl"
-              style={{
-                boxShadow:
-                  "inset 0 0 0 1px hsl(var(--border)), inset 0 0 40px 6px hsl(var(--primary) / 0.10), inset 0 0 120px 24px rgba(0,0,0,0.28)",
-              }}
+              className="pointer-events-none absolute inset-0 rounded-[10px]"
+              style={{ boxShadow: "inset 0 0 80px 14px rgba(0,0,0,0.22)" }}
             />
           </div>
         </div>
 
-        {/* Timeline + ask-for-input */}
-        <div className="flex min-h-0 flex-col">
+        {/* Ask-for-input — full width, right under the preview. */}
+        {r?.status === "needs_input" && (
+          <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+            <div className="mb-2 flex items-center gap-2 text-xs font-medium text-amber-300">
+              <MessageCircleQuestion className="h-4 w-4" /> The agent needs your input
+            </div>
+            <p className="mb-2 text-sm">{r.pending_question}</p>
+            <div className="flex gap-2">
+              <Input
+                value={answer} onChange={(e) => setAnswer(e.target.value)}
+                placeholder="Your answer…"
+                onKeyDown={(e) => e.key === "Enter" && submitAnswer()}
+              />
+              <Button size="sm" onClick={submitAnswer} disabled={submitting || !answer.trim()}>
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {r?.error_message && (
+          <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">
+            {r.error_message}
+          </p>
+        )}
+
+        {/* Timeline below the preview. */}
+        <div className="mt-6">
           <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Agent timeline
           </div>
-          <div ref={timelineRef} className="min-h-0 flex-1 space-y-1.5 overflow-y-auto rounded-xl border border-border bg-card/40 p-3">
+          <div ref={timelineRef} className="max-h-72 space-y-1.5 overflow-y-auto rounded-xl border border-border bg-card/40 p-3">
             {(steps.data ?? []).length === 0 ? (
               <p className="text-xs text-muted-foreground">The agent is preparing the plan…</p>
             ) : (
@@ -225,31 +247,6 @@ export function OpsTestRunPage() {
               })
             )}
           </div>
-
-          {r?.status === "needs_input" && (
-            <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
-              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-amber-300">
-                <MessageCircleQuestion className="h-4 w-4" /> The agent needs your input
-              </div>
-              <p className="mb-2 text-sm">{r.pending_question}</p>
-              <div className="flex gap-2">
-                <Input
-                  value={answer} onChange={(e) => setAnswer(e.target.value)}
-                  placeholder="Your answer…"
-                  onKeyDown={(e) => e.key === "Enter" && submitAnswer()}
-                />
-                <Button size="sm" onClick={submitAnswer} disabled={submitting || !answer.trim()}>
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {r?.error_message && (
-            <p className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">
-              {r.error_message}
-            </p>
-          )}
         </div>
       </div>
     </div>
