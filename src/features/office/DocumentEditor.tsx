@@ -2,13 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Plate, usePlateEditor, PlateContent } from "platejs/react";
 import {
-  BoldPlugin, ItalicPlugin, UnderlinePlugin, CodePlugin,
+  BoldPlugin, ItalicPlugin, UnderlinePlugin, StrikethroughPlugin, CodePlugin,
   H1Plugin, H2Plugin, H3Plugin, BlockquotePlugin,
 } from "@platejs/basic-nodes/react";
+import { ListPlugin } from "@platejs/list/react";
+import { toggleList, ListStyleType } from "@platejs/list";
+import { IndentPlugin } from "@platejs/indent/react";
+import { indent, outdent } from "@platejs/indent";
+import { TextAlignPlugin } from "@platejs/basic-styles/react";
+import { LinkPlugin } from "@platejs/link/react";
+import { KEYS } from "platejs";
 import {
   Loader2, ArrowLeft, Check, Sparkles, Download, FileText, FileDown, FileJson,
-  Bold, Italic, Underline as UnderlineIcon, Code as CodeIcon,
-  Heading1, Heading2, Heading3, Quote,
+  Bold, Italic, Underline as UnderlineIcon, Strikethrough, Code as CodeIcon,
+  Heading1, Heading2, Heading3, Quote, List, ListOrdered,
+  AlignLeft, AlignCenter, AlignRight, Indent, Outdent,
 } from "lucide-react";
 import {
   Document as DocxDocument, Packer, Paragraph, HeadingLevel, TextRun,
@@ -19,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { cn } from "@/lib/utils";
 import { useOfficeDoc } from "./useOfficeDoc";
 import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
 import {
@@ -27,8 +36,9 @@ import {
 } from "./shared";
 
 const PLUGINS = [
-  BoldPlugin, ItalicPlugin, UnderlinePlugin, CodePlugin,
+  BoldPlugin, ItalicPlugin, UnderlinePlugin, StrikethroughPlugin, CodePlugin,
   H1Plugin, H2Plugin, H3Plugin, BlockquotePlugin,
+  IndentPlugin, ListPlugin, TextAlignPlugin, LinkPlugin,
 ];
 
 export function DocumentEditorPage() {
@@ -159,7 +169,15 @@ export function DocumentEditorPage() {
             <Toolbar editor={editor} />
             <div className="min-h-0 flex-1 overflow-y-auto">
               <PlateContent
-                className="mx-auto min-h-full max-w-3xl px-8 py-6 text-sm leading-relaxed focus:outline-none [&_h1]:mb-3 [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_p]:mb-2"
+                className={cn(
+                  "mx-auto min-h-full max-w-3xl px-8 py-6 text-sm leading-relaxed focus:outline-none",
+                  "[&_h1]:mb-3 [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-semibold",
+                  "[&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold",
+                  "[&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold",
+                  "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic",
+                  "[&_p]:mb-2 [&_a]:text-primary [&_a]:underline [&_code]:rounded [&_code]:bg-secondary [&_code]:px-1 [&_code]:text-[0.85em]",
+                  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6",
+                )}
                 placeholder="Start writing, or use the AI panel to generate content…"
               />
             </div>
@@ -183,17 +201,31 @@ export function DocumentEditorPage() {
 
 function Toolbar({ editor }: { editor: any }) {
   const toggleBlock = (type: string) => editor.tf.toggleBlock(type);
+  const setAlign = (align: "left" | "center" | "right") =>
+    editor.tf.setNodes({ [KEYS.textAlign]: align }, { match: (n: any) => editor.api.isBlock(n) });
+  const list = (style: string) => toggleList(editor, { listStyleType: style });
+
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-border px-3 py-2">
-      <TBtn onClick={() => editor.tf.bold.toggle()} title="Bold"><Bold className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => editor.tf.italic.toggle()} title="Italic"><Italic className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => editor.tf.underline.toggle()} title="Underline"><UnderlineIcon className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => editor.tf.code.toggle()} title="Code"><CodeIcon className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => editor.tf.bold.toggle()} title="Bold (Ctrl+B)"><Bold className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => editor.tf.italic.toggle()} title="Italic (Ctrl+I)"><Italic className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => editor.tf.underline.toggle()} title="Underline (Ctrl+U)"><UnderlineIcon className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => editor.tf.strikethrough.toggle()} title="Strikethrough"><Strikethrough className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => editor.tf.code.toggle()} title="Inline code"><CodeIcon className="h-3.5 w-3.5" /></TBtn>
       <span className="mx-1 h-4 w-px bg-border" />
       <TBtn onClick={() => toggleBlock("h1")} title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></TBtn>
       <TBtn onClick={() => toggleBlock("h2")} title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></TBtn>
       <TBtn onClick={() => toggleBlock("h3")} title="Heading 3"><Heading3 className="h-3.5 w-3.5" /></TBtn>
       <TBtn onClick={() => toggleBlock("blockquote")} title="Quote"><Quote className="h-3.5 w-3.5" /></TBtn>
+      <span className="mx-1 h-4 w-px bg-border" />
+      <TBtn onClick={() => list(ListStyleType.Disc)} title="Bulleted list"><List className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => list(ListStyleType.Decimal)} title="Numbered list"><ListOrdered className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => indent(editor)} title="Indent"><Indent className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => outdent(editor)} title="Outdent"><Outdent className="h-3.5 w-3.5" /></TBtn>
+      <span className="mx-1 h-4 w-px bg-border" />
+      <TBtn onClick={() => setAlign("left")} title="Align left"><AlignLeft className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => setAlign("center")} title="Align center"><AlignCenter className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => setAlign("right")} title="Align right"><AlignRight className="h-3.5 w-3.5" /></TBtn>
     </div>
   );
 }

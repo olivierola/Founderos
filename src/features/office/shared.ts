@@ -121,22 +121,24 @@ export function slateToMarkdown(nodes: any[]): string {
       .join("");
 
   const lines: string[] = [];
+  let olCount = 0;
   for (const n of nodes ?? []) {
     const text = inline(n.children ?? []);
+    // Plate v53 lists are paragraphs carrying listStyleType + indent.
+    if (n.listStyleType) {
+      const ordered = n.listStyleType === "decimal";
+      const pad = "  ".repeat(Math.max(0, (n.indent ?? 1) - 1));
+      if (ordered) { olCount += 1; lines.push(`${pad}${olCount}. ${text}`); }
+      else { olCount = 0; lines.push(`${pad}- ${text}`); }
+      continue;
+    }
+    olCount = 0;
     switch (n.type) {
       case "h1": lines.push(`# ${text}`); break;
       case "h2": lines.push(`## ${text}`); break;
       case "h3": lines.push(`### ${text}`); break;
       case "blockquote": lines.push(`> ${text}`); break;
       case "code_block": lines.push("```\n" + text + "\n```"); break;
-      case "ul":
-      case "ol": {
-        (n.children ?? []).forEach((li: any, i: number) => {
-          const marker = n.type === "ol" ? `${i + 1}.` : "-";
-          lines.push(`${marker} ${inline(li.children ?? [])}`);
-        });
-        break;
-      }
       default: lines.push(text);
     }
     lines.push("");
@@ -149,31 +151,45 @@ export function slateToMarkdown(nodes: any[]): string {
 export function markdownToSlate(md: string): any[] {
   const out: any[] = [];
   const lines = (md ?? "").split("\n");
-  let listBuf: { type: "ul" | "ol"; items: string[] } | null = null;
-  const flushList = () => {
-    if (listBuf) {
-      out.push({
-        type: listBuf.type,
-        children: listBuf.items.map((t) => ({ type: "li", children: [{ text: t }] })),
-      });
-      listBuf = null;
-    }
-  };
   for (const raw of lines) {
     const line = raw.replace(/\r$/, "");
     const h = line.match(/^(#{1,3})\s+(.*)$/);
-    if (h) { flushList(); out.push({ type: `h${h[1].length}`, children: [{ text: h[2] }] }); continue; }
-    if (/^>\s+/.test(line)) { flushList(); out.push({ type: "blockquote", children: [{ text: line.replace(/^>\s+/, "") }] }); continue; }
-    const ol = line.match(/^\s*\d+\.\s+(.*)$/);
-    if (ol) { if (listBuf?.type !== "ol") { flushList(); listBuf = { type: "ol", items: [] }; } listBuf.items.push(ol[1]); continue; }
-    const ul = line.match(/^\s*[-*+]\s+(.*)$/);
-    if (ul) { if (listBuf?.type !== "ul") { flushList(); listBuf = { type: "ul", items: [] }; } listBuf.items.push(ul[1]); continue; }
-    flushList();
+    if (h) { out.push({ type: `h${h[1].length}`, children: [{ text: h[2] }] }); continue; }
+    if (/^>\s+/.test(line)) { out.push({ type: "blockquote", children: [{ text: line.replace(/^>\s+/, "") }] }); continue; }
+    // Bulleted / numbered lists → Plate v53 indent-based list paragraphs.
+    const ol = line.match(/^(\s*)\d+\.\s+(.*)$/);
+    if (ol) {
+      const indent = Math.floor(ol[1].length / 2) + 1;
+      out.push({ type: "p", indent, listStyleType: "decimal", children: parseInlineMarks(ol[2]) });
+      continue;
+    }
+    const ul = line.match(/^(\s*)[-*+]\s+(.*)$/);
+    if (ul) {
+      const indent = Math.floor(ul[1].length / 2) + 1;
+      out.push({ type: "p", indent, listStyleType: "disc", children: parseInlineMarks(ul[2]) });
+      continue;
+    }
     if (line.trim() === "") continue;
-    out.push({ type: "p", children: [{ text: line }] });
+    out.push({ type: "p", children: parseInlineMarks(line) });
   }
-  flushList();
   return out.length ? out : [{ type: "p", children: [{ text: "" }] }];
+}
+
+// Parse a subset of inline markdown (**bold**, *italic*, `code`) into Slate text runs.
+function parseInlineMarks(text: string): any[] {
+  const runs: any[] = [];
+  const re = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
+  let last = 0; let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) runs.push({ text: text.slice(last, m.index) });
+    const t = m[0];
+    if (t.startsWith("**")) runs.push({ text: t.slice(2, -2), bold: true });
+    else if (t.startsWith("`")) runs.push({ text: t.slice(1, -1), code: true });
+    else runs.push({ text: t.slice(1, -1), italic: true });
+    last = m.index + t.length;
+  }
+  if (last < text.length) runs.push({ text: text.slice(last) });
+  return runs.length ? runs : [{ text }];
 }
 
 // --- data access -----------------------------------------------------------
