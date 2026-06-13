@@ -35,7 +35,7 @@ npm start
 | Var | Required | Notes |
 |-----|----------|-------|
 | `SUPABASE_URL` | ✅ | `https://<ref>.supabase.co` |
-| `RUNNER_TOKEN` | ✅ | Plaintext runner token. Register it in **DevOps → Settings** (it's hashed into `ops_settings.runner_token_hash`). The same token drives Ops jobs and E2E tests. |
+| `RUNNER_TOKEN` | ✅ | The **global platform token**. Must equal the `PLATFORM_RUNNER_TOKEN` secret set on the edge functions (`supabase secrets set PLATFORM_RUNNER_TOKEN=...`). This single token lets one hosted runner serve **all** client projects. |
 | `SUPABASE_SERVICE_ROLE_KEY` | ⚠️ | Only used to upload screenshots to the `test-artifacts` bucket. Without it, runs still work but the live view shows no frames. |
 | `RUNNER_ID` | — | Defaults to `hostname-pid`. |
 | `POLL_INTERVAL_MS` | — | Idle poll cadence, default `3000`. |
@@ -43,6 +43,17 @@ npm start
 
 The `test-artifacts` storage bucket is created by migration `0042_e2e_testing.sql`
 (public read; writes via service role).
+
+### Who manages the token?
+
+**You (the host)**, not your clients. The E2E test runner is part of your
+platform: one runner process, one global token. Clients of your SaaS just write
+tests and click **Run** — they never see a token and there is no runner setup in
+their UI.
+
+(The runner endpoint also still accepts the per-project Ops token in
+`ops_settings.runner_token_hash` for backwards compatibility with the Ops module,
+but for E2E testing use the global `PLATFORM_RUNNER_TOKEN`.)
 
 ## How a run flows
 

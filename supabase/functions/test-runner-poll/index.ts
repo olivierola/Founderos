@@ -33,14 +33,31 @@ async function sha256Hex(s: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function authenticate(req: Request): Promise<{ ok: true; projectId: string } | { ok: false; reason: string }> {
+// A runner is authorised either by:
+//   - the GLOBAL platform token (PLATFORM_RUNNER_TOKEN env) → it serves every
+//     project (this is the host's single shared runner; clients never see a
+//     token), or
+//   - a per-project token in ops_settings.runner_token_hash (legacy / Ops).
+// `projectId === null` means "global" — no per-project scoping is applied.
+async function authenticate(
+  req: Request,
+): Promise<{ ok: true; projectId: string | null } | { ok: false; reason: string }> {
   const token = req.headers.get("x-runner-token");
   if (!token) return { ok: false, reason: "Missing X-Runner-Token header" };
+
+  const platform = Deno.env.get("PLATFORM_RUNNER_TOKEN");
+  if (platform && token === platform) return { ok: true, projectId: null };
+
   const admin = createServiceClient();
   const { data } = await admin
     .from("ops_settings").select("project_id").eq("runner_token_hash", await sha256Hex(token)).maybeSingle();
   if (!data) return { ok: false, reason: "Unknown runner token" };
   return { ok: true, projectId: data.project_id };
+}
+
+// True when a run belongs to the runner's scope (global runner sees all).
+function inScope(projectId: string | null, runProjectId: string): boolean {
+  return projectId === null || projectId === runProjectId;
 }
 
 Deno.serve(async (req) => {
@@ -61,7 +78,13 @@ Deno.serve(async (req) => {
       const runnerId = String(body.runner_id ?? "");
       if (!runnerId) return jsonResponse({ ok: false, message: "runner_id required" }, { status: 400 });
       const { data: run } = await admin.rpc("claim_test_run", { p_runner_id: runnerId });
-      if (!run || run.project_id !== projectId) return jsonResponse({ ok: true, run: null });
+      // A per-project runner that grabbed another project's run must release it
+      // back to the queue; the global runner keeps whatever it claims.
+      if (!run) return jsonResponse({ ok: true, run: null });
+      if (!inScope(projectId, run.project_id)) {
+        await admin.from("test_runs").update({ status: "queued", runner_id: null }).eq("id", run.id);
+        return jsonResponse({ ok: true, run: null });
+      }
 
       const { data: tc } = await admin
         .from("test_cases").select("name, instructions, expected_outcome, fixtures").eq("id", run.case_id).maybeSingle();
@@ -82,7 +105,7 @@ Deno.serve(async (req) => {
       if (!runId) return jsonResponse({ ok: false, message: "run_id required" }, { status: 400 });
 
       const { data: run } = await admin.from("test_runs").select("*").eq("id", runId).maybeSingle();
-      if (!run || run.project_id !== projectId) return jsonResponse({ ok: false, message: "Run not found" }, { status: 404 });
+      if (!run || !inScope(projectId, run.project_id)) return jsonResponse({ ok: false, message: "Run not found" }, { status: 404 });
       if (["passed", "failed", "error", "cancelled"].includes(run.status)) {
         return jsonResponse({ ok: true, action: { type: run.status === "passed" ? "pass" : "fail" }, terminal: true });
       }
@@ -118,7 +141,7 @@ Deno.serve(async (req) => {
         user_answers: userAnswers,
       };
 
-      const action = await decideNextAction(ctx, { workspace_id: run.workspace_id, project_id: projectId });
+      const action = await decideNextAction(ctx, { workspace_id: run.workspace_id, project_id: run.project_id });
       const step = actionToStep(action);
 
       // Record the agent's decision as a timeline step (carry the screenshot the
@@ -150,7 +173,7 @@ Deno.serve(async (req) => {
     if (mode === "poll") {
       const runId = String(body.run_id ?? "");
       const { data: run } = await admin.from("test_runs").select("status, project_id").eq("id", runId).maybeSingle();
-      if (!run || run.project_id !== projectId) return jsonResponse({ ok: false, message: "Run not found" }, { status: 404 });
+      if (!run || !inScope(projectId, run.project_id)) return jsonResponse({ ok: false, message: "Run not found" }, { status: 404 });
       // 'queued' again means the user answered and the orchestrator re-queued it.
       return jsonResponse({ ok: true, resumed: run.status === "queued" || run.status === "running", status: run.status });
     }
@@ -160,7 +183,7 @@ Deno.serve(async (req) => {
       const runId = String(body.run_id ?? "");
       const status = ["passed", "failed", "error", "cancelled"].includes(body.status) ? body.status : "error";
       const { data: run } = await admin.from("test_runs").select("project_id").eq("id", runId).maybeSingle();
-      if (!run || run.project_id !== projectId) return jsonResponse({ ok: false, message: "Run not found" }, { status: 404 });
+      if (!run || !inScope(projectId, run.project_id)) return jsonResponse({ ok: false, message: "Run not found" }, { status: 404 });
       await admin.from("test_runs").update({
         status, finished_at: new Date().toISOString(),
         error_message: body.error_message ? String(body.error_message) : null,

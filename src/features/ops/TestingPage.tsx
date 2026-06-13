@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FlaskConical, Plus, Play, Loader2, Trash2, Globe, ChevronRight,
-  ListChecks, AlertTriangle,
+  ListChecks,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -157,8 +157,6 @@ export function OpsTestingPage() {
         }
       />
 
-      <RunnerHint projectId={projectId} />
-
       {suites.isLoading ? (
         <EmptyState icon={Loader2} title="Loading…" />
       ) : (suites.data ?? []).length === 0 ? (
@@ -239,29 +237,6 @@ export function OpsTestingPage() {
         workspaceId={workspaceId} projectId={projectId}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ["test_cases", projectId] })}
       />
-    </div>
-  );
-}
-
-// ── Runner connectivity hint ────────────────────────────────────────────────
-function RunnerHint({ projectId }: { projectId: string }) {
-  const { data } = useQuery({
-    queryKey: ["ops_settings_runner", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("ops_settings").select("runner_token_hash").eq("project_id", projectId).maybeSingle();
-      return data;
-    },
-  });
-  if (data?.runner_token_hash) return null;
-  return (
-    <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-      <span>
-        No test runner is registered yet. Runs will queue until a Playwright runner connects.
-        Register a runner in <strong>DevOps → Settings</strong> — the same runner token drives Ops jobs and E2E tests.
-      </span>
     </div>
   );
 }

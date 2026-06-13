@@ -161,16 +161,12 @@ export function OpsTestRunPage() {
                   <>
                     <Loader2 className="h-7 w-7 animate-spin" />
                     <span className="text-sm">
-                      {r.status === "queued"
-                        ? "Waiting for a test runner to pick up this run…"
-                        : "Loading the app…"}
+                      {r.status === "planning"
+                        ? "Preparing the test plan…"
+                        : r.status === "queued"
+                          ? "Starting the test…"
+                          : "Loading the app…"}
                     </span>
-                    {r.status === "queued" && (
-                      <span className="max-w-md text-center text-xs text-muted-foreground/80">
-                        No runner has claimed the run yet. Make sure the Playwright test runner is
-                        running and a runner token is registered in DevOps → Settings.
-                      </span>
-                    )}
                   </>
                 ) : (
                   <>
