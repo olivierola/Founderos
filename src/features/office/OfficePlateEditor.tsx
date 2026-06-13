@@ -1,7 +1,7 @@
-import * as React from "react";
 import { Plate, usePlateEditor } from "platejs/react";
 import { EditorKit } from "@/components/editor-kit";
 import { Editor, EditorContainer } from "@/components/ui/editor";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 // Full Plate editor (playground-grade toolbar, drag handle, tables, media, AI
 // menu, slash commands…) wired for our Office module. Controlled via value +
@@ -21,13 +21,15 @@ export function OfficePlateEditor({
   });
 
   return (
-    <Plate
-      editor={editor}
-      onChange={({ value }) => onChange?.(value)}
-    >
-      <EditorContainer variant="default">
-        <Editor variant="default" placeholder={placeholder ?? "Type / for commands…"} />
-      </EditorContainer>
-    </Plate>
+    <TooltipProvider delayDuration={300}>
+      <Plate
+        editor={editor}
+        onChange={({ value }) => onChange?.(value)}
+      >
+        <EditorContainer variant="default">
+          <Editor variant="default" placeholder={placeholder ?? "Type / for commands…"} />
+        </EditorContainer>
+      </Plate>
+    </TooltipProvider>
   );
 }
