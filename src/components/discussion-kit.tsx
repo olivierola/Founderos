@@ -168,7 +168,9 @@ export const discussionPlugin = createPlatePlugin({
   key: 'discussion',
   options: {
     currentUserId: 'alice',
-    discussions: discussionsData,
+    // Start with no discussions (the demo seed data is intentionally unused so
+    // fresh documents don't show fake comments).
+    discussions: [] as TDiscussion[],
     users: usersData,
   },
 })
