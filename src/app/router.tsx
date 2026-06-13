@@ -57,6 +57,7 @@ import { OpsWorkflowsPage } from "@/features/ops/WorkflowsPage";
 import { OpsBundleDetailPage } from "@/features/ops/BundleDetailPage";
 import { OpsInfraProjectDetailPage } from "@/features/ops/InfraProjectDetailPage";
 import { OpsChecksPage } from "@/features/ops/ChecksPage";
+import { OpsTestingPage } from "@/features/ops/TestingPage";
 import { OpsJobsPage } from "@/features/ops/JobsPage";
 import { OpsSettingsPage } from "@/features/ops/SettingsPage";
 import { OnboardingPage as RagOnboardingPage } from "@/features/agent-rag/onboarding/OnboardingPage";
@@ -238,6 +239,7 @@ const PAGES: Record<string, PageEl> = {
   "devops/deployments": <DeploymentsPage />,
   "devops/workflows": <OpsWorkflowsPage />,
   "devops/checks": <OpsChecksPage />,
+  "devops/testing": <OpsTestingPage />,
   "devops/jobs": <OpsJobsPage />,
   "devops/settings": <OpsSettingsPage />,
 
