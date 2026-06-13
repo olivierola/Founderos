@@ -63,9 +63,10 @@ function createChatTransport({
 }) {
   return new DefaultChatTransport({
     api,
-    // Mock the API response. Remove it when you implement the route /api/ai/command
     fetch: (async (input, init) => {
-      const bodyOptions = editor.getOptions(aiChatPlugin).chatOptions?.body;
+      const opts = editor.getOptions(aiChatPlugin).chatOptions ?? {};
+      const bodyOptions = (opts as any).body;
+      const headerOptions = (opts as any).headers;
 
       const initBody = JSON.parse(init?.body as string);
 
@@ -76,10 +77,12 @@ function createChatTransport({
 
       const res = await fetch(input, {
         ...init,
+        headers: { ...(init?.headers ?? {}), ...(headerOptions ?? {}) },
         body: JSON.stringify(body),
       });
 
-      if (!res.ok) {
+      // Surface real backend errors instead of faking a stream.
+      if (!res.ok && false) {
         let sample: 'comment' | 'markdown' | 'mdx' | 'table' | null = null;
 
         try {

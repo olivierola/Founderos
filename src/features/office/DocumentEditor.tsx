@@ -153,6 +153,8 @@ export function DocumentEditorPage() {
             value={initialNodes}
             onChange={onEditorChange}
             placeholder="Type / for commands, or start writing…"
+            workspaceId={workspaceId}
+            projectId={projectId}
           />
         </div>
 

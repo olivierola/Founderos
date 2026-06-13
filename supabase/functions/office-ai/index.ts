@@ -15,6 +15,7 @@ import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { callAi, safeParseJson } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
+import { loadGrounding } from "../_shared/office-rag.ts";
 
 type Kind = "document" | "spreadsheet" | "presentation";
 
@@ -40,45 +41,6 @@ La première slide a en général le layout "title".`;
 - Pour ajouter du contenu: { "action": "insert_markdown", "markdown": "..." }
 - Pour réécrire tout le document: { "action": "replace_document", "markdown": "..." }
 - Pour seulement répondre à une question sans modifier le document: { "action": "answer", "answer": "..." }`;
-}
-
-async function loadGrounding(admin: ReturnType<typeof createServiceClient>, projectId: string, instruction: string, useKnowledge: boolean) {
-  const { data: scan } = await admin
-    .from("scan_results")
-    .select("summary, services, ai_analysis, repositories(full_name)")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const understanding = scan
-    ? {
-        repository: (scan as any).repositories?.full_name ?? null,
-        project_type: (scan as any).ai_analysis?.project_type ?? (scan as any).summary?.project_type ?? "unknown",
-        stack_summary: (scan as any).ai_analysis?.stack_summary ?? null,
-        services: ((scan as any).services ?? []).map((s: any) => s.service),
-      }
-    : null;
-
-  let knowledge: string[] = [];
-  if (useKnowledge && instruction) {
-    try {
-      const { embedTexts, toVectorLiteral } = await import("../_shared/jina.ts");
-      const [vec] = await embedTexts([instruction], "retrieval.query");
-      if (vec) {
-        const { data: agents } = await admin.from("rag_agents").select("id").eq("project_id", projectId).limit(8);
-        const hits: { sim: number; text: string }[] = [];
-        for (const a of agents ?? []) {
-          const { data } = await admin.rpc("match_rag_chunks", {
-            p_agent_id: (a as any).id, p_query_embedding: toVectorLiteral(vec), p_match_count: 4,
-          });
-          for (const d of (data as any[]) ?? []) hits.push({ sim: d.similarity ?? 0, text: (d.content ?? "").slice(0, 500) });
-        }
-        hits.sort((x, y) => y.sim - x.sim);
-        knowledge = hits.slice(0, 6).map((h) => h.text);
-      }
-    } catch { /* embeddings unavailable — skip */ }
-  }
-  return { understanding, knowledge };
 }
 
 Deno.serve(async (req) => {

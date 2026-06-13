@@ -190,6 +190,8 @@ export function PresentationEditorPage() {
                     onChange={(v) => update(active, { body: slateToMarkdown(v) })}
                     placeholder="Slide content — type / for blocks, or use the toolbar…"
                     editorClassName="px-6 py-4"
+                    workspaceId={workspaceId}
+                    projectId={projectId}
                   />
                 </div>
               ) : (

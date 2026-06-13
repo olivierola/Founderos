@@ -204,6 +204,8 @@ export function SpreadsheetEditorPage() {
                 value={rows[r][c]}
                 onChange={(v) => setCell(r, c, v)}
                 onClose={() => setActiveCell(null)}
+                workspaceId={workspaceId}
+                projectId={projectId}
               />
             );
           })()}
@@ -228,12 +230,14 @@ export function SpreadsheetEditorPage() {
 // Plate editor (with toolbar + more dropdown). The cell is stored as a markdown
 // string so CSV export and AI keep working unchanged.
 function CellRichPanel({
-  label, value, onChange, onClose,
+  label, value, onChange, onClose, workspaceId, projectId,
 }: {
   label: string;
   value: string | number | null;
   onChange: (v: string) => void;
   onClose: () => void;
+  workspaceId: string | null;
+  projectId: string | null;
 }) {
   return (
     <div className="border-t border-border bg-card">
@@ -247,6 +251,8 @@ function CellRichPanel({
           onChange={(v) => onChange(slateToMarkdown(v))}
           placeholder="Type the cell content — use the toolbar for formatting…"
           editorClassName="px-4 py-2"
+          workspaceId={workspaceId}
+          projectId={projectId}
         />
       </div>
     </div>
