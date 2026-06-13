@@ -184,9 +184,11 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Deployments", slug: "deployments" },
       { label: "Workflows", slug: "workflows" },
       { label: "Checks", slug: "checks" },
-      { label: "Testing", slug: "testing" },
       { label: "Jobs & Audit", slug: "jobs" },
       { label: "Settings", slug: "settings" },
+
+      // ── Testing (agentic E2E) ──
+      { label: "E2E Tests", slug: "testing", group: "Testing" },
     ],
   },
   {
