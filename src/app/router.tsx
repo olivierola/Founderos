@@ -72,10 +72,20 @@ import {
 } from "@/features/marketing/Extra";
 
 // Office (Bureautique)
+import { Suspense, lazy } from "react";
 import { OfficeLibraryPage } from "@/features/office/OfficeLibrary";
-import { DocumentEditorPage } from "@/features/office/DocumentEditor";
-import { SpreadsheetEditorPage } from "@/features/office/SpreadsheetEditor";
-import { PresentationEditorPage } from "@/features/office/PresentationEditor";
+// Office editors are lazy-loaded — the Plate document editor pulls a large
+// dependency graph (media, tables, AI…), so we keep it out of the initial bundle.
+const DocumentEditorPage = lazy(() =>
+  import("@/features/office/DocumentEditor").then((m) => ({ default: m.DocumentEditorPage })));
+const SpreadsheetEditorPage = lazy(() =>
+  import("@/features/office/SpreadsheetEditor").then((m) => ({ default: m.SpreadsheetEditorPage })));
+const PresentationEditorPage = lazy(() =>
+  import("@/features/office/PresentationEditor").then((m) => ({ default: m.PresentationEditorPage })));
+
+function OfficeEditorFallback() {
+  return <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">Loading editor…</div>;
+}
 
 // Code
 import { RepositoriesPage } from "@/features/code/Repositories";
@@ -170,7 +180,7 @@ import {
   ContactPage,
 } from "@/features/marketing-site/OtherPages";
 
-type PageEl = JSX.Element;
+type PageEl = import("react").ReactElement;
 
 const PAGES: Record<string, PageEl> = {
   // Overview was merged into the Admin panel — these three tabs were kept.
@@ -435,15 +445,15 @@ export const router = createBrowserRouter([
       },
       {
         path: "office/document/:docId",
-        element: <ErrorBoundary><DocumentEditorPage /></ErrorBoundary>,
+        element: <ErrorBoundary><Suspense fallback={<OfficeEditorFallback />}><DocumentEditorPage /></Suspense></ErrorBoundary>,
       },
       {
         path: "office/spreadsheet/:docId",
-        element: <ErrorBoundary><SpreadsheetEditorPage /></ErrorBoundary>,
+        element: <ErrorBoundary><Suspense fallback={<OfficeEditorFallback />}><SpreadsheetEditorPage /></Suspense></ErrorBoundary>,
       },
       {
         path: "office/presentation/:docId",
-        element: <ErrorBoundary><PresentationEditorPage /></ErrorBoundary>,
+        element: <ErrorBoundary><Suspense fallback={<OfficeEditorFallback />}><PresentationEditorPage /></Suspense></ErrorBoundary>,
       },
       {
         path: "devops/servers/:serverId",

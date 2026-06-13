@@ -31,7 +31,7 @@ const TYPES: { value: WidgetType; label: string }[] = [
 
 /** Wrap or insert markdown markers at the cursor in a textarea. */
 function applyMarkdown(
-  ref: React.RefObject<HTMLTextAreaElement>,
+  ref: React.RefObject<HTMLTextAreaElement | null>,
   current: string,
   setText: (v: string) => void,
   before: string,

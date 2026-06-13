@@ -1,26 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Plate, usePlateEditor, PlateContent, ParagraphPlugin } from "platejs/react";
-import {
-  BoldPlugin, ItalicPlugin, UnderlinePlugin, StrikethroughPlugin, CodePlugin,
-  H1Plugin, H2Plugin, H3Plugin, BlockquotePlugin,
-} from "@platejs/basic-nodes/react";
-import { ListPlugin } from "@platejs/list/react";
-import { toggleList, ListStyleType } from "@platejs/list";
-import { IndentPlugin } from "@platejs/indent/react";
-import { indent, outdent } from "@platejs/indent";
-import { TextAlignPlugin } from "@platejs/basic-styles/react";
-import { LinkPlugin } from "@platejs/link/react";
-import { KEYS } from "platejs";
-import {
-  H1Element, H2Element, H3Element, ParagraphElement,
-  BlockquoteElement, LinkElement, CodeLeaf,
-} from "./plate-nodes";
 import {
   Loader2, ArrowLeft, Check, Sparkles, Download, FileText, FileDown, FileJson,
-  Bold, Italic, Underline as UnderlineIcon, Strikethrough, Code as CodeIcon,
-  Heading1, Heading2, Heading3, Quote, List, ListOrdered,
-  AlignLeft, AlignCenter, AlignRight, Indent, Outdent,
 } from "lucide-react";
 import {
   Document as DocxDocument, Packer, Paragraph, HeadingLevel, TextRun,
@@ -31,28 +12,13 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { cn } from "@/lib/utils";
 import { useOfficeDoc } from "./useOfficeDoc";
+import { OfficePlateEditor } from "./OfficePlateEditor";
 import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
 import {
   type DocumentContent, slateToText, slateToMarkdown, markdownToSlate,
   downloadBlob, sanitizeFilename,
 } from "./shared";
-
-const PLUGINS = [
-  // Marks
-  BoldPlugin, ItalicPlugin, UnderlinePlugin, StrikethroughPlugin,
-  CodePlugin.withComponent(CodeLeaf),
-  // Blocks (with styled node components)
-  H1Plugin.withComponent(H1Element),
-  H2Plugin.withComponent(H2Element),
-  H3Plugin.withComponent(H3Element),
-  BlockquotePlugin.withComponent(BlockquoteElement),
-  LinkPlugin.withComponent(LinkElement),
-  ParagraphPlugin.withComponent(ParagraphElement),
-  // Structure
-  IndentPlugin, ListPlugin, TextAlignPlugin,
-];
 
 export function DocumentEditorPage() {
   const { docId } = useParams();
@@ -64,39 +30,43 @@ export function DocumentEditorPage() {
   const [title, setTitle] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  // The current Plate value. Kept in a ref for export/AI without re-rendering on
+  // every keystroke, plus a key to force-remount the editor on external replace.
+  const nodesRef = useRef<any[]>([{ type: "p", children: [{ text: "" }] }]);
+  const [editorKey, setEditorKey] = useState(0);
+  const [initialNodes, setInitialNodes] = useState<any[]>([{ type: "p", children: [{ text: "" }] }]);
 
-  const initialValue = useMemo(() => {
-    const nodes = (doc?.content as DocumentContent)?.nodes;
-    return Array.isArray(nodes) && nodes.length ? nodes : [{ type: "p", children: [{ text: "" }] }];
-  }, [doc?.id]); // hydrate once per doc
-
-  const editor = usePlateEditor({ plugins: PLUGINS, value: initialValue }, [doc?.id]);
-
-  useEffect(() => { if (doc) setTitle(doc.title); }, [doc?.id]);
+  // Hydrate once per loaded document.
+  useEffect(() => {
+    if (!doc) return;
+    setTitle(doc.title);
+    const nodes = (doc.content as DocumentContent)?.nodes;
+    const v = Array.isArray(nodes) && nodes.length ? nodes : [{ type: "p", children: [{ text: "" }] }];
+    nodesRef.current = v;
+    setInitialNodes(v);
+    setEditorKey((k) => k + 1);
+  }, [doc?.id]);
 
   function onTitleChange(v: string) {
     setTitle(v);
     scheduleSave({ title: v || "Untitled document" });
   }
 
-  function onEditorChange() {
-    const nodes = editor.children;
-    scheduleSave({ content: { nodes } as DocumentContent });
+  function onEditorChange(value: any[]) {
+    nodesRef.current = value;
+    scheduleSave({ content: { nodes: value } as DocumentContent });
   }
 
+  // Replace / insert content produced by the AI panel.
   function applyAi(r: AiResult) {
-    if (r.action === "replace_document" && r.markdown != null) {
-      const nodes = markdownToSlate(r.markdown);
-      editor.tf.setValue(nodes);
-      scheduleSave({ content: { nodes } as DocumentContent });
-      toast.success("Document generated");
-    } else if (r.action === "insert_markdown" && r.markdown != null) {
-      const nodes = markdownToSlate(r.markdown);
-      // Append generated blocks to the end of the document.
-      const merged = [...editor.children, ...nodes];
-      editor.tf.setValue(merged);
-      scheduleSave({ content: { nodes: merged } as DocumentContent });
-      toast.success("Inserted");
+    if ((r.action === "replace_document" || r.action === "insert_markdown") && r.markdown != null) {
+      const generated = markdownToSlate(r.markdown);
+      const next = r.action === "replace_document" ? generated : [...nodesRef.current, ...generated];
+      nodesRef.current = next;
+      setInitialNodes(next);
+      setEditorKey((k) => k + 1); // remount editor with new value
+      scheduleSave({ content: { nodes: next } as DocumentContent });
+      toast.success(r.action === "replace_document" ? "Document generated" : "Inserted");
     }
   }
 
@@ -105,15 +75,15 @@ export function DocumentEditorPage() {
   }
   if (!doc) return <EmptyState icon={FileText} title="Document not found" />;
 
-  const contextText = slateToText(editor?.children ?? []);
-
   function exportMarkdown() {
-    downloadBlob(sanitizeFilename(title) + ".md", slateToMarkdown(editor.children), "text/markdown");
+    downloadBlob(sanitizeFilename(title) + ".md", slateToMarkdown(nodesRef.current), "text/markdown");
     toast.success("Markdown downloaded");
   }
   async function exportDocx() {
-    const paras = docxParagraphs(editor.children);
-    const d = new DocxDocument({ creator: "FounderOS", title, sections: [{ properties: {}, children: paras }] });
+    const d = new DocxDocument({
+      creator: "FounderOS", title,
+      sections: [{ properties: {}, children: docxParagraphs(nodesRef.current) }],
+    });
     downloadBlob(sanitizeFilename(title) + ".docx", await Packer.toBlob(d));
     toast.success("DOCX downloaded");
   }
@@ -122,7 +92,7 @@ export function DocumentEditorPage() {
     stage.style.cssText =
       "position:fixed;left:-99999px;top:0;width:794px;background:#fff;color:#0f172a;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:48px 64px;line-height:1.6;font-size:14px";
     stage.innerHTML = `<h1 style="font-size:28px;font-weight:600;margin:0 0 16px">${escapeHtml(title)}</h1>` +
-      mdToHtml(slateToMarkdown(editor.children));
+      mdToHtml(slateToMarkdown(nodesRef.current));
     document.body.appendChild(stage);
     try {
       const canvas = await html2canvas(stage, { scale: 2, backgroundColor: "#ffffff" });
@@ -175,26 +145,15 @@ export function DocumentEditorPage() {
         </Button>
       </div>
 
-      {/* Body: editor + AI panel */}
+      {/* Body: full Plate editor + AI panel */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Plate editor={editor} onChange={onEditorChange}>
-            <Toolbar editor={editor} />
-            {/* Soft backdrop with a centered white "paper" page, like a real doc. */}
-            <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-100 py-8 dark:bg-zinc-900/40">
-              <div className="mx-auto w-full max-w-3xl rounded-lg bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200">
-                <PlateContent
-                  className={cn(
-                    "min-h-[60vh] px-14 py-12 text-[15px] leading-7 focus:outline-none",
-                    // list rendering (Plate v53 indent-based lists set listStyleType inline)
-                    "[&_[data-slate-node=element]]:my-1",
-                    "[&_li]:my-1",
-                  )}
-                  placeholder="Start writing, or use the AI panel to generate content…"
-                />
-              </div>
-            </div>
-          </Plate>
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <OfficePlateEditor
+            key={editorKey}
+            value={initialNodes}
+            onChange={onEditorChange}
+            placeholder="Type / for commands, or start writing…"
+          />
         </div>
 
         <OfficeAiPanel
@@ -202,57 +161,13 @@ export function DocumentEditorPage() {
           onClose={() => setAiOpen(false)}
           kind="document"
           docTitle={title}
-          contextText={contextText}
+          contextText={slateToText(nodesRef.current)}
           workspaceId={workspaceId}
           projectId={projectId}
           onResult={applyAi}
         />
       </div>
     </div>
-  );
-}
-
-function Toolbar({ editor }: { editor: any }) {
-  const toggleBlock = (type: string) => editor.tf.toggleBlock(type);
-  const setAlign = (align: "left" | "center" | "right") =>
-    editor.tf.setNodes({ [KEYS.textAlign]: align }, { match: (n: any) => editor.api.isBlock(n) });
-  const list = (style: string) => toggleList(editor, { listStyleType: style });
-
-  return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-border px-3 py-2">
-      <TBtn onClick={() => editor.tf.bold.toggle()} title="Bold (Ctrl+B)"><Bold className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => editor.tf.italic.toggle()} title="Italic (Ctrl+I)"><Italic className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => editor.tf.underline.toggle()} title="Underline (Ctrl+U)"><UnderlineIcon className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => editor.tf.strikethrough.toggle()} title="Strikethrough"><Strikethrough className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => editor.tf.code.toggle()} title="Inline code"><CodeIcon className="h-3.5 w-3.5" /></TBtn>
-      <span className="mx-1 h-4 w-px bg-border" />
-      <TBtn onClick={() => toggleBlock("h1")} title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => toggleBlock("h2")} title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => toggleBlock("h3")} title="Heading 3"><Heading3 className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => toggleBlock("blockquote")} title="Quote"><Quote className="h-3.5 w-3.5" /></TBtn>
-      <span className="mx-1 h-4 w-px bg-border" />
-      <TBtn onClick={() => list(ListStyleType.Disc)} title="Bulleted list"><List className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => list(ListStyleType.Decimal)} title="Numbered list"><ListOrdered className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => indent(editor)} title="Indent"><Indent className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => outdent(editor)} title="Outdent"><Outdent className="h-3.5 w-3.5" /></TBtn>
-      <span className="mx-1 h-4 w-px bg-border" />
-      <TBtn onClick={() => setAlign("left")} title="Align left"><AlignLeft className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => setAlign("center")} title="Align center"><AlignCenter className="h-3.5 w-3.5" /></TBtn>
-      <TBtn onClick={() => setAlign("right")} title="Align right"><AlignRight className="h-3.5 w-3.5" /></TBtn>
-    </div>
-  );
-}
-
-function TBtn({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
-      className="inline-flex h-7 w-7 items-center justify-center rounded border border-border text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-    >
-      {children}
-    </button>
   );
 }
 
