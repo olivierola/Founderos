@@ -67,20 +67,49 @@ async function rpc(body) {
   return json;
 }
 
+let warnedNoStorage = false;
 // Capture a screenshot, upload to storage, return a public URL (or null).
 async function snapshot(page, runId, idx) {
   try {
     const buf = await page.screenshot({ type: "png", fullPage: false });
-    if (!storage) return null;
+    if (!storage) {
+      if (!warnedNoStorage) {
+        console.warn("  [screenshots] SUPABASE_SERVICE_ROLE_KEY not set — the live view will show 'No frame captured'.");
+        warnedNoStorage = true;
+      }
+      return null;
+    }
     const path = `${runId}/${String(idx).padStart(4, "0")}.png`;
     const { error } = await storage.storage.from("test-artifacts").upload(path, buf, {
       contentType: "image/png", upsert: true,
     });
-    if (error) return null;
+    if (error) {
+      console.warn(`  [screenshots] upload failed: ${error.message}`);
+      return null;
+    }
     return storage.storage.from("test-artifacts").getPublicUrl(path).data.publicUrl;
-  } catch {
+  } catch (e) {
+    console.warn(`  [screenshots] ${e.message}`);
     return null;
   }
+}
+
+// Wait for an SPA to actually render: network to settle, then for some
+// interactive content (or visible text) to exist. Avoids the agent acting on
+// an empty DOM right after domcontentloaded (React/Vue hasn't hydrated yet).
+async function waitForReady(page) {
+  try {
+    await page.waitForLoadState("networkidle", { timeout: 12000 });
+  } catch { /* keep going — some apps keep long-poll connections open */ }
+  try {
+    await page.waitForFunction(() => {
+      const hasControls = document.querySelector("input,button,a,textarea,select,[role=button]");
+      const hasText = (document.body?.innerText || "").trim().length > 20;
+      return !!hasControls || hasText;
+    }, { timeout: 12000 });
+  } catch { /* proceed with whatever rendered */ }
+  // Small settle for late layout.
+  await page.waitForTimeout(400);
 }
 
 // A compact, agent-friendly DOM/accessibility excerpt: interactive elements
@@ -152,8 +181,8 @@ async function execAction(page, action) {
     default:
       break;
   }
-  // Let the SPA settle after an action.
-  await page.waitForTimeout(700);
+  // Let the SPA settle (and re-render) after an action.
+  await waitForReady(page);
 }
 
 async function runOne(claimed) {
@@ -164,12 +193,21 @@ async function runOne(claimed) {
   const page = await context.newPage();
   let idx = 0;
 
+  // Carry a note about the previous action's failure into the next observation
+  // so the agent stops repeating an action that can't be performed.
+  let actionError = null;
+
   try {
     await page.goto(app_url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await waitForReady(page);
 
     for (let step = 0; step < MAX_STEPS; step++) {
       const screenshot_url = await snapshot(page, runId, idx++);
-      const dom = await domExcerpt(page);
+      let dom = await domExcerpt(page);
+      if (actionError) {
+        dom = `PREVIOUS ACTION FAILED: ${actionError}\n(adjust your approach — pick a different selector or step)\n\n${dom}`;
+        actionError = null;
+      }
       const { action, terminal, paused } = await rpc({
         mode: "observe",
         run_id: runId,
@@ -197,8 +235,11 @@ async function runOne(claimed) {
       try {
         await execAction(page, action);
       } catch (e) {
-        await rpc({ mode: "observe", run_id: runId, current_url: page.url(),
-          dom_excerpt: `ACTION ERROR: ${e.message}\n` + (await domExcerpt(page).catch(() => "")) });
+        // Don't burn an observe round here — just remember the failure and let
+        // the next loop iteration report it alongside the fresh DOM.
+        console.log(`    action failed: ${e.message}`);
+        actionError = `${action?.type} ${action?.selector ?? ""} — ${e.message}`.trim();
+        await waitForReady(page).catch(() => {});
       }
     }
   } catch (e) {
