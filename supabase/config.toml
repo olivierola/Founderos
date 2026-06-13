@@ -147,3 +147,18 @@ verify_jwt = false
 # ops_settings.runner_token_hash) — it has no Supabase JWT.
 [functions.ops-runner-poll]
 verify_jwt = false
+
+# E2E testing: the orchestrator verifies the user session manually; the runner
+# poll authenticates with X-Runner-Token (no JWT), like ops-runner-poll.
+[functions.test-run-orchestrate]
+verify_jwt = false
+
+[functions.test-runner-poll]
+verify_jwt = false
+
+# PostHog import + connector test re-validation (manual user-session checks).
+[functions.sync-posthog]
+verify_jwt = false
+
+[functions.test-connection]
+verify_jwt = false
