@@ -105,6 +105,22 @@ export function slateToText(nodes: any[]): string {
   return out.join(" ").replace(/\s+/g, " ").trim();
 }
 
+// Cells / slide bodies may hold either legacy plain text (string) or a Plate
+// value (array of nodes). These helpers normalise both directions so the rich
+// editor always works on a Plate value while staying backward-compatible.
+export function toRichValue(v: unknown): any[] {
+  if (Array.isArray(v)) return v.length ? v : [{ type: "p", children: [{ text: "" }] }];
+  const text = v == null ? "" : String(v);
+  // Treat existing markdown-ish bullet text as markdown so lists survive.
+  return text.trim() ? markdownToSlate(text) : [{ type: "p", children: [{ text: "" }] }];
+}
+
+// A compact text rendering for previews/CSV/PDF of a rich value (or string).
+export function richValueToText(v: unknown): string {
+  if (Array.isArray(v)) return slateToText(v);
+  return v == null ? "" : String(v);
+}
+
 // Convert a Plate/Slate value to markdown (small subset: headings, lists, quote,
 // code, marks). Good enough for export + AI round-trips.
 export function slateToMarkdown(nodes: any[]): string {

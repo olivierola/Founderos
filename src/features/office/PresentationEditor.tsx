@@ -12,7 +12,8 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { useOfficeDoc } from "./useOfficeDoc";
 import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
-import { type PresentationContent, type Slide, sanitizeFilename } from "./shared";
+import { OfficePlateEditor } from "./OfficePlateEditor";
+import { type PresentationContent, type Slide, sanitizeFilename, slateToMarkdown } from "./shared";
 
 const LAYOUTS: Slide["layout"][] = ["title", "title-content", "section", "blank"];
 
@@ -166,29 +167,36 @@ export function PresentationEditorPage() {
                 </div>
               </div>
 
-              {/* Live slide canvas */}
-              <div className="flex aspect-video w-full flex-col rounded-lg bg-slate-900 p-8 text-white shadow-inner">
+              {/* Slide title (shown on the dark canvas header) */}
+              <div className="flex w-full flex-col rounded-t-lg bg-slate-900 p-6 text-white shadow-inner">
                 <input
                   value={slide.title}
                   onChange={(e) => update(active, { title: e.target.value })}
                   placeholder="Slide title"
                   className={cn(
                     "w-full bg-transparent font-semibold focus:outline-none placeholder:text-slate-500",
-                    slide.layout === "title" || slide.layout === "section" ? "my-auto text-center text-3xl" : "text-2xl",
+                    slide.layout === "title" || slide.layout === "section" ? "text-center text-3xl" : "text-2xl",
                   )}
                 />
-                {slide.layout !== "section" && slide.layout !== "blank" && (
-                  <textarea
-                    value={slide.body}
-                    onChange={(e) => update(active, { body: e.target.value })}
-                    placeholder={"- Point clé 1\n- Point clé 2"}
-                    className={cn(
-                      "mt-4 flex-1 resize-none bg-transparent text-base text-slate-200 focus:outline-none placeholder:text-slate-600",
-                      slide.layout === "title" && "text-center",
-                    )}
-                  />
-                )}
               </div>
+
+              {/* Slide body — full rich editor with toolbar */}
+              {slide.layout !== "section" && slide.layout !== "blank" ? (
+                <div className="min-h-[260px] flex-1 overflow-hidden rounded-b-lg border border-t-0 border-border">
+                  <OfficePlateEditor
+                    // Remount when switching slide so the editor hydrates the new body.
+                    key={active}
+                    value={slide.body}
+                    onChange={(v) => update(active, { body: slateToMarkdown(v) })}
+                    placeholder="Slide content — type / for blocks, or use the toolbar…"
+                    editorClassName="px-6 py-4"
+                  />
+                </div>
+              ) : (
+                <div className="rounded-b-lg border border-t-0 border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+                  This layout has no body content.
+                </div>
+              )}
 
               {/* Speaker notes */}
               <div className="mt-3">

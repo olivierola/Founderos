@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { cn } from "@/lib/utils";
 import { useOfficeDoc } from "./useOfficeDoc";
 import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
-import { type SpreadsheetContent, downloadBlob, sanitizeFilename } from "./shared";
+import { OfficePlateEditor } from "./OfficePlateEditor";
+import { type SpreadsheetContent, downloadBlob, sanitizeFilename, slateToMarkdown, richValueToText } from "./shared";
 
 export function SpreadsheetEditorPage() {
   const { docId } = useParams();
@@ -23,6 +25,9 @@ export function SpreadsheetEditorPage() {
   const [columns, setColumns] = useState<string[]>([]);
   const [rows, setRows] = useState<(string | number | null)[][]>([]);
   const [aiOpen, setAiOpen] = useState(false);
+  // The cell currently being rich-edited ("r:c"); only this one mounts a Plate
+  // editor — the rest render as plain text for performance.
+  const [activeCell, setActiveCell] = useState<string | null>(null);
 
   useEffect(() => {
     if (!doc) return;
@@ -160,15 +165,24 @@ export function SpreadsheetEditorPage() {
                         </button>
                       </div>
                     </td>
-                    {columns.map((_, ci) => (
-                      <td key={ci} className="border border-border p-0">
-                        <input
-                          value={(row[ci] ?? "") as string}
-                          onChange={(e) => setCell(ri, ci, e.target.value)}
-                          className="w-full bg-transparent px-2 py-1.5 focus:bg-primary/5 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-primary/40"
-                        />
-                      </td>
-                    ))}
+                    {columns.map((_, ci) => {
+                      const cellKey = `${ri}:${ci}`;
+                      const isActive = activeCell === cellKey;
+                      return (
+                        <td
+                          key={ci}
+                          onClick={() => setActiveCell(cellKey)}
+                          className={cn(
+                            "min-w-[120px] cursor-text border border-border px-2 py-1.5 align-top text-sm",
+                            isActive ? "ring-2 ring-inset ring-primary" : "hover:bg-muted/30",
+                          )}
+                        >
+                          <div className="min-h-[1.25rem] whitespace-pre-wrap">
+                            {richValueToText(row[ci]) || <span className="text-muted-foreground/30">&nbsp;</span>}
+                          </div>
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -179,6 +193,20 @@ export function SpreadsheetEditorPage() {
               </button>
             )}
           </div>
+
+          {activeCell && (() => {
+            const [r, c] = activeCell.split(":").map(Number);
+            if (rows[r] === undefined || columns[c] === undefined) return null;
+            return (
+              <CellRichPanel
+                key={activeCell}
+                label={`${colName(c)}${r + 1}`}
+                value={rows[r][c]}
+                onChange={(v) => setCell(r, c, v)}
+                onClose={() => setActiveCell(null)}
+              />
+            );
+          })()}
         </div>
 
         <OfficeAiPanel
@@ -190,6 +218,35 @@ export function SpreadsheetEditorPage() {
           workspaceId={workspaceId}
           projectId={projectId}
           onResult={applyAi}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Bottom "formula-bar"-style rich editor for the active cell. Mounts the full
+// Plate editor (with toolbar + more dropdown). The cell is stored as a markdown
+// string so CSV export and AI keep working unchanged.
+function CellRichPanel({
+  label, value, onChange, onClose,
+}: {
+  label: string;
+  value: string | number | null;
+  onChange: (v: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="border-t border-border bg-card">
+      <div className="flex items-center justify-between px-3 py-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Editing cell <span className="font-mono text-foreground">{label}</span></span>
+        <Button size="sm" variant="ghost" onClick={onClose} className="h-7">Done</Button>
+      </div>
+      <div className="max-h-[40vh] overflow-hidden">
+        <OfficePlateEditor
+          value={value}
+          onChange={(v) => onChange(slateToMarkdown(v))}
+          placeholder="Type the cell content — use the toolbar for formatting…"
+          editorClassName="px-4 py-2"
         />
       </div>
     </div>
