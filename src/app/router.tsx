@@ -71,6 +71,12 @@ import {
   MarketingAdvisorPage,
 } from "@/features/marketing/Extra";
 
+// Office (Bureautique)
+import { OfficeLibraryPage } from "@/features/office/OfficeLibrary";
+import { DocumentEditorPage } from "@/features/office/DocumentEditor";
+import { SpreadsheetEditorPage } from "@/features/office/SpreadsheetEditor";
+import { PresentationEditorPage } from "@/features/office/PresentationEditor";
+
 // Code
 import { RepositoriesPage } from "@/features/code/Repositories";
 import { ScanResultsPage } from "@/features/code/ScanResults";
@@ -232,6 +238,12 @@ const PAGES: Record<string, PageEl> = {
   "marketing/channels": <MarketingChannelsPage />,
   "marketing/analytics": <MarketingAnalyticsPage />,
   "marketing/advisor": <MarketingAdvisorPage />,
+
+  // Office (Bureautique) — library + per-kind filtered lists.
+  "office/library": <OfficeLibraryPage />,
+  "office/documents": <OfficeLibraryPage initialKind="document" />,
+  "office/spreadsheets": <OfficeLibraryPage initialKind="spreadsheet" />,
+  "office/presentations": <OfficeLibraryPage initialKind="presentation" />,
 
   // Code group (under the merged DevOps module)
   "devops/overview": <CodeOverviewPage />,
@@ -420,6 +432,18 @@ export const router = createBrowserRouter([
             <InternalAgentDetailPage />
           </ErrorBoundary>
         ),
+      },
+      {
+        path: "office/document/:docId",
+        element: <ErrorBoundary><DocumentEditorPage /></ErrorBoundary>,
+      },
+      {
+        path: "office/spreadsheet/:docId",
+        element: <ErrorBoundary><SpreadsheetEditorPage /></ErrorBoundary>,
+      },
+      {
+        path: "office/presentation/:docId",
+        element: <ErrorBoundary><PresentationEditorPage /></ErrorBoundary>,
       },
       {
         path: "devops/servers/:serverId",

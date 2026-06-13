@@ -1,0 +1,250 @@
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { Plate, usePlateEditor, PlateContent } from "platejs/react";
+import {
+  BoldPlugin, ItalicPlugin, UnderlinePlugin, CodePlugin,
+  H1Plugin, H2Plugin, H3Plugin, BlockquotePlugin,
+} from "@platejs/basic-nodes/react";
+import {
+  Loader2, ArrowLeft, Check, Sparkles, Download, FileText, FileDown, FileJson,
+  Bold, Italic, Underline as UnderlineIcon, Code as CodeIcon,
+  Heading1, Heading2, Heading3, Quote,
+} from "lucide-react";
+import {
+  Document as DocxDocument, Packer, Paragraph, HeadingLevel, TextRun,
+} from "docx";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
+import { useToast } from "@/components/ToastProvider";
+import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { useOfficeDoc } from "./useOfficeDoc";
+import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
+import {
+  type DocumentContent, slateToText, slateToMarkdown, markdownToSlate,
+  downloadBlob, sanitizeFilename,
+} from "./shared";
+
+const PLUGINS = [
+  BoldPlugin, ItalicPlugin, UnderlinePlugin, CodePlugin,
+  H1Plugin, H2Plugin, H3Plugin, BlockquotePlugin,
+];
+
+export function DocumentEditorPage() {
+  const { docId } = useParams();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const { workspaceId, projectId } = useCurrentContext();
+  const { data: doc, isLoading, saving, savedAt, scheduleSave } = useOfficeDoc(docId, "document");
+
+  const [title, setTitle] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const initialValue = useMemo(() => {
+    const nodes = (doc?.content as DocumentContent)?.nodes;
+    return Array.isArray(nodes) && nodes.length ? nodes : [{ type: "p", children: [{ text: "" }] }];
+  }, [doc?.id]); // hydrate once per doc
+
+  const editor = usePlateEditor({ plugins: PLUGINS, value: initialValue }, [doc?.id]);
+
+  useEffect(() => { if (doc) setTitle(doc.title); }, [doc?.id]);
+
+  function onTitleChange(v: string) {
+    setTitle(v);
+    scheduleSave({ title: v || "Untitled document" });
+  }
+
+  function onEditorChange() {
+    const nodes = editor.children;
+    scheduleSave({ content: { nodes } as DocumentContent });
+  }
+
+  function applyAi(r: AiResult) {
+    if (r.action === "replace_document" && r.markdown != null) {
+      const nodes = markdownToSlate(r.markdown);
+      editor.tf.setValue(nodes);
+      scheduleSave({ content: { nodes } as DocumentContent });
+      toast.success("Document generated");
+    } else if (r.action === "insert_markdown" && r.markdown != null) {
+      const nodes = markdownToSlate(r.markdown);
+      // Append generated blocks to the end of the document.
+      const merged = [...editor.children, ...nodes];
+      editor.tf.setValue(merged);
+      scheduleSave({ content: { nodes: merged } as DocumentContent });
+      toast.success("Inserted");
+    }
+  }
+
+  if (isLoading) {
+    return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  }
+  if (!doc) return <EmptyState icon={FileText} title="Document not found" />;
+
+  const contextText = slateToText(editor?.children ?? []);
+
+  function exportMarkdown() {
+    downloadBlob(sanitizeFilename(title) + ".md", slateToMarkdown(editor.children), "text/markdown");
+    toast.success("Markdown downloaded");
+  }
+  async function exportDocx() {
+    const paras = docxParagraphs(editor.children);
+    const d = new DocxDocument({ creator: "FounderOS", title, sections: [{ properties: {}, children: paras }] });
+    downloadBlob(sanitizeFilename(title) + ".docx", await Packer.toBlob(d));
+    toast.success("DOCX downloaded");
+  }
+  async function exportPdf() {
+    const stage = document.createElement("div");
+    stage.style.cssText =
+      "position:fixed;left:-99999px;top:0;width:794px;background:#fff;color:#0f172a;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:48px 64px;line-height:1.6;font-size:14px";
+    stage.innerHTML = `<h1 style="font-size:28px;font-weight:600;margin:0 0 16px">${escapeHtml(title)}</h1>` +
+      mdToHtml(slateToMarkdown(editor.children));
+    document.body.appendChild(stage);
+    try {
+      const canvas = await html2canvas(stage, { scale: 2, backgroundColor: "#ffffff" });
+      const pdf = new jsPDF({ unit: "pt", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgH = (canvas.height * pageW) / canvas.width;
+      let left = imgH; let pos = 0;
+      const img = canvas.toDataURL("image/png");
+      pdf.addImage(img, "PNG", 0, pos, pageW, imgH);
+      left -= pageH;
+      while (left > 0) { pos = left - imgH; pdf.addPage(); pdf.addImage(img, "PNG", 0, pos, pageW, imgH); left -= pageH; }
+      pdf.save(sanitizeFilename(title) + ".pdf");
+      toast.success("PDF downloaded");
+    } finally { stage.remove(); }
+  }
+
+  return (
+    <div className="flex h-[calc(100vh-7rem)] flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-2 border-b border-border pb-3">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(-1)}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-lg">{doc.emoji ?? "📝"}</span>
+        <input
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          className="min-w-0 flex-1 bg-transparent text-lg font-semibold focus:outline-none"
+          placeholder="Untitled document"
+        />
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          {saving ? <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>
+            : savedAt ? <><Check className="h-3 w-3" /> Saved</> : null}
+        </span>
+        <div className="relative">
+          <Button variant="outline" size="sm" onClick={() => setExportOpen((v) => !v)}>
+            <Download className="h-3.5 w-3.5" /> Export
+          </Button>
+          {exportOpen && (
+            <div className="absolute right-0 top-9 z-20 min-w-[160px] overflow-hidden rounded-md border border-border bg-popover shadow-xl" onMouseLeave={() => setExportOpen(false)}>
+              <MenuItem icon={FileText} label="Markdown (.md)" onClick={() => { exportMarkdown(); setExportOpen(false); }} />
+              <MenuItem icon={FileDown} label="PDF (.pdf)" onClick={() => { exportPdf(); setExportOpen(false); }} />
+              <MenuItem icon={FileJson} label="Word (.docx)" onClick={() => { exportDocx(); setExportOpen(false); }} />
+            </div>
+          )}
+        </div>
+        <Button size="sm" variant={aiOpen ? "default" : "outline"} onClick={() => setAiOpen((v) => !v)}>
+          <Sparkles className="h-3.5 w-3.5" /> AI
+        </Button>
+      </div>
+
+      {/* Body: editor + AI panel */}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Plate editor={editor} onChange={onEditorChange}>
+            <Toolbar editor={editor} />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <PlateContent
+                className="mx-auto min-h-full max-w-3xl px-8 py-6 text-sm leading-relaxed focus:outline-none [&_h1]:mb-3 [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_p]:mb-2"
+                placeholder="Start writing, or use the AI panel to generate content…"
+              />
+            </div>
+          </Plate>
+        </div>
+
+        <OfficeAiPanel
+          open={aiOpen}
+          onClose={() => setAiOpen(false)}
+          kind="document"
+          docTitle={title}
+          contextText={contextText}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          onResult={applyAi}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Toolbar({ editor }: { editor: any }) {
+  const toggleBlock = (type: string) => editor.tf.toggleBlock(type);
+  return (
+    <div className="flex flex-wrap items-center gap-1 border-b border-border px-3 py-2">
+      <TBtn onClick={() => editor.tf.bold.toggle()} title="Bold"><Bold className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => editor.tf.italic.toggle()} title="Italic"><Italic className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => editor.tf.underline.toggle()} title="Underline"><UnderlineIcon className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => editor.tf.code.toggle()} title="Code"><CodeIcon className="h-3.5 w-3.5" /></TBtn>
+      <span className="mx-1 h-4 w-px bg-border" />
+      <TBtn onClick={() => toggleBlock("h1")} title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => toggleBlock("h2")} title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => toggleBlock("h3")} title="Heading 3"><Heading3 className="h-3.5 w-3.5" /></TBtn>
+      <TBtn onClick={() => toggleBlock("blockquote")} title="Quote"><Quote className="h-3.5 w-3.5" /></TBtn>
+    </div>
+  );
+}
+
+function TBtn({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+      className="inline-flex h-7 w-7 items-center justify-center rounded border border-border text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuItem({ icon: Icon, label, onClick }: { icon: any; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-secondary">
+      <Icon className="h-3.5 w-3.5 text-muted-foreground" /> {label}
+    </button>
+  );
+}
+
+// --- export helpers --------------------------------------------------------
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function mdToHtml(md: string): string {
+  return md.split("\n").map((line) => {
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (h) return `<h${h[1].length}>${escapeHtml(h[2])}</h${h[1].length}>`;
+    if (/^>\s+/.test(line)) return `<blockquote>${escapeHtml(line.replace(/^>\s+/, ""))}</blockquote>`;
+    if (/^\s*[-*+]\s+/.test(line)) return `<li>${escapeHtml(line.replace(/^\s*[-*+]\s+/, ""))}</li>`;
+    if (line.trim() === "") return "";
+    return `<p>${escapeHtml(line)}</p>`;
+  }).join("\n");
+}
+function docxParagraphs(nodes: any[]): Paragraph[] {
+  const out: Paragraph[] = [];
+  const inline = (children: any[]) =>
+    (children ?? []).map((c: any) => new TextRun({ text: c.text ?? "", bold: !!c.bold, italics: !!c.italic }));
+  for (const n of nodes ?? []) {
+    const kids = n.children ?? [];
+    if (n.type === "h1") out.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: inline(kids) }));
+    else if (n.type === "h2") out.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: inline(kids) }));
+    else if (n.type === "h3") out.push(new Paragraph({ heading: HeadingLevel.HEADING_3, children: inline(kids) }));
+    else if (n.type === "blockquote") out.push(new Paragraph({ indent: { left: 360 }, children: inline(kids) }));
+    else out.push(new Paragraph({ children: inline(kids) }));
+  }
+  return out.length ? out : [new Paragraph({ children: [new TextRun("")] })];
+}

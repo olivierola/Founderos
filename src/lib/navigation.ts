@@ -6,6 +6,7 @@ import {
   Plug2,
   Cog,
   BarChart3,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -219,6 +220,18 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Channels", slug: "channels" },
       { label: "Analytics", slug: "analytics" },
       { label: "Advisor", slug: "advisor" },
+    ],
+  },
+  {
+    slug: "office",
+    label: "Bureautique",
+    icon: FileText,
+    color: "text-orange-400/60",
+    subItems: [
+      { label: "Library", slug: "library" },
+      { label: "Documents", slug: "documents" },
+      { label: "Spreadsheets", slug: "spreadsheets" },
+      { label: "Presentations", slug: "presentations" },
     ],
   },
   {
