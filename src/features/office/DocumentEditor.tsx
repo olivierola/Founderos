@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Plate, usePlateEditor, PlateContent } from "platejs/react";
+import { Plate, usePlateEditor, PlateContent, ParagraphPlugin } from "platejs/react";
 import {
   BoldPlugin, ItalicPlugin, UnderlinePlugin, StrikethroughPlugin, CodePlugin,
   H1Plugin, H2Plugin, H3Plugin, BlockquotePlugin,
@@ -12,6 +12,10 @@ import { indent, outdent } from "@platejs/indent";
 import { TextAlignPlugin } from "@platejs/basic-styles/react";
 import { LinkPlugin } from "@platejs/link/react";
 import { KEYS } from "platejs";
+import {
+  H1Element, H2Element, H3Element, ParagraphElement,
+  BlockquoteElement, LinkElement, CodeLeaf,
+} from "./plate-nodes";
 import {
   Loader2, ArrowLeft, Check, Sparkles, Download, FileText, FileDown, FileJson,
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, Code as CodeIcon,
@@ -36,9 +40,18 @@ import {
 } from "./shared";
 
 const PLUGINS = [
-  BoldPlugin, ItalicPlugin, UnderlinePlugin, StrikethroughPlugin, CodePlugin,
-  H1Plugin, H2Plugin, H3Plugin, BlockquotePlugin,
-  IndentPlugin, ListPlugin, TextAlignPlugin, LinkPlugin,
+  // Marks
+  BoldPlugin, ItalicPlugin, UnderlinePlugin, StrikethroughPlugin,
+  CodePlugin.withComponent(CodeLeaf),
+  // Blocks (with styled node components)
+  H1Plugin.withComponent(H1Element),
+  H2Plugin.withComponent(H2Element),
+  H3Plugin.withComponent(H3Element),
+  BlockquotePlugin.withComponent(BlockquoteElement),
+  LinkPlugin.withComponent(LinkElement),
+  ParagraphPlugin.withComponent(ParagraphElement),
+  // Structure
+  IndentPlugin, ListPlugin, TextAlignPlugin,
 ];
 
 export function DocumentEditorPage() {
@@ -167,19 +180,19 @@ export function DocumentEditorPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           <Plate editor={editor} onChange={onEditorChange}>
             <Toolbar editor={editor} />
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <PlateContent
-                className={cn(
-                  "mx-auto min-h-full max-w-3xl px-8 py-6 text-sm leading-relaxed focus:outline-none",
-                  "[&_h1]:mb-3 [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-semibold",
-                  "[&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold",
-                  "[&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold",
-                  "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic",
-                  "[&_p]:mb-2 [&_a]:text-primary [&_a]:underline [&_code]:rounded [&_code]:bg-secondary [&_code]:px-1 [&_code]:text-[0.85em]",
-                  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6",
-                )}
-                placeholder="Start writing, or use the AI panel to generate content…"
-              />
+            {/* Soft backdrop with a centered white "paper" page, like a real doc. */}
+            <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-100 py-8 dark:bg-zinc-900/40">
+              <div className="mx-auto w-full max-w-3xl rounded-lg bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200">
+                <PlateContent
+                  className={cn(
+                    "min-h-[60vh] px-14 py-12 text-[15px] leading-7 focus:outline-none",
+                    // list rendering (Plate v53 indent-based lists set listStyleType inline)
+                    "[&_[data-slate-node=element]]:my-1",
+                    "[&_li]:my-1",
+                  )}
+                  placeholder="Start writing, or use the AI panel to generate content…"
+                />
+              </div>
             </div>
           </Plate>
         </div>
