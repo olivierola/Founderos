@@ -58,6 +58,7 @@ import { OpsBundleDetailPage } from "@/features/ops/BundleDetailPage";
 import { OpsInfraProjectDetailPage } from "@/features/ops/InfraProjectDetailPage";
 import { OpsChecksPage } from "@/features/ops/ChecksPage";
 import { OpsTestingPage } from "@/features/ops/TestingPage";
+import { OpsTestRunPage } from "@/features/ops/TestRunPage";
 import { OpsJobsPage } from "@/features/ops/JobsPage";
 import { OpsSettingsPage } from "@/features/ops/SettingsPage";
 import { OnboardingPage as RagOnboardingPage } from "@/features/agent-rag/onboarding/OnboardingPage";
@@ -478,6 +479,14 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <OpsInfraProjectDetailPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "devops/testing/run/:runId",
+        element: (
+          <ErrorBoundary>
+            <OpsTestRunPage />
           </ErrorBoundary>
         ),
       },

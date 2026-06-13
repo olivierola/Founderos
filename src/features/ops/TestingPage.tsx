@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FlaskConical, Plus, Play, Loader2, Trash2, Globe, ChevronRight,
-  CheckCircle2, XCircle, MessageCircleQuestion, MousePointerClick,
-  Keyboard, ArrowDownUp, Eye, Send, ListChecks, Bot, AlertTriangle,
+  ListChecks, AlertTriangle,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -77,11 +77,13 @@ const RUN_TONE: Record<RunStatus, { label: string; variant: "success" | "destruc
 
 export function OpsTestingPage() {
   const { workspaceId, projectId } = useCurrentContext();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [caseOpen, setCaseOpen] = useState<{ suiteId: string } | null>(null);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
+
+  const openRun = (id: string) => navigate(`run/${id}`);
 
   const suites = useQuery({
     queryKey: ["test_suites", projectId],
@@ -111,7 +113,7 @@ export function OpsTestingPage() {
     return m;
   }, [cases.data]);
 
-  async function runCase(tc: TestCase, suite: TestSuite) {
+  async function runCase(tc: TestCase) {
     if (!workspaceId || !projectId) return;
     setStarting(tc.id);
     try {
@@ -121,7 +123,7 @@ export function OpsTestingPage() {
         case_id: tc.id,
         action: "start",
       });
-      setActiveRunId(res.run_id);
+      openRun(res.run_id);
       queryClient.invalidateQueries({ queryKey: ["test_runs", projectId] });
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
@@ -206,7 +208,7 @@ export function OpsTestingPage() {
                           <p className="line-clamp-2 text-xs text-muted-foreground">{tc.instructions}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
-                          <Button size="sm" disabled={starting === tc.id} onClick={() => runCase(tc, suite)}>
+                          <Button size="sm" disabled={starting === tc.id} onClick={() => runCase(tc)}>
                             {starting === tc.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                             Run
                           </Button>
@@ -219,7 +221,7 @@ export function OpsTestingPage() {
                   )}
                 </div>
 
-                <RecentRuns suiteId={suite.id} projectId={projectId} onOpen={setActiveRunId} />
+                <RecentRuns suiteId={suite.id} projectId={projectId} onOpen={openRun} />
               </CardContent>
             </Card>
           ))}
@@ -236,13 +238,6 @@ export function OpsTestingPage() {
         suiteId={caseOpen?.suiteId ?? null}
         workspaceId={workspaceId} projectId={projectId}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ["test_cases", projectId] })}
-      />
-
-      <RunViewer
-        runId={activeRunId}
-        onClose={() => setActiveRunId(null)}
-        workspaceId={workspaceId}
-        projectId={projectId}
       />
     </div>
   );
@@ -426,182 +421,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className="text-xs text-muted-foreground">{label}</label>
       {children}
     </div>
-  );
-}
-
-// ── Live run viewer: streamed app view + step timeline + ask-for-input ──────
-const STEP_ICON: Record<string, any> = {
-  plan: ListChecks, navigate: Globe, click: MousePointerClick, fill: Keyboard,
-  select: Keyboard, scroll: ArrowDownUp, press: Keyboard, wait: Loader2,
-  assert: CheckCircle2, screenshot: Eye, dom_snapshot: Eye, ask_user: MessageCircleQuestion,
-  user_answer: Send, thought: Bot, pass: CheckCircle2, fail: XCircle, error: XCircle, info: Eye,
-};
-
-function RunViewer({
-  runId, onClose, workspaceId, projectId,
-}: { runId: string | null; onClose: () => void; workspaceId: string | null; projectId: string | null }) {
-  const queryClient = useQueryClient();
-  const [answer, setAnswer] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const timelineRef = useRef<HTMLDivElement>(null);
-
-  const run = useQuery({
-    queryKey: ["test_run", runId],
-    enabled: !!runId,
-    refetchInterval: (q) => {
-      const s = (q.state.data as TestRun | undefined)?.status;
-      return s && ["passed", "failed", "error", "cancelled"].includes(s) ? false : 2000;
-    },
-    queryFn: async () => {
-      const { data } = await supabase.from("test_runs").select("*").eq("id", runId!).maybeSingle();
-      return data as TestRun | null;
-    },
-  });
-
-  const steps = useQuery({
-    queryKey: ["test_run_steps", runId],
-    enabled: !!runId,
-    refetchInterval: (q) => {
-      const s = run.data?.status;
-      return s && ["passed", "failed", "error", "cancelled"].includes(s) ? false : 2000;
-    },
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("test_run_steps").select("*").eq("run_id", runId!).order("idx", { ascending: true });
-      return (data ?? []) as RunStep[];
-    },
-  });
-
-  useEffect(() => {
-    if (timelineRef.current) timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
-  }, [steps.data?.length]);
-
-  async function submitAnswer() {
-    if (!workspaceId || !projectId || !runId || !answer.trim()) return;
-    setSubmitting(true);
-    try {
-      await callEdge("test-run-orchestrate", {
-        workspace_id: workspaceId, project_id: projectId,
-        run_id: runId, action: "answer", answer: answer.trim(),
-      });
-      setAnswer("");
-      queryClient.invalidateQueries({ queryKey: ["test_run", runId] });
-      queryClient.invalidateQueries({ queryKey: ["test_run_steps", runId] });
-    } finally { setSubmitting(false); }
-  }
-
-  async function cancelRun() {
-    if (!runId) return;
-    await supabase.from("test_runs").update({ status: "cancelled" }).eq("id", runId);
-    queryClient.invalidateQueries({ queryKey: ["test_run", runId] });
-  }
-
-  const r = run.data;
-  const tone = r ? RUN_TONE[r.status] : null;
-
-  return (
-    <Dialog open={!!runId} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-5xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            Test run {tone && <Badge variant={tone.variant}>{tone.label}</Badge>}
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.4fr_1fr]">
-          {/* Streamed app view: the runner streams screenshots of the
-              Playwright-controlled browser. Cross-origin apps can't be a real
-              controllable iframe, so we render the latest captured frame. */}
-          <div className="flex flex-col">
-            <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
-              <Globe className="h-3.5 w-3.5" />
-              <span className="truncate">{r?.current_url ?? r?.app_url ?? "—"}</span>
-            </div>
-            <div className="relative aspect-[4/3] overflow-hidden rounded-lg border border-border bg-secondary/40">
-              {r?.last_screenshot_url ? (
-                <img src={r.last_screenshot_url} alt="App under test" className="h-full w-full object-contain" />
-              ) : (
-                <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
-                  {r && ["queued", "planning", "running"].includes(r.status) ? (
-                    <>
-                      <Loader2 className="h-6 w-6 animate-spin" />
-                      <span className="text-xs">Waiting for the runner to load the app…</span>
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="h-6 w-6" />
-                      <span className="text-xs">No frame captured yet</span>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-            {r && ["queued", "planning", "running", "needs_input"].includes(r.status) && (
-              <Button size="sm" variant="ghost" className="mt-2 self-start text-muted-foreground" onClick={cancelRun}>
-                <XCircle className="h-3.5 w-3.5" /> Cancel run
-              </Button>
-            )}
-          </div>
-
-          {/* Step timeline */}
-          <div className="flex max-h-[60vh] flex-col">
-            <div ref={timelineRef} className="flex-1 space-y-1.5 overflow-y-auto pr-1">
-              {(steps.data ?? []).length === 0 ? (
-                <p className="text-xs text-muted-foreground">The agent is preparing the plan…</p>
-              ) : (
-                (steps.data ?? []).map((s) => {
-                  const Icon = STEP_ICON[s.kind] ?? Eye;
-                  const failed = s.status === "failed" || s.kind === "fail" || s.kind === "error";
-                  return (
-                    <div key={s.id} className={cn(
-                      "flex items-start gap-2 rounded-md border p-2 text-xs",
-                      failed ? "border-destructive/40 bg-destructive/5" : "border-border",
-                    )}>
-                      <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", failed ? "text-destructive" : "text-muted-foreground")} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-medium capitalize">{s.kind.replace("_", " ")}</span>
-                          <span className="text-[10px] uppercase text-muted-foreground">{s.actor}</span>
-                        </div>
-                        {s.label && <p className="text-muted-foreground">{s.label}</p>}
-                        {s.kind === "fill" && s.payload?.selector ? (
-                          <p className="font-mono text-[10px] text-muted-foreground/80">{String(s.payload.selector)}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Ask-for-input panel */}
-            {r?.status === "needs_input" && (
-              <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-amber-300">
-                  <MessageCircleQuestion className="h-4 w-4" /> The agent needs your input
-                </div>
-                <p className="mb-2 text-sm">{r.pending_question}</p>
-                <div className="flex gap-2">
-                  <Input
-                    value={answer} onChange={(e) => setAnswer(e.target.value)}
-                    placeholder="Your answer…"
-                    onKeyDown={(e) => e.key === "Enter" && submitAnswer()}
-                  />
-                  <Button size="sm" onClick={submitAnswer} disabled={submitting || !answer.trim()}>
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {r?.error_message && (
-              <p className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
-                {r.error_message}
-              </p>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
