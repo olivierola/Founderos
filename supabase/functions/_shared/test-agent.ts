@@ -111,6 +111,7 @@ export async function generateRunReport(
     failReason?: string | null;
     history: Array<{ kind: string; label: string | null; actor?: string }>;
     durationMs?: number | null;
+    perf?: Record<string, number> | null;
   },
   scope: { workspace_id: string; project_id: string },
 ): Promise<RunReport> {
@@ -120,6 +121,11 @@ export async function generateRunReport(
     .join("\n")
     .slice(0, 6000);
 
+  const p = ctx.perf ?? {};
+  const perfLine = ctx.perf
+    ? `Performance (real browser metrics): load=${p.load_ms ?? "?"}ms, DOMContentLoaded=${p.dom_content_loaded_ms ?? "?"}ms, TTFB=${p.ttfb_ms ?? "?"}ms, last action latency=${p.last_action_ms ?? "?"}ms, requests=${p.requests ?? "?"}, failed requests=${p.failedRequests ?? 0}, console errors=${p.consoleErrors ?? 0}, transfer=${p.transfer_kb ?? "?"}KB`
+    : "";
+
   const userPrompt = `Write a QA test report as STRICT JSON.
 
 Test goal:
@@ -128,6 +134,7 @@ Expected outcome: ${ctx.expected_outcome ?? "(inferred)"}
 App: ${ctx.app_url}
 Final verdict: ${ctx.verdict.toUpperCase()}${ctx.assertion ? ` — ${ctx.assertion}` : ""}${ctx.failReason ? ` — ${ctx.failReason}` : ""}
 ${ctx.durationMs ? `Duration: ${Math.round(ctx.durationMs / 1000)}s` : ""}
+${perfLine}
 
 Execution log (most recent last):
 ${actionLog || "(no steps)"}
@@ -142,7 +149,8 @@ Return JSON exactly in this shape:
   "findings": [ { "severity": "info"|"warning"|"critical", "title": "...", "detail": "..." } ],
   "recommendations": [ "actionable suggestion", ... ]
 }
-Base everything on the actual log. Keep it concise and useful. tone: "good" for positive metrics, "bad" for problems, else "neutral".`;
+Base everything on the actual log. Keep it concise and useful. tone: "good" for positive metrics, "bad" for problems, else "neutral".
+If performance metrics are given, COMMENT on them in the summary/findings (e.g. slow load, high latency, console errors) and add a recommendation if they're poor. Do NOT fabricate numbers — exact perf metrics are appended automatically.`;
 
   const fallback: RunReport = {
     title: ctx.verdict === "pass" ? "Test passed" : "Test failed",
@@ -162,6 +170,21 @@ Base everything on the actual log. Keep it concise and useful. tone: "good" for 
     recommendations: [],
   };
 
+  // Append accurate perf KPI cards (never hallucinated — real runner numbers).
+  const withPerf = (r: RunReport): RunReport => {
+    if (!ctx.perf) return r;
+    const tone = (ms: number | undefined, good: number, bad: number) =>
+      ms == null ? "neutral" : ms <= good ? "good" : ms >= bad ? "bad" : "neutral";
+    const perfMetrics: RunReport["metrics"] = [];
+    if (p.load_ms != null) perfMetrics.push({ label: "Page load", value: `${(p.load_ms / 1000).toFixed(2)}s`, tone: tone(p.load_ms, 1500, 4000) });
+    if (p.ttfb_ms != null) perfMetrics.push({ label: "TTFB", value: `${p.ttfb_ms}ms`, tone: tone(p.ttfb_ms, 300, 1000) });
+    if (p.last_action_ms != null) perfMetrics.push({ label: "Action latency", value: `${p.last_action_ms}ms`, tone: tone(p.last_action_ms, 800, 2500) });
+    if (p.requests != null) perfMetrics.push({ label: "Requests", value: String(p.requests) });
+    if (p.consoleErrors != null) perfMetrics.push({ label: "Console errors", value: String(p.consoleErrors), tone: p.consoleErrors > 0 ? "bad" : "good" });
+    // Keep the agent's metrics first, then perf; cap total.
+    return { ...r, metrics: [...r.metrics, ...perfMetrics].slice(0, 12) };
+  };
+
   try {
     let res;
     try {
@@ -171,9 +194,9 @@ Base everything on the actual log. Keep it concise and useful. tone: "good" for 
     }
     logLlmUsage({ ...scope, provider: res.provider, model: res.model, task: "json_extraction", feature: "e2e_testing_report", usage: res.usage });
     const parsed = safeParseJson<RunReport>(res.content);
-    if (!parsed || !parsed.summary) return fallback;
+    if (!parsed || !parsed.summary) return withPerf(fallback);
     // Normalise + clamp.
-    return {
+    return withPerf({
       title: String(parsed.title ?? fallback.title).slice(0, 120),
       verdict: parsed.verdict === "fail" ? "fail" : parsed.verdict === "pass" ? "pass" : ctx.verdict,
       summary: String(parsed.summary).slice(0, 800),
@@ -181,9 +204,9 @@ Base everything on the actual log. Keep it concise and useful. tone: "good" for 
       steps: Array.isArray(parsed.steps) ? parsed.steps.slice(0, 60) : fallback.steps,
       findings: Array.isArray(parsed.findings) ? parsed.findings.slice(0, 20) : [],
       recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.slice(0, 10).map(String) : [],
-    };
+    });
   } catch {
-    return fallback;
+    return withPerf(fallback);
   }
 }
 

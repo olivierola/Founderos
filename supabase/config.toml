@@ -156,6 +156,10 @@ verify_jwt = false
 [functions.test-runner-poll]
 verify_jwt = false
 
+# Armada: scan a GitHub repo and generate an E2E suite (manual user-session check).
+[functions.armada-generate-tests]
+verify_jwt = false
+
 # PostHog import + connector test re-validation (manual user-session checks).
 [functions.sync-posthog]
 verify_jwt = false

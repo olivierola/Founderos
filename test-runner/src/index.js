@@ -386,9 +386,33 @@ async function runOne(claimed) {
   const page = await context.newPage();
   let idx = 0;
 
+  // ── Perf telemetry: request count + console errors over the whole run. ──
+  const perf = { requests: 0, failedRequests: 0, consoleErrors: 0 };
+  page.on("request", () => { perf.requests++; });
+  page.on("requestfailed", () => { perf.failedRequests++; });
+  page.on("console", (m) => { if (m.type() === "error") perf.consoleErrors++; });
+
+  // Read navigation timing (load times / TTFB) for the current page.
+  async function navTiming() {
+    try {
+      return await page.evaluate(() => {
+        const n = performance.getEntriesByType("navigation")[0];
+        if (!n) return null;
+        return {
+          ttfb_ms: Math.round(n.responseStart),
+          dom_content_loaded_ms: Math.round(n.domContentLoadedEventEnd),
+          load_ms: Math.round(n.loadEventEnd || n.duration),
+          transfer_kb: Math.round((n.transferSize || 0) / 1024),
+        };
+      });
+    } catch { return null; }
+  }
+
   // Carry a note about the previous action's failure into the next observation
   // so the agent stops repeating an action that can't be performed.
   let actionError = null;
+  // Latency of the last executed action (ms), surfaced to the report.
+  let lastActionMs = null;
 
   // Wait (idle-poll) for the run to be re-queued after it finished or paused,
   // WITHOUT closing the browser — so a follow-up instruction continues from the
@@ -423,12 +447,18 @@ async function runOne(claimed) {
         dom = `PREVIOUS ACTION FAILED: ${actionError}\n(adjust your approach — pick a different selector or step)\n\n${dom}`;
         actionError = null;
       }
+      const timing = await navTiming();
       const { action, terminal, paused } = await rpc({
         mode: "observe",
         run_id: runId,
         current_url: page.url(),
         dom_excerpt: dom,
         screenshot_url,
+        perf: {
+          ...perf,
+          last_action_ms: lastActionMs,
+          ...(timing ?? {}),
+        },
       });
       console.log(`  → ${action?.type}${action?.ref !== undefined ? ` ref=${action.ref}` : action?.selector ? ` ${action.selector}` : ""}${action?.reason ? `  (${action.reason})` : ""}`);
 
@@ -444,7 +474,9 @@ async function runOne(claimed) {
       }
 
       try {
+        const t0 = Date.now();
         await execAction(page, action);
+        lastActionMs = Date.now() - t0;
       } catch (e) {
         console.log(`    action failed: ${e.message}`);
         actionError = `${action?.type} ${action?.selector ?? ""} — ${e.message}`.trim();

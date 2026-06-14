@@ -113,13 +113,16 @@ Deno.serve(async (req) => {
       const currentUrl = body.current_url ? String(body.current_url) : run.current_url;
       const domExcerpt = body.dom_excerpt ? String(body.dom_excerpt) : null;
       const screenshotUrl = body.screenshot_url ? String(body.screenshot_url) : null;
+      const perf = (body.perf && typeof body.perf === "object") ? body.perf as Record<string, number> : null;
 
-      // Persist the latest observation so the live view can render it.
+      // Persist the latest observation (+ rolling perf telemetry) so the live
+      // view and the final report can use them.
       await admin.from("test_runs").update({
         current_url: currentUrl,
         last_dom_excerpt: domExcerpt,
         last_screenshot_url: screenshotUrl ?? run.last_screenshot_url,
         status: "running",
+        result: { ...(run.result ?? {}), perf: perf ?? (run.result?.perf ?? null) },
       }).eq("id", runId);
 
       // Gather context for the agent: case + history + prior user answers.
@@ -167,7 +170,10 @@ Deno.serve(async (req) => {
         const finishedAt = new Date().toISOString();
         const durationMs = run.started_at ? new Date(finishedAt).getTime() - new Date(run.started_at).getTime() : null;
 
-        // Build a rich structured report from the full run history.
+        // Latest perf telemetry sent by the runner (stored on each observe).
+        const runPerf = perf ?? (run.result?.perf ?? null);
+
+        // Build a rich structured report from the full run history + perf.
         const report = await generateRunReport(
           {
             instructions: tc?.instructions ?? "",
@@ -178,6 +184,7 @@ Deno.serve(async (req) => {
             failReason: action.reason ?? null,
             history: steps.map((s) => ({ kind: s.kind, label: s.label, actor: s.actor })),
             durationMs,
+            perf: runPerf,
           },
           { workspace_id: run.workspace_id, project_id: run.project_id },
         );

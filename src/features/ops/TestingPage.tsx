@@ -1,7 +1,7 @@
 ﻿import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  FlaskConical, Plus, Play, Loader2, Trash2, Globe, Clock,
+  FlaskConical, Plus, Play, Loader2, Trash2, Globe, Clock, Github, Sparkles,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -101,6 +101,7 @@ export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) 
   const queryClient = useQueryClient();
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [caseOpen, setCaseOpen] = useState<{ suiteId: string } | null>(null);
+  const [armadaOpen, setArmadaOpen] = useState(false);
   const [starting, setStarting] = useState<string | null>(null);
 
   const openRun = onOpenRun;
@@ -223,9 +224,14 @@ export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) 
         <p className="text-sm text-muted-foreground">
           Describe a scenario in plain language; an AI agent drives a real browser against your app.
         </p>
-        <Button size="sm" onClick={() => setSuiteOpen(true)}>
-          <Plus className="h-4 w-4" /> New suite
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setArmadaOpen(true)}>
+            <Github className="h-4 w-4" /> Generate from repo
+          </Button>
+          <Button size="sm" onClick={() => setSuiteOpen(true)}>
+            <Plus className="h-4 w-4" /> New suite
+          </Button>
+        </div>
       </div>
 
       {suites.isLoading ? (
@@ -299,7 +305,95 @@ export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) 
         workspaceId={workspaceId} projectId={projectId}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ["test_cases", projectId] })}
       />
+      <ArmadaDialog
+        open={armadaOpen} onOpenChange={setArmadaOpen}
+        workspaceId={workspaceId} projectId={projectId}
+        onGenerated={() => {
+          queryClient.invalidateQueries({ queryKey: ["test_suites", projectId] });
+          queryClient.invalidateQueries({ queryKey: ["test_cases", projectId] });
+        }}
+      />
     </div>
+  );
+}
+
+// ── Armada: scan a GitHub repo and auto-generate a full E2E suite ────────────
+function ArmadaDialog({
+  open, onOpenChange, workspaceId, projectId, onGenerated,
+}: { open: boolean; onOpenChange: (o: boolean) => void; workspaceId: string | null; projectId: string | null; onGenerated: () => void }) {
+  const [repo, setRepo] = useState("");
+  const [appUrl, setAppUrl] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  const repos = useQuery({
+    queryKey: ["armada_repos", workspaceId, projectId],
+    enabled: open && !!workspaceId && !!projectId,
+    queryFn: async () => {
+      const res = await callEdge<{ repos: { full_name: string }[] }>("github-list-repos", {
+        workspace_id: workspaceId, project_id: projectId,
+      });
+      return res.repos ?? [];
+    },
+  });
+
+  async function generate() {
+    if (!workspaceId || !projectId) return;
+    if (!repo || !appUrl.trim()) { setError("Pick a repo and enter the app URL."); return; }
+    let url = appUrl.trim();
+    if (!/^https?:\/\//.test(url)) url = `https://${url}`;
+    setGenerating(true); setError(null); setResult(null);
+    try {
+      const res = await callEdge<{ suite_id: string; cases: number }>("armada-generate-tests", {
+        workspace_id: workspaceId, project_id: projectId, full_name: repo, app_url: url,
+      });
+      setResult(`Generated ${res.cases} test${res.cases > 1 ? "s" : ""} from ${repo}.`);
+      onGenerated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setGenerating(false); }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Generate tests from a repo</DialogTitle>
+        </DialogHeader>
+        <p className="-mt-1 text-sm text-muted-foreground">
+          The agent scans your GitHub repo (routes, pages, forms) and writes a full E2E suite for your app.
+        </p>
+        <div className="space-y-3">
+          <Field label="GitHub repository">
+            {repos.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading repos…</div>
+            ) : (repos.data ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No connected repos. Connect GitHub in Integrations first.</p>
+            ) : (
+              <select
+                value={repo} onChange={(e) => setRepo(e.target.value)}
+                className="w-full rounded-md border border-border bg-background p-2 text-sm"
+              >
+                <option value="">Select a repository…</option>
+                {(repos.data ?? []).map((r) => <option key={r.full_name} value={r.full_name}>{r.full_name}</option>)}
+              </select>
+            )}
+          </Field>
+          <Field label="Application URL (where tests run)">
+            <Input value={appUrl} onChange={(e) => setAppUrl(e.target.value)} placeholder="https://app.example.com" />
+          </Field>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {result && <p className="text-sm text-emerald-500">{result}</p>}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{result ? "Close" : "Cancel"}</Button>
+          <Button onClick={generate} disabled={generating || !repo}>
+            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Generate suite
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
