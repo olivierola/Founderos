@@ -8,11 +8,8 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import dagre from "dagre";
 import {
-  Loader2, Network, MessagesSquare, Brain, ArrowRight, Pin, Bot,
+  Loader2, Network, MessagesSquare, Brain, ArrowRight, Pin, Bot, ChevronDown,
 } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -100,44 +97,42 @@ export function AgentEcosystemPage() {
 
   const collaborating = (agents ?? []).filter((a) => a.collaboration_enabled);
 
+  // Full-screen canvas with floating overlays for header + memory/feed panels.
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Agent ecosystem"
-        description="Your autonomous agents as a collaborating team — who talks to whom, what they exchange, and the shared knowledge they build."
-      />
-
+    <div className="relative h-[calc(100vh-3.5rem)] w-full">
       {collaborating.length === 0 ? (
-        <EmptyState
-          icon={Network}
-          title="No collaborating agents yet"
-          description="Create autonomous agents and enable collaboration on them — they'll be able to message, delegate and share knowledge here."
-        />
+        <div className="flex h-full items-center justify-center">
+          <EmptyState
+            icon={Network}
+            title="No collaborating agents yet"
+            description="Create autonomous agents and enable collaboration on them — they'll be able to message, delegate and share knowledge here."
+          />
+        </div>
       ) : (
-        <div className="space-y-5">
-          {/* Infinite collaboration canvas — full width */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4" /> Collaboration canvas</CardTitle>
-            </CardHeader>
-            <CardContent className="p-2">
-              <NetworkGraph
-                agents={collaborating}
-                threads={threads ?? []}
-                onOpen={(id) => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${id}/chat`)}
-              />
-            </CardContent>
-          </Card>
+        <>
+          {/* The canvas fills the whole area. */}
+          <NetworkGraph
+            agents={collaborating}
+            threads={threads ?? []}
+            onOpen={(id) => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${id}/chat`)}
+          />
 
-          <div className="grid gap-5 lg:grid-cols-2">
-          {/* Team memory */}
-          <Card className="flex max-h-[520px] flex-col">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm"><Brain className="h-4 w-4" /> Team memory</CardTitle>
-            </CardHeader>
-            <CardContent className="min-h-0 flex-1 overflow-y-auto">
+          {/* Floating title (top-left). */}
+          <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 shadow-sm backdrop-blur">
+            <Network className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">Agent ecosystem</span>
+            <span className="text-xs text-muted-foreground">· {collaborating.length} agents</span>
+          </div>
+
+          {/* Floating dropdown panels (top-right). */}
+          <div className="absolute right-4 top-4 z-10 flex gap-2">
+            <FloatingPanel
+              icon={<Brain className="h-4 w-4" />}
+              label="Team memory"
+              count={(teamMem ?? []).length}
+            >
               {(teamMem ?? []).length === 0 ? (
-                <p className="py-8 text-center text-xs text-muted-foreground">No shared knowledge yet. Agents add facts and decisions here as they collaborate.</p>
+                <p className="py-6 text-center text-xs text-muted-foreground">No shared knowledge yet.</p>
               ) : (
                 <div className="space-y-2">
                   {(teamMem ?? []).map((m) => {
@@ -156,17 +151,15 @@ export function AgentEcosystemPage() {
                   })}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </FloatingPanel>
 
-          {/* A2A live feed — full width */}
-          <Card className="lg:col-span-2 lg:col-start-1">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm"><MessagesSquare className="h-4 w-4" /> Agent-to-agent feed</CardTitle>
-            </CardHeader>
-            <CardContent>
+            <FloatingPanel
+              icon={<MessagesSquare className="h-4 w-4" />}
+              label="A2A feed"
+              count={(feed ?? []).length}
+            >
               {(feed ?? []).length === 0 ? (
-                <p className="py-8 text-center text-xs text-muted-foreground">No agent messages yet. When an agent messages or delegates to a teammate, it appears here live.</p>
+                <p className="py-6 text-center text-xs text-muted-foreground">No agent messages yet.</p>
               ) : (
                 <div className="space-y-1.5">
                   {(feed ?? []).map((m) => (
@@ -186,9 +179,36 @@ export function AgentEcosystemPage() {
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </FloatingPanel>
           </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// A floating dropdown: a pill button that toggles a scrollable panel below it.
+function FloatingPanel({
+  icon, label, count, children,
+}: { icon: React.ReactNode; label: string; count: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm shadow-sm backdrop-blur transition-colors",
+          open ? "border-primary/50 bg-background text-foreground" : "border-border bg-background/80 text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {icon}
+        <span className="font-medium">{label}</span>
+        <span className="rounded-full bg-secondary px-1.5 text-[10px] tabular-nums">{count}</span>
+        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+0.5rem)] max-h-[70vh] w-80 overflow-y-auto rounded-xl border border-border bg-background/95 p-2 shadow-xl backdrop-blur">
+          {children}
         </div>
       )}
     </div>
@@ -278,7 +298,7 @@ function NetworkGraph({
   }, [agents, threads, onOpen]);
 
   return (
-    <div className="h-[560px] w-full overflow-hidden rounded-lg border border-border">
+    <div className="h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}

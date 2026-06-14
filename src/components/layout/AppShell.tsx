@@ -104,5 +104,7 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/office\/(document|spreadsheet|presentation)\/[^/]+/.test(pathname)) return true;
   // E2E Testing: tabbed workspace with a live app preview + agent chatbot.
   if (/\/app\/[^/]+\/[^/]+\/devops\/testing(\/.*)?$/.test(pathname)) return true;
+  // Agent ecosystem: full-screen infinite collaboration canvas.
+  if (/\/app\/[^/]+\/[^/]+\/agent\/ecosystem$/.test(pathname)) return true;
   return false;
 }
