@@ -40,6 +40,7 @@ export interface AgentToolRow {
     | "edge_function"
     | "vault_connector"
     | "connector_action"
+    | "security_scan"
     | "custom";
   name: string;
   description: string | null;
@@ -969,6 +970,40 @@ export function buildInternalToolset(
       },
     });
     summaryLines.push(`- ${toolName}: act on ${provider} (${actions.map((a) => a.name).join(", ")}).`);
+  }
+
+  // security_scan rows: defensive + consented active scanning.
+  if (hasKind("security_scan")) {
+    tools.set("security_scan", {
+      def: {
+        name: "security_scan",
+        description:
+          "Run a security scan on an AUTHORISED target. Passive types (headers, tls, exposure) run instantly and are non-destructive. " +
+          "Active types (port_scan, surface, full) require recorded consent and run via the runner — they detect/prove exposure but never exploit. " +
+          "If an active scan is blocked, tell the user to register the target and confirm consent first.",
+        parameters: {
+          type: "object",
+          properties: {
+            target: { type: "string", description: "Domain or URL to scan (must be owned/authorised)." },
+            scan_type: { type: "string", description: "headers | tls | exposure (passive) | port_scan | surface | full (active, consent required)." },
+          },
+          required: ["target", "scan_type"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const base = Deno.env.get("SUPABASE_URL");
+        const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (!base || !key) return "ERROR: security scanning is not configured.";
+        const res = await fetch(`${base}/functions/v1/security-scan`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, target: str(args.target), scan_type: str(args.scan_type) }),
+        });
+        return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
+      },
+    });
+    summaryLines.push("- security_scan: defensive checks + consented active scans (no exploitation).");
   }
 
   // edge_function rows: one tool per configured function.

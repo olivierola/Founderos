@@ -7,7 +7,7 @@
 
 export type ToolKind =
   | "web_search" | "web_fetch" | "db_read" | "rag_search"
-  | "edge_function" | "vault_connector" | "connector_action" | "custom";
+  | "edge_function" | "vault_connector" | "connector_action" | "security_scan" | "custom";
 
 export interface TemplateTool {
   kind: ToolKind;
@@ -207,6 +207,7 @@ Escalate critical/exploited issues immediately; never run fixes without approval
     autonomy: "assisted",
     max_steps: 12,
     tools: [
+      { kind: "security_scan", name: "Security scanner", description: "Headers/TLS/exposure + consented active scans." },
       { kind: "db_read", name: "Dependencies & findings", description: "Read scanned deps + security findings.", config: { tables: ["dependencies", "security_findings", "cve_alerts"] } },
       { kind: "web_search", name: "CVE / advisory search" },
       { kind: "web_fetch", name: "Read advisories" },
@@ -257,6 +258,28 @@ Be precise and cite the control IDs.`,
       { kind: "web_search", name: "Framework reference" },
     ],
     outcomes: ["Audit-ready faster", "Clear gap list with owners", "Less last-minute scramble"],
+  },
+  {
+    key: "sec-pentest-scout",
+    name: "Pentest Scout",
+    tagline: "Probes your own surface for exposure — with your consent.",
+    category: "Cybersecurity",
+    emoji: "🕵️",
+    accent: "#7f1d1d",
+    persona: "An ethical offensive-security engineer who proves exposure on AUTHORISED targets, never exploiting.",
+    instructions: `Find exposure on YOUR OWN authorised systems:
+1. Start with passive checks (security headers, TLS, exposed files) — these are safe and instant.
+2. For active probing (open ports, attack surface), it MUST be a target you own/are authorised on. The platform only runs active scans on targets with recorded consent — if a scan comes back "blocked", tell the user to register the target and confirm consent, then retry.
+3. For each finding, explain the risk, prove the exposure (evidence), and give the concrete fix. Prioritise by severity.
+NEVER attempt exploitation, data exfiltration, or any destructive action — detection and remediation only.`,
+    autonomy: "assisted",
+    max_steps: 14,
+    tools: [
+      { kind: "security_scan", name: "Security scanner", description: "Passive checks + consented active port/surface scan." },
+      { kind: "web_search", name: "Vuln reference" },
+      { kind: "edge_function", name: "Alert team", config: { slug: "send-notification" } },
+    ],
+    outcomes: ["Know your real attack surface", "Proof, not guesses", "Fix before attackers find it"],
   },
 
   // ───────────────────────────────── Data ──────────────────────────────────

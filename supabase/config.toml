@@ -164,6 +164,14 @@ verify_jwt = false
 [functions.connector-action]
 verify_jwt = false
 
+# Security scanning: passive checks inline + active scans queued (consent-gated).
+[functions.security-scan]
+verify_jwt = false
+
+# Security scan runner endpoint (X-Runner-Token, no JWT).
+[functions.security-scan-poll]
+verify_jwt = false
+
 # PostHog import + connector test re-validation (manual user-session checks).
 [functions.sync-posthog]
 verify_jwt = false
