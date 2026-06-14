@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import ReactFlow, {
+  Background, BackgroundVariant, Controls, MiniMap, Handle, Position,
+  type Node, type Edge, type NodeProps,
+} from "reactflow";
+import "reactflow/dist/style.css";
+import dagre from "dagre";
 import {
   Loader2, Network, MessagesSquare, Brain, ArrowRight, Pin, Bot,
 } from "lucide-react";
@@ -108,13 +114,13 @@ export function AgentEcosystemPage() {
           description="Create autonomous agents and enable collaboration on them — they'll be able to message, delegate and share knowledge here."
         />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
-          {/* Network graph */}
+        <div className="space-y-5">
+          {/* Infinite collaboration canvas — full width */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4" /> Collaboration network</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4" /> Collaboration canvas</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-2">
               <NetworkGraph
                 agents={collaborating}
                 threads={threads ?? []}
@@ -123,6 +129,7 @@ export function AgentEcosystemPage() {
             </CardContent>
           </Card>
 
+          <div className="grid gap-5 lg:grid-cols-2">
           {/* Team memory */}
           <Card className="flex max-h-[520px] flex-col">
             <CardHeader className="pb-2">
@@ -153,7 +160,7 @@ export function AgentEcosystemPage() {
           </Card>
 
           {/* A2A live feed — full width */}
-          <Card className="lg:col-span-2">
+          <Card className="lg:col-span-2 lg:col-start-1">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm"><MessagesSquare className="h-4 w-4" /> Agent-to-agent feed</CardTitle>
             </CardHeader>
@@ -181,6 +188,7 @@ export function AgentEcosystemPage() {
               )}
             </CardContent>
           </Card>
+          </div>
         </div>
       )}
     </div>
@@ -201,63 +209,92 @@ function StatusDot({ status }: { status: A2AMessage["status"] }) {
   );
 }
 
-// SVG network: agents on a circle, edges for A2A threads.
+// ── Infinite dotted canvas (React Flow): agents as nodes, A2A threads as edges.
+type EcoAgent = { id: string; name: string; avatar_emoji: string | null; accent_color: string | null; role: string | null; skills: string[] };
+
+// Custom node renderer for an agent.
+function AgentNode({ data }: NodeProps<{ agent: EcoAgent; onOpen: (id: string) => void }>) {
+  const a = data.agent;
+  const color = a.accent_color ?? "#2F2FE4";
+  return (
+    <button
+      onClick={() => data.onOpen(a.id)}
+      className="group flex w-44 flex-col items-center rounded-xl border bg-card px-3 py-3 shadow-sm transition-colors hover:border-foreground/40"
+      style={{ borderColor: color + "55" }}
+    >
+      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0" style={{ background: color }} />
+      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0" style={{ background: color }} />
+      <div
+        className="flex h-11 w-11 items-center justify-center rounded-full text-xl"
+        style={{ backgroundColor: color + "22", border: `1.5px solid ${color}` }}
+      >
+        {a.avatar_emoji ?? "🤖"}
+      </div>
+      <div className="mt-2 max-w-full truncate text-sm font-medium">{a.name}</div>
+      {a.role && <div className="max-w-full truncate text-[10px] text-muted-foreground">{a.role}</div>}
+      {a.skills?.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap justify-center gap-1">
+          {a.skills.slice(0, 3).map((s) => (
+            <span key={s} className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">{s}</span>
+          ))}
+        </div>
+      )}
+    </button>
+  );
+}
+
+const NODE_TYPES = { agent: AgentNode };
+
 function NetworkGraph({
   agents, threads, onOpen,
-}: {
-  agents: { id: string; name: string; avatar_emoji: string | null; accent_color: string | null; role: string | null; skills: string[] }[];
-  threads: A2AThread[];
-  onOpen: (id: string) => void;
-}) {
-  const size = 420;
-  const cx = size / 2, cy = size / 2, r = size / 2 - 70;
-  const pos = useMemo(() => {
-    const m: Record<string, { x: number; y: number }> = {};
-    const n = agents.length;
-    agents.forEach((a, i) => {
-      const angle = (i / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2;
-      m[a.id] = n === 1
-        ? { x: cx, y: cy }
-        : { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+}: { agents: EcoAgent[]; threads: A2AThread[]; onOpen: (id: string) => void }) {
+  // Lay the agents out with dagre so connected agents sit near each other; falls
+  // back to a grid when there are no edges.
+  const { nodes, edges } = useMemo(() => {
+    const g = new dagre.graphlib.Graph();
+    g.setGraph({ rankdir: "TB", nodesep: 70, ranksep: 90, marginx: 40, marginy: 40 });
+    g.setDefaultEdgeLabel(() => ({}));
+    const W = 176, H = 110;
+    agents.forEach((a) => g.setNode(a.id, { width: W, height: H }));
+    threads.forEach((t) => { if (t.agent_a && t.agent_b) g.setEdge(t.agent_a, t.agent_b); });
+    dagre.layout(g);
+
+    const nodes: Node[] = agents.map((a, i) => {
+      const gn = g.node(a.id);
+      const x = gn ? gn.x - W / 2 : (i % 4) * (W + 60) + 40;
+      const y = gn ? gn.y - H / 2 : Math.floor(i / 4) * (H + 60) + 40;
+      return { id: a.id, type: "agent", position: { x, y }, data: { agent: a, onOpen } };
     });
-    return m;
-  }, [agents]);
+    const edges: Edge[] = threads
+      .filter((t) => t.agent_a && t.agent_b)
+      .map((t) => ({
+        id: t.id, source: t.agent_a, target: t.agent_b,
+        animated: true, style: { stroke: "hsl(var(--primary))", strokeWidth: 1.5 },
+        label: t.topic ?? undefined,
+        labelStyle: { fontSize: 10, fill: "hsl(var(--muted-foreground))" },
+        labelBgStyle: { fill: "hsl(var(--background))" },
+      }));
+    return { nodes, edges };
+  }, [agents, threads, onOpen]);
 
   return (
-    <div className="flex flex-col items-center">
-      <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[460px]">
-        {/* edges */}
-        {threads.map((t) => {
-          const a = pos[t.agent_a], b = pos[t.agent_b];
-          if (!a || !b) return null;
-          return <line key={t.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="hsl(var(--border))" strokeWidth={1.5} />;
-        })}
-        {/* nodes */}
-        {agents.map((a) => {
-          const p = pos[a.id];
-          if (!p) return null;
-          const color = a.accent_color ?? "#2F2FE4";
-          return (
-            <g key={a.id} className="cursor-pointer" onClick={() => onOpen(a.id)}>
-              <circle cx={p.x} cy={p.y} r={26} fill={color + "22"} stroke={color} strokeWidth={1.5} />
-              <text x={p.x} y={p.y + 6} textAnchor="middle" fontSize={20}>{a.avatar_emoji ?? "🤖"}</text>
-              <text x={p.x} y={p.y + 44} textAnchor="middle" fontSize={11} fill="currentColor" className="font-medium">
-                {a.name.length > 16 ? a.name.slice(0, 15) + "…" : a.name}
-              </text>
-              {a.role && (
-                <text x={p.x} y={p.y + 58} textAnchor="middle" fontSize={9} className="fill-muted-foreground">
-                  {a.role.length > 22 ? a.role.slice(0, 21) + "…" : a.role}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-        {agents.flatMap((a) => a.skills).filter((s, i, arr) => arr.indexOf(s) === i).slice(0, 12).map((s) => (
-          <Badge key={s} variant="outline" className="text-[10px]">{s}</Badge>
-        ))}
-      </div>
+    <div className="h-[560px] w-full overflow-hidden rounded-lg border border-border">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={NODE_TYPES}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        proOptions={{ hideAttribution: true }}
+        minZoom={0.2}
+        maxZoom={1.75}
+        nodesDraggable
+        panOnScroll
+      >
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="hsl(var(--border))" />
+        <Controls showInteractive={false} className="!border-border" />
+        <MiniMap pannable zoomable nodeColor={(n) => ((n.data as any)?.agent?.accent_color ?? "#2F2FE4")} className="!bg-card" />
+      </ReactFlow>
     </div>
   );
 }
