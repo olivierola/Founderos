@@ -5,8 +5,8 @@ import {
   Bot, User as UserIcon, CircleDot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { AIInput } from "@/components/ui/ai-input";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -291,28 +291,24 @@ function LiveRun({ runId }: { runId: string }) {
         {/* Floating composer: detached card with blur, answers a question or
             sends a directive mid-run. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3">
-          <div className="pointer-events-auto rounded-2xl border border-border bg-background/80 p-2.5 shadow-lg backdrop-blur-md">
+          <div className="pointer-events-auto rounded-3xl border border-border bg-background/70 p-2 shadow-lg backdrop-blur-md">
             {r?.status === "needs_input" && r.pending_question && (
-              <p className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
+              <p className="mx-1 mb-1 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
                 {r.pending_question}
               </p>
             )}
-            <div className="flex items-end gap-2">
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                rows={2}
-                placeholder={r?.status === "needs_input" ? "Answer the agent…" : "Tell the agent what to do…"}
-                disabled={!live && r?.status !== "needs_input"}
-                className="flex-1 resize-none rounded-lg border border-border bg-background/60 p-2 text-sm disabled:opacity-50"
-              />
-              <Button size="icon" onClick={send} disabled={sending || !message.trim()}>
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              </Button>
-            </div>
+            <AIInput
+              value={message}
+              onChange={setMessage}
+              onSubmit={send}
+              loading={sending}
+              disabled={!live && r?.status !== "needs_input"}
+              minHeight={48}
+              maxHeight={160}
+              placeholder={r?.status === "needs_input" ? "Answer the agent…" : "Tell the agent what to do…"}
+            />
             {!live && r && (
-              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+              <p className="mb-1 text-center text-[11px] text-muted-foreground">
                 This run is {RUN_TONE[r.status].label.toLowerCase()}.
               </p>
             )}
