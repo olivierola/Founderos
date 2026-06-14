@@ -227,7 +227,7 @@ function LiveRun({ runId }: { runId: string }) {
   return (
     <div className="flex h-full min-h-0">
       {/* LEFT: app preview, fixed (does not scroll with chat). */}
-      <div className="flex min-w-0 flex-1 flex-col bg-muted/30">
+      <div className="flex min-w-0 flex-1 flex-col bg-secondary/40">
         <div className="flex items-center gap-3 border-b border-border px-4 py-2">
           {tone && <Badge variant={tone.variant}>{tone.label}</Badge>}
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -240,34 +240,36 @@ function LiveRun({ runId }: { runId: string }) {
             </Button>
           )}
         </div>
-        {/* The preview sits in a rounded card with clear margins on all sides;
-            the app renders at its true ratio and scrolls vertically inside. */}
-        <div className="relative min-h-0 flex-1 p-6">
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-border bg-white shadow-sm">
-            <div className="absolute inset-0 overflow-y-auto">
-              {r?.last_screenshot_url ? (
-                <img
-                  src={r.last_screenshot_url}
-                  alt="App under test"
-                  className="block w-full h-auto"
-                />
-              ) : (
-                <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                  {r && ["queued", "planning", "running"].includes(r.status) ? (
-                    <>
-                      <Loader2 className="h-7 w-7 animate-spin" />
-                      <span className="text-sm">
-                        {r.status === "planning" ? "Preparing the test plan…" : r.status === "queued" ? "Starting the test…" : "Loading the app…"}
-                      </span>
-                    </>
-                  ) : (
-                    <><Eye className="h-7 w-7" /><span className="text-sm">No frame captured</span></>
-                  )}
-                </div>
-              )}
+        {/* Centred white card with margins; the app renders fully (contain) and
+            a multicolour halo glows BEHIND the card onto the dark panel. */}
+        <div className="relative min-h-0 flex-1 p-8">
+          <div className="relative mx-auto h-full w-full max-w-5xl">
+            {/* Halo glow behind the card. */}
+            <div className="e2e-halo-bg pointer-events-none absolute -inset-2 rounded-2xl" />
+            <div className="relative z-[1] h-full w-full overflow-hidden rounded-xl border border-border bg-white shadow-xl">
+              <div className="absolute inset-0 overflow-y-auto">
+                {r?.last_screenshot_url ? (
+                  <img
+                    src={r.last_screenshot_url}
+                    alt="App under test"
+                    className="block h-full w-full object-contain"
+                  />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground">
+                    {r && ["queued", "planning", "running"].includes(r.status) ? (
+                      <>
+                        <Loader2 className="h-7 w-7 animate-spin" />
+                        <span className="text-sm">
+                          {r.status === "planning" ? "Preparing the test plan…" : r.status === "queued" ? "Starting the test…" : "Loading the app…"}
+                        </span>
+                      </>
+                    ) : (
+                      <><Eye className="h-7 w-7" /><span className="text-sm">No frame captured</span></>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-            {/* Halo as an inset ring framing the visible card. */}
-            <div className="e2e-inner-halo pointer-events-none absolute inset-0" />
           </div>
         </div>
       </div>
