@@ -1029,6 +1029,60 @@ export const PROVIDERS: ProviderDef[] = [
       { key: "service_account", label: "Service account JSON", placeholder: '{ "client_email": "…", "private_key": "…" }', secret: true, helpUrl: "https://developers.google.com/sheets/api/guides/authorizing" },
     ],
   },
+
+  // --- Data lakes ---
+  {
+    slug: "athena",
+    name: "AWS Athena (S3 data lake)",
+    category: "data",
+    icon: Database,
+    description: "Query your S3 data lake with SQL via Athena. Agents run read-only analyses.",
+    mvp: true,
+    fields: [
+      { key: "access_key_id", label: "Access key ID", placeholder: "AKIA…", secret: true },
+      { key: "secret_access_key", label: "Secret access key", placeholder: "…", secret: true },
+      { key: "region", label: "Region", placeholder: "eu-west-1", secret: false },
+      { key: "database", label: "Glue database", placeholder: "analytics", secret: false },
+      { key: "output_location", label: "Results S3 location", placeholder: "s3://my-athena-results/", secret: false, helpUrl: "https://docs.aws.amazon.com/athena/latest/APIReference/Welcome.html" },
+      { key: "workgroup", label: "Workgroup (optional)", placeholder: "primary", secret: false },
+    ],
+  },
+  {
+    slug: "azure-blob",
+    name: "Azure Blob Storage",
+    category: "data",
+    icon: HardDrive,
+    description: "Azure object storage — list containers & read data-lake files.",
+    mvp: true,
+    fields: [
+      { key: "account", label: "Storage account", placeholder: "mydatalake", secret: false },
+      { key: "sas_token", label: "SAS token", placeholder: "sv=2022-…&sig=…", secret: true, helpUrl: "https://learn.microsoft.com/rest/api/storageservices/" },
+    ],
+  },
+  {
+    slug: "azure-synapse",
+    name: "Azure Synapse",
+    category: "data",
+    icon: Database,
+    description: "Synapse serverless SQL over your lake. Agents run read-only queries.",
+    mvp: true,
+    fields: [
+      { key: "workspace", label: "Synapse workspace", placeholder: "myworkspace", secret: false, helpUrl: "https://learn.microsoft.com/rest/api/synapse/" },
+      { key: "access_token", label: "Access token (AAD)", placeholder: "eyJ0…", secret: true },
+      { key: "database", label: "Database", placeholder: "lakehouse", secret: false },
+    ],
+  },
+  {
+    slug: "gcs",
+    name: "Google Cloud Storage",
+    category: "data",
+    icon: HardDrive,
+    description: "GCS buckets & data-lake objects — agents list and read files.",
+    mvp: true,
+    fields: [
+      { key: "service_account", label: "Service account JSON", placeholder: '{ "client_email": "…", "private_key": "…" }', secret: true, helpUrl: "https://cloud.google.com/storage/docs/json_api" },
+    ],
+  },
 ];
 
 export function findProvider(slug: string) {

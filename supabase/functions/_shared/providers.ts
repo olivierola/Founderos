@@ -573,6 +573,35 @@ export async function validateProvider(
           ? ok({ account: payload.account }, "read_only")
           : fail("account + username + password required");
 
+      // ── Data lakes ──
+      case "gcs": {
+        if (!payload.service_account) return fail("service_account JSON required");
+        try {
+          await getGoogleAccessToken(payload.service_account, ["https://www.googleapis.com/auth/devstorage.read_only"]);
+          return ok({}, "read_only");
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : "Invalid service account");
+        }
+      }
+      case "azure-blob": {
+        if (!payload.account || !payload.sas_token) return fail("account + sas_token required");
+        const sas = payload.sas_token.replace(/^\?/, "");
+        const r = await fetchJson(`https://${payload.account}.blob.core.windows.net/?comp=list&${sas}`, {});
+        if (!r.ok) return fail(`Azure Blob rejected the SAS token (HTTP ${r.status})`);
+        return ok({ account: payload.account });
+      }
+      case "athena": {
+        // SigV4-signed AWS calls happen at query time; validate required fields.
+        if (!payload.access_key_id || !payload.secret_access_key || !payload.region || !payload.output_location) {
+          return fail("access_key_id, secret_access_key, region and output_location required");
+        }
+        return ok({ region: payload.region, database: payload.database ?? null }, "read_only");
+      }
+      case "azure-synapse": {
+        if (!payload.workspace || !payload.access_token) return fail("workspace + access_token required");
+        return ok({ workspace: payload.workspace, database: payload.database ?? null }, "read_only");
+      }
+
       default:
         // Unknown provider: accept if it has any field, store as-is (best effort).
         return Object.keys(payload).length > 0

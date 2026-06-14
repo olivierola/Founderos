@@ -15,6 +15,9 @@
 //   Deel      https://developer.deel.com
 //   Factorial https://apidoc.factorialhr.com
 
+import { awsFetch } from "./aws-sigv4.ts";
+import { getGoogleAccessToken } from "./google-auth.ts";
+
 type Cred = Record<string, string>;
 type Params = Record<string, unknown>;
 
@@ -183,9 +186,147 @@ const factorial: ConnectorAction[] = [
   },
 ];
 
+// ── AWS Athena (SQL over an S3 data lake) ────────────────────────────────────
+async function athenaQuery(c: Cred, sql: string): Promise<unknown> {
+  if (!/^\s*(select|with|show|describe)\b/i.test(sql)) throw new Error("Only read-only queries (SELECT/WITH/SHOW/DESCRIBE) are allowed");
+  const creds = { accessKeyId: c.access_key_id, secretAccessKey: c.secret_access_key, region: c.region };
+  const host = `athena.${c.region}.amazonaws.com`;
+  const callout = async (target: string, payload: unknown) => {
+    const res = await awsFetch(creds, { service: "athena", host, target: `AmazonAthena.${target}`, contentType: "application/x-amz-json-1.1", body: JSON.stringify(payload) });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`Athena ${target} HTTP ${res.status}: ${text.slice(0, 240)}`);
+    return text ? JSON.parse(text) : {};
+  };
+  const start = await callout("StartQueryExecution", {
+    QueryString: sql,
+    QueryExecutionContext: c.database ? { Database: c.database } : undefined,
+    ResultConfiguration: { OutputLocation: c.output_location },
+    WorkGroup: c.workgroup || undefined,
+  }) as { QueryExecutionId: string };
+  const id = start.QueryExecutionId;
+  // Poll for completion (Athena is async).
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const st = await callout("GetQueryExecution", { QueryExecutionId: id }) as { QueryExecution: { Status: { State: string; StateChangeReason?: string } } };
+    const state = st.QueryExecution.Status.State;
+    if (state === "SUCCEEDED") break;
+    if (state === "FAILED" || state === "CANCELLED") throw new Error(`Query ${state}: ${st.QueryExecution.Status.StateChangeReason ?? ""}`);
+    if (i === 29) throw new Error("Query timed out");
+  }
+  const out = await callout("GetQueryResults", { QueryExecutionId: id, MaxResults: 100 }) as {
+    ResultSet: { Rows: { Data: { VarCharValue?: string }[] }[] };
+  };
+  const rows = out.ResultSet.Rows.map((r) => r.Data.map((d) => d.VarCharValue ?? null));
+  const [header, ...body] = rows;
+  return { columns: header, rows: body };
+}
+const athena: ConnectorAction[] = [
+  {
+    name: "query", description: "Run a read-only SQL query against the S3 data lake (Athena).",
+    params: { sql: { type: "string", description: "SELECT/WITH/SHOW/DESCRIBE only." } },
+    run: (c, p) => athenaQuery(c, str(p.sql)),
+  },
+  {
+    name: "list_tables", description: "List tables in the configured Glue database.",
+    run: (c) => athenaQuery(c, "SHOW TABLES"),
+  },
+];
+
+// ── Google Cloud Storage ─────────────────────────────────────────────────────
+const gcs: ConnectorAction[] = [
+  {
+    name: "list_objects", description: "List objects in a GCS bucket (optionally by prefix).",
+    params: { bucket: { type: "string", description: "Bucket name." }, prefix: { type: "string", description: "Optional path prefix." } },
+    run: async (c, p) => {
+      const { token } = await getGoogleAccessToken(c.service_account, ["https://www.googleapis.com/auth/devstorage.read_only"]);
+      const q = new URLSearchParams({ maxResults: "100" });
+      if (p.prefix) q.set("prefix", str(p.prefix));
+      return getJson(`https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(str(p.bucket))}/o?${q}`,
+        { headers: { Authorization: `Bearer ${token}` } });
+    },
+  },
+  {
+    name: "read_object", description: "Read a text/JSON object's content (first 100KB).",
+    params: { bucket: { type: "string", description: "Bucket." }, object: { type: "string", description: "Object path." } },
+    run: async (c, p) => {
+      const { token } = await getGoogleAccessToken(c.service_account, ["https://www.googleapis.com/auth/devstorage.read_only"]);
+      const res = await fetch(`https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(str(p.bucket))}/o/${encodeURIComponent(str(p.object))}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`GCS HTTP ${res.status}`);
+      return (await res.text()).slice(0, 100_000);
+    },
+  },
+];
+
+// ── Azure Blob Storage (SAS) ─────────────────────────────────────────────────
+const azureBlob: ConnectorAction[] = [
+  {
+    name: "list_containers", description: "List containers in the storage account.",
+    run: async (c) => {
+      const sas = c.sas_token.replace(/^\?/, "");
+      const res = await fetch(`https://${c.account}.blob.core.windows.net/?comp=list&${sas}`);
+      if (!res.ok) throw new Error(`Azure HTTP ${res.status}`);
+      return (await res.text()).slice(0, 20_000); // XML
+    },
+  },
+  {
+    name: "list_blobs", description: "List blobs in a container.",
+    params: { container: { type: "string", description: "Container name." }, prefix: { type: "string", description: "Optional prefix." } },
+    run: async (c, p) => {
+      const sas = c.sas_token.replace(/^\?/, "");
+      const pre = p.prefix ? `&prefix=${encodeURIComponent(str(p.prefix))}` : "";
+      const res = await fetch(`https://${c.account}.blob.core.windows.net/${encodeURIComponent(str(p.container))}?restype=container&comp=list${pre}&${sas}`);
+      if (!res.ok) throw new Error(`Azure HTTP ${res.status}`);
+      return (await res.text()).slice(0, 20_000);
+    },
+  },
+];
+
+// ── Azure Synapse (serverless SQL over the lake) ─────────────────────────────
+const azureSynapse: ConnectorAction[] = [
+  {
+    name: "query", description: "Run a read-only SQL query (SELECT) on Synapse serverless.",
+    params: { sql: { type: "string", description: "A SELECT query." } },
+    run: async (c, p) => {
+      const sql = str(p.sql).trim();
+      if (!/^select\s/i.test(sql)) throw new Error("Only SELECT queries are allowed");
+      // Synapse serverless SQL is exposed over the SQL-on-demand REST endpoint.
+      const host = `${c.workspace}-ondemand.sql.azuresynapse.net`;
+      return getJson(`https://${host}/databases/${encodeURIComponent(c.database || "master")}/query`,
+        { method: "POST", headers: { Authorization: `Bearer ${c.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ query: sql }) });
+    },
+  },
+];
+
+// ── BigQuery ─────────────────────────────────────────────────────────────────
+const bigquery: ConnectorAction[] = [
+  {
+    name: "query", description: "Run a read-only SQL query (BigQuery standard SQL).",
+    params: { sql: { type: "string", description: "A SELECT query." } },
+    run: async (c, p) => {
+      const sql = str(p.sql).trim();
+      if (!/^\s*(select|with)\b/i.test(sql)) throw new Error("Only SELECT/WITH queries are allowed");
+      const { token } = await getGoogleAccessToken(c.service_account, ["https://www.googleapis.com/auth/bigquery.readonly"]);
+      return getJson(`https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(c.project_id)}/queries`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ query: sql, useLegacySql: false, maxResults: 100, timeoutMs: 25000 }) });
+    },
+  },
+  {
+    name: "list_datasets", description: "List datasets in the project.",
+    run: async (c) => {
+      const { token } = await getGoogleAccessToken(c.service_account, ["https://www.googleapis.com/auth/bigquery.readonly"]);
+      return getJson(`https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(c.project_id)}/datasets`,
+        { headers: { Authorization: `Bearer ${token}` } });
+    },
+  },
+];
+
 export const CONNECTOR_ACTIONS: Record<string, ConnectorAction[]> = {
   hubspot, pipedrive, salesforce, attio, intercom,
   bamboohr, greenhouse, deel, factorial,
+  athena, gcs, bigquery, "azure-blob": azureBlob, "azure-synapse": azureSynapse,
 };
 
 export function actionsFor(provider: string): ConnectorAction[] {
