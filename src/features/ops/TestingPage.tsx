@@ -1,8 +1,7 @@
 ﻿import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  FlaskConical, Plus, Play, Loader2, Trash2, Globe, ChevronRight,
-  ListChecks,
+  FlaskConical, Plus, Play, Loader2, Trash2, Globe, Clock,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -62,6 +61,29 @@ interface RunStep {
   created_at: string;
 }
 
+export const ACTIVE_STATUSES: RunStatus[] = ["queued", "planning", "running", "needs_input"];
+
+interface CaseStat {
+  status: RunStatus;
+  last_at: string;
+  runs: number;
+  run_id: string;
+  plan_len: number;
+  step?: number;
+}
+
+// Compact relative time, e.g. "2m ago", "3h ago".
+function relTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.round(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
 export const RUN_TONE: Record<RunStatus, { label: string; variant: "success" | "destructive" | "warning" | "secondary" }> = {
   queued: { label: "Queued", variant: "secondary" },
   planning: { label: "Planning", variant: "warning" },
@@ -110,6 +132,58 @@ export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) 
     for (const c of cases.data ?? []) (m[c.suite_id] ??= []).push(c);
     return m;
   }, [cases.data]);
+
+  // Per-test run stats: latest run (status + time + live step) and total count.
+  // Polls while anything is active so the RUNNING cards update live.
+  const runStats = useQuery({
+    queryKey: ["test_case_stats", projectId],
+    enabled: !!projectId,
+    refetchInterval: (q) => {
+      const m = q.state.data as Record<string, CaseStat> | undefined;
+      const anyActive = m && Object.values(m).some((s) => ACTIVE_STATUSES.includes(s.status));
+      return anyActive ? 2500 : false;
+    },
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("test_runs")
+        .select("id, case_id, status, created_at, plan, pending_question")
+        .eq("project_id", projectId!)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      const rows = (data ?? []) as Array<{ id: string; case_id: string; status: RunStatus; created_at: string; plan: unknown; pending_question: string | null }>;
+      const map: Record<string, CaseStat> = {};
+      for (const r of rows) {
+        const cur = map[r.case_id];
+        if (!cur) {
+          map[r.case_id] = {
+            status: r.status, last_at: r.created_at, runs: 1,
+            run_id: r.id,
+            plan_len: Array.isArray(r.plan) ? (r.plan as unknown[]).length : 0,
+          };
+        } else {
+          cur.runs += 1;
+        }
+      }
+      // For the latest run of each case, compute the live step index.
+      const activeCaseIds = Object.entries(map).filter(([, s]) => ACTIVE_STATUSES.includes(s.status)).map(([, s]) => s.run_id);
+      if (activeCaseIds.length) {
+        const { data: steps } = await supabase
+          .from("test_run_steps")
+          .select("run_id, kind")
+          .in("run_id", activeCaseIds);
+        const stepCount: Record<string, number> = {};
+        for (const s of steps ?? []) {
+          if (["click", "fill", "select", "navigate", "press", "scroll"].includes((s as { kind: string }).kind)) {
+            stepCount[(s as { run_id: string }).run_id] = (stepCount[(s as { run_id: string }).run_id] ?? 0) + 1;
+          }
+        }
+        for (const s of Object.values(map)) {
+          if (ACTIVE_STATUSES.includes(s.status)) s.step = stepCount[s.run_id] ?? 0;
+        }
+      }
+      return map;
+    },
+  });
 
   async function runCase(tc: TestCase) {
     if (!workspaceId || !projectId) return;
@@ -191,32 +265,23 @@ export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) 
                   </div>
                 </div>
 
-                <div className="mt-3 space-y-2">
+                <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
                   {(casesBySuite[suite.id] ?? []).length === 0 ? (
                     <p className="text-xs text-muted-foreground">No tests in this suite yet.</p>
                   ) : (
                     (casesBySuite[suite.id] ?? []).map((tc) => (
-                      <div key={tc.id} className="flex items-start gap-3 rounded-md border border-border p-2.5">
-                        <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium">{tc.name}</div>
-                          <p className="line-clamp-2 text-xs text-muted-foreground">{tc.instructions}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <Button size="sm" disabled={starting === tc.id} onClick={() => runCase(tc)}>
-                            {starting === tc.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                            Run
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => deleteCase(tc.id)} title="Delete test">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                      <TestCaseCard
+                        key={tc.id}
+                        tc={tc}
+                        stat={runStats.data?.[tc.id]}
+                        starting={starting === tc.id}
+                        onRun={() => runCase(tc)}
+                        onDelete={() => deleteCase(tc.id)}
+                        onOpen={() => { const s = runStats.data?.[tc.id]; if (s?.run_id) openRun(s.run_id); }}
+                      />
                     ))
                   )}
                 </div>
-
-                <RecentRuns suiteId={suite.id} projectId={projectId} onOpen={openRun} />
               </CardContent>
             </Card>
           ))}
@@ -238,35 +303,79 @@ export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) 
   );
 }
 
-// ── Recent runs strip per suite ─────────────────────────────────────────────
-function RecentRuns({ suiteId, projectId, onOpen }: { suiteId: string; projectId: string; onOpen: (id: string) => void }) {
-  const { data } = useQuery({
-    queryKey: ["test_runs", projectId, suiteId],
-    enabled: !!projectId,
-    refetchInterval: 5000,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("test_runs").select("id, case_id, status, current_url, created_at, app_url, error_message, plan, pending_question, last_screenshot_url")
-        .eq("suite_id", suiteId).order("created_at", { ascending: false }).limit(5);
-      return (data ?? []) as TestRun[];
-    },
-  });
-  if (!data || data.length === 0) return null;
+// ── A single test rendered as a card (status, instruction, live step, meta) ──
+function TestCaseCard({
+  tc, stat, starting, onRun, onDelete, onOpen,
+}: {
+  tc: TestCase;
+  stat?: CaseStat;
+  starting: boolean;
+  onRun: () => void;
+  onDelete: () => void;
+  onOpen: () => void;
+}) {
+  const status = stat?.status;
+  const isActive = status ? ACTIVE_STATUSES.includes(status) : false;
+  const tone = status ? RUN_TONE[status] : null;
+  const clickable = !!stat?.run_id;
+
   return (
-    <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
-      {data.map((r) => {
-        const tone = RUN_TONE[r.status];
-        return (
-          <button
-            key={r.id} onClick={() => onOpen(r.id)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-secondary"
-          >
-            <Badge variant={tone.variant}>{tone.label}</Badge>
-            <span className="text-muted-foreground">{new Date(r.created_at).toLocaleTimeString()}</span>
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-          </button>
-        );
-      })}
+    <div
+      className={cn(
+        "group relative flex flex-col rounded-xl border border-border bg-card/40 p-4 transition-colors",
+        clickable && "cursor-pointer hover:border-foreground/30",
+      )}
+      onClick={() => clickable && onOpen()}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h4 className="font-medium leading-tight">{tc.name}</h4>
+        {tone ? (
+          <Badge variant={tone.variant} className="shrink-0">{tone.label}</Badge>
+        ) : (
+          <Badge variant="outline" className="shrink-0">never run</Badge>
+        )}
+      </div>
+
+      <p className="mt-1.5 line-clamp-2 text-sm text-muted-foreground">{tc.instructions}</p>
+
+      {/* Live progress when running. */}
+      {isActive && (
+        <div className="mt-2 flex items-center gap-2 text-sm text-primary">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {status === "needs_input"
+            ? <span>waiting for input…</span>
+            : status === "planning"
+              ? <span>planning…</span>
+              : <span>step {stat?.step ?? 0}{stat?.plan_len ? ` of ${stat.plan_len}` : ""} · in progress…</span>}
+        </div>
+      )}
+
+      {/* Meta footer. */}
+      <div className="mt-3 flex items-center gap-2 border-t border-border/60 pt-2.5 text-xs text-muted-foreground">
+        <Clock className="h-3.5 w-3.5" />
+        {stat ? (
+          <>
+            <span>{stat.runs} run{stat.runs > 1 ? "s" : ""}</span>
+            <span>·</span>
+            <span>last: {relTime(stat.last_at)}</span>
+          </>
+        ) : (
+          <span>not run yet</span>
+        )}
+        {/* Hover actions, top-right. */}
+        <div
+          className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Button size="sm" variant="outline" disabled={starting} onClick={onRun} className="h-7">
+            {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            Run
+          </Button>
+          <Button size="icon" variant="ghost" onClick={onDelete} title="Delete test" className="h-7 w-7">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
