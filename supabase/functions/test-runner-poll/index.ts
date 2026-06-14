@@ -130,6 +130,11 @@ Deno.serve(async (req) => {
       const steps = stepRows ?? [];
       const userAnswers = steps.filter((s) => s.kind === "user_answer").map((s) => String(s.label ?? ""));
 
+      // The persistent plan (stored as [{intent}] by the orchestrator).
+      const plan = Array.isArray(run.plan)
+        ? (run.plan as Array<{ intent?: string } | string>).map((p) => (typeof p === "string" ? p : p.intent ?? "")).filter(Boolean)
+        : [];
+
       const ctx: RunContext = {
         instructions: tc?.instructions ?? "",
         expected_outcome: tc?.expected_outcome ?? null,
@@ -139,6 +144,7 @@ Deno.serve(async (req) => {
         dom_excerpt: domExcerpt,
         history: steps.map((s) => ({ kind: s.kind, label: s.label })),
         user_answers: userAnswers,
+        plan,
       };
 
       const action = await decideNextAction(ctx, { workspace_id: run.workspace_id, project_id: run.project_id });

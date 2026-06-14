@@ -45,6 +45,9 @@ export interface RunContext {
   history: Array<{ kind: string; label: string | null }>;
   // Answers the user supplied to earlier ask_user steps.
   user_answers: string[];
+  // The high-level plan drafted at the start (the agent's persistent memory of
+  // the objective broken into steps).
+  plan?: string[];
 }
 
 const SYSTEM = `You are an expert autonomous end-to-end test agent. You drive a real Chromium browser (Playwright) against a web app to verify a scenario, like a careful QA engineer.
@@ -224,19 +227,25 @@ export async function decideNextAction(
 ): Promise<BrowserAction> {
   const dom = (ctx.dom_excerpt ?? "").slice(0, 8000);
   const latestAnswer = ctx.user_answers.length ? ctx.user_answers[ctx.user_answers.length - 1] : null;
-  const userPrompt = `Test instructions:
+  const planBlock = (ctx.plan && ctx.plan.length)
+    ? `\nYOUR PLAN (keep following it; figure out which step you're on):\n${ctx.plan.map((p, i) => `${i + 1}. ${p}`).join("\n")}\n`
+    : "";
+  const userPrompt = `OBJECTIVE (never lose sight of this):
 """${ctx.instructions}"""
 Expected outcome: ${ctx.expected_outcome ?? "(infer)"}
 Test data (fixtures): ${JSON.stringify(ctx.fixtures ?? {})}
-${latestAnswer ? `\n>>> THE USER JUST TOLD YOU WHAT TO DO NEXT — FOLLOW THIS NOW:\n"${latestAnswer}"\nFind the element in the snapshot that matches this instruction (match by its visible label/text) and act on its ref. Do not ask again.\n` : ""}${ctx.user_answers.length > 1 ? `Earlier user answers: ${JSON.stringify(ctx.user_answers.slice(0, -1))}\n` : ""}
+${planBlock}${latestAnswer ? `\n>>> THE USER JUST TOLD YOU WHAT TO DO NEXT — FOLLOW THIS NOW:\n"${latestAnswer}"\nFind the element in the snapshot that matches this instruction and act on its ref. Do not ask again.\n` : ""}${ctx.user_answers.length > 1 ? `Earlier user answers: ${JSON.stringify(ctx.user_answers.slice(0, -1))}\n` : ""}
 Current URL: ${ctx.current_url ?? ctx.app_url}
-Steps already taken (most recent last):
-${ctx.history.slice(-15).map((h, i) => `${i + 1}. ${h.kind}${h.label ? ` — ${h.label}` : ""}`).join("\n") || "(none yet)"}
 
-Current page snapshot — interactive elements are numbered; act with "ref":
+Steps already taken (most recent last):
+${ctx.history.slice(-18).map((h, i) => `${i + 1}. ${h.kind}${h.label ? ` — ${h.label}` : ""}`).join("\n") || "(none yet)"}
+
+Current page snapshot — interactive elements are numbered (with their current value); act with "ref":
 """${dom || "(empty — page may not be loaded yet; consider navigate)"}"""
 
-Decide the single next action as strict JSON. When the user gave an instruction above, pick the ref whose label best matches it.`;
+Think step by step, briefly: (1) what does the OBJECTIVE require overall? (2) given the steps already taken and the field VALUES in the snapshot, what is DONE and what remains? (3) pick the single best next action toward the objective.
+If a form is filled and a submit button is enabled, CLICK it. Only use "ask_user" if you genuinely lack information (a value you weren't given, or a real ambiguity) — never because you "can't determine the next step" when an obvious action exists.
+Respond with strict JSON for that next action.`;
   // Run on the configured agent provider/model; fall back to task routing if it
   // is unavailable so a run never hard-fails.
   let res;
@@ -279,15 +288,15 @@ Decide the single next action as strict JSON. When the user gave an instruction 
     };
   }
 
-  // Guard: don't re-fill the same field. If the last two interaction steps were
-  // already "fill", the field is very likely set — skip ahead (wait one tick so
-  // the agent re-reads the snapshot and moves to the next field/button).
+  // Guard: don't re-fill the same field endlessly. A form may need several
+  // distinct fills (email, password, …), so only intervene after 3 consecutive
+  // fills — then nudge the agent to re-read and move on (e.g. click submit).
   if (action.type === "fill") {
-    const recentFills = ctx.history
+    const recent = ctx.history
       .filter((h) => ["fill", "click", "select", "press"].includes(h.kind))
-      .slice(-2);
-    if (recentFills.length === 2 && recentFills.every((h) => h.kind === "fill")) {
-      return { type: "wait", amount: 300, reason: "field already filled — moving on" };
+      .slice(-3);
+    if (recent.length === 3 && recent.every((h) => h.kind === "fill")) {
+      return { type: "wait", amount: 300, reason: "fields filled — re-checking before next action" };
     }
   }
 
