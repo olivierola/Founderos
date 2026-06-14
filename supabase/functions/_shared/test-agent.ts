@@ -21,13 +21,14 @@ const AGENT_MODEL = Deno.env.get("E2E_AGENT_MODEL") || "moonshotai/kimi-k2-instr
 export interface BrowserAction {
   // What the runner should do next.
   type: "navigate" | "click" | "fill" | "select" | "scroll" | "press" | "wait"
-      | "assert" | "ask_user" | "pass" | "fail";
+      | "assert" | "say" | "ask_user" | "pass" | "fail";
   ref?: number | string;   // index of a target element from the snapshot (preferred)
   selector?: string;       // fallback CSS/text selector if no ref fits
   value?: string;          // text to type, option to select, url to navigate
   key?: string;            // key for press (e.g. "Enter")
   direction?: "up" | "down"; // for scroll
   amount?: number;         // px for scroll, ms for wait
+  message?: string;        // for "say": a free-text note/explanation to the user
   question?: string;       // for ask_user
   reason?: string;         // short rationale, shown in the timeline
   assertion?: string;      // for assert/pass/fail: what was being checked
@@ -68,14 +69,18 @@ NEVER LOOP:
 - If "PREVIOUS ACTION FAILED" appears, the target wasn't found/clickable — choose a DIFFERENT ref or approach.
 - If stuck after a couple attempts, ask_user with a specific question instead of guessing.
 
+TALKING:
+- Use "say" to explain something to the user in plain natural language — what you observe, why you chose an approach, a finding, or a short status update. After a "say" you keep control and will act on the next turn, so use it when an explanation adds value (don't narrate every trivial step).
+- Use "ask_user" only when you actually need information or a decision to continue.
+
 VERDICT:
 - "pass" with a one-line "assertion" when the expected outcome is clearly visible.
 - "fail" with "reason" when the app proves the test failed.
 - Never do destructive actions beyond what the test asks.
 
 Respond with STRICT JSON for the SINGLE next action, no prose:
-{ "type": "...", "ref": 0, "selector": "...", "value": "...", "key": "...", "direction": "up|down", "amount": 0, "question": "...", "assertion": "...", "reason": "..." }
-Include only fields relevant to the chosen type. For click/fill/select prefer "ref". For "fill", "value" is required. Always include a short "reason".`;
+{ "type": "...", "ref": 0, "selector": "...", "value": "...", "key": "...", "direction": "up|down", "amount": 0, "message": "...", "question": "...", "assertion": "...", "reason": "..." }
+Include only fields relevant to the chosen type. For click/fill/select prefer "ref". For "fill", "value" is required. For "say", put your message in "message". Always include a short "reason".`;
 
 // Draft a high-level ordered plan (intents) from the NL instructions.
 export async function draftPlan(
@@ -151,6 +156,17 @@ Decide the single next action as strict JSON. When the user gave an instruction 
     return { type: "ask_user", question: "I couldn't determine the next step. What should I do next?", reason: "agent returned no action" };
   }
 
+  // Guard: don't let the agent only talk. If the last 2 steps were already
+  // "say", force it to act (drop the say and re-decide would be costly, so we
+  // just nudge by turning a 3rd consecutive say into a wait, prompting action
+  // on the next turn).
+  if (action.type === "say") {
+    const tail = ctx.history.slice(-2);
+    if (tail.length === 2 && tail.every((h) => h.kind === "say")) {
+      return { type: "wait", amount: 300, reason: "continuing after explanation" };
+    }
+  }
+
   // Guard: a fill with no value means the agent lacks data — ask the user
   // instead of looping on an empty field.
   if (action.type === "fill" && !String(action.value ?? "").trim()) {
@@ -216,6 +232,7 @@ export async function appendStep(
 
 // Map a BrowserAction to a timeline step kind + label for display.
 export function actionToStep(a: BrowserAction): { kind: string; label: string } {
+  if (a.type === "say") return { kind: "say", label: a.message ?? a.reason ?? "" };
   switch (a.type) {
     case "navigate": return { kind: "navigate", label: a.value ? `Go to ${a.value}` : "Navigate" };
     case "click": return { kind: "click", label: a.reason ?? `Click ${a.selector ?? ""}`.trim() };

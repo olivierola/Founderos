@@ -335,6 +335,20 @@ function ChatStep({ step }: { step: RunStep }) {
     );
   }
 
+  // Natural-language message from the agent → full chat bubble.
+  if (isAgent && step.kind === "say") {
+    return (
+      <div className="flex items-start gap-2">
+        <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+          <Bot className="h-3 w-3" />
+        </div>
+        <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border bg-secondary/40 px-3 py-2 text-sm leading-relaxed">
+          {step.label}
+        </div>
+      </div>
+    );
+  }
+
   // Agent / runner / system → left-aligned compact line.
   return (
     <div className="flex items-start gap-2">
