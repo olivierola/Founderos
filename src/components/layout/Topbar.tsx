@@ -1,6 +1,6 @@
 import { Link, useParams, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Bell, Sun, Moon, Menu, Sparkles } from "lucide-react";
+import { Search, Bell, Sun, Moon, Menu, Bot } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
@@ -95,14 +95,14 @@ export function Topbar() {
         </Button>
         {/* Global AI assistant — opens a right-side panel with the current page as context. */}
         <Button
-          variant={assistant.open ? "default" : "outline"}
-          size="sm"
-          className={cn("h-9 gap-1.5", !assistant.open && "border-primary/30 text-primary hover:text-primary")}
+          variant="ghost"
+          size="icon"
+          className={cn("h-9 w-9", assistant.open ? "bg-primary/15 text-primary" : "text-primary hover:bg-primary/10 hover:text-primary")}
           onClick={assistant.toggle}
           title="AI Assistant"
+          aria-label="AI Assistant"
         >
-          <Sparkles className="h-4 w-4" />
-          <span className="hidden sm:inline">Assistant</span>
+          <Bot className="h-4 w-4" />
         </Button>
       </div>
     </header>
