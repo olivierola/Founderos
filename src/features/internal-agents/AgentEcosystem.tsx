@@ -19,6 +19,7 @@ import {
   MEMORY_KIND_META,
 } from "./shared";
 import { relativeDate } from "./shared";
+import { Robot3D } from "./Robot3D";
 
 export function AgentEcosystemPage() {
   const navigate = useNavigate();
@@ -236,21 +237,18 @@ type EcoAgent = { id: string; name: string; avatar_emoji: string | null; accent_
 function AgentNode({ data }: NodeProps<{ agent: EcoAgent; onOpen: (id: string) => void }>) {
   const a = data.agent;
   const color = a.accent_color ?? "#2F2FE4";
+  // A div (not a button) so React Flow's drag handling is unobstructed. Click
+  // still opens the agent (a drag won't fire onClick). Double-click also opens.
   return (
-    <button
-      onClick={() => data.onOpen(a.id)}
-      className="group flex w-44 flex-col items-center rounded-xl border bg-card px-3 py-3 shadow-sm transition-colors hover:border-foreground/40"
+    <div
+      onDoubleClick={() => data.onOpen(a.id)}
+      className="group flex w-44 cursor-grab flex-col items-center rounded-xl border bg-card px-3 py-3 shadow-sm transition-colors hover:border-foreground/40 active:cursor-grabbing"
       style={{ borderColor: color + "55" }}
     >
       <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0" style={{ background: color }} />
       <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0" style={{ background: color }} />
-      <div
-        className="flex h-11 w-11 items-center justify-center rounded-full text-xl"
-        style={{ backgroundColor: color + "22", border: `1.5px solid ${color}` }}
-      >
-        {a.avatar_emoji ?? "🤖"}
-      </div>
-      <div className="mt-2 max-w-full truncate text-sm font-medium">{a.name}</div>
+      <Robot3D color={color} size={56} />
+      <div className="mt-1.5 max-w-full truncate text-sm font-medium">{a.name}</div>
       {a.role && <div className="max-w-full truncate text-[10px] text-muted-foreground">{a.role}</div>}
       {a.skills?.length > 0 && (
         <div className="mt-1.5 flex flex-wrap justify-center gap-1">
@@ -259,7 +257,14 @@ function AgentNode({ data }: NodeProps<{ agent: EcoAgent; onOpen: (id: string) =
           ))}
         </div>
       )}
-    </button>
+      {/* Explicit open affordance — appears on hover, doesn't conflict with drag. */}
+      <button
+        onClick={(e) => { e.stopPropagation(); data.onOpen(a.id); }}
+        className="nodrag mt-2 rounded-md border border-border px-2 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+      >
+        Open chat
+      </button>
+    </div>
   );
 }
 

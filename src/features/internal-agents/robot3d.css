@@ -1,0 +1,156 @@
+/* Faux-3D CSS robot. Uses --robot-accent for tint. Kept GPU-cheap. */
+.robot3d {
+  position: relative;
+  display: inline-block;
+  perspective: 320px;
+  --robot-accent: #2f2fe4;
+  --robot-metal: color-mix(in srgb, var(--robot-accent) 16%, #e9edf6);
+  --robot-metal-dark: color-mix(in srgb, var(--robot-accent) 40%, #4a5470);
+}
+
+.robot3d__float {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateX(8deg) rotateY(-12deg);
+  animation: robot3d-float 3.2s ease-in-out infinite;
+}
+@keyframes robot3d-float {
+  0%, 100% { transform: rotateX(8deg) rotateY(-12deg) translateY(0); }
+  50%      { transform: rotateX(8deg) rotateY(-12deg) translateY(-6%); }
+}
+
+/* Head */
+.robot3d__head {
+  position: absolute;
+  left: 18%;
+  top: 8%;
+  width: 64%;
+  height: 46%;
+  border-radius: 28% 28% 26% 26% / 34% 34% 30% 30%;
+  background:
+    radial-gradient(120% 90% at 30% 20%, #ffffff 0%, var(--robot-metal) 45%, var(--robot-metal-dark) 120%);
+  box-shadow:
+    inset 0 -3px 6px rgba(0, 0, 0, 0.25),
+    inset 0 3px 5px rgba(255, 255, 255, 0.6),
+    0 4px 10px rgba(0, 0, 0, 0.2);
+}
+.robot3d__face {
+  position: absolute;
+  left: 12%;
+  top: 24%;
+  width: 76%;
+  height: 56%;
+  border-radius: 22%;
+  background: linear-gradient(160deg, #1b2233, #0c111d);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.7);
+}
+.robot3d__eye {
+  position: absolute;
+  top: 30%;
+  width: 18%;
+  height: 22%;
+  border-radius: 50%;
+  background: var(--robot-accent);
+  box-shadow: 0 0 8px var(--robot-accent), 0 0 2px #fff inset;
+  animation: robot3d-blink 4s infinite;
+}
+.robot3d__eye--l { left: 24%; }
+.robot3d__eye--r { right: 24%; }
+@keyframes robot3d-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95%           { transform: scaleY(0.1); }
+}
+.robot3d__mouth {
+  position: absolute;
+  bottom: 20%;
+  left: 32%;
+  width: 36%;
+  height: 8%;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--robot-accent) 60%, #2dd4bf);
+  opacity: 0.85;
+}
+.robot3d__ear {
+  position: absolute;
+  top: 40%;
+  width: 9%;
+  height: 22%;
+  border-radius: 3px;
+  background: var(--robot-metal-dark);
+}
+.robot3d__ear--l { left: -6%; }
+.robot3d__ear--r { right: -6%; }
+
+/* Antenna */
+.robot3d__antenna {
+  position: absolute;
+  left: 49%;
+  top: 0;
+  width: 4%;
+  height: 12%;
+  background: var(--robot-metal-dark);
+  border-radius: 2px;
+}
+.robot3d__antenna-tip {
+  position: absolute;
+  left: 45%;
+  top: -4%;
+  width: 12%;
+  height: 12%;
+  border-radius: 50%;
+  background: var(--robot-accent);
+  box-shadow: 0 0 8px var(--robot-accent);
+  animation: robot3d-pulse 1.8s ease-in-out infinite;
+}
+@keyframes robot3d-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+/* Body */
+.robot3d__body {
+  position: absolute;
+  left: 24%;
+  top: 52%;
+  width: 52%;
+  height: 40%;
+  border-radius: 26% 26% 30% 30% / 30% 30% 40% 40%;
+  background:
+    radial-gradient(120% 100% at 30% 10%, #ffffff 0%, var(--robot-metal) 50%, var(--robot-metal-dark) 130%);
+  box-shadow:
+    inset 0 -3px 6px rgba(0, 0, 0, 0.25),
+    inset 0 3px 5px rgba(255, 255, 255, 0.55),
+    0 5px 10px rgba(0, 0, 0, 0.2);
+}
+.robot3d__chest {
+  position: absolute;
+  left: 30%;
+  top: 26%;
+  width: 40%;
+  height: 30%;
+  border-radius: 22%;
+  background: linear-gradient(160deg, #1b2233, #0c111d);
+  box-shadow: 0 0 6px var(--robot-accent) inset;
+}
+
+/* Ground shadow */
+.robot3d__shadow {
+  position: absolute;
+  left: 24%;
+  bottom: -4%;
+  width: 52%;
+  height: 8%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  filter: blur(3px);
+  animation: robot3d-shadow 3.2s ease-in-out infinite;
+}
+@keyframes robot3d-shadow {
+  0%, 100% { transform: scaleX(1); opacity: 0.28; }
+  50%      { transform: scaleX(0.82); opacity: 0.18; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .robot3d__float, .robot3d__eye, .robot3d__antenna-tip, .robot3d__shadow { animation: none; }
+}
