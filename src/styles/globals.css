@@ -275,7 +275,7 @@
   );
   /* Uniform glowing ring on ALL FOUR EDGES: keep only a border-width band using
      two stacked masks composited with exclude (full box minus an inset box). */
-  padding: 22px;                         /* halo thickness — band fades within this */
+  padding: 12px;                         /* halo thickness — band fades within this */
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -284,9 +284,9 @@
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
-  opacity: 0.9;
+  opacity: 0.8;
   mix-blend-mode: screen;
-  filter: blur(10px) saturate(1.25);
+  filter: blur(6px) saturate(1.2);
   animation: e2e-halo-spin 6s linear infinite;
 }
 /* Static fallback when @property isn't supported. */

@@ -240,10 +240,10 @@ function LiveRun({ runId }: { runId: string }) {
             </Button>
           )}
         </div>
-        {/* The preview sits in a rounded card with margins on all sides; the
-            app renders at its true ratio and scrolls vertically inside. */}
-        <div className="relative min-h-0 flex-1 p-4">
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-border bg-white">
+        {/* The preview sits in a rounded card with clear margins on all sides;
+            the app renders at its true ratio and scrolls vertically inside. */}
+        <div className="relative min-h-0 flex-1 p-6">
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-border bg-white shadow-sm">
             <div className="absolute inset-0 overflow-y-auto">
               {r?.last_screenshot_url ? (
                 <img
