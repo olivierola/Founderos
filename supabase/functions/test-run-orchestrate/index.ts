@@ -98,7 +98,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true });
     }
 
-    // ── DIRECTIVE (steer a running test without it being paused) ──────────────
+    // ── DIRECTIVE (talk to the agent any time) ────────────────────────────────
+    // Works whether the run is in progress, paused, OR already finished:
+    //   - running   → recorded as the next instruction (agent picks it up on its
+    //                 next observe).
+    //   - needs_input→ recorded + unpaused.
+    //   - finished   → recorded + re-queued: the runner re-claims it, reopens the
+    //                 app and continues with the full history (new test / steps).
     if (action === "directive") {
       const runId = body.run_id as string | undefined;
       const directive = String(body.directive ?? body.answer ?? "").trim();
@@ -107,19 +113,26 @@ Deno.serve(async (req) => {
       const { data: run } = await admin
         .from("test_runs").select("id, status, project_id").eq("id", runId).maybeSingle();
       if (!run || run.project_id !== project_id) return jsonResponse({ error: "Run not found" }, { status: 404 });
-      if (["passed", "failed", "error", "cancelled"].includes(run.status)) {
-        return jsonResponse({ error: `Run already ${run.status}` }, { status: 409 });
-      }
 
       // Record as a user_answer step so decideNextAction treats it as the latest
-      // directive on the agent's next observation. The runner is mid-loop, so we
-      // don't change status (it will pick this up on the next observe).
+      // directive on the agent's next observation.
       await appendStep(admin, runId, { actor: "user", kind: "user_answer", label: directive });
-      // If the run happened to be paused, unpause it.
-      if (run.status === "needs_input") {
-        await admin.from("test_runs").update({ status: "queued", pending_question: null }).eq("id", runId);
+
+      const isTerminal = ["passed", "failed", "error", "cancelled"].includes(run.status);
+      if (isTerminal) {
+        await appendStep(admin, runId, { actor: "system", kind: "info", label: "Resuming the run with a new instruction" });
       }
-      return jsonResponse({ ok: true });
+      // Re-queue when paused or finished so the runner (re)picks it up. A running
+      // run stays as-is — it'll see the directive on its next observe.
+      if (run.status === "needs_input" || isTerminal) {
+        await admin.from("test_runs").update({
+          status: "queued",
+          pending_question: null,
+          finished_at: null,
+          error_message: null,
+        }).eq("id", runId);
+      }
+      return jsonResponse({ ok: true, resumed: isTerminal });
     }
 
     return jsonResponse({ error: `Unknown action ${action}` }, { status: 400 });

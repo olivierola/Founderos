@@ -305,14 +305,19 @@ function LiveRun({ runId }: { runId: string }) {
               onChange={setMessage}
               onSubmit={send}
               loading={sending}
-              disabled={!live && r?.status !== "needs_input"}
               minHeight={48}
               maxHeight={160}
-              placeholder={r?.status === "needs_input" ? "Answer the agent…" : "Tell the agent what to do…"}
+              placeholder={
+                r?.status === "needs_input"
+                  ? "Answer the agent…"
+                  : live
+                    ? "Tell the agent what to do…"
+                    : "Give a new instruction or start another test…"
+              }
             />
             {!live && r && (
               <p className="mb-1 text-center text-[11px] text-muted-foreground">
-                This run is {RUN_TONE[r.status].label.toLowerCase()}.
+                This run is {RUN_TONE[r.status].label.toLowerCase()} — send a message to continue.
               </p>
             )}
           </div>
