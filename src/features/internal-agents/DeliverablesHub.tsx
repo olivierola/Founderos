@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Star, Download, ExternalLink, FileText, FileJson, FileCode,
-  Link2, Paperclip, Package, Filter, X, Target, ArrowLeft,
+  Link2, Paperclip, Package, Filter, X, Target, ArrowLeft, BarChart3,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,14 +18,43 @@ import {
   type InternalAgent, type Deliverable, type Mission,
   downloadDeliverable, relativeDate,
 } from "./shared";
+import { DeliverableReport, RichMarkdown, tryParseReport } from "./DeliverableReport";
 
 const KIND_ICON: Record<string, any> = {
+  report: BarChart3,
   markdown: FileText,
   json: FileJson,
   code: FileCode,
   url: Link2,
   file: Paperclip,
 };
+
+// Renders a deliverable's body by kind: structured report, markdown (with
+// embedded charts), code/json, or url.
+function DeliverableBody({ d }: { d: Deliverable }) {
+  if (d.kind === "report") {
+    const report = tryParseReport(d.content);
+    if (report) return <DeliverableReport report={report} />;
+    // Fall through to markdown if the JSON didn't parse.
+  }
+  if (d.kind === "url") {
+    return (
+      <a href={d.content ?? d.file_url ?? "#"} target="_blank" rel="noreferrer" className="break-all text-sm text-primary underline">
+        {d.content ?? d.file_url}
+      </a>
+    );
+  }
+  if (d.kind === "json" || d.kind === "code") {
+    return (
+      <div className="prose prose-sm max-w-none dark:prose-invert">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {"```" + (d.kind === "json" ? "json" : "") + "\n" + (d.content ?? "(no inline content)") + "\n```"}
+        </ReactMarkdown>
+      </div>
+    );
+  }
+  return <RichMarkdown content={d.content ?? "_Empty_"} />;
+}
 
 export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
   const queryClient = useQueryClient();
@@ -33,7 +63,22 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
   const [missionFilter, setMissionFilter] = useState<string | null>(null);
   const [pinnedOnly, setPinnedOnly] = useState(false);
   // Selected deliverable opens inline (replaces the grid), not in a modal.
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("d"));
+
+  // Deep-link: ?d=<id> (e.g. from a chat artifact card) opens that deliverable.
+  useEffect(() => {
+    const d = searchParams.get("d");
+    if (d && d !== selectedId) setSelectedId(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  function selectDeliverable(id: string | null) {
+    setSelectedId(id);
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set("d", id); else next.delete("d");
+    setSearchParams(next, { replace: true });
+  }
 
   const { data: deliverables, isLoading } = useQuery({
     queryKey: ["internal_agent_all_deliverables", agent.id],
@@ -108,7 +153,7 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
       <DeliverableDetail
         d={selected}
         missionTitle={missionTitle[selected.mission_id]}
-        onBack={() => setSelectedId(null)}
+        onBack={() => selectDeliverable(null)}
         onTogglePin={() => togglePin(selected)}
       />
     );
@@ -184,7 +229,7 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
               key={d.id}
               d={d}
               missionTitle={missionTitle[d.mission_id]}
-              onOpen={() => setSelectedId(d.id)}
+              onOpen={() => selectDeliverable(d.id)}
               onTogglePin={() => togglePin(d)}
             />
           ))}
@@ -304,21 +349,7 @@ function DeliverableDetail({
 
       {/* Content — rendered directly on the tab background, like a document. */}
       <div className="px-1 pb-8 pt-2">
-        {d.kind === "url" ? (
-          <a href={d.content ?? d.file_url ?? "#"} target="_blank" rel="noreferrer" className="break-all text-sm text-primary underline">
-            {d.content ?? d.file_url}
-          </a>
-        ) : d.kind === "json" || d.kind === "code" ? (
-          <div className="prose prose-sm max-w-none dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {"```" + (d.kind === "json" ? "json" : "") + "\n" + (d.content ?? "(no inline content)") + "\n```"}
-            </ReactMarkdown>
-          </div>
-        ) : (
-          <div className="prose prose-sm max-w-none dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{d.content ?? "_Empty_"}</ReactMarkdown>
-          </div>
-        )}
+        <DeliverableBody d={d} />
       </div>
     </div>
   );

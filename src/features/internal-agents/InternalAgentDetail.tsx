@@ -128,6 +128,11 @@ function ChatTab({
 }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { workspaceSlug, projectSlug } = useParams();
+  function openDeliverable(id: string) {
+    navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${agent.id}/deliverables?d=${id}`);
+  }
   const [convoId, setConvoId] = useState<string | null>(null);
   // null convoId + started=false → resume the latest session; once the user
   // clicks "New session" we stay on the blank state until they send.
@@ -177,6 +182,21 @@ function ChatTab({
     },
   });
 
+  // Deliverables this agent produced during this chat session — rendered as
+  // artifact cards under the matching assistant message.
+  const { data: convoDeliverables } = useQuery({
+    queryKey: ["internal_agent_convo_deliverables", convoId],
+    enabled: !!convoId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("internal_agent_deliverables")
+        .select("id, kind, name, summary, created_at")
+        .eq("conversation_id", convoId!)
+        .order("created_at", { ascending: true });
+      return (data ?? []) as Array<{ id: string; kind: string; name: string; summary: string | null; created_at: string }>;
+    },
+  });
+
   useEffect(() => {
     if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [messages?.length]);
@@ -219,6 +239,7 @@ function ChatTab({
       });
       queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
       queryClient.invalidateQueries({ queryKey: ["internal_agent_conversations", agent.id] });
+      queryClient.invalidateQueries({ queryKey: ["internal_agent_convo_deliverables", cid] });
     } catch (e: any) {
       setError(e?.message ?? "Failed to send");
     } finally {
@@ -305,9 +326,20 @@ function ChatTab({
           </div>
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 py-4">
-            {messages!.map((m) => (
-              <ChatBubble key={m.id} msg={m} />
-            ))}
+            {messages!.map((m, i) => {
+              // Attach all session artifacts to the last assistant message.
+              const isLastAssistant =
+                m.role === "assistant" &&
+                !messages!.slice(i + 1).some((x) => x.role === "assistant");
+              return (
+                <ChatBubble
+                  key={m.id}
+                  msg={m}
+                  artifacts={isLastAssistant ? (convoDeliverables ?? []) : []}
+                  onOpenArtifact={openDeliverable}
+                />
+              );
+            })}
             {sending && (
               <div className="flex justify-start">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -330,7 +362,15 @@ function ChatTab({
   );
 }
 
-function ChatBubble({ msg }: { msg: ChatMessage }) {
+interface ChatArtifact { id: string; kind: string; name: string; summary: string | null }
+
+function ChatBubble({
+  msg, artifacts = [], onOpenArtifact,
+}: {
+  msg: ChatMessage;
+  artifacts?: ChatArtifact[];
+  onOpenArtifact?: (id: string) => void;
+}) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
@@ -349,10 +389,49 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
   }
   return (
     <div className="flex justify-start">
-      <div className="prose prose-sm max-w-[95%] dark:prose-invert">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+      <div className="w-full max-w-[95%]">
+        <div className="prose prose-sm dark:prose-invert">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+        </div>
+        {artifacts.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {artifacts.map((a) => (
+              <ArtifactCard key={a.id} artifact={a} onOpen={() => onOpenArtifact?.(a.id)} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+// A clickable card representing a deliverable the agent produced in chat.
+function ArtifactCard({ artifact, onOpen }: { artifact: ChatArtifact; onOpen: () => void }) {
+  const Icon =
+    artifact.kind === "report" ? BarChart3
+    : artifact.kind === "json" ? Database
+    : artifact.kind === "code" ? FileText
+    : artifact.kind === "url" ? Globe
+    : FileText;
+  const label = artifact.kind === "report" ? "Structured report" : artifact.kind;
+  return (
+    <button
+      onClick={onOpen}
+      className="group flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 text-white">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{artifact.name}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {artifact.summary || label}
+        </div>
+      </div>
+      <span className="flex items-center gap-1 text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+        Open <ArrowRight className="h-3.5 w-3.5" />
+      </span>
+    </button>
   );
 }
 

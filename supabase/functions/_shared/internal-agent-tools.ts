@@ -387,7 +387,26 @@ async function triggerA2A(messageId: string): Promise<void> {
 // toolset assembly
 // ---------------------------------------------------------------------------
 
-const DELIVERABLE_KINDS = ["markdown", "json", "code", "url"];
+const DELIVERABLE_KINDS = ["report", "markdown", "json", "code", "url"];
+
+// Guidance shown to the model for the structured `report` kind. The content is
+// a JSON string matching this shape; the UI renders it as a designed report.
+const REPORT_SCHEMA_HINT = `For kind="report", content MUST be a JSON string with this shape:
+{
+  "title": "string",
+  "summary": "string (1-3 sentences)",
+  "sections": [
+    {
+      "heading": "string",
+      "body": "markdown paragraph(s), optional",
+      "kpis": [{ "label": "string", "value": "string|number", "delta": "string, optional", "trend": "up|down|flat, optional" }],
+      "chart": { "type": "bar|line|area|pie", "x": "string (key name for category)", "series": ["key1"], "data": [{ "<x>": "Jan", "key1": 12 }] },
+      "table": { "columns": ["A","B"], "rows": [["x", 1]] },
+      "callout": { "tone": "info|success|warning|danger", "text": "string" }
+    }
+  ]
+}
+Every field except title/summary/sections is optional. Use charts/KPIs/tables when the data warrants it. You may also embed a chart inside markdown deliverables using a fenced block: \`\`\`chart\\n{ "type":"bar", "x":"month", "series":["mrr"], "data":[...] }\\n\`\`\``;
 
 export function buildInternalToolset(
   rows: AgentToolRow[],
@@ -401,29 +420,43 @@ export function buildInternalToolset(
     def: {
       name: "create_deliverable",
       description:
-        "Save a finished deliverable (document, JSON, code or URL list). Call this once per expected deliverable — deliverables are the durable output of your work. Do not repeat the full content in your final answer; summarise instead.",
+        "Save a finished deliverable — your durable output. Prefer kind=\"report\" for analyses/results: a structured, designed document with sections, KPIs, charts and tables. Use markdown/json/code/url for simpler outputs. Call once per expected deliverable; summarise (don't repeat the full content) in your final answer.\n" +
+        REPORT_SCHEMA_HINT,
       parameters: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: DELIVERABLE_KINDS, description: "Deliverable format." },
+          kind: { type: "string", enum: DELIVERABLE_KINDS, description: "Deliverable format. Use 'report' for structured analyses with charts/KPIs." },
           name: { type: "string", description: "Short human-readable name." },
-          content: { type: "string", description: "The full deliverable content." },
+          content: { type: "string", description: "The full deliverable content (for report: the JSON string described above)." },
         },
         required: ["kind", "name", "content"],
         additionalProperties: false,
       },
     },
     run: async (args) => {
-      const kind = DELIVERABLE_KINDS.includes(str(args.kind)) ? str(args.kind) : "markdown";
+      let kind = DELIVERABLE_KINDS.includes(str(args.kind)) ? str(args.kind) : "markdown";
       const name = str(args.name, "Output").slice(0, 120);
       const content = str(args.content);
       if (!content) return "ERROR: content is required.";
-      const summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
+      // Validate report JSON; downgrade to markdown if it's not parseable so we
+      // never persist a broken report.
+      let summary: string | null;
+      if (kind === "report") {
+        try {
+          const parsed = JSON.parse(content);
+          summary = (str(parsed.summary) || str(parsed.title)).slice(0, 200) || null;
+        } catch {
+          kind = "markdown";
+          summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
+        }
+      } else {
+        summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
+      }
       await ctx.createDeliverable({ kind, name, content, summary });
       return `Deliverable "${name}" (${kind}) saved.`;
     },
   });
-  summaryLines.push("- create_deliverable: save your outputs as durable deliverables (always available).");
+  summaryLines.push("- create_deliverable: save your outputs as durable deliverables, ideally as a structured 'report' with charts/KPIs (always available).");
 
   // Always-on: persistent memory. The agent reads its memory from the system
   // prompt and writes back through these tools.

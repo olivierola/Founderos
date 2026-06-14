@@ -107,7 +107,10 @@ function buildSystemPrompt(
       "- Your final message is a concise mission report (markdown): what you did, key findings, deliverables produced, pending approvals if any.",
     );
   } else {
-    lines.push("- Respond in concise markdown, in the user's language. Avoid filler.");
+    lines.push(
+      "- Respond in concise markdown, in the user's language. Avoid filler.",
+      "- When the user asks for an analysis, report, summary of data, or anything substantial, produce it with create_deliverable (prefer kind=\"report\" with KPIs/charts/tables). Then reply with a short summary — the full report opens as an artifact card in the chat.",
+    );
   }
   return lines.join("\n");
 }
@@ -211,6 +214,7 @@ function makeToolContext(opts: {
       await admin.from("internal_agent_deliverables").insert({
         run_id: runId,
         mission_id: missionId,
+        conversation_id: opts.conversationId ?? null,
         agent_id: agent.id,
         kind: d.kind,
         name: d.name,
