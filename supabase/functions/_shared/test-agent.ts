@@ -12,11 +12,11 @@ import { createServiceClient } from "./supabase-admin.ts";
 
 type Admin = ReturnType<typeof createServiceClient>;
 
-// The agent needs strong reasoning to drive a browser. Use the most capable
-// Groq model available; override with E2E_AGENT_MODEL without redeploying.
-// Kimi K2 is purpose-built for agentic tool use and is strong at following a
-// directive and matching it to the right element.
-const AGENT_MODEL = Deno.env.get("E2E_AGENT_MODEL") || "moonshotai/kimi-k2-instruct";
+// The agent needs strong reasoning to drive a browser. We run it on DeepSeek
+// (deepseek-chat) for reliable agentic reasoning. Override the model with
+// E2E_AGENT_MODEL and the provider with E2E_AGENT_PROVIDER without redeploying.
+const AGENT_PROVIDER = (Deno.env.get("E2E_AGENT_PROVIDER") as "groq" | "deepseek" | undefined) || "deepseek";
+const AGENT_MODEL = Deno.env.get("E2E_AGENT_MODEL") || "deepseek-chat";
 
 export interface BrowserAction {
   // What the runner should do next.
@@ -82,6 +82,105 @@ Respond with STRICT JSON for the SINGLE next action, no prose:
 { "type": "...", "ref": 0, "selector": "...", "value": "...", "key": "...", "direction": "up|down", "amount": 0, "message": "...", "question": "...", "assertion": "...", "reason": "..." }
 Include only fields relevant to the chosen type. For click/fill/select prefer "ref". For "fill", "value" is required. For "say", put your message in "message". Always include a short "reason".`;
 
+// ── Structured run report ───────────────────────────────────────────────────
+export interface RunReport {
+  title: string;
+  verdict: "pass" | "fail";
+  summary: string;                        // 2-3 sentence executive summary
+  metrics: Array<{ label: string; value: string; tone?: "good" | "bad" | "neutral" }>;
+  steps: Array<{ label: string; status: "ok" | "fail" | "info" }>;
+  findings: Array<{ severity: "info" | "warning" | "critical"; title: string; detail?: string }>;
+  recommendations: string[];
+}
+
+// Produce a rich, structured report from the full run history. Best-effort: on
+// any failure we synthesise a minimal report so the UI always has something.
+export async function generateRunReport(
+  ctx: {
+    instructions: string;
+    expected_outcome: string | null;
+    app_url: string;
+    verdict: "pass" | "fail";
+    assertion?: string | null;
+    failReason?: string | null;
+    history: Array<{ kind: string; label: string | null; actor?: string }>;
+    durationMs?: number | null;
+  },
+  scope: { workspace_id: string; project_id: string },
+): Promise<RunReport> {
+  const actionLog = ctx.history
+    .filter((h) => h.kind !== "dom_snapshot")
+    .map((h, i) => `${i + 1}. [${h.actor ?? "agent"}] ${h.kind}${h.label ? `: ${h.label}` : ""}`)
+    .join("\n")
+    .slice(0, 6000);
+
+  const userPrompt = `Write a QA test report as STRICT JSON.
+
+Test goal:
+"""${ctx.instructions}"""
+Expected outcome: ${ctx.expected_outcome ?? "(inferred)"}
+App: ${ctx.app_url}
+Final verdict: ${ctx.verdict.toUpperCase()}${ctx.assertion ? ` — ${ctx.assertion}` : ""}${ctx.failReason ? ` — ${ctx.failReason}` : ""}
+${ctx.durationMs ? `Duration: ${Math.round(ctx.durationMs / 1000)}s` : ""}
+
+Execution log (most recent last):
+${actionLog || "(no steps)"}
+
+Return JSON exactly in this shape:
+{
+  "title": "short report title",
+  "verdict": "pass" | "fail",
+  "summary": "2-3 sentence executive summary of what was tested and the outcome",
+  "metrics": [ { "label": "Steps", "value": "12", "tone": "neutral" }, { "label": "Duration", "value": "34s" } ],
+  "steps": [ { "label": "Navigated to /login", "status": "ok" } ],
+  "findings": [ { "severity": "info"|"warning"|"critical", "title": "...", "detail": "..." } ],
+  "recommendations": [ "actionable suggestion", ... ]
+}
+Base everything on the actual log. Keep it concise and useful. tone: "good" for positive metrics, "bad" for problems, else "neutral".`;
+
+  const fallback: RunReport = {
+    title: ctx.verdict === "pass" ? "Test passed" : "Test failed",
+    verdict: ctx.verdict,
+    summary: ctx.assertion || ctx.failReason || `The test ${ctx.verdict === "pass" ? "completed successfully" : "did not pass"}.`,
+    metrics: [
+      { label: "Verdict", value: ctx.verdict.toUpperCase(), tone: ctx.verdict === "pass" ? "good" : "bad" },
+      { label: "Steps", value: String(ctx.history.filter((h) => ["click", "fill", "select", "navigate", "press", "scroll"].includes(h.kind)).length) },
+      ...(ctx.durationMs ? [{ label: "Duration", value: `${Math.round(ctx.durationMs / 1000)}s` }] : []),
+    ],
+    steps: ctx.history
+      .filter((h) => ["click", "fill", "select", "navigate", "press", "scroll", "assert"].includes(h.kind))
+      .map((h) => ({ label: h.label || h.kind, status: "ok" as const })),
+    findings: ctx.verdict === "fail"
+      ? [{ severity: "critical" as const, title: "Test failed", detail: ctx.failReason ?? undefined }]
+      : [],
+    recommendations: [],
+  };
+
+  try {
+    let res;
+    try {
+      res = await callAi({ task: "json_extraction", systemPrompt: "You write concise, structured QA reports as strict JSON.", userPrompt, jsonMode: true, maxTokens: 1200, provider: AGENT_PROVIDER, model: AGENT_MODEL });
+    } catch (_e) {
+      res = await callAi({ task: "json_extraction", systemPrompt: "You write concise, structured QA reports as strict JSON.", userPrompt, jsonMode: true, maxTokens: 1200 });
+    }
+    logLlmUsage({ ...scope, provider: res.provider, model: res.model, task: "json_extraction", feature: "e2e_testing_report", usage: res.usage });
+    const parsed = safeParseJson<RunReport>(res.content);
+    if (!parsed || !parsed.summary) return fallback;
+    // Normalise + clamp.
+    return {
+      title: String(parsed.title ?? fallback.title).slice(0, 120),
+      verdict: parsed.verdict === "fail" ? "fail" : parsed.verdict === "pass" ? "pass" : ctx.verdict,
+      summary: String(parsed.summary).slice(0, 800),
+      metrics: Array.isArray(parsed.metrics) ? parsed.metrics.slice(0, 8) : fallback.metrics,
+      steps: Array.isArray(parsed.steps) ? parsed.steps.slice(0, 60) : fallback.steps,
+      findings: Array.isArray(parsed.findings) ? parsed.findings.slice(0, 20) : [],
+      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.slice(0, 10).map(String) : [],
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 // Draft a high-level ordered plan (intents) from the NL instructions.
 export async function draftPlan(
   ctx: Pick<RunContext, "instructions" | "expected_outcome" | "fixtures" | "app_url">,
@@ -100,7 +199,7 @@ Respond as JSON: { "plan": ["...", "..."] }`;
     try {
       res = await callAi({
         task: "json_extraction", systemPrompt: "You plan browser E2E tests. Output strict JSON only.",
-        userPrompt, jsonMode: true, maxTokens: 600, model: AGENT_MODEL,
+        userPrompt, jsonMode: true, maxTokens: 600, provider: AGENT_PROVIDER, model: AGENT_MODEL,
       });
     } catch (_e) {
       res = await callAi({
@@ -136,13 +235,13 @@ Current page snapshot — interactive elements are numbered; act with "ref":
 """${dom || "(empty — page may not be loaded yet; consider navigate)"}"""
 
 Decide the single next action as strict JSON. When the user gave an instruction above, pick the ref whose label best matches it.`;
-  // Use the strong agent model; if it's unavailable on this account, fall back
-  // to the provider default so a run never hard-fails on the model name.
+  // Run on the configured agent provider/model; fall back to task routing if it
+  // is unavailable so a run never hard-fails.
   let res;
   try {
     res = await callAi({
       task: "json_extraction", systemPrompt: SYSTEM, userPrompt,
-      jsonMode: true, maxTokens: 500, temperature: 0.1, model: AGENT_MODEL,
+      jsonMode: true, maxTokens: 500, temperature: 0.1, provider: AGENT_PROVIDER, model: AGENT_MODEL,
     });
   } catch (_e) {
     res = await callAi({

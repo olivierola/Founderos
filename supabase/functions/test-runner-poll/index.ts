@@ -25,7 +25,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import {
-  decideNextAction, appendStep, actionToStep, type RunContext,
+  decideNextAction, appendStep, actionToStep, generateRunReport, type RunContext,
 } from "../_shared/test-agent.ts";
 
 async function sha256Hex(s: string): Promise<string> {
@@ -157,12 +157,40 @@ Deno.serve(async (req) => {
         return jsonResponse({ ok: true, action, paused: true });
       }
       if (action.type === "pass" || action.type === "fail") {
+        const verdict = action.type === "pass" ? "pass" : "fail";
+        const finishedAt = new Date().toISOString();
+        const durationMs = run.started_at ? new Date(finishedAt).getTime() - new Date(run.started_at).getTime() : null;
+
+        // Build a rich structured report from the full run history.
+        const report = await generateRunReport(
+          {
+            instructions: tc?.instructions ?? "",
+            expected_outcome: tc?.expected_outcome ?? null,
+            app_url: run.app_url,
+            verdict,
+            assertion: action.assertion ?? null,
+            failReason: action.reason ?? null,
+            history: steps.map((s) => ({ kind: s.kind, label: s.label, actor: s.actor })),
+            durationMs,
+          },
+          { workspace_id: run.workspace_id, project_id: run.project_id },
+        );
+
         await admin.from("test_runs").update({
-          status: action.type === "pass" ? "passed" : "failed",
-          finished_at: new Date().toISOString(),
-          result: { assertion: action.assertion ?? null },
-          error_message: action.type === "fail" ? (action.reason ?? action.assertion ?? "Test failed") : null,
+          status: verdict === "pass" ? "passed" : "failed",
+          finished_at: finishedAt,
+          result: { assertion: action.assertion ?? null, report },
+          error_message: verdict === "fail" ? (action.reason ?? action.assertion ?? "Test failed") : null,
         }).eq("id", runId);
+
+        // Emit the report as a timeline artifact (a card the user can open).
+        await appendStep(admin, runId, {
+          actor: "agent", kind: "report",
+          label: report.title,
+          payload: { report } as unknown as Record<string, unknown>,
+          screenshot_url: screenshotUrl,
+        });
+
         return jsonResponse({ ok: true, action, terminal: true });
       }
 

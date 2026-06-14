@@ -12,6 +12,7 @@ import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { RUN_TONE, type RunStatus, type TestCase, type TestSuite } from "./TestingPage";
+import { ReportArtifactCard, ReportDialog, type RunReport } from "./TestReport";
 
 const TERMINAL: RunStatus[] = ["passed", "failed", "error", "cancelled"];
 
@@ -165,6 +166,7 @@ function LiveRun({ runId }: { runId: string }) {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [openReport, setOpenReport] = useState<RunReport | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
   const run = useQuery({
@@ -281,7 +283,7 @@ function LiveRun({ runId }: { runId: string }) {
           {(steps.data ?? []).length === 0 ? (
             <p className="text-xs text-muted-foreground">The agent is getting ready…</p>
           ) : (
-            (steps.data ?? []).map((s) => <ChatStep key={s.id} step={s} />)
+            (steps.data ?? []).map((s) => <ChatStep key={s.id} step={s} onOpenReport={setOpenReport} />)
           )}
           {live && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -323,14 +325,33 @@ function LiveRun({ runId }: { runId: string }) {
           </div>
         </div>
       </div>
+
+      <ReportDialog report={openReport} open={!!openReport} onOpenChange={(o) => !o && setOpenReport(null)} />
     </div>
   );
 }
 
-function ChatStep({ step }: { step: RunStep }) {
+function ChatStep({ step, onOpenReport }: { step: RunStep; onOpenReport: (r: RunReport) => void }) {
   const isUser = step.actor === "user";
   const isAgent = step.actor === "agent";
   const failed = step.kind === "fail" || step.kind === "error" || step.status === "failed";
+
+  // Structured report → artifact card.
+  if (step.kind === "report") {
+    const report = (step.payload?.report ?? null) as RunReport | null;
+    if (report) {
+      return (
+        <div className="flex items-start gap-2">
+          <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+            <Bot className="h-3 w-3" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <ReportArtifactCard report={report} onOpen={() => onOpenReport(report)} />
+          </div>
+        </div>
+      );
+    }
+  }
 
   if (isUser) {
     return (

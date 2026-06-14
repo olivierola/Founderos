@@ -43,6 +43,8 @@ interface CallOpts {
   temperature?: number;
   /** Override the model for this call (e.g. a stronger reasoning model). */
   model?: string;
+  /** Force a specific provider, bypassing task-based routing. */
+  provider?: "groq" | "deepseek";
 }
 
 interface ChatResponse {
@@ -55,7 +57,7 @@ const GROQ_MODEL = "llama-3.3-70b-versatile";
 const DEEPSEEK_MODEL = "deepseek-chat";
 
 export async function callAi(opts: CallOpts): Promise<{ content: string; provider: "groq" | "deepseek"; model: string; usage?: ChatResponse["usage"] }> {
-  const provider = routeAiRequest(opts.task);
+  const provider = opts.provider ?? routeAiRequest(opts.task);
   const apiKey =
     provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
   if (!apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
