@@ -459,6 +459,98 @@ export async function validateProvider(
           ? ok({}, "write_enabled")
           : fail("A valid Inngest event key is required");
 
+      // ── HR / People ──
+      case "bamboohr": {
+        if (!payload.subdomain || !payload.api_key) return fail("subdomain + api_key required");
+        // BambooHR uses HTTP Basic: api_key as username, any password.
+        const r = await fetchJson(`https://api.bamboohr.com/api/gateway.php/${payload.subdomain}/v1/employees/directory`, {
+          headers: { Authorization: `Basic ${btoa(`${payload.api_key}:x`)}`, Accept: "application/json" },
+        });
+        if (r.status === 401) return fail("Invalid BambooHR API key or subdomain");
+        if (!r.ok && r.status !== 403) return fail(`BambooHR error (HTTP ${r.status})`);
+        return ok({ subdomain: payload.subdomain });
+      }
+      case "greenhouse":
+        return payload.api_key
+          ? bearer("https://harvest.greenhouse.io/v1/jobs?per_page=1", payload.api_key, {}, "read_only", {
+              Authorization: `Basic ${btoa(`${payload.api_key}:`)}`,
+            })
+          : fail("api_key required");
+      case "deel":
+        return payload.api_key ? bearer("https://api.letsdeel.com/rest/v2/people", payload.api_key) : fail("api_key required");
+      case "personio": {
+        if (!payload.client_id || !payload.client_secret) return fail("client_id + client_secret required");
+        const r = await fetchJson("https://api.personio.de/v1/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ client_id: payload.client_id, client_secret: payload.client_secret }),
+        });
+        if (!r.ok) return fail("Invalid Personio credentials");
+        return ok({});
+      }
+
+      // ── Design ──
+      case "figma":
+        return payload.api_key
+          ? bearer("https://api.figma.com/v1/me", payload.api_key, {}, "read_only", { "X-Figma-Token": payload.api_key })
+          : fail("Personal access token required");
+      case "unsplash":
+        return payload.api_key
+          ? bearer(`https://api.unsplash.com/me`, payload.api_key, {}, "read_only", { Authorization: `Client-ID ${payload.api_key}` })
+          : fail("Access key required");
+      case "cloudinary-design": {
+        if (!payload.cloud_name || !payload.api_key || !payload.api_secret) return fail("cloud_name + api_key + api_secret required");
+        const auth = btoa(`${payload.api_key}:${payload.api_secret}`);
+        const r = await fetchJson(`https://api.cloudinary.com/v1_1/${payload.cloud_name}/usage`, {
+          headers: { Authorization: `Basic ${auth}` },
+        });
+        if (r.status === 401) return fail("Invalid Cloudinary credentials");
+        return ok({ cloud_name: payload.cloud_name }, "write_enabled");
+      }
+      case "canva":
+        // Canva Connect uses OAuth; accept a token and validate format here.
+        return payload.api_key && payload.api_key.length >= 8 ? ok({}, "write_enabled") : fail("A Canva API token is required");
+
+      // ── Data & analytics ──
+      case "airtable":
+        return payload.api_key
+          ? bearer("https://api.airtable.com/v0/meta/whoami", payload.api_key)
+          : fail("Personal access token required");
+      case "metabase": {
+        if (!payload.base_url || !payload.api_key) return fail("base_url + api_key required");
+        const base = String(payload.base_url).replace(/\/+$/, "");
+        const r = await fetchJson(`${base}/api/user/current`, { headers: { "x-api-key": payload.api_key } });
+        if (r.status === 401) return fail("Invalid Metabase API key");
+        if (!r.ok) return fail(`Metabase error (HTTP ${r.status})`);
+        return ok({ base_url: base });
+      }
+      case "bigquery": {
+        // Validate the service account by minting a Google token (datastore scope
+        // also works for BigQuery read via the cloud-platform scope).
+        if (!payload.project_id || !payload.service_account) return fail("project_id + service_account JSON required");
+        try {
+          await getGoogleAccessToken(payload.service_account, ["https://www.googleapis.com/auth/bigquery.readonly"]);
+          return ok({ project_id: payload.project_id }, "read_only");
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : "Invalid service account");
+        }
+      }
+      case "googlesheets": {
+        if (!payload.service_account) return fail("service_account JSON required");
+        try {
+          await getGoogleAccessToken(payload.service_account, ["https://www.googleapis.com/auth/spreadsheets"]);
+          return ok({}, "write_enabled");
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : "Invalid service account");
+        }
+      }
+      case "snowflake":
+        // Snowflake auth needs its driver/SQL API session; accept connection
+        // details (validated on first query by the data adapter).
+        return payload.account && payload.username && payload.password
+          ? ok({ account: payload.account }, "read_only")
+          : fail("account + username + password required");
+
       default:
         // Unknown provider: accept if it has any field, store as-is (best effort).
         return Object.keys(payload).length > 0

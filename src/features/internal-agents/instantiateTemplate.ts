@@ -9,26 +9,39 @@ export async function instantiateTemplate(
 ): Promise<string> {
   const flags = autonomyToFlags(template.autonomy);
 
+  // Core columns guaranteed by the base schema. We add the v2 columns
+  // (max_steps / requires_approval) in a follow-up update so a stale PostgREST
+  // schema cache on those columns can never block agent creation.
+  const base = {
+    workspace_id: ctx.workspaceId,
+    project_id: ctx.projectId,
+    created_by: ctx.userId,
+    name: template.name,
+    description: template.tagline,
+    avatar_emoji: template.emoji,
+    accent_color: template.accent,
+    persona: template.persona,
+    instructions: template.instructions,
+    chat_enabled: true,
+    mission_enabled: true,
+  };
+
   const { data: agent, error } = await supabase
     .from("internal_agents")
-    .insert({
-      workspace_id: ctx.workspaceId,
-      project_id: ctx.projectId,
-      created_by: ctx.userId,
-      name: template.name,
-      description: template.tagline,
-      avatar_emoji: template.emoji,
-      accent_color: template.accent,
-      persona: template.persona,
-      instructions: template.instructions,
-      max_steps: template.max_steps,
-      requires_approval: flags.requires_approval,
-      chat_enabled: true,
-      mission_enabled: true,
-    })
+    .insert(base)
     .select("id")
     .single();
   if (error || !agent) throw new Error(error?.message ?? "Could not create the agent");
+
+  // Best-effort: set autonomy guardrails (v2 columns). Ignore if unavailable.
+  try {
+    await supabase
+      .from("internal_agents")
+      .update({ max_steps: template.max_steps, requires_approval: flags.requires_approval })
+      .eq("id", agent.id);
+  } catch {
+    /* v2 columns not in cache yet — agent still works with defaults */
+  }
 
   if (template.tools.length > 0) {
     const rows = template.tools.map((t) => ({

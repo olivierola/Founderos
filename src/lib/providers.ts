@@ -32,6 +32,12 @@ import {
   Twitter,
   Linkedin,
   CalendarClock,
+  Palette,
+  Image,
+  Table2,
+  PieChart,
+  UserCheck,
+  BriefcaseBusiness,
   type LucideIcon,
 } from "lucide-react";
 
@@ -58,6 +64,9 @@ export type ProviderCategory =
   | "security"
   | "crm"
   | "marketing"
+  | "hr"
+  | "design"
+  | "data"
   | "tooling";
 
 export interface ProviderDef {
@@ -825,6 +834,158 @@ export const PROVIDERS: ProviderDef[] = [
     description: "Relay posts to any channel via an automation webhook.",
     mvp: true,
     fields: [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://…", secret: true }],
+  },
+
+  // --- HR / People ---
+  {
+    slug: "bamboohr",
+    name: "BambooHR",
+    category: "hr",
+    icon: Users,
+    description: "Employee directory, time off, onboarding — agents read HR data & build reports.",
+    mvp: true,
+    fields: [
+      { key: "subdomain", label: "Company subdomain", placeholder: "acme (from acme.bamboohr.com)", secret: false },
+      apiKeyField("API key", "…", "https://documentation.bamboohr.com/docs"),
+    ],
+  },
+  {
+    slug: "personio",
+    name: "Personio",
+    category: "hr",
+    icon: BriefcaseBusiness,
+    description: "EU HR platform — employees, absences, payroll context for HR agents.",
+    mvp: true,
+    fields: [
+      { key: "client_id", label: "Client ID", placeholder: "…", secret: false },
+      { key: "client_secret", label: "Client secret", placeholder: "…", secret: true, helpUrl: "https://developer.personio.de/docs" },
+    ],
+  },
+  {
+    slug: "greenhouse",
+    name: "Greenhouse",
+    category: "hr",
+    icon: UserCheck,
+    description: "Recruiting & ATS — candidates, jobs, pipeline analytics for hiring agents.",
+    mvp: true,
+    fields: [apiKeyField("Harvest API key", "…", "https://developers.greenhouse.io/harvest.html")],
+  },
+  {
+    slug: "deel",
+    name: "Deel",
+    category: "hr",
+    icon: Users,
+    description: "Global payroll & contractors — contracts and payments for people ops.",
+    mvp: true,
+    fields: [apiKeyField("API token", "…", "https://developer.deel.com/")],
+  },
+
+  // --- Design ---
+  {
+    slug: "figma",
+    name: "Figma",
+    category: "design",
+    icon: Palette,
+    description: "Design files, components, comments — agents review designs & export assets.",
+    mvp: true,
+    fields: [apiKeyField("Personal access token", "figd_…", "https://www.figma.com/developers/api#access-tokens")],
+  },
+  {
+    slug: "canva",
+    name: "Canva",
+    category: "design",
+    icon: Image,
+    description: "Create & export branded visuals — agents generate on-brand graphics.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://www.canva.dev/docs/connect/")],
+  },
+  {
+    slug: "cloudinary-design",
+    name: "Cloudinary (assets)",
+    category: "design",
+    icon: Image,
+    description: "Media asset management & transforms for design/marketing agents.",
+    mvp: true,
+    fields: [
+      { key: "cloud_name", label: "Cloud name", placeholder: "my-cloud", secret: false },
+      { key: "api_key", label: "API key", placeholder: "…", secret: false },
+      { key: "api_secret", label: "API secret", placeholder: "…", secret: true, helpUrl: "https://cloudinary.com/documentation/admin_api" },
+    ],
+  },
+  {
+    slug: "unsplash",
+    name: "Unsplash",
+    category: "design",
+    icon: Image,
+    description: "Stock imagery — agents source visuals for content & decks.",
+    mvp: true,
+    fields: [apiKeyField("Access key", "…", "https://unsplash.com/developers")],
+  },
+
+  // --- Data & analytics (warehouses / BI) ---
+  {
+    slug: "bigquery",
+    name: "BigQuery",
+    category: "data",
+    icon: Table2,
+    description: "Google data warehouse — agents run analytical queries & build reports.",
+    mvp: true,
+    fields: [
+      { key: "project_id", label: "GCP project ID", placeholder: "my-gcp-project", secret: false },
+      {
+        key: "service_account",
+        label: "Service account JSON",
+        placeholder: '{ "type": "service_account", "project_id": "…", "private_key": "…", "client_email": "…" }',
+        secret: true,
+        helpUrl: "https://cloud.google.com/bigquery/docs/authentication/service-account-file",
+      },
+    ],
+  },
+  {
+    slug: "snowflake",
+    name: "Snowflake",
+    category: "data",
+    icon: Database,
+    description: "Cloud data warehouse — query company data for analyses & dashboards.",
+    mvp: true,
+    fields: [
+      { key: "account", label: "Account identifier", placeholder: "xy12345.eu-west-1", secret: false },
+      { key: "username", label: "User", placeholder: "ANALYST", secret: false },
+      { key: "password", label: "Password", placeholder: "…", secret: true },
+      { key: "warehouse", label: "Warehouse", placeholder: "COMPUTE_WH", secret: false },
+    ],
+  },
+  {
+    slug: "metabase",
+    name: "Metabase",
+    category: "data",
+    icon: PieChart,
+    description: "BI dashboards & questions — agents fetch metrics and assemble reports.",
+    mvp: true,
+    fields: [
+      { key: "base_url", label: "Metabase URL", placeholder: "https://metabase.acme.com", secret: false },
+      apiKeyField("API key", "…", "https://www.metabase.com/docs/latest/people-and-groups/api-keys"),
+    ],
+  },
+  {
+    slug: "airtable",
+    name: "Airtable",
+    category: "data",
+    icon: Table2,
+    description: "Flexible tables & bases — agents read/write structured data and report on it.",
+    mvp: true,
+    fields: [apiKeyField("Personal access token", "pat…", "https://airtable.com/create/tokens")],
+  },
+  {
+    slug: "googlesheets",
+    name: "Google Sheets",
+    category: "data",
+    icon: Table2,
+    description: "Spreadsheets — agents read data, append rows and produce summaries.",
+    mvp: true,
+    fields: [
+      { key: "service_account", label: "Service account JSON", placeholder: '{ "client_email": "…", "private_key": "…" }', secret: true, helpUrl: "https://developers.google.com/sheets/api/guides/authorizing" },
+    ],
   },
 ];
 
