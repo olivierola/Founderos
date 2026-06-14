@@ -152,7 +152,7 @@ export function OpsTestRunPage() {
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         {/* Streamed app view — full width, with an animated multicolour glow
             that fades inward over the render. */}
-        <div className="relative w-full overflow-hidden rounded-xl border border-border bg-secondary/20">
+        <div className="relative w-full overflow-hidden rounded-xl border border-border bg-white">
             {r?.last_screenshot_url ? (
               <img
                 src={r.last_screenshot_url}

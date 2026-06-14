@@ -227,7 +227,7 @@ function LiveRun({ runId }: { runId: string }) {
   return (
     <div className="flex h-full min-h-0">
       {/* LEFT: app preview, fixed (does not scroll with chat). */}
-      <div className="flex min-w-0 flex-1 flex-col bg-black/20">
+      <div className="flex min-w-0 flex-1 flex-col bg-muted/30">
         <div className="flex items-center gap-3 border-b border-border px-4 py-2">
           {tone && <Badge variant={tone.variant}>{tone.label}</Badge>}
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -241,7 +241,7 @@ function LiveRun({ runId }: { runId: string }) {
           )}
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-          <div className="relative max-h-full w-full overflow-hidden rounded-xl border border-border bg-secondary/20">
+          <div className="relative max-h-full w-full overflow-hidden rounded-xl border border-border bg-white">
             {r?.last_screenshot_url ? (
               <img src={r.last_screenshot_url} alt="App under test" className="block max-h-[calc(100vh-12rem)] w-full object-contain" />
             ) : (
@@ -263,13 +263,10 @@ function LiveRun({ runId }: { runId: string }) {
         </div>
       </div>
 
-      {/* RIGHT: agent chat, full height. */}
-      <div className="flex w-[380px] shrink-0 flex-col border-l border-border bg-background">
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm font-medium">
-          <Bot className="h-4 w-4 text-primary" /> Test agent
-        </div>
-
-        <div ref={chatRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+      {/* RIGHT: agent chat, full height. The composer floats over the messages. */}
+      <div className="relative flex w-[380px] shrink-0 flex-col border-l border-border bg-background">
+        {/* Extra top + bottom padding so messages clear the floating composer. */}
+        <div ref={chatRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 pb-40">
           {(steps.data ?? []).length === 0 ? (
             <p className="text-xs text-muted-foreground">The agent is getting ready…</p>
           ) : (
@@ -283,32 +280,35 @@ function LiveRun({ runId }: { runId: string }) {
           )}
         </div>
 
-        {/* Composer: answers a question, or sends a directive mid-run. */}
-        <div className="border-t border-border p-3">
-          {r?.status === "needs_input" && r.pending_question && (
-            <p className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
-              {r.pending_question}
-            </p>
-          )}
-          <div className="flex items-end gap-2">
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              rows={2}
-              placeholder={r?.status === "needs_input" ? "Answer the agent…" : "Tell the agent what to do…"}
-              disabled={!live && r?.status !== "needs_input"}
-              className="flex-1 resize-none rounded-md border border-border bg-background p-2 text-sm disabled:opacity-50"
-            />
-            <Button size="icon" onClick={send} disabled={sending || !message.trim()}>
-              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
+        {/* Floating composer: detached card with blur, answers a question or
+            sends a directive mid-run. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3">
+          <div className="pointer-events-auto rounded-2xl border border-border bg-background/80 p-2.5 shadow-lg backdrop-blur-md">
+            {r?.status === "needs_input" && r.pending_question && (
+              <p className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
+                {r.pending_question}
+              </p>
+            )}
+            <div className="flex items-end gap-2">
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                rows={2}
+                placeholder={r?.status === "needs_input" ? "Answer the agent…" : "Tell the agent what to do…"}
+                disabled={!live && r?.status !== "needs_input"}
+                className="flex-1 resize-none rounded-lg border border-border bg-background/60 p-2 text-sm disabled:opacity-50"
+              />
+              <Button size="icon" onClick={send} disabled={sending || !message.trim()}>
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+            {!live && r && (
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                This run is {RUN_TONE[r.status].label.toLowerCase()}.
+              </p>
+            )}
           </div>
-          {!live && r && (
-            <p className="mt-2 text-center text-[11px] text-muted-foreground">
-              This run is {RUN_TONE[r.status].label.toLowerCase()}.
-            </p>
-          )}
         </div>
       </div>
     </div>
