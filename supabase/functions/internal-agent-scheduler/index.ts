@@ -46,6 +46,25 @@ async function invokeWorker(agentId: string, runId: string): Promise<boolean> {
   }
 }
 
+async function invokeA2A(messageId: string): Promise<boolean> {
+  const base = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!base || !key) return false;
+  try {
+    const res = await fetch(`${base}/functions/v1/internal-agent-a2a`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ message_id: messageId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+const MAX_A2A_PER_TICK = 5;
+const A2A_RESCUE_AFTER_MS = 60 * 1000;
+
 Deno.serve(async (req) => {
   const corsResp = handleCors(req);
   if (corsResp) return corsResp;
@@ -53,7 +72,7 @@ Deno.serve(async (req) => {
 
   const admin = createServiceClient();
   const now = new Date();
-  const report = { launched: [] as string[], rescued: [] as string[], timed_out: [] as string[] };
+  const report = { launched: [] as string[], rescued: [] as string[], timed_out: [] as string[], a2a: [] as string[] };
 
   // 1. Due scheduled missions.
   const { data: due } = await admin
@@ -136,6 +155,20 @@ Deno.serve(async (req) => {
       payload: { error: "Timed out by scheduler" },
     });
     report.timed_out.push(r.id);
+  }
+
+  // 4. Sweep A2A messages whose immediate trigger failed (pending past a grace
+  //    period), so inter-agent collaboration is resilient to dropped invocations.
+  const a2aBefore = new Date(now.getTime() - A2A_RESCUE_AFTER_MS).toISOString();
+  const { data: pendingMsgs } = await admin
+    .from("internal_agent_a2a_messages")
+    .select("id")
+    .eq("status", "pending")
+    .lt("created_at", a2aBefore)
+    .order("created_at", { ascending: true })
+    .limit(MAX_A2A_PER_TICK);
+  for (const m of pendingMsgs ?? []) {
+    if (await invokeA2A((m as { id: string }).id)) report.a2a.push((m as { id: string }).id);
   }
 
   return jsonResponse({ ok: true, ...report });

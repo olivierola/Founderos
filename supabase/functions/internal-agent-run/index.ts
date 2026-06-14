@@ -41,6 +41,7 @@ interface AgentRow {
   workspace_id: string;
   project_id: string;
   is_archived: boolean;
+  collaboration_enabled: boolean;
 }
 
 // Rough per-1k-token rates (USD). Adjust as providers change pricing.
@@ -66,9 +67,11 @@ function buildSystemPrompt(
   capabilitySummary: string,
   mode: "chat" | "mission",
   memorySection: string,
+  teamMemorySection: string,
 ): string {
   const lines: string[] = [];
   lines.push(`You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`);
+  lines.push(`You work as part of a TEAM of agents — you can discover, message and delegate to peers, and share knowledge through the team memory.`);
   if (agent.instructions) {
     lines.push("", "Your detailed instructions:", agent.instructions);
   }
@@ -77,6 +80,13 @@ function buildSystemPrompt(
       "",
       "Your persistent memory (knowledge carried over from previous sessions and runs):",
       memorySection,
+    );
+  }
+  if (teamMemorySection) {
+    lines.push(
+      "",
+      "Shared TEAM memory (knowledge contributed by you and your teammate agents):",
+      teamMemorySection,
     );
   }
   lines.push(
@@ -89,6 +99,7 @@ function buildSystemPrompt(
     "- Some tools require human approval: calling them queues the action for review. Acknowledge the pending approval and keep going.",
     "- If a tool errors, adapt: try another approach or state the limitation clearly.",
     "- When you discover a durable fact, preference or lesson worth keeping, save it with save_memory (no transient details, no duplicates of the memory above).",
+    "- Collaborate: if a teammate's skills fit part of the work better, message them (send_message_to_agent) or delegate it (delegate_mission) instead of doing everything yourself. Record team-wide decisions/findings with team_memory.",
   );
   if (mode === "mission") {
     lines.push(
@@ -106,7 +117,7 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived")
+      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -146,6 +157,25 @@ async function loadMemorySection(
   return lines.join("\n");
 }
 
+// Shared team knowledge pool, injected so agents share context across the team.
+async function loadTeamMemorySection(
+  admin: ReturnType<typeof createServiceClient>,
+  projectId: string,
+): Promise<string> {
+  const { data } = await admin
+    .from("internal_agent_team_memories")
+    .select("kind, content, is_pinned")
+    .eq("project_id", projectId)
+    .order("is_pinned", { ascending: false })
+    .order("importance", { ascending: false })
+    .order("updated_at", { ascending: false })
+    .limit(15);
+  if (!data || data.length === 0) return "";
+  return (data as Array<{ kind: string; content: string; is_pinned: boolean }>)
+    .map((m) => `- [${m.kind}${m.is_pinned ? ", pinned" : ""}] ${m.content}`)
+    .join("\n");
+}
+
 function nextRunAt(schedule: string, from: Date): string {
   const d = new Date(from);
   if (schedule === "daily") d.setDate(d.getDate() + 1);
@@ -173,6 +203,8 @@ function makeToolContext(opts: {
     workspaceId: agent.workspace_id,
     projectId: agent.project_id,
     agentId: agent.id,
+    agentName: agent.name,
+    collaborationEnabled: agent.collaboration_enabled,
     runId,
     conversationId: opts.conversationId ?? null,
     createDeliverable: async (d) => {
@@ -246,10 +278,13 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
 
   const ctx = makeToolContext({ admin, agent, runId: null, missionId: null, conversationId });
   const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
-  const memorySection = await loadMemorySection(admin, agent.id);
+  const [memorySection, teamMemorySection] = await Promise.all([
+    loadMemorySection(admin, agent.id),
+    loadTeamMemorySection(admin, agent.project_id),
+  ]);
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "chat", memorySection) },
+    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "chat", memorySection, teamMemorySection) },
     ...(history ?? [])
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
@@ -318,7 +353,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
 
   const { data: mission } = await admin
     .from("internal_agent_missions")
-    .select("id, title, brief, acceptance_criteria, expected_deliverables, schedule")
+    .select("id, title, brief, acceptance_criteria, expected_deliverables, schedule, report_back_to_agent")
     .eq("id", run.mission_id)
     .maybeSingle();
   if (!mission) throw new Error("Mission not found");
@@ -338,7 +373,10 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
   const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
   await ctx.logEvent("log", { message: `Run started — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
 
-  const memorySection = await loadMemorySection(admin, agent.id);
+  const [memorySection, teamMemorySection] = await Promise.all([
+    loadMemorySection(admin, agent.id),
+    loadTeamMemorySection(admin, agent.project_id),
+  ]);
 
   // Continuity for re-runs (especially scheduled missions): show the agent
   // what its last successful run produced so it builds on it instead of
@@ -375,7 +413,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     const result = await callAiWithTools({
       provider,
       messages: [
-        { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection) },
+        { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection, teamMemorySection) },
         { role: "user", content: userPrompt },
       ],
       tools: defs,
@@ -443,6 +481,46 @@ Execute this mission now. Use your tools to gather what you need, save each expe
       .update({ board_column: "review" })
       .eq("id", mission.id)
       .eq("board_column", "in_progress");
+
+    // Delegation report-back: if this mission was delegated and asks to report
+    // back, send the final report as an A2A message to the requesting agent.
+    if (mission.report_back_to_agent) {
+      try {
+        const [a, b] = [agent.id, mission.report_back_to_agent as string].sort();
+        let threadId: string;
+        const { data: existing } = await admin
+          .from("internal_agent_a2a_threads")
+          .select("id").eq("agent_a", a).eq("agent_b", b).maybeSingle();
+        if (existing) threadId = (existing as { id: string }).id;
+        else {
+          const { data: created } = await admin
+            .from("internal_agent_a2a_threads")
+            .insert({ workspace_id: agent.workspace_id, project_id: agent.project_id, agent_a: a, agent_b: b, topic: `Re: ${mission.title}` })
+            .select("id").single();
+          threadId = (created as { id: string }).id;
+        }
+        const { data: rb } = await admin.from("internal_agent_a2a_messages").insert({
+          thread_id: threadId,
+          workspace_id: agent.workspace_id,
+          project_id: agent.project_id,
+          from_agent: agent.id,
+          to_agent: mission.report_back_to_agent,
+          content: `Delegated mission "${mission.title}" complete. Report:\n\n${finalOutput.slice(0, 3500)}`,
+        }).select("id").single();
+        // Make the requester react to the report immediately.
+        if (rb) {
+          const base = Deno.env.get("SUPABASE_URL");
+          const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+          if (base && key) {
+            fetch(`${base}/functions/v1/internal-agent-a2a`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ message_id: (rb as { id: string }).id }),
+            }).catch(() => {});
+          }
+        }
+      } catch { /* report-back is best-effort */ }
+    }
 
     await logLlmUsage({
       workspace_id: agent.workspace_id,

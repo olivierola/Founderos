@@ -65,6 +65,10 @@ export interface InternalToolContext {
   workspaceId: string;
   projectId: string;
   agentId: string;
+  /** This agent's display name — used when collaborating with peers. */
+  agentName?: string;
+  /** Whether this agent may message/delegate to peers. */
+  collaborationEnabled?: boolean;
   runId: string | null;
   /** Originating chat session, when running in chat mode. */
   conversationId?: string | null;
@@ -338,6 +342,48 @@ async function invokeWebhook(
 }
 
 // ---------------------------------------------------------------------------
+// collaboration (inter-agent) implementations
+// ---------------------------------------------------------------------------
+
+// Resolve (or create) the canonical A2A thread for an agent pair. The pair is
+// stored ordered (agent_a < agent_b) so each pair has a single thread.
+async function getOrCreateThread(
+  ctx: InternalToolContext,
+  peerId: string,
+): Promise<string> {
+  const [a, b] = [ctx.agentId, peerId].sort();
+  const { data: existing } = await ctx.admin
+    .from("internal_agent_a2a_threads")
+    .select("id")
+    .eq("agent_a", a)
+    .eq("agent_b", b)
+    .maybeSingle();
+  if (existing) return (existing as { id: string }).id;
+  const { data, error } = await ctx.admin
+    .from("internal_agent_a2a_threads")
+    .insert({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, agent_a: a, agent_b: b })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return (data as { id: string }).id;
+}
+
+// Fire-and-forget: ask the a2a edge to make the recipient agent react now.
+// The scheduler is the safety net if this invocation fails.
+async function triggerA2A(messageId: string): Promise<void> {
+  const base = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!base || !key) return;
+  try {
+    await fetch(`${base}/functions/v1/internal-agent-a2a`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ message_id: messageId }),
+    });
+  } catch { /* scheduler will pick it up */ }
+}
+
+// ---------------------------------------------------------------------------
 // toolset assembly
 // ---------------------------------------------------------------------------
 
@@ -518,6 +564,220 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- list_missions / move_mission: inspect and move missions on your kanban board (always available).");
+
+  // -------------------------------------------------------------------------
+  // Collaboration: discover, message and delegate to peer agents + team memory.
+  // -------------------------------------------------------------------------
+  if (ctx.collaborationEnabled !== false) {
+    tools.set("list_team_agents", {
+      def: {
+        name: "list_team_agents",
+        description:
+          "List the other autonomous agents on your team (project), with their role and skills, so you know who to ask for help or delegate to. Returns agent ids you can use with send_message_to_agent and delegate_mission.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      },
+      run: async () => {
+        const { data } = await ctx.admin
+          .from("internal_agents")
+          .select("id, name, role, skills, description")
+          .eq("project_id", ctx.projectId)
+          .eq("is_archived", false)
+          .eq("collaboration_enabled", true)
+          .neq("id", ctx.agentId)
+          .limit(30);
+        if (!data || data.length === 0) return "No other collaborating agents on this team yet.";
+        return JSON.stringify(data);
+      },
+    });
+
+    tools.set("send_message_to_agent", {
+      def: {
+        name: "send_message_to_agent",
+        description:
+          "Send a message to another team agent (ask a question, share info, request help). The recipient reacts autonomously and may reply — their reply arrives back as a message you'll see in a later turn or session. Use list_team_agents to get agent ids.",
+        parameters: {
+          type: "object",
+          properties: {
+            to_agent_id: { type: "string", description: "Recipient agent id (uuid)." },
+            content: { type: "string", description: "Your message." },
+            topic: { type: "string", description: "Optional short topic for the thread." },
+          },
+          required: ["to_agent_id", "content"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const to = str(args.to_agent_id);
+        const content = str(args.content).trim();
+        if (!to || !content) return "ERROR: to_agent_id and content are required.";
+        if (to === ctx.agentId) return "ERROR: you cannot message yourself.";
+        // Recipient must be a collaborating agent in the same project.
+        const { data: peer } = await ctx.admin
+          .from("internal_agents")
+          .select("id, name, collaboration_enabled, is_archived")
+          .eq("id", to)
+          .eq("project_id", ctx.projectId)
+          .maybeSingle();
+        if (!peer || (peer as any).is_archived || (peer as any).collaboration_enabled === false) {
+          return "ERROR: recipient is not a collaborating agent on this project.";
+        }
+        const threadId = await getOrCreateThread(ctx, to);
+        if (str(args.topic)) {
+          await ctx.admin.from("internal_agent_a2a_threads")
+            .update({ topic: str(args.topic).slice(0, 120), updated_at: new Date().toISOString() })
+            .eq("id", threadId);
+        }
+        const { data: msg, error } = await ctx.admin
+          .from("internal_agent_a2a_messages")
+          .insert({
+            thread_id: threadId,
+            workspace_id: ctx.workspaceId,
+            project_id: ctx.projectId,
+            from_agent: ctx.agentId,
+            to_agent: to,
+            content: content.slice(0, 4000),
+          })
+          .select("id")
+          .single();
+        if (error) return `ERROR: ${error.message}`;
+        await triggerA2A((msg as { id: string }).id);
+        return `Message sent to ${(peer as { name: string }).name}. They will react autonomously; their reply will appear in your A2A thread.`;
+      },
+    });
+
+    tools.set("delegate_mission", {
+      def: {
+        name: "delegate_mission",
+        description:
+          "Delegate a task to a better-suited team agent by creating a mission they own. Use when another agent's skills fit the work better than yours. The mission runs on their side; ask them to report back if you need the result.",
+        parameters: {
+          type: "object",
+          properties: {
+            to_agent_id: { type: "string", description: "Agent to delegate to (uuid)." },
+            title: { type: "string", description: "Mission title." },
+            brief: { type: "string", description: "Detailed task description." },
+            report_back: { type: "boolean", description: "If true, the assignee mirrors its final report back to you (default true)." },
+          },
+          required: ["to_agent_id", "title", "brief"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const to = str(args.to_agent_id);
+        const title = str(args.title).trim().slice(0, 160);
+        const brief = str(args.brief).trim();
+        if (!to || !title || !brief) return "ERROR: to_agent_id, title and brief are required.";
+        if (to === ctx.agentId) return "ERROR: you cannot delegate to yourself.";
+        const { data: peer } = await ctx.admin
+          .from("internal_agents")
+          .select("id, name, collaboration_enabled, is_archived, project_id, workspace_id")
+          .eq("id", to)
+          .eq("project_id", ctx.projectId)
+          .maybeSingle();
+        if (!peer || (peer as any).is_archived || (peer as any).collaboration_enabled === false) {
+          return "ERROR: recipient is not a collaborating agent on this project.";
+        }
+        const reportBack = args.report_back !== false;
+        const { data: mission, error } = await ctx.admin
+          .from("internal_agent_missions")
+          .insert({
+            agent_id: to,
+            workspace_id: ctx.workspaceId,
+            project_id: ctx.projectId,
+            title,
+            brief,
+            status: "active",
+            board_column: "todo",
+            priority: "high",
+            delegated_by_agent: ctx.agentId,
+            report_back_to_agent: reportBack ? ctx.agentId : null,
+          })
+          .select("id")
+          .single();
+        if (error) return `ERROR: ${error.message}`;
+        // Launch the delegated mission immediately (fire-and-forget run).
+        const { data: run } = await ctx.admin
+          .from("internal_agent_runs")
+          .insert({
+            mission_id: (mission as { id: string }).id,
+            agent_id: to,
+            workspace_id: ctx.workspaceId,
+            project_id: ctx.projectId,
+            status: "queued",
+            triggered_via: "api",
+          })
+          .select("id")
+          .single();
+        if (run) {
+          const base = Deno.env.get("SUPABASE_URL");
+          const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+          if (base && key) {
+            fetch(`${base}/functions/v1/internal-agent-run`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ agent_id: to, mode: "mission", run_id: (run as { id: string }).id }),
+            }).catch(() => {});
+          }
+        }
+        return `Mission "${title}" delegated to ${(peer as { name: string }).name} and started.${reportBack ? " They will report back to you." : ""}`;
+      },
+    });
+
+    tools.set("team_memory", {
+      def: {
+        name: "team_memory",
+        description:
+          "Read or write the shared TEAM knowledge pool — facts, decisions and lessons every agent on the project can see. Use 'search' to look something up before asking a peer, and 'add' to record a shared decision or finding others should know.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["search", "add"], description: "search the pool or add to it." },
+            query: { type: "string", description: "Search keywords (for action=search)." },
+            content: { type: "string", description: "The knowledge to record (for action=add)." },
+            kind: { type: "string", enum: ["fact", "preference", "learning", "context", "decision"], description: "Type (for add; default fact)." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+        if (action === "add") {
+          const content = str(args.content).trim().slice(0, 600);
+          if (!content) return "ERROR: content is required to add team memory.";
+          const kind = ["fact", "preference", "learning", "context", "decision"].includes(str(args.kind)) ? str(args.kind) : "fact";
+          const { error } = await ctx.admin.from("internal_agent_team_memories").insert({
+            workspace_id: ctx.workspaceId,
+            project_id: ctx.projectId,
+            kind,
+            content,
+            author_agent: ctx.agentId,
+            source: "agent",
+          });
+          if (error) return `ERROR: ${error.message}`;
+          return `Team memory recorded (${kind}). All project agents can now see it.`;
+        }
+        // search (default)
+        const query = str(args.query).trim();
+        let q = ctx.admin
+          .from("internal_agent_team_memories")
+          .select("kind, content, importance, created_at")
+          .eq("project_id", ctx.projectId)
+          .order("is_pinned", { ascending: false })
+          .order("importance", { ascending: false })
+          .limit(12);
+        if (query) q = q.ilike("content", `%${query.slice(0, 60)}%`);
+        const { data } = await q;
+        if (!data || data.length === 0) return query ? "No matching team memory." : "Team memory is empty.";
+        return JSON.stringify(data);
+      },
+    });
+
+    summaryLines.push(
+      "- list_team_agents / send_message_to_agent / delegate_mission: collaborate with your teammate agents.",
+      "- team_memory: read & contribute to the shared team knowledge pool.",
+    );
+  }
 
   const enabled = rows.filter((r) => r.enabled);
   const hasKind = (k: AgentToolRow["kind"]) => enabled.some((r) => r.kind === k);

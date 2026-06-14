@@ -199,6 +199,7 @@ export const MODULES: ModuleNavItem[] = [
     subItems: [
       { label: "Public agents", slug: "agents", group: "Agents" },
       { label: "Autonomous agents", slug: "internal-agents" },
+      { label: "Agent ecosystem", slug: "ecosystem" },
       { label: "Onboarding", slug: "onboarding" },
 
       // ── AI Assistant (merged from the former AI Agent module) ──

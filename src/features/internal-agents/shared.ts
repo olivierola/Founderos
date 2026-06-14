@@ -21,8 +21,44 @@ export interface InternalAgent {
   max_run_cost_usd: number;
   chat_enabled: boolean;
   mission_enabled: boolean;
+  // Collaboration ecosystem.
+  role: string | null;
+  skills: string[];
+  collaboration_enabled: boolean;
   created_by: string;
   is_archived: boolean;
+  created_at: string;
+}
+
+// --- collaboration ecosystem ------------------------------------------------
+
+export interface A2AMessage {
+  id: string;
+  thread_id: string;
+  from_agent: string;
+  to_agent: string;
+  content: string;
+  status: "pending" | "processing" | "answered" | "ignored";
+  reply_to: string | null;
+  created_at: string;
+}
+
+export interface A2AThread {
+  id: string;
+  agent_a: string;
+  agent_b: string;
+  topic: string | null;
+  updated_at: string;
+}
+
+export interface TeamMemory {
+  id: string;
+  kind: "fact" | "preference" | "learning" | "context" | "decision";
+  content: string;
+  author_agent: string | null;
+  source: "agent" | "user";
+  importance: number;
+  is_pinned: boolean;
   created_at: string;
 }
 

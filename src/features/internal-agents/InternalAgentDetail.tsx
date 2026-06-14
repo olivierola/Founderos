@@ -8,6 +8,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
   CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
   ListTree, Gauge, Brain, Pin, PinOff, ArrowLeft, ChevronDown, History,
+  Network, MessagesSquare, Send, ArrowRight,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -36,6 +37,7 @@ import {
   type InternalAgent, type Mission, type MissionRun, type Deliverable,
   type WorkspaceMemberRow, type RunEvent, type AgentApproval,
   type AgentConversation, type AgentMemory, type MemoryKind, type BoardColumn,
+  type A2AMessage,
   PRIORITY_META, MEMORY_KIND_META, BOARD_COLUMNS, loadWorkspaceMembers, memberLabel,
   dueDateMeta, downloadDeliverable, relativeDate,
 } from "./shared";
@@ -45,6 +47,7 @@ export type InternalAgentTab =
   | "mission"
   | "deliverables"
   | "memory"
+  | "collaboration"
   | "approvals"
   | "instructions"
   | "tools"
@@ -53,7 +56,7 @@ export type InternalAgentTab =
   | "settings";
 
 const VALID_TABS: InternalAgentTab[] = [
-  "chat", "mission", "deliverables", "memory", "approvals", "instructions", "tools", "members", "analytics", "settings",
+  "chat", "mission", "deliverables", "memory", "collaboration", "approvals", "instructions", "tools", "members", "analytics", "settings",
 ];
 
 export function InternalAgentDetailPage() {
@@ -91,6 +94,7 @@ export function InternalAgentDetailPage() {
       {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "deliverables" && <DeliverablesHub agent={agent} />}
       {tab === "memory" && <MemoryTab agent={agent} />}
+      {tab === "collaboration" && <CollaborationTab agent={agent} />}
       {tab === "approvals" && <ApprovalsTab agent={agent} />}
       {tab === "instructions" && <InstructionsEditor agent={agent} />}
       {tab === "tools" && <ToolsTab agent={agent} />}
@@ -2124,6 +2128,11 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   const [missionEnabled, setMissionEnabled] = useState(agent.mission_enabled);
   const [maxSteps, setMaxSteps] = useState(agent.max_steps ?? 8);
   const [maxCost, setMaxCost] = useState(agent.max_run_cost_usd ?? 0.5);
+  // Collaboration profile.
+  const [role, setRole] = useState(agent.role ?? "");
+  const [skills, setSkills] = useState<string[]>(agent.skills ?? []);
+  const [skillInput, setSkillInput] = useState("");
+  const [collabEnabled, setCollabEnabled] = useState(agent.collaboration_enabled ?? true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
@@ -2141,6 +2150,9 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
           mission_enabled: missionEnabled,
           max_steps: Math.min(Math.max(Math.round(maxSteps) || 8, 1), 30),
           max_run_cost_usd: Math.max(Number(maxCost) || 0.5, 0),
+          role: role.trim() || null,
+          skills,
+          collaboration_enabled: collabEnabled,
           updated_at: new Date().toISOString(),
         })
         .eq("id", agent.id);
@@ -2274,6 +2286,54 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
         </CardContent>
       </Card>
 
+      {/* Collaboration profile — how this agent fits in the ecosystem. */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4" /> Collaboration</CardTitle>
+          <p className="text-xs text-muted-foreground">Role and skills help teammate agents decide when to message or delegate to this one.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <label className="flex items-center gap-2 rounded border border-border p-3 text-sm">
+            <input type="checkbox" checked={collabEnabled} onChange={(e) => setCollabEnabled(e.target.checked)} disabled={!isOwner} />
+            <Network className="h-4 w-4 text-muted-foreground" />
+            Allow this agent to collaborate with other agents (message, delegate, share knowledge)
+          </label>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Role</label>
+              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Research analyst" disabled={!isOwner} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Skills</label>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5">
+                {skills.map((s) => (
+                  <span key={s} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {s}
+                    {isOwner && <button onClick={() => setSkills(skills.filter((x) => x !== s))} className="text-muted-foreground hover:text-foreground">×</button>}
+                  </span>
+                ))}
+                {isOwner && (
+                  <input
+                    value={skillInput}
+                    onChange={(e) => setSkillInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const s = skillInput.trim().toLowerCase();
+                        if (s && !skills.includes(s)) setSkills([...skills, s]);
+                        setSkillInput("");
+                      }
+                    }}
+                    placeholder="add skill…"
+                    className="min-w-[80px] flex-1 bg-transparent text-xs focus:outline-none"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {isOwner && (
         <Card>
           <CardHeader><CardTitle className="text-sm text-destructive">Danger zone</CardTitle></CardHeader>
@@ -2288,12 +2348,123 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   );
 }
 
+// ============================================================================
+// COLLABORATION TAB — this agent's inter-agent (A2A) messages + peers
+// ============================================================================
+
+function CollaborationTab({ agent }: { agent: InternalAgent }) {
+  const { data: peers } = useQuery({
+    queryKey: ["agent_peers", agent.project_id, agent.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("internal_agents")
+        .select("id, name, avatar_emoji, role, skills")
+        .eq("project_id", agent.project_id)
+        .eq("is_archived", false)
+        .eq("collaboration_enabled", true)
+        .neq("id", agent.id);
+      return (data ?? []) as Array<{ id: string; name: string; avatar_emoji: string | null; role: string | null; skills: string[] }>;
+    },
+  });
+
+  const { data: messages } = useQuery({
+    queryKey: ["agent_a2a", agent.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("internal_agent_a2a_messages")
+        .select("id, thread_id, from_agent, to_agent, content, status, reply_to, created_at")
+        .or(`from_agent.eq.${agent.id},to_agent.eq.${agent.id}`)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return (data ?? []) as A2AMessage[];
+    },
+    refetchInterval: 5000,
+  });
+
+  const peerName = (id: string) =>
+    id === agent.id ? agent.name : (peers ?? []).find((p) => p.id === id)?.name ?? id.slice(0, 6);
+
+  if (!agent.collaboration_enabled) {
+    return (
+      <EmptyState
+        icon={Network}
+        title="Collaboration is disabled"
+        description="Enable collaboration in Settings so this agent can message, delegate to and learn from teammate agents."
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+      <Card className="flex max-h-[calc(100vh-14rem)] flex-col">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm"><MessagesSquare className="h-4 w-4" /> Agent-to-agent messages</CardTitle>
+        </CardHeader>
+        <CardContent className="min-h-0 flex-1 overflow-y-auto">
+          {!messages || messages.length === 0 ? (
+            <p className="py-8 text-center text-xs text-muted-foreground">
+              No messages yet. This agent will message or delegate to peers autonomously when a task fits their skills.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {messages.map((m) => {
+                const outgoing = m.from_agent === agent.id;
+                return (
+                  <div key={m.id} className={cn("rounded-md border p-2.5", outgoing ? "border-primary/30 bg-primary/5" : "border-border")}>
+                    <div className="mb-1 flex items-center gap-1.5 text-xs">
+                      <span className="font-medium">{peerName(m.from_agent)}</span>
+                      <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                      <span className="font-medium">{peerName(m.to_agent)}</span>
+                      <Badge variant="outline" className="ml-auto text-[10px]">{m.status}</Badge>
+                      <span className="text-[10px] text-muted-foreground">{relativeDate(m.created_at)}</span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-xs leading-relaxed">{m.content}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Teammates</CardTitle></CardHeader>
+        <CardContent>
+          {!peers || peers.length === 0 ? (
+            <p className="py-4 text-center text-xs text-muted-foreground">No other collaborating agents on this project.</p>
+          ) : (
+            <div className="space-y-2">
+              {peers.map((p) => (
+                <div key={p.id} className="rounded-md border border-border p-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">{p.avatar_emoji ?? "🤖"}</span>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{p.name}</div>
+                      {p.role && <div className="truncate text-[10px] text-muted-foreground">{p.role}</div>}
+                    </div>
+                  </div>
+                  {p.skills?.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {p.skills.slice(0, 5).map((s) => <Badge key={s} variant="outline" className="text-[9px]">{s}</Badge>)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // Re-export tab metadata so the sidebar can show the same labels/icons.
 export const INTERNAL_AGENT_TABS: { slug: InternalAgentTab; label: string; icon: any }[] = [
   { slug: "chat", label: "Chat", icon: MessageSquare },
   { slug: "mission", label: "Missions", icon: Target },
   { slug: "deliverables", label: "Deliverables", icon: Package },
   { slug: "memory", label: "Memory", icon: Brain },
+  { slug: "collaboration", label: "Collaboration", icon: Network },
   { slug: "approvals", label: "Approvals", icon: ShieldCheck },
   { slug: "instructions", label: "Instructions", icon: FileText },
   { slug: "tools", label: "Tools", icon: Wrench },
