@@ -121,12 +121,33 @@ async function domExcerpt(page) {
     for (const el of document.querySelectorAll("[data-e2e-ref]")) el.removeAttribute("data-e2e-ref");
 
     const explicit = "a,button,input,textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[role=option],[role=checkbox],[role=radio],[role=switch],[onclick],[tabindex],[data-testid],[data-test],[data-cy],[contenteditable='true']";
+    // Laid-out & not display:none/visibility:hidden. We intentionally KEEP
+    // opacity:0 elements (commonly revealed on hover) and flag them instead.
     const isVisible = (el) => {
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return false;
       if (r.bottom < 0 || r.top > (innerHeight + 1200)) return false; // skip far off-screen
       const st = getComputedStyle(el);
-      return st.visibility !== "hidden" && st.display !== "none" && Number(st.opacity) !== 0;
+      return st.visibility !== "hidden" && st.display !== "none";
+    };
+    // True when an element is in the DOM/layout but currently invisible because
+    // it's gated behind a hover (opacity 0). The agent should hover its parent.
+    const isHoverHidden = (el) => {
+      const st = getComputedStyle(el);
+      if (Number(st.opacity) === 0) return true;
+      // group-hover / hover: utility classes that hide until hovered.
+      const cls = (el.getAttribute("class") || "") + " " + (el.parentElement?.getAttribute("class") || "");
+      return /\bopacity-0\b/.test(cls) && /group-hover:opacity-100|hover:opacity-100/.test(cls);
+    };
+    // Find a sensible ref-bearing ancestor to hover to reveal this element.
+    const hoverHandleOf = (el) => {
+      let p = el.parentElement;
+      for (let i = 0; i < 5 && p; i++, p = p.parentElement) {
+        if (p.hasAttribute?.("data-e2e-ref")) return p.getAttribute("data-e2e-ref");
+        const cls = p.getAttribute?.("class") || "";
+        if (/\bgroup\b/.test(cls)) return p.getAttribute("data-e2e-ref"); // may be null; still a hint
+      }
+      return null;
     };
     // A test id, if present on the element or a close ancestor — the most stable
     // hook the agent can reference.
@@ -260,13 +281,19 @@ async function domExcerpt(page) {
       return `${kind} "${lbl}"${val}${meta}${state}`;
     };
 
-    const lines = [];
-    let ref = 0;
-    for (const el of chosen.slice(0, 200)) {
-      el.setAttribute("data-e2e-ref", String(ref));
-      lines.push(`[${ref}] ${describe(el)}`);
-      ref++;
-    }
+    const picked = chosen.slice(0, 200);
+    // Pass 1: assign refs to all picked elements first so hover hints can point
+    // at a parent's ref.
+    picked.forEach((el, i) => el.setAttribute("data-e2e-ref", String(i)));
+    // Pass 2: describe, flagging hover-revealed items with how to reveal them.
+    const lines = picked.map((el, i) => {
+      let extra = "";
+      if (isHoverHidden(el)) {
+        const handle = hoverHandleOf(el);
+        extra = handle != null ? ` (hidden — hover ref ${handle} to reveal)` : " (hidden until hover)";
+      }
+      return `[${i}] ${describe(el)}${extra}`;
+    });
 
     const headings = Array.from(document.querySelectorAll("h1,h2,h3"))
       .filter(isVisible).slice(0, 8)
@@ -318,6 +345,15 @@ async function execAction(page, action) {
     case "press": {
       const loc = (action.ref !== undefined || action.selector) ? resolveTarget(page, action) : page;
       await loc.press(action.key || "Enter");
+      break;
+    }
+    case "hover": {
+      // Reveal elements that only appear on hover (dropdowns, row actions,
+      // submenus). The next snapshot will include what hovering exposed.
+      const loc = resolveTarget(page, action);
+      if (!loc) throw new Error("hover: no ref or selector");
+      await loc.hover({ timeout: 10000 });
+      await page.waitForTimeout(400); // let the reveal animation play
       break;
     }
     case "scroll":

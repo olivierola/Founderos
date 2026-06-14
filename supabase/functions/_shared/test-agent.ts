@@ -20,7 +20,7 @@ const AGENT_MODEL = Deno.env.get("E2E_AGENT_MODEL") || "deepseek-v4-pro";
 
 export interface BrowserAction {
   // What the runner should do next.
-  type: "navigate" | "click" | "fill" | "select" | "scroll" | "press" | "wait"
+  type: "navigate" | "click" | "fill" | "select" | "scroll" | "press" | "hover" | "wait"
       | "assert" | "say" | "ask_user" | "pass" | "fail";
   ref?: number | string;   // index of a target element from the snapshot (preferred)
   selector?: string;       // fallback CSS/text selector if no ref fits
@@ -62,6 +62,7 @@ HOW TO ACT — critical:
 - Pick the ref whose label best matches your intent. Match by meaning, not position.
 - "fill" needs a "ref" AND a non-empty "value". If you lack the value (password, OTP, email, a code, or which option to choose), use "ask_user" with a precise question. Never invent secrets, never fill empty.
 - READ THE FIELD VALUES in the snapshot. Each input shows its current value, e.g. value="a@b.com" or value=(empty). NEVER fill a field that already contains the intended value — move on to the NEXT empty field (e.g. once email is set, fill the PASSWORD; once both are set, click submit).
+- HOVER-REVEALED elements: some items are marked "(hidden — hover ref N to reveal)" or only appear on hover (row actions, dropdown menus, kebab/⋮ menus). To reach them, first {"type":"hover","ref":N} on the indicated parent/handle, then read the new snapshot and click the revealed item. If a menu/action you expect isn't in the snapshot, hover the likely trigger (row, card, avatar, ⋮ button) to reveal it.
 - A "(disabled)" button (like a Sign in / submit that's greyed out) means a required field is still empty or invalid. Do NOT click it and do NOT navigate away — find the remaining empty/invalid field and fill it first; the button enables itself.
 
 THINKING:
@@ -362,6 +363,7 @@ export function actionToStep(a: BrowserAction): { kind: string; label: string } 
     case "select": return { kind: "select", label: a.reason ?? `Select ${a.value ?? ""}` };
     case "scroll": return { kind: "scroll", label: `Scroll ${a.direction ?? "down"}` };
     case "press": return { kind: "press", label: `Press ${a.key ?? "Enter"}` };
+    case "hover": return { kind: "hover", label: a.reason ?? `Hover ${a.ref ?? a.selector ?? ""}`.trim() };
     case "wait": return { kind: "wait", label: `Wait ${a.amount ?? 500}ms` };
     case "assert": return { kind: "assert", label: a.assertion ?? "Assert" };
     case "ask_user": return { kind: "ask_user", label: a.question ?? "Need input" };
