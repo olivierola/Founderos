@@ -25,6 +25,9 @@ export function Robot3D({ color = "#2F2FE4", size = 56 }: { color?: string; size
         <div className="robot3d__body">
           <span className="robot3d__chest" />
         </div>
+        {/* Arms (one waves) */}
+        <span className="robot3d__arm robot3d__arm--l" />
+        <span className="robot3d__arm robot3d__arm--r" />
       </div>
       {/* Ground shadow */}
       <span className="robot3d__shadow" />

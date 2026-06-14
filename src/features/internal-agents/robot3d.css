@@ -13,12 +13,21 @@
   inset: 0;
   transform-style: preserve-3d;
   transform: rotateX(8deg) rotateY(-12deg);
-  animation: robot3d-float 3.2s ease-in-out infinite;
+  animation: robot3d-float 3.2s ease-in-out infinite, robot3d-sway 6s ease-in-out infinite;
 }
+/* Vertical bob. */
 @keyframes robot3d-float {
   0%, 100% { transform: rotateX(8deg) rotateY(-12deg) translateY(0); }
-  50%      { transform: rotateX(8deg) rotateY(-12deg) translateY(-6%); }
+  50%      { transform: rotateX(8deg) rotateY(-12deg) translateY(-7%); }
 }
+/* Gentle left/right look-around (layered on the bob via the head). */
+@keyframes robot3d-sway {
+  0%, 100% { filter: none; }
+  50%      { filter: none; }
+}
+/* Hover wakes the bot: faster bob, brighter glow. */
+.robot3d:hover .robot3d__float { animation-duration: 1.6s, 6s; }
+.robot3d:hover .robot3d__eye { box-shadow: 0 0 12px var(--robot-accent), 0 0 3px #fff inset; }
 
 /* Head */
 .robot3d__head {
@@ -34,6 +43,13 @@
     inset 0 -3px 6px rgba(0, 0, 0, 0.25),
     inset 0 3px 5px rgba(255, 255, 255, 0.6),
     0 4px 10px rgba(0, 0, 0, 0.2);
+  transform-origin: 50% 100%;
+  animation: robot3d-headtilt 5s ease-in-out infinite;
+}
+@keyframes robot3d-headtilt {
+  0%, 100% { transform: rotate(0deg); }
+  30%      { transform: rotate(-4deg); }
+  70%      { transform: rotate(4deg); }
 }
 .robot3d__face {
   position: absolute;
@@ -134,6 +150,29 @@
   box-shadow: 0 0 6px var(--robot-accent) inset;
 }
 
+/* Arms — the right one waves. */
+.robot3d__arm {
+  position: absolute;
+  top: 56%;
+  width: 9%;
+  height: 26%;
+  border-radius: 5px;
+  background: linear-gradient(160deg, var(--robot-metal), var(--robot-metal-dark));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.robot3d__arm--l { left: 18%; transform-origin: 50% 0; animation: robot3d-arm-idle 3.2s ease-in-out infinite; }
+.robot3d__arm--r { right: 18%; transform-origin: 50% 0; animation: robot3d-wave 2.6s ease-in-out infinite; }
+@keyframes robot3d-wave {
+  0%, 60%, 100% { transform: rotate(8deg); }
+  70%  { transform: rotate(-38deg); }
+  80%  { transform: rotate(-20deg); }
+  90%  { transform: rotate(-38deg); }
+}
+@keyframes robot3d-arm-idle {
+  0%, 100% { transform: rotate(6deg); }
+  50%      { transform: rotate(12deg); }
+}
+
 /* Ground shadow */
 .robot3d__shadow {
   position: absolute;
@@ -152,5 +191,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .robot3d__float, .robot3d__eye, .robot3d__antenna-tip, .robot3d__shadow { animation: none; }
+  .robot3d__float, .robot3d__eye, .robot3d__antenna-tip, .robot3d__shadow,
+  .robot3d__head, .robot3d__arm--l, .robot3d__arm--r { animation: none; }
 }

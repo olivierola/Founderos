@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import ReactFlow, {
-  Background, BackgroundVariant, Controls, MiniMap, Handle, Position,
+  Background, BackgroundVariant, Controls, MiniMap, Handle, Position, Panel,
   type Node, type Edge, type NodeProps,
 } from "reactflow";
 import "reactflow/dist/style.css";
@@ -295,11 +295,14 @@ function NetworkGraph({
     return { nodes, edges };
   }, [agents, threads, onOpen]);
 
+  // Links (A2A threads) are hidden by default — toggle to reveal the network.
+  const [showLinks, setShowLinks] = useState(false);
+
   return (
     <div className="h-full w-full">
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={showLinks ? edges : []}
         nodeTypes={NODE_TYPES}
         fitView
         fitViewOptions={{ padding: 0.2 }}
@@ -312,6 +315,18 @@ function NetworkGraph({
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="hsl(var(--border))" />
         <Controls showInteractive={false} className="!border-border" />
         <MiniMap pannable zoomable nodeColor={(n) => ((n.data as any)?.agent?.accent_color ?? "#2F2FE4")} className="!bg-card" />
+        <Panel position="bottom-center">
+          <button
+            onClick={() => setShowLinks((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm backdrop-blur transition-colors",
+              showLinks ? "border-primary/50 bg-background text-foreground" : "border-border bg-background/80 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Network className="h-3.5 w-3.5" />
+            {showLinks ? "Hide links" : `Show links${edges.length ? ` (${edges.length})` : ""}`}
+          </button>
+        </Panel>
       </ReactFlow>
     </div>
   );
