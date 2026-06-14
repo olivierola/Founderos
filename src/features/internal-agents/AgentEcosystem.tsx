@@ -237,30 +237,23 @@ type EcoAgent = { id: string; name: string; avatar_emoji: string | null; accent_
 function AgentNode({ data }: NodeProps<{ agent: EcoAgent; onOpen: (id: string) => void }>) {
   const a = data.agent;
   const color = a.accent_color ?? "#2F2FE4";
-  // A div (not a button) so React Flow's drag handling is unobstructed. Click
-  // still opens the agent (a drag won't fire onClick). Double-click also opens.
+  // No card/border — just the floating 3D robot + name. A div (not a button)
+  // so React Flow dragging is unobstructed. Double-click (or the hover "Open
+  // chat" button) opens the agent.
   return (
     <div
       onDoubleClick={() => data.onOpen(a.id)}
-      className="group flex w-44 cursor-grab flex-col items-center rounded-xl border bg-card px-3 py-3 shadow-sm transition-colors hover:border-foreground/40 active:cursor-grabbing"
-      style={{ borderColor: color + "55" }}
+      className="group flex w-40 cursor-grab flex-col items-center active:cursor-grabbing"
     >
-      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0" style={{ background: color }} />
-      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0" style={{ background: color }} />
-      <Robot3D color={color} size={56} />
-      <div className="mt-1.5 max-w-full truncate text-sm font-medium">{a.name}</div>
+      <Handle type="target" position={Position.Top} className="!h-1 !w-1 !border-0 !bg-transparent" />
+      <Handle type="source" position={Position.Bottom} className="!h-1 !w-1 !border-0 !bg-transparent" />
+      <Robot3D color={color} size={64} />
+      <div className="mt-1 max-w-full truncate text-sm font-medium drop-shadow-sm">{a.name}</div>
       {a.role && <div className="max-w-full truncate text-[10px] text-muted-foreground">{a.role}</div>}
-      {a.skills?.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap justify-center gap-1">
-          {a.skills.slice(0, 3).map((s) => (
-            <span key={s} className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">{s}</span>
-          ))}
-        </div>
-      )}
-      {/* Explicit open affordance — appears on hover, doesn't conflict with drag. */}
+      {/* Open affordance — appears on hover only, doesn't conflict with drag. */}
       <button
         onClick={(e) => { e.stopPropagation(); data.onOpen(a.id); }}
-        className="nodrag mt-2 rounded-md border border-border px-2 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+        className="nodrag mt-1.5 rounded-full border border-border bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:text-foreground group-hover:opacity-100"
       >
         Open chat
       </button>
