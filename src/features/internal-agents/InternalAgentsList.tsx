@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { AGENT_TEMPLATES, type AgentTemplate } from "./agentTemplates";
+import { AGENT_TEMPLATES, type AgentTemplate, type AgentCategory } from "./agentTemplates";
 import { instantiateTemplate } from "./instantiateTemplate";
 
 const ACCENT_COLORS = [
@@ -51,6 +51,18 @@ export function InternalAgentsListPage() {
   const [newColor, setNewColor] = useState(ACCENT_COLORS[0]);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [activatingKey, setActivatingKey] = useState<string | null>(null);
+  const [templateCat, setTemplateCat] = useState<AgentCategory | "All">("All");
+
+  // Ordered categories present in the catalogue (for the filter bar).
+  const templateCategories = useMemo(() => {
+    const order: AgentCategory[] = [];
+    for (const t of AGENT_TEMPLATES) if (!order.includes(t.category)) order.push(t.category);
+    return order;
+  }, []);
+  const visibleTemplates = useMemo(
+    () => (templateCat === "All" ? AGENT_TEMPLATES : AGENT_TEMPLATES.filter((t) => t.category === templateCat)),
+    [templateCat],
+  );
 
   async function activateTemplate(t: AgentTemplate) {
     if (!workspaceId || !projectId || !user) return;
@@ -218,20 +230,40 @@ export function InternalAgentsListPage() {
         </div>
       )}
 
-      {/* Templates gallery — one-click, ready-to-run agents by use case. */}
+      {/* Templates gallery — one-click, ready-to-run agents by category. */}
       <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" /> Agent templates
+              <span className="text-xs font-normal text-muted-foreground">· {AGENT_TEMPLATES.length} ready-to-run</span>
             </DialogTitle>
           </DialogHeader>
           <p className="-mt-1 text-sm text-muted-foreground">
             Ready-to-run AI workers for any company. Activate one in a click — it comes with its
             instructions, tools and guardrails. Connect your tools and it starts working.
           </p>
-          <div className="mt-2 grid max-h-[65vh] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
-            {AGENT_TEMPLATES.map((t) => (
+
+          {/* Category filter */}
+          <div className="-mx-1 flex flex-wrap gap-1.5 px-1">
+            {(["All", ...templateCategories] as const).map((c) => (
+              <button
+                key={c}
+                onClick={() => setTemplateCat(c)}
+                className={
+                  "rounded-full border px-2.5 py-1 text-xs transition-colors " +
+                  (templateCat === c
+                    ? "border-primary/50 bg-primary/10 text-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground")
+                }
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-1 grid max-h-[60vh] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleTemplates.map((t) => (
               <div key={t.key} className="flex flex-col rounded-xl border border-border bg-card/40 p-4">
                 <div className="flex items-start gap-3">
                   <div
