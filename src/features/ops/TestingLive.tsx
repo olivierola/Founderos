@@ -240,26 +240,31 @@ function LiveRun({ runId }: { runId: string }) {
             </Button>
           )}
         </div>
-        <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-          <div className="relative max-h-full w-full overflow-hidden rounded-xl border border-border bg-white">
-            {r?.last_screenshot_url ? (
-              <img src={r.last_screenshot_url} alt="App under test" className="block max-h-[calc(100vh-12rem)] w-full object-contain" />
-            ) : (
-              <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                {r && ["queued", "planning", "running"].includes(r.status) ? (
-                  <>
-                    <Loader2 className="h-7 w-7 animate-spin" />
-                    <span className="text-sm">
-                      {r.status === "planning" ? "Preparing the test plan…" : r.status === "queued" ? "Starting the test…" : "Loading the app…"}
-                    </span>
-                  </>
-                ) : (
-                  <><Eye className="h-7 w-7" /><span className="text-sm">No frame captured</span></>
-                )}
-              </div>
-            )}
-            <div className="e2e-inner-halo pointer-events-none absolute inset-0 rounded-xl" />
-          </div>
+        {/* The app fills the entire reserved area (no side gaps). object-cover +
+            top alignment keeps the top of the page visible. */}
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
+          {r?.last_screenshot_url ? (
+            <img
+              src={r.last_screenshot_url}
+              alt="App under test"
+              className="h-full w-full object-cover object-top"
+            />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground">
+              {r && ["queued", "planning", "running"].includes(r.status) ? (
+                <>
+                  <Loader2 className="h-7 w-7 animate-spin" />
+                  <span className="text-sm">
+                    {r.status === "planning" ? "Preparing the test plan…" : r.status === "queued" ? "Starting the test…" : "Loading the app…"}
+                  </span>
+                </>
+              ) : (
+                <><Eye className="h-7 w-7" /><span className="text-sm">No frame captured</span></>
+              )}
+            </div>
+          )}
+          {/* Halo as an inset ring over the full area. */}
+          <div className="e2e-inner-halo pointer-events-none absolute inset-0" />
         </div>
       </div>
 
