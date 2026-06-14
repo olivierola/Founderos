@@ -362,6 +362,28 @@ export async function validateProvider(
         return payload.api_key
           ? bearer("https://api.intercom.io/me", payload.api_key, {}, "read_only", { Accept: "application/json" })
           : fail("access token required");
+      case "pipedrive": {
+        if (!payload.company_domain || !payload.api_key) return fail("company_domain + api_token required");
+        const r = await fetchJson(`https://${payload.company_domain}.pipedrive.com/api/v1/users/me?api_token=${encodeURIComponent(payload.api_key)}`, {});
+        if (!r.ok) return fail("Invalid Pipedrive domain or token");
+        return ok({ company_domain: payload.company_domain });
+      }
+      case "salesforce": {
+        if (!payload.instance_url || !payload.access_token) return fail("instance_url + access_token required");
+        const base = String(payload.instance_url).replace(/\/+$/, "");
+        const r = await fetchJson(`${base}/services/data/v60.0/limits`, { headers: { Authorization: `Bearer ${payload.access_token}` } });
+        if (r.status === 401) return fail("Invalid/expired Salesforce token");
+        if (!r.ok) return fail(`Salesforce error (HTTP ${r.status})`);
+        return ok({ instance_url: base });
+      }
+      case "attio":
+        return payload.api_key
+          ? bearer("https://api.attio.com/v2/self", payload.api_key)
+          : fail("API key required");
+      case "factorial":
+        return payload.api_key
+          ? bearer("https://api.factorialhr.com/api/v1/employees", payload.api_key, {}, "read_only", { "x-api-key": payload.api_key })
+          : fail("API key required");
       case "linear": {
         const key = payload.api_key;
         if (!key) return fail("api_key required");

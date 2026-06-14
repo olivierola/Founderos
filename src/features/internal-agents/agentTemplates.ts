@@ -7,7 +7,7 @@
 
 export type ToolKind =
   | "web_search" | "web_fetch" | "db_read" | "rag_search"
-  | "edge_function" | "vault_connector" | "custom";
+  | "edge_function" | "vault_connector" | "connector_action" | "custom";
 
 export interface TemplateTool {
   kind: ToolKind;
@@ -346,7 +346,7 @@ Avoid bias; judge on role-relevant evidence only.`,
     autonomy: "advisor",
     max_steps: 10,
     tools: [
-      { kind: "vault_connector", name: "ATS (Greenhouse)", description: "Read candidates/jobs if connected." },
+      { kind: "connector_action", name: "Greenhouse", description: "List jobs & candidates.", config: { provider: "greenhouse" } },
       { kind: "rag_search", name: "Role & rubric context" },
       { kind: "web_search", name: "Market & references" },
     ],
@@ -368,7 +368,7 @@ Keep it personal and concrete.`,
     autonomy: "assisted",
     max_steps: 10,
     tools: [
-      { kind: "vault_connector", name: "HRIS (BambooHR/Personio)" },
+      { kind: "connector_action", name: "BambooHR", description: "Employee directory & time off.", config: { provider: "bamboohr" } },
       { kind: "rag_search", name: "Company handbook" },
       { kind: "edge_function", name: "Notify people team", config: { slug: "send-notification" } },
     ],
@@ -390,7 +390,7 @@ Aggregate and anonymise — never expose individual sensitive data.`,
     autonomy: "advisor",
     max_steps: 12,
     tools: [
-      { kind: "vault_connector", name: "HRIS" },
+      { kind: "connector_action", name: "BambooHR", description: "Directory & time off for headcount/attrition.", config: { provider: "bamboohr" } },
       { kind: "rag_search", name: "Org context" },
     ],
     outcomes: ["See team health", "Spot attrition early", "Data-driven people decisions"],

@@ -701,6 +701,39 @@ export const PROVIDERS: ProviderDef[] = [
     fields: [apiKeyField("Access token", "…", "https://app.intercom.com")],
   },
   {
+    slug: "pipedrive",
+    name: "Pipedrive",
+    category: "crm",
+    icon: Users,
+    description: "Sales CRM — deals, persons, pipelines. Agents read & report on the funnel.",
+    mvp: true,
+    fields: [
+      { key: "company_domain", label: "Company domain", placeholder: "acme (from acme.pipedrive.com)", secret: false },
+      apiKeyField("API token", "…", "https://developers.pipedrive.com/docs/api/v1"),
+    ],
+  },
+  {
+    slug: "salesforce",
+    name: "Salesforce",
+    category: "crm",
+    icon: Cloud,
+    description: "Enterprise CRM — accounts, opportunities, leads via REST API.",
+    mvp: true,
+    fields: [
+      { key: "instance_url", label: "Instance URL", placeholder: "https://yourco.my.salesforce.com", secret: false, helpUrl: "https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/" },
+      { key: "access_token", label: "Access token (OAuth)", placeholder: "00D…", secret: true },
+    ],
+  },
+  {
+    slug: "attio",
+    name: "Attio",
+    category: "crm",
+    icon: Users,
+    description: "Modern CRM — records, lists, notes. Agents query and summarise relationships.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://developers.attio.com/")],
+  },
+  {
     slug: "linear",
     name: "Linear",
     category: "tooling",
@@ -878,6 +911,15 @@ export const PROVIDERS: ProviderDef[] = [
     description: "Global payroll & contractors — contracts and payments for people ops.",
     mvp: true,
     fields: [apiKeyField("API token", "…", "https://developer.deel.com/")],
+  },
+  {
+    slug: "factorial",
+    name: "Factorial",
+    category: "hr",
+    icon: Users,
+    description: "EU HR suite — employees, time off, payroll. Agents build people reports.",
+    mvp: true,
+    fields: [apiKeyField("API key", "…", "https://apidoc.factorialhr.com/")],
   },
 
   // --- Design ---

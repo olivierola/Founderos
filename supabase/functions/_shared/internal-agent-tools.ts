@@ -28,6 +28,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import type { ToolDef, ToolExecutor } from "./ai.ts";
+import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
 
 export interface AgentToolRow {
   id: string;
@@ -38,6 +39,7 @@ export interface AgentToolRow {
     | "rag_search"
     | "edge_function"
     | "vault_connector"
+    | "connector_action"
     | "custom";
   name: string;
   description: string | null;
@@ -925,6 +927,48 @@ export function buildInternalToolset(
       run: () => listConnectors(ctx),
     });
     summaryLines.push("- list_connectors: inventory of connected integrations.");
+  }
+
+  // connector_action rows: one tool per provider that exposes safe actions
+  // (CRM / HR). The agent picks an action + params; the connector-action edge
+  // function decrypts the credential and calls the official API.
+  for (const row of enabled.filter((r) => r.kind === "connector_action")) {
+    const provider = str(row.config?.provider);
+    const actions = CONNECTOR_ACTIONS[provider];
+    if (!provider || !actions || actions.length === 0) continue;
+    const toolName = slugToToolName("use", provider);
+    const actionList = actions.map((a) => `${a.name} (${a.description})`).join("; ");
+    tools.set(toolName, {
+      def: {
+        name: toolName,
+        description: `Work with ${provider}. Available actions: ${actionList}. Pass the action name and its params.`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", description: `One of: ${actions.map((a) => a.name).join(", ")}` },
+            params: { type: "object", description: "Action parameters (see the action's description)." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const base = Deno.env.get("SUPABASE_URL");
+        const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (!base || !key) return "ERROR: connector actions are not configured.";
+        const res = await fetch(`${base}/functions/v1/connector-action`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+            provider, action: str(args.action),
+            params: (args.params && typeof args.params === "object") ? args.params : {},
+          }),
+        });
+        return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
+      },
+    });
+    summaryLines.push(`- ${toolName}: act on ${provider} (${actions.map((a) => a.name).join(", ")}).`);
   }
 
   // edge_function rows: one tool per configured function.

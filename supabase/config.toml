@@ -160,6 +160,10 @@ verify_jwt = false
 [functions.armada-generate-tests]
 verify_jwt = false
 
+# Connector actions: agents call CRM/HR APIs server-side (service role or member).
+[functions.connector-action]
+verify_jwt = false
+
 # PostHog import + connector test re-validation (manual user-session checks).
 [functions.sync-posthog]
 verify_jwt = false
