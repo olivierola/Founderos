@@ -8,12 +8,12 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "postinstall": "playwright install chromium"
+    "setup": "npm install && (cd ../ops-runner && npm install) && (cd ../test-runner && npm install) && npx playwright install chromium",
+    "postinstall": "npx playwright install chromium"
   },
   "engines": { "node": ">=20" },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "node-fetch": "^3.3.2",
     "playwright": "^1.47.0",
     "ssh2": "^1.16.0"
   }

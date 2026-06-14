@@ -13,7 +13,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "node-fetch": "^3.3.2",
     "ssh2": "^1.16.0"
   }
 }

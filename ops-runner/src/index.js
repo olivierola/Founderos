@@ -104,7 +104,8 @@ async function main() {
 // Export the single-tick poll so the unified runner can reuse it.
 export { pollOnce as pollOps };
 
-const isMain = import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, "/") ?? "");
+import { pathToFileURL } from "node:url";
+const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
 if (isMain) {
   process.on("SIGINT", () => { console.log("Shutting down."); process.exit(0); });
   process.on("SIGTERM", () => { console.log("Shutting down."); process.exit(0); });

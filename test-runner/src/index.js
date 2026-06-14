@@ -519,8 +519,10 @@ async function main() {
 // Export the single-tick poll so the unified runner can reuse it.
 export { pollOnce as pollTest };
 
-// Only run the standalone loop when executed directly (not when imported).
-const isMain = import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, "/") ?? "");
+// Only run the standalone loop when this file is the program entrypoint
+// (not when the unified runner imports it).
+import { pathToFileURL } from "node:url";
+const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
 if (isMain) {
   process.on("SIGINT", () => process.exit(0));
   process.on("SIGTERM", () => process.exit(0));
