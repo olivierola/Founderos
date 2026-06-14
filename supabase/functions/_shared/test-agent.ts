@@ -16,7 +16,7 @@ type Admin = ReturnType<typeof createServiceClient>;
 // (deepseek-chat) for reliable agentic reasoning. Override the model with
 // E2E_AGENT_MODEL and the provider with E2E_AGENT_PROVIDER without redeploying.
 const AGENT_PROVIDER = (Deno.env.get("E2E_AGENT_PROVIDER") as "groq" | "deepseek" | undefined) || "deepseek";
-const AGENT_MODEL = Deno.env.get("E2E_AGENT_MODEL") || "deepseek-chat";
+const AGENT_MODEL = Deno.env.get("E2E_AGENT_MODEL") || "deepseek-v4-pro";
 
 export interface BrowserAction {
   // What the runner should do next.
@@ -58,6 +58,8 @@ HOW TO ACT — critical:
 - To click/fill/select, reference the element by its NUMBER via "ref" (e.g. {"type":"click","ref":3}). This is the reliable way. DO NOT invent CSS selectors like "button > h1 + button" or "button#radix-:r9:" — they are guesses and will fail. Only use "selector" with plain visible text if truly no ref fits.
 - Pick the ref whose label best matches your intent. Match by meaning, not position.
 - "fill" needs a "ref" AND a non-empty "value". If you lack the value (password, OTP, email, a code, or which option to choose), use "ask_user" with a precise question. Never invent secrets, never fill empty.
+- READ THE FIELD VALUES in the snapshot. Each input shows its current value, e.g. value="a@b.com" or value=(empty). NEVER fill a field that already contains the intended value — move on to the NEXT empty field (e.g. once email is set, fill the PASSWORD; once both are set, click submit).
+- A "(disabled)" button (like a Sign in / submit that's greyed out) means a required field is still empty or invalid. Do NOT click it and do NOT navigate away — find the remaining empty/invalid field and fill it first; the button enables itself.
 
 THINKING:
 - One small step at a time: read the snapshot, pick the single best next action.
@@ -275,6 +277,18 @@ Decide the single next action as strict JSON. When the user gave an instruction 
       question: `What value should I enter for ${field}?`,
       reason: "fill requested without a value",
     };
+  }
+
+  // Guard: don't re-fill the same field. If the last two interaction steps were
+  // already "fill", the field is very likely set — skip ahead (wait one tick so
+  // the agent re-reads the snapshot and moves to the next field/button).
+  if (action.type === "fill") {
+    const recentFills = ctx.history
+      .filter((h) => ["fill", "click", "select", "press"].includes(h.kind))
+      .slice(-2);
+    if (recentFills.length === 2 && recentFills.every((h) => h.kind === "fill")) {
+      return { type: "wait", amount: 300, reason: "field already filled — moving on" };
+    }
   }
 
   // Loop guard — but ONLY count actions taken since the last user answer. A

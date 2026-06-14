@@ -190,9 +190,24 @@ async function domExcerpt(page) {
       const kind = type ? `${tag}:${type}` : role ? `${tag}[${role}]` : tag;
       const tid = testIdOf(el);
       const meta = tid ? ` {testid:${tid}}` : "";
-      const state = el.getAttribute("aria-selected") === "true" || el.getAttribute("aria-checked") === "true"
-        ? " (selected)" : el.disabled ? " (disabled)" : "";
-      return `${kind} "${labelOf(el)}"${meta}${state}`;
+      // Current value of form fields, so the agent KNOWS a field is already
+      // filled and doesn't re-fill it in a loop. Mask password values.
+      let val = "";
+      if (tag === "input" || tag === "textarea" || tag === "select") {
+        const v = (el.value ?? "").trim();
+        if (v) val = type === "password" ? ` value="••••(${v.length})"` : ` value="${v.slice(0, 40)}"`;
+        else val = " value=(empty)";
+        if (el.checked !== undefined && (type === "checkbox" || type === "radio")) {
+          val = el.checked ? " (checked)" : " (unchecked)";
+        }
+      }
+      const state =
+        el.getAttribute("aria-selected") === "true" || el.getAttribute("aria-checked") === "true"
+          ? " (selected)"
+          : el.disabled || el.getAttribute("aria-disabled") === "true"
+            ? " (disabled)"
+            : "";
+      return `${kind} "${labelOf(el)}"${val}${meta}${state}`;
     };
 
     const lines = [];
