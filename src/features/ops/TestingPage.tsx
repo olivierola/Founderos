@@ -144,7 +144,7 @@ export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) 
   if (!projectId) return null;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-6">
+    <div>
       <div className="mb-5 flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Describe a scenario in plain language; an AI agent drives a real browser against your app.

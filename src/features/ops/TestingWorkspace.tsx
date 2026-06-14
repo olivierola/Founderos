@@ -69,26 +69,23 @@ export function OpsTestingPage() {
 
       {/* Tab body */}
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "tests" && (
-          <div className="h-full overflow-y-auto">
-            <TestsTab onOpenRun={openRun} />
-          </div>
-        )}
-        {tab === "live" && (
+        {/* Live is edge-to-edge (the app canvas + chat fill the area). Every
+            other tab keeps the usual centred margins like the rest of the app. */}
+        {tab === "live" ? (
           <LiveTab
             runId={activeRun}
             onSelectRun={(id) => setTab("live", { run: id })}
             onCreateInTests={() => setTab("tests")}
           />
-        )}
-        {tab === "analytics" && (
-          <div className="h-full overflow-y-auto px-6 py-6"><AnalyticsTab /></div>
-        )}
-        {tab === "reports" && (
-          <div className="h-full overflow-y-auto px-6 py-6"><ReportsTab onOpenRun={openRun} /></div>
-        )}
-        {tab === "observability" && (
-          <div className="h-full overflow-y-auto px-6 py-6"><ObservabilityTab runId={activeRun} onOpenRun={openRun} /></div>
+        ) : (
+          <div className="h-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-12 xl:px-20">
+            <div className="mx-auto w-full max-w-6xl">
+              {tab === "tests" && <TestsTab onOpenRun={openRun} />}
+              {tab === "analytics" && <AnalyticsTab />}
+              {tab === "reports" && <ReportsTab onOpenRun={openRun} />}
+              {tab === "observability" && <ObservabilityTab runId={activeRun} onOpenRun={openRun} />}
+            </div>
+          </div>
         )}
       </div>
     </div>
