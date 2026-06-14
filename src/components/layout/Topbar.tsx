@@ -1,12 +1,14 @@
 import { Link, useParams, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Bell, Sun, Moon, Menu } from "lucide-react";
+import { Search, Bell, Sun, Moon, Menu, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useTheme } from "@/lib/theme-context";
 import { useShellNav } from "./AppShell";
+import { useAssistant } from "@/lib/assistant-context";
+import { cn } from "@/lib/utils";
 
 export function Topbar() {
   const { workspaceSlug } = useParams();
@@ -14,6 +16,7 @@ export function Topbar() {
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const { setMobileOpen } = useShellNav();
+  const assistant = useAssistant();
 
   // Detect /app/:ws/:proj/agent/builder/:agentId(/:tab) to show the agent name.
   const segs = location.pathname.split("/").filter(Boolean);
@@ -89,6 +92,17 @@ export function Topbar() {
         </Button>
         <Button variant="ghost" size="icon" className="h-9 w-9">
           <Bell className="h-4 w-4" />
+        </Button>
+        {/* Global AI assistant — opens a right-side panel with the current page as context. */}
+        <Button
+          variant={assistant.open ? "default" : "outline"}
+          size="sm"
+          className={cn("h-9 gap-1.5", !assistant.open && "border-primary/30 text-primary hover:text-primary")}
+          onClick={assistant.toggle}
+          title="AI Assistant"
+        >
+          <Sparkles className="h-4 w-4" />
+          <span className="hidden sm:inline">Assistant</span>
         </Button>
       </div>
     </header>

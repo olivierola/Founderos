@@ -202,9 +202,9 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Agent ecosystem", slug: "ecosystem" },
       { label: "Onboarding", slug: "onboarding" },
 
-      // ── AI Assistant (merged from the former AI Agent module) ──
-      { label: "Chat", slug: "chat", group: "AI Assistant" },
-      { label: "Insights", slug: "insights" },
+      // ── AI Agent tools (the Assistant "Chat" now lives in the global
+      //    top-bar panel, so it's intentionally not listed here; route kept). ──
+      { label: "Insights", slug: "insights", group: "AI Agent" },
       { label: "Reports", slug: "reports" },
       { label: "Workflows", slug: "workflows" },
       { label: "Prompt Templates", slug: "prompt-templates" },

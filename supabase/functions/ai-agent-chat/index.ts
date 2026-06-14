@@ -21,6 +21,7 @@ Règles:
 - Ne réalise jamais d'action irréversible sans validation explicite de l'utilisateur.
 - Réponds en markdown concis et actionnable, dans la langue de l'utilisateur.
 - Respecte strictement ton périmètre d'accès décrit ci-dessous.
+- Si un snapshot de la page actuelle de l'utilisateur est fourni, traite-le comme contexte PREMIER : réponds d'abord par rapport à ce qu'il voit à l'écran (chiffres, tableaux, sections visibles) avant de chercher ailleurs.
 
 INSTRUMENTATION DU CODE & ANALYTICS AVANCÉE:
 Tu peux instrumenter le dépôt GitHub connecté du projet : poser du tracking d'events, du feature flagging, installer les SDK FounderOS (analytics & RAG), et définir une analytics avancée à partir d'une description en langage naturel.
@@ -82,11 +83,12 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json();
-    const { workspace_id, project_id, message } = body as {
+    const { workspace_id, project_id, message, page_context } = body as {
       workspace_id?: string;
       project_id?: string;
       conversation_id?: string;
       message?: string;
+      page_context?: string;
     };
     let conversation_id = body.conversation_id as string | undefined;
 
@@ -143,6 +145,12 @@ Deno.serve(async (req) => {
     // enforced by the tools; this context is non-sensitive identity info).
     const context = await buildContext(project_id);
 
+    // Optional snapshot of the page the user is looking at — the assistant uses
+    // it as primary context to answer about what's on screen.
+    const pageSection = typeof page_context === "string" && page_context.trim()
+      ? `\n\n--- PAGE ACTUELLE DE L'UTILISATEUR (contexte premier — ce qu'il regarde à l'écran) ---\n${page_context.slice(0, 6000)}`
+      : "";
+
     // System prompt = base behaviour + access-scope summary tailored to the role.
     const systemPrompt = `${BASE_SYSTEM_PROMPT}
 
@@ -150,7 +158,7 @@ Deno.serve(async (req) => {
 ${accessScopeSummary(userRole)}
 
 --- CONTEXTE PROJET (non sensible) ---
-${JSON.stringify({ project: context.project, connectors: context.connectors, code: context.code }, null, 2)}`;
+${JSON.stringify({ project: context.project, connectors: context.connectors, code: context.code }, null, 2)}${pageSection}`;
 
     // Assemble the message list from history.
     const chatMessages: ChatMessage[] = [

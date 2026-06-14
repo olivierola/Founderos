@@ -6,6 +6,8 @@ import { SubTabBar } from "./SubTabBar";
 import { Topbar } from "./Topbar";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { PermissionsProvider } from "@/lib/permissions";
+import { AssistantProvider } from "@/lib/assistant-context";
+import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
 
 interface ShellNavCtx {
   mobileOpen: boolean;
@@ -44,6 +46,7 @@ export function AppShell() {
   return (
     <ShellNavContext.Provider value={{ mobileOpen, setMobileOpen }}>
       <PermissionsProvider>
+      <AssistantProvider>
       <div className="flex h-screen w-screen overflow-hidden bg-background">
         {/* Desktop sidebars */}
         <div className="hidden md:flex">
@@ -66,7 +69,7 @@ export function AppShell() {
           </>
         )}
 
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <Topbar />
           {/* Pages that render a large interactive canvas need the full content
               width with no horizontal padding and no max-width cap. The pages
@@ -87,7 +90,11 @@ export function AppShell() {
             </main>
           )}
         </div>
+
+        {/* Global assistant — pushes content (split) when open, full height. */}
+        <AssistantPanel />
       </div>
+      </AssistantProvider>
       </PermissionsProvider>
     </ShellNavContext.Provider>
   );
