@@ -251,7 +251,7 @@ function ChatTab({
   const currentConvo = conversations?.find((c) => c.id === convoId) ?? null;
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] flex-col">
+    <div className="flex h-[calc(100vh-8rem)] flex-col">
       {/* Floating session switcher */}
       <div className="flex items-center justify-between px-1 pb-2">
         <DropdownMenu>
