@@ -61,7 +61,7 @@ export function AIInput({
             "placeholder:text-black/50 dark:placeholder:text-white/50",
             "border-none ring-black/20 dark:ring-white/20",
             "text-foreground text-wrap",
-            "resize-none overflow-y-auto",
+            "resize-none overflow-y-auto scrollbar-hide",
             "focus-visible:ring-0 focus-visible:ring-offset-0",
             "transition-[height] duration-100 ease-out",
             "py-[16px] leading-[1.2]",

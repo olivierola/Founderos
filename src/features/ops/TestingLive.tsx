@@ -291,7 +291,7 @@ function LiveRun({ runId }: { runId: string }) {
         {/* Floating composer: detached card with blur, answers a question or
             sends a directive mid-run. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3">
-          <div className="pointer-events-auto rounded-3xl border border-border bg-background/70 p-2 shadow-lg backdrop-blur-md">
+          <div className="pointer-events-auto rounded-3xl bg-background/70 p-1 shadow-lg backdrop-blur-md">
             {r?.status === "needs_input" && r.pending_question && (
               <p className="mx-1 mb-1 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
                 {r.pending_question}
