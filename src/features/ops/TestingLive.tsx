@@ -240,34 +240,35 @@ function LiveRun({ runId }: { runId: string }) {
             </Button>
           )}
         </div>
-        {/* The app fills the full width with no side gaps; height follows the
-            real aspect ratio (no zoom/stretch). Scrolls vertically if taller.
-            The halo overlays the panel as a fixed frame (doesn't scroll). */}
-        <div className="relative min-h-0 flex-1 bg-white">
-          <div className="absolute inset-0 overflow-y-auto">
-            {r?.last_screenshot_url ? (
-              <img
-                src={r.last_screenshot_url}
-                alt="App under test"
-                className="block w-full h-auto"
-              />
-            ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                {r && ["queued", "planning", "running"].includes(r.status) ? (
-                  <>
-                    <Loader2 className="h-7 w-7 animate-spin" />
-                    <span className="text-sm">
-                      {r.status === "planning" ? "Preparing the test plan…" : r.status === "queued" ? "Starting the test…" : "Loading the app…"}
-                    </span>
-                  </>
-                ) : (
-                  <><Eye className="h-7 w-7" /><span className="text-sm">No frame captured</span></>
-                )}
-              </div>
-            )}
+        {/* The preview sits in a rounded card with margins on all sides; the
+            app renders at its true ratio and scrolls vertically inside. */}
+        <div className="relative min-h-0 flex-1 p-4">
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-border bg-white">
+            <div className="absolute inset-0 overflow-y-auto">
+              {r?.last_screenshot_url ? (
+                <img
+                  src={r.last_screenshot_url}
+                  alt="App under test"
+                  className="block w-full h-auto"
+                />
+              ) : (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground">
+                  {r && ["queued", "planning", "running"].includes(r.status) ? (
+                    <>
+                      <Loader2 className="h-7 w-7 animate-spin" />
+                      <span className="text-sm">
+                        {r.status === "planning" ? "Preparing the test plan…" : r.status === "queued" ? "Starting the test…" : "Loading the app…"}
+                      </span>
+                    </>
+                  ) : (
+                    <><Eye className="h-7 w-7" /><span className="text-sm">No frame captured</span></>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Halo as an inset ring framing the visible card. */}
+            <div className="e2e-inner-halo pointer-events-none absolute inset-0" />
           </div>
-          {/* Halo as an inset ring framing the visible panel. */}
-          <div className="e2e-inner-halo pointer-events-none absolute inset-0" />
         </div>
       </div>
 
