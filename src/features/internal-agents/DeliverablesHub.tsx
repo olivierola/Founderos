@@ -32,11 +32,11 @@ const KIND_ICON: Record<string, any> = {
 // Renders a deliverable's body by kind: structured report, markdown (with
 // embedded charts), code/json, or url.
 function DeliverableBody({ d }: { d: Deliverable }) {
-  if (d.kind === "report") {
-    const report = tryParseReport(d.content);
-    if (report) return <DeliverableReport report={report} />;
-    // Fall through to markdown if the JSON didn't parse.
-  }
+  // Render a structured report whenever the content IS one — regardless of the
+  // stored kind (agents sometimes save report JSON under kind "markdown"/"json").
+  const report = tryParseReport(d.content);
+  if (report) return <DeliverableReport report={report} />;
+
   if (d.kind === "url") {
     return (
       <a href={d.content ?? d.file_url ?? "#"} target="_blank" rel="noreferrer" className="break-all text-sm text-primary underline">

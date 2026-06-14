@@ -250,6 +250,38 @@ interface ToolChatResponse {
   model: string;
 }
 
+// Groq/Llama sometimes emit a tool call as text — "<function=NAME>{json}" — and
+// the API rejects it with 400 tool_use_failed, exposing the attempt in
+// `failed_generation`. Recover it into a proper tool_calls response so the loop
+// can run the tool instead of crashing the whole chat.
+function recoverFailedToolCall(rawBody: string): ToolChatResponse | null {
+  try {
+    const err = JSON.parse(rawBody)?.error;
+    if (!err || err.code !== "tool_use_failed" || !err.failed_generation) return null;
+    const gen: string = err.failed_generation;
+    const m = gen.match(/<function\s*=\s*([a-zA-Z0-9_-]+)\s*>([\s\S]*?)(?:<\/function>|$)/);
+    if (!m) return null;
+    const name = m[1];
+    let argText = (m[2] || "").trim();
+    // Trim anything after the JSON object closes.
+    const start = argText.indexOf("{");
+    if (start > 0) argText = argText.slice(start);
+    let args = "{}";
+    try { JSON.parse(argText); args = argText; } catch {
+      // keep only up to the last closing brace
+      const end = argText.lastIndexOf("}");
+      if (end > 0) { const slice = argText.slice(0, end + 1); try { JSON.parse(slice); args = slice; } catch { /* give up */ } }
+    }
+    return {
+      choices: [{ message: {
+        role: "assistant", content: null,
+        tool_calls: [{ id: `recovered_${Date.now()}`, type: "function", function: { name, arguments: args } }],
+      } }],
+      model: "recovered",
+    } as ToolChatResponse;
+  } catch { return null; }
+}
+
 async function postChat(
   url: string,
   apiKey: string,
@@ -263,7 +295,13 @@ async function postChat(
       body: JSON.stringify(body),
     });
     if (res.ok) return (await res.json()) as ToolChatResponse;
-    lastErr = `${res.status} ${await res.text()}`;
+    const text = await res.text();
+    lastErr = `${res.status} ${text}`;
+    // Recover a malformed tool call (Groq tool_use_failed) instead of failing.
+    if (res.status === 400) {
+      const recovered = recoverFailedToolCall(text);
+      if (recovered) return recovered;
+    }
     if (res.status < 500 && res.status !== 429) break;
     await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
   }
