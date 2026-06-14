@@ -1,0 +1,20 @@
+{
+  "name": "founderos-runner",
+  "version": "1.0.0",
+  "description": "Unified FounderOS runner — executes Ops jobs (SSH/infra), E2E test runs (Playwright) and security scans from a single poll loop.",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "postinstall": "playwright install chromium"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "node-fetch": "^3.3.2",
+    "playwright": "^1.47.0",
+    "ssh2": "^1.16.0"
+  }
+}

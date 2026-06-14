@@ -101,8 +101,13 @@ async function main() {
   }
 }
 
-process.on("SIGINT", () => { console.log("Shutting down."); process.exit(0); });
-process.on("SIGTERM", () => { console.log("Shutting down."); process.exit(0); });
-process.on("unhandledRejection", (e) => { console.error("Unhandled rejection:", e); });
+// Export the single-tick poll so the unified runner can reuse it.
+export { pollOnce as pollOps };
 
-main();
+const isMain = import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, "/") ?? "");
+if (isMain) {
+  process.on("SIGINT", () => { console.log("Shutting down."); process.exit(0); });
+  process.on("SIGTERM", () => { console.log("Shutting down."); process.exit(0); });
+  process.on("unhandledRejection", (e) => { console.error("Unhandled rejection:", e); });
+  main();
+}

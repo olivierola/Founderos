@@ -516,7 +516,14 @@ async function main() {
   }
 }
 
-process.on("SIGINT", () => process.exit(0));
-process.on("SIGTERM", () => process.exit(0));
-process.on("unhandledRejection", (e) => console.error("Unhandled rejection:", e));
-main();
+// Export the single-tick poll so the unified runner can reuse it.
+export { pollOnce as pollTest };
+
+// Only run the standalone loop when executed directly (not when imported).
+const isMain = import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, "/") ?? "");
+if (isMain) {
+  process.on("SIGINT", () => process.exit(0));
+  process.on("SIGTERM", () => process.exit(0));
+  process.on("unhandledRejection", (e) => console.error("Unhandled rejection:", e));
+  main();
+}
