@@ -354,11 +354,33 @@ async function runOne(claimed) {
   // so the agent stops repeating an action that can't be performed.
   let actionError = null;
 
+  // Wait (idle-poll) for the run to be re-queued after it finished or paused,
+  // WITHOUT closing the browser — so a follow-up instruction continues from the
+  // current page (logged in, same screen) instead of reloading the app.
+  // Returns true if resumed, false if abandoned/timed out.
+  async function waitForResume() {
+    for (let i = 0; i < 600; i++) { // up to ~30 min
+      await new Promise((r) => setTimeout(r, 3000));
+      const p = await rpc({ mode: "poll", run_id: runId }).catch(() => ({}));
+      if (p.resumed) return true;
+      if (p.status === "cancelled" || p.status === "error") return false;
+    }
+    return false;
+  }
+
   try {
     await page.goto(app_url, { waitUntil: "domcontentloaded", timeout: 30000 });
     await waitForReady(page);
 
-    for (let step = 0; step < MAX_STEPS; step++) {
+    // Per-segment step budget that resets whenever the user resumes the run, so
+    // a continued session isn't cut off by the initial cap.
+    let step = 0;
+    while (true) {
+      if (step >= MAX_STEPS) {
+        // Hit the budget — pause and wait for a human nudge rather than stopping.
+        await rpc({ mode: "observe", run_id: runId, current_url: page.url(),
+          dom_excerpt: "STEP BUDGET REACHED — pausing for the user." }).catch(() => {});
+      }
       const screenshot_url = await snapshot(page, runId, idx++);
       let dom = await domExcerpt(page);
       if (actionError) {
@@ -374,30 +396,25 @@ async function runOne(claimed) {
       });
       console.log(`  → ${action?.type}${action?.ref !== undefined ? ` ref=${action.ref}` : action?.selector ? ` ${action.selector}` : ""}${action?.reason ? `  (${action.reason})` : ""}`);
 
-      if (terminal) break;
-
-      if (paused || action?.type === "ask_user") {
-        // Idle-poll until the user answers (orchestrator re-queues → resumed).
-        let resumed = false;
-        for (let i = 0; i < 600 && !resumed; i++) { // up to ~30 min
-          await new Promise((r) => setTimeout(r, 3000));
-          const p = await rpc({ mode: "poll", run_id: runId });
-          resumed = p.resumed;
-          if (p.status && ["passed", "failed", "error", "cancelled"].includes(p.status)) { resumed = false; break; }
-        }
+      // Terminal or paused → keep the browser open and wait for a resume. If the
+      // user sends a new instruction, continue IN THE SAME PAGE (no reload).
+      if (terminal || paused || action?.type === "ask_user") {
+        const resumed = await waitForResume();
         if (!resumed) break;
+        step = 0;              // fresh budget for the new instruction
+        actionError = null;
+        await waitForReady(page).catch(() => {});
         continue;
       }
 
       try {
         await execAction(page, action);
       } catch (e) {
-        // Don't burn an observe round here — just remember the failure and let
-        // the next loop iteration report it alongside the fresh DOM.
         console.log(`    action failed: ${e.message}`);
         actionError = `${action?.type} ${action?.selector ?? ""} — ${e.message}`.trim();
         await waitForReady(page).catch(() => {});
       }
+      step++;
     }
   } catch (e) {
     console.error(`  run error: ${e.message}`);
