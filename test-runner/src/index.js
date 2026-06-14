@@ -496,7 +496,7 @@ async function pollOnce() {
   try {
     const resp = await rpc({ mode: "claim", runner_id: RUNNER_ID });
     const run = resp?.run ?? null;
-    if (!run) return false;
+    if (!run || !run.id) return false; // no run available this tick
     await runOne(run);
     return true;
   } catch (e) {

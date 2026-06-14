@@ -22,9 +22,12 @@ async function sha256Hex(s: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function authenticate(req: Request): Promise<{ ok: true; projectId: string } | { ok: false; reason: string }> {
+// projectId === null means the GLOBAL platform token (serves every project).
+async function authenticate(req: Request): Promise<{ ok: true; projectId: string | null } | { ok: false; reason: string }> {
   const token = req.headers.get("x-runner-token");
   if (!token) return { ok: false, reason: "Missing X-Runner-Token header" };
+  const platform = Deno.env.get("PLATFORM_RUNNER_TOKEN");
+  if (platform && token === platform) return { ok: true, projectId: null };
   const hash = await sha256Hex(token);
   const admin = createServiceClient();
   const { data: settings } = await admin
@@ -55,7 +58,14 @@ Deno.serve(async (req) => {
       // The claim_ops_job RPC atomically picks the next queued job project-wide.
       // We filter for this project after the call (since claim_ops_job is global).
       const { data: job } = await admin.rpc("claim_ops_job", { p_runner_id: runnerId });
-      if (!job || job.project_id !== projectId) return jsonResponse({ ok: true, job: null });
+      // Global platform token (projectId === null) takes any project's job; a
+      // per-project token only takes its own.
+      if (!job) return jsonResponse({ ok: true, job: null });
+      if (projectId !== null && job.project_id !== projectId) {
+        // Not ours — release it back to the queue for the right runner.
+        await admin.from("ops_jobs").update({ status: "queued", runner_id: null }).eq("id", job.id);
+        return jsonResponse({ ok: true, job: null });
+      }
       return jsonResponse({ ok: true, job });
     }
 

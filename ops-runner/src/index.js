@@ -79,7 +79,7 @@ async function runOne(job) {
 async function pollOnce() {
   try {
     const { job } = await api.claim(RUNNER_ID);
-    if (!job) return false;
+    if (!job || !job.id) return false; // no job available this tick
     console.log(`[${ts()}] Claimed job ${job.id} (${job.job_type})`);
     await runOne(job);
     return true;

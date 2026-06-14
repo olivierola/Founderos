@@ -83,7 +83,7 @@ export async function pollSecurity() {
     if (!/HTTP 40|not found/i.test(e.message)) console.error(`[${ts()}] security claim: ${e.message}`);
     return false;
   }
-  if (!claimed) return false;
+  if (!claimed || !claimed.id) return false; // no scan available this tick
 
   console.log(`[${ts()}] Security scan ${String(claimed.id).slice(0, 8)} — ${claimed.scan_type} on ${claimed.target_host}`);
   try {
