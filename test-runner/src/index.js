@@ -279,7 +279,9 @@ async function runOne(claimed) {
   const { id: runId, app_url } = claimed;
   console.log(`[${ts()}] Run ${String(runId).slice(0, 8)} — ${app_url}`);
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 960 } });
+  // Wide viewport (16:10) so the captured frame matches the preview area and
+  // fills its width without letterboxing.
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   let idx = 0;
 
