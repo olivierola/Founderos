@@ -57,7 +57,7 @@ import { OpsWorkflowsPage } from "@/features/ops/WorkflowsPage";
 import { OpsBundleDetailPage } from "@/features/ops/BundleDetailPage";
 import { OpsInfraProjectDetailPage } from "@/features/ops/InfraProjectDetailPage";
 import { OpsChecksPage } from "@/features/ops/ChecksPage";
-import { OpsTestingPage } from "@/features/ops/TestingPage";
+import { OpsTestingPage } from "@/features/ops/TestingWorkspace";
 import { OpsTestRunPage } from "@/features/ops/TestRunPage";
 import { OpsJobsPage } from "@/features/ops/JobsPage";
 import { OpsSettingsPage } from "@/features/ops/SettingsPage";

@@ -120,7 +120,7 @@ async function domExcerpt(page) {
   return await page.evaluate(() => {
     for (const el of document.querySelectorAll("[data-e2e-ref]")) el.removeAttribute("data-e2e-ref");
 
-    const explicit = "a,button,input,textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[role=option],[onclick],[tabindex]";
+    const explicit = "a,button,input,textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[role=option],[role=checkbox],[role=radio],[role=switch],[onclick],[tabindex],[data-testid],[data-test],[data-cy],[contenteditable='true']";
     const isVisible = (el) => {
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return false;
@@ -128,14 +128,36 @@ async function domExcerpt(page) {
       const st = getComputedStyle(el);
       return st.visibility !== "hidden" && st.display !== "none" && Number(st.opacity) !== 0;
     };
-    const labelOf = (el) =>
-      (el.getAttribute("aria-label") ||
-        el.getAttribute("placeholder") ||
-        (el.tagName === "INPUT" ? "" : el.innerText) ||
-        el.value ||
-        el.getAttribute("name") ||
-        el.getAttribute("title") ||
-        "").trim().replace(/\s+/g, " ").slice(0, 90);
+    // A test id, if present on the element or a close ancestor — the most stable
+    // hook the agent can reference.
+    const testIdOf = (el) => {
+      let p = el;
+      for (let i = 0; i < 3 && p; i++, p = p.parentElement) {
+        const t = p.getAttribute?.("data-testid") || p.getAttribute?.("data-test") || p.getAttribute?.("data-cy");
+        if (t) return t;
+      }
+      return "";
+    };
+    const labelOf = (el) => {
+      let base =
+        (el.getAttribute("aria-label") ||
+          el.getAttribute("placeholder") ||
+          (el.tagName === "INPUT" ? "" : el.innerText) ||
+          el.value ||
+          el.getAttribute("name") ||
+          el.getAttribute("title") ||
+          el.getAttribute("alt") ||
+          "").trim().replace(/\s+/g, " ");
+      // For an icon-only control with no text, borrow context from the closest
+      // labelled ancestor so the agent still knows what it is.
+      if (!base) {
+        let p = el.parentElement;
+        for (let i = 0; i < 3 && p && !base; i++, p = p.parentElement) {
+          base = (p.getAttribute?.("aria-label") || "").trim();
+        }
+      }
+      return base.slice(0, 90);
+    };
 
     // Candidate set: explicit controls + elements that LOOK clickable (React
     // attaches onClick without an [onclick] attribute, so use cursor:pointer).
@@ -166,7 +188,11 @@ async function domExcerpt(page) {
       const role = el.getAttribute("role");
       const type = el.getAttribute("type");
       const kind = type ? `${tag}:${type}` : role ? `${tag}[${role}]` : tag;
-      return `${kind} "${labelOf(el)}"`;
+      const tid = testIdOf(el);
+      const meta = tid ? ` {testid:${tid}}` : "";
+      const state = el.getAttribute("aria-selected") === "true" || el.getAttribute("aria-checked") === "true"
+        ? " (selected)" : el.disabled ? " (disabled)" : "";
+      return `${kind} "${labelOf(el)}"${meta}${state}`;
     };
 
     const lines = [];

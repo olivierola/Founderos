@@ -98,6 +98,30 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true });
     }
 
+    // ── DIRECTIVE (steer a running test without it being paused) ──────────────
+    if (action === "directive") {
+      const runId = body.run_id as string | undefined;
+      const directive = String(body.directive ?? body.answer ?? "").trim();
+      if (!runId || !directive) return jsonResponse({ error: "run_id and directive required" }, { status: 400 });
+
+      const { data: run } = await admin
+        .from("test_runs").select("id, status, project_id").eq("id", runId).maybeSingle();
+      if (!run || run.project_id !== project_id) return jsonResponse({ error: "Run not found" }, { status: 404 });
+      if (["passed", "failed", "error", "cancelled"].includes(run.status)) {
+        return jsonResponse({ error: `Run already ${run.status}` }, { status: 409 });
+      }
+
+      // Record as a user_answer step so decideNextAction treats it as the latest
+      // directive on the agent's next observation. The runner is mid-loop, so we
+      // don't change status (it will pick this up on the next observe).
+      await appendStep(admin, runId, { actor: "user", kind: "user_answer", label: directive });
+      // If the run happened to be paused, unpause it.
+      if (run.status === "needs_input") {
+        await admin.from("test_runs").update({ status: "queued", pending_question: null }).eq("id", runId);
+      }
+      return jsonResponse({ ok: true });
+    }
+
     return jsonResponse({ error: `Unknown action ${action}` }, { status: 400 });
   } catch (err) {
     return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

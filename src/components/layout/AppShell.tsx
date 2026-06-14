@@ -102,5 +102,7 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/devops\/(infra|workflows)\/[^/]+/.test(pathname)) return true;
   // Office editors (document / spreadsheet / presentation) are full-bleed canvases.
   if (/\/app\/[^/]+\/[^/]+\/office\/(document|spreadsheet|presentation)\/[^/]+/.test(pathname)) return true;
+  // E2E Testing: tabbed workspace with a live app preview + agent chatbot.
+  if (/\/app\/[^/]+\/[^/]+\/devops\/testing(\/.*)?$/.test(pathname)) return true;
   return false;
 }

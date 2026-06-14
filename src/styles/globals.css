@@ -271,14 +271,15 @@
 .e2e-inner-halo {
   background: conic-gradient(
     from var(--e2e-halo-angle),
-    #6366f1, #a855f7, #ec4899, #f59e0b, #10b981, #3b82f6, #6366f1
+    #6366f1, #a855f7, #ec4899, #f59e0b, #10b981, #22d3ee, #3b82f6, #6366f1
   );
-  /* Fade from the edges inward: opaque ring, transparent middle. */
-  -webkit-mask: radial-gradient(120% 120% at 50% 50%, transparent 58%, #000 100%);
-  mask: radial-gradient(120% 120% at 50% 50%, transparent 58%, #000 100%);
-  opacity: 0.85;
+  /* Wider, brighter band fading inward: strong colour at the edge, gone by ~70%. */
+  -webkit-mask: radial-gradient(135% 135% at 50% 50%, transparent 45%, #000 80%);
+  mask: radial-gradient(135% 135% at 50% 50%, transparent 45%, #000 80%);
+  opacity: 0.95;
   mix-blend-mode: screen;
-  animation: e2e-halo-spin 7s linear infinite;
+  filter: blur(2px) saturate(1.25);
+  animation: e2e-halo-spin 6s linear infinite;
 }
 /* Static fallback when @property isn't supported. */
 @supports not (background: conic-gradient(from var(--e2e-halo-angle), red, blue)) {

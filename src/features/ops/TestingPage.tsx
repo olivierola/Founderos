@@ -1,11 +1,9 @@
 ﻿import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FlaskConical, Plus, Play, Loader2, Trash2, Globe, ChevronRight,
   ListChecks,
 } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,14 +16,14 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 
 // ── Types (mirror the 0042 migration) ───────────────────────────────────────
-interface TestSuite {
+export interface TestSuite {
   id: string;
   name: string;
   description: string | null;
   app_url: string;
   created_at: string;
 }
-interface TestCase {
+export interface TestCase {
   id: string;
   suite_id: string;
   name: string;
@@ -36,7 +34,7 @@ interface TestCase {
   enabled: boolean;
   created_at: string;
 }
-type RunStatus =
+export type RunStatus =
   | "queued" | "planning" | "running" | "needs_input"
   | "passed" | "failed" | "error" | "cancelled";
 interface TestRun {
@@ -64,7 +62,7 @@ interface RunStep {
   created_at: string;
 }
 
-const RUN_TONE: Record<RunStatus, { label: string; variant: "success" | "destructive" | "warning" | "secondary" }> = {
+export const RUN_TONE: Record<RunStatus, { label: string; variant: "success" | "destructive" | "warning" | "secondary" }> = {
   queued: { label: "Queued", variant: "secondary" },
   planning: { label: "Planning", variant: "warning" },
   running: { label: "Running", variant: "warning" },
@@ -75,15 +73,15 @@ const RUN_TONE: Record<RunStatus, { label: string; variant: "success" | "destruc
   cancelled: { label: "Cancelled", variant: "secondary" },
 };
 
-export function OpsTestingPage() {
+// The "Tests" tab: author suites & test cases, run them, see recent runs.
+export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) {
   const { workspaceId, projectId } = useCurrentContext();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [caseOpen, setCaseOpen] = useState<{ suiteId: string } | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
 
-  const openRun = (id: string) => navigate(`run/${id}`);
+  const openRun = onOpenRun;
 
   const suites = useQuery({
     queryKey: ["test_suites", projectId],
@@ -143,19 +141,18 @@ export function OpsTestingPage() {
     queryClient.invalidateQueries({ queryKey: ["test_cases", projectId] });
   }
 
-  if (!projectId) return <PageHeader title="Testing" />;
+  if (!projectId) return null;
 
   return (
-    <div>
-      <PageHeader
-        title="Testing"
-        description="Agentic end-to-end testing. Describe a scenario in plain language; an AI agent drives a real browser (Playwright) against your app, fills forms, scrolls and asserts — pausing to ask you when it needs info."
-        actions={
-          <Button size="sm" onClick={() => setSuiteOpen(true)}>
-            <Plus className="h-4 w-4" /> New suite
-          </Button>
-        }
-      />
+    <div className="mx-auto w-full max-w-5xl px-6 py-6">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Describe a scenario in plain language; an AI agent drives a real browser against your app.
+        </p>
+        <Button size="sm" onClick={() => setSuiteOpen(true)}>
+          <Plus className="h-4 w-4" /> New suite
+        </Button>
+      </div>
 
       {suites.isLoading ? (
         <EmptyState icon={Loader2} title="Loading…" />
