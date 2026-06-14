@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot, Plus, Loader2, ChevronRight, MessageSquare, Target, Wrench, Users as UsersIcon,
+  Sparkles, Check, ShieldCheck, CalendarClock,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +15,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { AGENT_TEMPLATES, type AgentTemplate } from "./agentTemplates";
+import { instantiateTemplate } from "./instantiateTemplate";
 
 const ACCENT_COLORS = [
   "#2F2FE4", "#7c3aed", "#db2777", "#e11d48",
@@ -46,6 +49,23 @@ export function InternalAgentsListPage() {
   const [newDescription, setNewDescription] = useState("");
   const [newEmoji, setNewEmoji] = useState(EMOJIS[0]);
   const [newColor, setNewColor] = useState(ACCENT_COLORS[0]);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [activatingKey, setActivatingKey] = useState<string | null>(null);
+
+  async function activateTemplate(t: AgentTemplate) {
+    if (!workspaceId || !projectId || !user) return;
+    setActivatingKey(t.key);
+    try {
+      const id = await instantiateTemplate(t, { workspaceId, projectId, userId: user.id });
+      queryClient.invalidateQueries({ queryKey: ["internal_agents", projectId] });
+      setTemplatesOpen(false);
+      navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${id}/chat`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActivatingKey(null);
+    }
+  }
 
   const { data: agents, isLoading } = useQuery({
     queryKey: ["internal_agents", projectId, user?.id],
@@ -118,9 +138,14 @@ export function InternalAgentsListPage() {
         title="Internal agents"
         description="Build internal AI collaborators for your team. Give them instructions, tools, and missions."
         actions={
-          <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-            <Plus className="h-4 w-4" /> New agent
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setTemplatesOpen(true)} className="gap-1.5">
+              <Sparkles className="h-4 w-4" /> Browse templates
+            </Button>
+            <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
+              <Plus className="h-4 w-4" /> New agent
+            </Button>
+          </div>
         }
       />
 
@@ -134,9 +159,14 @@ export function InternalAgentsListPage() {
           title="No internal agents yet"
           description="Internal agents are private AI workers for your team — they chat, run missions, and produce deliverables."
           action={
-            <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" /> Create your first agent
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setTemplatesOpen(true)} className="gap-1.5">
+                <Sparkles className="h-4 w-4" /> Start from a template
+              </Button>
+              <Button variant="outline" onClick={() => setCreateOpen(true)} className="gap-1.5">
+                <Plus className="h-4 w-4" /> Blank agent
+              </Button>
+            </div>
           }
         />
       ) : (
@@ -187,6 +217,74 @@ export function InternalAgentsListPage() {
           })}
         </div>
       )}
+
+      {/* Templates gallery — one-click, ready-to-run agents by use case. */}
+      <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" /> Agent templates
+            </DialogTitle>
+          </DialogHeader>
+          <p className="-mt-1 text-sm text-muted-foreground">
+            Ready-to-run AI workers for any company. Activate one in a click — it comes with its
+            instructions, tools and guardrails. Connect your tools and it starts working.
+          </p>
+          <div className="mt-2 grid max-h-[65vh] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+            {AGENT_TEMPLATES.map((t) => (
+              <div key={t.key} className="flex flex-col rounded-xl border border-border bg-card/40 p-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-lg"
+                    style={{ backgroundColor: t.accent + "22", color: t.accent }}
+                  >
+                    {t.emoji}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="truncate font-semibold leading-tight">{t.name}</h3>
+                      <Badge variant="outline" className="shrink-0 text-[10px]">{t.category}</Badge>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{t.tagline}</p>
+                  </div>
+                </div>
+
+                <ul className="mt-3 space-y-1">
+                  {t.outcomes.map((o) => (
+                    <li key={o} className="flex items-start gap-1.5 text-xs text-foreground/80">
+                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" /> {o}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
+                    <Wrench className="h-3 w-3" /> {t.tools.length} tool{t.tools.length > 1 ? "s" : ""}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
+                    <ShieldCheck className="h-3 w-3" /> {t.autonomy}
+                  </span>
+                  {t.suggestedSchedule && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
+                      <CalendarClock className="h-3 w-3" /> {t.suggestedSchedule.label}
+                    </span>
+                  )}
+                </div>
+
+                <Button
+                  size="sm"
+                  className="mt-3 gap-1.5"
+                  disabled={activatingKey === t.key}
+                  onClick={() => activateTemplate(t)}
+                >
+                  {activatingKey === t.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  Activate
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-md">
