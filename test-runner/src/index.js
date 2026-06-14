@@ -138,24 +138,67 @@ async function domExcerpt(page) {
       }
       return "";
     };
+    const clean = (s) => (s || "").trim().replace(/\s+/g, " ");
+    // Resolve text from another element referenced by id (aria-labelledby/-describedby).
+    const refText = (ids) => {
+      if (!ids) return "";
+      for (const id of ids.split(/\s+/)) {
+        const t = document.getElementById(id);
+        if (t) { const v = clean(t.innerText || t.getAttribute("aria-label")); if (v) return v; }
+      }
+      return "";
+    };
+    // Lucide icons render <svg class="lucide lucide-settings ...">; derive a name.
+    const iconName = (el) => {
+      const svg = el.matches?.("svg") ? el : el.querySelector?.("svg");
+      if (!svg) return "";
+      const cls = svg.getAttribute("class") || "";
+      const m = cls.match(/lucide-([a-z0-9-]+)/i);
+      if (m) return m[1].replace(/-/g, " ");
+      const title = svg.querySelector?.("title");
+      return clean(title?.textContent);
+    };
+    // A human-meaningful hint from an href path, e.g. /app/x/y/devops -> "devops".
+    const hrefHint = (el) => {
+      const href = el.getAttribute?.("href");
+      if (!href || href === "#") return "";
+      try {
+        const path = href.startsWith("http") ? new URL(href).pathname : href;
+        const seg = path.split("?")[0].split("/").filter(Boolean).pop();
+        return seg && !/^[0-9a-f-]{12,}$/i.test(seg) ? seg.replace(/-/g, " ") : "";
+      } catch { return ""; }
+    };
     const labelOf = (el) => {
-      let base =
-        (el.getAttribute("aria-label") ||
-          el.getAttribute("placeholder") ||
-          (el.tagName === "INPUT" ? "" : el.innerText) ||
-          el.value ||
-          el.getAttribute("name") ||
-          el.getAttribute("title") ||
-          el.getAttribute("alt") ||
-          "").trim().replace(/\s+/g, " ");
-      // For an icon-only control with no text, borrow context from the closest
-      // labelled ancestor so the agent still knows what it is.
+      // 1) Direct accessible name / text.
+      let base = clean(
+        el.getAttribute("aria-label") ||
+        refText(el.getAttribute("aria-labelledby")) ||
+        el.getAttribute("placeholder") ||
+        (el.tagName === "INPUT" ? "" : el.innerText) ||
+        el.value ||
+        el.getAttribute("title") ||
+        refText(el.getAttribute("aria-describedby")) ||
+        el.getAttribute("alt") ||
+        el.getAttribute("name"),
+      );
+      // 2) Borrow an accessible name / title from a close ancestor (icon wrapped
+      //    in a labelled link/button).
       if (!base) {
         let p = el.parentElement;
         for (let i = 0; i < 3 && p && !base; i++, p = p.parentElement) {
-          base = (p.getAttribute?.("aria-label") || "").trim();
+          base = clean(p.getAttribute?.("aria-label") || p.getAttribute?.("title") || refText(p.getAttribute?.("aria-labelledby")));
         }
       }
+      // 3) Look inside for a title / aria-label / image alt.
+      if (!base) {
+        const inner = el.querySelector?.("[aria-label],[title],img[alt]");
+        if (inner) base = clean(inner.getAttribute("aria-label") || inner.getAttribute("title") || inner.getAttribute("alt"));
+      }
+      // 4) Derive from the link target path.
+      if (!base) base = hrefHint(el);
+      // 5) Last resort for icon-only controls: name the icon so the agent has a
+      //    semantic hook (e.g. "settings", "trash", "plus").
+      if (!base) { const ic = iconName(el); if (ic) base = ic + " (icon)"; }
       return base.slice(0, 90);
     };
 
@@ -189,7 +232,14 @@ async function domExcerpt(page) {
       const type = el.getAttribute("type");
       const kind = type ? `${tag}:${type}` : role ? `${tag}[${role}]` : tag;
       const tid = testIdOf(el);
-      const meta = tid ? ` {testid:${tid}}` : "";
+      // Extra hooks the agent can use to disambiguate icon-only controls:
+      // a test id, a tooltip/title distinct from the label, and the link target.
+      const title = clean(el.getAttribute("title"));
+      const lbl = labelOf(el);
+      const href = hrefHint(el);
+      let meta = tid ? ` {testid:${tid}}` : "";
+      if (title && title !== lbl) meta += ` {title:${title.slice(0, 40)}}`;
+      if (href && !lbl.includes(href)) meta += ` {to:${href}}`;
       // Current value of form fields, so the agent KNOWS a field is already
       // filled and doesn't re-fill it in a loop. Mask password values.
       let val = "";
@@ -207,7 +257,7 @@ async function domExcerpt(page) {
           : el.disabled || el.getAttribute("aria-disabled") === "true"
             ? " (disabled)"
             : "";
-      return `${kind} "${labelOf(el)}"${val}${meta}${state}`;
+      return `${kind} "${lbl}"${val}${meta}${state}`;
     };
 
     const lines = [];
