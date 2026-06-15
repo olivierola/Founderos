@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { Menu, X, ArrowRight, Github } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/Logo";
 
 const NAV_LINKS = [
   { to: "/features", label: "Features" },
@@ -21,9 +22,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <span className="text-[11px] font-bold">F</span>
-            </div>
+            <Logo size={28} />
             <span className="text-sm font-semibold tracking-tight">FounderOS</span>
             <span className="hidden text-[10px] uppercase text-muted-foreground sm:inline">for agencies</span>
           </Link>
@@ -118,9 +117,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
         <div className="mx-auto grid max-w-6xl grid-cols-2 gap-8 px-4 py-12 sm:px-6 md:grid-cols-5">
           <div className="col-span-2">
             <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <span className="text-[11px] font-bold">F</span>
-              </div>
+              <Logo size={28} />
               <span className="text-sm font-semibold">FounderOS</span>
             </div>
             <p className="mt-3 max-w-xs text-sm text-muted-foreground">

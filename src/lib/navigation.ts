@@ -1,12 +1,12 @@
 import {
-  LayoutDashboard,
-  Rocket,
-  Braces,
-  MessageSquareText,
-  Plug2,
-  Cog,
-  BarChart3,
-  FileText,
+  ShieldHalf,
+  Megaphone,
+  TerminalSquare,
+  BrainCircuit,
+  Blocks,
+  Settings2,
+  ChartLine,
+  FileStack,
   type LucideIcon,
 } from "lucide-react";
 
@@ -75,7 +75,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "actions",
     label: "Admin panel",
-    icon: LayoutDashboard,
+    icon: ShieldHalf,
     color: "text-slate-400",
     subItems: [
       // Kept from the former Overview module.
@@ -97,7 +97,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "saas-analytics",
     label: "SaaS Analytics",
-    icon: BarChart3,
+    icon: ChartLine,
     color: "text-violet-400/60",
     // The `group` is the primary nav axis (rendered as sidebar sections); the
     // items within each group are the horizontal tabs.
@@ -154,7 +154,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "devops",
     label: "DevOps",
-    icon: Braces,
+    icon: TerminalSquare,
     color: "text-sky-500/55",
     // Code, Security and Ops are sidebar sections; their pages are tabs.
     groupsAsTabs: true,
@@ -195,7 +195,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "agent",
     label: "RAG Agent",
-    icon: MessageSquareText,
+    icon: BrainCircuit,
     color: "text-white",
     subItems: [
       { label: "Public agents", slug: "agents", group: "Agents" },
@@ -216,7 +216,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "marketing",
     label: "Marketing",
-    icon: Rocket,
+    icon: Megaphone,
     color: "text-fuchsia-400/55",
     subItems: [
       { label: "Overview", slug: "overview" },
@@ -231,7 +231,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "office",
     label: "Bureautique",
-    icon: FileText,
+    icon: FileStack,
     color: "text-orange-400/60",
     subItems: [
       { label: "Library", slug: "library" },
@@ -243,7 +243,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "integrations",
     label: "Integrations",
-    icon: Plug2,
+    icon: Blocks,
     color: "text-cyan-500/55",
     pinBottom: true,
     subItems: [
@@ -258,7 +258,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "settings",
     label: "Settings",
-    icon: Cog,
+    icon: Settings2,
     color: "text-slate-400",
     pinBottom: true,
     subItems: [

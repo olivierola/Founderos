@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, Link, useNavigate } from "react-router-dom";
-import { Boxes, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,9 +37,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="w-full max-w-md">
         <div className="mb-8 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Boxes className="h-5 w-5" />
-          </div>
+          <Logo size={40} />
           <div>
             <div className="text-lg font-semibold">FounderOS</div>
             <div className="text-xs text-muted-foreground">SaaS cockpit for builders</div>

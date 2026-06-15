@@ -1,9 +1,10 @@
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
-import { Boxes, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { MODULES } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth-context";
+import { Logo } from "@/components/Logo";
 
 export function PrimarySidebar() {
   const { workspaceSlug = "default", projectSlug = "default" } = useParams();
@@ -26,9 +27,10 @@ export function PrimarySidebar() {
               <TooltipTrigger asChild>
                 <button
                   onClick={() => navigate(`/orgs/${workspaceSlug}/projects`)}
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity hover:opacity-80"
+                  className="transition-transform hover:scale-105"
+                  aria-label="Switch project"
                 >
-                  <Boxes className="h-5 w-5" />
+                  <Logo size={34} />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">Switch project</TooltipContent>
