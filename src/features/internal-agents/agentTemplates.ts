@@ -954,7 +954,7 @@ Match the brand voice; escalate sensitive issues. Nothing publishes without appr
     tools: [
       { kind: "web_search", name: "Mentions & trends" },
       { kind: "rag_search", name: "Brand voice" },
-      { kind: "edge_function", name: "Post to channel", config: { slug: "send-notification" }, requires_approval: true },
+      { kind: "connector_action", name: "Slack", description: "Post updates to a Slack channel.", config: { provider: "slack" } },
     ],
     outcomes: ["Consistent presence", "Faster, on-brand replies", "Sentiment on the radar"],
   },

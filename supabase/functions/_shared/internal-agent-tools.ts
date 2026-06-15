@@ -72,6 +72,8 @@ export interface InternalToolContext {
   agentName?: string;
   /** Whether this agent may message/delegate to peers. */
   collaborationEnabled?: boolean;
+  /** Whether the agent may run write/outgoing actions without per-action approval. */
+  autopilot?: boolean;
   runId: string | null;
   /** Originating chat session, when running in chat mode. */
   conversationId?: string | null;
@@ -1103,22 +1105,41 @@ export function buildInternalToolset(
     const actions = CONNECTOR_ACTIONS[provider];
     if (!provider || !actions || actions.length === 0) continue;
     const toolName = slugToToolName("use", provider);
-    const actionList = actions.map((a) => `${a.name} (${a.description})`).join("; ");
+    const writeNames = new Set(actions.filter((a) => a.write).map((a) => a.name));
+    const actionList = actions.map((a) => `${a.name}${a.write ? " [write]" : ""} (${a.description})`).join("; ");
+    const hasWrite = writeNames.size > 0;
     tools.set(toolName, {
       def: {
         name: toolName,
-        description: `Work with ${provider}. Available actions: ${actionList}. Pass the action name and its params.`,
+        description:
+          `Work with ${provider}. Available actions: ${actionList}. Pass the action name and its params.` +
+          (hasWrite && !ctx.autopilot
+            ? " Actions marked [write] send/create data and are queued for human approval before running."
+            : ""),
         parameters: {
           type: "object",
           properties: {
             action: { type: "string", description: `One of: ${actions.map((a) => a.name).join(", ")}` },
             params: { type: "object", description: "Action parameters (see the action's description)." },
+            reason: { type: "string", description: "One-sentence justification (used for write actions)." },
           },
           required: ["action"],
           additionalProperties: false,
         },
       },
       run: async (args) => {
+        const action = str(args.action);
+        const params = (args.params && typeof args.params === "object") ? args.params : {};
+        // Write actions need human approval unless the agent is on autopilot.
+        if (writeNames.has(action) && !ctx.autopilot) {
+          const id = await ctx.requestApproval({
+            tool_name: toolName,
+            action_kind: "connector_action",
+            payload: { provider, action, params },
+            reason: str(args.reason) || null,
+          });
+          return `Action ${provider}.${action} queued for human approval (approval ${id}). It runs once a team member approves it — continue and mention the pending approval in your final answer.`;
+        }
         const base = Deno.env.get("SUPABASE_URL");
         const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
         if (!base || !key) return "ERROR: connector actions are not configured.";
@@ -1127,8 +1148,7 @@ export function buildInternalToolset(
           headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             workspace_id: ctx.workspaceId, project_id: ctx.projectId,
-            provider, action: str(args.action),
-            params: (args.params && typeof args.params === "object") ? args.params : {},
+            provider, action, params,
           }),
         });
         return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);

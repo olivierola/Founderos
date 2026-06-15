@@ -25,6 +25,8 @@ export interface ConnectorAction {
   name: string;                 // e.g. "list_deals"
   description: string;
   params?: Record<string, { type: string; description: string }>;
+  /** True for outgoing/irreversible actions (post message, create, update…). */
+  write?: boolean;
   run: (cred: Cred, params: Params) => Promise<unknown>;
 }
 
@@ -64,6 +66,13 @@ const hubspot: ConnectorAction[] = [
     run: (c, p) => getJson("https://api.hubapi.com/crm/v3/objects/contacts/search",
       { method: "POST", headers: { Authorization: `Bearer ${c.api_key}`, "Content-Type": "application/json" },
         body: JSON.stringify({ query: str(p.query), limit: 20 }) }),
+  },
+  {
+    name: "create_note", description: "Create a note in the CRM.", write: true,
+    params: { body: { type: "string", description: "Note text." } },
+    run: (c, p) => getJson("https://api.hubapi.com/crm/v3/objects/notes",
+      { method: "POST", headers: { Authorization: `Bearer ${c.api_key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ properties: { hs_note_body: str(p.body), hs_timestamp: Date.now() } }) }),
   },
 ];
 
@@ -410,6 +419,17 @@ const notion: ConnectorAction[] = [
     run: (c, p) => getJson(`https://api.notion.com/v1/pages/${encodeURIComponent(str(p.page_id))}`,
       { headers: { Authorization: `Bearer ${c.api_key}`, "Notion-Version": NOTION_VER } }),
   },
+  {
+    name: "create_page", description: "Create a page inside a parent page.", write: true,
+    params: { parent_page_id: { type: "string", description: "Parent page ID." }, title: { type: "string", description: "Page title." }, content: { type: "string", description: "Body text." } },
+    run: (c, p) => getJson("https://api.notion.com/v1/pages",
+      { method: "POST", headers: { Authorization: `Bearer ${c.api_key}`, "Notion-Version": NOTION_VER, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parent: { page_id: str(p.parent_page_id) },
+          properties: { title: { title: [{ text: { content: str(p.title) } }] } },
+          children: str(p.content) ? [{ object: "block", type: "paragraph", paragraph: { rich_text: [{ text: { content: str(p.content) } }] } }] : [],
+        }) }),
+  },
 ];
 
 // ── Linear (GraphQL) ───────────────────────────────────────────────────────────
@@ -429,6 +449,12 @@ const linear: ConnectorAction[] = [
   {
     name: "list_projects", description: "List projects and their progress.",
     run: (c) => linearGql(c.api_key, `{ projects(first: 50) { nodes { name state progress targetDate } } }`),
+  },
+  {
+    name: "create_issue", description: "Create an issue in a team.", write: true,
+    params: { team_id: { type: "string", description: "Team ID (use list_teams to find it)." }, title: { type: "string", description: "Issue title." }, description: { type: "string", description: "Issue body." } },
+    run: (c, p) => linearGql(c.api_key,
+      `mutation { issueCreate(input: { teamId: ${JSON.stringify(str(p.team_id))}, title: ${JSON.stringify(str(p.title))}, description: ${JSON.stringify(str(p.description))} }) { success issue { identifier url } } }`),
   },
 ];
 
@@ -504,6 +530,13 @@ const airtable: ConnectorAction[] = [
     run: (c, p) => getJson(`https://api.airtable.com/v0/${encodeURIComponent(str(p.base_id))}/${encodeURIComponent(str(p.table))}?maxRecords=50`,
       { headers: { Authorization: `Bearer ${c.api_key}` } }),
   },
+  {
+    name: "create_record", description: "Create a record in a base table.", write: true,
+    params: { base_id: { type: "string", description: "Base ID." }, table: { type: "string", description: "Table name." }, fields: { type: "object", description: "Field name -> value map." } },
+    run: (c, p) => getJson(`https://api.airtable.com/v0/${encodeURIComponent(str(p.base_id))}/${encodeURIComponent(str(p.table))}`,
+      { method: "POST", headers: { Authorization: `Bearer ${c.api_key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: (p.fields && typeof p.fields === "object") ? p.fields : {} }) }),
+  },
 ];
 
 // ── GitHub (read) ─────────────────────────────────────────────────────────────────
@@ -519,9 +552,73 @@ const github: ConnectorAction[] = [
     run: (c, p) => getJson(`https://api.github.com/repos/${encodeURIComponent(str(p.owner))}/${encodeURIComponent(str(p.repo))}/issues?state=open&per_page=30`,
       { headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json" } }),
   },
+  {
+    name: "create_issue", description: "Open an issue on a repo.", write: true,
+    params: { owner: { type: "string", description: "Owner/org." }, repo: { type: "string", description: "Repo name." }, title: { type: "string", description: "Issue title." }, body: { type: "string", description: "Issue body." } },
+    run: (c, p) => getJson(`https://api.github.com/repos/${encodeURIComponent(str(p.owner))}/${encodeURIComponent(str(p.repo))}/issues`,
+      { method: "POST", headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+        body: JSON.stringify({ title: str(p.title), body: str(p.body) }) }),
+  },
+];
+
+// ── Messaging — each channel is its own provider with its own send tool ─────────
+async function postWebhook(url: string, body: unknown): Promise<unknown> {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+  return { ok: true, status: res.status };
+}
+
+const slack: ConnectorAction[] = [
+  {
+    name: "post_message", description: "Post a message to a channel using the Slack bot token (chat.postMessage).", write: true,
+    params: { channel: { type: "string", description: "Channel ID or #name." }, text: { type: "string", description: "Message text (mrkdwn)." } },
+    run: (c, p) => getJson("https://slack.com/api/chat.postMessage",
+      { method: "POST", headers: { Authorization: `Bearer ${c.bot_token || c.api_key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: str(p.channel), text: str(p.text) }) }),
+  },
+  {
+    name: "list_channels", description: "List public channels the bot can see.",
+    run: (c) => getJson("https://slack.com/api/conversations.list?limit=200&types=public_channel",
+      { headers: { Authorization: `Bearer ${c.bot_token || c.api_key}` } }),
+  },
+  {
+    name: "post_webhook", description: "Post to the configured incoming webhook (no channel choice).", write: true,
+    params: { text: { type: "string", description: "Message text." } },
+    run: (c, p) => postWebhook(str(c.webhook_url), { text: str(p.text) }),
+  },
+];
+
+const teams: ConnectorAction[] = [
+  {
+    name: "post_message", description: "Post a message to the configured Microsoft Teams channel (incoming webhook).", write: true,
+    params: { text: { type: "string", description: "Message text (Markdown)." }, title: { type: "string", description: "Optional title." } },
+    run: (c, p) => postWebhook(str(c.webhook_url), { "@type": "MessageCard", "@context": "https://schema.org/extensions",
+      summary: str(p.title) || "Agent message", themeColor: "2F2FE4",
+      title: str(p.title) || undefined, text: str(p.text) }),
+  },
+];
+
+const discord: ConnectorAction[] = [
+  {
+    name: "post_message", description: "Post a message to the configured Discord channel (webhook).", write: true,
+    params: { content: { type: "string", description: "Message content." }, username: { type: "string", description: "Optional override name." } },
+    run: (c, p) => postWebhook(str(c.webhook_url), { content: str(p.content), username: str(p.username) || undefined }),
+  },
+];
+
+const telegram: ConnectorAction[] = [
+  {
+    name: "send_message", description: "Send a message to the configured Telegram chat (bot token + chat_id).", write: true,
+    params: { text: { type: "string", description: "Message text." } },
+    run: (c, p) => getJson(`https://api.telegram.org/bot${c.api_key}/sendMessage`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: c.chat_id, text: str(p.text), parse_mode: "Markdown" }) }),
+  },
 ];
 
 export const CONNECTOR_ACTIONS: Record<string, ConnectorAction[]> = {
+  slack, teams, discord, telegram,
   hubspot, pipedrive, salesforce, attio, intercom,
   bamboohr, greenhouse, deel, factorial,
   athena, gcs, bigquery, "azure-blob": azureBlob, "azure-synapse": azureSynapse,

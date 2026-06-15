@@ -8,6 +8,7 @@ import { PROVIDERS, type ProviderDef } from "@/lib/providers";
 // Grouped for a readable picker. Keep slugs in sync with the backend catalog
 // (CONNECTOR_ACTIONS in supabase/functions/_shared/connector-actions.ts).
 export const CONNECTOR_ACTION_GROUPS: { label: string; slugs: string[] }[] = [
+  { label: "Messaging", slugs: ["slack", "teams", "discord", "telegram"] },
   { label: "CRM & Support", slugs: ["hubspot", "pipedrive", "salesforce", "attio", "intercom"] },
   { label: "Billing", slugs: ["stripe"] },
   { label: "HR & People", slugs: ["bamboohr", "greenhouse", "deel", "factorial"] },

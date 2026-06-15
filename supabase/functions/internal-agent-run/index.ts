@@ -42,6 +42,7 @@ interface AgentRow {
   project_id: string;
   is_archived: boolean;
   collaboration_enabled: boolean;
+  requires_approval: boolean;
 }
 
 // Rough per-1k-token rates (USD). Adjust as providers change pricing.
@@ -146,7 +147,7 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled")
+      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, requires_approval")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -234,6 +235,9 @@ function makeToolContext(opts: {
     agentId: agent.id,
     agentName: agent.name,
     collaborationEnabled: agent.collaboration_enabled,
+    // Autopilot = the agent may execute write actions without per-action
+    // approval. We treat "requires_approval = false" as autopilot.
+    autopilot: agent.requires_approval === false,
     runId,
     conversationId: opts.conversationId ?? null,
     createDeliverable: async (d) => {

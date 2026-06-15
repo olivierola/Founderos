@@ -19,13 +19,32 @@ interface ApprovalRow {
   id: string;
   agent_id: string;
   run_id: string | null;
+  workspace_id: string | null;
+  project_id: string | null;
   tool_name: string;
-  action_kind: "edge_function" | "webhook";
+  action_kind: "edge_function" | "webhook" | "connector_action";
   payload: Record<string, unknown>;
   status: string;
 }
 
 async function executeAction(a: ApprovalRow): Promise<{ ok: boolean; detail: string }> {
+  if (a.action_kind === "connector_action") {
+    const base = Deno.env.get("SUPABASE_URL");
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!base || !key) return { ok: false, detail: "Connector actions not configured" };
+    const res = await fetch(`${base}/functions/v1/connector-action`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspace_id: a.workspace_id, project_id: a.project_id,
+        provider: String(a.payload.provider ?? ""),
+        action: String(a.payload.action ?? ""),
+        params: (a.payload.params && typeof a.payload.params === "object") ? a.payload.params : {},
+      }),
+    });
+    const text = (await res.text()).slice(0, 4000);
+    return { ok: res.ok, detail: `HTTP ${res.status}\n${text}` };
+  }
   if (a.action_kind === "edge_function") {
     const slug = String(a.payload.slug ?? "");
     if (!/^[a-z0-9-]+$/.test(slug)) return { ok: false, detail: "Invalid function slug" };
@@ -79,7 +98,7 @@ Deno.serve(async (req) => {
     const admin = createServiceClient();
     const { data: approval } = await admin
       .from("internal_agent_approvals")
-      .select("id, agent_id, run_id, tool_name, action_kind, payload, status")
+      .select("id, agent_id, run_id, workspace_id, project_id, tool_name, action_kind, payload, status")
       .eq("id", approval_id)
       .maybeSingle();
     if (!approval) return jsonResponse({ error: "Approval not found" }, { status: 404 });

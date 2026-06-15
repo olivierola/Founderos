@@ -406,10 +406,22 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Slack",
     category: "messaging",
     icon: MessageSquare,
-    description: "Send alerts and admin notifications to Slack.",
+    description: "Post to channels and read channels. Bot token enables chat.postMessage; webhook is a simple fallback.",
     mvp: true,
     fields: [
-      { key: "webhook_url", label: "Incoming webhook URL", placeholder: "https://hooks.slack.com/…", secret: true, helpUrl: "https://api.slack.com/messaging/webhooks" },
+      { key: "bot_token", label: "Bot token (xoxb-…) — for posting to chosen channels & reading", placeholder: "xoxb-…", secret: true, helpUrl: "https://api.slack.com/authentication/token-types#bot" },
+      { key: "webhook_url", label: "Incoming webhook URL (optional fallback)", placeholder: "https://hooks.slack.com/…", secret: true, helpUrl: "https://api.slack.com/messaging/webhooks" },
+    ],
+  },
+  {
+    slug: "teams",
+    name: "Microsoft Teams",
+    category: "messaging",
+    icon: MessageSquare,
+    description: "Post messages to a Teams channel via an Incoming Webhook.",
+    mvp: true,
+    fields: [
+      { key: "webhook_url", label: "Incoming webhook URL", placeholder: "https://outlook.office.com/webhook/…", secret: true, helpUrl: "https://learn.microsoft.com/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook" },
     ],
   },
   {
