@@ -2143,179 +2143,216 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Settings</CardTitle>
-            <div className="flex items-center gap-2">
-              {savedAt && Date.now() - savedAt < 4000 && (
-                <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Saved</span>
+    <div className="mx-auto max-w-4xl">
+      {/* Header + Save — flush on the background. */}
+      <div className="flex items-center justify-between pb-2">
+        <h2 className="text-lg font-semibold">Settings</h2>
+        <div className="flex items-center gap-2">
+          {savedAt && Date.now() - savedAt < 4000 && (
+            <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Saved</span>
+          )}
+          <Button size="sm" onClick={save} disabled={saving || !isOwner}>
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+            <span className="ml-1">Save</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* General */}
+      <SettingsSection>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!isOwner} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} disabled={!isOwner} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Model</label>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={!isOwner}
+              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+            >
+              <option value="deepseek">DeepSeek</option>
+              <option value="groq">Groq (Llama 3.1)</option>
+              <option value="gpt-4">GPT-4</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Temperature ({temperature})</label>
+            <input
+              type="range" min={0} max={1} step={0.1}
+              value={temperature}
+              onChange={(e) => setTemperature(Number(e.target.value))}
+              disabled={!isOwner}
+              className="mt-2 w-full"
+            />
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ToggleRow
+            icon={MessageSquare} label="Chat mode"
+            checked={chatEnabled} onChange={setChatEnabled} disabled={!isOwner}
+          />
+          <ToggleRow
+            icon={Target} label="Mission mode"
+            checked={missionEnabled} onChange={setMissionEnabled} disabled={!isOwner}
+          />
+        </div>
+      </SettingsSection>
+
+      <SettingsDivider />
+
+      {/* Autonomy budget */}
+      <SettingsSection
+        title="Autonomy budget" icon={Gauge}
+        description="Hard limits applied to every run. The agent stops when it reaches the step budget; runs exceeding the cost budget are flagged in the timeline."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              Max steps per run (tool-call rounds, 1–30)
+            </label>
+            <Input
+              type="number" min={1} max={30}
+              value={maxSteps}
+              onChange={(e) => setMaxSteps(Number(e.target.value))}
+              disabled={!isOwner}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              Max cost per run (USD)
+            </label>
+            <Input
+              type="number" min={0} step={0.05}
+              value={maxCost}
+              onChange={(e) => setMaxCost(Number(e.target.value))}
+              disabled={!isOwner}
+            />
+          </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsDivider />
+
+      {/* Collaboration profile */}
+      <SettingsSection
+        title="Collaboration" icon={Network}
+        description="Role and skills help teammate agents decide when to message or delegate to this one."
+      >
+        <ToggleRow
+          icon={Network}
+          label="Allow this agent to collaborate with other agents (message, delegate, share knowledge)"
+          checked={collabEnabled} onChange={setCollabEnabled} disabled={!isOwner}
+        />
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Role</label>
+            <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Research analyst" disabled={!isOwner} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Skills</label>
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5">
+              {skills.map((s) => (
+                <span key={s} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+                  {s}
+                  {isOwner && <button onClick={() => setSkills(skills.filter((x) => x !== s))} className="text-muted-foreground hover:text-foreground">×</button>}
+                </span>
+              ))}
+              {isOwner && (
+                <input
+                  value={skillInput}
+                  onChange={(e) => setSkillInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const s = skillInput.trim().toLowerCase();
+                      if (s && !skills.includes(s)) setSkills([...skills, s]);
+                      setSkillInput("");
+                    }
+                  }}
+                  placeholder="add skill…"
+                  className="min-w-[80px] flex-1 bg-transparent text-xs focus:outline-none"
+                />
               )}
-              <Button size="sm" onClick={save} disabled={saving || !isOwner}>
-                {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                <span className="ml-1">Save</span>
-              </Button>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!isOwner} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
-              <Input value={description} onChange={(e) => setDescription(e.target.value)} disabled={!isOwner} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Model</label>
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                disabled={!isOwner}
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-              >
-                <option value="groq">Groq (Llama 3.1)</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="gpt-4">GPT-4</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Temperature ({temperature})</label>
-              <input
-                type="range" min={0} max={1} step={0.1}
-                value={temperature}
-                onChange={(e) => setTemperature(Number(e.target.value))}
-                disabled={!isOwner}
-                className="w-full"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-2 md:grid-cols-2">
-            <label className="flex items-center gap-2 rounded border border-border p-3 text-sm">
-              <input
-                type="checkbox"
-                checked={chatEnabled}
-                onChange={(e) => setChatEnabled(e.target.checked)}
-                disabled={!isOwner}
-              />
-              <MessageSquare className="h-4 w-4 text-muted-foreground" />
-              Chat mode
-            </label>
-            <label className="flex items-center gap-2 rounded border border-border p-3 text-sm">
-              <input
-                type="checkbox"
-                checked={missionEnabled}
-                onChange={(e) => setMissionEnabled(e.target.checked)}
-                disabled={!isOwner}
-              />
-              <Target className="h-4 w-4 text-muted-foreground" />
-              Mission mode
-            </label>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <Gauge className="h-4 w-4 text-muted-foreground" /> Autonomy budget
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Hard limits applied to every run. The agent stops when it reaches the step budget; runs exceeding the
-            cost budget are flagged in the timeline.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Max steps per run (tool-call rounds, 1–30)
-              </label>
-              <Input
-                type="number" min={1} max={30}
-                value={maxSteps}
-                onChange={(e) => setMaxSteps(Number(e.target.value))}
-                disabled={!isOwner}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Max cost per run (USD)
-              </label>
-              <Input
-                type="number" min={0} step={0.05}
-                value={maxCost}
-                onChange={(e) => setMaxCost(Number(e.target.value))}
-                disabled={!isOwner}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Collaboration profile — how this agent fits in the ecosystem. */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4" /> Collaboration</CardTitle>
-          <p className="text-xs text-muted-foreground">Role and skills help teammate agents decide when to message or delegate to this one.</p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <label className="flex items-center gap-2 rounded border border-border p-3 text-sm">
-            <input type="checkbox" checked={collabEnabled} onChange={(e) => setCollabEnabled(e.target.checked)} disabled={!isOwner} />
-            <Network className="h-4 w-4 text-muted-foreground" />
-            Allow this agent to collaborate with other agents (message, delegate, share knowledge)
-          </label>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Role</label>
-              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Research analyst" disabled={!isOwner} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Skills</label>
-              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5">
-                {skills.map((s) => (
-                  <span key={s} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
-                    {s}
-                    {isOwner && <button onClick={() => setSkills(skills.filter((x) => x !== s))} className="text-muted-foreground hover:text-foreground">×</button>}
-                  </span>
-                ))}
-                {isOwner && (
-                  <input
-                    value={skillInput}
-                    onChange={(e) => setSkillInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        const s = skillInput.trim().toLowerCase();
-                        if (s && !skills.includes(s)) setSkills([...skills, s]);
-                        setSkillInput("");
-                      }
-                    }}
-                    placeholder="add skill…"
-                    className="min-w-[80px] flex-1 bg-transparent text-xs focus:outline-none"
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsSection>
 
       {isOwner && (
-        <Card>
-          <CardHeader><CardTitle className="text-sm text-destructive">Danger zone</CardTitle></CardHeader>
-          <CardContent>
+        <>
+          <SettingsDivider />
+          <SettingsSection title="Danger zone" titleClassName="text-destructive">
             <Button variant="outline" onClick={archive} className="text-destructive">
               <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Archive agent
             </Button>
-          </CardContent>
-        </Card>
+          </SettingsSection>
+        </>
       )}
     </div>
+  );
+}
+
+// A section of settings laid directly on the page background (no card). Optional
+// title + description sit above the content.
+function SettingsSection({
+  title, icon: Icon, description, titleClassName, children,
+}: {
+  title?: string;
+  icon?: any;
+  description?: string;
+  titleClassName?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-4 py-5">
+      {(title || description) && (
+        <div className="space-y-1">
+          {title && (
+            <h3 className={cn("flex items-center gap-2 text-sm font-semibold", titleClassName)}>
+              {Icon && <Icon className="h-4 w-4 text-muted-foreground" />} {title}
+            </h3>
+          )}
+          {description && <p className="text-xs text-muted-foreground">{description}</p>}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+function SettingsDivider() {
+  return <hr className="border-border" />;
+}
+
+// A borderless checkbox row used inside settings sections.
+function ToggleRow({
+  icon: Icon, label, checked, onChange, disabled,
+}: {
+  icon?: any;
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+        className="h-4 w-4 accent-primary"
+      />
+      {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+      {label}
+    </label>
   );
 }
 
