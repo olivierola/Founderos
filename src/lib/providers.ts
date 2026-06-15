@@ -1029,6 +1029,18 @@ export const PROVIDERS: ProviderDef[] = [
       { key: "service_account", label: "Service account JSON", placeholder: '{ "client_email": "…", "private_key": "…" }', secret: true, helpUrl: "https://developers.google.com/sheets/api/guides/authorizing" },
     ],
   },
+  {
+    slug: "google-calendar",
+    name: "Google Calendar",
+    category: "tooling",
+    icon: CalendarClock,
+    description: "Create & list events — agents schedule meetings and reminders.",
+    mvp: true,
+    fields: [
+      { key: "calendar_id", label: "Calendar ID", placeholder: "you@company.com or …@group.calendar.google.com", secret: false },
+      { key: "service_account", label: "Service account JSON (with calendar access)", placeholder: '{ "client_email": "…", "private_key": "…" }', secret: true, helpUrl: "https://developers.google.com/calendar/api/guides/auth" },
+    ],
+  },
 
   // --- Data lakes ---
   {

@@ -323,10 +323,48 @@ const bigquery: ConnectorAction[] = [
   },
 ];
 
+// ── Google Calendar ──────────────────────────────────────────────────────────
+const googleCalendar: ConnectorAction[] = [
+  {
+    name: "list_events", description: "List upcoming events.",
+    params: { days: { type: "string", description: "Look-ahead window in days (default 14)." } },
+    run: async (c) => {
+      const { token } = await getGoogleAccessToken(c.service_account, ["https://www.googleapis.com/auth/calendar.readonly"]);
+      const timeMin = new Date().toISOString();
+      return getJson(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(c.calendar_id)}/events?timeMin=${encodeURIComponent(timeMin)}&singleEvents=true&orderBy=startTime&maxResults=20`,
+        { headers: { Authorization: `Bearer ${token}` } });
+    },
+  },
+  {
+    name: "create_event", description: "Create a calendar event.",
+    params: {
+      summary: { type: "string", description: "Event title." },
+      start: { type: "string", description: "ISO start datetime (e.g. 2026-07-01T15:00:00Z)." },
+      end: { type: "string", description: "ISO end datetime." },
+      description: { type: "string", description: "Optional details." },
+      attendees: { type: "string", description: "Optional comma-separated emails." },
+    },
+    run: async (c, p) => {
+      const { token } = await getGoogleAccessToken(c.service_account, ["https://www.googleapis.com/auth/calendar"]);
+      const attendees = str(p.attendees).split(",").map((e) => e.trim()).filter(Boolean).map((email) => ({ email }));
+      const body = {
+        summary: str(p.summary) || "Event",
+        description: str(p.description) || undefined,
+        start: { dateTime: str(p.start) },
+        end: { dateTime: str(p.end) || str(p.start) },
+        attendees: attendees.length ? attendees : undefined,
+      };
+      return getJson(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(c.calendar_id)}/events`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    },
+  },
+];
+
 export const CONNECTOR_ACTIONS: Record<string, ConnectorAction[]> = {
   hubspot, pipedrive, salesforce, attio, intercom,
   bamboohr, greenhouse, deel, factorial,
   athena, gcs, bigquery, "azure-blob": azureBlob, "azure-synapse": azureSynapse,
+  "google-calendar": googleCalendar,
 };
 
 export function actionsFor(provider: string): ConnectorAction[] {

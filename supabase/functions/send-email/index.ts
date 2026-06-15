@@ -9,11 +9,8 @@ Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
   try {
-    const authHeader = req.headers.get("Authorization");
+    const authHeader = req.headers.get("Authorization") ?? "";
     if (!authHeader) return jsonResponse({ error: "Missing Authorization" }, { status: 401 });
-    const userClient = createUserClient(authHeader);
-    const { data: userData } = await userClient.auth.getUser();
-    if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
     const { workspace_id, project_id, to, subject, html, text, from } = await req.json();
     if (!workspace_id || !project_id || !to || !subject || (!html && !text)) {
@@ -21,14 +18,18 @@ Deno.serve(async (req) => {
     }
 
     const admin = createServiceClient();
-    const { data: m } = await admin
-      .from("workspace_members")
-      .select("role")
-      .eq("workspace_id", workspace_id)
-      .eq("user_id", userData.user.id)
-      .maybeSingle();
-    if (!m || !["owner", "admin"].includes(m.role)) {
-      return jsonResponse({ error: "Not authorized" }, { status: 403 });
+    // Allow the agent worker (service role) or a workspace owner/admin.
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    if (!(serviceKey && authHeader === `Bearer ${serviceKey}`)) {
+      const userClient = createUserClient(authHeader);
+      const { data: userData } = await userClient.auth.getUser();
+      if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+      const { data: m } = await admin
+        .from("workspace_members").select("role")
+        .eq("workspace_id", workspace_id).eq("user_id", userData.user.id).maybeSingle();
+      if (!m || !["owner", "admin"].includes(m.role)) {
+        return jsonResponse({ error: "Not authorized" }, { status: 403 });
+      }
     }
 
     const { payload } = await getConnectorCredential(workspace_id, project_id, "resend");

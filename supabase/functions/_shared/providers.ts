@@ -566,6 +566,19 @@ export async function validateProvider(
           return fail(e instanceof Error ? e.message : "Invalid service account");
         }
       }
+      case "google-calendar": {
+        if (!payload.service_account || !payload.calendar_id) return fail("service_account JSON + calendar_id required");
+        try {
+          const { token } = await getGoogleAccessToken(payload.service_account, ["https://www.googleapis.com/auth/calendar"]);
+          const r = await fetchJson(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(payload.calendar_id)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!r.ok) return fail(`Calendar not accessible (HTTP ${r.status}) — share it with the service account email.`);
+          return ok({ calendar_id: payload.calendar_id }, "write_enabled");
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : "Invalid service account");
+        }
+      }
       case "snowflake":
         // Snowflake auth needs its driver/SQL API session; accept connection
         // details (validated on first query by the data adapter).

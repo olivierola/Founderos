@@ -875,14 +875,15 @@ Be decisive and evidence-led; separate opinion from data.`,
     instructions: `Be the founder's right hand:
 1. Triage and summarise what needs attention (messages, tasks, requests).
 2. Draft replies, agendas and follow-ups; prepare briefs before meetings.
-3. Track action items and remind about deadlines.
-4. Keep it concise; flag what's urgent vs. what can wait.
-Be proactive but never send anything externally without approval.`,
+3. Use create_task to capture action items, and schedule meetings/reminders on the calendar (create_event).
+4. You can send_email for outreach/confirmations — keep it professional and only to people the task concerns.
+5. Keep it concise; flag what's urgent vs. what can wait.
+Be proactive; confirm with the founder before anything sensitive or high-stakes.`,
     autonomy: "assisted",
     max_steps: 12,
     tools: [
       { kind: "rag_search", name: "Notes & context" },
-      { kind: "edge_function", name: "Send notification", config: { slug: "send-notification" }, requires_approval: true },
+      { kind: "connector_action", name: "Google Calendar", description: "Create & list events.", config: { provider: "google-calendar" } },
       { kind: "connector_action", name: "CRM (HubSpot)", config: { provider: "hubspot" } },
       { kind: "web_search", name: "Look things up" },
     ],

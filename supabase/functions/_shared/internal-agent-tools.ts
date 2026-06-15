@@ -466,6 +466,77 @@ export function buildInternalToolset(
   });
   summaryLines.push("- create_deliverable: save your outputs as durable deliverables, ideally as a structured 'report' with charts/KPIs (always available).");
 
+  // Always-on: file a trackable task.
+  tools.set("create_task", {
+    def: {
+      name: "create_task",
+      description: "File a durable, trackable task (a to-do) for the team. Use it to capture follow-ups, action items or things a human must do.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short task title." },
+          detail: { type: "string", description: "Optional details / context." },
+          priority: { type: "string", enum: ["low", "medium", "high", "urgent"], description: "Default medium." },
+          due_at: { type: "string", description: "Optional ISO date/time." },
+          assignee: { type: "string", description: "Optional owner (name or email)." },
+        },
+        required: ["title"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const title = str(args.title).slice(0, 200);
+      if (!title) return "ERROR: title is required.";
+      const { error } = await ctx.admin.from("agent_tasks").insert({
+        workspace_id: ctx.workspaceId, project_id: ctx.projectId, agent_id: ctx.agentId ?? null,
+        title, detail: str(args.detail) || null,
+        priority: ["low", "medium", "high", "urgent"].includes(str(args.priority)) ? str(args.priority) : "medium",
+        due_at: str(args.due_at) || null, assignee: str(args.assignee) || null,
+      });
+      if (error) return `ERROR creating task: ${error.message}`;
+      return `Task "${title}" created.`;
+    },
+  });
+  summaryLines.push("- create_task: file trackable to-dos / action items (always available).");
+
+  // Always-on: send a real email (needs a connected Resend integration).
+  tools.set("send_email", {
+    def: {
+      name: "send_email",
+      description: "Send a real email via the connected email provider (Resend). Use for outreach, reports or notifications to real recipients. Be professional; only email people the task is about.",
+      parameters: {
+        type: "object",
+        properties: {
+          to: { type: "string", description: "Recipient email (or comma-separated list)." },
+          subject: { type: "string", description: "Email subject." },
+          html: { type: "string", description: "HTML body (preferred for formatted emails)." },
+          text: { type: "string", description: "Plain-text body (if no HTML)." },
+        },
+        required: ["to", "subject"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const base = Deno.env.get("SUPABASE_URL");
+      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!base || !key) return "ERROR: email is not configured.";
+      const to = str(args.to);
+      const subject = str(args.subject);
+      if (!to || !subject || (!str(args.html) && !str(args.text))) return "ERROR: to, subject and html|text are required.";
+      const res = await fetch(`${base}/functions/v1/send-email`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+          to: to.includes(",") ? to.split(",").map((e) => e.trim()) : to,
+          subject, html: str(args.html) || undefined, text: str(args.text) || undefined,
+        }),
+      });
+      return cap(`HTTP ${res.status}\n${await res.text()}`, 2000);
+    },
+  });
+  summaryLines.push("- send_email: send a real email via Resend (needs the email integration connected).");
+
   // Always-on: persistent memory. The agent reads its memory from the system
   // prompt and writes back through these tools.
   tools.set("save_memory", {
