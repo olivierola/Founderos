@@ -49,13 +49,11 @@ export type InternalAgentTab =
   | "memory"
   | "collaboration"
   | "instructions"
-  | "tools"
-  | "members"
   | "analytics"
   | "settings";
 
 const VALID_TABS: InternalAgentTab[] = [
-  "chat", "mission", "deliverables", "memory", "collaboration", "instructions", "tools", "members", "analytics", "settings",
+  "chat", "mission", "deliverables", "memory", "collaboration", "instructions", "analytics", "settings",
 ];
 
 export function InternalAgentDetailPage() {
@@ -95,8 +93,6 @@ export function InternalAgentDetailPage() {
       {tab === "memory" && <MemoryTab agent={agent} />}
       {tab === "collaboration" && <CollaborationTab agent={agent} />}
       {tab === "instructions" && <InstructionsEditor agent={agent} />}
-      {tab === "tools" && <ToolsTab agent={agent} />}
-      {tab === "members" && <MembersTab agent={agent} />}
       {tab === "analytics" && <AnalyticsTab agent={agent} />}
       {tab === "settings" && <SettingsTab agent={agent} />}
     </div>
@@ -1247,15 +1243,15 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <div>
-          <CardTitle className="text-base">Tools</CardTitle>
+    <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h3 className="flex items-center gap-2 text-sm font-semibold"><Wrench className="h-4 w-4 text-muted-foreground" /> Tools</h3>
           <p className="text-xs text-muted-foreground">Grant capabilities to this agent.</p>
         </div>
         <Button size="sm" onClick={() => setAddOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" /> Add tool</Button>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="mt-4">
         {!tools || tools.length === 0 ? (
           <p className="py-6 text-center text-xs text-muted-foreground">No tools yet. Add one to give this agent capabilities.</p>
         ) : (
@@ -1318,7 +1314,7 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
             })}
           </div>
         )}
-      </CardContent>
+      </div>
 
       <Dialog open={addOpen} onOpenChange={(o) => { if (!o) closeAdd(); else setAddOpen(true); }}>
         <DialogContent className="max-w-md">
@@ -1414,7 +1410,7 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
           )}
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }
 
@@ -1897,12 +1893,15 @@ function MembersTab({ agent }: { agent: InternalAgent }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Members with access</CardTitle></CardHeader>
-        <CardContent>
+    <div className="space-y-1">
+      <h3 className="flex items-center gap-2 text-sm font-semibold"><UsersIcon className="h-4 w-4 text-muted-foreground" /> Members</h3>
+      <p className="text-xs text-muted-foreground">Who on your team can see and use this agent.</p>
+
+      <div className="grid gap-6 pt-3 lg:grid-cols-2">
+        <div>
+          <div className="mb-2 text-[11px] font-medium uppercase text-muted-foreground">Members with access</div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between rounded border border-border bg-muted/30 px-3 py-2">
+            <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
               <div className="text-sm">
                 <span className="font-medium">Creator</span>
                 <span className="ml-2 text-xs text-muted-foreground">{agent.created_by.slice(0, 8)}…</span>
@@ -1913,7 +1912,7 @@ function MembersTab({ agent }: { agent: InternalAgent }) {
               <p className="py-2 text-center text-xs text-muted-foreground">No additional members.</p>
             )}
             {(members ?? []).map((m) => (
-              <div key={m.id} className="flex items-center justify-between rounded border border-border px-3 py-2">
+              <div key={m.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                 <div className="text-sm">{m.user_id.slice(0, 8)}…</div>
                 <div className="flex items-center gap-2">
                   <select
@@ -1935,19 +1934,17 @@ function MembersTab({ agent }: { agent: InternalAgent }) {
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {isOwner && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Invite from workspace</CardTitle></CardHeader>
-          <CardContent>
+        {isOwner && (
+          <div>
+            <div className="mb-2 text-[11px] font-medium uppercase text-muted-foreground">Invite from workspace</div>
             {!candidates || candidates.length === 0 ? (
               <p className="py-4 text-center text-xs text-muted-foreground">No more members to add.</p>
             ) : (
               <div className="space-y-2">
                 {candidates.map((c) => (
-                  <div key={c.user_id} className="flex items-center justify-between rounded border border-border px-3 py-2">
+                  <div key={c.user_id} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                     <div className="text-sm">
                       {c.full_name ?? c.email ?? c.user_id.slice(0, 8) + "…"}
                       {c.email && c.full_name && <span className="ml-2 text-xs text-muted-foreground">{c.email}</span>}
@@ -1959,9 +1956,9 @@ function MembersTab({ agent }: { agent: InternalAgent }) {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2285,6 +2282,20 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
         </div>
       </SettingsSection>
 
+      <SettingsDivider />
+
+      {/* Tools — merged in from the former Tools tab. */}
+      <div className="py-5">
+        <ToolsTab agent={agent} />
+      </div>
+
+      <SettingsDivider />
+
+      {/* Members — merged in from the former Members tab. */}
+      <div className="py-5">
+        <MembersTab agent={agent} />
+      </div>
+
       {isOwner && (
         <>
           <SettingsDivider />
@@ -2474,8 +2485,6 @@ export const INTERNAL_AGENT_TABS: { slug: InternalAgentTab; label: string; icon:
   { slug: "memory", label: "Memory", icon: Brain },
   { slug: "collaboration", label: "Collaboration", icon: Network },
   { slug: "instructions", label: "Instructions", icon: FileText },
-  { slug: "tools", label: "Tools", icon: Wrench },
-  { slug: "members", label: "Members", icon: UsersIcon },
   { slug: "analytics", label: "Analytics", icon: BarChart3 },
   { slug: "settings", label: "Settings", icon: SettingsIcon },
 ];
