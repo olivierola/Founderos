@@ -51,6 +51,7 @@ import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
 import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
 import { InternalAgentDetailPage } from "@/features/internal-agents/InternalAgentDetail";
 import { AgentEcosystemPage } from "@/features/internal-agents/AgentEcosystem";
+import { AgentTasksPage } from "@/features/internal-agents/TasksPage";
 import { OpsOverviewPage } from "@/features/ops/OverviewPage";
 import { OpsServersPage } from "@/features/ops/ServersPage";
 import { OpsServerDetailPage } from "@/features/ops/ServerDetailPage";
@@ -234,6 +235,7 @@ const PAGES: Record<string, PageEl> = {
   "agent/agents": <RagAgentsPage />,
   "agent/internal-agents": <InternalAgentsListPage />,
   "agent/ecosystem": <AgentEcosystemPage />,
+  "agent/tasks": <AgentTasksPage />,
   "agent/onboarding": <RagOnboardingPage />,
 
   // Ops group (under the merged DevOps module)

@@ -200,6 +200,7 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Public agents", slug: "agents", group: "Agents" },
       { label: "Autonomous agents", slug: "internal-agents" },
       { label: "Agent ecosystem", slug: "ecosystem" },
+      { label: "Tasks", slug: "tasks" },
       { label: "Onboarding", slug: "onboarding" },
 
       // ── AI Agent tools (the Assistant "Chat" now lives in the global
