@@ -177,6 +177,7 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Secrets Detection", slug: "security-secrets" },
       { label: "License Audit", slug: "security-license-audit" },
       { label: "Compliance Watch", slug: "security-compliance" },
+      { label: "Scans & Pentest", slug: "security-scans" },
 
       // ── Ops (merged from the former Ops module) ──
       { label: "Overview", slug: "ops-overview", group: "Ops" },

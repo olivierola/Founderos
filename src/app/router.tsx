@@ -110,6 +110,7 @@ import { CveAlertsPage } from "@/features/security/CveAlerts";
 import { SecretsDetectionPage } from "@/features/security/Secrets";
 import { LicenseAuditPage, RiskScorePage } from "@/features/security/Extra";
 import { ComplianceWatchPage } from "@/features/security/Compliance";
+import { SecurityScansPage } from "@/features/security/SecurityScans";
 
 // Health
 import {
@@ -280,6 +281,7 @@ const PAGES: Record<string, PageEl> = {
   "devops/security-risk-score": <RiskScorePage />,
   "devops/security-license-audit": <LicenseAuditPage />,
   "devops/security-compliance": <ComplianceWatchPage />,
+  "devops/security-scans": <SecurityScansPage />,
 
   // Health sub-tabs under SaaS Analytics
   "saas-analytics/health-status": <HealthStatusPage />,
