@@ -15,8 +15,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { AGENT_TEMPLATES, type AgentTemplate, type AgentCategory } from "./agentTemplates";
-import { instantiateTemplate } from "./instantiateTemplate";
+import { type AgentTemplate } from "./agentTemplates";
+import { instantiateTemplate, type TemplateOverrides } from "./instantiateTemplate";
+import { TemplateDrawer } from "./TemplateDrawer";
 
 const ACCENT_COLORS = [
   "#2F2FE4", "#7c3aed", "#db2777", "#e11d48",
@@ -50,33 +51,13 @@ export function InternalAgentsListPage() {
   const [newEmoji, setNewEmoji] = useState(EMOJIS[0]);
   const [newColor, setNewColor] = useState(ACCENT_COLORS[0]);
   const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [activatingKey, setActivatingKey] = useState<string | null>(null);
-  const [templateCat, setTemplateCat] = useState<AgentCategory | "All">("All");
 
-  // Ordered categories present in the catalogue (for the filter bar).
-  const templateCategories = useMemo(() => {
-    const order: AgentCategory[] = [];
-    for (const t of AGENT_TEMPLATES) if (!order.includes(t.category)) order.push(t.category);
-    return order;
-  }, []);
-  const visibleTemplates = useMemo(
-    () => (templateCat === "All" ? AGENT_TEMPLATES : AGENT_TEMPLATES.filter((t) => t.category === templateCat)),
-    [templateCat],
-  );
-
-  async function activateTemplate(t: AgentTemplate) {
+  async function activateTemplate(t: AgentTemplate, overrides: TemplateOverrides) {
     if (!workspaceId || !projectId || !user) return;
-    setActivatingKey(t.key);
-    try {
-      const id = await instantiateTemplate(t, { workspaceId, projectId, userId: user.id });
-      queryClient.invalidateQueries({ queryKey: ["internal_agents", projectId] });
-      setTemplatesOpen(false);
-      navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${id}/chat`);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setActivatingKey(null);
-    }
+    const id = await instantiateTemplate(t, { workspaceId, projectId, userId: user.id }, overrides);
+    queryClient.invalidateQueries({ queryKey: ["internal_agents", projectId] });
+    setTemplatesOpen(false);
+    navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${id}/chat`);
   }
 
   const { data: agents, isLoading } = useQuery({
@@ -230,93 +211,8 @@ export function InternalAgentsListPage() {
         </div>
       )}
 
-      {/* Templates gallery — one-click, ready-to-run agents by category. */}
-      <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" /> Agent templates
-              <span className="text-xs font-normal text-muted-foreground">· {AGENT_TEMPLATES.length} ready-to-run</span>
-            </DialogTitle>
-          </DialogHeader>
-          <p className="-mt-1 text-sm text-muted-foreground">
-            Ready-to-run AI workers for any company. Activate one in a click — it comes with its
-            instructions, tools and guardrails. Connect your tools and it starts working.
-          </p>
-
-          {/* Category filter */}
-          <div className="-mx-1 flex flex-wrap gap-1.5 px-1">
-            {(["All", ...templateCategories] as const).map((c) => (
-              <button
-                key={c}
-                onClick={() => setTemplateCat(c)}
-                className={
-                  "rounded-full border px-2.5 py-1 text-xs transition-colors " +
-                  (templateCat === c
-                    ? "border-primary/50 bg-primary/10 text-foreground"
-                    : "border-border text-muted-foreground hover:text-foreground")
-                }
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-1 grid max-h-[60vh] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
-            {visibleTemplates.map((t) => (
-              <div key={t.key} className="flex flex-col rounded-xl border border-border bg-card/40 p-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-lg"
-                    style={{ backgroundColor: t.accent + "22", color: t.accent }}
-                  >
-                    {t.emoji}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="truncate font-semibold leading-tight">{t.name}</h3>
-                      <Badge variant="outline" className="shrink-0 text-[10px]">{t.category}</Badge>
-                    </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{t.tagline}</p>
-                  </div>
-                </div>
-
-                <ul className="mt-3 space-y-1">
-                  {t.outcomes.map((o) => (
-                    <li key={o} className="flex items-start gap-1.5 text-xs text-foreground/80">
-                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" /> {o}
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
-                    <Wrench className="h-3 w-3" /> {t.tools.length} tool{t.tools.length > 1 ? "s" : ""}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
-                    <ShieldCheck className="h-3 w-3" /> {t.autonomy}
-                  </span>
-                  {t.suggestedSchedule && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
-                      <CalendarClock className="h-3 w-3" /> {t.suggestedSchedule.label}
-                    </span>
-                  )}
-                </div>
-
-                <Button
-                  size="sm"
-                  className="mt-3 gap-1.5"
-                  disabled={activatingKey === t.key}
-                  onClick={() => activateTemplate(t)}
-                >
-                  {activatingKey === t.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                  Activate
-                </Button>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Templates browser + config stepper in a right-side full-height drawer. */}
+      <TemplateDrawer open={templatesOpen} onClose={() => setTemplatesOpen(false)} onActivate={activateTemplate} />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-md">

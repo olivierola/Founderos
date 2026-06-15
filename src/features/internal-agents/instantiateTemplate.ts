@@ -1,13 +1,28 @@
 import { supabase } from "@/lib/supabase";
-import { autonomyToFlags, type AgentTemplate } from "./agentTemplates";
+import { autonomyToFlags, type AgentTemplate, type AutonomyLevel, type TemplateTool } from "./agentTemplates";
+
+// Optional per-instance overrides chosen in the config stepper.
+export interface TemplateOverrides {
+  name?: string;
+  description?: string;
+  emoji?: string;
+  accent?: string;
+  instructions?: string;
+  autonomy?: AutonomyLevel;
+  /** Subset of the template's tools to enable (defaults to all). */
+  tools?: TemplateTool[];
+}
 
 // Instantiate a template into a real, runnable internal agent: the agent row
 // (persona/instructions/autonomy) + its preset tools. Returns the new agent id.
 export async function instantiateTemplate(
   template: AgentTemplate,
   ctx: { workspaceId: string; projectId: string; userId: string },
+  overrides: TemplateOverrides = {},
 ): Promise<string> {
-  const flags = autonomyToFlags(template.autonomy);
+  const autonomy = overrides.autonomy ?? template.autonomy;
+  const flags = autonomyToFlags(autonomy);
+  const tools = overrides.tools ?? template.tools;
 
   // Core columns guaranteed by the base schema. We add the v2 columns
   // (max_steps / requires_approval) in a follow-up update so a stale PostgREST
@@ -16,12 +31,12 @@ export async function instantiateTemplate(
     workspace_id: ctx.workspaceId,
     project_id: ctx.projectId,
     created_by: ctx.userId,
-    name: template.name,
-    description: template.tagline,
-    avatar_emoji: template.emoji,
-    accent_color: template.accent,
+    name: overrides.name?.trim() || template.name,
+    description: overrides.description?.trim() || template.tagline,
+    avatar_emoji: overrides.emoji || template.emoji,
+    accent_color: overrides.accent || template.accent,
     persona: template.persona,
-    instructions: template.instructions,
+    instructions: overrides.instructions?.trim() || template.instructions,
     chat_enabled: true,
     mission_enabled: true,
   };
@@ -43,8 +58,8 @@ export async function instantiateTemplate(
     /* v2 columns not in cache yet — agent still works with defaults */
   }
 
-  if (template.tools.length > 0) {
-    const rows = template.tools.map((t) => ({
+  if (tools.length > 0) {
+    const rows = tools.map((t) => ({
       agent_id: agent.id,
       kind: t.kind,
       name: t.name,
