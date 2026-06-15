@@ -2103,6 +2103,7 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   const [collabEnabled, setCollabEnabled] = useState(agent.collaboration_enabled ?? true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [section, setSection] = useState<SettingsSectionKey>("general");
 
   async function save() {
     setSaving(true);
@@ -2142,20 +2143,42 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   return (
     <div className="mx-auto max-w-4xl">
       {/* Header + Save — flush on the background. */}
-      <div className="flex items-center justify-between pb-2">
+      <div className="flex items-center justify-between pb-3">
         <h2 className="text-lg font-semibold">Settings</h2>
         <div className="flex items-center gap-2">
           {savedAt && Date.now() - savedAt < 4000 && (
             <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Saved</span>
           )}
-          <Button size="sm" onClick={save} disabled={saving || !isOwner}>
-            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-            <span className="ml-1">Save</span>
-          </Button>
+          {section !== "tools" && section !== "members" && section !== "danger" && (
+            <Button size="sm" onClick={save} disabled={saving || !isOwner}>
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              <span className="ml-1">Save</span>
+            </Button>
+          )}
         </div>
       </div>
 
+      {/* Sub-tab bar */}
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {SETTINGS_SECTIONS.filter((s) => s.key !== "danger" || isOwner).map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setSection(s.key)}
+            className={cn(
+              "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
+              section === s.key
+                ? "border-primary font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+              s.key === "danger" && "text-destructive hover:text-destructive",
+            )}
+          >
+            <s.icon className="h-3.5 w-3.5" /> {s.label}
+          </button>
+        ))}
+      </div>
+
       {/* General */}
+      {section === "general" && (
       <SettingsSection>
         <div className="grid gap-4 md:grid-cols-2">
           <div>
@@ -2201,10 +2224,10 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
           />
         </div>
       </SettingsSection>
-
-      <SettingsDivider />
+      )}
 
       {/* Autonomy budget */}
+      {section === "autonomy" && (
       <SettingsSection
         title="Autonomy budget" icon={Gauge}
         description="Hard limits applied to every run. The agent stops when it reaches the step budget; runs exceeding the cost budget are flagged in the timeline."
@@ -2234,10 +2257,10 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
           </div>
         </div>
       </SettingsSection>
-
-      <SettingsDivider />
+      )}
 
       {/* Collaboration profile */}
+      {section === "collaboration" && (
       <SettingsSection
         title="Collaboration" icon={Network}
         description="Role and skills help teammate agents decide when to message or delegate to this one."
@@ -2281,34 +2304,45 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
           </div>
         </div>
       </SettingsSection>
-
-      <SettingsDivider />
+      )}
 
       {/* Tools — merged in from the former Tools tab. */}
-      <div className="py-5">
-        <ToolsTab agent={agent} />
-      </div>
-
-      <SettingsDivider />
+      {section === "tools" && (
+        <div className="py-6">
+          <ToolsTab agent={agent} />
+        </div>
+      )}
 
       {/* Members — merged in from the former Members tab. */}
-      <div className="py-5">
-        <MembersTab agent={agent} />
-      </div>
+      {section === "members" && (
+        <div className="py-6">
+          <MembersTab agent={agent} />
+        </div>
+      )}
 
-      {isOwner && (
-        <>
-          <SettingsDivider />
-          <SettingsSection title="Danger zone" titleClassName="text-destructive">
-            <Button variant="outline" onClick={archive} className="text-destructive">
-              <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Archive agent
-            </Button>
-          </SettingsSection>
-        </>
+      {/* Danger zone */}
+      {section === "danger" && isOwner && (
+        <SettingsSection title="Danger zone" icon={Trash2} titleClassName="text-destructive"
+          description="Archiving removes the agent from your team. You can restore it later from the database.">
+          <Button variant="outline" onClick={archive} className="text-destructive">
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Archive agent
+          </Button>
+        </SettingsSection>
       )}
     </div>
   );
 }
+
+type SettingsSectionKey = "general" | "autonomy" | "collaboration" | "tools" | "members" | "danger";
+
+const SETTINGS_SECTIONS: { key: SettingsSectionKey; label: string; icon: any }[] = [
+  { key: "general", label: "General", icon: SettingsIcon },
+  { key: "autonomy", label: "Autonomy", icon: Gauge },
+  { key: "collaboration", label: "Collaboration", icon: Network },
+  { key: "tools", label: "Tools", icon: Wrench },
+  { key: "members", label: "Members", icon: UsersIcon },
+  { key: "danger", label: "Danger zone", icon: Trash2 },
+];
 
 // A section of settings laid directly on the page background (no card). Optional
 // title + description sit above the content.
@@ -2322,7 +2356,7 @@ function SettingsSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4 py-5">
+    <section className="space-y-5 py-6">
       {(title || description) && (
         <div className="space-y-1">
           {title && (
@@ -2336,10 +2370,6 @@ function SettingsSection({
       {children}
     </section>
   );
-}
-
-function SettingsDivider() {
-  return <hr className="border-border" />;
 }
 
 // A borderless checkbox row used inside settings sections.
