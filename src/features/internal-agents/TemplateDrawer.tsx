@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Sparkles, X, Check, Wrench, ShieldCheck, CalendarClock, ArrowLeft, ArrowRight,
   Loader2, Plus, ChevronRight,
@@ -34,7 +35,10 @@ export function TemplateDrawer({
     onClose();
   }
 
-  return (
+  // Render via a portal on <body> so the fixed positioning is relative to the
+  // viewport (escapes the padded <main> / any positioned ancestor) — the drawer
+  // truly spans the full height with no gap at the top.
+  return createPortal(
     <>
       {/* Scrim — dim only, no blur. */}
       <div
@@ -62,7 +66,8 @@ export function TemplateDrawer({
           <BrowseView onClose={close} onSelect={setSelected} />
         )}
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }
 
