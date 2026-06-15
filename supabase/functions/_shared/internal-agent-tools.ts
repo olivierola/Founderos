@@ -397,19 +397,24 @@ const DELIVERABLE_KINDS = ["report", "markdown", "json", "code", "url"];
 const REPORT_SCHEMA_HINT = `For kind="report", content MUST be a JSON string with this shape:
 {
   "title": "string",
-  "summary": "string (1-3 sentences)",
+  "subtitle": "string, optional (e.g. 'Weekly report')",
+  "author": "string, optional (the agent's name)",
+  "summary": "string (1-3 sentences, executive summary)",
   "sections": [
     {
       "heading": "string",
       "body": "markdown paragraph(s), optional",
-      "kpis": [{ "label": "string", "value": "string|number", "delta": "string, optional", "trend": "up|down|flat, optional" }],
-      "chart": { "type": "bar|line|area|pie", "x": "string (key name for category)", "series": ["key1"], "data": [{ "<x>": "Jan", "key1": 12 }] },
-      "table": { "columns": ["A","B"], "rows": [["x", 1]] },
+      "kpis": [{ "label": "string", "value": "string|number", "delta": "string, optional", "trend": "up|down|flat" }],
+      "gauges": [{ "label": "string", "value": 72, "max": 100, "tone": "good|bad|neutral" }],
+      "charts": [{ "type": "bar|line|area|pie|donut|radar|scatter", "title": "string", "x": "category key", "series": ["key1"], "data": [{ "<x>": "Jan", "key1": 12 }], "stacked": false }],
+      "table": { "title": "string, optional", "columns": ["A","B"], "rows": [["x", 1]] },
+      "timeline": [{ "date": "2026-06-01", "title": "string", "detail": "string", "tone": "info|success|warning|danger" }],
       "callout": { "tone": "info|success|warning|danger", "text": "string" }
     }
   ]
 }
-Every field except title/summary/sections is optional. Use charts/KPIs/tables when the data warrants it. You may also embed a chart inside markdown deliverables using a fenced block: \`\`\`chart\\n{ "type":"bar", "x":"month", "series":["mrr"], "data":[...] }\\n\`\`\``;
+MAKE REPORTS VISUAL AND PROFESSIONAL. Whenever you have numbers, SHOW them: lead a section with KPI cards, add at least one chart (pick the right type — line for trends over time, bar for comparisons, donut/pie for composition, radar for multi-dimension scores, scatter for correlation), use gauges for scores/completion, tables for detailed rows, a timeline for sequences of events, and callouts to highlight risks/wins. Prefer charts/KPIs over long prose. Every analytical report should contain visuals, not just text.
+You may also embed a chart inside markdown deliverables using a fenced block: \`\`\`chart\\n{ "type":"bar", "x":"month", "series":["mrr"], "data":[...] }\\n\`\`\``;
 
 export function buildInternalToolset(
   rows: AgentToolRow[],

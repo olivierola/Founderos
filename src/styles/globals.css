@@ -312,3 +312,13 @@
   .e2e-inner-halo,
   .e2e-halo-bg { animation: none; }
 }
+
+/* Print: when a report is on screen, isolate it for clean PDF export. */
+@media print {
+  .no-print { display: none !important; }
+  body * { visibility: hidden; }
+  .report-root, .report-root * { visibility: visible; }
+  .report-root { position: absolute; left: 0; top: 0; width: 100%; padding: 0 8mm; }
+  /* Avoid breaking charts/cards across pages where possible. */
+  figure, table, section { break-inside: avoid; }
+}
