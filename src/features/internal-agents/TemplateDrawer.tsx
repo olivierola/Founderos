@@ -36,18 +36,18 @@ export function TemplateDrawer({
 
   return (
     <>
-      {/* Scrim */}
+      {/* Scrim — dim only, no blur. */}
       <div
         className={cn(
-          "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity",
+          "fixed inset-0 z-[60] bg-black/30 transition-opacity",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={close}
       />
-      {/* Right drawer, full height */}
+      {/* Right drawer — full viewport height, wide. */}
       <aside
         className={cn(
-          "fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col border-l border-border bg-background shadow-2xl transition-transform duration-300",
+          "fixed inset-y-0 right-0 z-[70] flex h-screen w-full max-w-3xl flex-col border-l border-border bg-background shadow-2xl transition-transform duration-300 lg:max-w-4xl",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
