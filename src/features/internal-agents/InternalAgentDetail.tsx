@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
   CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
   ListTree, Gauge, Brain, Pin, PinOff, ArrowLeft, ChevronDown, History,
-  Network, MessagesSquare, Send, ArrowRight,
+  Network, MessagesSquare, Send, ArrowRight, Plug, AlertTriangle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -31,6 +31,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { InstructionsEditor } from "./InstructionsEditor";
+import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
 import { DeliverablesHub } from "./DeliverablesHub";
 import { MissionWizard, type MissionDraft } from "./MissionWizard";
 import {
@@ -1130,7 +1131,7 @@ function DeliverableItem({ d }: { d: Deliverable }) {
 interface AgentTool {
   id: string;
   agent_id: string;
-  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "custom";
+  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "security_scan" | "custom";
   name: string;
   description: string | null;
   config: Record<string, any>;
@@ -1145,6 +1146,8 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed knowledge base." },
   { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal FounderOS function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
+  { kind: "connector_action", label: "Integration", icon: Plug, description: "Read data from a connected integration (CRM, HR, data lake) via its official API." },
+  { kind: "security_scan", label: "Security scan", icon: ShieldCheck, description: "Run a consented security scan against a registered target." },
   { kind: "custom", label: "Custom webhook tool", icon: Wrench, description: "Call an external webhook with model-provided arguments." },
 ];
 
@@ -1180,10 +1183,9 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
     },
   });
 
-  // Live connections of the project, surfaced in the picker.
+  // Live connections of the project, surfaced in the picker + integrations section.
   const { data: connectors } = useQuery({
     queryKey: ["project_connectors_for_tools", agent.project_id],
-    enabled: addOpen,
     queryFn: async () => {
       const { data } = await supabase
         .from("connectors")
@@ -1192,6 +1194,35 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
       return (data ?? []) as Array<{ provider: string; status: string }>;
     },
   });
+  const connectedSet = new Set((connectors ?? []).filter((c) => c.status === "connected").map((c) => c.provider));
+
+  // Integrations = connector_action tools. Toggle one per provider slug.
+  const integrationSlugs = new Set(
+    (tools ?? [])
+      .filter((t) => t.kind === "connector_action")
+      .map((t) => String(t.config?.provider ?? "")),
+  );
+
+  async function toggleIntegration(slug: string) {
+    const existing = (tools ?? []).find(
+      (t) => t.kind === "connector_action" && String(t.config?.provider ?? "") === slug,
+    );
+    if (existing) {
+      await supabase.from("internal_agent_tools").delete().eq("id", existing.id);
+    } else {
+      const p = connectorActionProvider(slug);
+      const { error } = await supabase.from("internal_agent_tools").insert({
+        agent_id: agent.id,
+        kind: "connector_action",
+        name: p ? `Use ${p.name}` : `Use ${slug}`,
+        description: p?.description ?? null,
+        config: { provider: slug },
+        requires_approval: false,
+      });
+      if (error) { alert(error.message); return; }
+    }
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
+  }
 
   function closeAdd() {
     setAddOpen(false);
@@ -1247,16 +1278,18 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <h3 className="flex items-center gap-2 text-sm font-semibold"><Wrench className="h-4 w-4 text-muted-foreground" /> Tools</h3>
-          <p className="text-xs text-muted-foreground">Grant capabilities to this agent.</p>
+          <p className="text-xs text-muted-foreground">Built-in capabilities you grant this agent.</p>
         </div>
         <Button size="sm" onClick={() => setAddOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" /> Add tool</Button>
       </div>
       <div className="mt-4">
-        {!tools || tools.length === 0 ? (
+        {(() => {
+          const builtinTools = (tools ?? []).filter((t) => t.kind !== "connector_action");
+          return builtinTools.length === 0 ? (
           <p className="py-6 text-center text-xs text-muted-foreground">No tools yet. Add one to give this agent capabilities.</p>
         ) : (
           <div className="space-y-2">
-            {tools.map((t) => {
+            {builtinTools.map((t) => {
               const def = TOOL_CATALOGUE.find((d) => d.kind === t.kind);
               const Icon = def?.icon ?? Wrench;
               const configIssue = toolConfigIssue(t);
@@ -1313,7 +1346,73 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
               );
             })}
           </div>
-        )}
+          );
+        })()}
+      </div>
+
+      {/* Integrations — connector_action data sources (CRM / HR / data lakes). */}
+      <div className="mt-8">
+        <div className="space-y-1">
+          <h3 className="flex items-center gap-2 text-sm font-semibold"><Plug className="h-4 w-4 text-muted-foreground" /> Integrations</h3>
+          <p className="text-xs text-muted-foreground">
+            External data sources the agent can read from. Secrets stay encrypted at the project level — the agent only
+            picks an action and parameters.
+          </p>
+        </div>
+        <div className="mt-4 space-y-5">
+          {CONNECTOR_ACTION_GROUPS.map((group) => (
+            <div key={group.label} className="space-y-1.5">
+              <div className="text-[11px] font-medium uppercase text-muted-foreground">{group.label}</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {group.slugs.map((slug) => {
+                  const p = connectorActionProvider(slug);
+                  if (!p) return null;
+                  const on = integrationSlugs.has(slug);
+                  const connected = connectedSet.has(slug);
+                  const Icon = p.icon;
+                  return (
+                    <button
+                      key={slug}
+                      onClick={() => toggleIntegration(slug)}
+                      className={cn(
+                        "flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors",
+                        on ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30",
+                      )}
+                    >
+                      <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md", on ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground")}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-sm font-medium">{p.name}</span>
+                          {on && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                        </div>
+                        <p className="line-clamp-2 text-[11px] text-muted-foreground">{p.description}</p>
+                        <div className="mt-1">
+                          {connected ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                              <ShieldCheck className="h-3 w-3" /> Connected
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                              <AlertTriangle className="h-3 w-3" /> Not connected yet
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {[...integrationSlugs].some((s) => !connectedSet.has(s)) && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <span>Some enabled integrations aren't connected for this project yet. Add their credentials in Integrations before the agent can fetch data.</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <Dialog open={addOpen} onOpenChange={(o) => { if (!o) closeAdd(); else setAddOpen(true); }}>
@@ -1331,7 +1430,8 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
 
           {addStep === "kinds" && (
             <div className="grid grid-cols-1 gap-2">
-              {TOOL_CATALOGUE.map((t) => {
+              {/* connector_action is managed in the Integrations section below. */}
+              {TOOL_CATALOGUE.filter((t) => t.kind !== "connector_action").map((t) => {
                 const Icon = t.icon;
                 const hasCatalogue = t.kind === "edge_function" || t.kind === "vault_connector";
                 return (
@@ -2339,7 +2439,7 @@ const SETTINGS_SECTIONS: { key: SettingsSectionKey; label: string; icon: any }[]
   { key: "general", label: "General", icon: SettingsIcon },
   { key: "autonomy", label: "Autonomy", icon: Gauge },
   { key: "collaboration", label: "Collaboration", icon: Network },
-  { key: "tools", label: "Tools", icon: Wrench },
+  { key: "tools", label: "Tools & integrations", icon: Wrench },
   { key: "members", label: "Members", icon: UsersIcon },
   { key: "danger", label: "Danger zone", icon: Trash2 },
 ];
