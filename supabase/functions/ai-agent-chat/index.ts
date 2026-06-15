@@ -180,15 +180,36 @@ ${JSON.stringify({ project: context.project, connectors: context.connectors, cod
       emitArtifact: (a) => artifacts.push(a),
     };
 
-    const aiResult = await callAiWithTools({
-      provider: "groq",
-      messages: chatMessages,
-      tools: toolDefsForRole(userRole),
-      executor: buildExecutor(toolCtx),
-      temperature: 0.3,
-      maxTokens: 1500,
-      maxRounds: 6,
-    });
+    // DeepSeek handles native tool-calling reliably; Groq/Llama frequently emits
+    // malformed tool calls (400 tool_use_failed). Prefer DeepSeek when available,
+    // fall back to Groq otherwise.
+    const preferred: "groq" | "deepseek" = Deno.env.get("DEEPSEEK_API_KEY") ? "deepseek" : "groq";
+    let aiResult;
+    try {
+      aiResult = await callAiWithTools({
+        provider: preferred,
+        messages: chatMessages,
+        tools: toolDefsForRole(userRole),
+        executor: buildExecutor(toolCtx),
+        temperature: 0.3,
+        maxTokens: 1500,
+        maxRounds: 6,
+      });
+    } catch (e) {
+      // If the preferred provider fails, retry once on the other provider.
+      const fallback = preferred === "deepseek" ? "groq" : "deepseek";
+      const fallbackKey = fallback === "groq" ? "GROQ_API_KEY" : "DEEPSEEK_API_KEY";
+      if (!Deno.env.get(fallbackKey)) throw e;
+      aiResult = await callAiWithTools({
+        provider: fallback,
+        messages: chatMessages,
+        tools: toolDefsForRole(userRole),
+        executor: buildExecutor(toolCtx),
+        temperature: 0.3,
+        maxTokens: 1500,
+        maxRounds: 6,
+      });
+    }
 
     await logLlmUsage({
       workspace_id,

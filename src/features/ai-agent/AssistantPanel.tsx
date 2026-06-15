@@ -151,7 +151,7 @@ export function AssistantPanel() {
 
   return (
     <aside
-      className="relative flex h-full shrink-0 flex-col border-l border-border bg-zinc-950 text-zinc-100"
+      className="relative flex h-full shrink-0 flex-col border-l border-border bg-background text-foreground"
       style={{ width }}
     >
       {/* Resize handle (left edge). */}
@@ -160,18 +160,18 @@ export function AssistantPanel() {
         className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
         title="Drag to resize"
       />
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2.5">
+      {/* Header — h-14 to align its bottom border with the app topbar. */}
+      <div className="flex h-14 items-center gap-2 border-b border-border px-3">
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/20 text-primary">
           <Bot className="h-4 w-4" />
         </span>
         <span className="text-sm font-semibold">Assistant</span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="ghost" className="ml-1 h-7 max-w-[150px] px-2 text-xs text-zinc-300 hover:bg-white/10 hover:text-white">
-              <History className="mr-1 h-3 w-3 shrink-0 text-zinc-400" />
+            <Button size="sm" variant="ghost" className="ml-1 h-7 max-w-[150px] px-2 text-xs text-muted-foreground hover:text-foreground">
+              <History className="mr-1 h-3 w-3 shrink-0 text-muted-foreground" />
               <span className="truncate">{currentConvo?.title ?? "New chat"}</span>
-              <ChevronDown className="ml-1 h-3 w-3 shrink-0 text-zinc-400" />
+              <ChevronDown className="ml-1 h-3 w-3 shrink-0 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-64">
@@ -185,7 +185,7 @@ export function AssistantPanel() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button size="icon" variant="ghost" className="ml-auto h-7 w-7 text-zinc-400 hover:bg-white/10 hover:text-white" onClick={() => setOpen(false)}>
+        <Button size="icon" variant="ghost" className="ml-auto h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -195,8 +195,8 @@ export function AssistantPanel() {
         {isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-2 text-center">
             <AssistantAvatar />
-            <p className="text-sm font-medium text-zinc-100">Ask about this page</p>
-            <p className="text-xs text-zinc-400">
+            <p className="text-sm font-medium text-foreground">Ask about this page</p>
+            <p className="text-xs text-muted-foreground">
               I see what you're looking at. Ask me to explain, analyse, or act on it.
             </p>
             <div className="mt-2 grid w-full gap-1.5">
@@ -205,7 +205,7 @@ export function AssistantPanel() {
                   key={s}
                   onClick={() => handleSend(s)}
                   disabled={sending}
-                  className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+                  className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
                 >
                   {s}
                 </button>
@@ -223,7 +223,7 @@ export function AssistantPanel() {
               />
             ))}
             {sending && (
-              <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
               </div>
             )}
@@ -258,7 +258,7 @@ function AssistantAvatar() {
   return (
     <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/30">
       <Bot className="h-7 w-7 text-white" />
-      <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-400 ring-2 ring-zinc-950">
+      <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-400 ring-2 ring-background">
         <span className="h-1.5 w-1.5 rounded-full bg-white" />
       </span>
     </div>
@@ -275,7 +275,7 @@ function Bubble({
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[88%] whitespace-pre-wrap rounded-2xl bg-primary/20 px-3 py-2 text-sm leading-relaxed text-zinc-100">{m.content}</div>
+        <div className="max-w-[88%] whitespace-pre-wrap rounded-2xl bg-primary/15 px-3 py-2 text-sm leading-relaxed text-foreground">{m.content}</div>
       </div>
     );
   }
@@ -285,7 +285,7 @@ function Bubble({
         <Bot className="h-3.5 w-3.5" />
       </span>
       <div className="min-w-0 flex-1">
-        <div className={cn("prose prose-sm prose-invert max-w-none", "prose-p:text-zinc-200 prose-headings:text-zinc-100 prose-strong:text-white prose-a:text-primary")}>
+        <div className={cn("prose prose-sm max-w-none dark:prose-invert", "prose-p:text-foreground/90 prose-headings:text-foreground prose-strong:text-foreground prose-a:text-primary")}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
         </div>
         {artifacts.length > 0 && <MessageArtifacts artifacts={artifacts} onOpenDocument={onOpenDoc} />}

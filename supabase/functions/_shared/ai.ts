@@ -259,20 +259,37 @@ function recoverFailedToolCall(rawBody: string): ToolChatResponse | null {
   try {
     const err = JSON.parse(rawBody)?.error;
     if (!err || err.code !== "tool_use_failed" || !err.failed_generation) return null;
-    const gen: string = err.failed_generation;
-    const m = gen.match(/<function\s*=\s*([a-zA-Z0-9_-]+)\s*>([\s\S]*?)(?:<\/function>|$)/);
-    if (!m) return null;
-    const name = m[1];
-    let argText = (m[2] || "").trim();
-    // Trim anything after the JSON object closes.
-    const start = argText.indexOf("{");
-    if (start > 0) argText = argText.slice(start);
-    let args = "{}";
-    try { JSON.parse(argText); args = argText; } catch {
-      // keep only up to the last closing brace
-      const end = argText.lastIndexOf("}");
-      if (end > 0) { const slice = argText.slice(0, end + 1); try { JSON.parse(slice); args = slice; } catch { /* give up */ } }
+    let gen: string = err.failed_generation;
+    // Some providers double-escape the failed generation (\" instead of "). If
+    // there are no real quotes but plenty of escaped ones, unescape first.
+    if (!gen.includes('"') && gen.includes('\\"')) {
+      gen = gen.replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\\\/g, "\\");
     }
+
+    // Find the function name from any of the shapes the models emit:
+    //   <function=NAME>{...}</function>
+    //   <function=NAME>{...}
+    //   {"name":"NAME","arguments":{...}}  (sometimes wrapped in <function>…)
+    let name: string | null = null;
+    let argText = "";
+
+    const tag = gen.match(/<function\s*=\s*([a-zA-Z0-9_-]+)\s*>([\s\S]*?)(?:<\/function>|$)/);
+    if (tag) {
+      name = tag[1];
+      argText = tag[2] || "";
+    } else {
+      const nameMatch = gen.match(/"name"\s*:\s*"([a-zA-Z0-9_-]+)"/);
+      if (nameMatch) {
+        name = nameMatch[1];
+        const argMatch = gen.match(/"(?:arguments|parameters)"\s*:\s*(\{[\s\S]*)/);
+        argText = argMatch ? argMatch[1] : gen;
+      }
+    }
+    if (!name) return null;
+
+    // Isolate the first balanced JSON object in argText.
+    const args = extractFirstJsonObject(argText) ?? "{}";
+
     return {
       choices: [{ message: {
         role: "assistant", content: null,
@@ -281,6 +298,35 @@ function recoverFailedToolCall(rawBody: string): ToolChatResponse | null {
       model: "recovered",
     } as ToolChatResponse;
   } catch { return null; }
+}
+
+// Pull the first syntactically-valid {...} object out of an arbitrary string by
+// scanning for balanced braces (handles trailing junk like </function>).
+function extractFirstJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const slice = text.slice(start, i + 1);
+        try { JSON.parse(slice); return slice; } catch { return null; }
+      }
+    }
+  }
+  return null;
 }
 
 async function postChat(
