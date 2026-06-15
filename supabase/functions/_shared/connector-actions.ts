@@ -360,11 +360,174 @@ const googleCalendar: ConnectorAction[] = [
   },
 ];
 
+// ── Stripe ────────────────────────────────────────────────────────────────────
+// Read-only billing data via the official API (use a restricted/read key).
+const stripe: ConnectorAction[] = [
+  {
+    name: "list_customers", description: "List customers.",
+    params: { limit: { type: "number", description: "Max 100, default 20." } },
+    run: (c, p) => getJson(`https://api.stripe.com/v1/customers?limit=${num(p.limit, 20, 100)}`,
+      { headers: { Authorization: `Bearer ${c.secret_key}` } }),
+  },
+  {
+    name: "list_subscriptions", description: "List subscriptions (optionally by status).",
+    params: { limit: { type: "number", description: "Max 100." }, status: { type: "string", description: "active|past_due|canceled|all" } },
+    run: (c, p) => getJson(`https://api.stripe.com/v1/subscriptions?limit=${num(p.limit, 20, 100)}${p.status ? `&status=${encodeURIComponent(str(p.status))}` : ""}`,
+      { headers: { Authorization: `Bearer ${c.secret_key}` } }),
+  },
+  {
+    name: "list_invoices", description: "List invoices.",
+    params: { limit: { type: "number", description: "Max 100." }, status: { type: "string", description: "draft|open|paid|uncollectible|void" } },
+    run: (c, p) => getJson(`https://api.stripe.com/v1/invoices?limit=${num(p.limit, 20, 100)}${p.status ? `&status=${encodeURIComponent(str(p.status))}` : ""}`,
+      { headers: { Authorization: `Bearer ${c.secret_key}` } }),
+  },
+  {
+    name: "balance", description: "Current account balance.",
+    run: (c) => getJson("https://api.stripe.com/v1/balance", { headers: { Authorization: `Bearer ${c.secret_key}` } }),
+  },
+];
+
+// ── Notion ────────────────────────────────────────────────────────────────────
+const NOTION_VER = "2022-06-28";
+const notion: ConnectorAction[] = [
+  {
+    name: "search", description: "Search pages and databases by text.",
+    params: { query: { type: "string", description: "Search text." } },
+    run: (c, p) => getJson("https://api.notion.com/v1/search",
+      { method: "POST", headers: { Authorization: `Bearer ${c.api_key}`, "Notion-Version": NOTION_VER, "Content-Type": "application/json" },
+        body: JSON.stringify({ query: str(p.query), page_size: 20 }) }),
+  },
+  {
+    name: "query_database", description: "Query rows of a Notion database.",
+    params: { database_id: { type: "string", description: "Database ID." } },
+    run: (c, p) => getJson(`https://api.notion.com/v1/databases/${encodeURIComponent(str(p.database_id))}/query`,
+      { method: "POST", headers: { Authorization: `Bearer ${c.api_key}`, "Notion-Version": NOTION_VER, "Content-Type": "application/json" },
+        body: JSON.stringify({ page_size: 50 }) }),
+  },
+  {
+    name: "get_page", description: "Get a page's properties.",
+    params: { page_id: { type: "string", description: "Page ID." } },
+    run: (c, p) => getJson(`https://api.notion.com/v1/pages/${encodeURIComponent(str(p.page_id))}`,
+      { headers: { Authorization: `Bearer ${c.api_key}`, "Notion-Version": NOTION_VER } }),
+  },
+];
+
+// ── Linear (GraphQL) ───────────────────────────────────────────────────────────
+function linearGql(apiKey: string, query: string): Promise<unknown> {
+  return getJson("https://api.linear.app/graphql",
+    { method: "POST", headers: { Authorization: apiKey, "Content-Type": "application/json" }, body: JSON.stringify({ query }) });
+}
+const linear: ConnectorAction[] = [
+  {
+    name: "list_issues", description: "List recent issues (title, state, assignee, priority).",
+    run: (c) => linearGql(c.api_key, `{ issues(first: 30, orderBy: updatedAt) { nodes { identifier title priority state { name } assignee { name } updatedAt } } }`),
+  },
+  {
+    name: "list_teams", description: "List teams.",
+    run: (c) => linearGql(c.api_key, `{ teams(first: 50) { nodes { key name } } }`),
+  },
+  {
+    name: "list_projects", description: "List projects and their progress.",
+    run: (c) => linearGql(c.api_key, `{ projects(first: 50) { nodes { name state progress targetDate } } }`),
+  },
+];
+
+// ── Sentry ─────────────────────────────────────────────────────────────────────
+const sentry: ConnectorAction[] = [
+  {
+    name: "list_projects", description: "List projects you can access.",
+    run: (c) => getJson("https://sentry.io/api/0/projects/", { headers: { Authorization: `Bearer ${c.api_key}` } }),
+  },
+  {
+    name: "list_issues", description: "List unresolved issues for a project.",
+    params: { organization_slug: { type: "string", description: "Org slug." }, project_slug: { type: "string", description: "Project slug." } },
+    run: (c, p) => getJson(`https://sentry.io/api/0/projects/${encodeURIComponent(str(p.organization_slug))}/${encodeURIComponent(str(p.project_slug))}/issues/?query=is:unresolved&statsPeriod=14d`,
+      { headers: { Authorization: `Bearer ${c.api_key}` } }),
+  },
+];
+
+// ── PostHog ─────────────────────────────────────────────────────────────────────
+const posthog: ConnectorAction[] = [
+  {
+    name: "list_insights", description: "List saved insights (dashboards' charts).",
+    run: (c) => getJson(`${c.host.replace(/\/$/, "")}/api/projects/${c.project_id}/insights/?limit=25`,
+      { headers: { Authorization: `Bearer ${c.personal_api_key}` } }),
+  },
+  {
+    name: "trends", description: "Run a trends query for an event over time.",
+    params: { event: { type: "string", description: "Event name, e.g. '$pageview'." }, days: { type: "number", description: "Lookback days (default 14)." } },
+    run: (c, p) => {
+      const events = encodeURIComponent(JSON.stringify([{ id: str(p.event) || "$pageview", type: "events", math: "total" }]));
+      return getJson(`${c.host.replace(/\/$/, "")}/api/projects/${c.project_id}/insights/trend/?events=${events}&date_from=-${num(p.days, 14, 365)}d`,
+        { headers: { Authorization: `Bearer ${c.personal_api_key}` } });
+    },
+  },
+];
+
+// ── Plausible ────────────────────────────────────────────────────────────────────
+const plausible: ConnectorAction[] = [
+  {
+    name: "aggregate", description: "Aggregate visitors/pageviews/bounce for a site over a period.",
+    params: { site_id: { type: "string", description: "Domain, e.g. example.com." }, period: { type: "string", description: "day|7d|30d|month|6mo|12mo (default 30d)." } },
+    run: (c, p) => getJson(`https://plausible.io/api/v1/stats/aggregate?site_id=${encodeURIComponent(str(p.site_id))}&period=${encodeURIComponent(str(p.period) || "30d")}&metrics=visitors,pageviews,bounce_rate,visit_duration`,
+      { headers: { Authorization: `Bearer ${c.api_key}` } }),
+  },
+  {
+    name: "breakdown", description: "Top pages or sources breakdown.",
+    params: { site_id: { type: "string", description: "Domain." }, property: { type: "string", description: "event:page | visit:source (default event:page)." } },
+    run: (c, p) => getJson(`https://plausible.io/api/v1/stats/breakdown?site_id=${encodeURIComponent(str(p.site_id))}&period=30d&property=${encodeURIComponent(str(p.property) || "event:page")}&limit=20`,
+      { headers: { Authorization: `Bearer ${c.api_key}` } }),
+  },
+];
+
+// ── Figma ─────────────────────────────────────────────────────────────────────
+const figma: ConnectorAction[] = [
+  {
+    name: "get_file", description: "Get a file's document tree (nodes, pages).",
+    params: { file_key: { type: "string", description: "File key from the Figma URL." } },
+    run: (c, p) => getJson(`https://api.figma.com/v1/files/${encodeURIComponent(str(p.file_key))}?depth=2`,
+      { headers: { "X-Figma-Token": c.api_key } }),
+  },
+  {
+    name: "get_comments", description: "List comments on a file.",
+    params: { file_key: { type: "string", description: "File key." } },
+    run: (c, p) => getJson(`https://api.figma.com/v1/files/${encodeURIComponent(str(p.file_key))}/comments`,
+      { headers: { "X-Figma-Token": c.api_key } }),
+  },
+];
+
+// ── Airtable ─────────────────────────────────────────────────────────────────────
+const airtable: ConnectorAction[] = [
+  {
+    name: "list_records", description: "List records from a base table.",
+    params: { base_id: { type: "string", description: "Base ID (appXXXX)." }, table: { type: "string", description: "Table name or ID." } },
+    run: (c, p) => getJson(`https://api.airtable.com/v0/${encodeURIComponent(str(p.base_id))}/${encodeURIComponent(str(p.table))}?maxRecords=50`,
+      { headers: { Authorization: `Bearer ${c.api_key}` } }),
+  },
+];
+
+// ── GitHub (read) ─────────────────────────────────────────────────────────────────
+const github: ConnectorAction[] = [
+  {
+    name: "list_repos", description: "List repositories accessible to the token.",
+    run: (c) => getJson("https://api.github.com/user/repos?per_page=50&sort=updated",
+      { headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json" } }),
+  },
+  {
+    name: "list_issues", description: "List open issues for a repo.",
+    params: { owner: { type: "string", description: "Owner/org." }, repo: { type: "string", description: "Repo name." } },
+    run: (c, p) => getJson(`https://api.github.com/repos/${encodeURIComponent(str(p.owner))}/${encodeURIComponent(str(p.repo))}/issues?state=open&per_page=30`,
+      { headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json" } }),
+  },
+];
+
 export const CONNECTOR_ACTIONS: Record<string, ConnectorAction[]> = {
   hubspot, pipedrive, salesforce, attio, intercom,
   bamboohr, greenhouse, deel, factorial,
   athena, gcs, bigquery, "azure-blob": azureBlob, "azure-synapse": azureSynapse,
   "google-calendar": googleCalendar,
+  // Real SaaS apps (billing, docs, issues, monitoring, analytics, design, data).
+  stripe, notion, linear, sentry, posthog, plausible, figma, airtable, github,
 };
 
 export function actionsFor(provider: string): ConnectorAction[] {

@@ -5,10 +5,17 @@
 // official API. Metadata (name/icon/description) is reused from PROVIDERS.
 import { PROVIDERS, type ProviderDef } from "@/lib/providers";
 
-// Grouped for a readable picker. Keep slugs in sync with the backend catalog.
+// Grouped for a readable picker. Keep slugs in sync with the backend catalog
+// (CONNECTOR_ACTIONS in supabase/functions/_shared/connector-actions.ts).
 export const CONNECTOR_ACTION_GROUPS: { label: string; slugs: string[] }[] = [
   { label: "CRM & Support", slugs: ["hubspot", "pipedrive", "salesforce", "attio", "intercom"] },
+  { label: "Billing", slugs: ["stripe"] },
   { label: "HR & People", slugs: ["bamboohr", "greenhouse", "deel", "factorial"] },
+  { label: "Docs & project management", slugs: ["notion", "linear", "airtable", "github"] },
+  { label: "Product analytics", slugs: ["posthog", "plausible"] },
+  { label: "Monitoring", slugs: ["sentry"] },
+  { label: "Design", slugs: ["figma"] },
+  { label: "Productivity", slugs: ["google-calendar"] },
   { label: "Data lakes & warehouses", slugs: ["bigquery", "athena", "gcs", "azure-blob", "azure-synapse"] },
 ];
 
