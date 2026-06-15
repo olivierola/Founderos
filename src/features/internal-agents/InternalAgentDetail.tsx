@@ -35,7 +35,7 @@ import { DeliverablesHub } from "./DeliverablesHub";
 import { MissionWizard, type MissionDraft } from "./MissionWizard";
 import {
   type InternalAgent, type Mission, type MissionRun, type Deliverable,
-  type WorkspaceMemberRow, type RunEvent, type AgentApproval,
+  type WorkspaceMemberRow, type RunEvent,
   type AgentConversation, type AgentMemory, type MemoryKind, type BoardColumn,
   type A2AMessage,
   PRIORITY_META, MEMORY_KIND_META, BOARD_COLUMNS, loadWorkspaceMembers, memberLabel,
@@ -48,7 +48,6 @@ export type InternalAgentTab =
   | "deliverables"
   | "memory"
   | "collaboration"
-  | "approvals"
   | "instructions"
   | "tools"
   | "members"
@@ -56,7 +55,7 @@ export type InternalAgentTab =
   | "settings";
 
 const VALID_TABS: InternalAgentTab[] = [
-  "chat", "mission", "deliverables", "memory", "collaboration", "approvals", "instructions", "tools", "members", "analytics", "settings",
+  "chat", "mission", "deliverables", "memory", "collaboration", "instructions", "tools", "members", "analytics", "settings",
 ];
 
 export function InternalAgentDetailPage() {
@@ -95,7 +94,6 @@ export function InternalAgentDetailPage() {
       {tab === "deliverables" && <DeliverablesHub agent={agent} />}
       {tab === "memory" && <MemoryTab agent={agent} />}
       {tab === "collaboration" && <CollaborationTab agent={agent} />}
-      {tab === "approvals" && <ApprovalsTab agent={agent} />}
       {tab === "instructions" && <InstructionsEditor agent={agent} />}
       {tab === "tools" && <ToolsTab agent={agent} />}
       {tab === "members" && <MembersTab agent={agent} />}
@@ -1673,262 +1671,156 @@ function MemoryTab({ agent }: { agent: InternalAgent }) {
     return true;
   });
 
+  const pinnedCount = (memories ?? []).filter((m) => m.is_pinned).length;
+
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
+      {/* Header — the memory wall is the agent's own knowledge store. */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold">
             <Brain className="h-4 w-4 text-muted-foreground" /> Memory
             <Badge variant="outline" className="text-[10px]">{memories?.length ?? 0} / 300</Badge>
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Durable knowledge the agent carries into every chat session and mission run. The agent writes here
-            itself (save_memory); pinned entries are always injected into its prompt.
+            {pinnedCount > 0 && <Badge className="bg-amber-500/15 text-[10px] text-amber-600">{pinnedCount} pinned</Badge>}
+          </h2>
+          <p className="mt-0.5 max-w-2xl text-xs text-muted-foreground">
+            Durable knowledge {agent.name} builds itself as it works (save_memory) and carries into every session.
+            Pinned cards are always injected into its prompt. You can add or forget cards too.
           </p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {/* Add memory */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") addMemory(); }}
-              placeholder="Teach the agent something durable… (e.g. 'Our ICP is B2B agencies of 5-50 people')"
-              className="h-8 min-w-[260px] flex-1 text-sm"
-            />
-            <select
-              value={newKind}
-              onChange={(e) => setNewKind(e.target.value as MemoryKind)}
-              className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
-            >
-              {MEMORY_KINDS.map((k) => (
-                <option key={k} value={k}>{MEMORY_KIND_META[k].emoji} {MEMORY_KIND_META[k].label}</option>
-              ))}
-            </select>
-            <select
-              value={newImportance}
-              onChange={(e) => setNewImportance(Number(e.target.value))}
-              className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
-              title="Importance (drives prompt priority)"
-            >
-              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>★ {n}</option>)}
-            </select>
-            <Button size="sm" onClick={addMemory} disabled={adding || !newContent.trim()}>
-              {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-              <span className="ml-1">Add</span>
-            </Button>
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-1">
-              {(["all", ...MEMORY_KINDS] as const).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => setKindFilter(k as MemoryKind | "all")}
-                  className={cn(
-                    "rounded px-2 py-0.5 text-[11px] capitalize transition-colors",
-                    kindFilter === k ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
-                  )}
-                >
-                  {k}
-                </button>
-              ))}
-            </div>
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search memories…"
-              className="h-7 max-w-[200px] text-xs"
-            />
-          </div>
-
-          {/* List */}
-          {visible.length === 0 ? (
-            <p className="py-6 text-center text-xs text-muted-foreground">
-              {memories && memories.length > 0 ? "No memories match the filters." : "No memories yet. The agent saves them as it works, or add one above."}
-            </p>
-          ) : (
-            <div className="space-y-1.5">
-              {visible.map((m) => {
-                const meta = MEMORY_KIND_META[m.kind];
-                return (
-                  <div key={m.id} className="group flex items-start gap-2 rounded-md border border-border p-2.5">
-                    <span className={cn("mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", meta.cls)}>
-                      {meta.emoji} {meta.label}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">{m.content}</p>
-                      <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-                        <span title="Importance">{"★".repeat(m.importance)}</span>
-                        <span>{m.source === "agent" ? "saved by agent" : "added by team"}</span>
-                        <span>{relativeDate(m.updated_at)}</span>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button onClick={() => togglePin(m)} title={m.is_pinned ? "Unpin" : "Pin (always in prompt)"}>
-                        {m.is_pinned
-                          ? <PinOff className="h-3.5 w-3.5 text-muted-foreground" />
-                          : <Pin className="h-3.5 w-3.5 text-muted-foreground" />}
-                      </button>
-                      <button onClick={() => removeMemory(m.id)} title="Forget">
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </button>
-                    </div>
-                    {m.is_pinned && <Pin className="h-3 w-3 shrink-0 text-amber-500 group-hover:hidden" />}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ============================================================================
-// APPROVALS TAB — human-in-the-loop queue for sensitive agent actions
-// ============================================================================
-
-function ApprovalsTab({ agent }: { agent: InternalAgent }) {
-  const queryClient = useQueryClient();
-  const [deciding, setDeciding] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const { data: approvals } = useQuery({
-    queryKey: ["internal_agent_approvals", agent.id],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("internal_agent_approvals")
-        .select("*")
-        .eq("agent_id", agent.id)
-        .order("requested_at", { ascending: false })
-        .limit(100);
-      return (data ?? []) as AgentApproval[];
-    },
-    refetchInterval: (q) => ((q.state.data as AgentApproval[] | undefined)?.some((a) => a.status === "pending") ? 5000 : false),
-  });
-
-  async function decide(approval: AgentApproval, decision: "approve" | "reject") {
-    setDeciding(approval.id);
-    setError(null);
-    try {
-      await callEdge("internal-agent-approve", { approval_id: approval.id, decision });
-      queryClient.invalidateQueries({ queryKey: ["internal_agent_approvals", agent.id] });
-    } catch (e: any) {
-      setError(e?.message ?? "Decision failed");
-    } finally {
-      setDeciding(null);
-    }
-  }
-
-  const pending = (approvals ?? []).filter((a) => a.status === "pending");
-  const decided = (approvals ?? []).filter((a) => a.status !== "pending");
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="h-4 w-4 text-amber-500" /> Pending approvals
-            {pending.length > 0 && <Badge className="bg-amber-500/15 text-amber-600">{pending.length}</Badge>}
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Actions the agent wants to perform that are gated behind human review. Approving executes them immediately.
-          </p>
-        </CardHeader>
-        <CardContent>
-          {error && <div className="mb-3 rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{error}</div>}
-          {pending.length === 0 ? (
-            <p className="py-6 text-center text-xs text-muted-foreground">Nothing waiting for approval.</p>
-          ) : (
-            <div className="space-y-2">
-              {pending.map((a) => (
-                <ApprovalCard key={a.id} approval={a} deciding={deciding === a.id} onDecide={decide} />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {decided.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">History</CardTitle></CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {decided.map((a) => (
-                <ApprovalCard key={a.id} approval={a} deciding={false} onDecide={decide} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-const APPROVAL_STATUS_META: Record<AgentApproval["status"], { label: string; cls: string }> = {
-  pending: { label: "Pending", cls: "bg-amber-500/15 text-amber-600" },
-  approved: { label: "Approved", cls: "bg-sky-500/15 text-sky-600" },
-  rejected: { label: "Rejected", cls: "bg-muted text-muted-foreground" },
-  executed: { label: "Executed", cls: "bg-emerald-500/15 text-emerald-600" },
-  failed: { label: "Failed", cls: "bg-destructive/15 text-destructive" },
-};
-
-function ApprovalCard({
-  approval, deciding, onDecide,
-}: {
-  approval: AgentApproval;
-  deciding: boolean;
-  onDecide: (a: AgentApproval, d: "approve" | "reject") => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const meta = APPROVAL_STATUS_META[approval.status];
-  return (
-    <div className="rounded-md border border-border p-3">
-      <div className="flex items-center justify-between gap-2">
-        <button onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", meta.cls)}>{meta.label}</span>
-          <span className="truncate font-mono text-xs">{approval.tool_name}</span>
-          <span className="shrink-0 text-[10px] text-muted-foreground">{relativeDate(approval.requested_at)}</span>
-        </button>
-        {approval.status === "pending" && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <Button size="sm" variant="outline" disabled={deciding} onClick={() => onDecide(approval, "reject")}>
-              <XCircle className="mr-1 h-3 w-3 text-destructive" /> Reject
-            </Button>
-            <Button size="sm" disabled={deciding} onClick={() => onDecide(approval, "approve")}>
-              {deciding ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CheckCircle2 className="mr-1 h-3 w-3" />}
-              Approve & run
-            </Button>
-          </div>
-        )}
+        </div>
       </div>
-      {approval.reason && (
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          <span className="font-medium">Agent's justification:</span> {approval.reason}
-        </p>
-      )}
-      {open && (
-        <div className="mt-2 space-y-2">
-          <div>
-            <div className="text-[10px] font-medium uppercase text-muted-foreground">Action ({approval.action_kind})</div>
-            <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/40 p-2 text-[11px]">
-              {JSON.stringify(approval.payload, null, 2)}
-            </pre>
-          </div>
-          {approval.result?.detail && (
-            <div>
-              <div className="text-[10px] font-medium uppercase text-muted-foreground">Result</div>
-              <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/40 p-2 text-[11px]">{String(approval.result.detail)}</pre>
-            </div>
-          )}
-          {approval.error_message && (
-            <div className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{approval.error_message}</div>
-          )}
+
+      {/* Add a memory card */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={newContent}
+          onChange={(e) => setNewContent(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") addMemory(); }}
+          placeholder="Teach the agent something durable… (e.g. 'Our ICP is B2B agencies of 5-50 people')"
+          className="h-8 min-w-[260px] flex-1 text-sm"
+        />
+        <select
+          value={newKind}
+          onChange={(e) => setNewKind(e.target.value as MemoryKind)}
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+        >
+          {MEMORY_KINDS.map((k) => (
+            <option key={k} value={k}>{MEMORY_KIND_META[k].emoji} {MEMORY_KIND_META[k].label}</option>
+          ))}
+        </select>
+        <select
+          value={newImportance}
+          onChange={(e) => setNewImportance(Number(e.target.value))}
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+          title="Importance (drives prompt priority)"
+        >
+          {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>★ {n}</option>)}
+        </select>
+        <Button size="sm" onClick={addMemory} disabled={adding || !newContent.trim()}>
+          {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+          <span className="ml-1">Add</span>
+        </Button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1">
+          {(["all", ...MEMORY_KINDS] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setKindFilter(k as MemoryKind | "all")}
+              className={cn(
+                "rounded px-2 py-0.5 text-[11px] capitalize transition-colors",
+                kindFilter === k ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
+              )}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search memories…"
+          className="h-7 max-w-[200px] text-xs"
+        />
+      </div>
+
+      {/* Card grid */}
+      {visible.length === 0 ? (
+        <EmptyState
+          icon={Brain}
+          title={memories && memories.length > 0 ? "No memories match the filters" : "No memories yet"}
+          description={
+            memories && memories.length > 0
+              ? "Try a different filter or search term."
+              : "The agent saves memories as it works, or you can add one above."
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {visible.map((m) => (
+            <MemoryCard
+              key={m.id}
+              m={m}
+              onTogglePin={() => togglePin(m)}
+              onRemove={() => removeMemory(m.id)}
+            />
+          ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// A single memory the agent built (or the team added), shown as a card.
+function MemoryCard({
+  m, onTogglePin, onRemove,
+}: {
+  m: AgentMemory;
+  onTogglePin: () => void;
+  onRemove: () => void;
+}) {
+  const meta = MEMORY_KIND_META[m.kind];
+  return (
+    <div
+      className={cn(
+        "group relative flex flex-col rounded-xl border bg-card/40 p-3 transition-colors hover:border-foreground/30",
+        m.is_pinned ? "border-amber-500/40 ring-1 ring-amber-500/20" : "border-border",
+      )}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", meta.cls)}>
+          {meta.emoji} {meta.label}
+        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          {m.is_pinned && <Pin className="h-3 w-3 text-amber-500 group-hover:hidden" />}
+          <button
+            onClick={onTogglePin}
+            title={m.is_pinned ? "Unpin" : "Pin (always in prompt)"}
+            className="opacity-0 transition-opacity group-hover:opacity-100"
+          >
+            {m.is_pinned
+              ? <PinOff className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+              : <Pin className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />}
+          </button>
+          <button
+            onClick={onRemove}
+            title="Forget"
+            className="opacity-0 transition-opacity group-hover:opacity-100"
+          >
+            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          </button>
+        </div>
+      </div>
+      <p className="flex-1 text-sm leading-relaxed">{m.content}</p>
+      <div className="mt-3 flex items-center gap-2 text-[10px] text-muted-foreground">
+        <span title="Importance" className="text-amber-500">{"★".repeat(m.importance)}</span>
+        <span className="inline-flex items-center gap-1">
+          {m.source === "agent" ? <><Bot className="h-2.5 w-2.5" /> saved by agent</> : <><UserCircle2 className="h-2.5 w-2.5" /> added by team</>}
+        </span>
+        <span className="ml-auto">{relativeDate(m.updated_at)}</span>
+      </div>
     </div>
   );
 }
@@ -2544,7 +2436,6 @@ export const INTERNAL_AGENT_TABS: { slug: InternalAgentTab; label: string; icon:
   { slug: "deliverables", label: "Deliverables", icon: Package },
   { slug: "memory", label: "Memory", icon: Brain },
   { slug: "collaboration", label: "Collaboration", icon: Network },
-  { slug: "approvals", label: "Approvals", icon: ShieldCheck },
   { slug: "instructions", label: "Instructions", icon: FileText },
   { slug: "tools", label: "Tools", icon: Wrench },
   { slug: "members", label: "Members", icon: UsersIcon },
