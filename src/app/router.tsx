@@ -75,6 +75,21 @@ import {
   MarketingAdvisorPage,
 } from "@/features/marketing/Extra";
 
+// Business modules — HR / CRM / Support / Projects / Finance
+import {
+  HrOverviewPage, HrEmployeesPage, HrOrgChartPage, HrLeavePage, HrRecruitmentPage, HrPayrollPage,
+} from "@/features/hr/HrPages";
+import {
+  CrmOverviewPage, CrmContactsPage, CrmPipelinePage, CrmActivitiesPage,
+} from "@/features/crm/CrmPages";
+import {
+  SupportOverviewPage, SupportTicketsPage, SupportKbPage,
+} from "@/features/support/SupportPages";
+import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
+import {
+  FinanceOverviewPage, FinanceInvoicesPage, FinanceExpensesPage, FinanceBudgetsPage,
+} from "@/features/finance-mod/FinancePages";
+
 // Office (Bureautique)
 import { Suspense, lazy } from "react";
 import { OfficeLibraryPage } from "@/features/office/OfficeLibrary";
@@ -256,6 +271,35 @@ const PAGES: Record<string, PageEl> = {
   "marketing/channels": <MarketingChannelsPage />,
   "marketing/analytics": <MarketingAnalyticsPage />,
   "marketing/advisor": <MarketingAdvisorPage />,
+
+  // HR
+  "hr/overview": <HrOverviewPage />,
+  "hr/employees": <HrEmployeesPage />,
+  "hr/org-chart": <HrOrgChartPage />,
+  "hr/leave": <HrLeavePage />,
+  "hr/recruitment": <HrRecruitmentPage />,
+  "hr/payroll": <HrPayrollPage />,
+
+  // CRM
+  "crm/overview": <CrmOverviewPage />,
+  "crm/contacts": <CrmContactsPage />,
+  "crm/pipeline": <CrmPipelinePage />,
+  "crm/activities": <CrmActivitiesPage />,
+
+  // Support
+  "support/overview": <SupportOverviewPage />,
+  "support/tickets": <SupportTicketsPage />,
+  "support/knowledge-base": <SupportKbPage />,
+
+  // Projects (PM)
+  "pm/boards": <PmBoardsPage />,
+  "pm/my-tasks": <PmMyTasksPage />,
+
+  // Finance
+  "finance-mod/overview": <FinanceOverviewPage />,
+  "finance-mod/invoices": <FinanceInvoicesPage />,
+  "finance-mod/expenses": <FinanceExpensesPage />,
+  "finance-mod/budgets": <FinanceBudgetsPage />,
 
   // Office (Bureautique) — library + per-kind filtered lists.
   "office/library": <OfficeLibraryPage />,

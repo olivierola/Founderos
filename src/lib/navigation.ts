@@ -7,6 +7,11 @@ import {
   Settings2,
   ChartLine,
   FileStack,
+  UsersRound,
+  Handshake,
+  LifeBuoy,
+  FolderKanban,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -238,6 +243,65 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Documents", slug: "documents" },
       { label: "Spreadsheets", slug: "spreadsheets" },
       { label: "Presentations", slug: "presentations" },
+    ],
+  },
+  {
+    slug: "hr",
+    label: "RH",
+    icon: UsersRound,
+    color: "text-teal-400/60",
+    subItems: [
+      { label: "Overview", slug: "overview" },
+      { label: "Employees", slug: "employees" },
+      { label: "Org chart", slug: "org-chart" },
+      { label: "Leave & absences", slug: "leave" },
+      { label: "Recruitment", slug: "recruitment" },
+      { label: "Payroll & docs", slug: "payroll" },
+    ],
+  },
+  {
+    slug: "crm",
+    label: "CRM",
+    icon: Handshake,
+    color: "text-emerald-400/60",
+    subItems: [
+      { label: "Overview", slug: "overview" },
+      { label: "Contacts", slug: "contacts" },
+      { label: "Pipeline", slug: "pipeline" },
+      { label: "Activities", slug: "activities" },
+    ],
+  },
+  {
+    slug: "support",
+    label: "Support",
+    icon: LifeBuoy,
+    color: "text-sky-400/60",
+    subItems: [
+      { label: "Overview", slug: "overview" },
+      { label: "Tickets", slug: "tickets" },
+      { label: "Knowledge base", slug: "knowledge-base" },
+    ],
+  },
+  {
+    slug: "pm",
+    label: "Projets",
+    icon: FolderKanban,
+    color: "text-amber-400/60",
+    subItems: [
+      { label: "Boards", slug: "boards" },
+      { label: "My tasks", slug: "my-tasks" },
+    ],
+  },
+  {
+    slug: "finance-mod",
+    label: "Finance",
+    icon: Wallet,
+    color: "text-lime-400/60",
+    subItems: [
+      { label: "Overview", slug: "overview" },
+      { label: "Invoices", slug: "invoices" },
+      { label: "Expenses", slug: "expenses" },
+      { label: "Budgets", slug: "budgets" },
     ],
   },
   {
