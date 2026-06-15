@@ -10,13 +10,13 @@
      Base is a zinc-950-ish neutral kept slightly warm-neutral, never #000. */
   :root,
   .dark {
-    --background: 240 6% 8%;           /* zinc dark, not pure black */
+    --background: 240 7% 5%;           /* deep zinc, darker app canvas */
     --foreground: 240 5% 96%;          /* ~zinc-100 */
 
-    --card: 240 5% 11%;                /* ~zinc-900 raised */
+    --card: 240 6% 8%;                 /* raised surface above the darker bg */
     --card-foreground: 240 5% 96%;
 
-    --popover: 240 5% 11%;
+    --popover: 240 6% 9%;
     --popover-foreground: 240 5% 96%;
 
     --primary: 231 100% 36%;           /* #001BB7 deep blue */
@@ -47,13 +47,13 @@
     --destructive: 0 72% 51%;          /* red-500 */
     --destructive-foreground: 240 5% 96%;
 
-    --border: 240 4% 17%;              /* ~zinc-800 */
-    --input: 240 4% 17%;
+    --border: 240 4% 16%;              /* visible against the darker canvas */
+    --input: 240 4% 16%;
     --ring: 231 100% 36%;              /* deep blue ring */
 
-    --sidebar: 240 6% 7%;              /* slightly darker than bg */
+    --sidebar: 240 8% 4%;              /* slightly darker than the darker bg */
     --sidebar-foreground: 240 5% 65%;
-    --sidebar-accent: 240 5% 13%;
+    --sidebar-accent: 240 6% 10%;
 
     --radius: 0.3rem;                  /* tighter corners, sharper/sober */
   }
