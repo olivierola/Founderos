@@ -499,6 +499,95 @@ export function buildInternalToolset(
   });
   summaryLines.push("- create_task: file trackable to-dos / action items (always available).");
 
+  // Always-on: spin up a full background mission (assigned to self by default,
+  // or to a teammate agent). Use this when the user asks the agent to "do X" as
+  // standalone / ongoing work, optionally on a schedule.
+  tools.set("create_mission", {
+    def: {
+      name: "create_mission",
+      description: "Create a mission — a self-contained piece of work the agent (or a teammate) executes in the background. Use when the user assigns a job to do, or wants recurring/scheduled work. The mission runs the agent autonomously with its tools.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short mission title." },
+          brief: { type: "string", description: "Detailed instructions: what to do, context, constraints." },
+          acceptance_criteria: { type: "string", description: "Optional: what counts as done." },
+          assignee_agent: { type: "string", description: "Optional teammate agent name to run it; defaults to this agent." },
+          start_now: { type: "boolean", description: "If true, activate immediately (default true)." },
+        },
+        required: ["title", "brief"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const title = str(args.title).slice(0, 200);
+      const brief = str(args.brief);
+      if (!title || !brief) return "ERROR: title and brief are required.";
+      // Resolve assignee (default = self).
+      let agentId = ctx.agentId ?? null;
+      const who = str(args.assignee_agent);
+      if (who) {
+        const { data: mate } = await ctx.admin.from("internal_agents")
+          .select("id").eq("project_id", ctx.projectId).ilike("name", who).maybeSingle();
+        if (mate) agentId = mate.id;
+      }
+      if (!agentId) return "ERROR: no agent to assign the mission to.";
+      const startNow = args.start_now !== false;
+      const { data: mission, error } = await ctx.admin.from("internal_agent_missions").insert({
+        agent_id: agentId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+        title, brief, acceptance_criteria: str(args.acceptance_criteria) || null,
+        status: startNow ? "active" : "draft",
+      }).select("id").single();
+      if (error) return `ERROR creating mission: ${error.message}`;
+      // Kick it off now via the run function (best-effort, fire-and-forget).
+      if (startNow) {
+        const base = Deno.env.get("SUPABASE_URL"); const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (base && key) {
+          fetch(`${base}/functions/v1/internal-agent-run`, {
+            method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "mission", mission_id: mission.id }),
+          }).catch(() => {});
+        }
+      }
+      return `Mission "${title}" created${startNow ? " and started" : " as a draft"} (id ${mission.id}).`;
+    },
+  });
+  summaryLines.push("- create_mission: assign a full background mission to yourself or a teammate (always available).");
+
+  // Always-on: read-only HTTP GET to any public API/URL returning JSON/text.
+  tools.set("http_get", {
+    def: {
+      name: "http_get",
+      description: "Fetch data from a public HTTP(S) URL (read-only GET) — e.g. a public REST API, JSON feed or webpage. Use for data the other tools don't cover. Returns the response body (truncated).",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Absolute https URL." },
+          headers: { type: "object", description: "Optional request headers (e.g. Accept)." },
+        },
+        required: ["url"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const url = str(args.url);
+      if (!/^https?:\/\//i.test(url)) return "ERROR: url must be absolute http(s).";
+      // Block obvious internal/metadata targets (SSRF guard).
+      if (/(localhost|127\.0\.0\.1|169\.254\.169\.254|::1|metadata\.google)/i.test(url)) {
+        return "ERROR: that host is not allowed.";
+      }
+      try {
+        const headers = (args.headers && typeof args.headers === "object") ? args.headers as Record<string, string> : {};
+        const res = await fetch(url, { headers: { Accept: "application/json, text/*", ...headers } });
+        const body = await res.text();
+        return cap(`HTTP ${res.status}\n${body}`, 8000);
+      } catch (e) {
+        return `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+  });
+  summaryLines.push("- http_get: read data from a public API/URL (always available).");
+
   // Always-on: send a real email (needs a connected Resend integration).
   tools.set("send_email", {
     def: {

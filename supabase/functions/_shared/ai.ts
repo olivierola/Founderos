@@ -136,6 +136,7 @@ export type ToolExecutor = (
 
 interface ToolLoopOpts {
   provider?: "groq" | "deepseek";
+  model?: string;            // override the provider's default model
   messages: ChatMessage[];
   tools: ToolDef[];
   executor: ToolExecutor;
@@ -163,7 +164,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
     provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
   if (!apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
   const url = TOOL_ENDPOINTS[provider];
-  const model = provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL;
+  const model = opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
 
   const messages = [...opts.messages];
   const usageTotal = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };

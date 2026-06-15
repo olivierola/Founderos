@@ -58,8 +58,31 @@ function estimateCost(
   return (usage.prompt_tokens * r.in + usage.completion_tokens * r.out) / 1000;
 }
 
+// All internal agents run on DeepSeek for stronger reasoning, unless an agent
+// explicitly pins "groq" or DeepSeek isn't configured (then we fall back).
 function providerFor(agent: AgentRow): "groq" | "deepseek" {
-  return agent.model === "deepseek" ? "deepseek" : "groq";
+  if (agent.model === "groq") return "groq";
+  return Deno.env.get("DEEPSEEK_API_KEY") ? "deepseek" : "groq";
+}
+const AGENT_MODEL: Record<"groq" | "deepseek", string | undefined> = {
+  deepseek: Deno.env.get("AGENT_MODEL_DEEPSEEK") || "deepseek-v4-pro",
+  groq: undefined, // use ai.ts default
+};
+
+// Run the tool loop on the agent's provider; if DeepSeek fails (key/model
+// unavailable), fall back to Groq so a chat/mission never hard-fails.
+async function runTools(
+  provider: "groq" | "deepseek",
+  opts: Omit<Parameters<typeof callAiWithTools>[0], "provider" | "model">,
+) {
+  try {
+    return await callAiWithTools({ ...opts, provider, model: AGENT_MODEL[provider] });
+  } catch (e) {
+    if (provider === "deepseek") {
+      return await callAiWithTools({ ...opts, provider: "groq" });
+    }
+    throw e;
+  }
 }
 
 function buildSystemPrompt(
@@ -109,6 +132,9 @@ function buildSystemPrompt(
   } else {
     lines.push(
       "- Respond in concise markdown, in the user's language. Avoid filler.",
+      "- BE CONVERSATIONAL & THINK FIRST. If the request is ambiguous, under-specified, or could go several ways, ASK a brief clarifying question before acting (e.g. which target, which period, which audience). Don't guess on important details. A short back-and-forth is better than a wrong deliverable.",
+      "- Confirm scope on big/irreversible actions before doing them.",
+      "- You can turn work into a tracked task with create_task, or kick off a full background mission with create_mission (use it when the user asks you to 'do X' as ongoing/standalone work, or to schedule recurring work).",
       "- When the user asks for an analysis, report, summary of data, or anything substantial, produce it with create_deliverable (prefer kind=\"report\" with KPIs/charts/tables). Then reply with a short summary — the full report opens as an artifact card in the chat.",
     );
   }
@@ -296,8 +322,7 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
   if (messages.length === 1) messages.push({ role: "user", content: "Greet the user." });
 
   const provider = providerFor(agent);
-  const result = await callAiWithTools({
-    provider,
+  const result = await runTools(provider, {
     messages,
     tools: defs,
     executor,
@@ -306,7 +331,7 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
     maxRounds: Math.min(agent.max_steps, 6),
   });
 
-  const cost = estimateCost(result.usage, provider);
+  const cost = estimateCost(result.usage, result.provider);
   await admin.from("internal_agent_messages").insert({
     conversation_id: conversationId,
     agent_id: agent.id,
@@ -414,8 +439,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
 
   const provider = providerFor(agent);
   try {
-    const result = await callAiWithTools({
-      provider,
+    const result = await runTools(provider, {
       messages: [
         { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection, teamMemorySection) },
         { role: "user", content: userPrompt },
@@ -427,7 +451,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
       maxRounds: agent.max_steps,
     });
 
-    const cost = estimateCost(result.usage, provider);
+    const cost = estimateCost(result.usage, result.provider);
     const finalOutput = result.content?.trim() || "(no final report)";
 
     await admin.from("internal_agent_run_events").insert({
