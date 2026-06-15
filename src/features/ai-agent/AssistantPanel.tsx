@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Bot, X, Plus, History, ChevronDown } from "lucide-react";
+import {
+  Loader2, Bot, X, Plus, History, ChevronDown, FileText, BarChart3, ArrowRight, Sparkles,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChatComposer } from "@/components/ui/chat-composer";
@@ -20,6 +22,13 @@ import { MessageArtifacts, type AiArtifact } from "./Artifacts";
 const MIN_W = 340;
 const MAX_W = 720;
 const DEFAULT_W = 400;
+
+// Quick-start actions shown on the empty state as actionable cards.
+const QUICK_ACTIONS = [
+  { icon: Sparkles, title: "Explique cette page", subtitle: "Ce que je regarde, en clair", prompt: "Explique cette page" },
+  { icon: BarChart3, title: "Résume les chiffres clés", subtitle: "Les métriques à l'écran", prompt: "Résume les chiffres clés à l'écran" },
+  { icon: FileText, title: "Que dois-je faire ensuite ?", subtitle: "Prochaines actions recommandées", prompt: "Que dois-je faire ensuite ?" },
+] as const;
 
 interface AiMessage {
   id: string;
@@ -199,15 +208,22 @@ export function AssistantPanel() {
             <p className="text-xs text-muted-foreground">
               I see what you're looking at. Ask me to explain, analyse, or act on it.
             </p>
-            <div className="mt-2 grid w-full gap-1.5">
-              {["Explique cette page", "Résume les chiffres clés à l'écran", "Que dois-je faire ensuite ?"].map((s) => (
+            <div className="mt-2 grid w-full gap-2 text-left">
+              {QUICK_ACTIONS.map((a) => (
                 <button
-                  key={s}
-                  onClick={() => handleSend(s)}
+                  key={a.prompt}
+                  onClick={() => handleSend(a.prompt)}
                   disabled={sending}
-                  className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                  className="group flex items-center gap-3 rounded-lg border border-border bg-card/40 p-3 transition-colors hover:border-primary/40 hover:bg-secondary disabled:opacity-50"
                 >
-                  {s}
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <a.icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">{a.title}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">{a.subtitle}</span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </button>
               ))}
             </div>
@@ -285,8 +301,34 @@ function Bubble({
         <Bot className="h-3.5 w-3.5" />
       </span>
       <div className="min-w-0 flex-1">
-        <div className={cn("prose prose-sm max-w-none dark:prose-invert", "prose-p:text-foreground/90 prose-headings:text-foreground prose-strong:text-foreground prose-a:text-primary")}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+        <div
+          className={cn(
+            "prose prose-sm max-w-none dark:prose-invert leading-relaxed",
+            "prose-p:my-2 prose-p:text-foreground/90 prose-p:leading-relaxed",
+            "prose-headings:text-foreground prose-headings:font-semibold prose-headings:mb-1 prose-headings:mt-3",
+            "prose-strong:text-foreground prose-a:text-primary prose-a:font-medium",
+            "prose-ul:my-2 prose-ul:space-y-1.5 prose-ol:my-2 prose-ol:space-y-1.5",
+            "prose-li:my-0 prose-li:marker:text-muted-foreground",
+            "prose-code:rounded prose-code:bg-secondary prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.8em] prose-code:before:content-none prose-code:after:content-none",
+            "prose-pre:bg-secondary prose-pre:text-foreground prose-hr:border-border",
+          )}
+        >
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // Render list items as compact rows with a clear bullet so the
+              // model's quick-action lists read as a structured list, not a wall.
+              li: ({ children, ...props }) => (
+                <li {...props} className="flex gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
+                  <span className="min-w-0 flex-1">{children}</span>
+                </li>
+              ),
+              ul: ({ children }) => <ul className="my-2 list-none space-y-1.5 pl-0">{children}</ul>,
+            }}
+          >
+            {m.content}
+          </ReactMarkdown>
         </div>
         {artifacts.length > 0 && <MessageArtifacts artifacts={artifacts} onOpenDocument={onOpenDoc} />}
       </div>

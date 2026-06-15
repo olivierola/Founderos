@@ -2,16 +2,19 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Sparkles, X, Check, Wrench, ShieldCheck, CalendarClock, ArrowLeft, ArrowRight,
-  Loader2, Plus, ChevronRight,
+  Loader2, Plus, ChevronRight, Plug, AlertTriangle, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { useProjectConnectors } from "@/hooks/useConnectors";
 import {
   AGENT_TEMPLATES, type AgentTemplate, type AgentCategory, type AutonomyLevel, type TemplateTool,
 } from "./agentTemplates";
 import type { TemplateOverrides } from "./instantiateTemplate";
+import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
 
 const EMOJIS = ["🤖", "🧠", "🛠️", "🎯", "📊", "✍️", "🔍", "📦", "💼", "⚡", "🛡️", "💸", "🎧"];
 const ACCENTS = ["#2F2FE4", "#7c3aed", "#db2777", "#e11d48", "#ea580c", "#16a34a", "#0891b2", "#475569"];
@@ -137,7 +140,7 @@ function BrowseView({ onClose, onSelect }: { onClose: () => void; onSelect: (t: 
 }
 
 // ── Config stepper ───────────────────────────────────────────────────────────
-const STEPS = ["Identity", "Behaviour", "Tools & autonomy", "Review"];
+const STEPS = ["Identity", "Behaviour", "Tools & autonomy", "Integrations", "Review"];
 
 function ConfigStepper({
   template, onBack, onClose, onActivate,
@@ -157,8 +160,40 @@ function ConfigStepper({
   const [enabledTools, setEnabledTools] = useState<boolean[]>(template.tools.map(() => true));
   const [activating, setActivating] = useState(false);
 
+  // External integrations (connector_action tools) chosen for this agent.
+  // Seed from any connector_action tools already declared by the template.
+  const [integrations, setIntegrations] = useState<string[]>(() => {
+    const seeded = new Set<string>();
+    for (const t of template.tools) {
+      if (t.kind === "connector_action") {
+        const slug = (t.config?.provider as string | undefined) ?? "";
+        if (slug) seeded.add(slug);
+      }
+    }
+    return [...seeded];
+  });
+  const toggleIntegration = (slug: string) =>
+    setIntegrations((a) => (a.includes(slug) ? a.filter((s) => s !== slug) : [...a, slug]));
+
   const toggleTool = (i: number) => setEnabledTools((a) => a.map((v, idx) => (idx === i ? !v : v)));
-  const selectedTools: TemplateTool[] = template.tools.filter((_, i) => enabledTools[i]);
+
+  // The template's own tools minus its connector_action rows (those are managed
+  // by the Integrations step so we don't double-add them).
+  const baseSelectedTools: TemplateTool[] = template.tools.filter(
+    (t, i) => enabledTools[i] && t.kind !== "connector_action",
+  );
+  // One connector_action tool per chosen integration.
+  const integrationTools: TemplateTool[] = integrations.map((slug) => {
+    const p = connectorActionProvider(slug);
+    return {
+      kind: "connector_action" as const,
+      name: p ? `Use ${p.name}` : `Use ${slug}`,
+      description: p?.description,
+      config: { provider: slug },
+      requires_approval: false,
+    };
+  });
+  const selectedTools: TemplateTool[] = [...baseSelectedTools, ...integrationTools];
 
   async function activate() {
     setActivating(true);
@@ -233,20 +268,24 @@ function ConfigStepper({
           <div className="space-y-5">
             <Field label="Tools — what the agent can use">
               <div className="space-y-2">
-                {template.tools.map((t, i) => (
-                  <label key={i} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border p-2.5">
-                    <input type="checkbox" checked={enabledTools[i]} onChange={() => toggleTool(i)} className="mt-0.5 h-4 w-4 accent-primary" />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 text-sm">
-                        <span className="font-medium">{t.name}</span>
-                        <span className="rounded bg-secondary px-1.5 text-[10px] text-muted-foreground">{t.kind}</span>
-                        {t.requires_approval && <Badge variant="warning" className="text-[10px]">approval</Badge>}
+                {template.tools.map((t, i) =>
+                  t.kind === "connector_action" ? null : (
+                    <label key={i} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border p-2.5">
+                      <input type="checkbox" checked={enabledTools[i]} onChange={() => toggleTool(i)} className="mt-0.5 h-4 w-4 accent-primary" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 text-sm">
+                          <span className="font-medium">{t.name}</span>
+                          <span className="rounded bg-secondary px-1.5 text-[10px] text-muted-foreground">{t.kind}</span>
+                          {t.requires_approval && <Badge variant="warning" className="text-[10px]">approval</Badge>}
+                        </div>
+                        {t.description && <p className="text-xs text-muted-foreground">{t.description}</p>}
                       </div>
-                      {t.description && <p className="text-xs text-muted-foreground">{t.description}</p>}
-                    </div>
-                  </label>
-                ))}
-                {template.tools.length === 0 && <p className="text-xs text-muted-foreground">This template uses only built-in abilities.</p>}
+                    </label>
+                  ),
+                )}
+                {template.tools.filter((t) => t.kind !== "connector_action").length === 0 && (
+                  <p className="text-xs text-muted-foreground">This template uses only built-in abilities. Add external data sources in the next step.</p>
+                )}
               </div>
             </Field>
             <Field label="Autonomy">
@@ -264,6 +303,10 @@ function ConfigStepper({
         )}
 
         {step === 3 && (
+          <IntegrationsStep selected={integrations} onToggle={toggleIntegration} />
+        )}
+
+        {step === 4 && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-4">
               <div className="flex h-11 w-11 items-center justify-center rounded-md text-xl" style={{ backgroundColor: accent + "22", color: accent }}>{emoji}</div>
@@ -274,8 +317,23 @@ function ConfigStepper({
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-md border border-border p-3"><div className="text-[11px] uppercase text-muted-foreground">Autonomy</div><div className="mt-0.5 font-medium capitalize">{autonomy}</div></div>
-              <div className="rounded-md border border-border p-3"><div className="text-[11px] uppercase text-muted-foreground">Tools</div><div className="mt-0.5 font-medium">{selectedTools.length} enabled</div></div>
+              <div className="rounded-md border border-border p-3"><div className="text-[11px] uppercase text-muted-foreground">Tools</div><div className="mt-0.5 font-medium">{baseSelectedTools.length} enabled</div></div>
             </div>
+            {integrations.length > 0 && (
+              <div className="rounded-md border border-border p-3">
+                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase text-muted-foreground"><Plug className="h-3 w-3" /> Integrations</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {integrations.map((slug) => {
+                    const p = connectorActionProvider(slug);
+                    return (
+                      <span key={slug} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs">
+                        {p?.icon && <p.icon className="h-3 w-3" />} {p?.name ?? slug}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {template.suggestedSchedule && (
               <div className="flex items-start gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
                 <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" />
@@ -307,6 +365,96 @@ function ConfigStepper({
         )}
       </footer>
     </>
+  );
+}
+
+// ── Integrations step ─────────────────────────────────────────────────────────
+// Pick external data sources (CRM / HR / data lakes). Each becomes a
+// connector_action tool. We surface whether the connector is already configured
+// for this project so the user knows it will work at runtime.
+function IntegrationsStep({
+  selected, onToggle,
+}: {
+  selected: string[];
+  onToggle: (slug: string) => void;
+}) {
+  const { projectId } = useCurrentContext();
+  const { data: connectors } = useProjectConnectors(projectId ?? null);
+  const connectedSet = useMemo(
+    () => new Set((connectors ?? []).filter((c) => c.status === "connected").map((c) => c.provider)),
+    [connectors],
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start gap-2 rounded-md border border-border bg-card/40 p-3 text-xs text-muted-foreground">
+        <Plug className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <span>
+          Connect external data sources the agent can pull from — CRM, HR, data lakes. Secrets are stored encrypted at the
+          project level and never reach the model. The agent only chooses an action and parameters.
+        </span>
+      </div>
+
+      {CONNECTOR_ACTION_GROUPS.map((group) => (
+        <div key={group.label} className="space-y-1.5">
+          <div className="text-xs font-medium text-muted-foreground">{group.label}</div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {group.slugs.map((slug) => {
+              const p = connectorActionProvider(slug);
+              if (!p) return null;
+              const isOn = selected.includes(slug);
+              const isConnected = connectedSet.has(slug);
+              const Icon = p.icon;
+              return (
+                <button
+                  key={slug}
+                  type="button"
+                  onClick={() => onToggle(slug)}
+                  className={cn(
+                    "flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors",
+                    isOn ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30",
+                  )}
+                >
+                  <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md", isOn ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground")}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-medium">{p.name}</span>
+                      {isOn && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                    </div>
+                    <p className="line-clamp-2 text-[11px] text-muted-foreground">{p.description}</p>
+                    <div className="mt-1">
+                      {isConnected ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                          <ShieldCheck className="h-3 w-3" /> Connected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                          <AlertTriangle className="h-3 w-3" /> Not connected yet
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {selected.some((s) => !connectedSet.has(s)) && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <span>
+            Some selected integrations aren't connected for this project yet. The agent will be created with the tool, but
+            you'll need to add the credentials in{" "}
+            <span className="inline-flex items-center gap-0.5 font-medium text-foreground">Integrations <ExternalLink className="h-3 w-3" /></span>{" "}
+            before it can fetch data.
+          </span>
+        </div>
+      )}
+    </div>
   );
 }
 
