@@ -32,6 +32,9 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { InstructionsEditor } from "./InstructionsEditor";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
+import { ConnectorDialog } from "@/features/integrations/ConnectorDialog";
+import { findProvider } from "@/lib/providers";
+import { Settings2 } from "lucide-react";
 import { DeliverablesHub } from "./DeliverablesHub";
 import { MissionWizard, type MissionDraft } from "./MissionWizard";
 import {
@@ -1169,6 +1172,8 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
   const [addOpen, setAddOpen] = useState(false);
   // Second step of the add dialog: pick a concrete connection from the catalogue.
   const [addStep, setAddStep] = useState<"kinds" | "edge_function" | "vault_connector">("kinds");
+  // Provider slug whose project-level credentials we're (re)configuring.
+  const [configureSlug, setConfigureSlug] = useState<string | null>(null);
 
   const { data: tools } = useQuery({
     queryKey: ["internal_agent_tools", agent.id],
@@ -1208,19 +1213,23 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
     );
     if (existing) {
       await supabase.from("internal_agent_tools").delete().eq("id", existing.id);
-    } else {
-      const p = connectorActionProvider(slug);
-      const { error } = await supabase.from("internal_agent_tools").insert({
-        agent_id: agent.id,
-        kind: "connector_action",
-        name: p ? `Use ${p.name}` : `Use ${slug}`,
-        description: p?.description ?? null,
-        config: { provider: slug },
-        requires_approval: false,
-      });
-      if (error) { alert(error.message); return; }
+      queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
+      return;
     }
+    const p = connectorActionProvider(slug);
+    const { error } = await supabase.from("internal_agent_tools").insert({
+      agent_id: agent.id,
+      kind: "connector_action",
+      name: p ? `Use ${p.name}` : `Use ${slug}`,
+      description: p?.description ?? null,
+      config: { provider: slug },
+      requires_approval: false,
+    });
+    if (error) { alert(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
+    // If the integration isn't connected yet, open the config panel so the user
+    // can drop in the credentials (reused project-wide afterwards).
+    if (!connectedSet.has(slug)) setConfigureSlug(slug);
   }
 
   function closeAdd() {
@@ -1273,15 +1282,15 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
   }
 
   return (
-    <div>
-      <div className="flex items-start justify-between gap-3">
+    <div className="flex flex-col">
+      <div className="order-2 mt-8 flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <h3 className="flex items-center gap-2 text-sm font-semibold"><Wrench className="h-4 w-4 text-muted-foreground" /> Tools</h3>
-          <p className="text-xs text-muted-foreground">Built-in capabilities you grant this agent.</p>
+          <h3 className="flex items-center gap-2 text-sm font-semibold"><Wrench className="h-4 w-4 text-muted-foreground" /> Generic tools</h3>
+          <p className="text-xs text-muted-foreground">Capabilities not tied to a specific app — web search, knowledge, internal actions.</p>
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" /> Add tool</Button>
+        <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" /> Add tool</Button>
       </div>
-      <div className="mt-4">
+      <div className="order-2 mt-4">
         {(() => {
           const builtinTools = (tools ?? []).filter((t) => t.kind !== "connector_action");
           return builtinTools.length === 0 ? (
@@ -1350,12 +1359,12 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
       </div>
 
       {/* Integrations — connector_action data sources (CRM / HR / data lakes). */}
-      <div className="mt-8">
+      <div className="order-1">
         <div className="space-y-1">
           <h3 className="flex items-center gap-2 text-sm font-semibold"><Plug className="h-4 w-4 text-muted-foreground" /> Integrations</h3>
           <p className="text-xs text-muted-foreground">
-            External data sources the agent can read from. Secrets stay encrypted at the project level — the agent only
-            picks an action and parameters.
+            Add an integration and the agent gets its tools. Already-connected integrations are reused — no keys to
+            re-enter. Click the gear to (re)configure an integration's credentials for this project.
           </p>
         </div>
         <div className="mt-4 space-y-5">
@@ -1370,49 +1379,64 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
                   const connected = connectedSet.has(slug);
                   const Icon = p.icon;
                   return (
-                    <button
+                    <div
                       key={slug}
-                      onClick={() => toggleIntegration(slug)}
                       className={cn(
-                        "flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors",
+                        "flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors",
                         on ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30",
                       )}
                     >
-                      <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md", on ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground")}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate text-sm font-medium">{p.name}</span>
-                          {on && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                      <button onClick={() => toggleIntegration(slug)} className="flex min-w-0 flex-1 items-start gap-2.5 text-left">
+                        <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md", on ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground")}>
+                          <Icon className="h-4 w-4" />
                         </div>
-                        <p className="line-clamp-2 text-[11px] text-muted-foreground">{p.description}</p>
-                        <div className="mt-1">
-                          {connected ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
-                              <ShieldCheck className="h-3 w-3" /> Connected
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
-                              <AlertTriangle className="h-3 w-3" /> Not connected yet
-                            </span>
-                          )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-sm font-medium">{p.name}</span>
+                            {on && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                          </div>
+                          <p className="line-clamp-2 text-[11px] text-muted-foreground">{p.description}</p>
+                          <div className="mt-1">
+                            {connected ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                                <ShieldCheck className="h-3 w-3" /> Connected · reused
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                                <AlertTriangle className="h-3 w-3" /> Not connected — click gear to set up
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        onClick={() => setConfigureSlug(slug)}
+                        title={connected ? "Reconfigure credentials" : "Configure credentials"}
+                        className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                      >
+                        <Settings2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
             </div>
           ))}
-          {[...integrationSlugs].some((s) => !connectedSet.has(s)) && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-              <span>Some enabled integrations aren't connected for this project yet. Add their credentials in Integrations before the agent can fetch data.</span>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Configure / connect an integration's project-level credentials. */}
+      <ConnectorDialog
+        open={!!configureSlug}
+        onOpenChange={(o) => { if (!o) setConfigureSlug(null); }}
+        provider={configureSlug ? findProvider(configureSlug) ?? null : null}
+        workspaceId={agent.workspace_id}
+        projectId={agent.project_id}
+        onConnected={() => {
+          setConfigureSlug(null);
+          queryClient.invalidateQueries({ queryKey: ["project_connectors_for_tools", agent.project_id] });
+        }}
+      />
 
       <Dialog open={addOpen} onOpenChange={(o) => { if (!o) closeAdd(); else setAddOpen(true); }}>
         <DialogContent className="max-w-md">
