@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { ExternalLink, Loader2, Settings2 } from "lucide-react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { ExternalLink, Loader2, Settings2, X } from "lucide-react";
 import {
   Dialog,
-  DialogContent,
+  DialogPortal,
   DialogDescription,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -113,94 +113,106 @@ export function ConnectorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+      <DialogPortal>
+        {/* Dim overlay WITHOUT blur — the page behind stays sharp. */}
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        {/* Right-side, full-height drawer that slides in from the right. */}
+        <DialogPrimitive.Content
+          className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-md flex-col border-l border-border bg-card shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right"
+        >
+          {/* Header */}
+          <div className="flex items-start gap-3 border-b border-border px-5 py-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary">
               <Icon className="h-5 w-5" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <DialogTitle>Connect {provider.name}</DialogTitle>
               <DialogDescription>{provider.description}</DialogDescription>
             </div>
+            <DialogPrimitive.Close className="rounded-md text-muted-foreground transition-colors hover:text-foreground">
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
           </div>
-        </DialogHeader>
 
-        <div className="space-y-3">
-          {provider.fields.map((field) => (
-            <div key={field.key} className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label htmlFor={field.key} className="text-xs text-muted-foreground">
-                  {field.label}
-                </label>
-                {field.helpUrl && (
-                  <a
-                    href={field.helpUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Get key <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </div>
-              <Input
-                id={field.key}
-                type={field.secret ? "password" : "text"}
-                placeholder={field.placeholder}
-                value={values[field.key] ?? ""}
-                onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
-              />
-            </div>
-          ))}
-          {metaFields.length > 0 && (
-            <div className="space-y-2 rounded-md border border-border bg-secondary/30 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium">
-                <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
-                Configuration (used to target the right project)
-              </div>
-              {metaFields.map((field) => (
-                <div key={field.key} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label htmlFor={"meta-" + field.key} className="text-xs text-muted-foreground">
-                      {field.label}
-                    </label>
-                    {field.helpUrl && (
-                      <a
-                        href={field.helpUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-                      >
-                        Find it <ExternalLink className="h-2.5 w-2.5" />
-                      </a>
-                    )}
-                  </div>
-                  <Input
-                    id={"meta-" + field.key}
-                    placeholder={field.placeholder}
-                    value={meta[field.key] ?? ""}
-                    onChange={(e) => setMeta({ ...meta, [field.key]: e.target.value })}
-                    className="h-9 font-mono text-xs"
-                  />
+          {/* Scrollable body */}
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+            {provider.fields.map((field) => (
+              <div key={field.key} className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label htmlFor={field.key} className="text-xs text-muted-foreground">
+                    {field.label}
+                  </label>
+                  {field.helpUrl && (
+                    <a
+                      href={field.helpUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Get key <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+                <Input
+                  id={field.key}
+                  type={field.secret ? "password" : "text"}
+                  placeholder={field.placeholder}
+                  value={values[field.key] ?? ""}
+                  onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
+                />
+              </div>
+            ))}
+            {metaFields.length > 0 && (
+              <div className="space-y-2 rounded-md border border-border bg-secondary/30 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
+                  <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  Configuration (used to target the right project)
+                </div>
+                {metaFields.map((field) => (
+                  <div key={field.key} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label htmlFor={"meta-" + field.key} className="text-xs text-muted-foreground">
+                        {field.label}
+                      </label>
+                      {field.helpUrl && (
+                        <a
+                          href={field.helpUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                        >
+                          Find it <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
+                      )}
+                    </div>
+                    <Input
+                      id={"meta-" + field.key}
+                      placeholder={field.placeholder}
+                      value={meta[field.key] ?? ""}
+                      onChange={(e) => setMeta({ ...meta, [field.key]: e.target.value })}
+                      className="h-9 font-mono text-xs"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Connect
-          </Button>
-        </div>
-      </DialogContent>
+          {/* Footer pinned at the bottom of the full-height drawer */}
+          <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              Connect
+            </Button>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPortal>
     </Dialog>
   );
 }
