@@ -79,6 +79,11 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "d3-drag": "^3.0.0",
+    "d3-force": "^3.0.0",
+    "d3-selection": "^3.0.0",
+    "d3-shape": "^3.2.0",
+    "d3-zoom": "^3.0.0",
     "dagre": "^0.8.5",
     "date-fns": "^4.4.0",
     "dedent": "^1.0.0",
@@ -123,6 +128,11 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@types/d3-drag": "^3.0.7",
+    "@types/d3-force": "^3.0.10",
+    "@types/d3-selection": "^3.0.11",
+    "@types/d3-shape": "^3.1.8",
+    "@types/d3-zoom": "^3.0.8",
     "@types/dagre": "^0.7.54",
     "@types/lodash": "^4.17.24",
     "@types/node": "^22.7.5",

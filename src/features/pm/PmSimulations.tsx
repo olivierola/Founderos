@@ -15,6 +15,7 @@ import { callEdge } from "@/lib/edge";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
+import { SimulationGraph, type GraphRelation } from "./SimulationGraph";
 
 interface Sim {
   id: string; name: string; seed_text: string; question: string;
@@ -22,7 +23,10 @@ interface Sim {
   status: "draft" | "preparing" | "ready" | "queued" | "running" | "completed" | "failed";
   report: any | null; error: string | null; created_at: string;
 }
-interface Persona { id: string; name: string; role: string | null; bio: string | null; stance: string | null; avatar_emoji: string | null; traits: any }
+interface Persona {
+  id: string; name: string; role: string | null; bio: string | null; stance: string | null;
+  avatar_emoji: string | null; traits: any; population: number; sentiment_score: number; cluster: string | null;
+}
 interface Action { id: string; round: number; persona_id: string | null; kind: string; content: string; sentiment: string | null; created_at: string }
 
 const STATUS_META: Record<Sim["status"], { label: string; cls: string }> = {
@@ -49,7 +53,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", question: "", seed: "", personas: "12", rounds: "8" });
+  const [form, setForm] = useState({ name: "", question: "", seed: "", personas: "50", rounds: "8" });
   const [creating, setCreating] = useState(false);
 
   const { data: sims, isLoading } = useQuery({
@@ -72,12 +76,12 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
       const { data, error } = await supabase.from("sim_simulations").insert({
         workspace_id: workspaceId, project_id: projectId, created_by: user.id,
         name: form.name.trim(), question: form.question.trim(), seed_text: form.seed.trim(),
-        persona_count: Math.min(Math.max(Number(form.personas) || 12, 3), 30),
+        persona_count: Math.min(Math.max(Number(form.personas) || 50, 3), 1000),
         total_rounds: Math.min(Math.max(Number(form.rounds) || 8, 2), 40),
         status: "draft",
       }).select("id").single();
       if (error) { alert(error.message); return; }
-      setForm({ name: "", question: "", seed: "", personas: "12", rounds: "8" });
+      setForm({ name: "", question: "", seed: "", personas: "50", rounds: "8" });
       setOpen(false);
       queryClient.invalidateQueries({ queryKey: ["sims", projectId] });
       if (data) onOpen(data.id);
@@ -148,7 +152,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Personas (3–30)"><Input type="number" value={form.personas} onChange={(e) => setForm({ ...form, personas: e.target.value })} /></Field>
+                <Field label="Population (3–1000)"><Input type="number" value={form.personas} onChange={(e) => setForm({ ...form, personas: e.target.value })} /></Field>
                 <Field label="Rounds (2–40)"><Input type="number" value={form.rounds} onChange={(e) => setForm({ ...form, rounds: e.target.value })} /></Field>
               </div>
             </div>
@@ -183,8 +187,19 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
   const { data: personas } = useQuery({
     queryKey: ["sim_personas", simId],
     queryFn: async () => {
-      const { data } = await supabase.from("sim_personas").select("*").eq("simulation_id", simId).order("created_at", { ascending: true });
+      const { data } = await supabase
+        .from("sim_personas")
+        .select("id, name, role, bio, stance, avatar_emoji, traits, population, sentiment_score, cluster")
+        .eq("simulation_id", simId).order("population", { ascending: false });
       return (data ?? []) as Persona[];
+    },
+    refetchInterval: (sim?.status === "running") ? 4000 : false, // sentiment_score evolves
+  });
+  const { data: relations } = useQuery({
+    queryKey: ["sim_relations", simId],
+    queryFn: async () => {
+      const { data } = await supabase.from("sim_relations").select("source_id, target_id, kind, label, strength").eq("simulation_id", simId);
+      return (data ?? []) as GraphRelation[];
     },
   });
   const { data: actions } = useQuery({
@@ -262,8 +277,25 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
             <Loader2 className="h-4 w-4 animate-spin" /> Running — round {sim.current_round}/{sim.total_rounds}
           </span>
         )}
-        <span className="ml-auto text-xs text-muted-foreground">{(personas ?? []).length} personas · {sim.total_rounds} rounds</span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {(personas ?? []).length} archetypes · {(sim as any).population_size || sim.persona_count} agents · {sim.total_rounds} rounds
+        </span>
       </div>
+
+      {/* Persona influence graph (MiroFish-style) */}
+      {(personas ?? []).length > 0 && (
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+            <Users className="h-4 w-4 text-muted-foreground" /> Influence graph
+            <span className="text-[11px] font-normal text-muted-foreground">· node size = population · color = live sentiment · arrows = influence</span>
+          </div>
+          <SimulationGraph
+            personas={personas as any}
+            relations={relations ?? []}
+            onSelect={(p) => setActivePersona((personas ?? []).find((x) => x.id === p.id) ?? null)}
+          />
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         {/* Left: report + live feed */}

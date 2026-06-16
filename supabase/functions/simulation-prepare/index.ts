@@ -30,41 +30,88 @@ async function memberOf(admin: ReturnType<typeof createServiceClient>, workspace
   return !!data;
 }
 
-// ── prepare: seed + question → personas ──────────────────────────────────────
+const SENTIMENT_SCORE: Record<string, number> = { positive: 0.6, neutral: 0, negative: -0.6 };
+
+// ── prepare: seed + question → archetype personas + relations ────────────────
+// We generate a manageable set of ARCHETYPES (8-20) plus their relations, then
+// distribute the requested population (up to 1000) across the archetypes by
+// influence weight. The graph shows archetypes; rounds propagate sentiment.
 async function doPrepare(admin: ReturnType<typeof createServiceClient>, simId: string) {
   const { data: sim } = await admin
     .from("sim_simulations").select("id, workspace_id, seed_text, question, persona_count").eq("id", simId).maybeSingle();
   if (!sim) return { status: 404, body: { error: "Simulation not found" } };
 
   await admin.from("sim_simulations").update({ status: "preparing", error: null, updated_at: new Date().toISOString() }).eq("id", simId);
-  const count = Math.min(Math.max(sim.persona_count || 12, 3), 30);
+
+  // persona_count is reused as the TOTAL population size (3..1000).
+  const populationSize = Math.min(Math.max(sim.persona_count || 50, 3), 1000);
+  // Archetype count scales gently with population.
+  const archCount = Math.min(Math.max(Math.round(Math.sqrt(populationSize) * 1.4), 6), 20);
   const seed = String(sim.seed_text || "").slice(0, 8000);
 
   const systemPrompt =
-    "You design a representative population of distinct AI personas to simulate how real people/stakeholders would react to an idea, product or scenario. " +
-    "Personas must be diverse (roles, incentives, sentiment — supporters, skeptics, neutrals, edge cases) and grounded in the seed material. Return STRICT JSON only.";
+    "You design the SOCIAL GRAPH of a population to simulate reactions to an idea/scenario. " +
+    "Produce diverse ARCHETYPES (roles, incentives, sentiments — supporters, skeptics, neutrals, edge cases, influencers) grounded in the seed, " +
+    "PLUS their relations (who influences whom). Return STRICT JSON only.";
   const userPrompt =
     `SEED MATERIAL:\n${seed || "(none provided)"}\n\nSCENARIO / QUESTION:\n${sim.question || "(none)"}\n\n` +
-    `Generate exactly ${count} personas as JSON: ` +
-    `{"personas":[{"name":"...","role":"short title","bio":"2-3 sentences","stance":"initial stance (one line)","traits":{"sentiment":"positive|neutral|negative","influence":"low|medium|high"}}]}`;
+    `Generate exactly ${archCount} archetypes and a set of relations among them as JSON:\n` +
+    `{"archetypes":[{"key":"a1","name":"short label","role":"title","bio":"2-3 sentences","stance":"one line",` +
+    `"sentiment":"positive|neutral|negative","influence":"low|medium|high","cluster":"group name","weight":0.0_to_1.0}],` +
+    `"relations":[{"source":"a1","target":"a2","kind":"ally|rival|mentor|follower|peer|influences","label":"short","strength":0.0_to_1.0}]}`;
 
   try {
     const res = await callAi({ task: "content_generation", provider: "deepseek", systemPrompt, userPrompt, jsonMode: true, maxTokens: 4000, temperature: 0.7 });
-    const drafts = safeParseJson<{ personas: any[] }>(res.content)?.personas ?? [];
-    if (!Array.isArray(drafts) || drafts.length === 0) throw new Error("No personas generated");
+    const parsed = safeParseJson<{ archetypes: any[]; relations: any[] }>(res.content);
+    const archs = Array.isArray(parsed?.archetypes) ? parsed!.archetypes : [];
+    const relations = Array.isArray(parsed?.relations) ? parsed!.relations : [];
+    if (archs.length === 0) throw new Error("No archetypes generated");
+
     await admin.from("sim_personas").delete().eq("simulation_id", simId);
-    const rows = drafts.slice(0, count).map((p: any, i: number) => ({
+
+    // Distribute population across archetypes by weight (min 1 each).
+    const weights = archs.map((a: any) => Math.max(0.01, Number(a.weight) || 0.5));
+    const wsum = weights.reduce((s, w) => s + w, 0);
+    let assigned = 0;
+    const pops = weights.map((w, i) => {
+      const base = i === weights.length - 1 ? populationSize - assigned : Math.max(1, Math.round((w / wsum) * populationSize));
+      assigned += base;
+      return Math.max(1, base);
+    });
+
+    const rows = archs.map((a: any, i: number) => ({
       simulation_id: simId, workspace_id: sim.workspace_id,
-      name: String(p.name || `Persona ${i + 1}`).slice(0, 80),
-      role: String(p.role || "").slice(0, 120) || null,
-      bio: String(p.bio || "").slice(0, 600) || null,
-      stance: String(p.stance || "").slice(0, 300) || null,
-      traits: (p.traits && typeof p.traits === "object") ? p.traits : {},
+      name: String(a.name || `Archetype ${i + 1}`).slice(0, 80),
+      role: String(a.role || "").slice(0, 120) || null,
+      bio: String(a.bio || "").slice(0, 600) || null,
+      stance: String(a.stance || "").slice(0, 300) || null,
+      traits: { influence: a.influence ?? "medium", sentiment: a.sentiment ?? "neutral" },
       avatar_emoji: EMOJIS[i % EMOJIS.length],
+      is_archetype: true,
+      population: pops[i],
+      sentiment_score: SENTIMENT_SCORE[String(a.sentiment)] ?? 0,
+      cluster: String(a.cluster || "").slice(0, 60) || null,
     }));
-    await admin.from("sim_personas").insert(rows);
-    await admin.from("sim_simulations").update({ status: "ready", updated_at: new Date().toISOString() }).eq("id", simId);
-    return { status: 200, body: { ok: true, persona_count: rows.length } };
+    const { data: inserted, error: insErr } = await admin.from("sim_personas").insert(rows).select("id");
+    if (insErr) throw new Error(insErr.message);
+
+    // Map archetype keys -> inserted persona ids, then insert relations.
+    const idByKey = new Map<string, string>();
+    archs.forEach((a: any, i: number) => { if (a.key && inserted?.[i]) idByKey.set(String(a.key), inserted[i].id); });
+    const relRows = relations
+      .map((r: any) => ({
+        simulation_id: simId, workspace_id: sim.workspace_id,
+        source_id: idByKey.get(String(r.source)) ?? null,
+        target_id: idByKey.get(String(r.target)) ?? null,
+        kind: ["ally", "rival", "mentor", "follower", "peer", "influences"].includes(r.kind) ? r.kind : "influences",
+        label: String(r.label || "").slice(0, 60) || null,
+        strength: Math.min(1, Math.max(0, Number(r.strength) || 0.5)),
+      }))
+      .filter((r) => r.source_id && r.target_id && r.source_id !== r.target_id);
+    if (relRows.length) await admin.from("sim_relations").insert(relRows);
+
+    await admin.from("sim_simulations").update({ status: "ready", population_size: populationSize, updated_at: new Date().toISOString() }).eq("id", simId);
+    return { status: 200, body: { ok: true, archetype_count: rows.length, population: populationSize, relations: relRows.length } };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await admin.from("sim_simulations").update({ status: "failed", error: msg }).eq("id", simId);
@@ -110,10 +157,47 @@ async function doRound(admin: ReturnType<typeof createServiceClient>, simId: str
   }));
   if (rows.length) await admin.from("sim_actions").insert(rows);
 
+  // ── Influence propagation: each archetype's sentiment_score drifts toward its
+  // neighbors' (weighted by relation strength), plus this round's own actions.
+  await propagateInfluence(admin, simId, sim.workspace_id, rows);
+
   const done = round >= sim.total_rounds;
   await admin.from("sim_simulations").update({ current_round: round, updated_at: new Date().toISOString() }).eq("id", simId);
   return { round, actions: rows.length, done };
 }
+
+async function propagateInfluence(
+  admin: ReturnType<typeof createServiceClient>, simId: string, _workspaceId: string,
+  roundActions: Array<{ persona_id: string | null; sentiment: string }>,
+) {
+  const { data: personas } = await admin.from("sim_personas").select("id, sentiment_score").eq("simulation_id", simId);
+  const { data: rels } = await admin.from("sim_relations").select("source_id, target_id, strength").eq("simulation_id", simId);
+  if (!personas) return;
+  const score = new Map<string, number>(personas.map((p: any) => [p.id, Number(p.sentiment_score) || 0]));
+
+  // 1) Own actions nudge own score.
+  const SENT: Record<string, number> = { positive: 0.25, neutral: 0, negative: -0.25 };
+  for (const a of roundActions) {
+    if (a.persona_id && score.has(a.persona_id)) {
+      score.set(a.persona_id, clamp(score.get(a.persona_id)! + (SENT[a.sentiment] ?? 0)));
+    }
+  }
+  // 2) Neighbors pull each other (source influences target by strength).
+  const next = new Map(score);
+  for (const r of (rels ?? [])) {
+    const s = score.get(r.source_id), t = score.get(r.target_id);
+    if (s === undefined || t === undefined) continue;
+    const w = 0.15 * (Number(r.strength) || 0.5);
+    next.set(r.target_id, clamp(t + (s - t) * w));
+  }
+  // Persist only changed scores.
+  const updates = [...next.entries()].filter(([id, v]) => Math.abs(v - (score.get(id) ?? 0)) > 0.001);
+  for (const [id, v] of updates) {
+    await admin.from("sim_personas").update({ sentiment_score: v }).eq("id", id);
+  }
+}
+
+function clamp(v: number): number { return Math.max(-1, Math.min(1, v)); }
 
 // ── complete: build the prediction report ────────────────────────────────────
 async function doComplete(admin: ReturnType<typeof createServiceClient>, simId: string) {
