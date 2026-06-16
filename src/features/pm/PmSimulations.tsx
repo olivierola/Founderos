@@ -228,6 +228,23 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
 
   const personaById = useMemo(() => Object.fromEntries((personas ?? []).map((p) => [p.id, p])), [personas]);
 
+  // Build a system-console log from sim state + recent actions.
+  // (Hook must run on every render — keep it above any early return.)
+  const consoleLines = useMemo(() => {
+    if (!sim) return [];
+    const lines: string[] = [];
+    lines.push(`status: ${sim.status}`);
+    if ((personas ?? []).length) lines.push(`graph: ${(personas ?? []).length} nodes, ${(relations ?? []).length} edges`);
+    if (sim.status === "running" || sim.status === "completed") lines.push(`round ${sim.current_round}/${sim.total_rounds}`);
+    (actions ?? []).slice(-6).forEach((a) => {
+      const p = a.persona_id ? personaById[a.persona_id] : undefined;
+      lines.push(`[r${a.round}] ${(p?.name ?? "agent").slice(0, 18)}: ${a.content.slice(0, 60)}`);
+    });
+    if (sim.status === "completed") lines.push("✓ simulation completed — report generated");
+    if (sim.error) lines.push(`✗ ${sim.error}`);
+    return lines;
+  }, [sim, personas, relations, actions, personaById]);
+
   async function generatePersonas() {
     setBusy("prepare");
     try {
@@ -259,21 +276,6 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
     if (document.fullscreenElement) document.exitFullscreen();
     else el.requestFullscreen?.();
   }
-
-  // Build a system-console log from sim state + recent actions.
-  const consoleLines = useMemo(() => {
-    const lines: string[] = [];
-    lines.push(`status: ${sim.status}`);
-    if ((personas ?? []).length) lines.push(`graph: ${(personas ?? []).length} nodes, ${(relations ?? []).length} edges`);
-    if (sim.status === "running" || sim.status === "completed") lines.push(`round ${sim.current_round}/${sim.total_rounds}`);
-    (actions ?? []).slice(-6).forEach((a) => {
-      const p = a.persona_id ? personaById[a.persona_id] : undefined;
-      lines.push(`[r${a.round}] ${(p?.name ?? "agent").slice(0, 18)}: ${a.content.slice(0, 60)}`);
-    });
-    if (sim.status === "completed") lines.push("✓ simulation completed — report generated");
-    if (sim.error) lines.push(`✗ ${sim.error}`);
-    return lines;
-  }, [sim, personas, relations, actions, personaById]);
 
   const hasGraph = (personas ?? []).length > 0;
 
