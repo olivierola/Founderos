@@ -6,6 +6,10 @@ import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { useTheme } from "@/lib/theme-context";
+
+const DARK_BG = "#0a0a0a";
+const LIGHT_BG = "#ffffff";
 
 interface Props { boardId: string; onBack: () => void }
 
@@ -17,7 +21,9 @@ interface Scene { elements: readonly unknown[]; appState?: Record<string, unknow
 // board row and sync collaborators via Supabase Realtime.
 export function WhiteboardEditor({ boardId, onBack }: Props) {
   const { user } = useAuth();
+  const { theme } = useTheme();
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const [apiReady, setApiReady] = useState(0);
   const [title, setTitle] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -44,15 +50,14 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
   const initialScene = board?.scene ?? { elements: [] };
   const onApiReady = useCallback((api: ExcalidrawImperativeAPI) => {
     apiRef.current = api;
+    setApiReady((n) => n + 1);
   }, []);
 
   // Debounced save of the current scene.
   const persistScene = useCallback((elements: readonly unknown[], appState: Record<string, unknown>) => {
     if (applyingRemote.current) return;
-    const subset = {
-      viewBackgroundColor: appState.viewBackgroundColor,
-      gridSize: appState.gridSize,
-    };
+    // Don't persist viewBackgroundColor — it's theme-driven, not part of content.
+    const subset = { gridSize: appState.gridSize };
     const hash = JSON.stringify(elements);
     if (hash === lastLocalHash.current) return; // no element change (pure pan/zoom)
     lastLocalHash.current = hash;
@@ -85,6 +90,14 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [boardId]);
+
+  // The canvas background always follows the app theme (the whiteboard has no
+  // custom bg of its own). Re-apply whenever the theme changes or the API mounts.
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    api.updateScene({ appState: { viewBackgroundColor: theme === "dark" ? DARK_BG : LIGHT_BG } });
+  }, [theme, apiReady]);
 
   async function saveTitle(t: string) {
     const title = t.trim() || "Untitled board";
@@ -127,10 +140,14 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
       {/* Excalidraw canvas (smooth background, full toolset) */}
       <div className="min-h-0 flex-1">
         <Excalidraw
+          theme={theme}
           excalidrawAPI={onApiReady}
           initialData={{
             elements: (initialScene.elements ?? []) as any,
-            appState: { viewBackgroundColor: "#ffffff", currentItemFontFamily: 1 },
+            appState: {
+              viewBackgroundColor: theme === "dark" ? DARK_BG : LIGHT_BG,
+              currentItemFontFamily: 1,
+            },
             scrollToContent: true,
           }}
           onChange={(elements, appState) => persistScene(elements, appState as any)}
