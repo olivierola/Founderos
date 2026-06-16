@@ -68,18 +68,11 @@ async function doPrepare(admin: ReturnType<typeof createServiceClient>, simId: s
     if (archs.length === 0) throw new Error("No archetypes generated");
 
     await admin.from("sim_personas").delete().eq("simulation_id", simId);
+    await admin.from("sim_relations").delete().eq("simulation_id", simId);
 
-    // Distribute population across archetypes by weight (min 1 each).
+    // 1) Insert the archetypes as hidden SEED nodes (is_archetype=true).
     const weights = archs.map((a: any) => Math.max(0.01, Number(a.weight) || 0.5));
-    const wsum = weights.reduce((s, w) => s + w, 0);
-    let assigned = 0;
-    const pops = weights.map((w, i) => {
-      const base = i === weights.length - 1 ? populationSize - assigned : Math.max(1, Math.round((w / wsum) * populationSize));
-      assigned += base;
-      return Math.max(1, base);
-    });
-
-    const rows = archs.map((a: any, i: number) => ({
+    const archRows = archs.map((a: any, i: number) => ({
       simulation_id: simId, workspace_id: sim.workspace_id,
       name: String(a.name || `Archetype ${i + 1}`).slice(0, 80),
       role: String(a.role || "").slice(0, 120) || null,
@@ -87,50 +80,93 @@ async function doPrepare(admin: ReturnType<typeof createServiceClient>, simId: s
       stance: String(a.stance || "").slice(0, 300) || null,
       traits: { influence: a.influence ?? "medium", sentiment: a.sentiment ?? "neutral" },
       avatar_emoji: EMOJIS[i % EMOJIS.length],
-      is_archetype: true,
-      population: pops[i],
+      is_archetype: true, population: 0,
       sentiment_score: SENTIMENT_SCORE[String(a.sentiment)] ?? 0,
       cluster: String(a.cluster || "").slice(0, 60) || null,
     }));
-    const { data: inserted, error: insErr } = await admin.from("sim_personas").insert(rows).select("id");
-    if (insErr) throw new Error(insErr.message);
+    const { data: archIns, error: aErr } = await admin.from("sim_personas").insert(archRows).select("id");
+    if (aErr) throw new Error(aErr.message);
+    const archIds = (archIns ?? []).map((r: any) => r.id);
+    const idxByKey = new Map<string, number>();
+    archs.forEach((a: any, i: number) => { if (a.key) idxByKey.set(String(a.key), i); });
 
-    // Map archetype keys -> inserted persona ids, then insert relations.
-    const idByKey = new Map<string, string>();
-    const ids = (inserted ?? []).map((r: any) => r.id);
-    archs.forEach((a: any, i: number) => { if (a.key && inserted?.[i]) idByKey.set(String(a.key), inserted[i].id); });
-    let relRows = relations
-      .map((r: any) => ({
-        simulation_id: simId, workspace_id: sim.workspace_id,
-        source_id: idByKey.get(String(r.source)) ?? null,
-        target_id: idByKey.get(String(r.target)) ?? null,
-        kind: ["ally", "rival", "mentor", "follower", "peer", "influences"].includes(r.kind) ? r.kind : "influences",
-        label: String(r.label || "").slice(0, 60) || null,
-        strength: Math.min(1, Math.max(0, Number(r.strength) || 0.5)),
-      }))
-      .filter((r) => r.source_id && r.target_id && r.source_id !== r.target_id);
+    // 2) Distribute the population across archetypes by weight.
+    const wsum = weights.reduce((s, w) => s + w, 0);
+    let assigned = 0;
+    const pops = weights.map((w, i) => {
+      const base = i === weights.length - 1 ? populationSize - assigned : Math.max(1, Math.round((w / wsum) * populationSize));
+      assigned += base; return Math.max(1, base);
+    });
 
-    // Fallback: guarantee a connected graph even if the LLM omitted relations.
-    // Hubs = highest-influence archetypes; everyone links to a hub + a neighbor.
-    if (relRows.length < ids.length - 1) {
-      const infRank = (a: any) => ({ high: 3, medium: 2, low: 1 }[String(a.influence)] ?? 2);
-      const order = ids.map((id, i) => ({ id, w: infRank(archs[i]) })).sort((a, b) => b.w - a.w);
-      const hubs = order.slice(0, Math.min(3, order.length)).map((o) => o.id);
-      const synth: typeof relRows = [];
-      ids.forEach((id, i) => {
-        const hub = hubs[i % hubs.length];
-        if (hub && hub !== id) synth.push({ simulation_id: simId, workspace_id: sim.workspace_id, source_id: hub, target_id: id, kind: "influences", label: null, strength: 0.5 });
-        const neighbor = ids[(i + 1) % ids.length];
-        if (neighbor && neighbor !== id) synth.push({ simulation_id: simId, workspace_id: sim.workspace_id, source_id: id, target_id: neighbor, kind: "peer", label: null, strength: 0.3 });
-      });
-      // Merge, de-duplicating by (source,target).
-      const seen = new Set(relRows.map((r) => `${r.source_id}>${r.target_id}`));
-      for (const r of synth) { const k = `${r.source_id}>${r.target_id}`; if (!seen.has(k)) { seen.add(k); relRows.push(r); } }
+    // 3) Instantiate ONE agent node per population unit (1 node = 1 agent),
+    // sampled from its archetype with small sentiment variation.
+    const FIRST = ["Alex", "Sam", "Jordan", "Taylor", "Casey", "Riley", "Morgan", "Jamie", "Avery", "Quinn", "Drew", "Sky", "Noa", "Remy", "Wren", "Eli", "Mara", "Ivo", "Lia", "Theo", "Zoe", "Kai", "Nina", "Owen", "Maya"];
+    const agentRows: any[] = [];
+    const agentArchIdx: number[] = []; // archetype index per agent (for relation derivation)
+    pops.forEach((count, ai) => {
+      const a = archs[ai];
+      const base = SENTIMENT_SCORE[String(a.sentiment)] ?? 0;
+      for (let k = 0; k < count; k++) {
+        const jitter = (Math.random() - 0.5) * 0.4;
+        agentRows.push({
+          simulation_id: simId, workspace_id: sim.workspace_id,
+          name: `${FIRST[(agentRows.length) % FIRST.length]} ${String(a.name || "Agent").split(" ")[0]}`.slice(0, 60),
+          role: String(a.role || "").slice(0, 120) || null,
+          bio: String(a.bio || "").slice(0, 600) || null,
+          stance: String(a.stance || "").slice(0, 300) || null,
+          traits: { influence: a.influence ?? "medium", sentiment: a.sentiment ?? "neutral" },
+          avatar_emoji: EMOJIS[(ai + k) % EMOJIS.length],
+          is_archetype: false, population: 1,
+          sentiment_score: Math.max(-1, Math.min(1, base + jitter)),
+          cluster: String(a.cluster || `Cluster ${ai + 1}`).slice(0, 60),
+          archetype_id: archIds[ai] ?? null,
+        });
+        agentArchIdx.push(ai);
+      }
+    });
+    // Insert agents in batches (Postgres/PostgREST payload limits).
+    const agentIds: string[] = [];
+    for (let i = 0; i < agentRows.length; i += 200) {
+      const { data: chunk, error: gErr } = await admin.from("sim_personas").insert(agentRows.slice(i, i + 200)).select("id");
+      if (gErr) throw new Error(gErr.message);
+      (chunk ?? []).forEach((r: any) => agentIds.push(r.id));
     }
-    if (relRows.length) await admin.from("sim_relations").insert(relRows);
+
+    // 4) Derive agent↔agent relations from archetype relations + intra-cluster.
+    // Group agent ids by archetype index.
+    const byArch: Record<number, string[]> = {};
+    agentArchIdx.forEach((ai, gi) => { (byArch[ai] ??= []).push(agentIds[gi]); });
+    const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+    const seen = new Set<string>();
+    const relRows: any[] = [];
+    const addRel = (s: string, t: string, kind: string, strength: number, label: string | null) => {
+      if (!s || !t || s === t) return;
+      const key = `${s}>${t}`; if (seen.has(key)) return; seen.add(key);
+      relRows.push({ simulation_id: simId, workspace_id: sim.workspace_id, source_id: s, target_id: t, kind, label, strength });
+    };
+    // a) Cross-archetype: for each archetype relation, connect a few agent pairs.
+    for (const r of relations) {
+      const si = idxByKey.get(String(r.source)), ti = idxByKey.get(String(r.target));
+      if (si === undefined || ti === undefined || si === ti) continue;
+      const src = byArch[si] ?? [], tgt = byArch[ti] ?? [];
+      const kind = ["ally", "rival", "mentor", "follower", "peer", "influences"].includes(r.kind) ? r.kind : "influences";
+      const strength = Math.min(1, Math.max(0, Number(r.strength) || 0.5));
+      const pairs = Math.min(Math.max(2, Math.round(Math.min(src.length, tgt.length) * 0.5)), 30);
+      for (let i = 0; i < pairs; i++) addRel(pick(src), pick(tgt), kind, strength, String(r.label || "").slice(0, 60) || null);
+    }
+    // b) Intra-cluster: each agent links to 1-2 peers from the same archetype.
+    for (const ids of Object.values(byArch)) {
+      for (let i = 0; i < ids.length; i++) {
+        addRel(ids[i], ids[(i + 1) % ids.length], "peer", 0.3, null);
+        if (ids.length > 4 && Math.random() < 0.5) addRel(ids[i], pick(ids), "peer", 0.25, null);
+      }
+    }
+    for (let i = 0; i < relRows.length; i += 500) {
+      await admin.from("sim_relations").insert(relRows.slice(i, i + 500));
+    }
 
     await admin.from("sim_simulations").update({ status: "ready", population_size: populationSize, updated_at: new Date().toISOString() }).eq("id", simId);
-    return { status: 200, body: { ok: true, archetype_count: rows.length, population: populationSize, relations: relRows.length } };
+    return { status: 200, body: { ok: true, agents: agentIds.length, archetypes: archIds.length, relations: relRows.length } };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await admin.from("sim_simulations").update({ status: "failed", error: msg }).eq("id", simId);
@@ -146,16 +182,27 @@ async function doRound(admin: ReturnType<typeof createServiceClient>, simId: str
   if (sim.current_round >= sim.total_rounds) return { round: sim.current_round, actions: 0, done: true };
 
   const round = sim.current_round + 1;
-  const { data: personas } = await admin.from("sim_personas").select("id, name, role, stance").eq("simulation_id", simId).limit(30);
-  const list = personas ?? [];
-  if (list.length === 0) throw new Error("No personas");
+  // Count agents, then fetch only a rotating WINDOW of actors for this round so
+  // cost stays bounded even at 1000 agents (the whole population still drifts
+  // via influence propagation below).
+  const { count } = await admin
+    .from("sim_personas").select("id", { count: "exact", head: true })
+    .eq("simulation_id", simId).eq("is_archetype", false);
+  const total = count ?? 0;
+  if (total === 0) throw new Error("No agents");
+  const groupSize = 8;
+  const offset = ((round - 1) * groupSize) % Math.max(groupSize, total);
+  const { data: personas } = await admin
+    .from("sim_personas").select("id, name, role, stance")
+    .eq("simulation_id", simId).eq("is_archetype", false)
+    .order("created_at", { ascending: true })
+    .range(offset, offset + groupSize - 1);
+  const actors = personas ?? [];
+  if (actors.length === 0) throw new Error("No agents in window");
+  const list = actors; // names map for inserting actions
 
   const { data: recent } = await admin.from("sim_actions").select("content").eq("simulation_id", simId).order("created_at", { ascending: false }).limit(20);
   const recentText = (recent ?? []).map((a: any) => `- ${a.content}`).reverse().join("\n");
-
-  const groupSize = 6;
-  const offset = ((round - 1) * groupSize) % Math.max(groupSize, list.length);
-  const actors = [...list.slice(offset), ...list.slice(0, offset)].slice(0, groupSize);
 
   const roster = actors.map((p: any) => `${p.name} — ${p.role ?? "participant"} — stance: ${p.stance ?? "?"}`).join("\n");
   const systemPrompt =

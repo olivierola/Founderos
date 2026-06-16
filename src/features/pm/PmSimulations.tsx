@@ -192,7 +192,8 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
       const { data } = await supabase
         .from("sim_personas")
         .select("id, name, role, bio, stance, avatar_emoji, traits, population, sentiment_score, cluster")
-        .eq("simulation_id", simId).order("population", { ascending: false });
+        .eq("simulation_id", simId).eq("is_archetype", false)
+        .order("created_at", { ascending: true }).limit(1000);
       return (data ?? []) as Persona[];
     },
     refetchInterval: (sim?.status === "running") ? 4000 : false, // sentiment_score evolves
@@ -200,7 +201,7 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
   const { data: relations } = useQuery({
     queryKey: ["sim_relations", simId],
     queryFn: async () => {
-      const { data } = await supabase.from("sim_relations").select("source_id, target_id, kind, label, strength").eq("simulation_id", simId);
+      const { data } = await supabase.from("sim_relations").select("source_id, target_id, kind, label, strength").eq("simulation_id", simId).limit(5000);
       return (data ?? []) as GraphRelation[];
     },
   });
@@ -324,8 +325,8 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
             <p className="mt-1 text-sm text-muted-foreground">{sim.question}</p>
             <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
               <span className={cn("rounded-full px-2 py-0.5 font-medium", st.cls)}>{st.label}</span>
-              <span>{(personas ?? []).length} archetypes</span><span>·</span>
-              <span>{(sim as any).population_size || sim.persona_count} agents</span><span>·</span>
+              <span>{(personas ?? []).length} agents</span><span>·</span>
+              <span>{(relations ?? []).length} relations</span><span>·</span>
               <span>{sim.total_rounds} rounds</span>
             </div>
           </div>

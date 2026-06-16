@@ -44,9 +44,10 @@ export function SimulationGraph({
     const h = el.clientHeight || height || 460;
     el.innerHTML = "";
 
+    const big = personas.length > 120; // dense graph → simplify for performance
     const maxPop = Math.max(1, ...personas.map((p) => p.population || 1));
-    // Small dot nodes (MiroFish-style): 4–11px scaled by population.
-    const radius = (p: GraphPersona) => 4 + 7 * Math.sqrt((p.population || 1) / maxPop);
+    // Small dot nodes (MiroFish-style): smaller when the graph is dense.
+    const radius = (p: GraphPersona) => (big ? 3.5 : 4 + 7 * Math.sqrt((p.population || 1) / maxPop));
 
     const nodes: SimNode[] = personas.map((p) => ({ ...p }));
     const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -64,18 +65,19 @@ export function SimulationGraph({
 
     svg.call(d3zoom<SVGSVGElement, unknown>().scaleExtent([0.2, 4]).on("zoom", (e) => g.attr("transform", e.transform)) as any);
 
-    // Links — clearly visible grey lines (curved), width ∝ strength.
+    // Links — clearly visible grey lines, width ∝ strength. Straight + lighter
+    // when the graph is dense (perf).
     const link = g.append("g").selectAll("path").data(links).enter().append("path")
       .attr("fill", "none")
       .attr("stroke", "#8b93a1")
-      .attr("stroke-opacity", 0.55)
-      .attr("stroke-width", (d) => 1 + 2 * (d.strength || 0.5))
-      .attr("marker-end", "url(#sim-arrow)");
+      .attr("stroke-opacity", big ? 0.3 : 0.55)
+      .attr("stroke-width", (d) => (big ? 0.6 : 1 + 2 * (d.strength || 0.5)))
+      .attr("marker-end", big ? null : "url(#sim-arrow)");
 
-    const linkLabel = g.append("g").selectAll("text").data(links).enter().append("text")
+    const linkLabel = g.append("g").selectAll("text").data(big ? [] : links).enter().append("text")
       .text((d) => d.label || d.kind)
       .attr("font-size", 8).attr("fill", "hsl(var(--muted-foreground))").attr("text-anchor", "middle").attr("pointer-events", "none")
-      .style("display", showLabels ? "block" : "none");
+      .style("display", showLabels && !big ? "block" : "none");
 
     const node = g.append("g").selectAll("g").data(nodes).enter().append("g").style("cursor", "pointer")
       .on("click", (_e, d) => onSelect?.(d));
@@ -87,9 +89,11 @@ export function SimulationGraph({
       .attr("stroke", "hsl(var(--background))")
       .attr("stroke-width", 1.5);
 
-    node.append("text").text((d) => d.name)
-      .attr("text-anchor", "middle").attr("dy", (d) => radius(d) + 11)
-      .attr("font-size", 10).attr("fill", "hsl(var(--foreground))").attr("pointer-events", "none");
+    if (!big) {
+      node.append("text").text((d) => d.name)
+        .attr("text-anchor", "middle").attr("dy", (d) => radius(d) + 11)
+        .attr("font-size", 10).attr("fill", "hsl(var(--foreground))").attr("pointer-events", "none");
+    }
 
     node.append("title").text((d) => `${d.name}\n${d.role ?? ""}\npopulation: ${d.population}\nsentiment: ${d.sentiment_score.toFixed(2)}`);
 
@@ -104,6 +108,7 @@ export function SimulationGraph({
 
     function curve(d: SimLink): string {
       const sx = d.source.x ?? 0, sy = d.source.y ?? 0, tx = d.target.x ?? 0, ty = d.target.y ?? 0;
+      if (big) return `M${sx},${sy} L${tx},${ty}`; // straight lines when dense
       const dx = tx - sx, dy = ty - sy, dist = Math.hypot(dx, dy) || 1;
       const off = Math.max(20, dist * 0.16);
       const cx = (sx + tx) / 2 - dy / dist * off, cy = (sy + ty) / 2 + dx / dist * off;
