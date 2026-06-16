@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { MarketingShell, DotGrid } from "./MarketingShell";
 import { ArchitectureDiagram } from "./Illustrations";
+import { MarketingHero } from "./MarketingHero";
 
 const STATS = [
   { value: "57", label: "Integrations" },
@@ -74,69 +75,9 @@ const FAQ = [
 
 export function HomePage() {
   return (
-    <MarketingShell>
-      {/* ====== Hero — plein écran, deux colonnes : pitch + mockup cockpit ====== */}
-      <section className="relative flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden">
-        <DotGrid className="[mask-image:radial-gradient(ellipse_at_top,rgba(0,0,0,1),transparent_75%)]" />
-        {/* Glow d'ambiance */}
-        <div className="pointer-events-none absolute left-1/2 top-0 -z-10 h-[480px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,hsl(var(--primary-soft)/0.18),transparent_70%)] blur-2xl" />
-        <div className="relative mx-auto w-full max-w-7xl px-4 py-16 sm:px-6">
-          <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_1fr]">
-            {/* Colonne texte */}
-            <div className="text-center lg:text-left">
-              <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-1 text-xs text-muted-foreground">
-                <Building2 className="h-3 w-3" />
-                For technical agencies
-              </span>
-              <h1 className="mt-6 text-balance text-5xl font-semibold leading-[1.04] tracking-tight sm:text-6xl lg:text-7xl">
-                The cockpit{" "}
-                <span className="bg-gradient-to-r from-[hsl(var(--primary-soft))] to-[hsl(var(--accent-2))] bg-clip-text text-transparent">
-                  agencies
-                </span>{" "}
-                run on.
-              </h1>
-              <p className="mx-auto mt-6 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg lg:mx-0">
-                Manage every client SaaS from one panel — billing, infra, deploys, secrets, support
-                and AI agents. Replace 12 dashboards with one.
-              </p>
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
-                <Link
-                  to="/signup"
-                  className="group inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-all hover:opacity-90 hover:shadow-md"
-                >
-                  Start free
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </Link>
-                <Link
-                  to="/features"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/60 px-5 py-2.5 text-sm transition-colors hover:bg-secondary"
-                >
-                  See features
-                </Link>
-              </div>
-              <div className="mt-3 text-xs text-muted-foreground">
-                No credit card · 14-day Pro trial
-              </div>
-
-              {/* Stats inline sous le pitch */}
-              <div className="mt-10 grid max-w-lg grid-cols-4 gap-px overflow-hidden rounded-xl border border-border/60 bg-border/60 lg:mx-0 mx-auto">
-                {STATS.map((s) => (
-                  <div key={s.label} className="bg-card px-3 py-4 text-center">
-                    <div className="text-xl font-semibold tabular-nums sm:text-2xl">{s.value}</div>
-                    <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Colonne mockup cockpit (pur CSS — aucune image externe) */}
-            <div className="relative">
-              <div className="absolute -inset-6 -z-10 rounded-3xl bg-gradient-to-tr from-[hsl(var(--primary-soft)/0.18)] via-transparent to-[hsl(var(--accent-2)/0.18)] blur-3xl" />
-              <CockpitMockup />
-            </div>
-          </div>
-        </div>
-      </section>
+    <MarketingShell hideHeader>
+      {/* ====== Hero — full-screen video hero ====== */}
+      <MarketingHero />
 
       {/* ====== Logo marquee — deux rangées de pastilles qui défilent ====== */}
       <div className="overflow-hidden border-y border-border/40 bg-card/30 py-10">

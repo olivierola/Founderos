@@ -12,13 +12,14 @@ const NAV_LINKS = [
   { to: "/docs", label: "Docs" },
 ];
 
-export function MarketingShell({ children }: { children: ReactNode }) {
+export function MarketingShell({ children, hideHeader = false }: { children: ReactNode; hideHeader?: boolean }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { pathname } = useLocation();
 
   return (
     <div className="dark marketing min-h-screen bg-background text-foreground">
-      {/* Top nav */}
+      {/* Top nav — hidden when the page provides its own (e.g. the video hero). */}
+      {!hideHeader && (
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2">
@@ -109,6 +110,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
           </div>
         )}
       </header>
+      )}
 
       <main key={pathname}>{children}</main>
 
