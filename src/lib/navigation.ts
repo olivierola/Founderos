@@ -236,14 +236,17 @@ export const MODULES: ModuleNavItem[] = [
   },
   {
     slug: "office",
-    label: "Bureautique",
+    label: "Création",
     icon: FileStack,
     color: "text-orange-400/60",
     subItems: [
-      { label: "Library", slug: "library" },
-      { label: "Documents", slug: "documents" },
-      { label: "Spreadsheets", slug: "spreadsheets" },
-      { label: "Presentations", slug: "presentations" },
+      { label: "Library", slug: "library", group: "Documents" },
+      { label: "Documents", slug: "documents", group: "Documents" },
+      { label: "Spreadsheets", slug: "spreadsheets", group: "Documents" },
+      { label: "Presentations", slug: "presentations", group: "Documents" },
+      { label: "Image studio", slug: "gen-image", group: "Gen AI" },
+      { label: "Video studio", slug: "gen-video", group: "Gen AI" },
+      { label: "Copywriter", slug: "gen-copy", group: "Gen AI" },
     ],
   },
   {

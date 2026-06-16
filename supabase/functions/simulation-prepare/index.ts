@@ -97,8 +97,9 @@ async function doPrepare(admin: ReturnType<typeof createServiceClient>, simId: s
 
     // Map archetype keys -> inserted persona ids, then insert relations.
     const idByKey = new Map<string, string>();
+    const ids = (inserted ?? []).map((r: any) => r.id);
     archs.forEach((a: any, i: number) => { if (a.key && inserted?.[i]) idByKey.set(String(a.key), inserted[i].id); });
-    const relRows = relations
+    let relRows = relations
       .map((r: any) => ({
         simulation_id: simId, workspace_id: sim.workspace_id,
         source_id: idByKey.get(String(r.source)) ?? null,
@@ -108,6 +109,24 @@ async function doPrepare(admin: ReturnType<typeof createServiceClient>, simId: s
         strength: Math.min(1, Math.max(0, Number(r.strength) || 0.5)),
       }))
       .filter((r) => r.source_id && r.target_id && r.source_id !== r.target_id);
+
+    // Fallback: guarantee a connected graph even if the LLM omitted relations.
+    // Hubs = highest-influence archetypes; everyone links to a hub + a neighbor.
+    if (relRows.length < ids.length - 1) {
+      const infRank = (a: any) => ({ high: 3, medium: 2, low: 1 }[String(a.influence)] ?? 2);
+      const order = ids.map((id, i) => ({ id, w: infRank(archs[i]) })).sort((a, b) => b.w - a.w);
+      const hubs = order.slice(0, Math.min(3, order.length)).map((o) => o.id);
+      const synth: typeof relRows = [];
+      ids.forEach((id, i) => {
+        const hub = hubs[i % hubs.length];
+        if (hub && hub !== id) synth.push({ simulation_id: simId, workspace_id: sim.workspace_id, source_id: hub, target_id: id, kind: "influences", label: null, strength: 0.5 });
+        const neighbor = ids[(i + 1) % ids.length];
+        if (neighbor && neighbor !== id) synth.push({ simulation_id: simId, workspace_id: sim.workspace_id, source_id: id, target_id: neighbor, kind: "peer", label: null, strength: 0.3 });
+      });
+      // Merge, de-duplicating by (source,target).
+      const seen = new Set(relRows.map((r) => `${r.source_id}>${r.target_id}`));
+      for (const r of synth) { const k = `${r.source_id}>${r.target_id}`; if (!seen.has(k)) { seen.add(k); relRows.push(r); } }
+    }
     if (relRows.length) await admin.from("sim_relations").insert(relRows);
 
     await admin.from("sim_simulations").update({ status: "ready", population_size: populationSize, updated_at: new Date().toISOString() }).eq("id", simId);

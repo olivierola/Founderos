@@ -102,6 +102,7 @@ import {
 // Office (Bureautique)
 import { Suspense, lazy } from "react";
 import { OfficeLibraryPage } from "@/features/office/OfficeLibrary";
+import { OfficeCopywriterPage, OfficeImageStudioPage, OfficeVideoStudioPage } from "@/features/office/OfficeGenAi";
 // Office editors are lazy-loaded — the Plate document editor pulls a large
 // dependency graph (media, tables, AI…), so we keep it out of the initial bundle.
 const DocumentEditorPage = lazy(() =>
@@ -327,6 +328,9 @@ const PAGES: Record<string, PageEl> = {
   "office/documents": <OfficeLibraryPage initialKind="document" />,
   "office/spreadsheets": <OfficeLibraryPage initialKind="spreadsheet" />,
   "office/presentations": <OfficeLibraryPage initialKind="presentation" />,
+  "office/gen-image": <OfficeImageStudioPage />,
+  "office/gen-video": <OfficeVideoStudioPage />,
+  "office/gen-copy": <OfficeCopywriterPage />,
 
   // Code group (under the merged DevOps module)
   "devops/overview": <CodeOverviewPage />,
