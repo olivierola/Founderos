@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FlaskConical, Loader2, Plus, Trash2, ArrowLeft, Users, Play, Sparkles, Send,
-  TrendingUp, TrendingDown, Minus, MessageSquare, FileText,
+  TrendingUp, TrendingDown, Minus, MessageSquare, FileText, RefreshCw, Maximize2, Terminal,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -97,7 +97,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-6 py-6">
       <PageHeader
         title="Simulations"
         description="Test an idea, product or scenario against a population of AI personas — and predict how it plays out."
@@ -175,6 +175,8 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState<string | null>(null);
   const [activePersona, setActivePersona] = useState<Persona | null>(null);
+  const [showLabels, setShowLabels] = useState(true);
+  const graphPaneRef = useRef<HTMLDivElement>(null);
 
   const { data: sim } = useQuery({
     queryKey: ["sim", simId],
@@ -247,72 +249,135 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
   if (!sim) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   const st = STATUS_META[sim.status];
 
+  function refreshGraph() {
+    queryClient.invalidateQueries({ queryKey: ["sim_personas", simId] });
+    queryClient.invalidateQueries({ queryKey: ["sim_relations", simId] });
+  }
+  function fullscreen() {
+    const el = graphPaneRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else el.requestFullscreen?.();
+  }
+
+  // Build a system-console log from sim state + recent actions.
+  const consoleLines = useMemo(() => {
+    const lines: string[] = [];
+    lines.push(`status: ${sim.status}`);
+    if ((personas ?? []).length) lines.push(`graph: ${(personas ?? []).length} nodes, ${(relations ?? []).length} edges`);
+    if (sim.status === "running" || sim.status === "completed") lines.push(`round ${sim.current_round}/${sim.total_rounds}`);
+    (actions ?? []).slice(-6).forEach((a) => {
+      const p = a.persona_id ? personaById[a.persona_id] : undefined;
+      lines.push(`[r${a.round}] ${(p?.name ?? "agent").slice(0, 18)}: ${a.content.slice(0, 60)}`);
+    });
+    if (sim.status === "completed") lines.push("✓ simulation completed — report generated");
+    if (sim.error) lines.push(`✗ ${sim.error}`);
+    return lines;
+  }, [sim, personas, relations, actions, personaById]);
+
+  const hasGraph = (personas ?? []).length > 0;
+
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> Simulations</button>
-        <span className="mx-1 h-4 w-px bg-border" />
-        <h1 className="text-lg font-semibold">{sim.name}</h1>
-        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", st.cls)}>{st.label}</span>
-      </div>
-      <p className="max-w-3xl text-sm text-muted-foreground">{sim.question}</p>
-      {sim.error && <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{sim.error}</div>}
-
-      {/* Step bar / actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        {(sim.status === "draft" || sim.status === "failed") && (
-          <Button onClick={generatePersonas} disabled={busy === "prepare"}>
-            {busy === "prepare" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1.5 h-4 w-4" />} Generate personas
-          </Button>
-        )}
-        {sim.status === "preparing" && <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Generating personas…</span>}
-        {(sim.status === "ready" || sim.status === "completed") && (
-          <Button onClick={runSimulation} disabled={busy === "run"}>
-            {busy === "run" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
-            {sim.status === "completed" ? "Re-run simulation" : "Run simulation"}
-          </Button>
-        )}
-        {(sim.status === "queued" || sim.status === "running") && (
-          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Running — round {sim.current_round}/{sim.total_rounds}
-          </span>
-        )}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {(personas ?? []).length} archetypes · {(sim as any).population_size || sim.persona_count} agents · {sim.total_rounds} rounds
-        </span>
-      </div>
-
-      {/* Persona influence graph (MiroFish-style) */}
-      {(personas ?? []).length > 0 && (
-        <div>
-          <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-            <Users className="h-4 w-4 text-muted-foreground" /> Influence graph
-            <span className="text-[11px] font-normal text-muted-foreground">· node size = population · color = live sentiment · arrows = influence</span>
+    <div className="flex h-[calc(100vh-3.5rem)] w-full overflow-hidden">
+      {/* ── Left: graph pane ── */}
+      <div ref={graphPaneRef} className="relative flex min-w-0 flex-1 flex-col border-r border-border bg-background">
+        <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /></button>
+          <span className="text-sm font-semibold">Graph Relationship Visualization</span>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => setShowLabels((v) => !v)}
+              className={cn("inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs transition-colors", showLabels ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary")}>
+              <span className={cn("h-3.5 w-6 rounded-full p-0.5 transition-colors", showLabels ? "bg-primary" : "bg-secondary")}>
+                <span className={cn("block h-2.5 w-2.5 rounded-full bg-white transition-transform", showLabels && "translate-x-2.5")} />
+              </span>
+              Show Edge Labels
+            </button>
+            <button onClick={refreshGraph} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-secondary"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>
+            <button onClick={fullscreen} className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-secondary"><Maximize2 className="h-3.5 w-3.5" /></button>
           </div>
-          <SimulationGraph
-            personas={personas as any}
-            relations={relations ?? []}
-            onSelect={(p) => setActivePersona((personas ?? []).find((x) => x.id === p.id) ?? null)}
-          />
         </div>
-      )}
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-        {/* Left: report + live feed */}
-        <div className="space-y-5">
-          {sim.report && <ReportCard report={sim.report} />}
+        <div className="relative min-h-0 flex-1">
+          {hasGraph ? (
+            <SimulationGraph fill showLabels={showLabels}
+              personas={personas as any} relations={relations ?? []}
+              onSelect={(p) => setActivePersona((personas ?? []).find((x) => x.id === p.id) ?? null)} />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
+              <FlaskConical className="h-7 w-7 opacity-50" />
+              {sim.status === "preparing" ? "Building the persona graph…" : "Generate personas to build the influence graph."}
+            </div>
+          )}
+
+          {/* Legend overlay */}
+          {hasGraph && <GraphLegend personas={personas ?? []} />}
+        </div>
+      </div>
+
+      {/* ── Right: steps + console ── */}
+      <div className="flex w-[clamp(360px,38%,560px)] shrink-0 flex-col bg-card">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           <div>
-            <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><MessageSquare className="h-4 w-4 text-muted-foreground" /> Activity feed</div>
-            {(actions ?? []).length === 0 ? (
-              <p className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
-                No activity yet. Run the simulation to watch personas react in real time.
-              </p>
-            ) : (
+            <h1 className="text-lg font-semibold">{sim.name}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{sim.question}</p>
+            <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span className={cn("rounded-full px-2 py-0.5 font-medium", st.cls)}>{st.label}</span>
+              <span>{(personas ?? []).length} archetypes</span><span>·</span>
+              <span>{(sim as any).population_size || sim.persona_count} agents</span><span>·</span>
+              <span>{sim.total_rounds} rounds</span>
+            </div>
+          </div>
+
+          {/* Step 1 — personas */}
+          <StepCard index="01" title="Persona generation"
+            status={sim.status === "draft" ? "pending" : sim.status === "preparing" ? "processing" : "complete"}>
+            <p className="text-sm text-muted-foreground">The model extracts archetypes from your seed and scenario, then distributes the population across them.</p>
+            {(sim.status === "draft" || sim.status === "failed") && (
+              <Button className="mt-3" onClick={generatePersonas} disabled={busy === "prepare"}>
+                {busy === "prepare" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1.5 h-4 w-4" />} Generate personas
+              </Button>
+            )}
+            {hasGraph && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[...new Set((personas ?? []).map((p) => p.cluster).filter(Boolean))].slice(0, 10).map((c) => (
+                  <span key={c as string} className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{c}</span>
+                ))}
+              </div>
+            )}
+          </StepCard>
+
+          {/* Step 2 — run */}
+          <StepCard index="02" title="Run simulation"
+            status={sim.status === "completed" ? "complete" : (sim.status === "running" || sim.status === "queued") ? "processing" : hasGraph ? "ready" : "pending"}>
+            <p className="text-sm text-muted-foreground">The runner advances {sim.total_rounds} rounds. Personas react and influence propagates across the graph.</p>
+            {(sim.status === "ready" || sim.status === "completed") && (
+              <Button className="mt-3" onClick={runSimulation} disabled={busy === "run"}>
+                {busy === "run" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
+                {sim.status === "completed" ? "Re-run" : "Run simulation"}
+              </Button>
+            )}
+            {(sim.status === "queued" || sim.status === "running") && (
+              <div className="mt-3">
+                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div className="h-full bg-primary transition-all" style={{ width: `${Math.round((sim.current_round / Math.max(1, sim.total_rounds)) * 100)}%` }} />
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">Round {sim.current_round}/{sim.total_rounds}</div>
+              </div>
+            )}
+          </StepCard>
+
+          {/* Report */}
+          {sim.report && <ReportCard report={sim.report} />}
+
+          {/* Activity feed */}
+          {(actions ?? []).length > 0 && (
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><MessageSquare className="h-4 w-4 text-muted-foreground" /> Activity feed</div>
               <div className="space-y-2">
-                {(actions ?? []).map((a) => {
+                {(actions ?? []).slice(-40).map((a) => {
                   const p = a.persona_id ? personaById[a.persona_id] : undefined;
                   return (
-                    <div key={a.id} className="flex items-start gap-2.5 rounded-lg border border-border bg-card p-2.5">
+                    <div key={a.id} className="flex items-start gap-2.5 rounded-lg border border-border p-2.5">
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-sm">{p?.avatar_emoji ?? "🧑"}</span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 text-xs">
@@ -326,34 +391,66 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
                   );
                 })}
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: personas */}
-        <div>
-          <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><Users className="h-4 w-4 text-muted-foreground" /> Personas</div>
-          {(personas ?? []).length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">No personas yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {(personas ?? []).map((p) => (
-                <button key={p.id} onClick={() => setActivePersona(p)}
-                  className="flex w-full items-start gap-2.5 rounded-lg border border-border bg-card p-2.5 text-left transition-colors hover:border-foreground/30">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-base">{p.avatar_emoji ?? "🧑"}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{p.name}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">{p.role}</div>
-                  </div>
-                  {sim.status === "completed" && <MessageSquare className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                </button>
-              ))}
             </div>
           )}
+        </div>
+
+        {/* System console */}
+        <div className="shrink-0 border-t border-border bg-zinc-950 px-3 py-2 font-mono text-[11px] text-zinc-300">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500"><Terminal className="h-3 w-3" /> System dashboard</div>
+          <div className="max-h-28 space-y-0.5 overflow-y-auto">
+            {consoleLines.map((l, i) => <div key={i} className="truncate"><span className="text-zinc-600">{String(i).padStart(2, "0")}</span> {l}</div>)}
+          </div>
         </div>
       </div>
 
       {activePersona && <PersonaChat persona={activePersona} onClose={() => setActivePersona(null)} />}
+    </div>
+  );
+}
+
+// Entity-type style legend (bottom-left overlay), like MiroFish.
+function GraphLegend({ personas }: { personas: Persona[] }) {
+  const clusters = [...new Set(personas.map((p) => p.cluster).filter(Boolean))].slice(0, 8) as string[];
+  return (
+    <div className="absolute bottom-4 left-4 rounded-lg border border-border bg-card/90 p-3 text-xs shadow-lg backdrop-blur">
+      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sentiment</div>
+      <div className="space-y-1">
+        <Legend dot="#22c55e" label="Positive" />
+        <Legend dot="#94a3b8" label="Neutral" />
+        <Legend dot="#ef4444" label="Negative" />
+      </div>
+      {clusters.length > 0 && (
+        <>
+          <div className="mb-1.5 mt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Clusters</div>
+          <div className="flex max-w-[180px] flex-wrap gap-1">
+            {clusters.map((c) => <span key={c} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{c}</span>)}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+function Legend({ dot, label }: { dot: string; label: string }) {
+  return <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dot }} /> {label}</div>;
+}
+
+// MiroFish-style numbered step card.
+function StepCard({ index, title, status, children }: { index: string; title: string; status: "pending" | "ready" | "processing" | "complete"; children: React.ReactNode }) {
+  const badge = {
+    pending: { label: "Pending", cls: "bg-secondary text-muted-foreground" },
+    ready: { label: "Ready", cls: "bg-sky-500/15 text-sky-500" },
+    processing: { label: "Processing", cls: "bg-amber-500/15 text-amber-500" },
+    complete: { label: "Complete", cls: "bg-emerald-500/15 text-emerald-500" },
+  }[status];
+  return (
+    <div className={cn("rounded-xl border p-4", status === "processing" ? "border-primary/40" : "border-border")}>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="font-mono text-sm font-bold text-muted-foreground">{index}</span>
+        <span className="text-sm font-semibold">{title}</span>
+        <span className={cn("ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase", badge.cls)}>{badge.label}</span>
+      </div>
+      {children}
     </div>
   );
 }

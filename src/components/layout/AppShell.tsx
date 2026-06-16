@@ -117,5 +117,7 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/pm\/inbox(\/.*)?$/.test(pathname)) return true;
   // Project Whiteboard canvas (open board) — full-screen collaborative canvas.
   if (/\/app\/[^/]+\/[^/]+\/pm\/whiteboard(\/.*)?$/.test(pathname)) return true;
+  // Project Simulations — MiroFish-style two-pane full-screen workspace.
+  if (/\/app\/[^/]+\/[^/]+\/pm\/simulations(\/.*)?$/.test(pathname)) return true;
   return false;
 }

@@ -3,6 +3,7 @@ import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, f
 import { select } from "d3-selection";
 import { zoom as d3zoom } from "d3-zoom";
 import { drag as d3drag } from "d3-drag";
+import { cn } from "@/lib/utils";
 
 export interface GraphPersona {
   id: string; name: string; role: string | null; avatar_emoji: string | null;
@@ -24,12 +25,14 @@ function sentimentColor(s: number): string {
 // population), curved links = relations (width ∝ strength, label = kind). Pan,
 // zoom and drag; click a node to inspect / chat.
 export function SimulationGraph({
-  personas, relations, onSelect, height = 460,
+  personas, relations, onSelect, height, showLabels = true, fill = false,
 }: {
   personas: GraphPersona[];
   relations: GraphRelation[];
   onSelect?: (p: GraphPersona) => void;
   height?: number;
+  showLabels?: boolean;
+  fill?: boolean; // fill the parent container's height
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const simRef = useRef<Simulation<SimNode, undefined> | null>(null);
@@ -38,6 +41,7 @@ export function SimulationGraph({
     const el = ref.current;
     if (!el) return;
     const width = el.clientWidth || 800;
+    const h = el.clientHeight || height || 460;
     el.innerHTML = "";
 
     const maxPop = Math.max(1, ...personas.map((p) => p.population || 1));
@@ -49,7 +53,7 @@ export function SimulationGraph({
       .filter((r) => byId.has(r.source_id) && byId.has(r.target_id) && r.source_id !== r.target_id)
       .map((r) => ({ source: r.source_id, target: r.target_id, kind: r.kind, label: r.label, strength: r.strength }));
 
-    const svg = select(el).append("svg").attr("width", "100%").attr("height", height).attr("viewBox", `0 0 ${width} ${height}`);
+    const svg = select(el).append("svg").attr("width", "100%").attr("height", h).attr("viewBox", `0 0 ${width} ${h}`);
     const g = svg.append("g");
     // defs: arrowhead for directed influence.
     svg.append("defs").append("marker")
@@ -68,7 +72,8 @@ export function SimulationGraph({
 
     const linkLabel = g.append("g").selectAll("text").data(links).enter().append("text")
       .text((d) => d.label || d.kind)
-      .attr("font-size", 9).attr("fill", "hsl(var(--muted-foreground))").attr("text-anchor", "middle").attr("pointer-events", "none");
+      .attr("font-size", 9).attr("fill", "hsl(var(--muted-foreground))").attr("text-anchor", "middle").attr("pointer-events", "none")
+      .style("display", showLabels ? "block" : "none");
 
     const node = g.append("g").selectAll("g").data(nodes).enter().append("g").style("cursor", "pointer")
       .on("click", (_e, d) => onSelect?.(d));
@@ -96,10 +101,10 @@ export function SimulationGraph({
     const sim = forceSimulation<SimNode>(nodes)
       .force("link", forceLink<SimNode, SimLink>(links).id((d: any) => d.id).distance(110).strength((d) => 0.2 + 0.5 * (d.strength || 0.5)))
       .force("charge", forceManyBody().strength(-380))
-      .force("center", forceCenter(width / 2, height / 2))
+      .force("center", forceCenter(width / 2, h / 2))
       .force("collide", forceCollide<SimNode>().radius((d) => radius(d) + 16))
       .force("x", forceX(width / 2).strength(0.05))
-      .force("y", forceY(height / 2).strength(0.05));
+      .force("y", forceY(h / 2).strength(0.05));
     simRef.current = sim;
 
     function curve(d: SimLink): string {
@@ -124,7 +129,16 @@ export function SimulationGraph({
     );
 
     return () => { sim.stop(); el.innerHTML = ""; };
-  }, [personas, relations, height, onSelect]);
+  }, [personas, relations, height, onSelect, showLabels]);
 
-  return <div ref={ref} className="w-full overflow-hidden rounded-xl border border-border bg-[radial-gradient(circle,hsl(var(--border))_1px,transparent_1px)] [background-size:22px_22px]" style={{ height }} />;
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "overflow-hidden bg-[radial-gradient(circle,hsl(var(--border))_1px,transparent_1px)] [background-size:22px_22px]",
+        fill ? "h-full w-full" : "w-full rounded-xl border border-border",
+      )}
+      style={fill ? undefined : { height: height ?? 460 }}
+    />
+  );
 }
