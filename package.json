@@ -83,6 +83,8 @@
     "date-fns": "^4.4.0",
     "dedent": "^1.0.0",
     "docx": "^9.7.1",
+    "framer-motion": "^12.40.0",
+    "hls.js": "^1.6.16",
     "html2canvas": "^1.4.1",
     "html2canvas-pro": "^2.0.4",
     "js-yaml": "^4.2.0",
