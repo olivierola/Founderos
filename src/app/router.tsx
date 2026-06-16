@@ -213,43 +213,43 @@ const PAGES: Record<string, PageEl> = {
 
   // Finance was merged into SaaS Analytics (Revenue + Costs groups). The pages
   // are unchanged; only their route prefix moved to saas-analytics/*.
-  "saas-analytics/revenue": <RevenuePage />,
-  "saas-analytics/transactions": <TransactionsPage />,
-  "saas-analytics/mrr-movement": <MrrMovementPage />,
-  "saas-analytics/customers": <CustomersPage />,
-  "saas-analytics/subscriptions": <SubscriptionsPage />,
-  "saas-analytics/cohorts": <CohortsPage />,
-  "saas-analytics/forecasting": <ForecastingPage />,
-  "saas-analytics/investor-metrics": <InvestorMetricsPage />,
-  "saas-analytics/reports": <FinanceReportsPage />,
+  "software/revenue": <RevenuePage />,
+  "software/transactions": <TransactionsPage />,
+  "software/mrr-movement": <MrrMovementPage />,
+  "software/customers": <CustomersPage />,
+  "software/subscriptions": <SubscriptionsPage />,
+  "software/cohorts": <CohortsPage />,
+  "software/forecasting": <ForecastingPage />,
+  "software/investor-metrics": <InvestorMetricsPage />,
+  "software/reports": <FinanceReportsPage />,
 
-  "saas-analytics/costs-overview": <CostsOverviewPage />,
-  "saas-analytics/costs-providers": <CostsProvidersPage />,
-  "saas-analytics/costs-llm": <LlmCostsPage />,
-  "saas-analytics/costs-optimization": <OptimizationPage />,
-  "saas-analytics/costs-per-user": <CostPerUserPage />,
-  "saas-analytics/costs-budgets": <BudgetsPage />,
-  "saas-analytics/costs-invoices": <InvoicesPage />,
+  "software/costs-overview": <CostsOverviewPage />,
+  "software/costs-providers": <CostsProvidersPage />,
+  "software/costs-llm": <LlmCostsPage />,
+  "software/costs-optimization": <OptimizationPage />,
+  "software/costs-per-user": <CostPerUserPage />,
+  "software/costs-budgets": <BudgetsPage />,
+  "software/costs-invoices": <InvoicesPage />,
 
   // SaaS Analytics module — overview + user & health sub-tabs
-  "saas-analytics/overview": <SaasAnalyticsPage />,
-  "saas-analytics/session-replay": <SessionReplayPage />,
-  "saas-analytics/events": <EventsPage />,
-  "saas-analytics/growth": <GrowthPage />,
-  "saas-analytics/activation": <ActivationPage />,
-  "saas-analytics/funnels": <AnalyticsFunnelsPage />,
-  "saas-analytics/retention": <RetentionPage />,
-  "saas-analytics/users-all": <AllUsersPage />,
-  "saas-analytics/users-segments": <SegmentsPage />,
-  "saas-analytics/users-cohorts": <UserCohortsPage />,
-  "saas-analytics/users-360": <User360Page />,
-  "saas-analytics/users-engagement": <EngagementPage />,
-  "saas-analytics/users-health-scores": <HealthScoresPage />,
-  "saas-analytics/users-churn": <ChurnRiskPage />,
-  "saas-analytics/users-funnels": <UserJourneysPage />,
-  "saas-analytics/users-per-user": <PerUserAnalyticsPage />,
-  "saas-analytics/users-groups": <GroupAnalyticsPage />,
-  "saas-analytics/users-journeys": <UserJourneysPage />,
+  "software/overview": <SaasAnalyticsPage />,
+  "software/session-replay": <SessionReplayPage />,
+  "software/events": <EventsPage />,
+  "software/growth": <GrowthPage />,
+  "software/activation": <ActivationPage />,
+  "software/funnels": <AnalyticsFunnelsPage />,
+  "software/retention": <RetentionPage />,
+  "software/users-all": <AllUsersPage />,
+  "software/users-segments": <SegmentsPage />,
+  "software/users-cohorts": <UserCohortsPage />,
+  "software/users-360": <User360Page />,
+  "software/users-engagement": <EngagementPage />,
+  "software/users-health-scores": <HealthScoresPage />,
+  "software/users-churn": <ChurnRiskPage />,
+  "software/users-funnels": <UserJourneysPage />,
+  "software/users-per-user": <PerUserAnalyticsPage />,
+  "software/users-groups": <GroupAnalyticsPage />,
+  "software/users-journeys": <UserJourneysPage />,
 
   "agent/agents": <RagAgentsPage />,
   "agent/internal-agents": <InternalAgentsListPage />,
@@ -333,21 +333,21 @@ const PAGES: Record<string, PageEl> = {
   "devops/security-scans": <SecurityScansPage />,
 
   // Health sub-tabs under SaaS Analytics
-  "saas-analytics/health-status": <HealthStatusPage />,
-  "saas-analytics/health-uptime": <UptimePage />,
-  "saas-analytics/health-errors": <ErrorsPage />,
-  "saas-analytics/health-performance": <PerformancePage />,
-  "saas-analytics/health-incidents": <IncidentsPage />,
-  "saas-analytics/health-database": <DatabasePage />,
+  "software/health-status": <HealthStatusPage />,
+  "software/health-uptime": <UptimePage />,
+  "software/health-errors": <ErrorsPage />,
+  "software/health-performance": <PerformancePage />,
+  "software/health-incidents": <IncidentsPage />,
+  "software/health-database": <DatabasePage />,
 
-  "actions/quick-actions": <QuickActionsPage />,
-  "actions/user-management": <UserManagementPage />,
-  "actions/stripe-operations": <StripeOperationsPage />,
-  "actions/database-console": <DatabaseConsolePage />,
-  "actions/email-sender": <EmailSenderPage />,
-  "actions/webhooks": <ActionsWebhooksPage />,
-  "actions/runbooks": <RunbooksPage />,
-  "actions/audit-log": <AuditLogPage />,
+  "software/quick-actions": <QuickActionsPage />,
+  "software/user-management": <UserManagementPage />,
+  "software/stripe-operations": <StripeOperationsPage />,
+  "software/database-console": <DatabaseConsolePage />,
+  "software/email-sender": <EmailSenderPage />,
+  "software/webhooks": <ActionsWebhooksPage />,
+  "software/runbooks": <RunbooksPage />,
+  "software/audit-log": <AuditLogPage />,
 
   // AI Assistant pages live in the RAG Agent module ("agent/…") since the two
   // modules were merged; the old "ai/…" paths stay registered for deep links.
@@ -382,11 +382,30 @@ const PAGES: Record<string, PageEl> = {
   "settings/data-privacy": <SettingsDataPrivacyPage />,
 };
 
-/** Redirects an old /finance/:sub path to /saas-analytics/:sub (same suffix).
- *  Two `..` segments climb out of `finance/:sub` back to the project root. */
+/** Redirects an old /finance/:sub path to /software/:sub (same suffix). */
 function LegacyFinanceRedirect() {
   const { sub } = useParams();
-  return <Navigate to={`../../saas-analytics/${sub}`} replace />;
+  return <Navigate to={`../../software/${sub}`} replace />;
+}
+
+/** SaaS Analytics was renamed/merged into the Software module. Old
+ *  /saas-analytics/:sub deep links map 1:1 to /software/:sub. */
+function LegacySaasRedirect() {
+  const { sub } = useParams();
+  return <Navigate to={`../../software/${sub}`} replace />;
+}
+
+/** The admin tools moved from Admin panel (/actions/*) into Software. These
+ *  specific slugs redirect; the kept Overview tabs stay under /actions/*. */
+const MOVED_ADMIN = new Set([
+  "quick-actions", "user-management", "stripe-operations", "database-console",
+  "email-sender", "webhooks", "runbooks", "audit-log",
+]);
+function LegacyActionsRedirect() {
+  const { sub } = useParams();
+  if (sub && MOVED_ADMIN.has(sub)) return <Navigate to={`../../software/${sub}`} replace />;
+  // Unknown/overview slug → keep on the dashboard.
+  return <Navigate to="../dashboard" replace />;
 }
 
 /** Code + Ops were merged into the DevOps module. Old /code/:sub and /ops/:sub
@@ -553,10 +572,13 @@ export const router = createBrowserRouter([
           </ErrorBoundary>
         ),
       },
-      // Legacy redirects: Finance was merged into SaaS Analytics. Old
-      // /finance/* deep links (incl. /finance/costs-*) map 1:1 to the new slug.
-      { path: "finance", element: <Navigate to="../saas-analytics/revenue" replace /> },
+      // Legacy redirects: Finance / SaaS Analytics merged into the Software module.
+      { path: "finance", element: <Navigate to="../software/revenue" replace /> },
       { path: "finance/:sub", element: <LegacyFinanceRedirect /> },
+      { path: "saas-analytics", element: <Navigate to="../software/overview" replace /> },
+      { path: "saas-analytics/:sub", element: <LegacySaasRedirect /> },
+      // Admin tools moved from Admin panel (/actions/*) into Software.
+      { path: "actions/:sub", element: <LegacyActionsRedirect /> },
       // Legacy redirects: Code + Ops were merged into DevOps.
       { path: "code", element: <Navigate to="../devops/overview" replace /> },
       { path: "code/:sub", element: <LegacyCodeRedirect /> },

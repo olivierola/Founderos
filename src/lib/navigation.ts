@@ -5,7 +5,6 @@ import {
   BrainCircuit,
   Blocks,
   Settings2,
-  ChartLine,
   FileStack,
   UsersRound,
   Handshake,
@@ -83,26 +82,16 @@ export const MODULES: ModuleNavItem[] = [
     icon: ShieldHalf,
     color: "text-slate-400",
     subItems: [
-      // Kept from the former Overview module.
+      // Overview cockpit (the admin tools moved to the Software module).
       { label: "Dashboard", slug: "dashboard", group: "Overview" },
       { label: "Custom Dashboards", slug: "custom-dashboards" },
       { label: "Alerts", slug: "alerts" },
-
-      // Admin tools.
-      { label: "Actions Center", slug: "quick-actions", group: "Admin" },
-      { label: "User Management", slug: "user-management" },
-      { label: "Billing Operations", slug: "stripe-operations" },
-      { label: "Database Console", slug: "database-console" },
-      { label: "Email Sender", slug: "email-sender" },
-      { label: "Webhooks", slug: "webhooks" },
-      { label: "Runbooks", slug: "runbooks" },
-      { label: "Audit Log", slug: "audit-log" },
     ],
   },
   {
-    slug: "saas-analytics",
-    label: "SaaS Analytics",
-    icon: ChartLine,
+    slug: "software",
+    label: "Software",
+    icon: TerminalSquare,
     color: "text-violet-400/60",
     // The `group` is the primary nav axis (rendered as sidebar sections); the
     // items within each group are the horizontal tabs.
@@ -154,6 +143,16 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Errors",             slug: "health-errors" },
       { label: "Performance",        slug: "health-performance" },
       { label: "Incidents",          slug: "health-incidents" },
+
+      // ── Admin tools (merged from the former Admin panel) ──
+      { label: "Actions Center",     slug: "quick-actions",        group: "Admin" },
+      { label: "User Management",    slug: "user-management" },
+      { label: "Billing Operations", slug: "stripe-operations" },
+      { label: "Database Console",   slug: "database-console" },
+      { label: "Email Sender",       slug: "email-sender" },
+      { label: "Webhooks",           slug: "webhooks" },
+      { label: "Runbooks",           slug: "runbooks" },
+      { label: "Audit Log",          slug: "audit-log" },
     ],
   },
   {
