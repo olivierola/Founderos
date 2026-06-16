@@ -12,6 +12,7 @@ import {
   LifeBuoy,
   FolderKanban,
   Wallet,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -294,6 +295,19 @@ export const MODULES: ModuleNavItem[] = [
       { label: "My tasks", slug: "my-tasks" },
       { label: "Inbox", slug: "inbox" },
       { label: "Whiteboard", slug: "whiteboard" },
+    ],
+  },
+  {
+    slug: "supply",
+    label: "Supply Chain",
+    icon: Truck,
+    color: "text-orange-400/60",
+    subItems: [
+      { label: "Overview", slug: "overview" },
+      { label: "Inventory", slug: "inventory" },
+      { label: "Suppliers", slug: "suppliers" },
+      { label: "Purchase orders", slug: "purchase-orders" },
+      { label: "Shipments", slug: "shipments" },
     ],
   },
   {
