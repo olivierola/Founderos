@@ -69,12 +69,12 @@ function BoardGallery({ onOpen }: { onOpen: (id: string) => void }) {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-8 py-6 lg:px-12">
+    <div className="space-y-6 px-6 py-6">
       <PageHeader title="Whiteboards" description="Collaborative canvases — brainstorm with sticky notes, live with your team." />
       {isLoading ? (
         <div className="flex h-48 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : (
-        <div className="grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {/* Create card */}
           <button
             onClick={createBoard}
