@@ -2,6 +2,7 @@ import {
   ShieldHalf,
   Megaphone,
   TerminalSquare,
+  AppWindow,
   BrainCircuit,
   Blocks,
   Settings2,
@@ -91,7 +92,7 @@ export const MODULES: ModuleNavItem[] = [
   {
     slug: "software",
     label: "Software",
-    icon: TerminalSquare,
+    icon: AppWindow,
     color: "text-violet-400/60",
     // The `group` is the primary nav axis (rendered as sidebar sections); the
     // items within each group are the horizontal tabs.
