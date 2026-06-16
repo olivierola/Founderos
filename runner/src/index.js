@@ -13,8 +13,9 @@ import { RUNNER_ID, SUPABASE_URL, POLL_INTERVAL_MS, ts } from "./env.js";
 import { pollOps } from "./sources/ops.js";
 import { pollTest } from "./sources/test.js";
 import { pollSecurity } from "./sources/security.js";
+import { pollSimulation } from "./sources/simulation.js";
 
-const SOURCES = [pollOps, pollTest, pollSecurity];
+const SOURCES = [pollOps, pollTest, pollSecurity, pollSimulation];
 
 async function tick() {
   for (const source of SOURCES) {
@@ -32,7 +33,7 @@ async function main() {
   console.log("FounderOS Unified Runner");
   console.log(`  runner_id: ${RUNNER_ID}`);
   console.log(`  url:       ${SUPABASE_URL}`);
-  console.log(`  sources:   ops · tests · security`);
+  console.log(`  sources:   ops · tests · security · simulations`);
   while (true) {
     const didWork = await tick();
     if (!didWork) await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));

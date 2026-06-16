@@ -168,6 +168,11 @@ verify_jwt = false
 [functions.project-inbox-post]
 verify_jwt = false
 
+# Simulations (MiroFish-inspired): single endpoint dispatching by `action`
+# (prepare / claim / round / complete / chat).
+[functions.simulation-prepare]
+verify_jwt = false
+
 # Security scanning: passive checks inline + active scans queued (consent-gated).
 [functions.security-scan]
 verify_jwt = false

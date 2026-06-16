@@ -91,6 +91,7 @@ import {
 import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
 import { PmInboxPage } from "@/features/pm/PmInbox";
 import { PmWhiteboardPage } from "@/features/pm/PmWhiteboard";
+import { PmSimulationsPage } from "@/features/pm/PmSimulations";
 import {
   ScOverviewPage, ScInventoryPage, ScSuppliersPage, ScPurchaseOrdersPage, ScShipmentsPage,
 } from "@/features/supply/ScPages";
@@ -306,6 +307,7 @@ const PAGES: Record<string, PageEl> = {
   "pm/my-tasks": <PmMyTasksPage />,
   "pm/inbox": <PmInboxPage />,
   "pm/whiteboard": <PmWhiteboardPage />,
+  "pm/simulations": <PmSimulationsPage />,
 
   // Supply Chain
   "supply/overview": <ScOverviewPage />,

@@ -295,6 +295,7 @@ export const MODULES: ModuleNavItem[] = [
       { label: "My tasks", slug: "my-tasks" },
       { label: "Inbox", slug: "inbox" },
       { label: "Whiteboard", slug: "whiteboard" },
+      { label: "Simulations", slug: "simulations" },
     ],
   },
   {
