@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Hash, Lock, Loader2, Send, Bot, AtSign, Info, Users, Paperclip, Link2, Image as ImageIcon, X,
+  Plus, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 interface Channel {
   id: string; name: string; description: string | null;
   is_private: boolean; is_default: boolean; created_at: string;
+  created_by: string | null;
 }
 interface Message {
   id: string; channel_id: string; author_kind: "user" | "agent" | "system";
@@ -51,7 +53,7 @@ export function PmInboxPage() {
     queryFn: async () => {
       let { data } = await supabase
         .from("project_channels")
-        .select("id, name, description, is_private, is_default, created_at")
+        .select("id, name, description, is_private, is_default, created_at, created_by")
         .eq("project_id", projectId!)
         .order("is_default", { ascending: false })
         .order("created_at", { ascending: true });
@@ -62,7 +64,7 @@ export function PmInboxPage() {
         });
         ({ data } = await supabase
           .from("project_channels")
-          .select("id, name, description, is_private, is_default, created_at")
+          .select("id, name, description, is_private, is_default, created_at, created_by")
           .eq("project_id", projectId!)
           .order("is_default", { ascending: false })
           .order("created_at", { ascending: true }));
@@ -105,6 +107,30 @@ function ChannelView({ channel }: { channel: Channel }) {
   const [showMention, setShowMention] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab | null>("about");
   const scrollerRef = useRef<HTMLDivElement>(null);
+
+  // Resizable right detail sidebar (persisted), dragged from its left edge.
+  const [detailWidth, setDetailWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("pm_inbox_detail_width"));
+    return saved >= 280 && saved <= 640 ? saved : 384;
+  });
+  function startResizeDetail(e: React.MouseEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = detailWidth;
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.min(640, Math.max(280, startW + (startX - ev.clientX)));
+      setDetailWidth(next);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      setDetailWidth((w) => { localStorage.setItem("pm_inbox_detail_width", String(w)); return w; });
+    };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
 
   const { data: messages } = useQuery({
     queryKey: ["pm_messages", channel.id],
@@ -271,9 +297,15 @@ function ChannelView({ channel }: { channel: Channel }) {
         </div>
       </div>
 
-      {/* Right detail sidebar */}
+      {/* Right detail sidebar (resizable) */}
       {detailTab && (
-        <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-secondary/10">
+        <aside className="relative flex shrink-0 flex-col border-l border-border bg-secondary/10" style={{ width: detailWidth }}>
+          {/* Drag handle on the left edge */}
+          <div
+            onMouseDown={startResizeDetail}
+            className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-primary/30"
+            title="Drag to resize"
+          />
           <div className="flex h-12 items-center justify-between border-b border-border px-3">
             <span className="text-sm font-semibold">Details</span>
             <button onClick={() => setDetailTab(null)} className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-4 w-4" /></button>
@@ -309,28 +341,6 @@ function DetailPanel({
   links: { url: string; at: string }[];
   images: { url: string; at: string }[];
 }) {
-  const { projectId } = useCurrentContext();
-
-  // Human members for the Members tab.
-  const { data: members } = useQuery({
-    queryKey: ["pm_channel_members", channel.id, channel.is_private],
-    enabled: tab === "members",
-    queryFn: async () => {
-      if (channel.is_private) {
-        const { data } = await supabase
-          .from("project_channel_members")
-          .select("user_id, profiles:profiles(full_name, email)")
-          .eq("channel_id", channel.id);
-        return (data ?? []).map((r: any) => r.profiles?.full_name || r.profiles?.email || "Member");
-      }
-      const { data } = await supabase
-        .from("workspace_members")
-        .select("profiles:profiles(full_name, email)")
-        .limit(50);
-      return (data ?? []).map((r: any) => r.profiles?.full_name || r.profiles?.email || "Member");
-    },
-  });
-
   if (tab === "about") {
     return (
       <div className="space-y-4">
@@ -357,36 +367,7 @@ function DetailPanel({
   }
 
   if (tab === "members") {
-    return (
-      <div className="space-y-3">
-        <div>
-          <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">People</div>
-          <div className="space-y-1">
-            {(members ?? []).length === 0 ? <p className="text-xs text-muted-foreground">No members.</p> :
-              (members ?? []).map((name, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded bg-secondary text-[10px] font-semibold">{name.slice(0, 1).toUpperCase()}</span>
-                  <span className="truncate text-xs">{name}</span>
-                </div>
-              ))}
-          </div>
-        </div>
-        <div>
-          <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">Agents available</div>
-          <div className="space-y-1">
-            {agents.length === 0 ? <p className="text-xs text-muted-foreground">No agents.</p> :
-              agents.map((a) => (
-                <div key={a.id} className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded text-xs" style={{ backgroundColor: (a.accent_color ?? "#2F2FE4") + "22" }}>{a.avatar_emoji ?? "🤖"}</span>
-                  <span className="truncate text-xs">{a.name}</span>
-                  <Bot className="ml-auto h-3 w-3 text-primary" />
-                </div>
-              ))}
-          </div>
-          <p className="mt-2 text-[10px] text-muted-foreground">@mention any agent in the channel to bring it in.</p>
-        </div>
-      </div>
-    );
+    return <MembersTab channel={channel} agents={agents} agentById={agentById} />;
   }
 
   if (tab === "links") {
@@ -423,26 +404,221 @@ function Empty({ label }: { label: string }) {
   return <p className="py-6 text-center text-xs text-muted-foreground">{label}</p>;
 }
 
+interface MemberRow { id: string; user_id: string | null; agent_id: string | null }
+interface PersonLite { user_id: string; name: string }
+
+// Members tab: list humans + agents in the channel; add/remove based on
+// permissions. Manage rights = workspace owner/admin OR the channel creator.
+function MembersTab({
+  channel, agents, agentById,
+}: {
+  channel: Channel;
+  agents: AgentLite[];
+  agentById: Record<string, AgentLite>;
+}) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const { data: myRole } = useQuery({
+    queryKey: ["pm_my_ws_role", workspaceId, user?.id],
+    enabled: !!workspaceId && !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("workspace_members").select("role")
+        .eq("workspace_id", workspaceId!).eq("user_id", user!.id).maybeSingle();
+      return (data?.role ?? "viewer") as string;
+    },
+  });
+  const canManage = myRole === "owner" || myRole === "admin" || channel.created_by === user?.id;
+
+  // Membership rows (drive both private-channel ACL and agent membership).
+  const { data: memberRows } = useQuery({
+    queryKey: ["pm_channel_member_rows", channel.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("project_channel_members")
+        .select("id, user_id, agent_id")
+        .eq("channel_id", channel.id);
+      return (data ?? []) as MemberRow[];
+    },
+  });
+  const memberUserIds = new Set((memberRows ?? []).filter((r) => r.user_id).map((r) => r.user_id!));
+  const memberAgentIds = new Set((memberRows ?? []).filter((r) => r.agent_id).map((r) => r.agent_id!));
+
+  // Workspace people (names) for display + invite candidates.
+  const { data: people } = useQuery({
+    queryKey: ["pm_ws_people", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("workspace_members")
+        .select("user_id, profiles:profiles(full_name, email)")
+        .eq("workspace_id", workspaceId!)
+        .limit(200);
+      return (data ?? []).map((r: any) => ({ user_id: r.user_id, name: r.profiles?.full_name || r.profiles?.email || "Member" })) as PersonLite[];
+    },
+  });
+  const personById = useMemo(() => Object.fromEntries((people ?? []).map((p) => [p.user_id, p.name])), [people]);
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ["pm_channel_member_rows", channel.id] });
+  }
+
+  async function addUser(userId: string) {
+    await supabase.from("project_channel_members").insert({ channel_id: channel.id, user_id: userId });
+    invalidate();
+  }
+  async function addAgent(agentId: string) {
+    await supabase.from("project_channel_members").insert({ channel_id: channel.id, agent_id: agentId });
+    invalidate();
+  }
+  async function removeRow(id: string) {
+    await supabase.from("project_channel_members").delete().eq("id", id);
+    invalidate();
+  }
+
+  // Displayed people: for private channels, the explicit member rows; for public
+  // channels, everyone in the workspace (no per-channel rows needed).
+  const peopleRows = channel.is_private
+    ? (memberRows ?? []).filter((r) => r.user_id)
+    : (people ?? []).map((p) => ({ id: `ws:${p.user_id}`, user_id: p.user_id, agent_id: null } as MemberRow));
+  const agentRows = (memberRows ?? []).filter((r) => r.agent_id);
+
+  const candidatePeople = (people ?? []).filter((p) => p.user_id !== user?.id && !memberUserIds.has(p.user_id));
+  const candidateAgents = agents.filter((a) => !memberAgentIds.has(a.id));
+
+  return (
+    <div className="space-y-5">
+      {/* People */}
+      <div>
+        <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+          People{channel.is_private ? "" : " · everyone in the workspace"}
+        </div>
+        <div className="space-y-1">
+          {peopleRows.length === 0 ? <p className="text-xs text-muted-foreground">No members.</p> :
+            peopleRows.map((r) => {
+              const name = personById[r.user_id!] ?? "Member";
+              return (
+                <div key={r.id} className="group flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded bg-secondary text-[10px] font-semibold">{name.slice(0, 1).toUpperCase()}</span>
+                  <span className="truncate text-xs">{name}{r.user_id === user?.id && " (you)"}</span>
+                  {canManage && channel.is_private && r.user_id !== user?.id && (
+                    <button onClick={() => removeRow(r.id)} title="Remove" className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+        {/* Invite people (private channels only — public = everyone already) */}
+        {canManage && channel.is_private && candidatePeople.length > 0 && (
+          <details className="mt-2 rounded-md border border-border bg-background/50">
+            <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+              <Plus className="h-3 w-3" /> Add people
+            </summary>
+            <div className="max-h-40 overflow-y-auto px-1 pb-1">
+              {candidatePeople.map((p) => (
+                <button key={p.user_id} onClick={() => addUser(p.user_id)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-secondary">
+                  <span className="flex h-5 w-5 items-center justify-center rounded bg-secondary text-[9px] font-semibold">{p.name.slice(0, 1).toUpperCase()}</span>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+
+      {/* Agents */}
+      <div>
+        <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">Agents in this channel</div>
+        <div className="space-y-1">
+          {agentRows.length === 0 ? <p className="text-xs text-muted-foreground">No agents added. @mention one, or add it below.</p> :
+            agentRows.map((r) => {
+              const a = agentById[r.agent_id!];
+              return (
+                <div key={r.id} className="group flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded text-xs" style={{ backgroundColor: (a?.accent_color ?? "#2F2FE4") + "22" }}>{a?.avatar_emoji ?? "🤖"}</span>
+                  <span className="truncate text-xs">{a?.name ?? "Agent"}</span>
+                  <Bot className="h-3 w-3 text-primary" />
+                  {canManage && (
+                    <button onClick={() => removeRow(r.id)} title="Remove" className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+        {canManage && candidateAgents.length > 0 && (
+          <details className="mt-2 rounded-md border border-border bg-background/50">
+            <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+              <Plus className="h-3 w-3" /> Add agent
+            </summary>
+            <div className="max-h-40 overflow-y-auto px-1 pb-1">
+              {candidateAgents.map((a) => (
+                <button key={a.id} onClick={() => addAgent(a.id)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-secondary">
+                  <span className="flex h-5 w-5 items-center justify-center rounded text-[10px]" style={{ backgroundColor: (a.accent_color ?? "#2F2FE4") + "22" }}>{a.avatar_emoji ?? "🤖"}</span>
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
+        <p className="mt-2 text-[10px] text-muted-foreground">@mention any agent in the channel to get a reply.</p>
+        {!canManage && <p className="mt-1 text-[10px] text-muted-foreground">You need admin or channel-owner rights to manage members.</p>}
+      </div>
+    </div>
+  );
+}
+
 function MessageRow({ m, agent, mine }: { m: Message; agent?: AgentLite; mine: boolean }) {
   const isAgent = m.author_kind === "agent";
   const name = isAgent ? (agent?.name ?? "Agent") : mine ? "You" : "Teammate";
   const emoji = isAgent ? (agent?.avatar_emoji ?? "🤖") : null;
   const accent = agent?.accent_color ?? "#2F2FE4";
+
+  const avatar = (
+    <div
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sm"
+      style={{ backgroundColor: isAgent ? accent + "22" : "hsl(var(--secondary))", color: isAgent ? accent : undefined }}
+    >
+      {emoji ?? <span className="text-xs font-semibold">{name.slice(0, 1).toUpperCase()}</span>}
+    </div>
+  );
+
+  // My own messages: right-aligned with a filled bubble.
+  if (mine) {
+    return (
+      <div className="flex items-start justify-end gap-2.5">
+        <div className="flex min-w-0 max-w-[75%] flex-col items-end">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground">{relTime(m.created_at)}</span>
+            <span className="text-sm font-medium">You</span>
+          </div>
+          <p className="mt-1 whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-primary/85 px-3 py-2 text-sm leading-relaxed text-primary-foreground">
+            {m.body}
+          </p>
+        </div>
+        {avatar}
+      </div>
+    );
+  }
+
+  // Others (teammates / agents): left-aligned with a subtle bubble.
   return (
     <div className="flex items-start gap-2.5">
-      <div
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sm"
-        style={{ backgroundColor: isAgent ? accent + "22" : "hsl(var(--secondary))", color: isAgent ? accent : undefined }}
-      >
-        {emoji ?? <span className="text-xs font-semibold">{name.slice(0, 1).toUpperCase()}</span>}
-      </div>
-      <div className="min-w-0 flex-1">
+      {avatar}
+      <div className="min-w-0 max-w-[75%]">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{name}</span>
           {isAgent && <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary"><Bot className="h-2.5 w-2.5" /> agent</span>}
           <span className="text-[10px] text-muted-foreground">{relTime(m.created_at)}</span>
         </div>
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{m.body}</p>
+        <p className="mt-1 whitespace-pre-wrap break-words rounded-2xl rounded-tl-sm bg-secondary/60 px-3 py-2 text-sm leading-relaxed text-foreground/90">
+          {m.body}
+        </p>
       </div>
     </div>
   );
