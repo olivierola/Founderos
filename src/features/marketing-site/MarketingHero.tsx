@@ -1,100 +1,129 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
-import { motion, useScroll, useTransform } from "framer-motion";
-import { Logo } from "@/components/Logo";
+import { ArrowRight, Menu, X } from "lucide-react";
+import Hls from "hls.js";
 
-const VIDEO_URL =
-  "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260307_083826_e938b29f-a43a-41ec-a153-3d4730578ab8.mp4";
+const HLS_URL = "https://stream.mux.com/tLkHO1qZoaaQOUeVWo8hEBeGQfySP02EPS02BmnNFyXys.m3u8";
+const ACCENT = "#5ed29c";
+const INK = "#070b0a";
 
-// Neuralyn-style hero, using the app's logo + colorimetry (theme tokens).
-// Full-width background video at the bottom (no dashboard image over it),
-// parallax + staggered entrance animations via Framer Motion. Page structure
-// unchanged — the rest of the home follows.
+const NAV = [
+  { label: "Projects", to: "/features" },
+  { label: "Blog", to: "/changelog" },
+  { label: "About", to: "/about" },
+  { label: "Resume", to: "/pricing" },
+];
+
+// High-end dark hero: full-screen HLS video background, central glow, grid
+// lines and a liquid-glass card floating above the headline (left-aligned).
+// Branding adapted to FounderOS; the green accent + structure follow the spec.
 export function MarketingHero() {
-  const sectionRef = useRef<HTMLElement>(null);
-  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ["start start", "end start"] });
-  const textY = useTransform(scrollYProgress, [0, 1], [0, -200]);
-  const textOpacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    let hls: Hls | null = null;
+    if (v.canPlayType("application/vnd.apple.mpegurl")) {
+      v.src = HLS_URL; // native HLS (Safari)
+    } else if (Hls.isSupported()) {
+      hls = new Hls({ enableWorker: false });
+      hls.loadSource(HLS_URL);
+      hls.attachMedia(v);
+    }
+    v.play().catch(() => {});
+    return () => { hls?.destroy(); };
+  }, []);
 
   return (
-    <section ref={sectionRef} className="font-inter relative flex min-h-screen flex-col overflow-x-clip bg-background text-foreground">
+    <section className="font-inter relative min-h-screen w-full overflow-hidden" style={{ backgroundColor: INK }}>
+      {/* Background video @ 60% */}
+      <video ref={videoRef} className="absolute inset-0 h-full w-full object-cover opacity-60" autoPlay loop muted playsInline />
+      {/* Left + bottom gradient overlays for readability */}
+      <div className="pointer-events-none absolute inset-0" style={{ background: `linear-gradient(90deg, ${INK} 0%, transparent 60%)` }} />
+      <div className="pointer-events-none absolute inset-0" style={{ background: `linear-gradient(0deg, ${INK} 0%, transparent 50%)` }} />
+
+      {/* Vertical grid lines (desktop) */}
+      <div className="pointer-events-none absolute inset-0 hidden md:block">
+        <span className="absolute top-0 h-full w-px bg-white/10" style={{ left: "25%" }} />
+        <span className="absolute top-0 h-full w-px bg-white/10" style={{ left: "50%" }} />
+        <span className="absolute top-0 h-full w-px bg-white/10" style={{ left: "75%" }} />
+      </div>
+
+      {/* Central glow */}
+      <svg className="pointer-events-none absolute left-1/2 top-[8%] -translate-x-1/2" width="960" height="400" viewBox="0 0 960 400" fill="none" aria-hidden>
+        <defs><filter id="heroGlow"><feGaussianBlur stdDeviation="25" /></filter></defs>
+        <ellipse cx="480" cy="200" rx="420" ry="130" fill="#0f3d33" opacity="0.55" filter="url(#heroGlow)" />
+        <ellipse cx="480" cy="190" rx="260" ry="75" fill={ACCENT} opacity="0.16" filter="url(#heroGlow)" />
+      </svg>
+
       {/* Navbar */}
-      <nav className="flex items-center justify-between px-8 py-4 md:px-28">
-        <div className="flex items-center gap-12 md:gap-20">
-          <Link to="/" className="flex items-center gap-2">
-            <Logo size={28} />
-            <span className="text-xl font-bold tracking-tight">FounderOS</span>
-          </Link>
-          <div className="hidden items-center gap-1 md:flex">
-            <Link to="/" className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">Home</Link>
-            <Link to="/features" className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
-              Services <ChevronDown className="h-3.5 w-3.5" />
+      <nav className="relative z-20 mx-auto flex max-w-7xl items-center justify-between px-8 py-6 md:px-12">
+        <Link to="/" className="text-xl font-extrabold tracking-tight text-white">FounderOS</Link>
+        <div className="hidden items-center gap-10 md:flex">
+          {NAV.map((l) => (
+            <Link key={l.to} to={l.to} className="text-[15px] text-white/85 transition-colors hover:text-[color:var(--accent)]" style={{ ["--accent" as string]: ACCENT }}>
+              {l.label.toUpperCase()}
             </Link>
-            <Link to="/integrations" className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">Reviews</Link>
-            <Link to="/contact" className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">Contact us</Link>
-          </div>
+          ))}
         </div>
-        <Link to="/login" className="rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition-opacity hover:opacity-90">
-          Sign In
+        <Link to="/signup" className="hidden text-[15px] font-medium text-white/85 transition-colors hover:text-[color:var(--accent)] md:inline-flex" style={{ ["--accent" as string]: ACCENT }}>
+          [ REGISTER NOW ]
         </Link>
+        <button className="text-white md:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu className="h-6 w-6" /></button>
       </nav>
 
-      {/* Hero content (parallax + fade on scroll) */}
-      <motion.div style={{ y: textY, opacity: textOpacity }} className="mt-16 flex flex-col items-center px-4 text-center md:mt-20">
-        {/* Tag pill */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-          className="liquid-glass mb-6 inline-flex items-center gap-2 rounded-lg px-3 py-2"
-        >
-          <span className="rounded-md bg-foreground px-2 py-0.5 text-sm font-medium text-background">New</span>
-          <span className="text-sm font-medium text-muted-foreground">Say hello to the AI agent cockpit</span>
-        </motion.div>
+      {/* Mobile menu overlay */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col p-6 md:hidden" style={{ backgroundColor: INK }}>
+          <div className="flex items-center justify-between">
+            <span className="text-xl font-extrabold text-white">FounderOS</span>
+            <button className="text-white" onClick={() => setMenuOpen(false)} aria-label="Close menu"><X className="h-6 w-6" /></button>
+          </div>
+          <div className="mt-12 flex flex-col gap-6">
+            {NAV.map((l) => (
+              <Link key={l.to} to={l.to} onClick={() => setMenuOpen(false)} className="text-2xl font-semibold text-white">{l.label}</Link>
+            ))}
+            <Link to="/signup" onClick={() => setMenuOpen(false)} className="mt-4 inline-flex w-fit rounded-full px-6 py-3 text-sm font-bold uppercase" style={{ backgroundColor: ACCENT, color: INK }}>
+              Register now
+            </Link>
+          </div>
+        </div>
+      )}
 
-        {/* Title */}
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }}
-          className="mb-3 text-5xl font-medium leading-tight tracking-[-2px] md:text-7xl md:leading-[1.15]"
-        >
-          Your insights.
-          <br />
-          One clear <span className="font-instrument-serif font-normal italic">Overview.</span>
-        </motion.h1>
+      {/* Content — left aligned, glass card above the headline */}
+      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-88px)] max-w-7xl flex-col justify-between px-8 pb-16 pt-6 md:px-12">
+        {/* Liquid glass card (top-left) */}
+        <div className="liquid-glass -translate-y-[10px] flex h-[200px] w-[200px] flex-col justify-between rounded-2xl p-4 text-left">
+          <span className="text-[14px] text-white/70">[ 2025 ]</span>
+          <span className="text-[18px] font-medium leading-tight text-white">
+            Taught by <span className="font-instrument-serif italic">Industry</span> Professionals
+          </span>
+          <span className="text-[11px] text-white/55">Built and operated by senior SaaS & ops engineers.</span>
+        </div>
 
-        {/* Subtitle */}
-        <motion.p
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
-          className="mb-8 text-lg font-normal leading-6 opacity-90"
-          style={{ color: "hsl(210 17% 95%)" }}
-        >
-          FounderOS helps teams track metrics, goals,
-          <br />
-          and progress across every client SaaS with precision.
-        </motion.p>
-
-        {/* CTA */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.3 }}>
-          <Link to="/signup">
-            <motion.span
-              whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}
-              className="inline-flex rounded-full bg-foreground px-8 py-3.5 text-base font-medium text-background"
-            >
-              Get started for free
-            </motion.span>
+        {/* Headline + description + CTA (bottom-left) */}
+        <div className="max-w-2xl">
+          <p className="font-jakarta mb-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: ACCENT }}>
+            Career-ready cockpit
+          </p>
+          <h1 className="text-[40px] font-extrabold uppercase leading-[0.98] tracking-tight text-white md:text-[72px]" style={{ fontFamily: "Inter, sans-serif" }}>
+            Launch your<br />agency cockpit<span style={{ color: ACCENT }}>.</span>
+          </h1>
+          <p className="mt-5 max-w-[512px] text-[14px] text-white/70" style={{ fontFamily: "Inter, sans-serif" }}>
+            Master every client SaaS with one panel — billing, infra, deploys, secrets, support and the
+            AI agents that operate them. From zero to in-control.
+          </p>
+          <Link
+            to="/signup"
+            className="mt-8 inline-flex items-center gap-2 rounded-full px-7 py-3 text-sm font-bold uppercase transition-transform hover:scale-[1.03]"
+            style={{ backgroundColor: ACCENT, color: INK }}
+          >
+            Get started <ArrowRight className="h-4 w-4" />
           </Link>
-        </motion.div>
-      </motion.div>
-
-      {/* Full-width background video band (no dashboard image over it) */}
-      <motion.div
-        initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.4 }}
-        className="relative mt-16 w-full self-stretch"
-        style={{ aspectRatio: "16 / 9" }}
-      >
-        <video className="absolute inset-0 block h-full w-full object-cover object-center" src={VIDEO_URL} autoPlay loop muted playsInline />
-        {/* Bottom gradient fade into the page background */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-40 bg-gradient-to-t from-background to-transparent" />
-      </motion.div>
+        </div>
+      </div>
     </section>
   );
 }
