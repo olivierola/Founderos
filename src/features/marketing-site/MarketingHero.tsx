@@ -18,7 +18,7 @@ export function MarketingHero() {
   const textOpacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
 
   return (
-    <section ref={sectionRef} className="font-inter relative min-h-screen overflow-hidden bg-background text-foreground">
+    <section ref={sectionRef} className="font-inter relative flex min-h-screen flex-col overflow-x-clip bg-background text-foreground">
       {/* Navbar */}
       <nav className="flex items-center justify-between px-8 py-4 md:px-28">
         <div className="flex items-center gap-12 md:gap-20">
@@ -88,10 +88,10 @@ export function MarketingHero() {
       {/* Full-width background video band (no dashboard image over it) */}
       <motion.div
         initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.4 }}
-        className="relative mt-16 w-full"
+        className="relative mt-16 w-full self-stretch"
         style={{ aspectRatio: "16 / 9" }}
       >
-        <video className="absolute inset-0 h-full w-full object-cover" src={VIDEO_URL} autoPlay loop muted playsInline />
+        <video className="absolute inset-0 block h-full w-full object-cover object-center" src={VIDEO_URL} autoPlay loop muted playsInline />
         {/* Bottom gradient fade into the page background */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-40 bg-gradient-to-t from-background to-transparent" />
       </motion.div>
