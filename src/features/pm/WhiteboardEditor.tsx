@@ -105,10 +105,16 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
   }, [theme, apiReady]);
 
   // Fetch a .excalidrawlib and merge its shapes into the board's library panel.
+  // Guard against re-adding an already-loaded (or in-flight) library, which
+  // would duplicate every shape via merge:true.
   async function addLibrary(lib: LibDef) {
     const api = apiRef.current;
     if (!api) return;
     const key = lib.source;
+    if (loadedLibs.has(key) || loadingLib === key) {
+      api.updateLibrary({ libraryItems: [], merge: true, openLibraryMenu: true }); // just open the panel
+      return;
+    }
     setLoadingLib(key);
     try {
       const res = await fetch(libraryUrl(lib));
@@ -220,7 +226,10 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
                           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : loaded ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Download className="h-3.5 w-3.5" />}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs font-medium">{lib.name}</span>
+                          <span className="flex items-center gap-1.5 truncate text-xs font-medium">
+                            {lib.name}
+                            {loaded && <span className="rounded bg-emerald-500/15 px-1 text-[9px] font-medium text-emerald-500">Added</span>}
+                          </span>
                           {lib.items && <span className="block truncate text-[10px] text-muted-foreground">{lib.items}</span>}
                         </span>
                       </button>
