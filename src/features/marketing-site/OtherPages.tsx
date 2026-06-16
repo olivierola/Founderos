@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { Link } from "react-router-dom";
 import {
   Check,
+  Minus,
   ArrowRight,
   LayoutDashboard,
   Wallet,
@@ -10,6 +11,7 @@ import {
   Brain,
   Plug2,
   Rocket,
+  Lock,
   Sparkles,
   Activity,
   Cog,
@@ -231,11 +233,13 @@ export function FeaturesPage() {
 
 /* ===================== Pricing Page ===================== */
 
+// Four tiers. `monthly`/`annual` are numeric EUR amounts (per month); annual is
+// the discounted monthly-equivalent. null = custom pricing.
 const TIERS = [
   {
     name: "Free",
-    price: "€0",
-    suffix: "forever",
+    monthly: 0,
+    annual: 0,
     description: "Solo founders and tiny teams getting started.",
     features: ["Up to 3 projects", "1 workspace", "All 57 integrations", "Community Discord support", "Encrypted vault", "Audit log (30 days)"],
     cta: "Start free",
@@ -243,44 +247,91 @@ const TIERS = [
     highlight: false,
   },
   {
+    name: "Starter",
+    monthly: 19,
+    annual: 15,
+    description: "Freelancers managing a handful of clients.",
+    features: ["Up to 8 projects", "Up to 3 team members", "5 custom dashboards", "Admin actions (no approvals)", "Email support", "Audit log (90 days)", "1 AI agent"],
+    cta: "Start 14-day trial",
+    href: "/signup?plan=starter",
+    highlight: false,
+  },
+  {
     name: "Pro",
-    price: "€49",
-    suffix: "/ month",
+    monthly: 49,
+    annual: 39,
     description: "Agencies running several SaaS at once.",
-    features: ["Up to 25 projects", "Unlimited team members", "Custom dashboards", "Admin actions + approvals", "Priority email support", "Audit log (1 year)", "White-label widgets", "14-day free trial"],
+    features: ["Up to 25 projects", "Unlimited team members", "Unlimited dashboards", "Admin actions + approvals", "Priority email support", "Audit log (1 year)", "White-label widgets", "Up to 10 AI agents"],
     cta: "Start 14-day trial",
     href: "/signup?plan=pro",
     highlight: true,
   },
   {
     name: "Enterprise",
-    price: "Custom",
-    suffix: "",
+    monthly: null,
+    annual: null,
     description: "Compliance, SSO, dedicated support.",
-    features: ["Unlimited projects", "SSO / SAML", "SCIM provisioning", "Audit log export", "SLA + 99.9% uptime", "Dedicated success engineer", "Custom contracts & DPA", "Onboarding workshop"],
+    features: ["Unlimited projects", "SSO / SAML + SCIM", "Audit log export", "SLA + 99.9% uptime", "Dedicated success engineer", "Custom contracts & DPA", "Onboarding workshop", "Unlimited AI agents"],
     cta: "Talk to sales",
     href: "/contact",
     highlight: false,
   },
-];
+] as const;
 
-const COMPARE_MATRIX = [
-  { feature: "Projects", free: "3", pro: "25", ent: "Unlimited" },
-  { feature: "Team members", free: "Unlimited", pro: "Unlimited", ent: "Unlimited" },
-  { feature: "Custom dashboards", free: "1", pro: "Unlimited", ent: "Unlimited" },
-  { feature: "Audit log retention", free: "30 days", pro: "1 year", ent: "Forever + export" },
-  { feature: "Approvals & RBAC", free: "—", pro: "✓", ent: "Advanced" },
-  { feature: "SSO / SAML", free: "—", pro: "—", ent: "✓" },
-  { feature: "SLA", free: "Best effort", pro: "99%", ent: "99.9%" },
-  { feature: "Support", free: "Community", pro: "Email", ent: "Dedicated CSM" },
+// Grouped comparison matrix. Values: "✓" / "—" render as icons.
+const COMPARE_GROUPS = [
+  {
+    label: "Usage",
+    rows: [
+      { feature: "Projects", free: "3", starter: "8", pro: "25", ent: "Unlimited" },
+      { feature: "Workspaces", free: "1", starter: "1", pro: "5", ent: "Unlimited" },
+      { feature: "Team members", free: "1", starter: "3", pro: "Unlimited", ent: "Unlimited" },
+      { feature: "Custom dashboards", free: "1", starter: "5", pro: "Unlimited", ent: "Unlimited" },
+      { feature: "AI agents", free: "—", starter: "1", pro: "10", ent: "Unlimited" },
+    ],
+  },
+  {
+    label: "Platform",
+    rows: [
+      { feature: "All 57 integrations", free: "✓", starter: "✓", pro: "✓", ent: "✓" },
+      { feature: "Encrypted secrets vault", free: "✓", starter: "✓", pro: "✓", ent: "✓" },
+      { feature: "Admin actions", free: "—", starter: "✓", pro: "✓", ent: "✓" },
+      { feature: "Approvals & RBAC", free: "—", starter: "—", pro: "✓", ent: "Advanced" },
+      { feature: "White-label widgets", free: "—", starter: "—", pro: "✓", ent: "✓" },
+      { feature: "Audit log retention", free: "30 days", starter: "90 days", pro: "1 year", ent: "Forever + export" },
+    ],
+  },
+  {
+    label: "Security & support",
+    rows: [
+      { feature: "SSO / SAML", free: "—", starter: "—", pro: "—", ent: "✓" },
+      { feature: "SCIM provisioning", free: "—", starter: "—", pro: "—", ent: "✓" },
+      { feature: "SLA", free: "Best effort", starter: "99%", pro: "99%", ent: "99.9%" },
+      { feature: "Support", free: "Community", starter: "Email", pro: "Priority", ent: "Dedicated CSM" },
+    ],
+  },
 ];
 
 const PRICING_FAQ = [
   { q: "Can I change plans later?", a: "Yes, anytime. Upgrade unlocks features instantly; downgrade applies at the end of the billing period." },
+  { q: "How does annual billing work?", a: "Annual plans are billed once a year at the discounted monthly-equivalent rate — about 20% off versus monthly." },
+  { q: "What counts as a 'project'?", a: "One client SaaS — its own integrations, secrets, dashboards and AI agents. You can archive projects to free up slots." },
   { q: "Do you offer non-profit pricing?", a: "Yes, 50% off Pro for verified non-profits. Email us with your proof." },
   { q: "What payment methods?", a: "Card via Stripe. Wire transfer + PO available on Enterprise." },
-  { q: "Is there a free trial of Pro?", a: "Yes, 14 days, no credit card. Start from /signup." },
+  { q: "Is there a free trial of paid plans?", a: "Yes, 14 days on Starter and Pro, no credit card. Start from /signup." },
 ];
+
+// One comparison cell — renders ✓ / — as icons, plain text otherwise.
+function MatrixCell({ value, highlight }: { value: string; highlight?: boolean }) {
+  let content: React.ReactNode = value;
+  if (value === "✓") content = <Check className="mx-auto h-4 w-4 text-[hsl(var(--accent-2))]" />;
+  else if (value === "—") content = <Minus className="mx-auto h-4 w-4 text-muted-foreground/40" />;
+  return (
+    <td className={"px-4 py-3 text-center " + (highlight ? "font-medium text-foreground" : "text-muted-foreground")}>
+      {content}
+    </td>
+  );
+}
 
 export function PricingPage() {
   const [annual, setAnnual] = useState(false);
@@ -317,10 +368,11 @@ export function PricingPage() {
       </section>
 
       <section className="bg-background py-16">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {TIERS.map((t) => {
-              const monthlyPrice = t.name === "Pro" ? (annual ? "€39" : "€49") : t.price;
+              const isCustom = t.monthly === null;
+              const amount = annual ? t.annual : t.monthly;
               return (
                 <div
                   key={t.name}
@@ -339,13 +391,20 @@ export function PricingPage() {
                   <div className="text-lg font-semibold">{t.name}</div>
                   <div className="mt-1 text-sm text-muted-foreground">{t.description}</div>
                   <div className="mt-6 flex items-end gap-1">
-                    <span className="text-4xl font-semibold tabular-nums">{monthlyPrice}</span>
-                    <span className="pb-1 text-sm text-muted-foreground">{t.suffix}</span>
+                    {isCustom ? (
+                      <span className="text-4xl font-semibold">Custom</span>
+                    ) : (
+                      <>
+                        <span className="text-4xl font-semibold tabular-nums">€{amount}</span>
+                        <span className="pb-1 text-sm text-muted-foreground">/ mo</span>
+                      </>
+                    )}
                   </div>
-                  {annual && t.name === "Pro" && (
-                    <div className="mt-1 text-xs text-[hsl(var(--accent-2))]">€468 billed annually</div>
-                  )}
-                  <ul className="mt-6 space-y-2.5 text-sm">
+                  <div className="mt-1 min-h-[1rem] text-xs text-[hsl(var(--accent-2))]">
+                    {!isCustom && amount! > 0 && annual && `€${amount! * 12} billed annually`}
+                    {!isCustom && amount! > 0 && !annual && <span className="text-muted-foreground">billed monthly</span>}
+                  </div>
+                  <ul className="mt-6 flex-1 space-y-2.5 text-sm">
                     {t.features.map((f) => (
                       <li key={f} className="flex items-start gap-2">
                         <Check className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--accent-2))]" />
@@ -373,30 +432,61 @@ export function PricingPage() {
 
       {/* Comparison matrix */}
       <section className="border-t border-border/60 bg-secondary/20 py-24">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <h2 className="mb-8 text-center text-2xl font-semibold tracking-tight">Compare plans in detail</h2>
-          <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full min-w-[680px] text-sm">
               <thead className="border-b border-border bg-secondary/30 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 text-left">Feature</th>
                   <th className="px-4 py-3 text-center">Free</th>
-                  <th className="px-4 py-3 text-center">Pro</th>
+                  <th className="px-4 py-3 text-center">Starter</th>
+                  <th className="px-4 py-3 text-center text-[hsl(var(--primary-soft))]">Pro</th>
                   <th className="px-4 py-3 text-center">Enterprise</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {COMPARE_MATRIX.map((row) => (
-                  <tr key={row.feature} className="hover:bg-secondary/30">
-                    <td className="px-4 py-3 font-medium">{row.feature}</td>
-                    <td className="px-4 py-3 text-center text-muted-foreground">{row.free}</td>
-                    <td className="px-4 py-3 text-center font-medium">{row.pro}</td>
-                    <td className="px-4 py-3 text-center text-muted-foreground">{row.ent}</td>
-                  </tr>
+                {COMPARE_GROUPS.map((g) => (
+                  <Fragment key={g.label}>
+                    <tr className="bg-secondary/20">
+                      <td colSpan={5} className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{g.label}</td>
+                    </tr>
+                    {g.rows.map((row) => (
+                      <tr key={row.feature} className="hover:bg-secondary/30">
+                        <td className="px-4 py-3 font-medium">{row.feature}</td>
+                        <MatrixCell value={row.free} />
+                        <MatrixCell value={row.starter} />
+                        <MatrixCell value={row.pro} highlight />
+                        <MatrixCell value={row.ent} />
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      {/* Trust strip */}
+      <section className="border-t border-border/60 bg-background py-12">
+        <div className="mx-auto grid max-w-5xl gap-6 px-4 sm:grid-cols-3 sm:px-6">
+          {[
+            { icon: ShieldCheck, t: "Read-only by default", b: "Every admin action is approval-gated and audit-logged." },
+            { icon: Rocket, t: "Cancel anytime", b: "No lock-in. Export your data and pause sync whenever you want." },
+            { icon: Lock, t: "Encrypted secrets", b: "Credentials are encrypted at rest; no plaintext leaves the browser." },
+          ].map((it) => {
+            const I = it.icon;
+            return (
+              <div key={it.t} className="flex gap-3">
+                <I className="mt-0.5 h-5 w-5 shrink-0 text-[hsl(var(--accent-2))]" />
+                <div>
+                  <div className="text-sm font-medium">{it.t}</div>
+                  <div className="text-sm text-muted-foreground">{it.b}</div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 

@@ -214,6 +214,11 @@
 
 .mkt-fade-up { animation: mkt-fade-up 600ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .mkt-marquee { animation: mkt-marquee 35s linear infinite; }
+@keyframes mkt-marquee-reverse {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+.mkt-marquee-reverse { animation: mkt-marquee-reverse 40s linear infinite; }
 .mkt-pulse-ring { animation: mkt-pulse-ring 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
 .mkt-blob { animation: mkt-blob 18s ease-in-out infinite; }
 .mkt-shimmer {

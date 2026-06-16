@@ -16,6 +16,13 @@ import {
   Zap,
   Building2,
   Brain,
+  BarChart3,
+  CreditCard,
+  Server,
+  Users,
+  MessageSquare,
+  TerminalSquare,
+  Bell,
 } from "lucide-react";
 import { MarketingShell, DotGrid } from "./MarketingShell";
 import { ArchitectureDiagram } from "./Illustrations";
@@ -32,6 +39,8 @@ const LOGOS = [
   "Slack", "PostHog", "Sentry", "Cloudflare", "Fly.io", "Netlify",
   "Railway", "Heroku", "Firebase", "Datadog", "Mixpanel", "Segment",
 ];
+const FIRST_ROW = LOGOS.filter((_, i) => i % 2 === 0);
+const SECOND_ROW = LOGOS.filter((_, i) => i % 2 === 1);
 
 const FEATURE_CARDS = [
   { icon: Layers, color: "hsl(var(--primary-soft))", title: "One cockpit per client", body: "Switch between every client's SaaS in two clicks. Each project gets isolated metrics, secrets and actions." },
@@ -66,89 +75,84 @@ const FAQ = [
 export function HomePage() {
   return (
     <MarketingShell>
-      {/* ====== Hero centré ====== */}
-      <section className="relative overflow-hidden">
+      {/* ====== Hero — plein écran, deux colonnes : pitch + mockup cockpit ====== */}
+      <section className="relative flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden">
         <DotGrid className="[mask-image:radial-gradient(ellipse_at_top,rgba(0,0,0,1),transparent_75%)]" />
-        <div className="relative mx-auto max-w-4xl px-4 pb-12 pt-20 text-center sm:px-6 lg:pb-16 lg:pt-28">
-          <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-1 text-xs text-muted-foreground">
-            <Building2 className="h-3 w-3" />
-            For technical agencies
-          </span>
-          <h1 className="mx-auto mt-6 max-w-3xl text-balance text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-            The cockpit agencies run on.
-          </h1>
-          <p className="mx-auto mt-6 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg">
-            Manage every client SaaS from one panel — billing, infra, deploys, secrets, support
-            and AI agents. Replace 12 dashboards with one.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-            <Link
-              to="/signup"
-              className="group inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
-            >
-              Start free
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-            <Link
-              to="/features"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/60 px-5 py-2.5 text-sm transition-colors hover:bg-secondary"
-            >
-              See features
-            </Link>
-          </div>
-          <div className="mt-3 text-xs text-muted-foreground">
-            No credit card · 14-day Pro trial
-          </div>
-        </div>
-      </section>
+        {/* Glow d'ambiance */}
+        <div className="pointer-events-none absolute left-1/2 top-0 -z-10 h-[480px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,hsl(var(--primary-soft)/0.18),transparent_70%)] blur-2xl" />
+        <div className="relative mx-auto w-full max-w-7xl px-4 py-16 sm:px-6">
+          <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_1fr]">
+            {/* Colonne texte */}
+            <div className="text-center lg:text-left">
+              <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-1 text-xs text-muted-foreground">
+                <Building2 className="h-3 w-3" />
+                For technical agencies
+              </span>
+              <h1 className="mt-6 text-balance text-5xl font-semibold leading-[1.04] tracking-tight sm:text-6xl lg:text-7xl">
+                The cockpit{" "}
+                <span className="bg-gradient-to-r from-[hsl(var(--primary-soft))] to-[hsl(var(--accent-2))] bg-clip-text text-transparent">
+                  agencies
+                </span>{" "}
+                run on.
+              </h1>
+              <p className="mx-auto mt-6 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg lg:mx-0">
+                Manage every client SaaS from one panel — billing, infra, deploys, secrets, support
+                and AI agents. Replace 12 dashboards with one.
+              </p>
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
+                <Link
+                  to="/signup"
+                  className="group inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-all hover:opacity-90 hover:shadow-md"
+                >
+                  Start free
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </Link>
+                <Link
+                  to="/features"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/60 px-5 py-2.5 text-sm transition-colors hover:bg-secondary"
+                >
+                  See features
+                </Link>
+              </div>
+              <div className="mt-3 text-xs text-muted-foreground">
+                No credit card · 14-day Pro trial
+              </div>
 
-      {/* ====== Vraie capture dashboard + stats ====== */}
-      <section className="relative">
-        <div className="mx-auto max-w-7xl px-4 pb-24 sm:px-6">
-          <div className="grid items-end gap-6 lg:grid-cols-[1.5fr_1fr]">
-            <div className="relative">
-              {/* Glow doux derrière */}
-              <div className="absolute -inset-4 -z-10 rounded-3xl bg-gradient-to-tr from-[hsl(var(--primary-soft)/0.12)] via-transparent to-[hsl(var(--accent-2)/0.12)] blur-3xl" />
-              <div className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-2xl mkt-rise">
-                <img
-                  src="/cockpit.png"
-                  alt="FounderOS cockpit"
-                  className="w-full select-none"
-                  draggable={false}
-                />
-                {/* Vignette + overlay sombre subtil pour donner l'effet "screenshot encadré" */}
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background/40" />
-                <div className="pointer-events-none absolute inset-0 [box-shadow:inset_0_0_120px_rgba(0,0,0,0.55)]" />
-                {/* Highlight subtil sur les bords sup */}
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+              {/* Stats inline sous le pitch */}
+              <div className="mt-10 grid max-w-lg grid-cols-4 gap-px overflow-hidden rounded-xl border border-border/60 bg-border/60 lg:mx-0 mx-auto">
+                {STATS.map((s) => (
+                  <div key={s.label} className="bg-card px-3 py-4 text-center">
+                    <div className="text-xl font-semibold tabular-nums sm:text-2xl">{s.value}</div>
+                    <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="space-y-3">
-              {STATS.map((s) => (
-                <div key={s.label} className="rounded-xl border border-border bg-card/60 p-4">
-                  <div className="text-3xl font-semibold tabular-nums">{s.value}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">{s.label}</div>
-                </div>
-              ))}
+
+            {/* Colonne mockup cockpit (pur CSS — aucune image externe) */}
+            <div className="relative">
+              <div className="absolute -inset-6 -z-10 rounded-3xl bg-gradient-to-tr from-[hsl(var(--primary-soft)/0.18)] via-transparent to-[hsl(var(--accent-2)/0.18)] blur-3xl" />
+              <CockpitMockup />
             </div>
           </div>
         </div>
       </section>
 
-      {/* ====== Logo marquee — pas de section delimit. ====== */}
-      <div className="overflow-hidden border-y border-border/40 bg-card/40 py-8">
-        <p className="mb-5 text-center text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          Plugs into the tools your clients already use
+      {/* ====== Logo marquee — deux rangées de pastilles qui défilent ====== */}
+      <div className="overflow-hidden border-y border-border/40 bg-card/30 py-10">
+        <p className="mb-7 text-center text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+          Plugs into the tools your clients already use · 57 integrations
         </p>
-        <div className="relative">
-          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-32 bg-gradient-to-r from-background to-transparent" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-32 bg-gradient-to-l from-background to-transparent" />
+        <div className="relative space-y-3">
+          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-40 bg-gradient-to-r from-background to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-40 bg-gradient-to-l from-background to-transparent" />
+          {/* Row 1 → */}
           <div className="flex w-max mkt-marquee">
-            {[...LOGOS, ...LOGOS].map((l, i) => (
-              <span key={i} className="mx-8 whitespace-nowrap text-sm font-medium text-muted-foreground/60 transition-colors hover:text-foreground">
-                {l}
-              </span>
-            ))}
+            {[...FIRST_ROW, ...FIRST_ROW].map((l, i) => <LogoPill key={`a${i}`} name={l} />)}
+          </div>
+          {/* Row 2 ← (reverse) */}
+          <div className="flex w-max mkt-marquee-reverse">
+            {[...SECOND_ROW, ...SECOND_ROW].map((l, i) => <LogoPill key={`b${i}`} name={l} />)}
           </div>
         </div>
       </div>
@@ -382,6 +386,109 @@ export function HomePage() {
         </div>
       </section>
     </MarketingShell>
+  );
+}
+
+// A bordered logo pill used in the integrations marquee.
+function LogoPill({ name }: { name: string }) {
+  return (
+    <span className="mx-2 inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-border/60 bg-card/60 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground">
+      <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary-soft))]" />
+      {name}
+    </span>
+  );
+}
+
+// A self-contained, image-free mock of the cockpit UI used in the hero.
+function CockpitMockup() {
+  const modules = [
+    { icon: BarChart3, on: true },
+    { icon: CreditCard, on: false },
+    { icon: Server, on: false },
+    { icon: Users, on: false },
+    { icon: MessageSquare, on: false },
+    { icon: Brain, on: false },
+  ];
+  const spark = [28, 34, 30, 42, 38, 52, 48, 60, 64, 72, 68, 84];
+  return (
+    <div className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-2xl mkt-rise">
+      {/* Title bar */}
+      <div className="flex items-center gap-2 border-b border-border bg-secondary/40 px-3 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-destructive/70" />
+        <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
+        <span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--accent-2))]/70" />
+        <span className="ml-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <TerminalSquare className="h-3 w-3" /> acme-agency · cockpit
+        </span>
+        <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Bell className="h-3 w-3" /> 3
+        </span>
+      </div>
+
+      <div className="flex">
+        {/* Module rail */}
+        <div className="flex flex-col items-center gap-2 border-r border-border bg-secondary/20 p-2.5">
+          {modules.map((m, i) => {
+            const I = m.icon;
+            return (
+              <span
+                key={i}
+                className={`flex h-7 w-7 items-center justify-center rounded-md ${
+                  m.on ? "bg-primary/20 text-primary" : "text-muted-foreground/60"
+                }`}
+              >
+                <I className="h-3.5 w-3.5" />
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Content */}
+        <div className="min-w-0 flex-1 space-y-3 p-3.5">
+          {/* KPI row */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { l: "MRR", v: "$48.2k", d: "+12%" },
+              { l: "Active", v: "1,284", d: "+5%" },
+              { l: "Churn", v: "1.9%", d: "-0.3%" },
+            ].map((k) => (
+              <div key={k.l} className="rounded-lg border border-border/60 bg-secondary/30 p-2.5">
+                <div className="text-[9px] uppercase tracking-wide text-muted-foreground">{k.l}</div>
+                <div className="mt-0.5 text-sm font-semibold tabular-nums">{k.v}</div>
+                <div className="text-[9px] text-[hsl(var(--accent-2))]">{k.d}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Sparkline chart */}
+          <div className="rounded-lg border border-border/60 bg-secondary/20 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-medium text-muted-foreground">Revenue · 12 mo</span>
+              <span className="inline-flex items-center gap-1 text-[9px] text-[hsl(var(--accent-2))]"><Activity className="h-2.5 w-2.5" /> live</span>
+            </div>
+            <div className="flex h-14 items-end gap-1">
+              {spark.map((h, i) => (
+                <span
+                  key={i}
+                  className="flex-1 rounded-sm bg-gradient-to-t from-[hsl(var(--primary-soft)/0.35)] to-[hsl(var(--primary-soft))]"
+                  style={{ height: `${h}%` }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Client rows */}
+          <div className="space-y-1.5">
+            <ProjectRow name="northwind" mrr="$21.4k" status="healthy" growth="+8%" />
+            <ProjectRow name="stark-labs" mrr="$14.0k" status="warning" growth="+2%" />
+            <ProjectRow name="initech" mrr="$12.8k" status="error" growth="-3%" />
+          </div>
+        </div>
+      </div>
+
+      {/* Edge highlights */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+    </div>
   );
 }
 
