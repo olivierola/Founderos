@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Hash, Lock, Plus, Loader2, Send, Bot, Trash2, X, AtSign,
+  Hash, Lock, Loader2, Send, Bot, AtSign, Info, Users, Paperclip, Link2, Image as ImageIcon, X,
 } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,20 +24,28 @@ interface Message {
 }
 interface AgentLite { id: string; name: string; avatar_emoji: string | null; accent_color: string | null }
 
+const URL_RE = /(https?:\/\/[^\s]+)/g;
+const IMG_RE = /\.(png|jpe?g|gif|webp|svg|avif)(\?|$)/i;
+
 function relTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit", month: "short", day: "numeric" });
+  return new Date(iso).toLocaleString(undefined, { hour: "2-digit", minute: "2-digit", month: "short", day: "numeric" });
 }
 
 export function PmInboxPage() {
-  const { workspaceId, projectId } = useCurrentContext();
+  const { projectId, workspaceId } = useCurrentContext();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const channelParam = searchParams.get("channel");
+  const wantNew = searchParams.get("new") === "1";
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Ensure a default #general channel exists, then list channels.
-  const { data: channels, isLoading } = useQuery({
+  useEffect(() => {
+    if (wantNew) { setCreateOpen(true); setSearchParams({}, { replace: true }); }
+  }, [wantNew, setSearchParams]);
+
+  // Ensure #general exists, then resolve the active channel.
+  const { data: channels } = useQuery({
     queryKey: ["pm_channels", projectId],
     enabled: !!projectId,
     queryFn: async () => {
@@ -48,7 +56,6 @@ export function PmInboxPage() {
         .order("is_default", { ascending: false })
         .order("created_at", { ascending: true });
       if ((!data || data.length === 0) && workspaceId && user) {
-        // Seed #general on first visit.
         await supabase.from("project_channels").insert({
           workspace_id: workspaceId, project_id: projectId, name: "general",
           description: "Team-wide channel", is_default: true, created_by: user.id,
@@ -64,63 +71,30 @@ export function PmInboxPage() {
     },
   });
 
-  useEffect(() => {
-    if (!activeId && channels && channels.length > 0) setActiveId(channels[0].id);
-  }, [channels, activeId]);
-
-  const active = channels?.find((c) => c.id === activeId) ?? null;
+  const active = useMemo(
+    () => channels?.find((c) => c.id === channelParam) ?? channels?.[0] ?? null,
+    [channels, channelParam],
+  );
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="Inbox" description="Team & agent chatrooms for this project. @mention an agent to bring it in." />
-      <div className="flex h-[calc(100vh-12rem)] overflow-hidden rounded-xl border border-border">
-        {/* Channel rail */}
-        <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-secondary/20">
-          <div className="flex items-center justify-between px-3 py-2.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Channels</span>
-            <button onClick={() => setCreateOpen(true)} title="New channel" className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground">
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-            {isLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-            ) : (
-              (channels ?? []).map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setActiveId(c.id)}
-                  className={cn(
-                    "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                    activeId === c.id ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
-                  )}
-                >
-                  {c.is_private ? <Lock className="h-3.5 w-3.5 shrink-0" /> : <Hash className="h-3.5 w-3.5 shrink-0" />}
-                  <span className="truncate">{c.name}</span>
-                </button>
-              ))
-            )}
-          </div>
-        </aside>
-
-        {/* Conversation */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          {active ? (
-            <ChannelView channel={active} />
-          ) : (
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Select a channel</div>
-          )}
+    <div className="flex h-[calc(100vh-3.5rem)] w-full flex-col">
+      {active ? (
+        <ChannelView key={active.id} channel={active} />
+      ) : (
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          {channels ? "Create a channel to get started." : <Loader2 className="h-4 w-4 animate-spin" />}
         </div>
-      </div>
-
+      )}
       <CreateChannelDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(id) => { queryClient.invalidateQueries({ queryKey: ["pm_channels", projectId] }); setActiveId(id); }}
+        onCreated={(id) => { queryClient.invalidateQueries({ queryKey: ["pm_channels", projectId] }); queryClient.invalidateQueries({ queryKey: ["sidebar_pm_channels", projectId] }); setSearchParams({ channel: id }); }}
       />
     </div>
   );
 }
+
+type DetailTab = "about" | "members" | "files" | "links" | "images";
 
 function ChannelView({ channel }: { channel: Channel }) {
   const { workspaceId, projectId } = useCurrentContext();
@@ -129,6 +103,7 @@ function ChannelView({ channel }: { channel: Channel }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [showMention, setShowMention] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab | null>("about");
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   const { data: messages } = useQuery({
@@ -139,12 +114,11 @@ function ChannelView({ channel }: { channel: Channel }) {
         .select("id, channel_id, author_kind, user_id, agent_id, body, mentions, created_at")
         .eq("channel_id", channel.id)
         .order("created_at", { ascending: true })
-        .limit(200);
+        .limit(300);
       return (data ?? []) as Message[];
     },
   });
 
-  // Project agents (for @mention + author display).
   const { data: agents } = useQuery({
     queryKey: ["pm_inbox_agents", projectId],
     enabled: !!projectId,
@@ -158,13 +132,9 @@ function ChannelView({ channel }: { channel: Channel }) {
       return (data ?? []) as AgentLite[];
     },
   });
-  const agentById = useMemo(() => {
-    const m: Record<string, AgentLite> = {};
-    (agents ?? []).forEach((a) => { m[a.id] = a; });
-    return m;
-  }, [agents]);
+  const agentById = useMemo(() => Object.fromEntries((agents ?? []).map((a) => [a.id, a])), [agents]);
 
-  // Realtime: push new messages into the cache as they arrive.
+  // Realtime stream.
   useEffect(() => {
     const ch = supabase
       .channel(`pm_messages:${channel.id}`)
@@ -185,13 +155,23 @@ function ChannelView({ channel }: { channel: Channel }) {
     if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [messages?.length]);
 
-  // Resolve @mentions in the text to agent ids (case-insensitive, name match).
+  // Shared links / images extracted from message bodies.
+  const { links, images } = useMemo(() => {
+    const links: { url: string; at: string }[] = [];
+    const images: { url: string; at: string }[] = [];
+    for (const m of messages ?? []) {
+      const urls = m.body.match(URL_RE) ?? [];
+      for (const u of urls) (IMG_RE.test(u) ? images : links).push({ url: u, at: m.created_at });
+    }
+    return { links, images };
+  }, [messages]);
+
   function resolveMentions(text: string): string[] {
     const ids: string[] = [];
+    const compact = text.replace(/\s+/g, "").toLowerCase();
     for (const a of agents ?? []) {
-      const handle = a.name.replace(/\s+/g, "");
-      const re = new RegExp(`@${handle}\\b`, "i");
-      if (re.test(text.replace(/\s+/g, "")) || text.toLowerCase().includes(`@${a.name.toLowerCase()}`)) ids.push(a.id);
+      const handle = a.name.replace(/\s+/g, "").toLowerCase();
+      if (compact.includes(`@${handle}`) || text.toLowerCase().includes(`@${a.name.toLowerCase()}`)) ids.push(a.id);
     }
     return ids;
   }
@@ -204,10 +184,8 @@ function ChannelView({ channel }: { channel: Channel }) {
       const mentions = resolveMentions(text);
       setInput("");
       await callEdge("project-inbox-post", {
-        workspace_id: workspaceId, project_id: projectId, channel_id: channel.id,
-        body: text, mentions,
+        workspace_id: workspaceId, project_id: projectId, channel_id: channel.id, body: text, mentions,
       });
-      // Realtime delivers the row; refetch as a fallback.
       queryClient.invalidateQueries({ queryKey: ["pm_messages", channel.id] });
     } finally {
       setSending(false);
@@ -219,67 +197,230 @@ function ChannelView({ channel }: { channel: Channel }) {
     setShowMention(false);
   }
 
+  const detailTabs: { key: DetailTab; label: string; icon: typeof Info }[] = [
+    { key: "about", label: "About", icon: Info },
+    { key: "members", label: "Members", icon: Users },
+    { key: "files", label: "Files", icon: Paperclip },
+    { key: "links", label: "Links", icon: Link2 },
+    { key: "images", label: "Images", icon: ImageIcon },
+  ];
+
   return (
-    <>
-      {/* Channel header */}
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-        {channel.is_private ? <Lock className="h-4 w-4 text-muted-foreground" /> : <Hash className="h-4 w-4 text-muted-foreground" />}
-        <span className="text-sm font-semibold">{channel.name}</span>
-        {channel.description && <span className="truncate text-xs text-muted-foreground">· {channel.description}</span>}
-      </div>
-
-      {/* Messages */}
-      <div ref={scrollerRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {(messages ?? []).length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-            <Hash className="h-6 w-6 opacity-50" />
-            This is the start of #{channel.name}. Say hi — or @mention an agent.
-          </div>
-        ) : (
-          (messages ?? []).map((m) => (
-            <MessageRow key={m.id} m={m} agent={m.agent_id ? agentById[m.agent_id] : undefined} mine={m.user_id === user?.id} />
-          ))
-        )}
-      </div>
-
-      {/* Composer */}
-      <div className="relative border-t border-border p-3">
-        {showMention && (agents ?? []).length > 0 && (
-          <div className="absolute bottom-full left-3 mb-1 w-64 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-            <div className="border-b border-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">Mention an agent</div>
-            <div className="max-h-48 overflow-y-auto">
-              {(agents ?? []).map((a) => (
-                <button key={a.id} onClick={() => insertMention(a)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary">
-                  <span className="flex h-6 w-6 items-center justify-center rounded text-sm" style={{ backgroundColor: (a.accent_color ?? "#2F2FE4") + "22" }}>{a.avatar_emoji ?? "🤖"}</span>
-                  {a.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        <div className="flex items-end gap-2">
+    <div className="flex min-h-0 flex-1">
+      {/* Main column */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Channel header */}
+        <div className="flex h-12 items-center gap-2 border-b border-border px-4">
+          {channel.is_private ? <Lock className="h-4 w-4 text-muted-foreground" /> : <Hash className="h-4 w-4 text-muted-foreground" />}
+          <span className="text-sm font-semibold">{channel.name}</span>
+          {channel.description && <span className="truncate text-xs text-muted-foreground">· {channel.description}</span>}
           <button
-            onClick={() => setShowMention((s) => !s)}
-            title="Mention an agent"
-            className="mb-1 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            onClick={() => setDetailTab((t) => (t ? null : "about"))}
+            className={cn("ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground", detailTab && "bg-secondary text-foreground")}
+            title="Channel details"
           >
-            <AtSign className="h-4 w-4" />
+            <Info className="h-4 w-4" />
           </button>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-            rows={1}
-            placeholder={`Message #${channel.name}…  (@ to mention an agent)`}
-            className="max-h-32 min-h-[38px] flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <Button onClick={send} disabled={sending || !input.trim()} className="mb-0.5">
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
+        </div>
+
+        {/* Messages */}
+        <div ref={scrollerRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+          {(messages ?? []).length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+              <Hash className="h-6 w-6 opacity-50" />
+              This is the start of #{channel.name}. Say hi — or @mention an agent.
+            </div>
+          ) : (
+            (messages ?? []).map((m) => (
+              <MessageRow key={m.id} m={m} agent={m.agent_id ? agentById[m.agent_id] : undefined} mine={m.user_id === user?.id} />
+            ))
+          )}
+        </div>
+
+        {/* Composer */}
+        <div className="relative border-t border-border p-3">
+          {showMention && (agents ?? []).length > 0 && (
+            <div className="absolute bottom-full left-3 mb-1 w-64 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+              <div className="border-b border-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">Mention an agent</div>
+              <div className="max-h-48 overflow-y-auto">
+                {(agents ?? []).map((a) => (
+                  <button key={a.id} onClick={() => insertMention(a)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary">
+                    <span className="flex h-6 w-6 items-center justify-center rounded text-sm" style={{ backgroundColor: (a.accent_color ?? "#2F2FE4") + "22" }}>{a.avatar_emoji ?? "🤖"}</span>
+                    {a.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            <button onClick={() => setShowMention((s) => !s)} title="Mention an agent" className="mb-1 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground">
+              <AtSign className="h-4 w-4" />
+            </button>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              rows={1}
+              placeholder={`Message #${channel.name}…  (@ to mention an agent)`}
+              className="max-h-32 min-h-[38px] flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <Button onClick={send} disabled={sending || !input.trim()} className="mb-0.5">
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
       </div>
-    </>
+
+      {/* Right detail sidebar */}
+      {detailTab && (
+        <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-secondary/10">
+          <div className="flex h-12 items-center justify-between border-b border-border px-3">
+            <span className="text-sm font-semibold">Details</span>
+            <button onClick={() => setDetailTab(null)} className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="flex gap-0.5 border-b border-border px-2 py-1.5">
+            {detailTabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setDetailTab(t.key)}
+                title={t.label}
+                className={cn("flex flex-1 items-center justify-center rounded-md py-1.5 transition-colors", detailTab === t.key ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")}
+              >
+                <t.icon className="h-4 w-4" />
+              </button>
+            ))}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 text-sm">
+            <DetailPanel tab={detailTab} channel={channel} agents={agents ?? []} agentById={agentById} links={links} images={images} />
+          </div>
+        </aside>
+      )}
+    </div>
   );
+}
+
+function DetailPanel({
+  tab, channel, agents, agentById, links, images,
+}: {
+  tab: DetailTab;
+  channel: Channel;
+  agents: AgentLite[];
+  agentById: Record<string, AgentLite>;
+  links: { url: string; at: string }[];
+  images: { url: string; at: string }[];
+}) {
+  const { projectId } = useCurrentContext();
+
+  // Human members for the Members tab.
+  const { data: members } = useQuery({
+    queryKey: ["pm_channel_members", channel.id, channel.is_private],
+    enabled: tab === "members",
+    queryFn: async () => {
+      if (channel.is_private) {
+        const { data } = await supabase
+          .from("project_channel_members")
+          .select("user_id, profiles:profiles(full_name, email)")
+          .eq("channel_id", channel.id);
+        return (data ?? []).map((r: any) => r.profiles?.full_name || r.profiles?.email || "Member");
+      }
+      const { data } = await supabase
+        .from("workspace_members")
+        .select("profiles:profiles(full_name, email)")
+        .limit(50);
+      return (data ?? []).map((r: any) => r.profiles?.full_name || r.profiles?.email || "Member");
+    },
+  });
+
+  if (tab === "about") {
+    return (
+      <div className="space-y-4">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Channel</div>
+          <div className="mt-1 flex items-center gap-1.5 font-medium">
+            {channel.is_private ? <Lock className="h-3.5 w-3.5" /> : <Hash className="h-3.5 w-3.5" />}{channel.name}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Description</div>
+          <p className="mt-1 text-muted-foreground">{channel.description || "No description."}</p>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Visibility</div>
+          <p className="mt-1 text-muted-foreground">{channel.is_private ? "Private — invite only" : "Public — all project members"}</p>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Created</div>
+          <p className="mt-1 text-muted-foreground">{new Date(channel.created_at).toLocaleDateString()}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (tab === "members") {
+    return (
+      <div className="space-y-3">
+        <div>
+          <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">People</div>
+          <div className="space-y-1">
+            {(members ?? []).length === 0 ? <p className="text-xs text-muted-foreground">No members.</p> :
+              (members ?? []).map((name, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded bg-secondary text-[10px] font-semibold">{name.slice(0, 1).toUpperCase()}</span>
+                  <span className="truncate text-xs">{name}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">Agents available</div>
+          <div className="space-y-1">
+            {agents.length === 0 ? <p className="text-xs text-muted-foreground">No agents.</p> :
+              agents.map((a) => (
+                <div key={a.id} className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded text-xs" style={{ backgroundColor: (a.accent_color ?? "#2F2FE4") + "22" }}>{a.avatar_emoji ?? "🤖"}</span>
+                  <span className="truncate text-xs">{a.name}</span>
+                  <Bot className="ml-auto h-3 w-3 text-primary" />
+                </div>
+              ))}
+          </div>
+          <p className="mt-2 text-[10px] text-muted-foreground">@mention any agent in the channel to bring it in.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (tab === "links") {
+    return links.length === 0 ? <Empty label="No links shared yet." /> : (
+      <ul className="space-y-2">
+        {links.map((l, i) => (
+          <li key={i}>
+            <a href={l.url} target="_blank" rel="noreferrer" className="flex items-start gap-2 text-xs text-primary hover:underline">
+              <Link2 className="mt-0.5 h-3 w-3 shrink-0" /><span className="truncate">{l.url}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (tab === "images") {
+    return images.length === 0 ? <Empty label="No images shared yet." /> : (
+      <div className="grid grid-cols-2 gap-2">
+        {images.map((im, i) => (
+          <a key={i} href={im.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border border-border">
+            <img src={im.url} alt="" className="h-20 w-full object-cover" />
+          </a>
+        ))}
+      </div>
+    );
+  }
+
+  // files — we don't have uploads yet; list non-image links as "files" hint.
+  return <Empty label="File uploads are coming soon. Paste a link to share a file for now." />;
+}
+
+function Empty({ label }: { label: string }) {
+  return <p className="py-6 text-center text-xs text-muted-foreground">{label}</p>;
 }
 
 function MessageRow({ m, agent, mine }: { m: Message; agent?: AgentLite; mine: boolean }) {
@@ -301,7 +442,7 @@ function MessageRow({ m, agent, mine }: { m: Message; agent?: AgentLite; mine: b
           {isAgent && <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary"><Bot className="h-2.5 w-2.5" /> agent</span>}
           <span className="text-[10px] text-muted-foreground">{relTime(m.created_at)}</span>
         </div>
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{m.body}</p>
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{m.body}</p>
       </div>
     </div>
   );
@@ -336,7 +477,6 @@ function CreateChannelDialog({
         .select("id")
         .single();
       if (error) { alert(error.message); return; }
-      // Private channel: add the creator as the first member.
       if (isPrivate && data) {
         await supabase.from("project_channel_members").insert({ channel_id: data.id, user_id: user.id });
       }
@@ -357,13 +497,7 @@ function CreateChannelDialog({
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
             <div className="flex items-center gap-1 rounded-md border border-input bg-background px-2">
               <Hash className="h-4 w-4 text-muted-foreground" />
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="deploys"
-                autoFocus
-                className="flex-1 bg-transparent py-2 text-sm focus:outline-none"
-              />
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="deploys" autoFocus className="flex-1 bg-transparent py-2 text-sm focus:outline-none" />
             </div>
           </div>
           <div>

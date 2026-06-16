@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
+import { InboxChannelsItem } from "./InboxChannelsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
 import { useMemo } from "react";
 import { INTERNAL_AGENT_TABS } from "@/features/internal-agents/InternalAgentDetail";
@@ -158,6 +159,9 @@ export function SecondarySidebar() {
           const node = (() => {
             if ((module.slug === "ai" || module.slug === "agent") && sub.slug === "chat") {
               return <ChatConversationsItem key={sub.slug} to={to} label={sub.label} />;
+            }
+            if (module.slug === "pm" && sub.slug === "inbox") {
+              return <InboxChannelsItem key={sub.slug} to={to} label={sub.label} />;
             }
             if (kids && kids.length > 0) {
               return (

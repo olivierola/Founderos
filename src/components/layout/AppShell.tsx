@@ -113,5 +113,7 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/devops\/testing(\/.*)?$/.test(pathname)) return true;
   // Agent ecosystem: full-screen infinite collaboration canvas.
   if (/\/app\/[^/]+\/[^/]+\/agent\/ecosystem$/.test(pathname)) return true;
+  // Project Inbox: Slack-style full-width chatroom.
+  if (/\/app\/[^/]+\/[^/]+\/pm\/inbox(\/.*)?$/.test(pathname)) return true;
   return false;
 }
