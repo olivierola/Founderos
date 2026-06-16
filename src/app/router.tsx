@@ -77,8 +77,10 @@ import {
 
 // Business modules — HR / CRM / Support / Projects / Finance
 import {
-  HrOverviewPage, HrEmployeesPage, HrOrgChartPage, HrLeavePage, HrRecruitmentPage, HrPayrollPage,
+  HrOverviewPage, HrEmployeesPage, HrOrgChartPage, HrLeavePage, HrPayrollPage,
 } from "@/features/hr/HrPages";
+import { RecruitmentPage } from "@/features/hr/Recruitment";
+import { OpeningDetailPage } from "@/features/hr/OpeningDetail";
 import {
   CrmOverviewPage, CrmContactsPage, CrmPipelinePage, CrmActivitiesPage,
 } from "@/features/crm/CrmPages";
@@ -278,7 +280,7 @@ const PAGES: Record<string, PageEl> = {
   "hr/employees": <HrEmployeesPage />,
   "hr/org-chart": <HrOrgChartPage />,
   "hr/leave": <HrLeavePage />,
-  "hr/recruitment": <HrRecruitmentPage />,
+  "hr/recruitment": <RecruitmentPage />,
   "hr/payroll": <HrPayrollPage />,
 
   // CRM
@@ -488,6 +490,14 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <AgentBuilderPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "hr/opening/:openingId/:tab?",
+        element: (
+          <ErrorBoundary>
+            <OpeningDetailPage />
           </ErrorBoundary>
         ),
       },

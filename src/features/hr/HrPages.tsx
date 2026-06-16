@@ -18,7 +18,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import {
   type Employee, type LeaveRequest, type Candidate,
-  EMPLOYMENT_TYPES, EMP_STATUS_META, LEAVE_STATUS_META, RECRUIT_STAGES, STAGE_META,
+  EMPLOYMENT_TYPES, EMP_STATUS_META, LEAVE_STATUS_META,
   fmtMoney, daysBetween,
 } from "./shared";
 
@@ -390,101 +390,6 @@ function LeaveDialog({ open, onOpenChange, employees, onCreate }: {
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={submit} disabled={saving}>{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Submit</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ================================================================ RECRUITMENT
-export function HrRecruitmentPage() {
-  const { workspaceId, projectId } = useCurrentContext();
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-
-  const { data: candidates, isLoading } = useQuery({
-    queryKey: ["hr_candidates", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await supabase.from("hr_candidates").select("*").eq("project_id", projectId!).order("created_at", { ascending: false });
-      return (data ?? []) as Candidate[];
-    },
-  });
-
-  async function move(id: string, stage: Candidate["stage"]) {
-    await supabase.from("hr_candidates").update({ stage }).eq("id", id);
-    queryClient.invalidateQueries({ queryKey: ["hr_candidates", projectId] });
-  }
-
-  const byStage = useMemo(() => {
-    const m: Record<string, Candidate[]> = {};
-    RECRUIT_STAGES.forEach((s) => (m[s] = []));
-    (candidates ?? []).forEach((c) => { (m[c.stage] ??= []).push(c); });
-    return m;
-  }, [candidates]);
-
-  return (
-    <div className="space-y-5">
-      <PageHeader title="Recruitment" description="Candidate pipeline — drag stages via the menu on each card." actions={<Button size="sm" onClick={() => setOpen(true)}><UserPlus className="h-4 w-4" /> Add candidate</Button>} />
-      {isLoading ? (
-        <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {RECRUIT_STAGES.map((stage) => (
-            <div key={stage} className="rounded-lg border border-border bg-muted/20 p-2">
-              <div className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium">
-                <span className={cn("h-2 w-2 rounded-full", STAGE_META[stage].accent)} />
-                {STAGE_META[stage].label}
-                <span className="ml-auto text-muted-foreground">{byStage[stage]?.length ?? 0}</span>
-              </div>
-              <div className="space-y-2">
-                {(byStage[stage] ?? []).map((c) => (
-                  <div key={c.id} className="rounded-md border border-border bg-card p-2.5">
-                    <div className="text-sm font-medium">{c.full_name}</div>
-                    {c.email && <div className="truncate text-[11px] text-muted-foreground">{c.email}</div>}
-                    <select value={c.stage} onChange={(e) => move(c.id, e.target.value as Candidate["stage"])} className="mt-1.5 w-full rounded border border-input bg-background px-1 py-0.5 text-[11px]">
-                      {RECRUIT_STAGES.map((s) => <option key={s} value={s}>{STAGE_META[s].label}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <CandidateDialog open={open} onOpenChange={setOpen} onCreate={async (draft) => {
-        if (!workspaceId || !projectId) return;
-        await supabase.from("hr_candidates").insert({ ...draft, workspace_id: workspaceId, project_id: projectId });
-        queryClient.invalidateQueries({ queryKey: ["hr_candidates", projectId] });
-        setOpen(false);
-      }} />
-    </div>
-  );
-}
-
-function CandidateDialog({ open, onOpenChange, onCreate }: {
-  open: boolean; onOpenChange: (o: boolean) => void; onCreate: (d: Partial<Candidate>) => Promise<void>;
-}) {
-  const [d, setD] = useState<Partial<Candidate>>({ stage: "applied" });
-  const [saving, setSaving] = useState(false);
-  async function submit() {
-    if (!d.full_name?.trim()) return;
-    setSaving(true);
-    try { await onCreate(d); setD({ stage: "applied" }); } finally { setSaving(false); }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Add candidate</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <Field label="Full name"><Input value={d.full_name ?? ""} onChange={(e) => setD((p) => ({ ...p, full_name: e.target.value }))} autoFocus /></Field>
-          <Field label="Email"><Input type="email" value={d.email ?? ""} onChange={(e) => setD((p) => ({ ...p, email: e.target.value }))} /></Field>
-          <Field label="Resume URL"><Input value={d.resume_url ?? ""} onChange={(e) => setD((p) => ({ ...p, resume_url: e.target.value }))} /></Field>
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Add</Button>
         </div>
       </DialogContent>
     </Dialog>
