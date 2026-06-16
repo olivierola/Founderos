@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Pencil, Check } from "lucide-react";
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { ArrowLeft, Loader2, Pencil, Check, LibraryBig, X, Download } from "lucide-react";
+import { Excalidraw, loadLibraryFromBlob } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useTheme } from "@/lib/theme-context";
+import { cn } from "@/lib/utils";
+import { EXCALIDRAW_LIBRARY_GROUPS, libraryUrl, type LibDef } from "./excalidrawLibraries";
 
 const DARK_BG = "#0a0a0a";
 const LIGHT_BG = "#ffffff";
@@ -27,6 +29,9 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
   const [title, setTitle] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [libsOpen, setLibsOpen] = useState(false);
+  const [loadingLib, setLoadingLib] = useState<string | null>(null);
+  const [loadedLibs, setLoadedLibs] = useState<Set<string>>(new Set());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Ignore the realtime echo of our own writes / the initial load.
   const applyingRemote = useRef(false);
@@ -99,6 +104,26 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
     api.updateScene({ appState: { viewBackgroundColor: theme === "dark" ? DARK_BG : LIGHT_BG } });
   }, [theme, apiReady]);
 
+  // Fetch a .excalidrawlib and merge its shapes into the board's library panel.
+  async function addLibrary(lib: LibDef) {
+    const api = apiRef.current;
+    if (!api) return;
+    const key = `${lib.author}/${lib.slug}`;
+    setLoadingLib(key);
+    try {
+      const res = await fetch(libraryUrl(lib));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const items = await loadLibraryFromBlob(blob);
+      await api.updateLibrary({ libraryItems: items, merge: true, openLibraryMenu: true });
+      setLoadedLibs((s) => new Set(s).add(key));
+    } catch (e) {
+      alert(`Couldn't load "${lib.name}". ${e instanceof Error ? e.message : ""}`);
+    } finally {
+      setLoadingLib(null);
+    }
+  }
+
   async function saveTitle(t: string) {
     const title = t.trim() || "Untitled board";
     setTitle(title);
@@ -135,8 +160,18 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
         {savedAt && Date.now() - savedAt < 3000 && (
           <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground"><Check className="h-3 w-3" /> Saved</span>
         )}
+        <button
+          onClick={() => setLibsOpen((o) => !o)}
+          className={cn(
+            "ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-secondary",
+            libsOpen && "bg-secondary",
+          )}
+        >
+          <LibraryBig className="h-4 w-4" /> Libraries
+        </button>
       </div>
 
+      <div className="flex min-h-0 flex-1">
       {/* Excalidraw canvas (smooth background, full toolset) */}
       <div className="min-h-0 flex-1">
         <Excalidraw
@@ -153,6 +188,50 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
           onChange={(elements, appState) => persistScene(elements, appState as any)}
           UIOptions={{ canvasActions: { toggleTheme: true } }}
         />
+      </div>
+
+      {/* Business library catalog — load curated shape sets on demand */}
+      {libsOpen && (
+        <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-card">
+          <div className="flex h-12 items-center justify-between border-b border-border px-3">
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold"><LibraryBig className="h-4 w-4" /> Libraries</span>
+            <button onClick={() => setLibsOpen(false)} className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-4 w-4" /></button>
+          </div>
+          <p className="border-b border-border px-3 py-2 text-[11px] text-muted-foreground">
+            Add curated shape sets — they appear in Excalidraw's library panel, ready to drag onto the board.
+          </p>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+            {EXCALIDRAW_LIBRARY_GROUPS.map((g) => (
+              <div key={g.label}>
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{g.label}</div>
+                <div className="space-y-1.5">
+                  {g.libs.map((lib) => {
+                    const key = `${lib.author}/${lib.slug}`;
+                    const loaded = loadedLibs.has(key);
+                    const loading = loadingLib === key;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => addLibrary(lib)}
+                        disabled={loading}
+                        className="flex w-full items-start gap-2 rounded-md border border-border p-2 text-left transition-colors hover:border-foreground/30 hover:bg-secondary/50 disabled:opacity-60"
+                      >
+                        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-secondary text-muted-foreground">
+                          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : loaded ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Download className="h-3.5 w-3.5" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-medium">{lib.name}</span>
+                          {lib.items && <span className="block truncate text-[10px] text-muted-foreground">{lib.items}</span>}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </aside>
+      )}
       </div>
     </div>
   );
