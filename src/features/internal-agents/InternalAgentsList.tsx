@@ -167,26 +167,33 @@ export function InternalAgentsListPage() {
           {agents.map((a) => {
             const c = counts?.[a.id];
             const isMine = a.created_by === user?.id;
+            const accent = a.accent_color ?? "#2F2FE4";
             return (
               <Card
                 key={a.id}
                 onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${a.id}/chat`)}
-                className="group cursor-pointer transition-colors hover:border-foreground/30"
+                className="group relative cursor-pointer overflow-hidden p-0 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ ['--agent-accent' as string]: accent }}
               >
-                <CardContent className="space-y-3 p-4">
-                  <div className="flex items-start justify-between">
-                    <div
-                      className="flex h-10 w-10 items-center justify-center rounded-md text-lg"
-                      style={{ backgroundColor: (a.accent_color ?? "#2F2FE4") + "22", color: a.accent_color ?? undefined }}
-                    >
-                      {a.avatar_emoji ?? "🤖"}
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                {/* Accent header band */}
+                <div
+                  className="relative h-16"
+                  style={{ background: `linear-gradient(135deg, ${accent}26, ${accent}0d)` }}
+                >
+                  <div
+                    className="absolute -bottom-5 left-4 flex h-12 w-12 items-center justify-center rounded-xl text-2xl shadow-sm ring-4 ring-card"
+                    style={{ backgroundColor: accent + "22", color: accent }}
+                  >
+                    {a.avatar_emoji ?? "🤖"}
                   </div>
+                  <ChevronRight className="absolute right-3 top-3 h-4 w-4 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-foreground" />
+                </div>
+
+                <CardContent className="space-y-3 px-4 pb-4 pt-7">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold leading-tight">{a.name}</h3>
-                      {isMine && <Badge variant="outline" className="text-[10px]">Owner</Badge>}
+                      <h3 className="truncate font-semibold leading-tight">{a.name}</h3>
+                      {isMine && <Badge variant="outline" className="shrink-0 text-[10px]">Owner</Badge>}
                     </div>
                     {a.description ? (
                       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{a.description}</p>
@@ -194,15 +201,29 @@ export function InternalAgentsListPage() {
                       <p className="mt-1 text-xs italic text-muted-foreground">No description</p>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+
+                  {/* Capability chips */}
+                  <div className="flex flex-wrap gap-1.5">
                     {a.chat_enabled && (
-                      <span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" /> Chat</span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <MessageSquare className="h-3 w-3" /> Chat
+                      </span>
                     )}
                     {a.mission_enabled && (
-                      <span className="inline-flex items-center gap-1"><Target className="h-3 w-3" /> {c?.missions ?? 0} missions</span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <Target className="h-3 w-3" /> Missions
+                      </span>
                     )}
-                    <span className="inline-flex items-center gap-1"><Wrench className="h-3 w-3" /> {c?.tools ?? 0} tools</span>
-                    <span className="inline-flex items-center gap-1"><UsersIcon className="h-3 w-3" /> {c?.members ?? 0} members</span>
+                  </div>
+
+                  {/* Stats footer */}
+                  <div className="flex items-center gap-4 border-t border-border pt-3 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1" title="Missions"><Target className="h-3 w-3" /> {c?.missions ?? 0}</span>
+                    <span className="inline-flex items-center gap-1" title="Tools & integrations"><Wrench className="h-3 w-3" /> {c?.tools ?? 0}</span>
+                    <span className="inline-flex items-center gap-1" title="Members"><UsersIcon className="h-3 w-3" /> {c?.members ?? 0}</span>
+                    <span className="ml-auto inline-flex items-center gap-1 font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                      Open chat <ChevronRight className="h-3 w-3" />
+                    </span>
                   </div>
                 </CardContent>
               </Card>
