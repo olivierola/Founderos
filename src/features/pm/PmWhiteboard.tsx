@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Loader2, ArrowLeft, Trash2, StickyNote, Pencil, Type, ZoomIn, ZoomOut, Maximize2, Eraser } from "lucide-react";
+import { Plus, Loader2, ArrowLeft, Trash2, StickyNote, Pencil, Type, ZoomIn, ZoomOut, Maximize2, Eraser, Square, ListChecks, HelpCircle } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 interface Board { id: string; title: string; color: string; created_at: string; updated_at: string }
 interface Node {
-  id: string; board_id: string; kind: "note" | "text"; text: string; color: string;
+  id: string; board_id: string; kind: "note" | "text" | "frame"; text: string; color: string;
   x: number; y: number; w: number; h: number;
 }
 
@@ -79,9 +79,9 @@ function BoardGallery({ onOpen }: { onOpen: (id: string) => void }) {
           <button
             onClick={createBoard}
             disabled={creating}
-            className="group flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+            className="group flex aspect-[4/3] flex-col items-center justify-center gap-2.5 rounded-md border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary disabled:opacity-50"
           >
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary transition-colors group-hover:bg-primary/15">
+            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary transition-colors group-hover:bg-primary/15">
               {creating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
             </span>
             <span className="text-sm font-medium">New whiteboard</span>
@@ -91,30 +91,32 @@ function BoardGallery({ onOpen }: { onOpen: (id: string) => void }) {
             <div
               key={b.id}
               onClick={() => onOpen(b.id)}
-              className="group relative flex aspect-[4/3] cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-card transition-all hover:-translate-y-1 hover:shadow-xl"
+              className="group relative flex aspect-[4/3] cursor-pointer flex-col overflow-hidden rounded-md border border-border bg-card transition-all hover:border-foreground/25 hover:shadow-lg"
             >
-              {/* Preview area — gradient + dotted canvas feel + mini notes */}
-              <div className="relative flex-1 overflow-hidden" style={{ background: `linear-gradient(135deg, ${b.color}26, ${b.color}05)` }}>
+              {/* Top accent line */}
+              <div className="h-1 w-full" style={{ backgroundColor: b.color }} />
+              {/* Preview area — dotted canvas feel + mini notes */}
+              <div className="relative flex-1 overflow-hidden bg-secondary/20">
                 <div className="absolute inset-0 opacity-40 [background-image:radial-gradient(circle,hsl(var(--border))_1px,transparent_1px)] [background-size:16px_16px]" />
-                <span className="absolute left-4 top-5 h-9 w-12 rotate-[-4deg] rounded-sm bg-[#FEF08A] shadow-sm" />
-                <span className="absolute left-14 top-9 h-9 w-12 rotate-[3deg] rounded-sm bg-[#BFDBFE] shadow-sm" />
-                <span className="absolute left-8 top-14 h-9 w-12 rotate-[-1deg] rounded-sm bg-[#BBF7D0] shadow-sm" />
+                <span className="absolute left-5 top-6 h-10 w-14 rotate-[-5deg] rounded-[3px] bg-[#FEF08A] shadow-md" />
+                <span className="absolute left-16 top-10 h-10 w-14 rotate-[4deg] rounded-[3px] bg-[#BFDBFE] shadow-md" />
+                <span className="absolute left-9 top-[58px] h-10 w-14 rotate-[-1deg] rounded-[3px] bg-[#BBF7D0] shadow-md" />
                 <span
-                  className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg"
+                  className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md"
                   style={{ backgroundColor: b.color + "22", color: b.color }}
                 >
                   <StickyNote className="h-3.5 w-3.5" />
                 </span>
               </div>
               {/* Footer */}
-              <div className="flex items-center justify-between border-t border-border px-3 py-2.5">
+              <div className="flex items-center justify-between border-t border-border bg-card px-3.5 py-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{b.title}</div>
-                  <div className="text-[10px] text-muted-foreground">Updated {new Date(b.updated_at).toLocaleDateString()}</div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">Updated {new Date(b.updated_at).toLocaleDateString()}</div>
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); remove(b.id); }}
-                  className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                  className="shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-destructive group-hover:opacity-100"
                   title="Delete"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -167,15 +169,33 @@ function BoardCanvas({ boardId, onBack }: { boardId: string; onBack: () => void 
   const [defaultColor, setDefaultColor] = useState(NOTE_COLORS[0]);
   const [zoom, setZoom] = useState(1);
 
-  async function addNode(kind: "note" | "text") {
+  async function addNode(kind: "note" | "text" | "frame", text = "") {
     if (!workspaceId || !user) return;
+    const dims =
+      kind === "text" ? { w: 220, h: 60 } :
+      kind === "frame" ? { w: 360, h: 280 } :
+      { w: 180, h: 120 };
+    const color = kind === "note" ? defaultColor : "transparent";
     await supabase.from("whiteboard_nodes").insert({
-      board_id: boardId, workspace_id: workspaceId, kind,
-      text: "", color: kind === "text" ? "transparent" : defaultColor,
+      board_id: boardId, workspace_id: workspaceId, kind, text,
+      color,
       x: 80 + Math.random() * 280, y: 80 + Math.random() * 200,
-      w: kind === "text" ? 220 : 180, h: kind === "text" ? 60 : 120,
+      ...dims,
       created_by: user.id,
     });
+    queryClient.invalidateQueries({ queryKey: ["pm_whiteboard_nodes", boardId] });
+  }
+
+  // Seed a small To Do / Doing / Done set of frames.
+  async function addRetroTemplate() {
+    if (!workspaceId || !user) return;
+    const cols = [
+      { t: "What went well", x: 60 }, { t: "What to improve", x: 460 }, { t: "Action items", x: 860 },
+    ];
+    await supabase.from("whiteboard_nodes").insert(cols.map((c) => ({
+      board_id: boardId, workspace_id: workspaceId, kind: "frame", text: c.t,
+      color: "transparent", x: c.x, y: 70, w: 360, h: 360, created_by: user.id,
+    })));
     queryClient.invalidateQueries({ queryKey: ["pm_whiteboard_nodes", boardId] });
   }
 
@@ -220,6 +240,9 @@ function BoardCanvas({ boardId, onBack }: { boardId: string; onBack: () => void 
         <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-card/95 p-1 shadow-lg backdrop-blur">
           <ToolBtn label="Add sticky note" onClick={() => addNode("note")}><StickyNote className="h-4 w-4" /></ToolBtn>
           <ToolBtn label="Add text" onClick={() => addNode("text")}><Type className="h-4 w-4" /></ToolBtn>
+          <ToolBtn label="Add section frame" onClick={() => addNode("frame")}><Square className="h-4 w-4" /></ToolBtn>
+          <ToolBtn label="Add question note" onClick={() => addNode("note", "❓ ")}><HelpCircle className="h-4 w-4" /></ToolBtn>
+          <ToolBtn label="Retro template (3 columns)" onClick={addRetroTemplate}><ListChecks className="h-4 w-4" /></ToolBtn>
           <Divider />
           {/* Default note color */}
           <div className="flex items-center gap-1 px-1">
@@ -298,11 +321,41 @@ function Canvas({ boardId, nodes, zoom }: { boardId: string; nodes: Node[]; zoom
       {nodes.map((n) => {
         const pos = drag && drag.id === n.id ? drag : n;
         const isText = n.kind === "text";
+        const isFrame = n.kind === "frame";
+
+        // Frame: a translucent labelled section behind everything else.
+        if (isFrame) {
+          return (
+            <div
+              key={n.id}
+              onMouseDown={(e) => onDragStart(n, e)}
+              className="group absolute z-0 cursor-grab rounded-md border-2 border-dashed border-border/70 bg-secondary/10 active:cursor-grabbing"
+              style={{ left: pos.x, top: pos.y, width: n.w, height: n.h }}
+            >
+              <input
+                defaultValue={n.text}
+                onMouseDown={(e) => e.stopPropagation()}
+                onBlur={(e) => { if (e.target.value !== n.text) persist(n.id, { text: e.target.value }); }}
+                placeholder="Section title"
+                className="m-2 w-[calc(100%-1rem)] rounded bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+              />
+              <button
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={async () => { await supabase.from("whiteboard_nodes").delete().eq("id", n.id); queryClient.invalidateQueries({ queryKey: ["pm_whiteboard_nodes", boardId] }); }}
+                title="Delete frame"
+                className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-destructive text-white group-hover:flex"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          );
+        }
+
         return (
           <div
             key={n.id}
             onMouseDown={(e) => onDragStart(n, e)}
-            className={cn("group absolute flex cursor-grab flex-col rounded-md active:cursor-grabbing", isText ? "" : "shadow-md")}
+            className={cn("group absolute z-10 flex cursor-grab flex-col rounded-[3px] active:cursor-grabbing", isText ? "" : "shadow-md")}
             style={{ left: pos.x, top: pos.y, width: n.w, height: n.h, backgroundColor: isText ? "transparent" : n.color }}
           >
             <textarea
@@ -311,7 +364,7 @@ function Canvas({ boardId, nodes, zoom }: { boardId: string; nodes: Node[]; zoom
               placeholder={isText ? "Text…" : "Type…"}
               className={cn(
                 "h-full w-full resize-none bg-transparent p-2 focus:outline-none",
-                isText ? "text-base font-medium text-foreground placeholder:text-muted-foreground/50" : "rounded-md text-sm text-zinc-900 placeholder:text-zinc-900/40",
+                isText ? "text-base font-medium text-foreground placeholder:text-muted-foreground/50" : "rounded-[3px] text-sm text-zinc-900 placeholder:text-zinc-900/40",
               )}
             />
             <button
