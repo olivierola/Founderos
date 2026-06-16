@@ -371,8 +371,17 @@
 .fos-wb .excalidraw .default-sidebar-trigger,
 .fos-wb .excalidraw [data-testid="sidebar-trigger"] { display: none !important; }
 
-/* ── Marketing hero (VEX-style) — Inter + liquid glass ─────────────────────── */
+/* ── Marketing hero — Inter / Instrument Serif + entrance animations ──────── */
 .font-inter { font-family: 'Inter', sans-serif; }
+.font-instrument-serif { font-family: 'Instrument Serif', serif; }
+
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-rise { animation: fade-rise 0.8s ease-out both; }
+.animate-fade-rise-delay { animation: fade-rise 0.8s ease-out 0.2s both; }
+.animate-fade-rise-delay-2 { animation: fade-rise 0.8s ease-out 0.4s both; }
 .liquid-glass {
   background: rgba(0, 0, 0, 0.4);
   background-blend-mode: luminosity;
