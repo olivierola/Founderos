@@ -292,6 +292,7 @@ export const MODULES: ModuleNavItem[] = [
     subItems: [
       { label: "Boards", slug: "boards" },
       { label: "My tasks", slug: "my-tasks" },
+      { label: "Inbox", slug: "inbox" },
     ],
   },
   {

@@ -89,6 +89,7 @@ import {
   SupportAnalyticsPage, SupportMacrosPage,
 } from "@/features/support/SupportPages";
 import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
+import { PmInboxPage } from "@/features/pm/PmInbox";
 import {
   FinanceOverviewPage, FinanceInvoicesPage, FinanceExpensesPage, FinanceBudgetsPage,
 } from "@/features/finance-mod/FinancePages";
@@ -299,6 +300,7 @@ const PAGES: Record<string, PageEl> = {
   // Projects (PM)
   "pm/boards": <PmBoardsPage />,
   "pm/my-tasks": <PmMyTasksPage />,
+  "pm/inbox": <PmInboxPage />,
 
   // Finance
   "finance-mod/overview": <FinanceOverviewPage />,

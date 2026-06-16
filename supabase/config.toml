@@ -164,6 +164,10 @@ verify_jwt = false
 [functions.connector-action]
 verify_jwt = false
 
+# Project inbox: post a channel message + dispatch @mentioned agents.
+[functions.project-inbox-post]
+verify_jwt = false
+
 # Security scanning: passive checks inline + active scans queued (consent-gated).
 [functions.security-scan]
 verify_jwt = false
