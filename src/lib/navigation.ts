@@ -279,6 +279,8 @@ export const MODULES: ModuleNavItem[] = [
     subItems: [
       { label: "Overview", slug: "overview" },
       { label: "Tickets", slug: "tickets" },
+      { label: "Analytics", slug: "analytics" },
+      { label: "Macros", slug: "macros" },
       { label: "Knowledge base", slug: "knowledge-base" },
     ],
   },

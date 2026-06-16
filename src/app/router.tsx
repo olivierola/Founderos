@@ -84,6 +84,7 @@ import {
 } from "@/features/crm/CrmPages";
 import {
   SupportOverviewPage, SupportTicketsPage, SupportKbPage,
+  SupportAnalyticsPage, SupportMacrosPage,
 } from "@/features/support/SupportPages";
 import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
 import {
@@ -289,6 +290,8 @@ const PAGES: Record<string, PageEl> = {
   // Support
   "support/overview": <SupportOverviewPage />,
   "support/tickets": <SupportTicketsPage />,
+  "support/analytics": <SupportAnalyticsPage />,
+  "support/macros": <SupportMacrosPage />,
   "support/knowledge-base": <SupportKbPage />,
 
   // Projects (PM)
