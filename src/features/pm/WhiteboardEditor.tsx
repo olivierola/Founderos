@@ -10,8 +10,8 @@ import { useTheme } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
 import { EXCALIDRAW_LIBRARY_GROUPS, libraryUrl, type LibDef } from "./excalidrawLibraries";
 
-const DARK_BG = "#0a0a0a";
-const LIGHT_BG = "#ffffff";
+const DARK_BG = "#0c0c0e";
+const LIGHT_BG = "#fafafa";
 
 interface Props { boardId: string; onBack: () => void }
 
@@ -108,7 +108,7 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
   async function addLibrary(lib: LibDef) {
     const api = apiRef.current;
     if (!api) return;
-    const key = `${lib.author}/${lib.slug}`;
+    const key = lib.source;
     setLoadingLib(key);
     try {
       const res = await fetch(libraryUrl(lib));
@@ -138,11 +138,11 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
   return (
     <div className="flex h-[calc(100vh-3.5rem)] w-full flex-col">
       {/* Header */}
-      <div className="flex h-12 items-center gap-2 border-b border-border px-4">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+      <div className="flex h-12 items-center gap-2 border-b border-border bg-card/60 px-4 backdrop-blur">
+        <button onClick={onBack} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Boards
         </button>
-        <span className="mx-2 text-border">|</span>
+        <span className="mx-1 h-4 w-px bg-border" />
         {titleEditing ? (
           <input
             autoFocus
@@ -163,8 +163,8 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
         <button
           onClick={() => setLibsOpen((o) => !o)}
           className={cn(
-            "ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-secondary",
-            libsOpen && "bg-secondary",
+            "ml-auto inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:bg-secondary",
+            libsOpen ? "border-primary/40 bg-primary/10 text-primary" : "text-muted-foreground",
           )}
         >
           <LibraryBig className="h-4 w-4" /> Libraries
@@ -173,7 +173,7 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
 
       <div className="flex min-h-0 flex-1">
       {/* Excalidraw canvas (smooth background, full toolset) */}
-      <div className="min-h-0 flex-1">
+      <div className="fos-wb min-h-0 flex-1">
         <Excalidraw
           theme={theme}
           excalidrawAPI={onApiReady}
@@ -206,7 +206,7 @@ export function WhiteboardEditor({ boardId, onBack }: Props) {
                 <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{g.label}</div>
                 <div className="space-y-1.5">
                   {g.libs.map((lib) => {
-                    const key = `${lib.author}/${lib.slug}`;
+                    const key = lib.source;
                     const loaded = loadedLibs.has(key);
                     const loading = loadingLib === key;
                     return (

@@ -318,6 +318,59 @@
   .e2e-halo-bg { animation: none; }
 }
 
+/* ── Whiteboard (Excalidraw) — softer, more pro chrome ──────────────────────
+   Scoped under .fos-wb so we never touch Excalidraw elsewhere. We override the
+   exposed CSS variables + the floating islands for rounder corners, gentler
+   shadows and subtler borders. */
+.fos-wb .excalidraw {
+  --ui-font: inherit;
+  --border-radius-lg: 14px;
+  --border-radius-md: 10px;
+}
+/* Floating panels: toolbar, left menu, zoom, library, side panels. */
+.fos-wb .excalidraw .Island,
+.fos-wb .excalidraw .App-toolbar,
+.fos-wb .excalidraw .App-menu__left,
+.fos-wb .excalidraw .layer-ui__wrapper__footer-left,
+.fos-wb .excalidraw .layer-ui__wrapper__footer-right .Island,
+.fos-wb .excalidraw .dropdown-menu .Island,
+.fos-wb .excalidraw .App-menu_top .buttonList {
+  border-radius: 14px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px -8px rgba(0, 0, 0, 0.18) !important;
+  border: 1px solid hsl(var(--border) / 0.7) !important;
+  backdrop-filter: blur(8px);
+}
+/* The main top toolbar — slightly more padding + soft surface. */
+.fos-wb .excalidraw .App-toolbar {
+  padding: 6px !important;
+  gap: 2px;
+}
+/* Tool buttons: rounder, calmer hover/active. */
+.fos-wb .excalidraw .ToolIcon__icon,
+.fos-wb .excalidraw .ToolIcon {
+  border-radius: 10px !important;
+}
+.fos-wb .excalidraw .ToolIcon:hover .ToolIcon__icon {
+  background: hsl(var(--secondary)) !important;
+}
+.fos-wb .excalidraw .ToolIcon__icon[aria-checked="true"],
+.fos-wb .excalidraw .ToolIcon--selected .ToolIcon__icon {
+  background: hsl(var(--primary) / 0.16) !important;
+  color: hsl(var(--primary)) !important;
+}
+/* Bottom zoom / undo pills + help — match the soft radius. */
+.fos-wb .excalidraw .zoom-actions,
+.fos-wb .excalidraw .undo-redo-buttons {
+  border-radius: 12px !important;
+}
+/* Hint text under the toolbar — quieter. */
+.fos-wb .excalidraw .HintViewer { opacity: 0.6; font-size: 12px; }
+
+/* Hide Excalidraw's built-in "Library" toggle — we drive libraries from our own
+   header "Libraries" panel, so the native one is a duplicate. */
+.fos-wb .excalidraw .default-sidebar-trigger,
+.fos-wb .excalidraw [data-testid="sidebar-trigger"] { display: none !important; }
+
 /* Print: when a report is on screen, isolate it for clean PDF export. */
 @media print {
   .no-print { display: none !important; }
