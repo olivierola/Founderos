@@ -100,7 +100,8 @@ import {
   FinanceOverviewPage, FinanceInvoicesPage, FinanceExpensesPage, FinanceBudgetsPage,
 } from "@/features/finance-mod/FinancePages";
 import { FinanceBillsPage, FinanceTreasuryPage } from "@/features/finance-mod/FinanceAdvanced";
-import { PmTimesheetsPage, PmResourcingPage, PmProfitabilityPage } from "@/features/pm/PmPsa";
+import { FinanceLedgerPage, FinanceReportingPage } from "@/features/finance-mod/FinanceLedger";
+import { PmTimesheetsPage, PmResourcingPage, PmProfitabilityPage, PmGanttPage } from "@/features/pm/PmPsa";
 
 // Office (Bureautique)
 import { Suspense, lazy } from "react";
@@ -312,6 +313,7 @@ const PAGES: Record<string, PageEl> = {
   "pm/inbox": <PmInboxPage />,
   "pm/whiteboard": <PmWhiteboardPage />,
   "pm/simulations": <PmSimulationsPage />,
+  "pm/gantt": <PmGanttPage />,
   "pm/timesheets": <PmTimesheetsPage />,
   "pm/resourcing": <PmResourcingPage />,
   "pm/profitability": <PmProfitabilityPage />,
@@ -332,6 +334,8 @@ const PAGES: Record<string, PageEl> = {
   "finance-mod/expenses": <FinanceExpensesPage />,
   "finance-mod/treasury": <FinanceTreasuryPage />,
   "finance-mod/budgets": <FinanceBudgetsPage />,
+  "finance-mod/reporting": <FinanceReportingPage />,
+  "finance-mod/ledger": <FinanceLedgerPage />,
 
   // Office (Bureautique) — library + per-kind filtered lists.
   "office/library": <OfficeLibraryPage />,

@@ -295,6 +295,7 @@ export const MODULES: ModuleNavItem[] = [
     color: "text-amber-400/60",
     subItems: [
       { label: "Boards", slug: "boards", group: "Delivery" },
+      { label: "Gantt", slug: "gantt", group: "Delivery" },
       { label: "My tasks", slug: "my-tasks", group: "Delivery" },
       { label: "Timesheets", slug: "timesheets", group: "PSA" },
       { label: "Resourcing", slug: "resourcing", group: "PSA" },
@@ -326,11 +327,13 @@ export const MODULES: ModuleNavItem[] = [
     color: "text-lime-400/60",
     subItems: [
       { label: "Overview", slug: "overview", group: "Reporting" },
+      { label: "Reporting", slug: "reporting", group: "Reporting" },
       { label: "Budgets", slug: "budgets", group: "Reporting" },
       { label: "Invoices (AR)", slug: "invoices", group: "Receivable" },
       { label: "Bills (AP)", slug: "bills", group: "Payable" },
       { label: "Expenses", slug: "expenses", group: "Payable" },
       { label: "Treasury", slug: "treasury", group: "Cash" },
+      { label: "General ledger", slug: "ledger", group: "Accounting" },
     ],
   },
   {

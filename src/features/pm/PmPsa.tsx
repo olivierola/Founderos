@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Plus, Trash2, Clock, Users, TrendingUp, Gauge, CheckCircle2,
+  Loader2, Plus, Trash2, Clock, Users, TrendingUp, Gauge, CheckCircle2, Diamond, GanttChartSquare,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
@@ -300,6 +300,88 @@ export function PmProfitabilityPage() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================== GANTT
+export function PmGanttPage() {
+  const { data: boards } = useTbl<any>("pm_projects", "pm_projects_gantt");
+  const [boardId, setBoardId] = useState<string>("");
+  const activeBoard = boardId || (boards ?? [])[0]?.id || "";
+
+  const { data: tasks } = useQuery({
+    queryKey: ["pm_gantt_tasks", activeBoard],
+    enabled: !!activeBoard,
+    queryFn: async () => {
+      const { data } = await supabase.from("pm_tasks").select("id, title, start_date, due_date, progress, is_milestone, column_key").eq("board_id", activeBoard).limit(500);
+      return (data ?? []) as any[];
+    },
+  });
+
+  // Timeline window from earliest start to latest due (fallback: next 8 weeks).
+  const { start, days } = useMemo(() => {
+    const dates: number[] = [];
+    for (const t of (tasks ?? [])) {
+      if (t.start_date) dates.push(new Date(t.start_date).getTime());
+      if (t.due_date) dates.push(new Date(t.due_date).getTime());
+    }
+    const min = dates.length ? Math.min(...dates) : Date.now();
+    const max = dates.length ? Math.max(...dates) : Date.now() + 56 * 864e5;
+    const startD = new Date(min); startD.setHours(0, 0, 0, 0);
+    const total = Math.max(14, Math.ceil((max - startD.getTime()) / 864e5) + 2);
+    return { start: startD, days: total };
+  }, [tasks]);
+
+  const dayPct = 100 / days;
+  function pos(t: any) {
+    const s = t.start_date ? new Date(t.start_date).getTime() : start.getTime();
+    const e = t.due_date ? new Date(t.due_date).getTime() : s + 864e5;
+    const left = Math.max(0, (s - start.getTime()) / 864e5) * dayPct;
+    const width = Math.max(dayPct, ((e - s) / 864e5 + 1) * dayPct);
+    return { left: `${left}%`, width: `${width}%` };
+  }
+
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Gantt" description="Timeline of tasks, milestones and dependencies."
+        actions={(boards ?? []).length > 1 ? (
+          <select value={activeBoard} onChange={(e) => setBoardId(e.target.value)} className="rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+            {(boards ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        ) : undefined} />
+      {!activeBoard ? <EmptyState icon={GanttChartSquare} title="No project" description="Create a board first." />
+      : (tasks ?? []).length === 0 ? <EmptyState icon={GanttChartSquare} title="No tasks" description="Add tasks with start/due dates to see the timeline." />
+      : (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <div className="min-w-[760px]">
+            <div className="flex border-b border-border bg-secondary/30 text-[10px] text-muted-foreground">
+              <div className="w-52 shrink-0 px-3 py-2 font-medium">Task</div>
+              <div className="relative flex-1">
+                <div className="flex">{Array.from({ length: Math.ceil(days / 7) }).map((_, i) => {
+                  const d = new Date(start); d.setDate(d.getDate() + i * 7);
+                  return <div key={i} className="border-l border-border/50 px-2 py-2" style={{ width: `${(7 / days) * 100}%` }}>{d.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</div>;
+                })}</div>
+              </div>
+            </div>
+            {(tasks ?? []).map((t) => (
+              <div key={t.id} className="flex items-center border-b border-border/60">
+                <div className="w-52 shrink-0 truncate px-3 py-2 text-xs">{t.is_milestone && <Diamond className="mr-1 inline h-3 w-3 text-primary" />}{t.title}</div>
+                <div className="relative h-9 flex-1">
+                  {t.is_milestone ? (
+                    <div className="absolute top-1/2 -translate-y-1/2" style={{ left: pos(t).left }}><Diamond className="h-4 w-4 fill-primary text-primary" /></div>
+                  ) : (
+                    <div className="absolute top-1/2 h-4 -translate-y-1/2 overflow-hidden rounded bg-primary/25" style={pos(t)}>
+                      <div className="h-full bg-primary/70" style={{ width: `${t.progress ?? 0}%` }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <p className="text-[11px] text-muted-foreground">Bars span start→due; fill shows progress. Diamonds are milestones. Set dates on tasks in Boards.</p>
     </div>
   );
 }

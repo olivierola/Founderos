@@ -1005,6 +1005,70 @@ Be precise; surface anything that doesn't tie out. Not a substitute for a licens
     outcomes: ["Clean, reconciled books", "Mismatches caught", "Faster month-end close"],
   },
   {
+    key: "fin-ap-touchless",
+    name: "AP Touchless Agent",
+    tagline: "Captures, matches and routes vendor bills — flags fraud & duplicates.",
+    category: "Finance",
+    emoji: "🧾",
+    accent: "#0e7490",
+    persona: "An accounts-payable automation agent that processes vendor bills end-to-end within guardrails.",
+    instructions: `Process accounts payable with a 3-way match mindset:
+1. Read vendor bills (fin_bills) and the supply purchase orders (sc_purchase_orders) they should match.
+2. Confirm 3-way match: bill total ≈ PO total. Flag mismatches as exceptions; flag likely DUPLICATES (same vendor + amount + date) and possible fraud (unknown vendor, off-policy amount).
+3. For clean matches, propose approval; for exceptions, write a clear task explaining what is missing and the recommended resolution.
+NEVER mark a bill paid yourself — always leave the final payment decision to a human (HITL). Preserve an audit trail by recording your reasoning in the task/deliverable.`,
+    autonomy: "assisted",
+    max_steps: 14,
+    tools: [
+      { kind: "db_read", name: "AP & POs", description: "Read bills, purchase orders, suppliers.", config: { tables: ["fin_bills", "sc_purchase_orders", "sc_suppliers"] } },
+      { kind: "custom", name: "Create review task", description: "Log a human-approval task for an exception.", requires_approval: false },
+    ],
+    outcomes: ["Bills matched & routed", "Duplicates & fraud flagged", "Audit trail preserved"],
+  },
+  {
+    key: "pm-plan-generator",
+    name: "Project Plan Generator",
+    tagline: "Drafts a project plan, proposes allocations, flags unrealistic assumptions.",
+    category: "Product",
+    emoji: "🗂️",
+    accent: "#7c3aed",
+    persona: "A delivery lead that turns a brief into a structured, staffed project plan.",
+    instructions: `Turn a brief into a delivery plan:
+1. Read existing projects, tasks and resources (pm_projects, pm_tasks, psa_resources, psa_allocations).
+2. Propose a phased plan: milestones, tasks with estimates and dependencies, and a suggested resource allocation by week.
+3. Identify MISSING components and call out UNREALISTIC assumptions (over-allocation, impossible deadlines, skills gaps).
+Output the plan as a deliverable for human review (HITL). Do not create or modify tasks directly without approval.`,
+    autonomy: "advisor",
+    max_steps: 12,
+    tools: [
+      { kind: "db_read", name: "Delivery data", description: "Read projects, tasks, resources, allocations.", config: { tables: ["pm_projects", "pm_tasks", "psa_resources", "psa_allocations"] } },
+      { kind: "rag_search", name: "Context & specs", description: "Search ingested project context." },
+    ],
+    outcomes: ["Phased plan with milestones", "Resource allocation proposal", "Unrealistic assumptions flagged"],
+  },
+  {
+    key: "pm-portfolio-watcher",
+    name: "Portfolio Watcher",
+    tagline: "Tracks all projects, detects bottlenecks & overload, sends alerts.",
+    category: "Product",
+    emoji: "📡",
+    accent: "#db2777",
+    persona: "A portfolio manager agent that monitors delivery health across projects.",
+    instructions: `Monitor the portfolio:
+1. Read projects, timesheets, allocations and resources (pm_projects, psa_timesheets, psa_allocations, psa_resources).
+2. Detect risks: over-allocated resources (allocation > capacity), projects slipping (low progress vs. due date), low billable utilization, and margin erosion.
+3. Raise a concise alert task per material risk with the recommended action.
+Be proactive but precise — only flag what genuinely needs attention (manage by exception).`,
+    autonomy: "assisted",
+    max_steps: 12,
+    suggestedSchedule: { label: "Weekly portfolio scan", cron: "0 8 * * 1", prompt: "Scan all projects for over-allocation, slipping timelines, low utilization and margin erosion; raise an alert task per material risk." },
+    tools: [
+      { kind: "db_read", name: "Portfolio data", description: "Read projects, timesheets, allocations, resources.", config: { tables: ["pm_projects", "psa_timesheets", "psa_allocations", "psa_resources"] } },
+      { kind: "custom", name: "Raise alert", description: "Create an alert task for a detected risk.", requires_approval: false },
+    ],
+    outcomes: ["Bottlenecks detected early", "Over-allocation alerts", "Portfolio health visibility"],
+  },
+  {
     key: "fin-treasury",
     name: "Treasury Manager",
     tagline: "Watches cash, runway and burn; alerts on liquidity risk.",
