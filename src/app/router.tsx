@@ -99,6 +99,8 @@ import { ScControlTowerPage, ScSalesOrdersPage, ScReturnsPage } from "@/features
 import {
   FinanceOverviewPage, FinanceInvoicesPage, FinanceExpensesPage, FinanceBudgetsPage,
 } from "@/features/finance-mod/FinancePages";
+import { FinanceBillsPage, FinanceTreasuryPage } from "@/features/finance-mod/FinanceAdvanced";
+import { PmTimesheetsPage, PmResourcingPage, PmProfitabilityPage } from "@/features/pm/PmPsa";
 
 // Office (Bureautique)
 import { Suspense, lazy } from "react";
@@ -310,6 +312,9 @@ const PAGES: Record<string, PageEl> = {
   "pm/inbox": <PmInboxPage />,
   "pm/whiteboard": <PmWhiteboardPage />,
   "pm/simulations": <PmSimulationsPage />,
+  "pm/timesheets": <PmTimesheetsPage />,
+  "pm/resourcing": <PmResourcingPage />,
+  "pm/profitability": <PmProfitabilityPage />,
 
   // Supply Chain
   "supply/overview": <ScControlTowerPage />,
@@ -323,7 +328,9 @@ const PAGES: Record<string, PageEl> = {
   // Finance
   "finance-mod/overview": <FinanceOverviewPage />,
   "finance-mod/invoices": <FinanceInvoicesPage />,
+  "finance-mod/bills": <FinanceBillsPage />,
   "finance-mod/expenses": <FinanceExpensesPage />,
+  "finance-mod/treasury": <FinanceTreasuryPage />,
   "finance-mod/budgets": <FinanceBudgetsPage />,
 
   // Office (Bureautique) — library + per-kind filtered lists.

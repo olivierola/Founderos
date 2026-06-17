@@ -1379,9 +1379,96 @@ const supplyOverview: AssistantTool = {
   },
 };
 
+// Finance copilot — AP/AR, treasury, profitability signals for the assistant.
+const financeOverview: AssistantTool = {
+  name: "get_finance_overview",
+  minRole: "viewer",
+  scope: "Finance: AR/AP, cash, overdue, margin signals.",
+  def: {
+    name: "get_finance_overview",
+    description:
+      "Return the project's finance snapshot: accounts receivable (invoices: outstanding, overdue), accounts payable (bills: due, 3-way match exceptions), cash position across bank accounts, and expenses. Use for ANY finance, invoice, bill, payment, cash, treasury, margin, AR/AP or 'why did my margin/cash change' question.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async (_args, ctx) => {
+    const pid = ctx.projectId;
+    const [inv, bills, exp, accts] = await Promise.all([
+      ctx.admin.from("fin_invoices").select("status, amount_cents, due_date, client_name").eq("project_id", pid).limit(1000),
+      ctx.admin.from("fin_bills").select("status, amount_cents, due_date, match_status, vendor").eq("project_id", pid).limit(1000),
+      ctx.admin.from("fin_expenses").select("status, amount_cents, category").eq("project_id", pid).limit(1000),
+      ctx.admin.from("fin_bank_accounts").select("name, balance_cents").eq("project_id", pid).limit(100),
+    ]);
+    const today = new Date().toISOString().slice(0, 10);
+    const invoices = inv.data ?? [];
+    const ar = invoices.filter((i: any) => !["paid", "void"].includes(i.status));
+    const arOverdue = ar.filter((i: any) => i.due_date && i.due_date < today);
+    const apRows = bills.data ?? [];
+    const ap = apRows.filter((b: any) => !["paid", "void"].includes(b.status));
+    const cash = (accts.data ?? []).reduce((s: number, a: any) => s + (a.balance_cents || 0), 0);
+    const c = (n: number) => Math.round(n / 100);
+    return JSON.stringify({
+      accounts_receivable_eur: c(ar.reduce((s: number, i: any) => s + i.amount_cents, 0)),
+      ar_overdue_eur: c(arOverdue.reduce((s: number, i: any) => s + i.amount_cents, 0)),
+      ar_overdue_count: arOverdue.length,
+      accounts_payable_eur: c(ap.reduce((s: number, b: any) => s + b.amount_cents, 0)),
+      ap_match_exceptions: apRows.filter((b: any) => b.match_status === "exception").length,
+      cash_eur: c(cash),
+      expenses_pending: (exp.data ?? []).filter((e: any) => e.status === "pending").length,
+      top_overdue: arOverdue.slice(0, 8).map((i: any) => ({ client: i.client_name, amount_eur: c(i.amount_cents), due: i.due_date })),
+    });
+  },
+};
+
+// Project (PSA) copilot — delivery, timesheets, resourcing, profitability.
+const projectOverview: AssistantTool = {
+  name: "get_project_overview",
+  minRole: "viewer",
+  scope: "Projects/PSA: boards, timesheets, resourcing, profitability.",
+  def: {
+    name: "get_project_overview",
+    description:
+      "Return the project's PSA snapshot: active boards/projects & their status, logged vs billable hours, resource over-allocation (utilization), and per-project margin (billed vs cost). Use for ANY project, delivery, timesheet, resourcing, capacity, utilization, over-allocation, deadline or project-margin question.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async (_args, ctx) => {
+    const pid = ctx.projectId;
+    const [boards, ts, res, alloc] = await Promise.all([
+      ctx.admin.from("pm_projects").select("id, name, status, due_date").eq("project_id", pid).limit(200),
+      ctx.admin.from("psa_timesheets").select("hours, billable, pm_project_id, resource_id").eq("project_id", pid).limit(3000),
+      ctx.admin.from("psa_resources").select("id, name, cost_rate_cents, bill_rate_cents, capacity_hours_week").eq("project_id", pid).limit(300),
+      ctx.admin.from("psa_allocations").select("resource_id, week_start, hours").eq("project_id", pid).limit(3000),
+    ]);
+    const resById: Record<string, any> = Object.fromEntries((res.data ?? []).map((r: any) => [r.id, r]));
+    const tsRows = ts.data ?? [];
+    const hours = tsRows.reduce((s: number, t: any) => s + Number(t.hours), 0);
+    const billableH = tsRows.filter((t: any) => t.billable).reduce((s: number, t: any) => s + Number(t.hours), 0);
+    // Per-week utilization → over-allocated resources.
+    const wk: Record<string, number> = {};
+    for (const a of (alloc.data ?? [])) wk[`${a.resource_id}|${a.week_start}`] = (wk[`${a.resource_id}|${a.week_start}`] ?? 0) + Number(a.hours);
+    const over = Object.entries(wk).filter(([k, h]) => { const rid = k.split("|")[0]; const cap = resById[rid]?.capacity_hours_week ?? 35; return h > cap; })
+      .map(([k, h]) => ({ resource: resById[k.split("|")[0]]?.name ?? "?", week: k.split("|")[1], hours: h }));
+    // Per-project margin.
+    const margins = (boards.data ?? []).map((b: any) => {
+      const rows = tsRows.filter((t: any) => t.pm_project_id === b.id);
+      const cost = rows.reduce((s: number, t: any) => s + Number(t.hours) * ((resById[t.resource_id]?.cost_rate_cents ?? 0) / 8), 0);
+      const billed = rows.filter((t: any) => t.billable).reduce((s: number, t: any) => s + Number(t.hours) * ((resById[t.resource_id]?.bill_rate_cents ?? 0) / 8), 0);
+      return { project: b.name, status: b.status, margin_eur: Math.round((billed - cost) / 100), billed_eur: Math.round(billed / 100) };
+    });
+    return JSON.stringify({
+      projects: (boards.data ?? []).length,
+      hours_logged: hours,
+      billable_pct: hours ? Math.round((billableH / hours) * 100) : 0,
+      over_allocated: over.slice(0, 10),
+      project_margins: margins.slice(0, 15),
+    });
+  },
+};
+
 const ALL_TOOLS: AssistantTool[] = [
   getMetrics,
   supplyOverview,
+  financeOverview,
+  projectOverview,
   getLatestScan,
   getConnectors,
   getAlerts,
