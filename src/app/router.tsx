@@ -431,6 +431,14 @@ function LegacyActionsRedirect() {
   return <Navigate to="../dashboard" replace />;
 }
 
+/** Admin panel cockpit was merged into CRM. Redirect old /actions/* links to
+ *  /app/:ws/:proj/crm/admin-* using an absolute, slug-based path (relative
+ *  ../.. math across two dynamic segments is fragile and could drop to the root). */
+function AdminMergeRedirect({ to }: { to: string }) {
+  const { workspaceSlug, projectSlug } = useParams();
+  return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/crm/${to}`} replace />;
+}
+
 /** Code + Ops were merged into the DevOps module. Old /code/:sub and /ops/:sub
  *  deep links map to /devops/:sub, except the Ops overview which was renamed. */
 function LegacyCodeRedirect() {
@@ -521,11 +529,12 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Navigate to="crm/admin-dashboard" replace /> },
-      // The Admin panel was merged into CRM — old /actions/* cockpit links redirect.
-      { path: "actions", element: <Navigate to="../crm/admin-dashboard" replace /> },
-      { path: "actions/dashboard", element: <Navigate to="../../crm/admin-dashboard" replace /> },
-      { path: "actions/custom-dashboards", element: <Navigate to="../../crm/admin-custom-dashboards" replace /> },
-      { path: "actions/alerts", element: <Navigate to="../../crm/admin-alerts" replace /> },
+      // The Admin panel was merged into CRM — old /actions/* cockpit links
+      // redirect (absolute, slug-based) to the new crm/admin-* locations.
+      { path: "actions", element: <AdminMergeRedirect to="admin-dashboard" /> },
+      { path: "actions/dashboard", element: <AdminMergeRedirect to="admin-dashboard" /> },
+      { path: "actions/custom-dashboards", element: <AdminMergeRedirect to="admin-custom-dashboards" /> },
+      { path: "actions/alerts", element: <AdminMergeRedirect to="admin-alerts" /> },
       {
         path: "actions/dashboard-builder/:dashboardId",
         element: (

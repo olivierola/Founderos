@@ -271,7 +271,7 @@ export function SaasAnalyticsPage() {
                 icon={AlertTriangle}
                 tone={snapshot.open_alerts > 0 ? "warn" : "calm"}
                 actionLabel="Review alerts"
-                actionTo={`${base}/actions/alerts`}
+                actionTo={`${base}/crm/admin-alerts`}
               />
               <ActionTile
                 label="Open incidents"
@@ -502,7 +502,7 @@ function suggestActions(s: Snapshot, base: string) {
     out.push({
       label: "Nothing urgent — keep shipping",
       detail: "No alerts, no failed payments, healthy churn. Review the dashboard for context.",
-      to: `${base}/actions/dashboard`,
+      to: `${base}/crm/admin-dashboard`,
       icon: CheckCircle2,
       tone: "info",
     });
