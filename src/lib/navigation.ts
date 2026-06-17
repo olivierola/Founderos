@@ -1,13 +1,10 @@
 import {
-  ShieldHalf,
-  Megaphone,
   TerminalSquare,
   AppWindow,
   BrainCircuit,
   Blocks,
   Settings2,
   FileStack,
-  UsersRound,
   Handshake,
   LifeBuoy,
   FolderKanban,
@@ -86,18 +83,6 @@ export const MODULES: ModuleNavItem[] = [
     color: "text-indigo-400/60",
     subItems: [
       { label: "Asset map", slug: "map" },
-    ],
-  },
-  {
-    slug: "actions",
-    label: "Admin panel",
-    icon: ShieldHalf,
-    color: "text-slate-400",
-    subItems: [
-      // Overview cockpit (the admin tools moved to the Software module).
-      { label: "Dashboard", slug: "dashboard", group: "Overview" },
-      { label: "Custom Dashboards", slug: "custom-dashboards" },
-      { label: "Alerts", slug: "alerts" },
     ],
   },
   {
@@ -233,21 +218,6 @@ export const MODULES: ModuleNavItem[] = [
     ],
   },
   {
-    slug: "marketing",
-    label: "Marketing",
-    icon: Megaphone,
-    color: "text-fuchsia-400/55",
-    subItems: [
-      { label: "Overview", slug: "overview" },
-      { label: "Content Studio", slug: "content-studio" },
-      { label: "Calendar", slug: "calendar" },
-      { label: "Campaigns", slug: "campaigns" },
-      { label: "Channels", slug: "channels" },
-      { label: "Analytics", slug: "analytics" },
-      { label: "Advisor", slug: "advisor" },
-    ],
-  },
-  {
     slug: "office",
     label: "Création",
     icon: FileStack,
@@ -263,30 +233,22 @@ export const MODULES: ModuleNavItem[] = [
     ],
   },
   {
-    slug: "hr",
-    label: "RH",
-    icon: UsersRound,
-    color: "text-teal-400/60",
-    subItems: [
-      { label: "Overview", slug: "overview" },
-      { label: "Employees", slug: "employees" },
-      { label: "Org chart", slug: "org-chart" },
-      { label: "Leave & absences", slug: "leave" },
-      { label: "Recruitment", slug: "recruitment" },
-      { label: "Onboarding", slug: "onboarding" },
-      { label: "Payroll & docs", slug: "payroll" },
-    ],
-  },
-  {
     slug: "crm",
     label: "CRM",
     icon: Handshake,
     color: "text-emerald-400/60",
     subItems: [
-      { label: "Overview", slug: "overview" },
+      { label: "Overview", slug: "overview", group: "CRM" },
       { label: "Contacts", slug: "contacts" },
       { label: "Pipeline", slug: "pipeline" },
       { label: "Activities", slug: "activities" },
+
+      // Admin cockpit merged into CRM (more relevant alongside customer data).
+      // These keep their `actions/*` routes; the slugs below are prefixed so the
+      // router resolves them via the cross-module aliases registered in PAGES.
+      { label: "Dashboard", slug: "admin-dashboard", group: "Admin" },
+      { label: "Custom Dashboards", slug: "admin-custom-dashboards" },
+      { label: "Alerts", slug: "admin-alerts" },
     ],
   },
   {

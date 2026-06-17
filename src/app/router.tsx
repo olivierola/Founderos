@@ -66,23 +66,8 @@ import { OpsJobsPage } from "@/features/ops/JobsPage";
 import { OpsSettingsPage } from "@/features/ops/SettingsPage";
 import { OnboardingPage as RagOnboardingPage } from "@/features/agent-rag/onboarding/OnboardingPage";
 
-import { ContentStudioPage } from "@/features/marketing/ContentStudio";
-import {
-  MarketingOverviewPage,
-  MarketingCalendarPage,
-  MarketingChannelsPage,
-  MarketingAnalyticsPage,
-  MarketingCampaignsPage,
-  MarketingAdvisorPage,
-} from "@/features/marketing/Extra";
-
-// Business modules — HR / CRM / Support / Projects / Finance
-import {
-  HrOverviewPage, HrEmployeesPage, HrOrgChartPage, HrLeavePage, HrPayrollPage,
-} from "@/features/hr/HrPages";
-import { RecruitmentPage } from "@/features/hr/Recruitment";
-import { OpeningDetailPage } from "@/features/hr/OpeningDetail";
-import { OnboardingPage } from "@/features/hr/Onboarding";
+// Business modules — CRM / Support / Projects / Finance
+// (Marketing and HR modules are temporarily hidden — not yet mature.)
 import {
   CrmOverviewPage, CrmContactsPage, CrmPipelinePage, CrmActivitiesPage,
 } from "@/features/crm/CrmPages";
@@ -288,28 +273,17 @@ const PAGES: Record<string, PageEl> = {
   "devops/jobs": <OpsJobsPage />,
   "devops/settings": <OpsSettingsPage />,
 
-  "marketing/overview": <MarketingOverviewPage />,
-  "marketing/content-studio": <ContentStudioPage />,
-  "marketing/calendar": <MarketingCalendarPage />,
-  "marketing/campaigns": <MarketingCampaignsPage />,
-  "marketing/channels": <MarketingChannelsPage />,
-  "marketing/analytics": <MarketingAnalyticsPage />,
-  "marketing/advisor": <MarketingAdvisorPage />,
+  // Marketing and HR modules are temporarily hidden (not yet mature) — their
+  // nav entries, page routes and the hr/opening detail route were removed.
 
-  // HR
-  "hr/overview": <HrOverviewPage />,
-  "hr/employees": <HrEmployeesPage />,
-  "hr/org-chart": <HrOrgChartPage />,
-  "hr/leave": <HrLeavePage />,
-  "hr/recruitment": <RecruitmentPage />,
-  "hr/onboarding": <OnboardingPage />,
-  "hr/payroll": <HrPayrollPage />,
-
-  // CRM
+  // CRM (+ Admin cockpit merged in — same components as the old actions/* routes)
   "crm/overview": <CrmOverviewPage />,
   "crm/contacts": <CrmContactsPage />,
   "crm/pipeline": <CrmPipelinePage />,
   "crm/activities": <CrmActivitiesPage />,
+  "crm/admin-dashboard": <OverviewDashboard />,
+  "crm/admin-custom-dashboards": <CustomDashboardsPage />,
+  "crm/admin-alerts": <AlertsPage />,
 
   // Support
   "support/overview": <SupportOverviewPage />,
@@ -546,7 +520,12 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <Navigate to="actions/dashboard" replace /> },
+      { index: true, element: <Navigate to="crm/admin-dashboard" replace /> },
+      // The Admin panel was merged into CRM — old /actions/* cockpit links redirect.
+      { path: "actions", element: <Navigate to="../crm/admin-dashboard" replace /> },
+      { path: "actions/dashboard", element: <Navigate to="../../crm/admin-dashboard" replace /> },
+      { path: "actions/custom-dashboards", element: <Navigate to="../../crm/admin-custom-dashboards" replace /> },
+      { path: "actions/alerts", element: <Navigate to="../../crm/admin-alerts" replace /> },
       {
         path: "actions/dashboard-builder/:dashboardId",
         element: (
@@ -560,14 +539,6 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <AgentBuilderPage />
-          </ErrorBoundary>
-        ),
-      },
-      {
-        path: "hr/opening/:openingId/:tab?",
-        element: (
-          <ErrorBoundary>
-            <OpeningDetailPage />
           </ErrorBoundary>
         ),
       },

@@ -492,8 +492,8 @@ function suggestActions(s: Snapshot, base: string) {
   if (s.new_signups_7d > 0 && (s.activation_rate ?? 0) < 0.3) {
     out.push({
       label: "Low activation on recent signups",
-      detail: "Trigger an onboarding email campaign for the last cohort.",
-      to: `${base}/marketing/campaigns`,
+      detail: "Draft an onboarding email for the last cohort.",
+      to: `${base}/office/gen-copy`,
       icon: Megaphone,
       tone: "info",
     });
