@@ -5,7 +5,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { callAiWithTools, type ChatMessage } from "../_shared/ai.ts";
+import { callAi, callAiWithTools, safeParseJson, type AiTask, type ChatMessage } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import {
   type WorkspaceRole, type EmittedArtifact, type ToolContext,
@@ -40,6 +40,12 @@ FLUX OBLIGATOIRE POUR INSTALLER LE SDK / BALISER (NE JAMAIS SAUTER D'ÉTAPE):
 - Le tracking utilise le SDK FounderOS (fos.track('event_name', { properties })). Propose d'abord install_sdk si le SDK n'est pas encore présent.
 - SDK — RÈGLE STRICTE: n'INVENTE JAMAIS le contenu d'un SDK, ni une commande "git clone github.com/founderos/sdk", ni une API "founderos.configure(api_key, api_secret)". Ces choses N'EXISTENT PAS. Le vrai SDK est servi par l'outil install_sdk (le contenu réel est injecté côté serveur) : tu choisis seulement sdk ('analytics'|'rag'), runtime ('browser'|'server'), lib_dir et l'expression d'environnement de la clé. L'auth réelle = UNE clé 'fos_' (serveur) OU anon key + workspaceId (navigateur). En JS: import { createClient } from "./founderos"; const analytics = createClient({ host, projectId, apiKey|anonKey }). Pour ajouter des appels track au bon endroit, passe-les dans extra_changes (contenu complet du fichier).
 - Si le connecteur GitHub est en lecture seule, explique qu'un admin doit activer l'accès en écriture dans Integrations avant que la proposition puisse être appliquée.`;
+
+// Default system prompt for the folded-in fast_summary utility.
+const FAST_SUMMARY_SYSTEM = `Tu es l'agent admin technique d'un SaaS code-aware.
+Tu aides un fondateur ou développeur à comprendre son produit, ses métriques, ses coûts, ses risques et ses actions possibles.
+Tu peux analyser les données fournies, mais tu ne dois jamais inventer de métriques absentes.
+Réponds de manière concise, technique et actionnable.`;
 
 // Lightweight, non-sensitive identity context only. Everything sensitive
 // (metrics, scan, finance, alerts) is fetched on demand by role-gated tools.
@@ -78,12 +84,36 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return jsonResponse({ error: "Missing Authorization header" }, { status: 401 });
 
+    const body = await req.json();
+
+    // ── Folded-in utility (formerly the ai-fast-summary fn): a generic Groq
+    //    summary/classification/extraction helper. Auth header still required.
+    if (body?.mode === "fast_summary") {
+      const task = (body.task ?? "summary") as AiTask;
+      const inputStr = typeof body.input === "string" ? body.input : JSON.stringify(body.input ?? "");
+      const r = await callAi({
+        task,
+        systemPrompt: body.system_prompt ?? FAST_SUMMARY_SYSTEM,
+        userPrompt: inputStr,
+        jsonMode: body.json === true,
+        maxTokens: 1200,
+        temperature: 0.2,
+      });
+      await logLlmUsage({
+        workspace_id: body.workspace_id ?? null, project_id: body.project_id ?? null,
+        provider: r.provider, model: r.model, task, feature: body.feature ?? "fast-summary", usage: r.usage,
+      });
+      return jsonResponse({
+        provider: r.provider, model: r.model, usage: r.usage, content: r.content,
+        json: body.json ? safeParseJson(r.content) : null,
+      });
+    }
+
     const userClient = createUserClient(authHeader);
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
     const userId = userData.user.id;
 
-    const body = await req.json();
     const { workspace_id, project_id, message, page_context } = body as {
       workspace_id?: string;
       project_id?: string;

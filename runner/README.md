@@ -30,6 +30,28 @@ deps too if you run from a fresh checkout:
 (cd ../ops-runner && npm install) && (cd ../test-runner && npm install)
 ```
 
+## Voice call center (optional)
+
+The runner also hosts the Support voice bridge: Twilio Media Streams ⇄ Deepgram
+STT/TTS ⇄ the AI resolver. Edge functions can't hold long-lived bidirectional
+audio sockets, so this persistent WebSocket server runs here, started
+automatically by `main()` **only when configured**:
+
+```bash
+# .env additions
+SUPABASE_SERVICE_ROLE_KEY=...   # used to read/write support_voice_calls
+VOICE_WS_PORT=8787              # port the WS server listens on
+DEEPGRAM_API_KEY=...            # STT + TTS
+# optional overrides:
+# DEEPGRAM_STT_MODEL=nova-2  DEEPGRAM_STT_LANGUAGE=fr  DEEPGRAM_TTS_MODEL=aura-2-thalia-fr
+```
+
+Expose the port publicly (e.g. via a reverse proxy / tunnel) as `wss://…`, then
+set that base URL as `runner_ws` in the voice channel's config (support_channels
+row, `config.runner_ws`). The support-voice edge function returns TwiML pointing
+Twilio's Media Stream at `runner_ws?call_sid=…&project_id=…`. Set the Twilio
+number's Voice webhook to the URL shown in the channel card (Support → Channels).
+
 ## Security scanning scope
 
 Active scans are **non-destructive**: connect-and-close port checks and surface

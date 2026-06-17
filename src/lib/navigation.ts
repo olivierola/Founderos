@@ -285,11 +285,17 @@ export const MODULES: ModuleNavItem[] = [
     icon: LifeBuoy,
     color: "text-sky-400/60",
     subItems: [
-      { label: "Overview", slug: "overview" },
+      { label: "Overview", slug: "overview", group: "Inbox" },
       { label: "Tickets", slug: "tickets" },
+      { label: "Call center", slug: "calls" },
       { label: "Analytics", slug: "analytics" },
+
+      { label: "Knowledge base", slug: "knowledge-base", group: "Self-service" },
+      { label: "Help center portal", slug: "portal" },
       { label: "Macros", slug: "macros" },
-      { label: "Knowledge base", slug: "knowledge-base" },
+
+      { label: "Channels", slug: "channels", group: "Configuration" },
+      { label: "SLA & routing", slug: "sla-routing" },
     ],
   },
   {

@@ -22,6 +22,14 @@ export const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 export const RUNNER_ID = process.env.RUNNER_ID || `${os.hostname()}-${process.pid}`;
 export const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 3000;
 
+// Voice call center (Twilio Media Streams ⇄ Deepgram STT/TTS). Optional — the
+// voice WS server only starts when VOICE_WS_PORT and a Deepgram key are set.
+export const VOICE_WS_PORT = Number(process.env.VOICE_WS_PORT) || 0;
+export const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || "";
+export const VOICE_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || "aura-2-thalia-fr";
+export const VOICE_STT_MODEL = process.env.DEEPGRAM_STT_MODEL || "nova-2";
+export const VOICE_STT_LANGUAGE = process.env.DEEPGRAM_STT_LANGUAGE || "fr";
+
 if (!SUPABASE_URL || !RUNNER_TOKEN) {
   console.error("SUPABASE_URL and RUNNER_TOKEN are required in the environment / .env");
   process.exit(1);

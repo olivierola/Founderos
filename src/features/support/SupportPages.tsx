@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import {
   type Ticket, type TicketMessage, type Macro, type Article, type MemberRow,
   STATUS_META, PRIORITY_META, computeSla, slaState, relativeDate,
-  loadWorkspaceMembers, memberLabel, callSupportAi,
+  loadWorkspaceMembers, memberLabel, callSupportAi, callSupportResolve,
 } from "./shared";
 
 function useTickets() {
@@ -198,6 +198,7 @@ function TicketDetail({ ticket, members, onBack }: { ticket: Ticket; members: Me
   const [internal, setInternal] = useState(false);
   const [aiBusy, setAiBusy] = useState<string | null>(null);
   const [aiPanel, setAiPanel] = useState<{ kind: string; text: string } | null>(null);
+  const [resolveResult, setResolveResult] = useState<{ decision: "resolve" | "escalate"; confidence: number; reply: string; reason?: string } | null>(null);
   const [draftViaAi, setDraftViaAi] = useState(false);
 
   const { data: messages } = useQuery({
@@ -258,6 +259,20 @@ function TicketDetail({ ticket, members, onBack }: { ticket: Ticket; members: Me
     } finally { setAiBusy(null); }
   }
 
+  // Autonomous resolution: the AI decides resolve vs escalate (HITL — the draft
+  // is staged in the editor; nothing is sent automatically).
+  async function runResolve() {
+    if (!workspaceId || !projectId) return;
+    setAiBusy("resolve"); setResolveResult(null);
+    try {
+      const r = await callSupportResolve(workspaceId, projectId, ticket.id);
+      setResolveResult(r);
+      if (r.reply) { setReply(r.reply); setDraftViaAi(true); }
+    } catch (e) {
+      setResolveResult({ decision: "escalate", confidence: 0, reply: "", reason: e instanceof Error ? e.message : "AI error" });
+    } finally { setAiBusy(null); }
+  }
+
   const sla = slaState(ticket);
 
   return (
@@ -272,6 +287,9 @@ function TicketDetail({ ticket, members, onBack }: { ticket: Ticket; members: Me
 
         {/* AI toolbar */}
         <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={runResolve} disabled={!!aiBusy}>
+            {aiBusy === "resolve" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} AI Resolve
+          </Button>
           <Button size="sm" variant="outline" onClick={() => runAi("suggest_reply")} disabled={!!aiBusy}>
             {aiBusy === "suggest_reply" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Suggest reply
           </Button>
@@ -288,6 +306,22 @@ function TicketDetail({ ticket, members, onBack }: { ticket: Ticket; members: Me
               <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-primary"><Sparkles className="h-3.5 w-3.5" /> AI {aiPanel.kind}</div>
               <p className="whitespace-pre-wrap text-foreground/90">{aiPanel.text}</p>
               <button onClick={() => setAiPanel(null)} className="mt-1 text-[11px] text-muted-foreground hover:text-foreground">Dismiss</button>
+            </CardContent>
+          </Card>
+        )}
+        {resolveResult && (
+          <Card className={cn("border", resolveResult.decision === "resolve" ? "border-emerald-500/40 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5")}>
+            <CardContent className="p-3 text-sm">
+              <div className="mb-1 flex items-center gap-2 text-xs font-medium">
+                {resolveResult.decision === "resolve"
+                  ? <span className="flex items-center gap-1 text-emerald-600"><Sparkles className="h-3.5 w-3.5" /> AI can resolve</span>
+                  : <span className="flex items-center gap-1 text-amber-600"><AlertTriangle className="h-3.5 w-3.5" /> Escalate to a human</span>}
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{resolveResult.confidence}% confidence</span>
+              </div>
+              {resolveResult.decision === "resolve"
+                ? <p className="text-foreground/80">A suggested reply has been staged below — review and send it (nothing was sent automatically).</p>
+                : <p className="text-foreground/80">{resolveResult.reason || "The AI isn't confident enough to answer this on its own."}</p>}
+              <button onClick={() => setResolveResult(null)} className="mt-1 text-[11px] text-muted-foreground hover:text-foreground">Dismiss</button>
             </CardContent>
           </Card>
         )}

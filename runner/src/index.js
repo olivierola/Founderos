@@ -14,6 +14,7 @@ import { pollOps } from "./sources/ops.js";
 import { pollTest } from "./sources/test.js";
 import { pollSecurity } from "./sources/security.js";
 import { pollSimulation } from "./sources/simulation.js";
+import { startVoiceServer } from "./voice.js";
 
 const SOURCES = [pollOps, pollTest, pollSecurity, pollSimulation];
 
@@ -34,6 +35,7 @@ async function main() {
   console.log(`  runner_id: ${RUNNER_ID}`);
   console.log(`  url:       ${SUPABASE_URL}`);
   console.log(`  sources:   ops · tests · security · simulations`);
+  startVoiceServer(); // persistent voice WS bridge (only if configured)
   while (true) {
     const didWork = await tick();
     if (!didWork) await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));

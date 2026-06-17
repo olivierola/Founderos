@@ -90,6 +90,10 @@ import {
   SupportOverviewPage, SupportTicketsPage, SupportKbPage,
   SupportAnalyticsPage, SupportMacrosPage,
 } from "@/features/support/SupportPages";
+import {
+  SupportChannelsPage, SupportSlaRoutingPage, SupportCallCenterPage, SupportPortalPage,
+} from "@/features/support/SupportAdvanced";
+import { HelpCenterPage } from "@/features/support/HelpCenter";
 import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
 import { PmInboxPage } from "@/features/pm/PmInbox";
 import { PmWhiteboardPage } from "@/features/pm/PmWhiteboard";
@@ -310,6 +314,10 @@ const PAGES: Record<string, PageEl> = {
   "support/analytics": <SupportAnalyticsPage />,
   "support/macros": <SupportMacrosPage />,
   "support/knowledge-base": <SupportKbPage />,
+  "support/calls": <SupportCallCenterPage />,
+  "support/portal": <SupportPortalPage />,
+  "support/channels": <SupportChannelsPage />,
+  "support/sla-routing": <SupportSlaRoutingPage />,
 
   // Projects (PM)
   "pm/boards": <PmBoardsPage />,
@@ -504,6 +512,8 @@ export const router = createBrowserRouter([
   { path: "/changelog", element: <ChangelogPage /> },
   { path: "/docs", element: <DocsPage /> },
   { path: "/contact", element: <ContactPage /> },
+  // Public help center portal
+  { path: "/help/:publicKey", element: <HelpCenterPage /> },
   // Auth
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },

@@ -125,6 +125,46 @@ export function relativeDate(iso: string | null): string {
 
 export interface MemberRow { user_id: string; email: string | null; full_name: string | null }
 
+// ───────────────────────────────────────────── omnichannel / SLA / routing / voice
+export interface SupportChannel {
+  id: string; kind: "email" | "chat" | "web" | "voice" | "sms" | "social" | "api";
+  name: string; address: string | null; config: Record<string, unknown>; enabled: boolean; created_at: string;
+}
+export interface SlaTargets { frt: number; res: number }
+export interface SlaPolicy {
+  id: string; name: string; targets: Record<"low" | "normal" | "high" | "urgent", SlaTargets>;
+  business_hours: Record<string, unknown>; is_default: boolean; enabled: boolean; created_at: string;
+}
+export interface RoutingRule {
+  id: string; name: string; position: number;
+  conditions: { channel?: string; priority?: string; keywords?: string[] };
+  actions: { team?: string; assignee_id?: string; priority?: string; sla_policy_id?: string; ai_resolve?: boolean };
+  enabled: boolean; created_at: string;
+}
+export interface VoiceCall {
+  id: string; ticket_id: string | null; direction: "inbound" | "outbound";
+  from_number: string | null; to_number: string | null; provider_call_sid: string | null;
+  status: "ringing" | "in_progress" | "ai_handling" | "escalated" | "completed" | "failed" | "no_answer";
+  transcript: { role: "caller" | "agent"; text: string; ts?: string }[];
+  recording_url: string | null; summary: string | null;
+  resolution: "ai_resolved" | "escalated" | "voicemail" | "dropped" | null;
+  duration_sec: number | null; started_at: string; ended_at: string | null;
+}
+export interface SupportPortal {
+  id: string; public_key: string; title: string; brand_color: string | null; welcome: string | null;
+  ai_enabled: boolean; rag_collection_id: string | null; enabled: boolean; created_at: string;
+}
+
+export const CHANNEL_META: Record<SupportChannel["kind"], { label: string; cls: string }> = {
+  email: { label: "Email", cls: "bg-sky-500/15 text-sky-600" },
+  chat: { label: "Chat", cls: "bg-violet-500/15 text-violet-600" },
+  web: { label: "Web form", cls: "bg-blue-500/15 text-blue-600" },
+  voice: { label: "Voice", cls: "bg-emerald-500/15 text-emerald-600" },
+  sms: { label: "SMS", cls: "bg-teal-500/15 text-teal-600" },
+  social: { label: "Social", cls: "bg-fuchsia-500/15 text-fuchsia-600" },
+  api: { label: "API", cls: "bg-muted text-muted-foreground" },
+};
+
 export async function loadWorkspaceMembers(workspaceId: string): Promise<MemberRow[]> {
   const { data } = await supabase
     .from("workspace_members")
@@ -146,8 +186,19 @@ export async function callSupportAi(
   workspaceId: string, projectId: string, ticketId: string,
   action: "suggest_reply" | "summarize" | "sentiment",
 ): Promise<string> {
-  const res = await callEdge<{ content: string }>("support-ai", {
+  const res = await callEdge<{ content: string }>("support-engine", {
     workspace_id: workspaceId, project_id: projectId, ticket_id: ticketId, action,
   });
   return res.content;
+}
+
+// Autonomous resolution: the AI decides resolve vs escalate, grounded in the KB
+// (optionally a specific RAG collection). HITL — the agent reviews before sending.
+export async function callSupportResolve(
+  workspaceId: string, projectId: string, ticketId: string, ragCollectionId?: string | null,
+): Promise<{ decision: "resolve" | "escalate"; confidence: number; reply: string; reason?: string }> {
+  return callEdge("support-engine", {
+    workspace_id: workspaceId, project_id: projectId, ticket_id: ticketId,
+    action: "resolve", rag_collection_id: ragCollectionId ?? null,
+  });
 }
