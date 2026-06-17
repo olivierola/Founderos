@@ -8,7 +8,7 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import {
   Loader2, Plus, Search, Square, StickyNote, Trash2, X, Save, Check,
-  Shapes, ChevronDown,
+  Shapes, ChevronDown, ArrowLeftRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -181,11 +181,41 @@ function AssetMapInner() {
   const selected = useMemo(() => nodes.find((n) => n.selected) ?? null, [nodes]);
   const selectedEdge = useMemo(() => edges.find((e) => e.selected) ?? null, [edges]);
 
-  async function setEdgeRelation(id: string, relation: string) {
-    await supabase.from("asset_edges").update({ relation, label: relation }).eq("id", id);
-    setEdges((eds) => eds.map((e) => (e.id === id ? { ...e, label: relation, data: { ...e.data, relation } } : e)));
+  // Patch an edge in the DB + local state. `data` carries relation/custom-label
+  // flags so the rendered label can be either the relation or a free label.
+  const patchEdge = useCallback(async (id: string, patch: Partial<DbEdge> & { customLabel?: boolean }) => {
+    const { customLabel, ...dbPatch } = patch;
+    await supabase.from("asset_edges").update(dbPatch).eq("id", id);
+    setEdges((eds) => eds.map((e) => {
+      if (e.id !== id) return e;
+      const data = { ...e.data } as { relation?: string; customLabel?: boolean };
+      if (dbPatch.relation !== undefined) data.relation = dbPatch.relation ?? undefined;
+      if (customLabel !== undefined) data.customLabel = customLabel;
+      const label = dbPatch.label !== undefined
+        ? (dbPatch.label ?? undefined)
+        : (data.customLabel ? e.label : (data.relation ?? e.label));
+      const style = { ...(e.style ?? {}) };
+      if (dbPatch.color !== undefined) style.stroke = dbPatch.color ?? undefined;
+      return {
+        ...e, label, data, style,
+        animated: dbPatch.animated !== undefined ? dbPatch.animated : e.animated,
+      };
+    }));
     setSavedAt(Date.now());
-  }
+  }, []);
+
+  // Swap an edge's direction (source ⇄ target).
+  const reverseEdge = useCallback(async (e: Edge) => {
+    await supabase.from("asset_edges").update({ source_node_id: e.target, target_node_id: e.source }).eq("id", e.id);
+    setEdges((eds) => eds.map((x) => (x.id === e.id ? { ...x, source: e.target, target: e.source } : x)));
+    setSavedAt(Date.now());
+  }, []);
+
+  const deleteEdge = useCallback(async (id: string) => {
+    await supabase.from("asset_edges").delete().eq("id", id);
+    setEdges((eds) => eds.filter((e) => e.id !== id));
+    setSavedAt(Date.now());
+  }, []);
 
   async function deleteSelected() {
     const sel = nodes.filter((n) => n.selected).map((n) => n.id);
@@ -253,13 +283,7 @@ function AssetMapInner() {
 
       {/* Edge relation editor */}
       {selectedEdge && !selected && (
-        <div className="absolute right-3 top-3 z-10 w-56 rounded-lg border border-border bg-card p-3 shadow-lg">
-          <div className="mb-2 text-xs font-medium uppercase text-muted-foreground">Relation</div>
-          <select value={(selectedEdge.data?.relation as string) ?? "relates_to"} onChange={(e) => setEdgeRelation(selectedEdge.id, e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm">
-            {RELATIONS.map((r) => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
-          </select>
-          <p className="mt-2 text-[11px] text-muted-foreground">Select an edge and press Delete to remove it.</p>
-        </div>
+        <EdgeInspector edge={selectedEdge} onPatch={patchEdge} onReverse={reverseEdge} onDelete={deleteEdge} />
       )}
 
       {/* Asset library drawer */}
@@ -293,6 +317,72 @@ function Inspector({ node, onRename, onDelete }: { node: Node; onRename: (id: st
         <div className="text-sm"><div className="font-medium">{String(node.data.label)}</div>{node.data.sub && <div className="text-xs text-muted-foreground">{String(node.data.sub)}</div>}</div>
       )}
       {node.type === "asset" && <p className="mt-2 text-[11px] text-muted-foreground">Drag from the right edge to connect. Set the relation type on the edge.</p>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────── edge inspector
+const EDGE_COLORS = ["", "#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899"];
+
+function EdgeInspector({ edge, onPatch, onReverse, onDelete }: {
+  edge: Edge;
+  onPatch: (id: string, patch: Partial<DbEdge> & { customLabel?: boolean }) => void;
+  onReverse: (e: Edge) => void;
+  onDelete: (id: string) => void;
+}) {
+  const data = (edge.data ?? {}) as { relation?: string; customLabel?: boolean };
+  const isCustom = !!data.customLabel;
+  const [label, setLabel] = useState(typeof edge.label === "string" ? edge.label : "");
+  useEffect(() => setLabel(typeof edge.label === "string" ? edge.label : ""), [edge.id, edge.label]);
+  const curColor = (edge.style?.stroke as string) ?? "";
+
+  return (
+    <div className="absolute right-3 top-3 z-10 w-64 rounded-lg border border-border bg-card p-3 shadow-lg">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium uppercase text-muted-foreground">Link</span>
+        <button onClick={() => onDelete(edge.id)} className="rounded p-1 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+      </div>
+
+      {/* Relation type — drives the label unless a custom label is set. */}
+      <label className="mb-1 block text-[11px] text-muted-foreground">Relation</label>
+      <select
+        value={data.relation ?? "relates_to"}
+        onChange={(e) => onPatch(edge.id, { relation: e.target.value, ...(isCustom ? {} : { label: e.target.value }) })}
+        className="mb-2 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+      >
+        {RELATIONS.map((r) => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+      </select>
+
+      {/* Custom label */}
+      <label className="mb-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <input type="checkbox" checked={isCustom} onChange={(e) => onPatch(edge.id, { customLabel: e.target.checked, label: e.target.checked ? (label || data.relation || "") : (data.relation ?? null) })} className="accent-primary" />
+        Custom label
+      </label>
+      {isCustom && (
+        <input
+          value={label} onChange={(e) => setLabel(e.target.value)} onBlur={() => onPatch(edge.id, { label, customLabel: true })}
+          placeholder="e.g. signed on 12 May" className="mb-2 h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      )}
+
+      {/* Color */}
+      <label className="mb-1 block text-[11px] text-muted-foreground">Color</label>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {EDGE_COLORS.map((c) => (
+          <button key={c || "default"} onClick={() => onPatch(edge.id, { color: c || null })}
+            className={cn("h-5 w-5 rounded-full border", curColor === c ? "ring-2 ring-primary ring-offset-1 ring-offset-card" : "border-border")}
+            style={{ background: c || "hsl(var(--muted-foreground))" }} title={c || "default"} />
+        ))}
+      </div>
+
+      {/* Animated + direction */}
+      <label className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <input type="checkbox" checked={!!edge.animated} onChange={(e) => onPatch(edge.id, { animated: e.target.checked })} className="accent-primary" />
+        Animated flow
+      </label>
+      <Button size="sm" variant="outline" className="h-7 w-full" onClick={() => onReverse(edge)}>
+        <ArrowLeftRight className="mr-1 h-3.5 w-3.5" /> Reverse direction
+      </Button>
     </div>
   );
 }
@@ -380,14 +470,18 @@ function dbToFlowNode(n: DbNode): Node {
 }
 
 function dbToFlowEdge(e: DbEdge): Edge {
+  const custom = !!(e.label && e.relation && e.label !== e.relation);
   return {
     id: e.id,
     source: e.source_node_id,
     target: e.target_node_id,
     label: e.label ?? e.relation ?? undefined,
     animated: e.animated,
-    style: e.color ? { stroke: e.color } : undefined,
-    data: { relation: e.relation },
+    style: { stroke: e.color || undefined, strokeWidth: 1.5 },
+    interactionWidth: 20, // wider invisible hit area so thin edges are easy to select
+    labelStyle: { fontSize: 11, fill: "hsl(var(--foreground))" },
+    labelBgStyle: { fill: "hsl(var(--card))" },
+    data: { relation: e.relation, customLabel: custom },
   };
 }
 
