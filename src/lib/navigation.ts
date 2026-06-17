@@ -210,6 +210,9 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Tasks", slug: "tasks" },
       { label: "Onboarding", slug: "onboarding" },
 
+      // ── Centralised knowledge bases ("RAG centers") reusable across agents. ──
+      { label: "RAG Center", slug: "knowledge", group: "Knowledge" },
+
       // ── AI Agent tools (the Assistant "Chat" now lives in the global
       //    top-bar panel, so it's intentionally not listed here; route kept). ──
       { label: "Insights", slug: "insights", group: "AI Agent" },

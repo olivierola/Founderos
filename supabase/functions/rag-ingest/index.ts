@@ -106,9 +106,9 @@ Deno.serve(async (req) => {
     const { data: userData } = await userClient.auth.getUser();
     if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
-    const { workspace_id, project_id, agent_id, type, title, content, url, structure } = await req.json();
-    if (!workspace_id || !project_id || !agent_id || !type || !title) {
-      return jsonResponse({ error: "workspace_id, project_id, agent_id, type, title required" }, { status: 400 });
+    const { workspace_id, project_id, agent_id, collection_id, type, title, content, url, structure } = await req.json();
+    if (!workspace_id || !project_id || (!agent_id && !collection_id) || !type || !title) {
+      return jsonResponse({ error: "workspace_id, project_id, type, title and one of agent_id|collection_id required" }, { status: 400 });
     }
 
     const admin = createServiceClient();
@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
     const { data: source, error: srcErr } = await admin
       .from("rag_sources")
       .insert({
-        workspace_id, project_id, agent_id, type, title,
+        workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, type, title,
         source_ref: url ?? null, status: "processing",
       })
       .select("id")
@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
         const vectors = await embedTexts(batch, "retrieval.passage");
         batch.forEach((c, j) => {
           rows.push({
-            workspace_id, project_id, agent_id, source_id: source.id,
+            workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, source_id: source.id,
             content: c,
             embedding: toVectorLiteral(vectors[j] ?? []),
             token_estimate: Math.ceil(c.length / 4),

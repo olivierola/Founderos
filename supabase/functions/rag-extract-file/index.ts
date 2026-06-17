@@ -74,9 +74,9 @@ Deno.serve(async (req) => {
     const { data: userData } = await userClient.auth.getUser();
     if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
-    const { workspace_id, project_id, agent_id, title, storage_path, mime } = await req.json();
-    if (!workspace_id || !project_id || !agent_id || !storage_path) {
-      return jsonResponse({ error: "workspace_id, project_id, agent_id, storage_path required" }, { status: 400 });
+    const { workspace_id, project_id, agent_id, collection_id, title, storage_path, mime } = await req.json();
+    if (!workspace_id || !project_id || (!agent_id && !collection_id) || !storage_path) {
+      return jsonResponse({ error: "workspace_id, project_id, storage_path and one of agent_id|collection_id required" }, { status: 400 });
     }
 
     const admin = createServiceClient();
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
     const { data: source } = await admin
       .from("rag_sources")
-      .insert({ workspace_id, project_id, agent_id, type: "document", title: title || storage_path.split("/").pop(), source_ref: storage_path, status: "processing" })
+      .insert({ workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, type: "document", title: title || storage_path.split("/").pop(), source_ref: storage_path, status: "processing" })
       .select("id")
       .single();
     if (!source) return jsonResponse({ error: "Could not create source" }, { status: 500 });
@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
         const batch = chunks.slice(i, i + batchSize);
         const vectors = await embedTexts(batch, "retrieval.passage");
         batch.forEach((c, j) => rows.push({
-          workspace_id, project_id, agent_id, source_id: source.id,
+          workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, source_id: source.id,
           content: c, embedding: toVectorLiteral(vectors[j] ?? []), token_estimate: Math.ceil(c.length / 4),
         }));
       }

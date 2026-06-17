@@ -229,29 +229,46 @@ async function searchKnowledge(
   ctx: InternalToolContext,
   query: string,
   limit: number,
+  collectionIds: string[] = [],
 ): Promise<string> {
-  // Semantic search via the agent-scoped match RPC across the project's RAG
-  // agents; keyword fallback when embeddings are unavailable.
+  // Semantic search. If the agent has activated specific RAG Center collections,
+  // search those; otherwise search the project's RAG agents. Keyword fallback
+  // when embeddings are unavailable.
   try {
     const { embedTexts, toVectorLiteral } = await import("./jina.ts");
     const [vec] = await embedTexts([query], "retrieval.query");
     if (vec) {
-      const { data: agents } = await ctx.admin
-        .from("rag_agents")
-        .select("id")
-        .eq("project_id", ctx.projectId)
-        .limit(10);
       const vecLiteral = toVectorLiteral(vec);
       const hits: Array<{ similarity: number; text: string }> = [];
-      for (const a of agents ?? []) {
-        const { data, error } = await ctx.admin.rpc("match_rag_chunks", {
-          p_agent_id: (a as { id: string }).id,
+
+      if (collectionIds.length > 0) {
+        // Single RPC across all activated collections.
+        const { data, error } = await ctx.admin.rpc("match_rag_collection_chunks", {
+          p_collection_ids: collectionIds,
           p_query_embedding: vecLiteral,
           p_match_count: limit,
         });
         if (!error && data) {
           for (const d of data as Array<{ similarity?: number; content?: string }>) {
             hits.push({ similarity: d.similarity ?? 0, text: (d.content ?? "").slice(0, 600) });
+          }
+        }
+      } else {
+        const { data: agents } = await ctx.admin
+          .from("rag_agents")
+          .select("id")
+          .eq("project_id", ctx.projectId)
+          .limit(10);
+        for (const a of agents ?? []) {
+          const { data, error } = await ctx.admin.rpc("match_rag_chunks", {
+            p_agent_id: (a as { id: string }).id,
+            p_query_embedding: vecLiteral,
+            p_match_count: limit,
+          });
+          if (!error && data) {
+            for (const d of data as Array<{ similarity?: number; content?: string }>) {
+              hits.push({ similarity: d.similarity ?? 0, text: (d.content ?? "").slice(0, 600) });
+            }
           }
         }
       }
@@ -263,12 +280,13 @@ async function searchKnowledge(
   } catch {
     // embeddings / rpc unavailable — fall through to keyword search
   }
-  const { data } = await ctx.admin
+  let kw = ctx.admin
     .from("rag_chunks")
     .select("content")
-    .eq("project_id", ctx.projectId)
     .ilike("content", `%${query.slice(0, 60)}%`)
     .limit(limit);
+  kw = collectionIds.length > 0 ? kw.in("collection_id", collectionIds) : kw.eq("project_id", ctx.projectId);
+  const { data } = await kw;
   if (!data || data.length === 0) return "No matching knowledge found.";
   return JSON.stringify(data.map((d: { content?: string }) => ({ text: (d.content ?? "").slice(0, 600) })));
 }
@@ -1028,10 +1046,24 @@ export function buildInternalToolset(
   }
 
   if (hasKind("rag_search")) {
+    // Activated RAG Center collections, gathered from each rag_search row's
+    // config.collection_ids. Empty → fall back to project-wide RAG-agent search.
+    const collectionIds = [
+      ...new Set(
+        enabled
+          .filter((r) => r.kind === "rag_search")
+          .flatMap((r) => {
+            const ids = (r.config as { collection_ids?: unknown })?.collection_ids;
+            return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+          }),
+      ),
+    ];
     tools.set("search_knowledge", {
       def: {
         name: "search_knowledge",
-        description: "Semantic search across the project's indexed knowledge base (uploaded docs, notes).",
+        description: collectionIds.length > 0
+          ? "Semantic search across the knowledge collections activated on this agent."
+          : "Semantic search across the project's indexed knowledge base (uploaded docs, notes).",
         parameters: {
           type: "object",
           properties: {
@@ -1046,10 +1078,12 @@ export function buildInternalToolset(
         const query = str(args.query);
         if (!query) return Promise.resolve("ERROR: query is required.");
         const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 10);
-        return searchKnowledge(ctx, query, limit);
+        return searchKnowledge(ctx, query, limit, collectionIds);
       },
     });
-    summaryLines.push("- search_knowledge: search the project's internal knowledge base.");
+    summaryLines.push(collectionIds.length > 0
+      ? `- search_knowledge: search ${collectionIds.length} activated knowledge collection(s).`
+      : "- search_knowledge: search the project's internal knowledge base.");
   }
 
   if (hasKind("db_read")) {

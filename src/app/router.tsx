@@ -48,6 +48,7 @@ import { EngagementPage } from "@/features/users/Engagement";
 
 import { RagAgentsPage } from "@/features/agent-rag/Agents";
 import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
+import { RagCenterPage, RagCollectionDetailPage } from "@/features/rag-center/RagCenter";
 import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
 import { InternalAgentDetailPage } from "@/features/internal-agents/InternalAgentDetail";
 import { AgentEcosystemPage } from "@/features/internal-agents/AgentEcosystem";
@@ -268,6 +269,7 @@ const PAGES: Record<string, PageEl> = {
   "agent/ecosystem": <AgentEcosystemPage />,
   "agent/tasks": <AgentTasksPage />,
   "agent/onboarding": <RagOnboardingPage />,
+  "agent/knowledge": <RagCenterPage />,
 
   // Ops group (under the merged DevOps module)
   "devops/ops-overview": <OpsOverviewPage />,
@@ -553,6 +555,14 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <OpeningDetailPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "agent/knowledge/:collectionId",
+        element: (
+          <ErrorBoundary>
+            <RagCollectionDetailPage />
           </ErrorBoundary>
         ),
       },
