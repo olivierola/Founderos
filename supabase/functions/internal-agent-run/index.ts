@@ -42,7 +42,6 @@ interface AgentRow {
   project_id: string;
   is_archived: boolean;
   collaboration_enabled: boolean;
-  requires_approval: boolean;
 }
 
 // Rough per-1k-token rates (USD). Adjust as providers change pricing.
@@ -147,7 +146,7 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, requires_approval")
+      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -155,7 +154,8 @@ async function loadAgentAndTools(agentId: string) {
       .select("id, kind, name, description, config, enabled, requires_approval")
       .eq("agent_id", agentId),
   ]);
-  if (agentErr || !agent) throw new Error("Agent not found");
+  if (agentErr) throw new Error(`Could not load agent: ${agentErr.message}`);
+  if (!agent) throw new Error(`Agent not found (id=${agentId})`);
   if ((agent as AgentRow).is_archived) throw new Error("Agent is archived");
   return { agent: agent as AgentRow, tools: (tools ?? []) as AgentToolRow[] };
 }
@@ -236,8 +236,10 @@ function makeToolContext(opts: {
     agentName: agent.name,
     collaborationEnabled: agent.collaboration_enabled,
     // Autopilot = the agent may execute write actions without per-action
-    // approval. We treat "requires_approval = false" as autopilot.
-    autopilot: agent.requires_approval === false,
+    // approval. There is no per-agent autopilot flag on internal_agents, so we
+    // default to NOT autopilot — write gating is driven per-tool by each tool's
+    // own requires_approval flag.
+    autopilot: false,
     runId,
     conversationId: opts.conversationId ?? null,
     createDeliverable: async (d) => {

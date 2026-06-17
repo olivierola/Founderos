@@ -201,6 +201,7 @@ function ChatTab({
 
   async function handleSend(text: string) {
     if (!user || !workspaceId || !projectId || !text.trim() || sending) return;
+    if (!agent?.id) { setError("Agent is still loading — please retry in a moment."); return; }
     setSending(true);
     setError(null);
     try {
