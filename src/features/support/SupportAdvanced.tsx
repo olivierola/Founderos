@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Plus, Trash2, Phone, PhoneCall, Mail, MessageSquare, Globe, Smartphone,
   Hash, Power, Clock, GitBranch, Copy, Check, ExternalLink, Sparkles, ChevronUp, ChevronDown,
-  PhoneIncoming, AlertTriangle,
+  PhoneIncoming, AlertTriangle, Settings2,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
@@ -30,6 +30,7 @@ export function SupportChannelsPage() {
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [configuring, setConfiguring] = useState<SupportChannel | null>(null);
 
   const { data: channels, isLoading } = useQuery({
     queryKey: ["support_channels", projectId],
@@ -43,10 +44,17 @@ export function SupportChannelsPage() {
   async function add(d: { kind: SupportChannel["kind"]; name: string; address: string }) {
     if (!workspaceId || !projectId || !d.name.trim()) return;
     const config: Record<string, unknown> = {};
-    if (d.kind === "voice") config.token = crypto.randomUUID().replace(/-/g, "");
-    await supabase.from("support_channels").insert({ workspace_id: workspaceId, project_id: projectId, kind: d.kind, name: d.name.trim(), address: d.address || null, config });
+    if (d.kind === "voice") {
+      config.token = crypto.randomUUID().replace(/-/g, "");
+      config.language = "fr";
+      config.greeting = "Bonjour, vous êtes en relation avec l'assistant. Comment puis-je vous aider ?";
+      config.record = false;
+    }
+    const { data: row } = await supabase.from("support_channels").insert({ workspace_id: workspaceId, project_id: projectId, kind: d.kind, name: d.name.trim(), address: d.address || null, config }).select("*").single();
     queryClient.invalidateQueries({ queryKey: ["support_channels", projectId] });
     setOpen(false);
+    // Voice channels need configuration — open the editor immediately.
+    if (d.kind === "voice" && row) setConfiguring(row as SupportChannel);
   }
   async function toggle(c: SupportChannel) {
     await supabase.from("support_channels").update({ enabled: !c.enabled }).eq("id", c.id);
@@ -66,6 +74,7 @@ export function SupportChannelsPage() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {(channels ?? []).map((c) => {
               const Icon = CHANNEL_ICON[c.kind];
+              const voiceReady = c.kind === "voice" && !!(c.config as { runner_ws?: string })?.runner_ws;
               return (
                 <Card key={c.id} className="group">
                   <CardContent className="space-y-2 p-4">
@@ -77,8 +86,16 @@ export function SupportChannelsPage() {
                       <button onClick={() => remove(c.id)} className="rounded p-1 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                     {c.address && <div className="truncate text-xs text-muted-foreground">{c.address}</div>}
-                    {c.kind === "voice" && <VoiceChannelHint channel={c} />}
-                    <button onClick={() => toggle(c)} className={cn("flex items-center gap-1 text-[11px]", c.enabled ? "text-emerald-600" : "text-muted-foreground")}><Power className="h-3 w-3" /> {c.enabled ? "Enabled" : "Disabled"}</button>
+                    {c.kind === "voice" && (
+                      <div className={cn("flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]", voiceReady ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600")}>
+                        {voiceReady ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                        {voiceReady ? "Bridge configured" : "Needs configuration"}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between pt-1">
+                      <button onClick={() => toggle(c)} className={cn("flex items-center gap-1 text-[11px]", c.enabled ? "text-emerald-600" : "text-muted-foreground")}><Power className="h-3 w-3" /> {c.enabled ? "Enabled" : "Disabled"}</button>
+                      {c.kind === "voice" && <Button size="sm" variant="outline" className="h-7" onClick={() => setConfiguring(c)}><Settings2 className="mr-1 h-3.5 w-3.5" /> Configure</Button>}
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -86,22 +103,100 @@ export function SupportChannelsPage() {
           </div>
         )}
       <AddChannelDialog open={open} onOpenChange={setOpen} onAdd={add} />
+      {configuring && <VoiceChannelConfigDialog channel={configuring} onClose={() => setConfiguring(null)} onSaved={() => queryClient.invalidateQueries({ queryKey: ["support_channels", projectId] })} />}
     </div>
   );
 }
 
-function VoiceChannelHint({ channel }: { channel: SupportChannel }) {
-  const token = (channel.config as { token?: string })?.token ?? "";
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/support-voice?action=incoming&t=${token}`;
-  const [copied, setCopied] = useState(false);
+interface VoiceConfig {
+  token?: string; runner_ws?: string; greeting?: string; language?: string;
+  record?: boolean; account_sid?: string;
+}
+
+// Full voice call-center configuration: the WS bridge endpoint, greeting,
+// language, recording, plus the Twilio webhook URL + a readiness checklist.
+function VoiceChannelConfigDialog({ channel, onClose, onSaved }: { channel: SupportChannel; onClose: () => void; onSaved: () => void }) {
+  const [cfg, setCfg] = useState<VoiceConfig>({ ...(channel.config as VoiceConfig) });
+  const [address, setAddress] = useState(channel.address ?? "");
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const token = cfg.token ?? "";
+  const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/support-voice?action=incoming&t=${token}`;
+  const statusUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/support-voice?action=status&t=${token}`;
+
+  function set<K extends keyof VoiceConfig>(k: K, v: VoiceConfig[K]) { setCfg((p) => ({ ...p, [k]: v })); }
+  function copy(text: string, key: string) { navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(null), 1500); }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await supabase.from("support_channels").update({ config: cfg, address: address || null }).eq("id", channel.id);
+      onSaved(); onClose();
+    } finally { setSaving(false); }
+  }
+
+  const wsOk = !!cfg.runner_ws && /^wss?:\/\//.test(cfg.runner_ws);
+  const checklist = [
+    { ok: !!address, label: "A Twilio phone number is set (below)" },
+    { ok: wsOk, label: "The runner WebSocket URL is set (wss://…)" },
+    { ok: !!cfg.greeting, label: "A greeting message is set" },
+  ];
+
   return (
-    <div className="rounded-md border border-border bg-muted/30 p-2 text-[11px]">
-      <div className="mb-1 font-medium text-foreground">Twilio webhook (Voice → A call comes in)</div>
-      <div className="flex items-center gap-1">
-        <code className="min-w-0 flex-1 truncate text-muted-foreground">{url}</code>
-        <button onClick={() => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }} className="shrink-0 rounded p-1 hover:bg-muted">{copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}</button>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><PhoneCall className="h-4 w-4" /> Configure voice call center — {channel.name}</DialogTitle></DialogHeader>
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+          {/* Readiness checklist */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3">
+            <div className="mb-2 text-xs font-medium uppercase text-muted-foreground">Setup checklist</div>
+            <ul className="space-y-1 text-sm">
+              {checklist.map((c, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  {c.ok ? <Check className="h-4 w-4 text-emerald-500" /> : <AlertTriangle className="h-4 w-4 text-amber-500" />}
+                  <span className={c.ok ? "text-foreground" : "text-muted-foreground"}>{c.label}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Bridge + behaviour config */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Phone number (E.164)"><Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="+33 1 23 45 67 89" /></Field>
+            <Field label="Language"><select value={cfg.language ?? "fr"} onChange={(e) => set("language", e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">{["fr", "en", "es", "de", "it", "pt", "nl"].map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}</select></Field>
+          </div>
+          <Field label="Runner WebSocket URL (wss://…)">
+            <Input value={cfg.runner_ws ?? ""} onChange={(e) => set("runner_ws", e.target.value)} placeholder="wss://voice.yourdomain.com" />
+            <p className="mt-1 text-[11px] text-muted-foreground">Public address of the self-hosted runner's voice bridge (VOICE_WS_PORT). Twilio Media Streams connects here for live audio.</p>
+          </Field>
+          <Field label="Greeting (spoken when the call connects)">
+            <textarea value={cfg.greeting ?? ""} onChange={(e) => set("greeting", e.target.value)} rows={2} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          </Field>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!cfg.record} onChange={(e) => set("record", e.target.checked)} className="accent-primary" /> Record calls (store recording URL on the call)</label>
+
+          {/* Twilio wiring */}
+          <div className="rounded-lg border border-border p-3">
+            <div className="mb-2 text-xs font-medium uppercase text-muted-foreground">Twilio number webhooks</div>
+            <CopyRow label="Voice — “A call comes in” (HTTP POST)" value={webhookUrl} copied={copied === "wh"} onCopy={() => copy(webhookUrl, "wh")} />
+            <CopyRow label="Call status callback (optional)" value={statusUrl} copied={copied === "st"} onCopy={() => copy(statusUrl, "st")} />
+            <p className="mt-2 text-[11px] text-muted-foreground">In Twilio Console → your number → Voice Configuration, set these URLs. Twilio/Deepgram secrets live in the runner's <code>.env</code> (DEEPGRAM_API_KEY, VOICE_WS_PORT) — never stored here.</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={saving}>{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Save configuration</Button></div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CopyRow({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  return (
+    <div className="mb-2">
+      <div className="mb-0.5 text-[11px] text-muted-foreground">{label}</div>
+      <div className="flex items-center gap-1 rounded-md border border-border bg-muted/30 p-1.5">
+        <code className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{value}</code>
+        <button onClick={onCopy} className="shrink-0 rounded p-1 hover:bg-muted">{copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}</button>
       </div>
-      <p className="mt-1 text-muted-foreground">Set this as the Voice webhook on your Twilio number. The Node runner handles the live audio bridge (Deepgram STT/TTS).</p>
     </div>
   );
 }

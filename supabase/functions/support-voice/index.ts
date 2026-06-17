@@ -16,6 +16,15 @@
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 
+// Twilio <Say> locale per channel language.
+const LOCALE: Record<string, string> = {
+  fr: "fr-FR", en: "en-US", es: "es-ES", de: "de-DE", it: "it-IT", pt: "pt-PT", nl: "nl-NL",
+};
+// Escape for safe embedding in TwiML/XML attributes & text.
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function xml(body: string): Response {
   return new Response(`<?xml version="1.0" encoding="UTF-8"?>${body}`, {
     headers: { "Content-Type": "text/xml" },
@@ -111,6 +120,7 @@ Deno.serve(async (req) => {
       const callSid = p.CallSid ?? null;
       const from = p.From ?? null;
       const to = p.To ?? null;
+      const cfg = (channel.config ?? {}) as { runner_ws?: string; greeting?: string; language?: string; record?: boolean };
 
       // Create the call record (the runner will attach transcript/resolution).
       await admin.from("support_voice_calls").insert({
@@ -119,23 +129,28 @@ Deno.serve(async (req) => {
         provider_call_sid: callSid, status: "in_progress",
       });
 
-      // Runner WS endpoint that bridges Twilio Media Streams to Deepgram + AI.
-      const wsBase = (channel.config as { runner_ws?: string })?.runner_ws;
-      const greeting = (channel.config as { greeting?: string })?.greeting
-        ?? "Bonjour, vous êtes en relation avec l'assistant. Comment puis-je vous aider ?";
+      const lang = cfg.language ?? "fr";
+      const sayLocale = LOCALE[lang] ?? "fr-FR";
+      const greeting = esc(cfg.greeting ?? "Bonjour, vous êtes en relation avec l'assistant. Comment puis-je vous aider ?");
+      const wsBase = cfg.runner_ws;
+      const recordAttr = cfg.record ? ` record="record-from-answer-dual"` : "";
 
       if (!wsBase) {
-        // No runner configured — take a message and create a ticket fallback.
-        return xml(`<Response><Say voice="alice" language="fr-FR">${greeting}</Say><Pause length="1"/><Say voice="alice" language="fr-FR">Notre équipe vous recontactera. Au revoir.</Say></Response>`);
+        // No runner configured — greet, take a voicemail-style message and stop.
+        return xml(`<Response><Say voice="alice" language="${sayLocale}">${greeting}</Say><Pause length="1"/><Say voice="alice" language="${sayLocale}">Notre équipe vous recontactera. Au revoir.</Say></Response>`);
       }
 
-      // Bridge to the runner over a Media Stream. Pass identifiers so the runner
-      // can load context and write back to the right call row.
-      const streamUrl = `${wsBase}?call_sid=${encodeURIComponent(callSid ?? "")}&project_id=${channel.project_id}&channel_id=${channel.id}`;
+      // Bridge to the runner over a Media Stream. Pass identifiers via <Parameter>
+      // (reliable) so the runner can load context and write to the right call row.
       return xml(
         `<Response>` +
-          `<Say voice="alice" language="fr-FR">${greeting}</Say>` +
-          `<Connect><Stream url="${streamUrl}"/></Connect>` +
+          `<Say voice="alice" language="${sayLocale}">${greeting}</Say>` +
+          `<Connect${recordAttr}><Stream url="${esc(wsBase)}">` +
+            `<Parameter name="call_sid" value="${esc(callSid ?? "")}"/>` +
+            `<Parameter name="project_id" value="${channel.project_id}"/>` +
+            `<Parameter name="channel_id" value="${channel.id}"/>` +
+            `<Parameter name="language" value="${esc(lang)}"/>` +
+          `</Stream></Connect>` +
         `</Response>`,
       );
     }

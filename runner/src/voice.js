@@ -57,8 +57,8 @@ function sendAudioToTwilio(twilioWs, streamSid, mulawBuf) {
 }
 
 // ── Deepgram streaming STT connection for one call. ──
-function openDeepgramStt(onTranscript) {
-  const url = `wss://api.deepgram.com/v1/listen?model=${VOICE_STT_MODEL}&language=${VOICE_STT_LANGUAGE}` +
+function openDeepgramStt(onTranscript, language = VOICE_STT_LANGUAGE) {
+  const url = `wss://api.deepgram.com/v1/listen?model=${VOICE_STT_MODEL}&language=${language}` +
     `&encoding=mulaw&sample_rate=8000&channels=1&punctuate=true&interim_results=true&endpointing=300`;
   const dg = new WebSocket(url, { headers: { Authorization: `Token ${DEEPGRAM_API_KEY}` } });
   dg.on("message", (raw) => {
@@ -90,12 +90,29 @@ function handleCall(twilioWs, params) {
     await persist({ transcript: history, status: "ai_handling" });
   }
 
+  // Create a support ticket from the call so a human can follow up in the inbox.
+  async function escalateToTicket(reason) {
+    if (!supa || !callRow || callRow.ticket_id) return;
+    try {
+      const body = history.map((h) => `${h.role === "agent" ? "AI" : "Caller"}: ${h.text}`).join("\n");
+      const { data: t } = await supa.from("support_tickets").insert({
+        workspace_id: callRow.workspace_id, project_id: callRow.project_id,
+        subject: `Phone call — ${callRow.from_number || "unknown"}`,
+        body: `${reason}\n\nTranscript:\n${body}`,
+        channel: "voice", priority: "high", status: "open",
+        requester_phone: callRow.from_number, last_activity_at: new Date().toISOString(),
+      }).select("id").single();
+      if (t?.id) { callRow.ticket_id = t.id; await persist({ ticket_id: t.id }); }
+    } catch (e) { console.error(`[${ts()}] escalateToTicket error: ${e.message}`); }
+  }
+
   async function respondTo(text) {
     await pushTurn("caller", text);
     // Hand off to a human if the caller asks for one.
     if (/agent|humain|conseiller|someone|person/i.test(text)) {
       await speak("Je vous mets en relation avec un conseiller. Un instant.");
       await persist({ status: "escalated", resolution: "escalated" });
+      await escalateToTicket("Caller requested a human agent.");
       return;
     }
     try {
@@ -108,6 +125,7 @@ function handleCall(twilioWs, params) {
       console.error(`[${ts()}] aiTurn error: ${e.message}`);
       await speak("Désolé, une erreur est survenue. Je vous transfère à un conseiller.");
       await persist({ status: "escalated", resolution: "escalated" });
+      await escalateToTicket("AI error during the call.");
     }
   }
 
@@ -128,11 +146,13 @@ function handleCall(twilioWs, params) {
 
     if (msg.event === "start") {
       streamSid = msg.start?.streamSid;
-      const callSid = msg.start?.customParameters?.call_sid || params.call_sid;
+      const cp = msg.start?.customParameters ?? {};
+      const callSid = cp.call_sid || params.call_sid;
+      const language = cp.language || params.language || undefined;
       // Load the call row + portal RAG collection for this project.
       if (supa && callSid) {
         const { data } = await supa.from("support_voice_calls")
-          .select("id, project_id, workspace_id, channel_id").eq("provider_call_sid", callSid).maybeSingle();
+          .select("id, project_id, workspace_id, channel_id, ticket_id, from_number").eq("provider_call_sid", callSid).maybeSingle();
         callRow = data ?? null;
         if (callRow) {
           const { data: portal } = await supa.from("support_portals")
@@ -140,8 +160,8 @@ function handleCall(twilioWs, params) {
           ragCollectionId = portal?.rag_collection_id ?? null;
         }
       }
-      dg = openDeepgramStt((transcript) => { if (!speaking) respondTo(transcript); });
-      console.log(`[${ts()}] voice call started stream=${streamSid} call=${callSid}`);
+      dg = openDeepgramStt((transcript) => { if (!speaking) respondTo(transcript); }, language);
+      console.log(`[${ts()}] voice call started stream=${streamSid} call=${callSid} lang=${language ?? VOICE_STT_LANGUAGE}`);
     } else if (msg.event === "media") {
       // Inbound caller audio (base64 μ-law) → Deepgram.
       if (dg && dg.readyState === WebSocket.OPEN && msg.media?.payload) {

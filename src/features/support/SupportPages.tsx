@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import {
   type Ticket, type TicketMessage, type Macro, type Article, type MemberRow,
   STATUS_META, PRIORITY_META, computeSla, slaState, relativeDate,
-  loadWorkspaceMembers, memberLabel, callSupportAi, callSupportResolve,
+  loadWorkspaceMembers, memberLabel, callSupportAi, callSupportResolve, applyRouting,
 } from "./shared";
 
 function useTickets() {
@@ -181,7 +181,11 @@ export function SupportTicketsPage() {
       <TicketDialog open={open} onOpenChange={setOpen} onCreate={async (d) => {
         if (!workspaceId || !projectId) return;
         const sla = computeSla(d.priority ?? "normal");
-        await supabase.from("support_tickets").insert({ ...d, ...sla, workspace_id: workspaceId, project_id: projectId, last_activity_at: new Date().toISOString() });
+        const { data: row } = await supabase.from("support_tickets")
+          .insert({ ...d, ...sla, workspace_id: workspaceId, project_id: projectId, last_activity_at: new Date().toISOString() })
+          .select("id").single();
+        // Apply routing rules (assign team / priority) to the new ticket.
+        if (row?.id) { try { await applyRouting(workspaceId, projectId, row.id); } catch { /* routing optional */ } }
         queryClient.invalidateQueries({ queryKey: ["support_tickets", projectId] });
         setOpen(false);
       }} />
@@ -394,6 +398,8 @@ function TicketDetail({ ticket, members, onBack }: { ticket: Ticket; members: Me
               </select>
             </Prop>
             <Prop label="Priority"><Badge variant="outline" className="capitalize">{ticket.priority}</Badge></Prop>
+            {ticket.assigned_team && <Prop label="Team"><Badge variant="outline">{ticket.assigned_team}</Badge></Prop>}
+            {ticket.sla_breached && <Prop label="SLA"><span className="inline-flex items-center gap-1 rounded bg-destructive/15 px-1.5 py-0.5 text-[11px] text-destructive"><AlertTriangle className="h-3 w-3" /> Breached</span></Prop>}
             {ticket.category && <Prop label="Category"><Badge variant="outline">{ticket.category}</Badge></Prop>}
             <Prop label="Channel"><span className="text-xs capitalize text-muted-foreground">{ticket.channel ?? "—"}</span></Prop>
             <Prop label="First reply"><span className="text-xs text-muted-foreground">{ticket.first_response_at ? relativeDate(ticket.first_response_at) : "pending"}</span></Prop>

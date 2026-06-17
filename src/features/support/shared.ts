@@ -22,6 +22,9 @@ export interface Ticket {
   resolution: "ai_resolved" | "human_resolved" | "escalated" | null;
   ai_confidence: number | null;
   resolved_at: string | null;
+  assigned_team: string | null;
+  sla_breached: boolean;
+  requester_phone: string | null;
   created_at: string;
 }
 
@@ -190,6 +193,11 @@ export async function callSupportAi(
     workspace_id: workspaceId, project_id: projectId, ticket_id: ticketId, action,
   });
   return res.content;
+}
+
+// Apply the project's routing rules to a ticket (assign team / priority / SLA).
+export async function applyRouting(workspaceId: string, projectId: string, ticketId: string): Promise<void> {
+  await callEdge("support-engine", { workspace_id: workspaceId, project_id: projectId, action: "route", ticket_id: ticketId });
 }
 
 // Autonomous resolution: the AI decides resolve vs escalate, grounded in the KB
