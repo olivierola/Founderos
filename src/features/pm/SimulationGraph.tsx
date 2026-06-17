@@ -46,8 +46,8 @@ export function SimulationGraph({
 
     const big = personas.length > 120; // dense graph → simplify for performance
     const maxPop = Math.max(1, ...personas.map((p) => p.population || 1));
-    // Small dot nodes (MiroFish-style): smaller when the graph is dense.
-    const radius = (p: GraphPersona) => (big ? 3.5 : 4 + 7 * Math.sqrt((p.population || 1) / maxPop));
+    // Dot nodes (MiroFish-style). Keep them comfortably visible even when dense.
+    const radius = (p: GraphPersona) => (big ? 6 : 5 + 7 * Math.sqrt((p.population || 1) / maxPop));
 
     const nodes: SimNode[] = personas.map((p) => ({ ...p }));
     const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -70,8 +70,8 @@ export function SimulationGraph({
     const link = g.append("g").selectAll("path").data(links).enter().append("path")
       .attr("fill", "none")
       .attr("stroke", "#8b93a1")
-      .attr("stroke-opacity", big ? 0.3 : 0.55)
-      .attr("stroke-width", (d) => (big ? 0.6 : 1 + 2 * (d.strength || 0.5)))
+      .attr("stroke-opacity", big ? 0.4 : 0.55)
+      .attr("stroke-width", (d) => (big ? 0.9 : 1 + 2 * (d.strength || 0.5)))
       .attr("marker-end", big ? null : "url(#sim-arrow)");
 
     const linkLabel = g.append("g").selectAll("text").data(big ? [] : links).enter().append("text")
@@ -101,7 +101,7 @@ export function SimulationGraph({
       .force("link", forceLink<SimNode, SimLink>(links).id((d: any) => d.id).distance(90).strength((d) => 0.15 + 0.5 * (d.strength || 0.5)))
       .force("charge", forceManyBody().strength(-220))
       .force("center", forceCenter(width / 2, h / 2))
-      .force("collide", forceCollide<SimNode>().radius((d) => radius(d) + 24))
+      .force("collide", forceCollide<SimNode>().radius((d) => radius(d) + (big ? 6 : 24)))
       .force("x", forceX(width / 2).strength(0.04))
       .force("y", forceY(h / 2).strength(0.04));
     simRef.current = sim;
