@@ -260,6 +260,7 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Org chart", slug: "org-chart" },
       { label: "Leave & absences", slug: "leave" },
       { label: "Recruitment", slug: "recruitment" },
+      { label: "Onboarding", slug: "onboarding" },
       { label: "Payroll & docs", slug: "payroll" },
     ],
   },

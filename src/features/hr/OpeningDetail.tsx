@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, ArrowLeft, Briefcase, Users, GitBranch, Settings2, Plus, Trash2,
   Save, Check, Sparkles, Star, Calendar, GripVertical, X, ChevronUp, ChevronDown,
+  Download, AlertTriangle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -19,7 +20,8 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import {
   type Opening, type Stage, type Candidate, type Criterion, type Evaluation, type Interview,
-  OPENING_STATUS, STAGE_KIND_ACCENT, INTERVIEW_KIND, screenCandidate, weightedScore,
+  type SourcedCandidate, OPENING_STATUS, STAGE_KIND_ACCENT, INTERVIEW_KIND, SOURCE_PROVIDERS,
+  screenCandidate, weightedScore, fetchSourcedCandidates,
 } from "./recruitmentTypes";
 
 const TABS = [
@@ -162,6 +164,7 @@ function CandidatesTab({ opening }: { opening: Opening }) {
   const { data: candidates, isLoading } = useCandidates(opening.id);
   const { data: stages } = useStages(opening.id);
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<Candidate | null>(null);
   const stageName = (id: string | null) => (stages ?? []).find((s) => s.id === id)?.name ?? "—";
 
@@ -173,9 +176,28 @@ function CandidatesTab({ opening }: { opening: Opening }) {
     setOpen(false);
   }
 
+  async function importMany(rows: SourcedCandidate[], source: string) {
+    if (!workspaceId || !projectId || rows.length === 0) return;
+    const firstStage = (stages ?? [])[0]?.id ?? null;
+    const existing = new Set((candidates ?? []).map((c) => (c.email ?? "").toLowerCase()).filter(Boolean));
+    const toInsert = rows
+      .filter((r) => !r.email || !existing.has(r.email.toLowerCase()))
+      .map((r) => ({
+        opening_id: opening.id, stage_id: firstStage, workspace_id: workspaceId, project_id: projectId,
+        full_name: r.full_name, email: r.email, phone: r.phone, location: r.location,
+        resume_text: r.resume_text, source, source_ref: r.external_ref, applied_at: new Date().toISOString(),
+      }));
+    if (toInsert.length) await supabase.from("hr_candidates").insert(toInsert);
+    queryClient.invalidateQueries({ queryKey: ["hr_opening_candidates", opening.id] });
+    setImportOpen(false);
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Add candidate</Button></div>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}><Download className="h-4 w-4" /> Import from source</Button>
+        <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Add candidate</Button>
+      </div>
       {isLoading ? <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         : (candidates ?? []).length === 0 ? <EmptyState icon={Users} title="No candidates" description="Add candidates to this opening." />
         : (
@@ -200,8 +222,84 @@ function CandidatesTab({ opening }: { opening: Opening }) {
         )}
 
       <AddCandidateDialog open={open} onOpenChange={setOpen} onCreate={add} />
+      <ImportSourceDialog open={importOpen} onOpenChange={setImportOpen} onImport={importMany} />
       {selected && <CandidateDrawer candidate={selected} opening={opening} stages={stages ?? []} onClose={() => setSelected(null)} />}
     </div>
+  );
+}
+
+// Pull candidatures from a connected ATS source (Greenhouse/Lever/Workable/LinkedIn).
+function ImportSourceDialog({ open, onOpenChange, onImport }: { open: boolean; onOpenChange: (o: boolean) => void; onImport: (rows: SourcedCandidate[], source: string) => Promise<void> }) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const [provider, setProvider] = useState(SOURCE_PROVIDERS[0].slug);
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<SourcedCandidate[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+
+  const def = SOURCE_PROVIDERS.find((p) => p.slug === provider)!;
+
+  async function fetchNow() {
+    if (!workspaceId || !projectId) return;
+    setLoading(true); setError(null); setRows(null);
+    try {
+      const r = await fetchSourcedCandidates(workspaceId, projectId, def.slug, def.action);
+      setRows(r);
+      setPicked(new Set(r.map((x) => x.external_ref)));
+      if (r.length === 0) setError("No candidates returned by this source.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to fetch — is the integration connected?");
+    } finally { setLoading(false); }
+  }
+  function toggle(ref: string) { setPicked((p) => { const n = new Set(p); n.has(ref) ? n.delete(ref) : n.add(ref); return n; }); }
+  async function run() {
+    if (!rows) return;
+    setImporting(true);
+    try { await onImport(rows.filter((r) => picked.has(r.external_ref)), def.label); setRows(null); setPicked(new Set()); }
+    finally { setImporting(false); }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Download className="h-4 w-4" /> Import candidatures</DialogTitle></DialogHeader>
+        <div className="flex items-end gap-2">
+          <L label="Source">
+            <select value={provider} onChange={(e) => { setProvider(e.target.value); setRows(null); setError(null); }} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
+              {SOURCE_PROVIDERS.map((p) => <option key={p.slug} value={p.slug}>{p.label}</option>)}
+            </select>
+          </L>
+          <Button onClick={fetchNow} disabled={loading}>{loading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1 h-3.5 w-3.5" />}Fetch</Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Connect the source first in the integrations catalog. Candidates already on this opening (matched by email) are skipped.</p>
+
+        {error && <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600"><AlertTriangle className="h-3.5 w-3.5" /> {error}</div>}
+
+        {rows && rows.length > 0 && (
+          <>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{picked.size} of {rows.length} selected</span>
+              <button className="hover:text-foreground" onClick={() => setPicked(picked.size === rows.length ? new Set() : new Set(rows.map((r) => r.external_ref)))}>{picked.size === rows.length ? "Deselect all" : "Select all"}</button>
+            </div>
+            <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-border p-1">
+              {rows.map((r) => (
+                <label key={r.external_ref} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/40">
+                  <input type="checkbox" checked={picked.has(r.external_ref)} onChange={() => toggle(r.external_ref)} className="accent-primary" />
+                  <span className="font-medium">{r.full_name}</span>
+                  {r.email && <span className="text-[11px] text-muted-foreground">{r.email}</span>}
+                  {r.location && <span className="ml-auto text-[11px] text-muted-foreground">{r.location}</span>}
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button onClick={run} disabled={importing || picked.size === 0}>{importing && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Import {picked.size}</Button>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -418,49 +516,81 @@ function InterviewDialog({ open, onOpenChange, onCreate }: { open: boolean; onOp
 }
 
 // ----------------------------------------------------------- Avancement (pipeline)
+// Drag-and-drop kanban: one column per stage, cards show source + AI fit + rating.
 function PipelineTab({ opening }: { opening: Opening }) {
   const queryClient = useQueryClient();
   const { data: stages } = useStages(opening.id);
   const { data: candidates } = useCandidates(opening.id);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overStage, setOverStage] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Candidate | null>(null);
 
   const byStage = useMemo(() => {
     const m: Record<string, Candidate[]> = {};
     (stages ?? []).forEach((s) => (m[s.id] = []));
-    (candidates ?? []).forEach((c) => { if (c.stage_id && m[c.stage_id]) m[c.stage_id].push(c); else (m.__unassigned ??= []).push(c); });
+    (candidates ?? []).forEach((c) => { if (c.stage_id && m[c.stage_id]) m[c.stage_id].push(c); });
     return m;
   }, [stages, candidates]);
 
-  async function move(c: Candidate, stageId: string) {
-    await supabase.from("hr_candidates").update({ stage_id: stageId }).eq("id", c.id);
+  async function move(id: string, stageId: string) {
+    const c = (candidates ?? []).find((x) => x.id === id);
+    if (!c || c.stage_id === stageId) return;
+    // Optimistic update so the card jumps immediately.
+    queryClient.setQueryData<Candidate[]>(["hr_opening_candidates", opening.id], (prev) =>
+      (prev ?? []).map((x) => (x.id === id ? { ...x, stage_id: stageId } : x)));
+    await supabase.from("hr_candidates").update({ stage_id: stageId }).eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["hr_opening_candidates", opening.id] });
   }
 
   if (!stages || stages.length === 0) return <EmptyState icon={GitBranch} title="No pipeline" description="Configure stages in the ATS settings tab." />;
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      {stages.map((s) => (
-        <div key={s.id} className="rounded-lg border border-border bg-muted/20 p-2">
-          <div className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium">
-            <span className={cn("h-2 w-2 rounded-full", STAGE_KIND_ACCENT[s.kind])} /> {s.name}
-            <span className="ml-auto text-muted-foreground">{byStage[s.id]?.length ?? 0}</span>
-          </div>
-          <div className="space-y-2">
-            {(byStage[s.id] ?? []).map((c) => (
-              <div key={c.id} className="rounded-md border border-border bg-card p-2.5">
-                <div className="flex items-center justify-between gap-1">
-                  <span className="truncate text-sm font-medium">{c.full_name}</span>
-                  {c.ai_score != null && <FitBadge score={c.ai_score} />}
-                </div>
-                <select value={c.stage_id ?? ""} onChange={(e) => move(c, e.target.value)} className="mt-1.5 w-full rounded border border-input bg-background px-1 py-0.5 text-[11px]">
-                  {stages.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
-                </select>
+    <>
+      <div className="flex gap-3 overflow-x-auto pb-2">
+        {stages.map((s) => {
+          const list = byStage[s.id] ?? [];
+          return (
+            <div
+              key={s.id}
+              onDragOver={(e) => { e.preventDefault(); setOverStage(s.id); }}
+              onDragLeave={() => setOverStage((p) => (p === s.id ? null : p))}
+              onDrop={() => { if (dragId) move(dragId, s.id); setDragId(null); setOverStage(null); }}
+              className={cn("flex w-64 shrink-0 flex-col rounded-lg border bg-muted/20 p-2 transition-colors",
+                overStage === s.id ? "border-primary bg-primary/5" : "border-border")}
+            >
+              <div className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium">
+                <span className={cn("h-2 w-2 rounded-full", STAGE_KIND_ACCENT[s.kind])} /> {s.name}
+                <span className="ml-auto rounded bg-muted px-1.5 text-muted-foreground">{list.length}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
+              <div className="min-h-[40px] space-y-2">
+                {list.map((c) => (
+                  <div
+                    key={c.id}
+                    draggable
+                    onDragStart={() => setDragId(c.id)}
+                    onDragEnd={() => { setDragId(null); setOverStage(null); }}
+                    onClick={() => setSelected(c)}
+                    className={cn("cursor-grab rounded-md border border-border bg-card p-2.5 active:cursor-grabbing hover:border-primary/40",
+                      dragId === c.id && "opacity-50")}
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <span className="truncate text-sm font-medium">{c.full_name}</span>
+                      {c.ai_score != null && <FitBadge score={c.ai_score} />}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                      {c.source && <span className="rounded bg-muted px-1.5 py-0.5">{c.source}</span>}
+                      {c.rating ? <span className="text-amber-500">{c.rating}★</span> : null}
+                    </div>
+                  </div>
+                ))}
+                {list.length === 0 && <div className="rounded-md border border-dashed border-border/60 py-3 text-center text-[11px] text-muted-foreground">Drop here</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {selected && <CandidateDrawer candidate={selected} opening={opening} stages={stages} onClose={() => setSelected(null)} />}
+    </>
   );
 }
 

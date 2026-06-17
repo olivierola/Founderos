@@ -6,7 +6,7 @@ import {
   ChevronDown, UserCircle2, Trash2,
 } from "lucide-react";
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
 } from "recharts";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
@@ -442,19 +442,41 @@ export function SupportAnalyticsPage() {
     // CSAT distribution.
     const csats = t.map((x) => x.csat).filter((v): v is number => v != null);
     const avgCsat = csats.length ? csats.reduce((s, v) => s + v, 0) / csats.length : null;
-    return { avgFr: avg(frTimes), avgRes: avg(resTimes), breached, volume, avgCsat, csatCount: csats.length, total: t.length };
+    // Autonomous resolution: AI-resolved vs human vs escalated.
+    const aiResolved = t.filter((x) => x.resolution === "ai_resolved").length;
+    const humanResolved = t.filter((x) => x.resolution === "human_resolved").length;
+    const escalated = t.filter((x) => x.resolution === "escalated").length;
+    const resolvedTotal = aiResolved + humanResolved + escalated;
+    const deflection = resolvedTotal ? Math.round((aiResolved / resolvedTotal) * 100) : null;
+    const escalationRate = resolvedTotal ? Math.round((escalated / resolvedTotal) * 100) : null;
+    const confs = t.map((x) => x.ai_confidence).filter((v): v is number => v != null);
+    const avgConf = confs.length ? Math.round(confs.reduce((s, v) => s + v, 0) / confs.length) : null;
+    const resolutionMix = [
+      { name: "AI resolved", value: aiResolved, fill: "#15aabf" },
+      { name: "Human resolved", value: humanResolved, fill: "#4dabf7" },
+      { name: "Escalated", value: escalated, fill: "#f59f00" },
+    ];
+    return { avgFr: avg(frTimes), avgRes: avg(resTimes), breached, volume, avgCsat, csatCount: csats.length, total: t.length,
+      deflection, escalationRate, avgConf, resolutionMix, resolvedTotal };
   }, [tickets]);
 
   const fmtH = (h: number | null) => h == null ? "—" : h < 1 ? `${Math.round(h * 60)}m` : `${h.toFixed(1)}h`;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Support analytics" description="Response times, volume and satisfaction." />
+      <PageHeader title="Support analytics" description="Response times, volume, AI deflection and satisfaction." />
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard label="Avg first response" value={fmtH(data.avgFr)} icon={Clock} />
         <MetricCard label="Avg resolution" value={fmtH(data.avgRes)} icon={Clock} />
         <MetricCard label="SLA breached (open)" value={String(data.breached)} icon={AlertTriangle} />
         <MetricCard label="Avg CSAT" value={data.avgCsat != null ? `${data.avgCsat.toFixed(1)} / 5` : "—"} icon={Smile} hint={`${data.csatCount} ratings`} />
+      </div>
+
+      {/* Autonomous resolution — measures how much the AI deflects vs escalates. */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <MetricCard label="AI deflection" value={data.deflection != null ? `${data.deflection}%` : "—"} icon={Sparkles} hint={`${data.resolvedTotal} resolved`} />
+        <MetricCard label="Escalation rate" value={data.escalationRate != null ? `${data.escalationRate}%` : "—"} icon={Zap} hint="to a human agent" />
+        <MetricCard label="Avg AI confidence" value={data.avgConf != null ? `${data.avgConf}%` : "—"} icon={BarChart3} />
       </div>
       {data.volume.length > 0 && (
         <Card>
@@ -468,6 +490,25 @@ export function SupportAnalyticsPage() {
                 <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                 <Bar dataKey="created" fill="#4dabf7" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="solved" fill="#15aabf" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {data.resolvedTotal > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4" /> Resolution mix</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart layout="vertical" data={data.resolutionMix} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" width={110} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Bar dataKey="value" radius={[0, 3, 3, 0]}>
+                  {data.resolutionMix.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

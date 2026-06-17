@@ -4,7 +4,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { LoginPage } from "@/features/auth/Login";
 import { SignupPage } from "@/features/auth/Signup";
-import { OnboardingPage } from "@/features/auth/Onboarding";
+import { OnboardingPage as AuthOnboardingPage } from "@/features/auth/Onboarding";
 import { AcceptInvitePage } from "@/features/auth/AcceptInvite";
 import { OrganisationsPage } from "@/features/orgs/Organisations";
 import { ProjectsPage } from "@/features/orgs/Projects";
@@ -81,6 +81,7 @@ import {
 } from "@/features/hr/HrPages";
 import { RecruitmentPage } from "@/features/hr/Recruitment";
 import { OpeningDetailPage } from "@/features/hr/OpeningDetail";
+import { OnboardingPage } from "@/features/hr/Onboarding";
 import {
   CrmOverviewPage, CrmContactsPage, CrmPipelinePage, CrmActivitiesPage,
 } from "@/features/crm/CrmPages";
@@ -292,6 +293,7 @@ const PAGES: Record<string, PageEl> = {
   "hr/org-chart": <HrOrgChartPage />,
   "hr/leave": <HrLeavePage />,
   "hr/recruitment": <RecruitmentPage />,
+  "hr/onboarding": <OnboardingPage />,
   "hr/payroll": <HrPayrollPage />,
 
   // CRM
@@ -503,7 +505,7 @@ export const router = createBrowserRouter([
   // Auth
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },
-  { path: "/onboarding", element: <OnboardingPage /> },
+  { path: "/onboarding", element: <AuthOnboardingPage /> },
   { path: "/accept-invite", element: <AcceptInvitePage /> },
   {
     path: "/orgs",

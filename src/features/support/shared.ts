@@ -19,6 +19,9 @@ export interface Ticket {
   csat: number | null;
   csat_comment: string | null;
   last_activity_at: string | null;
+  resolution: "ai_resolved" | "human_resolved" | "escalated" | null;
+  ai_confidence: number | null;
+  resolved_at: string | null;
   created_at: string;
 }
 

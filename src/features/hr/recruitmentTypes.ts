@@ -33,6 +33,7 @@ export interface Candidate {
   phone: string | null;
   location: string | null;
   source: string | null;
+  source_ref: string | null;
   resume_url: string | null;
   resume_text: string | null;
   rating: number | null;
@@ -41,7 +42,10 @@ export interface Candidate {
   ai_summary: string | null;
   ai_strengths: string | null;
   ai_gaps: string | null;
+  ai_decision: "advance" | "review" | "reject" | null;
+  human_override: boolean;
   ai_screened_at: string | null;
+  applied_at: string | null;
   created_at: string;
 }
 
@@ -98,6 +102,68 @@ export async function screenCandidate(workspaceId: string, projectId: string, ca
   return callEdge<{ ok: boolean; score: number }>("hr-screen-candidate", {
     workspace_id: workspaceId, project_id: projectId, candidate_id: candidateId,
   });
+}
+
+// ─────────────────────────────────────────────────────────── candidate sourcing
+// ATS providers we can pull candidatures from (must match CONNECTOR_ACTIONS slugs
+// + the "Recruiting sources" group in connectorActionProviders.ts).
+export const SOURCE_PROVIDERS: { slug: string; label: string; action: string }[] = [
+  { slug: "greenhouse", label: "Greenhouse", action: "list_candidates" },
+  { slug: "lever", label: "Lever", action: "list_candidates" },
+  { slug: "workable", label: "Workable", action: "list_candidates" },
+  { slug: "linkedin-talent", label: "LinkedIn Talent", action: "list_candidates" },
+];
+
+export interface SourcedCandidate {
+  external_ref: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  location: string | null;
+  resume_text: string | null;
+}
+
+// Normalize each provider's raw payload to a common shape. Providers return
+// different envelopes (Lever: {data:[…]}, Workable: {candidates:[…]}, …).
+export function normalizeSourced(slug: string, payload: any): SourcedCandidate[] {
+  const rows: any[] =
+    payload?.data ?? payload?.candidates ?? payload?.results ?? payload?.elements ??
+    (Array.isArray(payload) ? payload : []);
+  return rows
+    .map((r): SourcedCandidate | null => {
+      const name =
+        r.name ?? r.full_name ??
+        ([r.first_name ?? r.firstName, r.last_name ?? r.lastName].filter(Boolean).join(" ") || null);
+      if (!name) return null;
+      const email =
+        r.email ?? r.emails?.[0] ?? r.email_addresses?.[0]?.value ??
+        r.contact?.emails?.[0] ?? null;
+      const phone = r.phone ?? r.phones?.[0]?.value ?? r.phone_numbers?.[0]?.value ?? null;
+      const location =
+        r.location ?? r.address ?? r.contact?.location?.name ?? r.headline ?? null;
+      const resume =
+        r.summary ?? r.headline ?? r.resume_text ??
+        (Array.isArray(r.tags) ? r.tags.join(", ") : null);
+      return {
+        external_ref: String(r.id ?? r.candidate_id ?? email ?? name),
+        full_name: name,
+        email,
+        phone,
+        location: typeof location === "string" ? location : null,
+        resume_text: typeof resume === "string" ? resume : null,
+      };
+    })
+    .filter((x): x is SourcedCandidate => !!x);
+}
+
+export async function fetchSourcedCandidates(
+  workspaceId: string, projectId: string, slug: string, action: string,
+): Promise<SourcedCandidate[]> {
+  const res = await callEdge<any>("connector-action", {
+    workspace_id: workspaceId, project_id: projectId, provider: slug, action,
+    params: { limit: 50 },
+  });
+  return normalizeSourced(slug, res?.result ?? res?.data ?? res);
 }
 
 // Weighted average of a candidate's evaluations (1-5) → 0-100.
