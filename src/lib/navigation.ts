@@ -307,11 +307,13 @@ export const MODULES: ModuleNavItem[] = [
     icon: Truck,
     color: "text-orange-400/60",
     subItems: [
-      { label: "Overview", slug: "overview" },
-      { label: "Inventory", slug: "inventory" },
-      { label: "Suppliers", slug: "suppliers" },
-      { label: "Purchase orders", slug: "purchase-orders" },
-      { label: "Shipments", slug: "shipments" },
+      { label: "Control tower", slug: "overview", group: "Visibility" },
+      { label: "Inventory", slug: "inventory", group: "Operations" },
+      { label: "Sales orders", slug: "sales-orders", group: "Operations" },
+      { label: "Returns (RMA)", slug: "returns", group: "Operations" },
+      { label: "Purchase orders", slug: "purchase-orders", group: "Procurement" },
+      { label: "Suppliers", slug: "suppliers", group: "Procurement" },
+      { label: "Shipments", slug: "shipments", group: "Logistics" },
     ],
   },
   {

@@ -114,7 +114,7 @@ export function ScInventoryPage() {
   const { data: suppliers } = useSuppliers();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ sku: "", name: "", category: "", unit: "unit", quantity: "0", reorder_point: "0", unit_cost: "0", location: "", supplier_id: "" });
+  const [form, setForm] = useState({ sku: "", name: "", category: "", unit: "unit", quantity: "0", reorder_point: "0", safety_stock: "0", unit_cost: "0", location: "", supplier_id: "" });
 
   const supplierName = (id: string | null) => (suppliers ?? []).find((s) => s.id === id)?.name ?? "—";
   const visible = (items ?? []).filter((x) =>
@@ -126,12 +126,12 @@ export function ScInventoryPage() {
       workspace_id: workspaceId, project_id: projectId, created_by: user.id,
       sku: form.sku.trim() || form.name.trim().toUpperCase().replace(/\s+/g, "-").slice(0, 16),
       name: form.name.trim(), category: form.category.trim() || null, unit: form.unit.trim() || "unit",
-      quantity: Number(form.quantity) || 0, reorder_point: Number(form.reorder_point) || 0,
+      quantity: Number(form.quantity) || 0, reorder_point: Number(form.reorder_point) || 0, safety_stock: Number(form.safety_stock) || 0,
       unit_cost_cents: Math.round((Number(form.unit_cost) || 0) * 100),
       location: form.location.trim() || null, supplier_id: form.supplier_id || null,
     });
     if (error) { alert(error.message); return; }
-    setForm({ sku: "", name: "", category: "", unit: "unit", quantity: "0", reorder_point: "0", unit_cost: "0", location: "", supplier_id: "" });
+    setForm({ sku: "", name: "", category: "", unit: "unit", quantity: "0", reorder_point: "0", safety_stock: "0", unit_cost: "0", location: "", supplier_id: "" });
     setOpen(false);
     queryClient.invalidateQueries({ queryKey: ["sc_inventory_items", projectId] });
   }
@@ -199,6 +199,7 @@ export function ScInventoryPage() {
             <Field label="Unit"><Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} /></Field>
             <Field label="Quantity"><Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /></Field>
             <Field label="Reorder point"><Input type="number" value={form.reorder_point} onChange={(e) => setForm({ ...form, reorder_point: e.target.value })} /></Field>
+            <Field label="Safety stock"><Input type="number" value={form.safety_stock} onChange={(e) => setForm({ ...form, safety_stock: e.target.value })} /></Field>
             <Field label="Unit cost"><Input type="number" step="0.01" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: e.target.value })} /></Field>
             <Field label="Location"><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></Field>
             <Field label="Supplier" full>
@@ -426,7 +427,7 @@ export function ScShipmentsPage() {
   const queryClient = useQueryClient();
   const { data: shipments, isLoading } = useShipments();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ reference: "", direction: "inbound" as Shipment["direction"], carrier: "", tracking_number: "", eta: "" });
+  const [form, setForm] = useState({ reference: "", direction: "inbound" as Shipment["direction"], carrier: "", tracking_number: "", eta: "", carbon: "0" });
 
   async function create() {
     if (!workspaceId || !projectId || !user) return;
@@ -435,9 +436,10 @@ export function ScShipmentsPage() {
       workspace_id: workspaceId, project_id: projectId, created_by: user.id,
       reference: ref, direction: form.direction, carrier: form.carrier.trim() || null,
       tracking_number: form.tracking_number.trim() || null, eta: form.eta || null,
+      carbon_kg: Number(form.carbon) || 0,
     });
     if (error) { alert(error.message); return; }
-    setForm({ reference: "", direction: "inbound", carrier: "", tracking_number: "", eta: "" });
+    setForm({ reference: "", direction: "inbound", carrier: "", tracking_number: "", eta: "", carbon: "0" });
     setOpen(false);
     queryClient.invalidateQueries({ queryKey: ["sc_shipments", projectId] });
   }
@@ -503,6 +505,7 @@ export function ScShipmentsPage() {
               <Field label="ETA"><Input type="date" value={form.eta} onChange={(e) => setForm({ ...form, eta: e.target.value })} /></Field>
             </div>
             <Field label="Tracking number"><Input value={form.tracking_number} onChange={(e) => setForm({ ...form, tracking_number: e.target.value })} /></Field>
+            <Field label="Carbon (kg CO₂)"><Input type="number" step="0.1" value={form.carbon} onChange={(e) => setForm({ ...form, carbon: e.target.value })} /></Field>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

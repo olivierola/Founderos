@@ -1318,8 +1318,70 @@ const defineJourney: AssistantTool = {
 
 // ---------------------------------------------------------------------------
 
+// Supply-chain copilot tool — lets the navbar assistant answer supply questions
+// (stock health, OTIF/fill rate, open POs, shipment delays, exceptions, carbon).
+const supplyOverview: AssistantTool = {
+  name: "get_supply_overview",
+  minRole: "viewer",
+  scope: "Supply chain & logistics: stock health, orders, shipments, exceptions, KPIs.",
+  def: {
+    name: "get_supply_overview",
+    description:
+      "Return a snapshot of the project's supply chain: low/out-of-stock items, expiring batches, open purchase orders, sales-order OTIF/fill-rate, in-transit/delayed shipments, carbon, and open control-tower exceptions. Use for ANY supply chain, inventory, procurement, logistics, OTIF, fill rate, stockout, shipment or supplier question.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async (_args, ctx) => {
+    const pid = ctx.projectId;
+    const [items, batches, pos, so, ship, exc, suppliers] = await Promise.all([
+      ctx.admin.from("sc_inventory_items").select("name, sku, quantity, reorder_point, safety_stock, unit_cost_cents").eq("project_id", pid).limit(500),
+      ctx.admin.from("sc_batches").select("lot_code, quantity, expiry_date, item_id").eq("project_id", pid).not("expiry_date", "is", null).order("expiry_date", { ascending: true }).limit(50),
+      ctx.admin.from("sc_purchase_orders").select("reference, status, total_cents, expected_at").eq("project_id", pid).limit(500),
+      ctx.admin.from("sc_sales_orders").select("status, promised_at, delivered_at").eq("project_id", pid).limit(1000),
+      ctx.admin.from("sc_shipments").select("reference, status, carrier, eta, carbon_kg, delay_risk").eq("project_id", pid).limit(500),
+      ctx.admin.from("sc_exceptions").select("kind, severity, title, detail").eq("project_id", pid).eq("resolved", false).order("severity", { ascending: false }).limit(50),
+      ctx.admin.from("sc_suppliers").select("name, reliability, lead_time_days, status").eq("project_id", pid).limit(200),
+    ]);
+    const it = items.data ?? [];
+    const lowStock = it.filter((x: any) => x.quantity <= Math.max(x.reorder_point, x.safety_stock));
+    const stockValue = it.reduce((s: number, x: any) => s + x.quantity * x.unit_cost_cents, 0) / 100;
+    const orders = so.data ?? [];
+    const delivered = orders.filter((o: any) => o.status === "delivered");
+    const onTimeInFull = delivered.filter((o: any) => o.promised_at && o.delivered_at && new Date(o.delivered_at) <= new Date(o.promised_at + "T23:59:59"));
+    const otif = delivered.length ? Math.round((onTimeInFull.length / delivered.length) * 100) : null;
+    const openPo = (pos.data ?? []).filter((p: any) => !["received", "cancelled"].includes(p.status));
+    const overduePo = openPo.filter((p: any) => p.expected_at && new Date(p.expected_at) < new Date());
+    const shipments = ship.data ?? [];
+    const inTransit = shipments.filter((s: any) => s.status === "in_transit");
+    const delayed = shipments.filter((s: any) => s.status === "delayed" || s.delay_risk === "high");
+    const carbon = shipments.reduce((s: number, x: any) => s + (Number(x.carbon_kg) || 0), 0);
+    const soon = (batches.data ?? []).filter((b: any) => b.expiry_date && new Date(b.expiry_date) < new Date(Date.now() + 30 * 864e5));
+
+    return JSON.stringify({
+      kpis: {
+        stock_value_eur: Math.round(stockValue),
+        low_or_out_of_stock: lowStock.length,
+        otif_percent: otif,
+        open_purchase_orders: openPo.length,
+        overdue_purchase_orders: overduePo.length,
+        shipments_in_transit: inTransit.length,
+        shipments_delayed: delayed.length,
+        carbon_kg_total: Math.round(carbon),
+        suppliers: (suppliers.data ?? []).length,
+        open_exceptions: (exc.data ?? []).length,
+      },
+      low_stock: lowStock.slice(0, 25).map((x: any) => ({ name: x.name, sku: x.sku, qty: x.quantity, reorder: x.reorder_point, safety: x.safety_stock })),
+      expiring_soon: soon.slice(0, 15).map((b: any) => ({ lot: b.lot_code, qty: b.quantity, expiry: b.expiry_date })),
+      overdue_pos: overduePo.slice(0, 15).map((p: any) => ({ ref: p.reference, status: p.status, due: p.expected_at })),
+      delayed_shipments: delayed.slice(0, 15).map((s: any) => ({ ref: s.reference, carrier: s.carrier, eta: s.eta, risk: s.delay_risk })),
+      exceptions: (exc.data ?? []).slice(0, 25),
+      worst_suppliers: (suppliers.data ?? []).filter((s: any) => s.reliability < 85).slice(0, 10),
+    });
+  },
+};
+
 const ALL_TOOLS: AssistantTool[] = [
   getMetrics,
+  supplyOverview,
   getLatestScan,
   getConnectors,
   getAlerts,

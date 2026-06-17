@@ -95,6 +95,7 @@ import { PmSimulationsPage } from "@/features/pm/PmSimulations";
 import {
   ScOverviewPage, ScInventoryPage, ScSuppliersPage, ScPurchaseOrdersPage, ScShipmentsPage,
 } from "@/features/supply/ScPages";
+import { ScControlTowerPage, ScSalesOrdersPage, ScReturnsPage } from "@/features/supply/ScAdvanced";
 import {
   FinanceOverviewPage, FinanceInvoicesPage, FinanceExpensesPage, FinanceBudgetsPage,
 } from "@/features/finance-mod/FinancePages";
@@ -311,8 +312,10 @@ const PAGES: Record<string, PageEl> = {
   "pm/simulations": <PmSimulationsPage />,
 
   // Supply Chain
-  "supply/overview": <ScOverviewPage />,
+  "supply/overview": <ScControlTowerPage />,
   "supply/inventory": <ScInventoryPage />,
+  "supply/sales-orders": <ScSalesOrdersPage />,
+  "supply/returns": <ScReturnsPage />,
   "supply/suppliers": <ScSuppliersPage />,
   "supply/purchase-orders": <ScPurchaseOrdersPage />,
   "supply/shipments": <ScShipmentsPage />,
