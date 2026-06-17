@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background, BackgroundVariant, Controls, MiniMap, Handle, Position, Panel,
-  applyNodeChanges, applyEdgeChanges, addEdge, ReactFlowProvider,
+  applyNodeChanges, applyEdgeChanges, addEdge, ReactFlowProvider, NodeResizer,
   type Node, type Edge, type NodeProps, type Connection,
   type NodeChange, type EdgeChange, type OnConnect,
 } from "reactflow";
@@ -56,11 +56,21 @@ function NoteNode({ data, selected }: NodeProps) {
   );
 }
 
-function ZoneNode({ data, selected }: NodeProps) {
+function ZoneNode({ id, data, selected }: NodeProps) {
   return (
-    <div className={cn("h-full w-full rounded-xl border-2 border-dashed", selected ? "border-primary" : "border-border")} style={{ background: (data.color || "#6366f1") + "10" }}>
-      <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{data.label || "Zone"}</div>
-    </div>
+    <>
+      <NodeResizer
+        isVisible={selected}
+        minWidth={160}
+        minHeight={120}
+        onResizeEnd={(_e, p) => data.onResizeEnd?.(id, p.width, p.height)}
+        lineClassName="!border-primary"
+        handleClassName="!h-2 !w-2 !rounded-sm !border-primary !bg-card"
+      />
+      <div className={cn("h-full w-full rounded-xl border-2 border-dashed", selected ? "border-primary" : "border-border")} style={{ background: (data.color || "#6366f1") + "10" }}>
+        <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{data.label || "Zone"}</div>
+      </div>
+    </>
   );
 }
 
@@ -120,19 +130,23 @@ function AssetMapInner() {
     setSavedAt(Date.now());
   }, []);
 
+  // Apply React Flow changes to local state. We do NOT persist here: position is
+  // saved on drag-stop and size on resize-end (below). Auto-measured `dimensions`
+  // changes on mount must never be written back, or stored layout drifts on reload.
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((nds) => applyNodeChanges(changes, nds));
-    for (const ch of changes) {
-      if (ch.type === "position" && ch.position && !ch.dragging) {
-        const dims = (ch as { dimensions?: { width: number; height: number } }).dimensions;
-        persistNodePosition(ch.id, ch.position.x, ch.position.y, dims?.width, dims?.height);
-      }
-      if (ch.type === "dimensions" && (ch as any).resizing === false) {
-        const n = nodes.find((x) => x.id === ch.id);
-        const d = (ch as { dimensions?: { width: number; height: number } }).dimensions;
-        if (n && d) persistNodePosition(ch.id, n.position.x, n.position.y, d.width, d.height);
-      }
-    }
+  }, []);
+
+  // Persist the final position once the user releases a node (covers multi-select drag).
+  const onNodeDragStop = useCallback((_e: unknown, _node: Node, dragged: Node[]) => {
+    const moved = dragged && dragged.length ? dragged : (_node ? [_node] : []);
+    for (const n of moved) persistNodePosition(n.id, n.position.x, n.position.y);
+  }, [persistNodePosition]);
+
+  // Persist a zone/note size when a resize ends.
+  const onResizeEnd = useCallback((id: string, width: number, height: number) => {
+    const n = nodes.find((x) => x.id === id);
+    if (n) persistNodePosition(id, n.position.x, n.position.y, width, height);
   }, [nodes, persistNodePosition]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -237,15 +251,22 @@ function AssetMapInner() {
 
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
+  // Inject the resize callback into zone nodes' data (without storing it in DB).
+  const displayNodes = useMemo(
+    () => nodes.map((n) => (n.type === "zone" ? { ...n, data: { ...n.data, onResizeEnd } } : n)),
+    [nodes, onResizeEnd],
+  );
+
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
 
   return (
     <div className="relative h-full w-full">
       <ReactFlow
-        nodes={nodes}
+        nodes={displayNodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
         onNodesChange={onNodesChange}
+        onNodeDragStop={onNodeDragStop}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         fitView
@@ -465,7 +486,6 @@ function dbToFlowNode(n: DbNode): Node {
     base.zIndex = -1;
   }
   if (n.kind === "note") base.style = { background: n.color || "#fef9c3" };
-  if (n.width && n.kind !== "zone") base.width = n.width;
   return base;
 }
 
