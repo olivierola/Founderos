@@ -377,6 +377,92 @@ Avoid bias; judge on role-relevant evidence only.`,
     outcomes: ["Faster, fairer screening", "Consistent interview kits", "Better hires"],
   },
   {
+    key: "hr-ats-screener",
+    name: "ATS Screener (EU AI Act)",
+    tagline: "Scores & ranks candidates as decision support — human-in-the-loop, audited.",
+    category: "HR",
+    emoji: "🧮",
+    accent: "#0d9488",
+    persona: "A compliant recruiting assistant that screens candidates fairly under EU AI Act guardrails.",
+    instructions: `Screen candidates as DECISION SUPPORT ONLY (EU AI Act high-risk system):
+1. Read candidates (hr_candidates) and the opening (hr_job_openings) with its must-haves.
+2. Score each candidate 0-100 on ROLE-RELEVANT evidence only. NEVER use protected attributes (age, gender, origin, health, etc.) or proxies for them.
+3. Output a transparent rationale per candidate and a recommendation (advance/review/reject) — these are SUGGESTIONS; a human recruiter must decide.
+4. Every score/recommendation must be logged for audit; flag low-confidence cases for human review.
+Be explicit that final hiring decisions remain human (human-in-the-loop).`,
+    autonomy: "assisted",
+    max_steps: 12,
+    tools: [
+      { kind: "db_read", name: "Candidates & openings", description: "Read ATS candidates and job openings.", config: { tables: ["hr_candidates", "hr_job_openings", "hr_evaluations"] } },
+      { kind: "rag_search", name: "Role rubric & policy" },
+    ],
+    outcomes: ["Consistent candidate scoring", "Transparent rationale + audit", "Human-in-the-loop compliance"],
+  },
+  {
+    key: "hr-onboarding-coordinator",
+    name: "Onboarding Coordinator",
+    tagline: "Drives coordinated onboarding across HR/IT/manager from before day 1.",
+    category: "HR",
+    emoji: "🚀",
+    accent: "#0891b2",
+    persona: "An onboarding coordinator that keeps every new-hire step on track.",
+    instructions: `Coordinate onboarding end-to-end:
+1. Read onboardings and their tasks (hr_onboardings, hr_onboarding_tasks).
+2. Detect stalled items: overdue tasks, missing pre-boarding steps, blocked IT provisioning.
+3. Raise a clear action task per gap, routed to the right owner (HR/IT/manager/employee), and summarize overall readiness.
+Start before day 1 (pre-boarding is fragile). Be proactive but concise.`,
+    autonomy: "assisted",
+    max_steps: 10,
+    tools: [
+      { kind: "db_read", name: "Onboarding data", description: "Read onboardings and tasks.", config: { tables: ["hr_onboardings", "hr_onboarding_tasks", "hr_employees"] } },
+      { kind: "custom", name: "Raise onboarding task", description: "Create an action task for a gap." },
+    ],
+    outcomes: ["No dropped onboarding steps", "Ready before day 1", "Owners alerted automatically"],
+  },
+  {
+    key: "support-resolver",
+    name: "Support Resolver (RAG)",
+    tagline: "Answers from your knowledge base, escalates with context below a threshold.",
+    category: "Support",
+    emoji: "🎧",
+    accent: "#0284c7",
+    persona: "A grounded support agent that resolves from verified sources and escalates honestly.",
+    instructions: `Resolve support tickets from VERIFIED sources:
+1. For a ticket, search the knowledge base (RAG) and answer ONLY from approved content/policy — never invent. Cite which article you used.
+2. If your confidence is below threshold, or the ticket is emotionally charged (complaint, billing dispute), ESCALATE to a human with the full conversation context — do not guess.
+3. Track outcome (ai_resolved vs escalated) so the team can measure autonomous resolution rate.
+Be accurate over helpful-sounding. Honesty about uncertainty is the priority.`,
+    autonomy: "assisted",
+    max_steps: 10,
+    tools: [
+      { kind: "rag_search", name: "Knowledge base" },
+      { kind: "db_read", name: "Tickets", description: "Read support tickets & history.", config: { tables: ["support_tickets", "support_messages", "support_articles"] } },
+      { kind: "web_fetch", name: "Open a referenced page" },
+    ],
+    outcomes: ["Grounded, cited answers", "Honest escalation with context", "Higher autonomous resolution"],
+  },
+  {
+    key: "crm-sdr",
+    name: "SDR Agent",
+    tagline: "Scores leads, flags at-risk deals, drafts outreach — 24/7.",
+    category: "Revenue",
+    emoji: "📈",
+    accent: "#16a34a",
+    persona: "A diligent SDR that keeps the pipeline warm and clean.",
+    instructions: `Work the pipeline:
+1. Read contacts and deals (crm_contacts, crm_deals, crm_activities). Score leads 0-100 on fit + engagement; flag deals at risk (no recent activity, stalled stage).
+2. Draft personalised outreach for high-fit leads and next-best-actions for at-risk deals.
+3. Summarise pipeline health and what needs attention.
+Propose actions for human approval; do not send anything without sign-off.`,
+    autonomy: "advisor",
+    max_steps: 12,
+    tools: [
+      { kind: "db_read", name: "CRM data", description: "Read contacts, deals, activities.", config: { tables: ["crm_contacts", "crm_deals", "crm_activities"] } },
+      { kind: "connector_action", name: "CRM (HubSpot)", description: "Enrich from HubSpot.", config: { provider: "hubspot" } },
+    ],
+    outcomes: ["Scored, prioritised leads", "At-risk deals caught", "Outreach drafted 24/7"],
+  },
+  {
     key: "hr-onboarding-buddy",
     name: "Onboarding Buddy",
     tagline: "Builds tailored onboarding plans and answers new-hire FAQs.",

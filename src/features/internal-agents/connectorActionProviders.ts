@@ -12,6 +12,7 @@ export const CONNECTOR_ACTION_GROUPS: { label: string; slugs: string[] }[] = [
   { label: "CRM & Support", slugs: ["hubspot", "pipedrive", "salesforce", "attio", "intercom"] },
   { label: "Billing", slugs: ["stripe"] },
   { label: "HR & People", slugs: ["bamboohr", "greenhouse", "deel", "factorial"] },
+  { label: "Recruiting sources", slugs: ["greenhouse", "lever", "workable", "linkedin-talent"] },
   { label: "Docs & project management", slugs: ["notion", "linear", "airtable", "github"] },
   { label: "Product analytics", slugs: ["posthog", "plausible"] },
   { label: "Monitoring", slugs: ["sentry"] },

@@ -369,6 +369,36 @@ const googleCalendar: ConnectorAction[] = [
   },
 ];
 
+// ── Lever (ATS) ──────────────────────────────────────────────────────────────
+const lever: ConnectorAction[] = [
+  {
+    name: "list_candidates", description: "List recent opportunities/candidates.",
+    params: { limit: { type: "number", description: "Max 100." } },
+    run: (c, p) => getJson(`https://api.lever.co/v1/opportunities?limit=${num(p.limit, 25, 100)}`,
+      { headers: { Authorization: `Basic ${btoa(c.api_key + ":")}` } }),
+  },
+  {
+    name: "list_postings", description: "List published job postings.",
+    run: (c) => getJson("https://api.lever.co/v1/postings?state=published&limit=50",
+      { headers: { Authorization: `Basic ${btoa(c.api_key + ":")}` } }),
+  },
+];
+
+// ── Workable (ATS) ───────────────────────────────────────────────────────────
+const workable: ConnectorAction[] = [
+  {
+    name: "list_candidates", description: "List candidates across jobs.",
+    params: { limit: { type: "number", description: "Max 100." } },
+    run: (c, p) => getJson(`https://${c.subdomain}.workable.com/spi/v3/candidates?limit=${num(p.limit, 25, 100)}`,
+      { headers: { Authorization: `Bearer ${c.api_key}` } }),
+  },
+  {
+    name: "list_jobs", description: "List published jobs.",
+    run: (c) => getJson(`https://${c.subdomain}.workable.com/spi/v3/jobs?state=published`,
+      { headers: { Authorization: `Bearer ${c.api_key}` } }),
+  },
+];
+
 // ── Stripe ────────────────────────────────────────────────────────────────────
 // Read-only billing data via the official API (use a restricted/read key).
 const stripe: ConnectorAction[] = [
@@ -620,7 +650,7 @@ const telegram: ConnectorAction[] = [
 export const CONNECTOR_ACTIONS: Record<string, ConnectorAction[]> = {
   slack, teams, discord, telegram,
   hubspot, pipedrive, salesforce, attio, intercom,
-  bamboohr, greenhouse, deel, factorial,
+  bamboohr, greenhouse, deel, factorial, lever, workable,
   athena, gcs, bigquery, "azure-blob": azureBlob, "azure-synapse": azureSynapse,
   "google-calendar": googleCalendar,
   // Real SaaS apps (billing, docs, issues, monitoring, analytics, design, data).

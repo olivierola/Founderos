@@ -1464,11 +1464,106 @@ const projectOverview: AssistantTool = {
   },
 };
 
+// Support copilot — tickets, SLA, resolution rate, CSAT.
+const supportOverview: AssistantTool = {
+  name: "get_support_overview",
+  minRole: "viewer",
+  scope: "Support: tickets, backlog, autonomous resolution rate, CSAT.",
+  def: {
+    name: "get_support_overview",
+    description:
+      "Return the project's support snapshot: open/backlog tickets, autonomous (AI) resolution rate, escalations, average CSAT and recent tickets. Use for ANY support, ticket, helpdesk, SLA, CSAT or 'how is support doing' question.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async (_args, ctx) => {
+    const { data } = await ctx.admin
+      .from("support_tickets").select("status, resolution, csat, subject, created_at").eq("project_id", ctx.projectId).limit(1000);
+    const t = data ?? [];
+    const open = t.filter((x: any) => !["resolved", "closed"].includes(x.status));
+    const resolved = t.filter((x: any) => x.resolution);
+    const aiResolved = t.filter((x: any) => x.resolution === "ai_resolved");
+    const escalated = t.filter((x: any) => x.resolution === "escalated");
+    const csats = t.filter((x: any) => typeof x.csat === "number").map((x: any) => x.csat);
+    return JSON.stringify({
+      total: t.length, open: open.length,
+      autonomous_resolution_rate: resolved.length ? Math.round((aiResolved.length / resolved.length) * 100) : null,
+      escalations: escalated.length,
+      avg_csat: csats.length ? Math.round((csats.reduce((s: number, n: number) => s + n, 0) / csats.length) * 10) / 10 : null,
+      recent_open: open.slice(0, 10).map((x: any) => ({ subject: x.subject, status: x.status })),
+    });
+  },
+};
+
+// CRM copilot — pipeline, lead scores, at-risk deals.
+const crmOverview: AssistantTool = {
+  name: "get_crm_overview",
+  minRole: "viewer",
+  scope: "CRM: pipeline value, lead scores, at-risk deals, stale activity.",
+  def: {
+    name: "get_crm_overview",
+    description:
+      "Return the project's CRM snapshot: open pipeline value & stages, top-scored leads, at-risk deals, and stale (no recent activity) deals. Use for ANY CRM, sales, pipeline, deal, lead-scoring or forecast question.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async (_args, ctx) => {
+    const [contacts, deals] = await Promise.all([
+      ctx.admin.from("crm_contacts").select("full_name, lead_score, status").eq("project_id", ctx.projectId).limit(1000),
+      ctx.admin.from("crm_deals").select("title, stage, amount_cents, risk, last_activity_at").eq("project_id", ctx.projectId).limit(1000),
+    ]);
+    const d = deals.data ?? [];
+    const open = d.filter((x: any) => !["won", "lost"].includes(x.stage));
+    const c = (n: number) => Math.round(n / 100);
+    const staleCut = Date.now() - 14 * 864e5;
+    return JSON.stringify({
+      open_pipeline_eur: c(open.reduce((s: number, x: any) => s + (x.amount_cents || 0), 0)),
+      open_deals: open.length,
+      at_risk: open.filter((x: any) => x.risk === "high").map((x: any) => ({ title: x.title, amount_eur: c(x.amount_cents || 0) })).slice(0, 10),
+      stale_deals: open.filter((x: any) => !x.last_activity_at || new Date(x.last_activity_at).getTime() < staleCut).length,
+      top_leads: (contacts.data ?? []).filter((x: any) => typeof x.lead_score === "number").sort((a: any, b: any) => b.lead_score - a.lead_score).slice(0, 8).map((x: any) => ({ name: x.full_name, score: x.lead_score })),
+    });
+  },
+};
+
+// Recruitment copilot — ATS pipeline + sources + AI screening (EU AI Act aware).
+const recruitmentOverview: AssistantTool = {
+  name: "get_recruitment_overview",
+  minRole: "viewer",
+  scope: "Recruitment/ATS: openings, candidates by stage & source, AI screening.",
+  def: {
+    name: "get_recruitment_overview",
+    description:
+      "Return the project's recruiting snapshot: open job openings, candidates by pipeline stage and by source channel (LinkedIn/Indeed/Greenhouse/Lever/Workable/referral), AI screening scores, and onboarding progress. Use for ANY recruiting, ATS, hiring, candidate, sourcing or onboarding question. Note: AI candidate scoring is EU AI Act high-risk — always frame results as decision support requiring human review.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async (_args, ctx) => {
+    const [openings, cands, onb] = await Promise.all([
+      ctx.admin.from("hr_job_openings").select("title, status").eq("project_id", ctx.projectId).limit(200),
+      ctx.admin.from("hr_candidates").select("full_name, stage, source, ai_score, ai_decision, human_override").eq("project_id", ctx.projectId).limit(2000),
+      ctx.admin.from("hr_onboardings").select("name, status").eq("project_id", ctx.projectId).limit(200),
+    ]);
+    const cs = cands.data ?? [];
+    const byStage: Record<string, number> = {}; const bySource: Record<string, number> = {};
+    for (const c of cs) { byStage[c.stage] = (byStage[c.stage] ?? 0) + 1; bySource[c.source ?? "manual"] = (bySource[c.source ?? "manual"] ?? 0) + 1; }
+    return JSON.stringify({
+      open_positions: (openings.data ?? []).filter((o: any) => o.status === "open").length,
+      candidates: cs.length,
+      by_stage: byStage, by_source: bySource,
+      ai_screened: cs.filter((c: any) => typeof c.ai_score === "number").length,
+      ai_overridden_by_human: cs.filter((c: any) => c.human_override).length,
+      onboardings_active: (onb.data ?? []).filter((o: any) => o.status !== "complete").length,
+      governance_note: "AI candidate scoring is decision support only (EU AI Act high-risk): a human must review before any hiring decision.",
+    });
+  },
+};
+
 const ALL_TOOLS: AssistantTool[] = [
   getMetrics,
   supplyOverview,
   financeOverview,
   projectOverview,
+  supportOverview,
+  crmOverview,
+  recruitmentOverview,
   getLatestScan,
   getConnectors,
   getAlerts,
