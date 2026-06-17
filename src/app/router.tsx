@@ -94,6 +94,7 @@ import {
   SupportChannelsPage, SupportSlaRoutingPage, SupportCallCenterPage, SupportPortalPage,
 } from "@/features/support/SupportAdvanced";
 import { HelpCenterPage } from "@/features/support/HelpCenter";
+import { AssetMapPage } from "@/features/assets/AssetMap";
 import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
 import { PmInboxPage } from "@/features/pm/PmInbox";
 import { PmWhiteboardPage } from "@/features/pm/PmWhiteboard";
@@ -223,6 +224,8 @@ import {
 type PageEl = import("react").ReactElement;
 
 const PAGES: Record<string, PageEl> = {
+  // Assets — infinite modular canvas of the company's objects + relations.
+  "assets/map": <AssetMapPage />,
   // Overview was merged into the Admin panel — these three tabs were kept.
   "actions/dashboard": <OverviewDashboard />,
   "actions/custom-dashboards": <CustomDashboardsPage />,

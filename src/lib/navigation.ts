@@ -13,6 +13,7 @@ import {
   FolderKanban,
   Wallet,
   Truck,
+  Shapes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -78,6 +79,15 @@ export function itemsInGroup(module: ModuleNavItem, group: string): SubNavItem[]
 }
 
 export const MODULES: ModuleNavItem[] = [
+  {
+    slug: "assets",
+    label: "Assets",
+    icon: Shapes,
+    color: "text-indigo-400/60",
+    subItems: [
+      { label: "Asset map", slug: "map" },
+    ],
+  },
   {
     slug: "actions",
     label: "Admin panel",
