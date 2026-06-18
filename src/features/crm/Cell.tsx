@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, X, ExternalLink } from "lucide-react";
+import { Check, X, ExternalLink, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CrmProperty, CrmRecord, SelectOption } from "./objectModel";
+import { iconByName } from "./crmIcons";
+import type { CrmProperty, CrmRecord, SelectOption, RelatedDisplay } from "./objectModel";
 
 // A single editable table cell. Renders the value for a property type and, when
 // edited, calls onChange with the new value. Relations are handled separately.
 export function Cell({
-  property, record, value, onChange, relationLabels, onEditRelation,
+  property, record, value, onChange, relationChips, onEditRelation,
 }: {
   property: CrmProperty;
   record: CrmRecord;
   value: unknown;
   onChange: (v: unknown) => void;
-  relationLabels?: string[];
+  relationChips?: RelatedDisplay[];
   onEditRelation?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -45,14 +46,24 @@ export function Cell({
         </div>
       );
 
-    case "relation":
+    case "relation": {
+      const chips = relationChips ?? [];
       return (
-        <button onClick={onEditRelation} className="flex h-full w-full items-center gap-1 px-3 text-left text-sm hover:bg-muted/40">
-          {(relationLabels ?? []).length === 0
-            ? <span className="text-muted-foreground/50">—</span>
-            : (relationLabels ?? []).map((l, i) => <span key={i} className="rounded bg-muted px-1.5 py-0.5 text-xs">{l}</span>)}
+        <button onClick={onEditRelation} className="group/rel flex h-full w-full flex-wrap items-center gap-1 px-2 text-left text-sm hover:bg-muted/40">
+          {chips.length === 0
+            ? <span className="flex items-center gap-1 px-1 text-muted-foreground/50"><Plus className="h-3 w-3 opacity-0 group-hover/rel:opacity-100" /> —</span>
+            : chips.map((c) => {
+                const Icon = iconByName(c.objectIcon);
+                return (
+                  <span key={c.id} className="flex max-w-full items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-xs">
+                    <Icon className={cn("h-3 w-3 shrink-0", c.objectColor)} />
+                    <span className="truncate">{c.label}</span>
+                  </span>
+                );
+              })}
         </button>
       );
+    }
 
     case "url":
     case "email":

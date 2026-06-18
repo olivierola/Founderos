@@ -253,6 +253,39 @@ export async function fetchRelations(objectId: string): Promise<Record<string, R
   return out;
 }
 
+// Display info for a related record (icon + color come from its object).
+export interface RelatedDisplay { id: string; label: string; objectIcon: string; objectColor: string }
+
+// For each relation property of `objectId`, resolve the titles + object styling
+// of every linked target record, keyed by target record id. One pass, no N+1.
+export async function fetchRelatedDisplays(objectId: string): Promise<Record<string, RelatedDisplay>> {
+  const out: Record<string, RelatedDisplay> = {};
+  // Which target objects do this object's relation props point at?
+  const { data: props } = await supabase
+    .from("crm_properties").select("relation_object_id")
+    .eq("object_id", objectId).eq("type", "relation").not("relation_object_id", "is", null);
+  const targetObjIds = [...new Set((props ?? []).map((p) => (p as { relation_object_id: string }).relation_object_id))];
+  if (!targetObjIds.length) return out;
+
+  // Target objects (icon/color/title_property).
+  const { data: objs } = await supabase.from("crm_objects").select("id, icon, color, title_property").in("id", targetObjIds);
+  const objById = new Map((objs ?? []).map((o) => [(o as CrmObject).id, o as Pick<CrmObject, "id" | "icon" | "color" | "title_property">]));
+
+  // All records of those target objects → build display chips.
+  const { data: recs } = await supabase.from("crm_records").select("id, object_id, data").in("object_id", targetObjIds);
+  for (const r of (recs ?? []) as { id: string; object_id: string; data: Record<string, unknown> }[]) {
+    const o = objById.get(r.object_id);
+    const titleKey = o?.title_property ?? "name";
+    out[r.id] = {
+      id: r.id,
+      label: String(r.data[titleKey] ?? r.data.name ?? "Untitled"),
+      objectIcon: o?.icon ?? "Boxes",
+      objectColor: o?.color ?? "text-muted-foreground",
+    };
+  }
+  return out;
+}
+
 function slugifyKey(s: string): string {
   const base = s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "field";
   return `${base}_${Math.random().toString(36).slice(2, 6)}`;

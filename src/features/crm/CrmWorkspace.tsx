@@ -17,11 +17,12 @@ import { iconByName, OBJECT_ICON_CHOICES, OBJECT_COLOR_CHOICES } from "./crmIcon
 import { Cell } from "./Cell";
 import {
   ensureSeeded, fetchObjects, fetchProperties, fetchRecords, fetchRelations, fetchViews,
+  fetchRelatedDisplays,
   createRecord, updateRecordValue, deleteRecords, createProperty, deleteProperty,
   updateProperty, createObject, deleteObject, setRelations,
   createView, deleteView, saveView, applyView,
   PROPERTY_TYPE_META,
-  type CrmObject, type CrmProperty, type CrmRecord, type CrmView, type ViewConfig, type PropertyType, type SelectOption,
+  type CrmObject, type CrmProperty, type CrmRecord, type CrmView, type ViewConfig, type PropertyType, type SelectOption, type RelatedDisplay,
 } from "./objectModel";
 import { ViewBar } from "./ViewBar";
 import { Kanban } from "./Kanban";
@@ -105,6 +106,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
   const propsQ = useQuery({ queryKey: ["crm_props", object.id], queryFn: () => fetchProperties(object.id) });
   const recsQ = useQuery({ queryKey: ["crm_records", object.id], queryFn: () => fetchRecords(object.id) });
   const relQ = useQuery({ queryKey: ["crm_relations", object.id], queryFn: () => fetchRelations(object.id) });
+  const relDispQ = useQuery({ queryKey: ["crm_rel_displays", object.id], queryFn: () => fetchRelatedDisplays(object.id) });
   const viewsQ = useQuery({ queryKey: ["crm_views", object.id], queryFn: () => fetchViews(object.id) });
 
   const properties = propsQ.data ?? [];
@@ -171,14 +173,14 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
   }
   async function removeView(id: string) { await deleteView(id); invViews(); if (activeViewId === id) setActiveViewId(null); }
 
-  const relLabelFor = useMemo(() => {
-    // Build labels for relation cells: propertyId → fromRecordId → [labels]
-    return (property: CrmProperty, rec: CrmRecord): string[] => {
+  const relDisplays = relDispQ.data ?? {};
+  // Rich chips for a relation cell: the linked records with their object icon/color.
+  const relDisplaysFor = useMemo(() => {
+    return (property: CrmProperty, rec: CrmRecord): RelatedDisplay[] => {
       const ids = relations[property.id]?.[rec.id] ?? [];
-      // Labels resolved lazily by RelationLabels via a shared cache below.
-      return ids.map((id) => relationCache.get(id) ?? "…");
+      return ids.map((id) => relDisplays[id] ?? { id, label: "…", objectIcon: "Boxes", objectColor: "text-muted-foreground" });
     };
-  }, [relations]);
+  }, [relations, relDisplays]);
 
   if (propsQ.isLoading || recsQ.isLoading) return <Centered><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></Centered>;
 
@@ -276,7 +278,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
                       <Cell
                         property={p} record={rec} value={rec.data[p.key]}
                         onChange={(v) => setCell(rec, p.key, v)}
-                        relationLabels={p.type === "relation" ? relLabelFor(p, rec) : undefined}
+                        relationChips={p.type === "relation" ? relDisplaysFor(p, rec) : undefined}
                         onEditRelation={p.type === "relation" ? () => setRelationFor({ property: p, record: rec }) : undefined}
                       />
                     )}
@@ -309,7 +311,11 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
           property={relationFor.property} record={relationFor.record} object={object}
           current={relations[relationFor.property.id]?.[relationFor.record.id] ?? []}
           onClose={() => setRelationFor(null)}
-          onSaved={() => { queryClient.invalidateQueries({ queryKey: ["crm_relations", object.id] }); setRelationFor(null); }}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ["crm_relations", object.id] });
+            queryClient.invalidateQueries({ queryKey: ["crm_rel_displays", object.id] });
+            setRelationFor(null);
+          }}
         />
       )}
 
@@ -319,7 +325,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
         return (
           <RecordPanel
             object={object} record={rec} properties={properties} relations={relations}
-            relationLabels={relLabelFor}
+            relationChips={relDisplaysFor}
             onClose={() => setOpenRecordId(null)}
             onChange={(key, v) => setCell(rec, key, v)}
             onEditRelation={(p) => setRelationFor({ property: p, record: rec })}
@@ -332,12 +338,12 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
 }
 
 // ───────────────────────────────────────────────────────── record detail panel
-function RecordPanel({ object, record, properties, relations, relationLabels, onClose, onChange, onEditRelation, onDelete }: {
+function RecordPanel({ object, record, properties, relations, relationChips, onClose, onChange, onEditRelation, onDelete }: {
   object: CrmObject;
   record: CrmRecord;
   properties: CrmProperty[];
   relations: Record<string, Record<string, string[]>>;
-  relationLabels: (p: CrmProperty, r: CrmRecord) => string[];
+  relationChips: (p: CrmProperty, r: CrmRecord) => RelatedDisplay[];
   onClose: () => void;
   onChange: (key: string, v: unknown) => void;
   onEditRelation: (p: CrmProperty) => void;
@@ -394,7 +400,7 @@ function RecordPanel({ object, record, properties, relations, relationLabels, on
                     <Cell
                       property={p} record={record} value={record.data[p.key]}
                       onChange={(v) => onChange(p.key, v)}
-                      relationLabels={p.type === "relation" ? relationLabels(p, record) : undefined}
+                      relationChips={p.type === "relation" ? relationChips(p, record) : undefined}
                       onEditRelation={p.type === "relation" ? () => onEditRelation(p) : undefined}
                     />
                   </div>
