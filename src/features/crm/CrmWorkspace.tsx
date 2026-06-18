@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Plus, Search, Settings2, Trash2, X, Database, Maximize2, Copy, Check,
+  Clock, CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -288,51 +289,112 @@ function RecordPanel({ object, record, properties, relations, relationLabels, on
   const titleProp = properties.find((p) => p.is_title);
   const title = titleProp ? String(record.data[titleProp.key] ?? "Untitled") : "Untitled";
   const [copied, setCopied] = useState(false);
+  const [tab, setTab] = useState<"properties" | "timeline" | "tasks">("properties");
+
+  const TABS = [
+    { key: "properties" as const, label: "Properties", icon: Settings2 },
+    { key: "timeline" as const, label: "Timeline", icon: Clock },
+    { key: "tasks" as const, label: "Tasks", icon: CheckSquare },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
-      <aside className="flex h-full w-full max-w-md flex-col border-l border-border bg-background shadow-2xl dark:bg-zinc-950" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <span className={cn("flex h-8 w-8 items-center justify-center rounded-md bg-muted", object.color)}><Icon className="h-4 w-4" /></span>
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+      {/* Attio-style dark record panel */}
+      <aside className="flex h-full w-full max-w-md flex-col border-l border-border bg-background shadow-2xl dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center gap-2.5 px-4 py-3">
+          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
+          <span className={cn("flex h-7 w-7 items-center justify-center rounded-md bg-muted", object.color)}><Icon className="h-4 w-4" /></span>
           <div className="min-w-0 flex-1">
-            <div className="truncate font-semibold">{title}</div>
-            <div className="text-[11px] text-muted-foreground">{object.label}</div>
+            <div className="truncate text-sm font-semibold">{title}</div>
           </div>
-          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>
+          <span className="shrink-0 text-[11px] text-muted-foreground">Created {timeAgo(record.created_at)}</span>
         </div>
 
-        {/* Properties (editable, reusing the same cell editors) */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {properties.map((p) => (
-            <div key={p.id} className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/30">
-              <div className="mt-1.5 w-28 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{p.label}</div>
-              <div className="min-w-0 flex-1 rounded border border-transparent hover:border-border">
-                <div className="min-h-[34px]">
-                  <Cell
-                    property={p} record={record} value={record.data[p.key]}
-                    onChange={(v) => onChange(p.key, v)}
-                    relationLabels={p.type === "relation" ? relationLabels(p, record) : undefined}
-                    onEditRelation={p.type === "relation" ? () => onEditRelation(p) : undefined}
-                  />
+        {/* Tabs */}
+        <div className="flex items-center gap-1 border-b border-border px-3">
+          {TABS.map((t) => {
+            const TI = t.icon;
+            return (
+              <button key={t.key} onClick={() => setTab(t.key)}
+                className={cn("flex items-center gap-1.5 border-b-2 px-2.5 py-2 text-sm transition-colors",
+                  tab === t.key ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+                <TI className="h-3.5 w-3.5" /> {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Body */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {tab === "properties" && (
+            <div className="p-2">
+              {properties.map((p) => (
+                <div key={p.id} className="flex items-start gap-2 rounded-md px-2 py-1 hover:bg-muted/30">
+                  <div className="mt-2 w-28 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{p.label}</div>
+                  <div className="min-h-[34px] min-w-0 flex-1 rounded border border-transparent hover:border-border">
+                    <Cell
+                      property={p} record={record} value={record.data[p.key]}
+                      onChange={(v) => onChange(p.key, v)}
+                      relationLabels={p.type === "relation" ? relationLabels(p, record) : undefined}
+                      onEditRelation={p.type === "relation" ? () => onEditRelation(p) : undefined}
+                    />
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-          ))}
+          )}
+          {tab === "timeline" && (
+            <div className="p-4">
+              <div className="mb-3 text-[11px] uppercase tracking-wide text-muted-foreground">{new Date(record.created_at).toLocaleDateString(undefined, { month: "long", year: "numeric" })}</div>
+              <ul className="space-y-3 text-sm">
+                <TimelineRow label="Created" when={record.created_at} />
+                {record.updated_at !== record.created_at && <TimelineRow label="Updated" when={record.updated_at} />}
+              </ul>
+            </div>
+          )}
+          {tab === "tasks" && (
+            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+              No linked tasks yet.
+            </div>
+          )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2 border-t border-border p-3">
-          <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(record.id); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-            {copied ? <Check className="mr-1 h-3.5 w-3.5 text-emerald-500" /> : <Copy className="mr-1 h-3.5 w-3.5" />} Copy ID
-          </Button>
-          <span className="ml-auto text-[11px] text-muted-foreground">Updated {new Date(record.updated_at).toLocaleDateString()}</span>
-          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { if (confirm("Delete this record?")) onDelete(); }}>
+        {/* Footer actions */}
+        <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+          <Button size="sm" variant="ghost" className="h-8 text-destructive" onClick={() => { if (confirm("Delete this record?")) onDelete(); }}>
             <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
           </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-8" onClick={() => { navigator.clipboard.writeText(record.id); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+              {copied ? <Check className="mr-1 h-3.5 w-3.5 text-emerald-500" /> : <Copy className="mr-1 h-3.5 w-3.5" />} Copy ID
+            </Button>
+          </div>
         </div>
       </aside>
     </div>
   );
+}
+
+function TimelineRow({ label, when }: { label: string; when: string }) {
+  return (
+    <li className="flex items-center gap-2">
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground"><Clock className="h-3.5 w-3.5" /></span>
+      <span className="font-medium">{label}</span>
+      <span className="ml-auto text-[11px] text-muted-foreground">{timeAgo(when)}</span>
+    </li>
+  );
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} minute${m > 1 ? "s" : ""} ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `about ${h} hour${h > 1 ? "s" : ""} ago`;
+  const d = Math.floor(h / 24);
+  return `${d} day${d > 1 ? "s" : ""} ago`;
 }
 
 // A module-level cache of record id → title label, populated by relation pickers
