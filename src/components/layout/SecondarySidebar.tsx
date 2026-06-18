@@ -4,6 +4,7 @@ import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/n
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
 import { InboxChannelsItem } from "./InboxChannelsItem";
+import { CrmObjectsItem } from "./CrmObjectsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
 import { useMemo } from "react";
 import { INTERNAL_AGENT_TABS } from "@/features/internal-agents/InternalAgentDetail";
@@ -162,6 +163,10 @@ export function SecondarySidebar() {
             }
             if (module.slug === "pm" && sub.slug === "inbox") {
               return <InboxChannelsItem key={sub.slug} to={to} label={sub.label} />;
+            }
+            // CRM "Records" → dynamic list of the project's objects (no 3rd sidebar).
+            if (module.slug === "crm" && sub.slug === "workspace") {
+              return <CrmObjectsItem key={sub.slug} />;
             }
             if (kids && kids.length > 0) {
               return (

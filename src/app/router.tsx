@@ -71,6 +71,7 @@ import { OnboardingPage as RagOnboardingPage } from "@/features/agent-rag/onboar
 import {
   CrmOverviewPage, CrmContactsPage, CrmPipelinePage, CrmActivitiesPage,
 } from "@/features/crm/CrmPages";
+import { CrmWorkspacePage } from "@/features/crm/CrmWorkspace";
 import {
   SupportOverviewPage, SupportTicketsPage, SupportKbPage,
   SupportAnalyticsPage, SupportMacrosPage,
@@ -281,6 +282,7 @@ const PAGES: Record<string, PageEl> = {
   "crm/contacts": <CrmContactsPage />,
   "crm/pipeline": <CrmPipelinePage />,
   "crm/activities": <CrmActivitiesPage />,
+  "crm/workspace": <CrmWorkspacePage />,
   "crm/admin-dashboard": <OverviewDashboard />,
   "crm/admin-custom-dashboards": <CustomDashboardsPage />,
   "crm/admin-alerts": <AlertsPage />,
@@ -548,6 +550,14 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <AgentBuilderPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "crm/workspace/:objectSlug",
+        element: (
+          <ErrorBoundary>
+            <CrmWorkspacePage />
           </ErrorBoundary>
         ),
       },

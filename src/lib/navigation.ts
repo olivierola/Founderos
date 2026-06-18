@@ -238,14 +238,12 @@ export const MODULES: ModuleNavItem[] = [
     icon: Handshake,
     color: "text-emerald-400/60",
     subItems: [
-      { label: "Overview", slug: "overview", group: "CRM" },
-      { label: "Contacts", slug: "contacts" },
-      { label: "Pipeline", slug: "pipeline" },
-      { label: "Activities", slug: "activities" },
+      // Object workspace (Attio/Notion-style: People, Companies, Opportunities,
+      // Tasks, Notes, Dashboards, Software + custom objects). Full-bleed page
+      // with its own object sidebar.
+      { label: "Records", slug: "workspace", group: "CRM" },
 
       // Admin cockpit merged into CRM (more relevant alongside customer data).
-      // These keep their `actions/*` routes; the slugs below are prefixed so the
-      // router resolves them via the cross-module aliases registered in PAGES.
       { label: "Dashboard", slug: "admin-dashboard", group: "Admin" },
       { label: "Custom Dashboards", slug: "admin-custom-dashboards" },
       { label: "Alerts", slug: "admin-alerts" },

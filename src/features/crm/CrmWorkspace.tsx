@@ -1,0 +1,430 @@
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Loader2, Plus, Search, Settings2, Trash2, X, Database,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/EmptyState";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
+import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { cn } from "@/lib/utils";
+import { iconByName, OBJECT_ICON_CHOICES, OBJECT_COLOR_CHOICES } from "./crmIcons";
+import { Cell } from "./Cell";
+import {
+  ensureSeeded, fetchObjects, fetchProperties, fetchRecords, fetchRelations,
+  createRecord, updateRecordValue, deleteRecords, createProperty, deleteProperty,
+  updateProperty, createObject, deleteObject, setRelations,
+  PROPERTY_TYPE_META,
+  type CrmObject, type CrmProperty, type CrmRecord, type PropertyType, type SelectOption,
+} from "./objectModel";
+
+// The object list lives in the secondary sidebar (CrmObjectsItem) — this page
+// renders only the table for the object in the route (crm/workspace/:objectSlug).
+// `?new=1` opens the New-object dialog (triggered from the sidebar link).
+export function CrmWorkspacePage() {
+  const { workspaceSlug, projectSlug, objectSlug } = useParams();
+  const { workspaceId, projectId } = useCurrentContext();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [seeding, setSeeding] = useState(true);
+  const newObjOpen = searchParams.get("new") === "1";
+
+  useEffect(() => {
+    if (!workspaceId || !projectId) return;
+    let cancelled = false;
+    (async () => {
+      setSeeding(true);
+      await ensureSeeded(workspaceId, projectId, user?.id ?? null);
+      if (!cancelled) { queryClient.invalidateQueries({ queryKey: ["crm_objects", projectId] }); setSeeding(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [workspaceId, projectId, user?.id, queryClient]);
+
+  const { data: objects } = useQuery({
+    queryKey: ["crm_objects", projectId],
+    enabled: !!projectId && !seeding,
+    queryFn: () => fetchObjects(projectId!),
+  });
+
+  const active = objects?.find((o) => o.slug === objectSlug) ?? objects?.[0] ?? null;
+
+  // No object in the URL → land on the first object.
+  useEffect(() => {
+    if (!objectSlug && active && objects?.length) {
+      navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${active.slug}`, { replace: true });
+    }
+  }, [objectSlug, active, objects, navigate, workspaceSlug, projectSlug]);
+
+  return (
+    <div className="-mx-4 -my-4 h-[calc(100vh-3.5rem)] sm:-mx-6 sm:-my-6 lg:-mx-12 xl:-mx-20">
+      {seeding || !objects ? <Centered><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></Centered>
+        : !active ? <Centered><EmptyState icon={Database} title="No objects" description="Create your first object from the sidebar." /></Centered>
+        : <ObjectTable key={active.id} object={active} objects={objects} />}
+
+      {newObjOpen && (
+        <NewObjectDialog
+          objects={objects ?? []}
+          onClose={() => { searchParams.delete("new"); setSearchParams(searchParams, { replace: true }); }}
+          onCreated={(slug) => {
+            queryClient.invalidateQueries({ queryKey: ["crm_objects", projectId] });
+            navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${slug}`);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────── records table
+function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObject[] }) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [addColOpen, setAddColOpen] = useState(false);
+  const [editProp, setEditProp] = useState<CrmProperty | null>(null);
+  const [relationFor, setRelationFor] = useState<{ property: CrmProperty; record: CrmRecord } | null>(null);
+
+  const propsQ = useQuery({ queryKey: ["crm_props", object.id], queryFn: () => fetchProperties(object.id) });
+  const recsQ = useQuery({ queryKey: ["crm_records", object.id], queryFn: () => fetchRecords(object.id) });
+  const relQ = useQuery({ queryKey: ["crm_relations", object.id], queryFn: () => fetchRelations(object.id) });
+
+  const properties = propsQ.data ?? [];
+  const records = recsQ.data ?? [];
+  const relations = relQ.data ?? {};
+
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    if (!s) return records;
+    return records.filter((r) => Object.values(r.data).some((v) => String(v ?? "").toLowerCase().includes(s)));
+  }, [records, search]);
+
+  function invRecords() { queryClient.invalidateQueries({ queryKey: ["crm_records", object.id] }); }
+  function invProps() { queryClient.invalidateQueries({ queryKey: ["crm_props", object.id] }); }
+
+  async function addRow() {
+    if (!workspaceId || !projectId) return;
+    await createRecord(workspaceId, projectId, object.id, {}, user?.id ?? null);
+    invRecords();
+  }
+  async function setCell(rec: CrmRecord, key: string, value: unknown) {
+    // optimistic
+    queryClient.setQueryData<CrmRecord[]>(["crm_records", object.id], (prev) =>
+      (prev ?? []).map((r) => (r.id === rec.id ? { ...r, data: { ...r.data, [key]: value } } : r)));
+    await updateRecordValue(rec.id, key, value);
+  }
+  async function removeSelected() {
+    await deleteRecords([...selected]); setSelected(new Set()); invRecords();
+  }
+  async function addProperty(p: { label: string; type: PropertyType; options?: SelectOption[]; relation_object_id?: string | null }) {
+    if (!workspaceId || !projectId) return;
+    await createProperty(workspaceId, projectId, object.id, { ...p, position: properties.length });
+    invProps(); setAddColOpen(false);
+  }
+
+  const relLabelFor = useMemo(() => {
+    // Build labels for relation cells: propertyId → fromRecordId → [labels]
+    return (property: CrmProperty, rec: CrmRecord): string[] => {
+      const ids = relations[property.id]?.[rec.id] ?? [];
+      // Labels resolved lazily by RelationLabels via a shared cache below.
+      return ids.map((id) => relationCache.get(id) ?? "…");
+    };
+  }, [relations]);
+
+  if (propsQ.isLoading || recsQ.isLoading) return <Centered><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></Centered>;
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+        {(() => { const Icon = iconByName(object.icon); return <Icon className={cn("h-4 w-4", object.color)} />; })()}
+        <span className="text-sm font-semibold">All {object.label_plural ?? object.label}</span>
+        <span className="rounded bg-muted px-1.5 text-xs text-muted-foreground">{records.length}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="h-8 w-48 pl-7" />
+          </div>
+          {!object.is_system && (
+            <Button size="sm" variant="ghost" className="h-8 text-muted-foreground hover:text-destructive"
+              onClick={async () => { if (confirm(`Delete the "${object.label}" object and all its records?`)) { await deleteObject(object.id); queryClient.invalidateQueries({ queryKey: ["crm_objects", projectId] }); } }}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Selection bar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-1.5 text-sm">
+          <span>{selected.size} selected</span>
+          <Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={removeSelected}><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button>
+          <button onClick={() => setSelected(new Set())} className="ml-auto text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-max min-w-full border-collapse text-sm">
+          <thead className="sticky top-0 z-10 bg-card">
+            <tr className="border-b border-border">
+              <th className="w-9 border-r border-border px-2 py-2">
+                <input type="checkbox" className="accent-primary" checked={selected.size > 0 && selected.size === filtered.length}
+                  onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((r) => r.id)) : new Set())} />
+              </th>
+              {properties.map((p) => (
+                <th key={p.id} className="group/h border-r border-border px-3 py-2 text-left font-medium" style={{ minWidth: p.width ?? 180 }}>
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <span className="truncate">{p.label}</span>
+                    {!p.is_title && (
+                      <button onClick={() => setEditProp(p)} className="opacity-0 group-hover/h:opacity-100"><Settings2 className="h-3 w-3" /></button>
+                    )}
+                  </div>
+                </th>
+              ))}
+              <th className="px-2 py-2">
+                <button onClick={() => setAddColOpen(true)} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted"><Plus className="h-4 w-4" /></button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((rec) => (
+              <tr key={rec.id} className="group/r border-b border-border hover:bg-muted/20">
+                <td className="border-r border-border px-2 text-center">
+                  <input type="checkbox" className="accent-primary" checked={selected.has(rec.id)}
+                    onChange={(e) => setSelected((s) => { const n = new Set(s); e.target.checked ? n.add(rec.id) : n.delete(rec.id); return n; })} />
+                </td>
+                {properties.map((p) => (
+                  <td key={p.id} className="h-9 border-r border-border p-0" style={{ minWidth: p.width ?? 180 }}>
+                    <Cell
+                      property={p} record={rec} value={rec.data[p.key]}
+                      onChange={(v) => setCell(rec, p.key, v)}
+                      relationLabels={p.type === "relation" ? relLabelFor(p, rec) : undefined}
+                      onEditRelation={p.type === "relation" ? () => setRelationFor({ property: p, record: rec }) : undefined}
+                    />
+                  </td>
+                ))}
+                <td />
+              </tr>
+            ))}
+            {/* Add row */}
+            <tr className="border-b border-border">
+              <td />
+              <td colSpan={properties.length + 1}>
+                <button onClick={addRow} className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted/30">
+                  <Plus className="h-3.5 w-3.5" /> Add {object.label}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        {records.length === 0 && (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">No {object.label_plural?.toLowerCase() ?? "records"} yet — add one above.</div>
+        )}
+      </div>
+
+      {addColOpen && <AddPropertyDialog objects={objects} onClose={() => setAddColOpen(false)} onAdd={addProperty} />}
+      {editProp && <EditPropertyDialog property={editProp} onClose={() => setEditProp(null)} onSaved={() => { invProps(); setEditProp(null); }} onDeleted={() => { invProps(); setEditProp(null); }} />}
+      {relationFor && (
+        <RelationPicker
+          property={relationFor.property} record={relationFor.record} object={object}
+          current={relations[relationFor.property.id]?.[relationFor.record.id] ?? []}
+          onClose={() => setRelationFor(null)}
+          onSaved={() => { queryClient.invalidateQueries({ queryKey: ["crm_relations", object.id] }); setRelationFor(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// A module-level cache of record id → title label, populated by relation pickers
+// so relation cells can show names without N queries.
+const relationCache = new Map<string, string>();
+
+// ───────────────────────────────────────────────────────── dialogs
+function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]; onClose: () => void; onCreated: (slug: string) => void }) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const { user } = useAuth();
+  const [label, setLabel] = useState("");
+  const [plural, setPlural] = useState("");
+  const [icon, setIcon] = useState("Boxes");
+  const [color, setColor] = useState(OBJECT_COLOR_CHOICES[0]);
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (!label.trim() || !workspaceId || !projectId) return;
+    setSaving(true);
+    try {
+      const obj = await createObject(workspaceId, projectId, { label: label.trim(), label_plural: plural.trim() || label.trim() + "s", icon, color, position: objects.length }, user?.id ?? null);
+      if (obj) onCreated(obj.slug);
+      onClose();
+    } finally { setSaving(false); }
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>New object</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <L label="Singular name"><Input value={label} onChange={(e) => setLabel(e.target.value)} autoFocus placeholder="Invoice" /></L>
+            <L label="Plural name"><Input value={plural} onChange={(e) => setPlural(e.target.value)} placeholder="Invoices" /></L>
+          </div>
+          <L label="Icon">
+            <div className="flex flex-wrap gap-1">
+              {OBJECT_ICON_CHOICES.map((nm) => { const I = iconByName(nm); return (
+                <button key={nm} onClick={() => setIcon(nm)} className={cn("flex h-8 w-8 items-center justify-center rounded-md border", icon === nm ? "border-primary bg-primary/10" : "border-border")}><I className={cn("h-4 w-4", color)} /></button>
+              ); })}
+            </div>
+          </L>
+          <L label="Color">
+            <div className="flex flex-wrap gap-1.5">
+              {OBJECT_COLOR_CHOICES.map((c) => <button key={c} onClick={() => setColor(c)} className={cn("h-6 w-6 rounded-full", c.replace("text-", "bg-"), color === c && "ring-2 ring-primary ring-offset-1 ring-offset-background")} />)}
+            </div>
+          </L>
+        </div>
+        <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={saving}>{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Create</Button></div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddPropertyDialog({ objects, onClose, onAdd }: { objects: CrmObject[]; onClose: () => void; onAdd: (p: { label: string; type: PropertyType; options?: SelectOption[]; relation_object_id?: string | null }) => void }) {
+  const [label, setLabel] = useState("");
+  const [type, setType] = useState<PropertyType>("text");
+  const [relObj, setRelObj] = useState<string>("");
+  const [options, setOptions] = useState<SelectOption[]>([]);
+  const [optInput, setOptInput] = useState("");
+  const needsOptions = type === "select" || type === "multi_select";
+  const needsRelation = type === "relation";
+
+  function addOption() {
+    const v = optInput.trim(); if (!v) return;
+    setOptions((o) => [...o, { value: v.toLowerCase().replace(/\s+/g, "_"), label: v, color: PALETTE[o.length % PALETTE.length] }]);
+    setOptInput("");
+  }
+  function submit() {
+    if (!label.trim()) return;
+    onAdd({ label: label.trim(), type, options: needsOptions ? options : undefined, relation_object_id: needsRelation ? (relObj || null) : undefined });
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Add property</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <L label="Name"><Input value={label} onChange={(e) => setLabel(e.target.value)} autoFocus placeholder="Amount, Status…" /></L>
+          <L label="Type">
+            <select value={type} onChange={(e) => setType(e.target.value as PropertyType)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
+              {(Object.keys(PROPERTY_TYPE_META) as PropertyType[]).map((t) => <option key={t} value={t}>{PROPERTY_TYPE_META[t].label}</option>)}
+            </select>
+          </L>
+          {needsRelation && (
+            <L label="Related object">
+              <select value={relObj} onChange={(e) => setRelObj(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
+                <option value="">Select…</option>
+                {objects.map((o) => <option key={o.id} value={o.id}>{o.label_plural ?? o.label}</option>)}
+              </select>
+            </L>
+          )}
+          {needsOptions && (
+            <L label="Options">
+              <div className="mb-1 flex flex-wrap gap-1">
+                {options.map((o, i) => (
+                  <span key={i} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs" style={{ background: (o.color || "#64748b") + "22", color: o.color }}>
+                    {o.label}<button onClick={() => setOptions((p) => p.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-1"><Input value={optInput} onChange={(e) => setOptInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addOption())} placeholder="Add option…" className="h-8" /><Button size="sm" variant="outline" onClick={addOption}><Plus className="h-3.5 w-3.5" /></Button></div>
+            </L>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={!label.trim() || (needsRelation && !relObj)}>Add property</Button></div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditPropertyDialog({ property, onClose, onSaved, onDeleted }: { property: CrmProperty; onClose: () => void; onSaved: () => void; onDeleted: () => void }) {
+  const [label, setLabel] = useState(property.label);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Edit property</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <L label="Name"><Input value={label} onChange={(e) => setLabel(e.target.value)} autoFocus /></L>
+          <p className="text-[11px] text-muted-foreground">Type: {PROPERTY_TYPE_META[property.type].label}</p>
+        </div>
+        <div className="flex items-center justify-between pt-2">
+          {!property.is_system ? (
+            <Button variant="ghost" className="text-destructive" onClick={async () => { await deleteProperty(property.id); onDeleted(); }}><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button>
+          ) : <span />}
+          <div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={async () => { await updateProperty(property.id, { label }); onSaved(); }}>Save</Button></div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RelationPicker({ property, record, object, current, onClose, onSaved }: {
+  property: CrmProperty; record: CrmRecord; object: CrmObject; current: string[]; onClose: () => void; onSaved: () => void;
+}) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const [selected, setSelected] = useState<Set<string>>(new Set(current));
+  const [search, setSearch] = useState("");
+  const relObjId = property.relation_object_id;
+
+  const { data: targets } = useQuery({
+    queryKey: ["crm_relation_targets", relObjId],
+    enabled: !!relObjId,
+    queryFn: async () => {
+      const [recs, props] = await Promise.all([fetchRecords(relObjId!), fetchProperties(relObjId!)]);
+      const titleKey = props.find((p) => p.is_title)?.key ?? "name";
+      const list = recs.map((r) => ({ id: r.id, label: String(r.data[titleKey] ?? "Untitled") }));
+      list.forEach((x) => relationCache.set(x.id, x.label));
+      return list;
+    },
+  });
+
+  async function save() {
+    if (!workspaceId || !projectId) return;
+    await setRelations(workspaceId, projectId, property.id, record.id, [...selected]);
+    onSaved();
+  }
+  const filtered = (targets ?? []).filter((t) => t.label.toLowerCase().includes(search.trim().toLowerCase()));
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Link {property.label}</DialogTitle></DialogHeader>
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="h-8" autoFocus />
+        <div className="max-h-72 space-y-1 overflow-y-auto">
+          {(targets == null) ? <div className="flex h-20 items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+            : filtered.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No records.</p>
+            : filtered.map((t) => (
+              <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/40">
+                <input type="checkbox" className="accent-primary" checked={selected.has(t.id)} onChange={(e) => setSelected((s) => { const n = new Set(s); e.target.checked ? n.add(t.id) : n.delete(t.id); return n; })} />
+                {t.label}
+              </label>
+            ))}
+        </div>
+        <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={save}>Save</Button></div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const PALETTE = ["#3b82f6", "#a855f7", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#64748b"];
+
+function L({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>{children}</div>;
+}
+function Centered({ children }: { children: React.ReactNode }) {
+  return <div className="flex h-full items-center justify-center">{children}</div>;
+}
