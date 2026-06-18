@@ -173,8 +173,59 @@ export async function deleteObject(id: string) {
   await supabase.from("crm_objects").delete().eq("id", id);
 }
 
-export async function saveView(id: string, config: ViewConfig) {
-  await supabase.from("crm_views").update({ config }).eq("id", id);
+export async function saveView(id: string, patch: Partial<Pick<CrmView, "config" | "name" | "kind">>) {
+  await supabase.from("crm_views").update(patch).eq("id", id);
+}
+
+export async function createView(workspaceId: string, projectId: string, objectId: string, v: { name: string; kind: CrmView["kind"]; position: number }) {
+  const { data } = await supabase.from("crm_views").insert({
+    workspace_id: workspaceId, project_id: projectId, object_id: objectId,
+    name: v.name, kind: v.kind, position: v.position, config: {},
+  }).select("*").single();
+  return data as CrmView;
+}
+
+export async function deleteView(id: string) {
+  await supabase.from("crm_views").delete().eq("id", id);
+}
+
+// Apply a view's filters + sorts to a record list (client-side).
+export function applyView(records: CrmRecord[], properties: CrmProperty[], config: ViewConfig): CrmRecord[] {
+  const byKey = new Map(properties.map((p) => [p.key, p]));
+  let out = records;
+  for (const f of config.filters ?? []) {
+    out = out.filter((r) => matchFilter(r.data[f.key], f.op, f.value, byKey.get(f.key)?.type));
+  }
+  for (const s of [...(config.sorts ?? [])].reverse()) {
+    const type = byKey.get(s.key)?.type;
+    out = [...out].sort((a, b) => cmp(a.data[s.key], b.data[s.key], type) * (s.dir === "desc" ? -1 : 1));
+  }
+  return out;
+}
+
+export const FILTER_OPS = ["is", "is_not", "contains", "is_empty", "is_not_empty", "gt", "lt"] as const;
+export type FilterOp = (typeof FILTER_OPS)[number];
+
+function matchFilter(v: unknown, op: string, target: unknown, type?: PropertyType): boolean {
+  const s = (x: unknown) => String(x ?? "").toLowerCase();
+  switch (op) {
+    case "is_empty": return v == null || v === "" || (Array.isArray(v) && v.length === 0);
+    case "is_not_empty": return !(v == null || v === "" || (Array.isArray(v) && v.length === 0));
+    case "is": return Array.isArray(v) ? v.includes(target) : s(v) === s(target);
+    case "is_not": return Array.isArray(v) ? !v.includes(target) : s(v) !== s(target);
+    case "contains": return s(v).includes(s(target));
+    case "gt": return Number(v) > Number(target);
+    case "lt": return Number(v) < Number(target);
+    default: return true;
+  }
+}
+function cmp(a: unknown, b: unknown, type?: PropertyType): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return -1; if (b == null) return 1;
+  if (type === "number" || type === "currency" || type === "percent" || type === "rating") return Number(a) - Number(b);
+  if (type === "date" || type === "datetime") return new Date(String(a)).getTime() - new Date(String(b)).getTime();
+  if (type === "checkbox") return (a ? 1 : 0) - (b ? 1 : 0);
+  return String(a).localeCompare(String(b));
 }
 
 // Relations: set the related record ids for a relation property on a record.

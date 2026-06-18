@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,12 +16,15 @@ import { cn } from "@/lib/utils";
 import { iconByName, OBJECT_ICON_CHOICES, OBJECT_COLOR_CHOICES } from "./crmIcons";
 import { Cell } from "./Cell";
 import {
-  ensureSeeded, fetchObjects, fetchProperties, fetchRecords, fetchRelations,
+  ensureSeeded, fetchObjects, fetchProperties, fetchRecords, fetchRelations, fetchViews,
   createRecord, updateRecordValue, deleteRecords, createProperty, deleteProperty,
   updateProperty, createObject, deleteObject, setRelations,
+  createView, deleteView, saveView, applyView,
   PROPERTY_TYPE_META,
-  type CrmObject, type CrmProperty, type CrmRecord, type PropertyType, type SelectOption,
+  type CrmObject, type CrmProperty, type CrmRecord, type CrmView, type ViewConfig, type PropertyType, type SelectOption,
 } from "./objectModel";
+import { ViewBar } from "./ViewBar";
+import { Kanban } from "./Kanban";
 
 // The object list lives in the secondary sidebar (CrmObjectsItem) — this page
 // renders only the table for the object in the route (crm/workspace/:objectSlug).
@@ -93,20 +96,48 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
   const [editProp, setEditProp] = useState<CrmProperty | null>(null);
   const [relationFor, setRelationFor] = useState<{ property: CrmProperty; record: CrmRecord } | null>(null);
   const [openRecordId, setOpenRecordId] = useState<string | null>(null);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [config, setConfig] = useState<ViewConfig>({});
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const propsQ = useQuery({ queryKey: ["crm_props", object.id], queryFn: () => fetchProperties(object.id) });
   const recsQ = useQuery({ queryKey: ["crm_records", object.id], queryFn: () => fetchRecords(object.id) });
   const relQ = useQuery({ queryKey: ["crm_relations", object.id], queryFn: () => fetchRelations(object.id) });
+  const viewsQ = useQuery({ queryKey: ["crm_views", object.id], queryFn: () => fetchViews(object.id) });
 
   const properties = propsQ.data ?? [];
   const records = recsQ.data ?? [];
   const relations = relQ.data ?? {};
+  const views = viewsQ.data ?? [];
+  const activeView = views.find((v) => v.id === activeViewId) ?? views[0] ?? null;
+
+  // Select the default view + load its config when views load / object changes.
+  useEffect(() => {
+    if (views.length && (!activeViewId || !views.some((v) => v.id === activeViewId))) {
+      const v = views.find((x) => x.is_default) ?? views[0];
+      setActiveViewId(v.id); setConfig(v.config ?? {});
+    }
+  }, [views, activeViewId]);
+
+  // Persist view config (debounced).
+  function updateConfig(c: ViewConfig) {
+    setConfig(c);
+    if (!activeView) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { saveView(activeView.id, { config: c }); }, 500);
+  }
+  function selectView(id: string) {
+    setActiveViewId(id);
+    setConfig(views.find((v) => v.id === id)?.config ?? {});
+  }
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
   const filtered = useMemo(() => {
+    let list = applyView(records, properties, config);
     const s = search.trim().toLowerCase();
-    if (!s) return records;
-    return records.filter((r) => Object.values(r.data).some((v) => String(v ?? "").toLowerCase().includes(s)));
-  }, [records, search]);
+    if (s) list = list.filter((r) => Object.values(r.data).some((v) => String(v ?? "").toLowerCase().includes(s)));
+    return list;
+  }, [records, properties, config, search]);
 
   function invRecords() { queryClient.invalidateQueries({ queryKey: ["crm_records", object.id] }); }
   function invProps() { queryClient.invalidateQueries({ queryKey: ["crm_props", object.id] }); }
@@ -130,6 +161,13 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
     await createProperty(workspaceId, projectId, object.id, { ...p, position: properties.length });
     invProps(); setAddColOpen(false);
   }
+  function invViews() { queryClient.invalidateQueries({ queryKey: ["crm_views", object.id] }); }
+  async function addView(kind: CrmView["kind"]) {
+    if (!workspaceId || !projectId) return;
+    const v = await createView(workspaceId, projectId, object.id, { name: kind === "kanban" ? "Board" : "Table", kind, position: views.length });
+    invViews(); if (v) { setActiveViewId(v.id); setConfig({}); }
+  }
+  async function removeView(id: string) { await deleteView(id); invViews(); if (activeViewId === id) setActiveViewId(null); }
 
   const relLabelFor = useMemo(() => {
     // Build labels for relation cells: propertyId → fromRecordId → [labels]
@@ -163,6 +201,13 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
         </div>
       </div>
 
+      {/* View bar (tabs + filter/sort/group) */}
+      <ViewBar
+        views={views} activeViewId={activeView?.id ?? null} onSelectView={selectView}
+        onAddView={addView} onDeleteView={removeView}
+        properties={properties} config={config} onConfigChange={updateConfig}
+      />
+
       {/* Selection bar */}
       {selected.size > 0 && (
         <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-1.5 text-sm">
@@ -172,7 +217,17 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
         </div>
       )}
 
-      {/* Table */}
+      {/* Kanban view */}
+      {activeView?.kind === "kanban" ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <Kanban
+            object={object} properties={properties} records={filtered} groupByKey={config.group_by}
+            onMove={(rec, value) => setCell(rec, config.group_by!, value)}
+            onOpen={(rec) => setOpenRecordId(rec.id)}
+          />
+        </div>
+      ) : (
+      /* Table */
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-max min-w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-card">
@@ -243,6 +298,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">No {object.label_plural?.toLowerCase() ?? "records"} yet — add one above.</div>
         )}
       </div>
+      )}
 
       {addColOpen && <AddPropertyDialog objects={objects} onClose={() => setAddColOpen(false)} onAdd={addProperty} />}
       {editProp && <EditPropertyDialog property={editProp} onClose={() => setEditProp(null)} onSaved={() => { invProps(); setEditProp(null); }} onDeleted={() => { invProps(); setEditProp(null); }} />}
