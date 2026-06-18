@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Plus, Search, Settings2, Trash2, X, Database,
+  Loader2, Plus, Search, Settings2, Trash2, X, Database, Maximize2, Copy, Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,6 +91,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
   const [addColOpen, setAddColOpen] = useState(false);
   const [editProp, setEditProp] = useState<CrmProperty | null>(null);
   const [relationFor, setRelationFor] = useState<{ property: CrmProperty; record: CrmRecord } | null>(null);
+  const [openRecordId, setOpenRecordId] = useState<string | null>(null);
 
   const propsQ = useQuery({ queryKey: ["crm_props", object.id], queryFn: () => fetchProperties(object.id) });
   const recsQ = useQuery({ queryKey: ["crm_records", object.id], queryFn: () => fetchRecords(object.id) });
@@ -203,12 +204,24 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
                 </td>
                 {properties.map((p) => (
                   <td key={p.id} className="h-9 border-r border-border p-0" style={{ minWidth: p.width ?? 180 }}>
-                    <Cell
-                      property={p} record={rec} value={rec.data[p.key]}
-                      onChange={(v) => setCell(rec, p.key, v)}
-                      relationLabels={p.type === "relation" ? relLabelFor(p, rec) : undefined}
-                      onEditRelation={p.type === "relation" ? () => setRelationFor({ property: p, record: rec }) : undefined}
-                    />
+                    {p.is_title ? (
+                      <div className="relative flex h-full items-center">
+                        <div className="min-w-0 flex-1">
+                          <Cell property={p} record={rec} value={rec.data[p.key]} onChange={(v) => setCell(rec, p.key, v)} />
+                        </div>
+                        <button onClick={() => setOpenRecordId(rec.id)}
+                          className="mr-1 hidden shrink-0 items-center gap-1 rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground group-hover/r:flex">
+                          <Maximize2 className="h-3 w-3" /> Open
+                        </button>
+                      </div>
+                    ) : (
+                      <Cell
+                        property={p} record={rec} value={rec.data[p.key]}
+                        onChange={(v) => setCell(rec, p.key, v)}
+                        relationLabels={p.type === "relation" ? relLabelFor(p, rec) : undefined}
+                        onEditRelation={p.type === "relation" ? () => setRelationFor({ property: p, record: rec }) : undefined}
+                      />
+                    )}
                   </td>
                 ))}
                 <td />
@@ -240,6 +253,84 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
           onSaved={() => { queryClient.invalidateQueries({ queryKey: ["crm_relations", object.id] }); setRelationFor(null); }}
         />
       )}
+
+      {openRecordId && (() => {
+        const rec = records.find((r) => r.id === openRecordId);
+        if (!rec) return null;
+        return (
+          <RecordPanel
+            object={object} record={rec} properties={properties} relations={relations}
+            relationLabels={relLabelFor}
+            onClose={() => setOpenRecordId(null)}
+            onChange={(key, v) => setCell(rec, key, v)}
+            onEditRelation={(p) => setRelationFor({ property: p, record: rec })}
+            onDelete={async () => { await deleteRecords([rec.id]); setOpenRecordId(null); invRecords(); }}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────── record detail panel
+function RecordPanel({ object, record, properties, relations, relationLabels, onClose, onChange, onEditRelation, onDelete }: {
+  object: CrmObject;
+  record: CrmRecord;
+  properties: CrmProperty[];
+  relations: Record<string, Record<string, string[]>>;
+  relationLabels: (p: CrmProperty, r: CrmRecord) => string[];
+  onClose: () => void;
+  onChange: (key: string, v: unknown) => void;
+  onEditRelation: (p: CrmProperty) => void;
+  onDelete: () => void;
+}) {
+  const Icon = iconByName(object.icon);
+  const titleProp = properties.find((p) => p.is_title);
+  const title = titleProp ? String(record.data[titleProp.key] ?? "Untitled") : "Untitled";
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
+      <aside className="flex h-full w-full max-w-md flex-col border-l border-border bg-background shadow-2xl dark:bg-zinc-950" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+          <span className={cn("flex h-8 w-8 items-center justify-center rounded-md bg-muted", object.color)}><Icon className="h-4 w-4" /></span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-semibold">{title}</div>
+            <div className="text-[11px] text-muted-foreground">{object.label}</div>
+          </div>
+          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>
+        </div>
+
+        {/* Properties (editable, reusing the same cell editors) */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {properties.map((p) => (
+            <div key={p.id} className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/30">
+              <div className="mt-1.5 w-28 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{p.label}</div>
+              <div className="min-w-0 flex-1 rounded border border-transparent hover:border-border">
+                <div className="min-h-[34px]">
+                  <Cell
+                    property={p} record={record} value={record.data[p.key]}
+                    onChange={(v) => onChange(p.key, v)}
+                    relationLabels={p.type === "relation" ? relationLabels(p, record) : undefined}
+                    onEditRelation={p.type === "relation" ? () => onEditRelation(p) : undefined}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 border-t border-border p-3">
+          <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(record.id); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+            {copied ? <Check className="mr-1 h-3.5 w-3.5 text-emerald-500" /> : <Copy className="mr-1 h-3.5 w-3.5" />} Copy ID
+          </Button>
+          <span className="ml-auto text-[11px] text-muted-foreground">Updated {new Date(record.updated_at).toLocaleDateString()}</span>
+          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { if (confirm("Delete this record?")) onDelete(); }}>
+            <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+          </Button>
+        </div>
+      </aside>
     </div>
   );
 }
