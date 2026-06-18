@@ -150,11 +150,12 @@ export async function createObject(workspaceId: string, projectId: string, o: {
   label: string; label_plural: string; icon: string; color: string; position: number;
 }, userId: string | null) {
   const slug = slugifyKey(o.label_plural || o.label);
-  const { data: obj } = await supabase.from("crm_objects").insert({
+  const { data: obj, error } = await supabase.from("crm_objects").insert({
     workspace_id: workspaceId, project_id: projectId, slug,
     label: o.label, label_plural: o.label_plural, icon: o.icon, color: o.color,
     is_system: false, title_property: "name", position: o.position, created_by: userId,
   }).select("*").single();
+  if (error) throw new Error(error.message);
   if (obj) {
     // Every object gets a title "Name" property + a default table view.
     await supabase.from("crm_properties").insert({

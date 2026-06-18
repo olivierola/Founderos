@@ -58,12 +58,14 @@ export function CrmWorkspacePage() {
 
   const active = objects?.find((o) => o.slug === objectSlug) ?? objects?.[0] ?? null;
 
-  // No object in the URL → land on the first object.
+  // No object in the URL → land on the first object. Preserve ?new=1 so the
+  // "New object" action from the sidebar still opens the dialog.
   useEffect(() => {
     if (!objectSlug && active && objects?.length) {
-      navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${active.slug}`, { replace: true });
+      const suffix = newObjOpen ? "?new=1" : "";
+      navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${active.slug}${suffix}`, { replace: true });
     }
-  }, [objectSlug, active, objects, navigate, workspaceSlug, projectSlug]);
+  }, [objectSlug, active, objects, navigate, workspaceSlug, projectSlug, newObjOpen]);
 
   return (
     <div className="-mx-4 -my-4 h-[calc(100vh-3.5rem)] sm:-mx-6 sm:-my-6 lg:-mx-12 xl:-mx-20">
@@ -466,14 +468,17 @@ function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]
   const [icon, setIcon] = useState("Boxes");
   const [color, setColor] = useState(OBJECT_COLOR_CHOICES[0]);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function submit() {
     if (!label.trim() || !workspaceId || !projectId) return;
-    setSaving(true);
+    setSaving(true); setError(null);
     try {
       const obj = await createObject(workspaceId, projectId, { label: label.trim(), label_plural: plural.trim() || label.trim() + "s", icon, color, position: objects.length }, user?.id ?? null);
-      if (obj) onCreated(obj.slug);
-      onClose();
+      if (obj) { onCreated(obj.slug); onClose(); }
+      else setError("Could not create the object.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create the object.");
     } finally { setSaving(false); }
   }
   return (
@@ -498,7 +503,8 @@ function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]
             </div>
           </L>
         </div>
-        <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={saving}>{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Create</Button></div>
+        {error && <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={saving || !label.trim()}>{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Create</Button></div>
       </DialogContent>
     </Dialog>
   );
