@@ -45,6 +45,22 @@ export const OBJECT_ACTIONS: Record<string, ObjectAction[]> = {
     { id: "open", label: "Open channel", icon: "MessageSquare", kind: "navigate",
       path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/inbox?channel=${r.source_id}` },
   ],
+  projects: [
+    { id: "open", label: "Open in board", icon: "FolderKanban", kind: "navigate",
+      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/boards` },
+  ],
+  tasks_pm: [
+    { id: "open", label: "Open board", icon: "CheckSquare", kind: "navigate",
+      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/boards` },
+  ],
+  whiteboards: [
+    { id: "open", label: "Open whiteboard", icon: "PenSquare", kind: "navigate",
+      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/whiteboard?board=${r.source_id}` },
+  ],
+  inventory: [
+    { id: "open", label: "Open inventory", icon: "Package", kind: "navigate",
+      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/supply/inventory` },
+  ],
 };
 
 export function actionsForSlug(slug: string): ObjectAction[] {
