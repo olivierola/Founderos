@@ -57,6 +57,14 @@ export const OBJECT_ACTIONS: Record<string, ObjectAction[]> = {
     { id: "open", label: "Open whiteboard", icon: "PenSquare", kind: "navigate",
       path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/whiteboard?board=${r.source_id}` },
   ],
+  tickets: [
+    { id: "open", label: "Open in Support", icon: "LifeBuoy", kind: "navigate",
+      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/support/tickets` },
+  ],
+  invoices: [
+    { id: "open", label: "Open in Finance", icon: "Receipt", kind: "navigate",
+      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/finance-mod/invoices` },
+  ],
   inventory: [
     { id: "open", label: "Open inventory", icon: "Package", kind: "navigate",
       path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/supply/inventory` },
