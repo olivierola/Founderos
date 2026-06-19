@@ -103,6 +103,35 @@ export function InternalAgentDetailPage() {
   );
 }
 
+// Reusable agent tab body — lets other surfaces (e.g. the CRM record view)
+// embed the real agent tabs (Chat / Missions / Deliverables / …) by agent id,
+// without leaving their module. Loads the agent then renders the chosen tab.
+export function AgentTabContent({ agentId, tab }: { agentId: string; tab: InternalAgentTab }) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const { data: agent, isLoading } = useQuery({
+    queryKey: ["internal_agent", agentId],
+    enabled: !!agentId,
+    queryFn: async () => {
+      const { data } = await supabase.from("internal_agents").select("*").eq("id", agentId).maybeSingle();
+      return data as InternalAgent | null;
+    },
+  });
+  if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (!agent) return <EmptyState icon={Bot} title="Agent not found" />;
+  return (
+    <>
+      {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {tab === "deliverables" && <DeliverablesHub agent={agent} />}
+      {tab === "memory" && <MemoryTab agent={agent} />}
+      {tab === "collaboration" && <CollaborationTab agent={agent} />}
+      {tab === "instructions" && <InstructionsEditor agent={agent} />}
+      {tab === "analytics" && <AnalyticsTab agent={agent} />}
+      {tab === "settings" && <SettingsTab agent={agent} />}
+    </>
+  );
+}
+
 // ============================================================================
 // CHAT TAB — conversation with the agent (uses internal_agent_conversations)
 // ============================================================================

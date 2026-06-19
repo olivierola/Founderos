@@ -67,21 +67,6 @@ export function actionsForSlug(slug: string): ObjectAction[] {
   return OBJECT_ACTIONS[slug] ?? [];
 }
 
-// For object classes whose source module already has a rich, tabbed detail view
-// (its own secondary sidebar), "Open" routes straight there — reusing the native
-// experience (e.g. agent: Chat / Missions / Deliverables / Memory / … tabs) and
-// letting that sidebar eclipse the CRM objects sidebar. Returns null otherwise
-// → the generic CRM RecordView is used.
-export function nativeOpenPath(slug: string, sourceId: string | null, ctx: { workspaceSlug: string; projectSlug: string }): string | null {
-  if (!sourceId) return null;
-  const base = `/app/${ctx.workspaceSlug}/${ctx.projectSlug}`;
-  switch (slug) {
-    case "autonomous_agents": return `${base}/agent/internal/${sourceId}/chat`;
-    case "public_agents": return `${base}/agent/builder/${sourceId}/playground`;
-    default: return null;
-  }
-}
-
 // ── data helpers used by the action components ──
 
 // Assign a mission to an agent (creates an internal_agent_missions row). The

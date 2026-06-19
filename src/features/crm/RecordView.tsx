@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, ArrowLeft, Clock, CheckSquare, StickyNote, Zap, MessageSquare, Trash2,
+  Target, Package, Brain, Network, FileText, BarChart3, Settings as SettingsIcon,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import {
   type CrmObject, type CrmProperty, type CrmRecord, type RelatedDisplay,
 } from "./objectModel";
 import { actionsForSlug } from "./objectActions";
+import { AgentTabContent, type InternalAgentTab } from "@/features/internal-agents/InternalAgentDetail";
 
 // Full-screen Attio-style record view: left = grouped fields + clickable
 // relations, center = tabs (Content / Timeline / Tasks / Notes). Route:
@@ -55,7 +57,20 @@ export function RecordViewPage() {
   const displays = dispQ.data ?? {};
   const targetSlugs = slugQ.data ?? {};
 
-  const [tab, setTab] = useState<"content" | "timeline" | "tasks" | "notes">(hasContent(objectSlug) ? "content" : "timeline");
+  // Tabs are type-aware: an autonomous agent shows its real tabs (Chat /
+  // Missions / Deliverables / …) embedded in this CRM view (no redirect).
+  const isAgent = objectSlug === "autonomous_agents";
+  const AGENT_TAB_DEFS = [
+    { key: "chat", label: "Chat", icon: MessageSquare },
+    { key: "mission", label: "Missions", icon: Target },
+    { key: "deliverables", label: "Deliverables", icon: Package },
+    { key: "memory", label: "Memory", icon: Brain },
+    { key: "collaboration", label: "Collaboration", icon: Network },
+    { key: "instructions", label: "Instructions", icon: FileText },
+    { key: "analytics", label: "Analytics", icon: BarChart3 },
+    { key: "settings", label: "Settings", icon: SettingsIcon },
+  ] as const;
+  const [tab, setTab] = useState<string>(isAgent ? "chat" : hasContent(objectSlug) ? "content" : "timeline");
 
   const grouped = useMemo(() => {
     const fields = properties.filter((p) => p.type !== "relation");
@@ -76,12 +91,14 @@ export function RecordViewPage() {
   }
 
   const actions = actionsForSlug(objectSlug);
-  const TABS = [
-    ...(hasContent(objectSlug) ? [{ key: "content" as const, label: object.label, icon: Icon }] : []),
-    { key: "timeline" as const, label: "Timeline", icon: Clock },
-    { key: "tasks" as const, label: "Tasks", icon: CheckSquare },
-    { key: "notes" as const, label: "Notes", icon: StickyNote },
-  ];
+  const TABS = isAgent
+    ? AGENT_TAB_DEFS.map((t) => ({ key: t.key as string, label: t.label, icon: t.icon }))
+    : [
+        ...(hasContent(objectSlug) ? [{ key: "content", label: object.label, icon: Icon }] : []),
+        { key: "timeline", label: "Timeline", icon: Clock },
+        { key: "tasks", label: "Tasks", icon: CheckSquare },
+        { key: "notes", label: "Notes", icon: StickyNote },
+      ];
 
   return (
     <div className="flex h-full w-full">
@@ -148,7 +165,7 @@ export function RecordViewPage() {
 
       {/* Center: tabs */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-1 border-b border-border px-4">
+        <div className="flex items-center gap-1 border-b border-border px-6 lg:px-10">
           {TABS.map((t) => {
             const TI = t.icon;
             return (
@@ -163,7 +180,11 @@ export function RecordViewPage() {
             <span className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground"><Zap className="h-3 w-3" /> {actions.length} action{actions.length > 1 ? "s" : ""} in the panel</span>
           )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 lg:px-10">
+          {isAgent && record.source_id ? (
+            <AgentTabContent agentId={record.source_id} tab={tab as InternalAgentTab} />
+          ) : (
+          <>
           {tab === "content" && <RecordContent object={object} record={record} />}
           {tab === "timeline" && (
             <div className="p-4">
@@ -176,6 +197,8 @@ export function RecordViewPage() {
           )}
           {tab === "tasks" && <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">No linked tasks.</div>}
           {tab === "notes" && <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">No notes yet.</div>}
+          </>
+          )}
         </div>
       </div>
     </div>
