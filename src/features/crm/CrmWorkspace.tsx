@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Plus, Search, Settings2, Trash2, X, Database, Maximize2, Copy, Check,
-  Clock, CheckSquare,
+  Clock, Zap, ChevronRight, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,10 @@ import {
 import { ViewBar } from "./ViewBar";
 import { Kanban } from "./Kanban";
 import { OBJECT_TEMPLATES, addObjectFromTemplate } from "./objectTemplates";
+import {
+  actionsForSlug, assignMission, fetchAgentDeliverables, fetchMissionDeliverables,
+  type ObjectAction, type Deliverable,
+} from "./objectActions";
 
 // The object list lives in the secondary sidebar (CrmObjectsItem) — this page
 // renders only the table for the object in the route (crm/workspace/:objectSlug).
@@ -354,12 +358,13 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
   const titleProp = properties.find((p) => p.is_title);
   const title = titleProp ? String(record.data[titleProp.key] ?? "Untitled") : "Untitled";
   const [copied, setCopied] = useState(false);
-  const [tab, setTab] = useState<"properties" | "timeline" | "tasks">("properties");
+  const actions = actionsForSlug(object.slug);
+  const [tab, setTab] = useState<"properties" | "actions" | "timeline">("properties");
 
   const TABS = [
     { key: "properties" as const, label: "Properties", icon: Settings2 },
+    ...(actions.length ? [{ key: "actions" as const, label: "Actions", icon: Zap }] : []),
     { key: "timeline" as const, label: "Timeline", icon: Clock },
-    { key: "tasks" as const, label: "Tasks", icon: CheckSquare },
   ];
 
   return (
@@ -418,11 +423,7 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
               </ul>
             </div>
           )}
-          {tab === "tasks" && (
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-              No linked tasks yet.
-            </div>
-          )}
+          {tab === "actions" && <ActionsTab object={object} record={record} actions={actions} />}
         </div>
 
         {/* Footer actions */}
@@ -438,6 +439,110 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
         </div>
       </aside>
     </div>
+  );
+}
+
+// ───────────────────────────────────────────────────── record actions tab
+function ActionsTab({ object, record, actions }: { object: CrmObject; record: CrmRecord; actions: ObjectAction[] }) {
+  const navigate = useNavigate();
+  const { workspaceSlug = "", projectSlug = "" } = useParams();
+  const [open, setOpen] = useState<ObjectAction | null>(null);
+
+  if (!record.source_id) {
+    return <div className="p-4 text-sm text-muted-foreground">Actions are available on synced records (linked to a real {object.label.toLowerCase()}).</div>;
+  }
+
+  return (
+    <div className="p-3">
+      <div className="space-y-1.5">
+        {actions.map((a) => {
+          const AI = iconByName(a.icon);
+          return (
+            <button key={a.id}
+              onClick={() => { if (a.kind === "navigate" && a.path) navigate(a.path(record, { workspaceSlug, projectSlug })); else setOpen(a); }}
+              className="flex w-full items-center gap-2.5 rounded-lg border border-border p-2.5 text-left text-sm hover:border-primary/50 hover:bg-muted/30">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-muted-foreground"><AI className="h-3.5 w-3.5" /></span>
+              <span className="flex-1">{a.label}</span>
+              {a.kind === "navigate" ? <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {open?.component === "assign_mission" && <AssignMissionDialog agentSourceId={record.source_id} onClose={() => setOpen(null)} />}
+      {open?.component === "deliverables" && <DeliverablesDialog title="Agent deliverables" load={() => fetchAgentDeliverables(record.source_id!)} onClose={() => setOpen(null)} />}
+      {open?.component === "mission_deliverables" && <DeliverablesDialog title="Mission deliverables" load={() => fetchMissionDeliverables(record.source_id!)} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
+function AssignMissionDialog({ agentSourceId, onClose }: { agentSourceId: string; onClose: () => void }) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const { user } = useAuth();
+  const [title, setTitle] = useState("");
+  const [brief, setBrief] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit() {
+    if (!title.trim() || !workspaceId || !projectId) return;
+    setSaving(true); setError(null);
+    try { await assignMission(workspaceId, projectId, agentSourceId, { title: title.trim(), brief }, user?.id ?? null); setDone(true); }
+    catch (e) { setError(e instanceof Error ? e.message : "Failed to assign"); }
+    finally { setSaving(false); }
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Assign a mission</DialogTitle></DialogHeader>
+        {done ? (
+          <div className="space-y-3">
+            <p className="flex items-center gap-2 text-sm text-emerald-600"><Check className="h-4 w-4" /> Mission assigned — it appears in the Missions object.</p>
+            <div className="flex justify-end"><Button onClick={onClose}>Done</Button></div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <L label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus placeholder="Draft the Q3 report" /></L>
+            <L label="Brief"><textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={4} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" placeholder="What should the agent do…" /></L>
+            {error && <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{error}</p>}
+            <div className="flex justify-end gap-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={saving || !title.trim()}>{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Assign</Button></div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeliverablesDialog({ title, load, onClose }: { title: string; load: () => Promise<Deliverable[]>; onClose: () => void }) {
+  const { data, isLoading } = useQuery({ queryKey: ["crm_deliverables", title, Math.random().toString(36).slice(2)], queryFn: load });
+  const [openItem, setOpenItem] = useState<Deliverable | null>(null);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        {isLoading ? <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          : (data ?? []).length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">No deliverables yet.</p>
+          : openItem ? (
+            <div className="space-y-2">
+              <button onClick={() => setOpenItem(null)} className="text-xs text-muted-foreground hover:text-foreground">← Back</button>
+              <div className="font-medium">{openItem.name}</div>
+              {openItem.file_url && <a href={openItem.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline"><ExternalLink className="h-3 w-3" /> Open file</a>}
+              {openItem.content && <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-xs">{openItem.content}</pre>}
+            </div>
+          ) : (
+            <div className="max-h-80 space-y-1 overflow-y-auto">
+              {(data ?? []).map((d) => (
+                <button key={d.id} onClick={() => setOpenItem(d)} className="flex w-full items-center gap-2 rounded-md border border-border p-2.5 text-left text-sm hover:bg-muted/30">
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{d.kind}</span>
+                  <span className="flex-1 truncate">{d.name}</span>
+                  <span className="text-[11px] text-muted-foreground">{timeAgo(d.created_at)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

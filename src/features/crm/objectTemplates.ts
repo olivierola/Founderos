@@ -18,6 +18,7 @@ export const OBJECT_TEMPLATES: ObjectTemplate[] = [
   { slug: "simulations", label: "Simulation", label_plural: "Simulations", icon: "FlaskConical", color: "text-purple-500", description: "Persona simulations." },
   { slug: "autonomous_agents", label: "Autonomous agent", label_plural: "Autonomous agents", icon: "Bot", color: "text-fuchsia-500", description: "Internal autonomous agents." },
   { slug: "public_agents", label: "Public agent", label_plural: "Public agents", icon: "Bot", color: "text-emerald-500", description: "RAG / public-facing agents." },
+  { slug: "missions", label: "Mission", label_plural: "Missions", icon: "Target", color: "text-amber-500", description: "Agent & employee missions, with deliverables." },
 ];
 
 // Instantiate a template as a live-synced CRM object (+ backfill existing rows).
