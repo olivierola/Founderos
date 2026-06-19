@@ -607,14 +607,18 @@ function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{mode === "catalog" ? "Add object" : "New custom object"}</DialogTitle></DialogHeader>
-
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+      <aside className="flex h-full w-full max-w-md flex-col border-l border-border bg-background shadow-2xl dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+          {mode === "blank" && <button onClick={() => setMode("catalog")} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronRight className="h-4 w-4 rotate-180" /></button>}
+          <span className="flex-1 text-sm font-semibold">{mode === "catalog" ? "Add object" : "New custom object"}</span>
+          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {mode === "catalog" ? (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">Add a module as a live object — its records mirror the real data and stay in sync. Or create a blank custom object.</p>
-            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-1.5">
               {available.map((t) => { const I = iconByName(t.icon); return (
                 <button key={t.slug} disabled={!!saving} onClick={() => addTemplate(t.slug)}
                   className="flex items-start gap-2.5 rounded-lg border border-border p-3 text-left hover:border-primary/50 hover:bg-muted/30 disabled:opacity-50">
@@ -660,8 +664,9 @@ function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      </aside>
+    </div>
   );
 }
 
