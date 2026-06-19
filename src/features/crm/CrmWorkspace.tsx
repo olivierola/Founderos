@@ -28,7 +28,7 @@ import { ViewBar } from "./ViewBar";
 import { Kanban } from "./Kanban";
 import { OBJECT_TEMPLATES, addObjectFromTemplate } from "./objectTemplates";
 import {
-  actionsForSlug, assignMission, fetchAgentDeliverables, fetchMissionDeliverables,
+  actionsForSlug, assignMission, fetchAgentDeliverables, fetchMissionDeliverables, nativeOpenPath,
   type ObjectAction, type Deliverable,
 } from "./objectActions";
 
@@ -337,7 +337,10 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
             onChange={(key, v) => setCell(rec, key, v)}
             onEditRelation={(p) => setRelationFor({ property: p, record: rec })}
             onDelete={async () => { await deleteRecords([rec.id]); setOpenRecordId(null); invRecords(); }}
-            onOpenFull={() => navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`)}
+            onOpenFull={() => {
+              const native = nativeOpenPath(object.slug, rec.source_id, { workspaceSlug: workspaceSlug ?? "", projectSlug: projectSlug ?? "" });
+              navigate(native ?? `/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`);
+            }}
           />
         );
       })()}

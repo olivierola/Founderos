@@ -36,6 +36,12 @@ export function SecondarySidebar() {
   const moduleSlug = appIdx >= 0 ? segments[appIdx + 3] : undefined;
   const base = `/app/${workspaceSlug}/${projectSlug}`;
 
+  // CRM full record view (crm/workspace/<obj>/<recordId>) brings its own fields
+  // sidebar → eclipse the objects sidebar entirely.
+  if (moduleSlug === "crm" && segments[appIdx + 4] === "workspace" && segments[appIdx + 6]) {
+    return null;
+  }
+
   // Special case: agent builder → show the agent's own tabs in this sidebar.
   // Path: /app/:ws/:proj/agent/builder/:agentId/:tab?
   if (moduleSlug === "agent" && segments[appIdx + 4] === "builder") {
