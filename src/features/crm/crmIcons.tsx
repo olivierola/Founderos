@@ -4,14 +4,15 @@ import {
   Boxes, Users, Building2, Target, CheckSquare, StickyNote, AppWindow, Briefcase,
   Package, Truck, Receipt, FileText, Bot, Library, Handshake, Star, Mail, Phone,
   Link as LinkIcon, Hash, DollarSign, Percent, Calendar, Clock, Type, AlignLeft,
-  Tags, ChevronDownCircle, GitBranch, User, LayoutDashboard, type LucideIcon,
+  Tags, ChevronDownCircle, GitBranch, User, LayoutDashboard, MessageSquare,
+  FlaskConical, type LucideIcon,
 } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
   Boxes, Users, Building2, Target, CheckSquare, StickyNote, AppWindow, Briefcase,
   Package, Truck, Receipt, FileText, Bot, Library, Handshake, Star, Mail, Phone,
   Link: LinkIcon, Hash, DollarSign, Percent, Calendar, Clock, Type, AlignLeft,
-  Tags, ChevronDownCircle, GitBranch, User, LayoutDashboard,
+  Tags, ChevronDownCircle, GitBranch, User, LayoutDashboard, MessageSquare, FlaskConical,
 };
 
 export function iconByName(name: string | null | undefined): LucideIcon {

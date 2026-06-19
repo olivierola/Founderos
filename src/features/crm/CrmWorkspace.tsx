@@ -26,6 +26,7 @@ import {
 } from "./objectModel";
 import { ViewBar } from "./ViewBar";
 import { Kanban } from "./Kanban";
+import { OBJECT_TEMPLATES, addObjectFromTemplate } from "./objectTemplates";
 
 // The object list lives in the secondary sidebar (CrmObjectsItem) — this page
 // renders only the table for the object in the route (crm/workspace/:objectSlug).
@@ -469,48 +470,91 @@ const relationCache = new Map<string, string>();
 function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]; onClose: () => void; onCreated: (slug: string) => void }) {
   const { workspaceId, projectId } = useCurrentContext();
   const { user } = useAuth();
+  const [mode, setMode] = useState<"catalog" | "blank">("catalog");
   const [label, setLabel] = useState("");
   const [plural, setPlural] = useState("");
   const [icon, setIcon] = useState("Boxes");
   const [color, setColor] = useState(OBJECT_COLOR_CHOICES[0]);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit() {
+  const existingSlugs = new Set(objects.map((o) => o.slug));
+  const available = OBJECT_TEMPLATES.filter((t) => !existingSlugs.has(t.slug));
+
+  async function addTemplate(slug: string) {
+    if (!workspaceId || !projectId) return;
+    setSaving(slug); setError(null);
+    try {
+      const obj = await addObjectFromTemplate(workspaceId, projectId, slug, user?.id ?? null);
+      if (obj) { onCreated(obj.slug); onClose(); } else setError("Could not add this object.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not add this object."); }
+    finally { setSaving(null); }
+  }
+
+  async function submitBlank() {
     if (!label.trim() || !workspaceId || !projectId) return;
-    setSaving(true); setError(null);
+    setSaving("blank"); setError(null);
     try {
       const obj = await createObject(workspaceId, projectId, { label: label.trim(), label_plural: plural.trim() || label.trim() + "s", icon, color, position: objects.length }, user?.id ?? null);
-      if (obj) { onCreated(obj.slug); onClose(); }
-      else setError("Could not create the object.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create the object.");
-    } finally { setSaving(false); }
+      if (obj) { onCreated(obj.slug); onClose(); } else setError("Could not create the object.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not create the object."); }
+    finally { setSaving(null); }
   }
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>New object</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <L label="Singular name"><Input value={label} onChange={(e) => setLabel(e.target.value)} autoFocus placeholder="Invoice" /></L>
-            <L label="Plural name"><Input value={plural} onChange={(e) => setPlural(e.target.value)} placeholder="Invoices" /></L>
-          </div>
-          <L label="Icon">
-            <div className="flex flex-wrap gap-1">
-              {OBJECT_ICON_CHOICES.map((nm) => { const I = iconByName(nm); return (
-                <button key={nm} onClick={() => setIcon(nm)} className={cn("flex h-8 w-8 items-center justify-center rounded-md border", icon === nm ? "border-primary bg-primary/10" : "border-border")}><I className={cn("h-4 w-4", color)} /></button>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{mode === "catalog" ? "Add object" : "New custom object"}</DialogTitle></DialogHeader>
+
+        {mode === "catalog" ? (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Add a module as a live object — its records mirror the real data and stay in sync. Or create a blank custom object.</p>
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {available.map((t) => { const I = iconByName(t.icon); return (
+                <button key={t.slug} disabled={!!saving} onClick={() => addTemplate(t.slug)}
+                  className="flex items-start gap-2.5 rounded-lg border border-border p-3 text-left hover:border-primary/50 hover:bg-muted/30 disabled:opacity-50">
+                  <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted", t.color)}>
+                    {saving === t.slug ? <Loader2 className="h-4 w-4 animate-spin" /> : <I className="h-4 w-4" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{t.label_plural}</span>
+                    <span className="block text-[11px] text-muted-foreground">{t.description}</span>
+                  </span>
+                </button>
               ); })}
+              {available.length === 0 && <p className="col-span-2 py-2 text-center text-xs text-muted-foreground">All module objects are already added.</p>}
             </div>
-          </L>
-          <L label="Color">
-            <div className="flex flex-wrap gap-1.5">
-              {OBJECT_COLOR_CHOICES.map((c) => <button key={c} onClick={() => setColor(c)} className={cn("h-6 w-6 rounded-full", c.replace("text-", "bg-"), color === c && "ring-2 ring-primary ring-offset-1 ring-offset-background")} />)}
+            <button onClick={() => setMode("blank")} className="flex w-full items-center gap-2.5 rounded-lg border border-dashed border-border p-3 text-left text-sm hover:border-primary/50 hover:bg-muted/30">
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground"><Plus className="h-4 w-4" /></span>
+              <span><span className="block font-medium">Blank custom object</span><span className="block text-[11px] text-muted-foreground">Define your own object + properties.</span></span>
+            </button>
+            {error && <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{error}</p>}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <L label="Singular name"><Input value={label} onChange={(e) => setLabel(e.target.value)} autoFocus placeholder="Invoice" /></L>
+              <L label="Plural name"><Input value={plural} onChange={(e) => setPlural(e.target.value)} placeholder="Invoices" /></L>
             </div>
-          </L>
-        </div>
-        {error && <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{error}</p>}
-        <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={saving || !label.trim()}>{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Create</Button></div>
+            <L label="Icon">
+              <div className="flex flex-wrap gap-1">
+                {OBJECT_ICON_CHOICES.map((nm) => { const I = iconByName(nm); return (
+                  <button key={nm} onClick={() => setIcon(nm)} className={cn("flex h-8 w-8 items-center justify-center rounded-md border", icon === nm ? "border-primary bg-primary/10" : "border-border")}><I className={cn("h-4 w-4", color)} /></button>
+                ); })}
+              </div>
+            </L>
+            <L label="Color">
+              <div className="flex flex-wrap gap-1.5">
+                {OBJECT_COLOR_CHOICES.map((c) => <button key={c} onClick={() => setColor(c)} className={cn("h-6 w-6 rounded-full", c.replace("text-", "bg-"), color === c && "ring-2 ring-primary ring-offset-1 ring-offset-background")} />)}
+              </div>
+            </L>
+            {error && <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{error}</p>}
+            <div className="flex justify-between gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setMode("catalog")}>← Back</Button>
+              <Button onClick={submitBlank} disabled={!!saving || !label.trim()}>{saving === "blank" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Create</Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
