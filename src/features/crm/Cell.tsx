@@ -7,7 +7,7 @@ import type { CrmProperty, CrmRecord, SelectOption, RelatedDisplay } from "./obj
 // A single editable table cell. Renders the value for a property type and, when
 // edited, calls onChange with the new value. Relations are handled separately.
 export function Cell({
-  property, record, value, onChange, relationChips, onEditRelation,
+  property, record, value, onChange, relationChips, onEditRelation, onChipClick,
 }: {
   property: CrmProperty;
   record: CrmRecord;
@@ -15,6 +15,7 @@ export function Cell({
   onChange: (v: unknown) => void;
   relationChips?: RelatedDisplay[];
   onEditRelation?: () => void;
+  onChipClick?: (recordId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -55,7 +56,9 @@ export function Cell({
             : chips.map((c) => {
                 const Icon = iconByName(c.objectIcon);
                 return (
-                  <span key={c.id} className="flex max-w-full items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-xs">
+                  <span key={c.id} role="button"
+                    onClick={(e) => { if (onChipClick) { e.stopPropagation(); onChipClick(c.id); } }}
+                    className={cn("flex max-w-full items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-xs", onChipClick && "hover:border-primary/50 hover:bg-primary/5")}>
                     <Icon className={cn("h-3 w-3 shrink-0", c.objectColor)} />
                     <span className="truncate">{c.label}</span>
                   </span>

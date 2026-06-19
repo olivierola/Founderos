@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, ArrowLeft, Clock, CheckSquare, StickyNote, Zap, MessageSquare, Trash2,
-  Target, Package, Brain, Network, FileText, BarChart3, Settings as SettingsIcon,
+  Loader2, Clock, CheckSquare, StickyNote, Zap, MessageSquare, Trash2,
+  Target, Package, Brain, Network, FileText, BarChart3, Settings as SettingsIcon, ChevronUp,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
@@ -101,20 +101,28 @@ export function RecordViewPage() {
       ];
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full flex-col">
+      {/* Breadcrumb header (e.g. "Opportunities / API Integration Deal") */}
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-sm">
+        <button onClick={() => navigate(`${base}/${object.slug}`)} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
+          <Icon className={cn("h-4 w-4", object.color)} /> {object.label_plural ?? object.label}
+        </button>
+        <span className="text-muted-foreground/50">/</span>
+        <span className="min-w-0 truncate font-medium">{title}</span>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
       {/* Left: fields + relations */}
       <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-r border-border bg-card/30">
-        <div className="flex items-center gap-2 px-4 py-3">
-          <button onClick={() => navigate(`${base}/${object.slug}`)} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowLeft className="h-4 w-4" /></button>
-          <span className="text-xs text-muted-foreground">{object.label_plural ?? object.label}</span>
-        </div>
-        <div className="flex flex-col items-center gap-2 px-4 pb-4 text-center">
+        <div className="flex flex-col items-center gap-2 px-4 py-5 text-center">
           <span className={cn("flex h-14 w-14 items-center justify-center rounded-full bg-muted text-2xl", object.color)}><Icon className="h-7 w-7" /></span>
           <div className="text-lg font-semibold">{title}</div>
+          <div className="text-[11px] text-muted-foreground">Added {timeAgoShort(record.created_at)}</div>
         </div>
 
+        <div className="border-t border-border px-4 pb-1 pt-3 text-sm font-semibold">Fields</div>
         {/* Fields */}
-        <Group label="Fields">
+        <Group label={object.label}>
           {grouped.fields.map((p) => (
             <Row key={p.id} label={p.label} icon={iconByName(typeMeta(p))}>
               <Cell property={p} record={record} value={record.data[p.key]} onChange={(v) => setCell(p.key, v)} />
@@ -201,8 +209,16 @@ export function RecordViewPage() {
           )}
         </div>
       </div>
+      </div>
     </div>
   );
+}
+
+function timeAgoShort(iso: string): string {
+  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (d <= 0) return "today";
+  if (d === 1) return "1 day ago";
+  return `${d} days ago`;
 }
 
 function typeMeta(p: CrmProperty): string {
@@ -215,10 +231,14 @@ function typeMeta(p: CrmProperty): string {
 }
 
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(true);
   return (
-    <div className="border-t border-border px-2 py-2">
-      <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
-      {children}
+    <div className="px-2 py-1">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-2 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+        <span>{label}</span>
+        <ChevronUp className={cn("h-3.5 w-3.5 transition-transform", !open && "rotate-180")} />
+      </button>
+      {open && <div className="pb-1">{children}</div>}
     </div>
   );
 }

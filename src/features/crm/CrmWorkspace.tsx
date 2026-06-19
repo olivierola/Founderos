@@ -17,7 +17,7 @@ import { iconByName, OBJECT_ICON_CHOICES, OBJECT_COLOR_CHOICES } from "./crmIcon
 import { Cell } from "./Cell";
 import {
   ensureSeeded, fetchObjects, fetchProperties, fetchRecords, fetchRelations, fetchViews,
-  fetchRelatedDisplays,
+  fetchRelatedDisplays, fetchRecord, fetchObjectById, fetchRecordRelations,
   createRecord, updateRecordValue, deleteRecords, createProperty, deleteProperty,
   updateProperty, createObject, deleteObject, setRelations,
   createView, deleteView, saveView, applyView,
@@ -106,6 +106,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
   const [editProp, setEditProp] = useState<CrmProperty | null>(null);
   const [relationFor, setRelationFor] = useState<{ property: CrmProperty; record: CrmRecord } | null>(null);
   const [openRecordId, setOpenRecordId] = useState<string | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null); // open ANY record (e.g. a related one) in a panel
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [config, setConfig] = useState<ViewConfig>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -272,12 +273,15 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
                 {properties.map((p) => (
                   <td key={p.id} className="h-9 border-r border-border p-0" style={{ minWidth: p.width ?? 180 }}>
                     {p.is_title ? (
-                      <div className="relative flex h-full items-center">
-                        <div className="min-w-0 flex-1">
-                          <Cell property={p} record={rec} value={rec.data[p.key]} onChange={(v) => setCell(rec, p.key, v)} />
-                        </div>
+                      <div className="relative flex h-full items-center gap-1 px-2">
+                        {/* Title as a clickable badge → opens the record panel. */}
                         <button onClick={() => setOpenRecordId(rec.id)}
-                          className="mr-1 hidden shrink-0 items-center gap-1 rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground group-hover/r:flex">
+                          className="flex min-w-0 items-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-left text-sm hover:border-border hover:bg-card">
+                          {(() => { const TI = iconByName(object.icon); return <TI className={cn("h-3.5 w-3.5 shrink-0", object.color)} />; })()}
+                          <span className="truncate font-medium">{String(rec.data[p.key] ?? "Untitled")}</span>
+                        </button>
+                        <button onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`)}
+                          className="ml-auto mr-1 hidden shrink-0 items-center gap-1 rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground group-hover/r:flex">
                           <Maximize2 className="h-3 w-3" /> Open
                         </button>
                       </div>
@@ -287,6 +291,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
                         onChange={(v) => setCell(rec, p.key, v)}
                         relationChips={p.type === "relation" ? relDisplaysFor(p, rec) : undefined}
                         onEditRelation={p.type === "relation" ? () => setRelationFor({ property: p, record: rec }) : undefined}
+                        onChipClick={p.type === "relation" ? (id) => setInspectId(id) : undefined}
                       />
                     )}
                   </td>
@@ -341,7 +346,43 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
           />
         );
       })()}
+
+      {/* Inspect any (possibly related) record in a panel. */}
+      {inspectId && <InspectRecordPanel recordId={inspectId} onClose={() => setInspectId(null)}
+        onOpenFull={(slug, id) => { setInspectId(null); navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${slug}/${id}`); }} />}
     </div>
+  );
+}
+
+// Loads any record by id (+ its object/properties/relations) and shows it in a
+// RecordPanel — used when clicking a relation chip pointing at another object.
+function InspectRecordPanel({ recordId, onClose, onOpenFull }: { recordId: string; onClose: () => void; onOpenFull: (slug: string, id: string) => void }) {
+  const recQ = useQuery({ queryKey: ["crm_record", recordId], queryFn: () => fetchRecord(recordId) });
+  const objQ = useQuery({ queryKey: ["crm_obj_by_id", recQ.data?.object_id], enabled: !!recQ.data, queryFn: () => fetchObjectById(recQ.data!.object_id) });
+  const propsQ = useQuery({ queryKey: ["crm_props", objQ.data?.id], enabled: !!objQ.data, queryFn: () => fetchProperties(objQ.data!.id) });
+  const relQ = useQuery({ queryKey: ["crm_record_rels", objQ.data?.id, recordId], enabled: !!objQ.data, queryFn: () => fetchRecordRelations(objQ.data!.id, recordId) });
+  const dispQ = useQuery({ queryKey: ["crm_rel_displays", objQ.data?.id], enabled: !!objQ.data, queryFn: () => fetchRelatedDisplays(objQ.data!.id) });
+  const queryClient = useQueryClient();
+
+  const object = objQ.data, record = recQ.data;
+  if (!object || !record) {
+    return <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}><aside className="flex h-full w-full max-w-md items-center justify-center border-l border-border bg-background dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></aside></div>;
+  }
+  const properties = propsQ.data ?? [];
+  const relations = relQ.data ?? {};
+  const displays = dispQ.data ?? {};
+  const relChips = (p: CrmProperty) => (relations[p.id] ?? []).map((id) => displays[id] ?? { id, label: "…", objectIcon: "Boxes", objectColor: "text-muted-foreground" });
+
+  return (
+    <RecordPanel
+      object={object} record={record} properties={properties} relations={{}}
+      relationChips={(p) => relChips(p)}
+      onClose={onClose}
+      onChange={async (key, v) => { await updateRecordValue(record.id, key, v); queryClient.invalidateQueries({ queryKey: ["crm_record", recordId] }); }}
+      onEditRelation={() => {}}
+      onDelete={onClose}
+      onOpenFull={() => onOpenFull(object.slug, record.id)}
+    />
   );
 }
 

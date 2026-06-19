@@ -1,8 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
-import { Loader2, ExternalLink } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, ExternalLink, Send, Users, Hash, Bot } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { callEdge } from "@/lib/edge";
+import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import type { CrmObject, CrmRecord } from "./objectModel";
 import { fetchAgentDeliverables, fetchMissionDeliverables, type Deliverable } from "./objectActions";
 
@@ -19,7 +24,7 @@ export function RecordContent({ object, record }: { object: CrmObject; record: C
 
   if (!sid) return <Empty text="No linked source content." />;
 
-  if (object.slug === "discussions") return <DiscussionThread channelId={sid} />;
+  if (object.slug === "discussions") return <ChannelChat channelId={sid} />;
   if (object.slug === "missions") return <DeliverableList load={() => fetchMissionDeliverables(sid)} empty="No deliverables for this mission yet." />;
   if (object.slug === "autonomous_agents") return (
     <div className="space-y-4 p-4">
@@ -39,31 +44,115 @@ export function RecordContent({ object, record }: { object: CrmObject; record: C
   return <Empty text="No embedded content for this object." />;
 }
 
-// Read-only message thread for a discussion channel (reuses project_messages).
-function DiscussionThread({ channelId }: { channelId: string }) {
-  const { data, isLoading } = useQuery({
+// Full channel chat: live message bubbles + composer + a right sidebar with
+// channel info & members. Reuses project_messages + project-inbox-post.
+interface ChatMsg { id: string; channel_id: string; author_kind: "user" | "agent" | "system"; user_id: string | null; agent_id: string | null; body: string; created_at: string }
+
+function ChannelChat({ channelId }: { channelId: string }) {
+  const { workspaceId, projectId } = useCurrentContext();
+  const queryClient = useQueryClient();
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const { data: messages } = useQuery({
     queryKey: ["crm_channel_messages", channelId],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("project_messages")
-        .select("id, author_kind, body, created_at")
-        .eq("channel_id", channelId)
-        .order("created_at", { ascending: true })
-        .limit(200);
-      return (data ?? []) as { id: string; author_kind: string; body: string; created_at: string }[];
+      const { data } = await supabase.from("project_messages")
+        .select("id, channel_id, author_kind, user_id, agent_id, body, created_at")
+        .eq("channel_id", channelId).order("created_at", { ascending: true }).limit(300);
+      return (data ?? []) as ChatMsg[];
     },
   });
-  if (isLoading) return <Centered />;
-  if (!data || data.length === 0) return <Empty text="No messages in this channel yet." />;
+
+  // Realtime updates.
+  useEffect(() => {
+    const ch = supabase.channel(`crm-chan-${channelId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "project_messages", filter: `channel_id=eq.${channelId}` },
+        () => queryClient.invalidateQueries({ queryKey: ["crm_channel_messages", channelId] }))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [channelId, queryClient]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages?.length]);
+
+  async function send() {
+    if (!text.trim() || !workspaceId || !projectId || sending) return;
+    setSending(true);
+    try {
+      await callEdge("project-inbox-post", { workspace_id: workspaceId, project_id: projectId, channel_id: channelId, body: text.trim(), mentions: [] });
+      setText("");
+      queryClient.invalidateQueries({ queryKey: ["crm_channel_messages", channelId] });
+    } finally { setSending(false); }
+  }
+
   return (
-    <div className="space-y-2 p-4">
-      {data.map((m) => (
-        <div key={m.id} className="rounded-lg border border-border bg-card p-2.5">
-          <div className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{m.author_kind}</div>
-          <div className="whitespace-pre-wrap text-sm">{m.body}</div>
+    <div className="flex h-full">
+      {/* Messages + composer */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
+          {(messages ?? []).length === 0 ? <Empty text="No messages yet — say hello." />
+            : (messages ?? []).map((m) => {
+                const sent = m.author_kind === "user";
+                return (
+                  <div key={m.id} className={cn("flex", sent ? "justify-end" : "justify-start")}>
+                    <div className={cn("max-w-[75%] rounded-2xl px-3 py-2 text-sm", sent ? "bg-primary/15" : m.author_kind === "agent" ? "border border-primary/30 bg-primary/5" : "bg-muted")}>
+                      <div className="mb-0.5 flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        {m.author_kind === "agent" && <Bot className="h-3 w-3 text-primary" />}{m.author_kind}
+                      </div>
+                      <div className="whitespace-pre-wrap">{m.body}</div>
+                    </div>
+                  </div>
+                );
+              })}
+          <div ref={endRef} />
         </div>
-      ))}
+        <div className="flex items-center gap-2 border-t border-border p-3">
+          <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())} placeholder="Message…" className="h-9" />
+          <Button size="icon" className="h-9 w-9" onClick={send} disabled={sending || !text.trim()}>{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
+        </div>
+      </div>
+
+      {/* Right info sidebar */}
+      <ChannelInfo channelId={channelId} />
     </div>
+  );
+}
+
+function ChannelInfo({ channelId }: { channelId: string }) {
+  const { data: members } = useQuery({
+    queryKey: ["crm_channel_members", channelId],
+    queryFn: async () => {
+      const { data } = await supabase.from("project_channel_members")
+        .select("id, user_id, agent_id").eq("channel_id", channelId);
+      return (data ?? []) as { id: string; user_id: string | null; agent_id: string | null }[];
+    },
+  });
+  const { data: count } = useQuery({
+    queryKey: ["crm_channel_msgcount", channelId],
+    queryFn: async () => {
+      const { count } = await supabase.from("project_messages").select("id", { count: "exact", head: true }).eq("channel_id", channelId);
+      return count ?? 0;
+    },
+  });
+  return (
+    <aside className="hidden w-60 shrink-0 flex-col border-l border-border bg-card/30 p-4 lg:flex">
+      <div className="mb-3 flex items-center gap-1.5 text-sm font-medium"><Hash className="h-4 w-4 text-muted-foreground" /> Channel</div>
+      <div className="mb-4 space-y-1 text-xs text-muted-foreground">
+        <div>{count ?? 0} messages</div>
+        <div>{(members ?? []).length} members</div>
+      </div>
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase text-muted-foreground"><Users className="h-3.5 w-3.5" /> Members</div>
+      <div className="space-y-1">
+        {(members ?? []).map((m) => (
+          <div key={m.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
+            <span className={cn("flex h-5 w-5 items-center justify-center rounded-full text-[10px]", m.agent_id ? "bg-primary/15 text-primary" : "bg-muted")}>{m.agent_id ? <Bot className="h-3 w-3" /> : "U"}</span>
+            <span className="truncate text-xs text-muted-foreground">{m.agent_id ? "Agent" : "Member"}</span>
+          </div>
+        ))}
+        {(members ?? []).length === 0 && <p className="text-[11px] text-muted-foreground">No members listed.</p>}
+      </div>
+    </aside>
   );
 }
 
