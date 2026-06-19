@@ -72,6 +72,7 @@ import {
   CrmOverviewPage, CrmContactsPage, CrmPipelinePage, CrmActivitiesPage,
 } from "@/features/crm/CrmPages";
 import { CrmWorkspacePage } from "@/features/crm/CrmWorkspace";
+import { RecordViewPage } from "@/features/crm/RecordView";
 import {
   SupportOverviewPage, SupportTicketsPage, SupportKbPage,
   SupportAnalyticsPage, SupportMacrosPage,
@@ -558,6 +559,14 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <CrmWorkspacePage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "crm/workspace/:objectSlug/:recordId",
+        element: (
+          <ErrorBoundary>
+            <RecordViewPage />
           </ErrorBoundary>
         ),
       },

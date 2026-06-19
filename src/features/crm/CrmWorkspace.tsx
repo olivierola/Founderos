@@ -97,6 +97,8 @@ export function CrmWorkspacePage() {
 function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObject[] }) {
   const { workspaceId, projectId } = useCurrentContext();
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { workspaceSlug, projectSlug } = useParams();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -335,6 +337,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
             onChange={(key, v) => setCell(rec, key, v)}
             onEditRelation={(p) => setRelationFor({ property: p, record: rec })}
             onDelete={async () => { await deleteRecords([rec.id]); setOpenRecordId(null); invRecords(); }}
+            onOpenFull={() => navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`)}
           />
         );
       })()}
@@ -343,7 +346,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
 }
 
 // ───────────────────────────────────────────────────────── record detail panel
-function RecordPanel({ object, record, properties, relations, relationChips, onClose, onChange, onEditRelation, onDelete }: {
+function RecordPanel({ object, record, properties, relations, relationChips, onClose, onChange, onEditRelation, onDelete, onOpenFull }: {
   object: CrmObject;
   record: CrmRecord;
   properties: CrmProperty[];
@@ -353,6 +356,7 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
   onChange: (key: string, v: unknown) => void;
   onEditRelation: (p: CrmProperty) => void;
   onDelete: () => void;
+  onOpenFull?: () => void;
 }) {
   const Icon = iconByName(object.icon);
   const titleProp = properties.find((p) => p.is_title);
@@ -435,6 +439,9 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
             <Button size="sm" variant="outline" className="h-8" onClick={() => { navigator.clipboard.writeText(record.id); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
               {copied ? <Check className="mr-1 h-3.5 w-3.5 text-emerald-500" /> : <Copy className="mr-1 h-3.5 w-3.5" />} Copy ID
             </Button>
+            {onOpenFull && (
+              <Button size="sm" className="h-8" onClick={onOpenFull}><Maximize2 className="mr-1 h-3.5 w-3.5" /> Open</Button>
+            )}
           </div>
         </div>
       </aside>

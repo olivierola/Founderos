@@ -286,6 +286,31 @@ export async function fetchRelatedDisplays(objectId: string): Promise<Record<str
   return out;
 }
 
+export async function fetchObjectBySlug(projectId: string, slug: string): Promise<CrmObject | null> {
+  const { data } = await supabase.from("crm_objects").select("*").eq("project_id", projectId).eq("slug", slug).maybeSingle();
+  return (data as CrmObject) ?? null;
+}
+export async function fetchRecord(id: string): Promise<CrmRecord | null> {
+  const { data } = await supabase.from("crm_records").select("*").eq("id", id).maybeSingle();
+  return (data as CrmRecord) ?? null;
+}
+export async function fetchObjectById(id: string): Promise<CrmObject | null> {
+  const { data } = await supabase.from("crm_objects").select("*").eq("id", id).maybeSingle();
+  return (data as CrmObject) ?? null;
+}
+// Relation links for a single record across its object's relation properties.
+export async function fetchRecordRelations(objectId: string, recordId: string): Promise<Record<string, string[]>> {
+  const { data: props } = await supabase.from("crm_properties").select("id").eq("object_id", objectId).eq("type", "relation");
+  const ids = (props ?? []).map((p) => (p as { id: string }).id);
+  const out: Record<string, string[]> = {};
+  if (!ids.length) return out;
+  const { data: links } = await supabase.from("crm_record_links").select("property_id, to_record_id").eq("from_record_id", recordId).in("property_id", ids);
+  for (const l of (links ?? []) as { property_id: string; to_record_id: string }[]) {
+    (out[l.property_id] ??= []).push(l.to_record_id);
+  }
+  return out;
+}
+
 function slugifyKey(s: string): string {
   const base = s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "field";
   return `${base}_${Math.random().toString(36).slice(2, 6)}`;

@@ -121,5 +121,7 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/pm\/simulations(\/.*)?$/.test(pathname)) return true;
   // Assets — infinite modular canvas of the company's objects + relations.
   if (/\/app\/[^/]+\/[^/]+\/assets\/map(\/.*)?$/.test(pathname)) return true;
+  // CRM full record view (crm/workspace/<obj>/<recordId>) — Attio-style.
+  if (/\/app\/[^/]+\/[^/]+\/crm\/workspace\/[^/]+\/[^/]+/.test(pathname)) return true;
   return false;
 }
