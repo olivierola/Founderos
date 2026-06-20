@@ -240,8 +240,8 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
         </div>
       ) : (
       /* Table */
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-max min-w-full border-collapse text-sm">
+      <div className="min-h-0 flex-1 overflow-auto p-px">
+        <table className="w-max min-w-full border-separate border-spacing-0 overflow-hidden rounded-xl border border-border text-sm">
           <thead className="sticky top-0 z-10 bg-card">
             <tr className="border-b border-border">
               <th className="w-9 border-r border-border px-2 py-2">
@@ -366,7 +366,7 @@ function InspectRecordPanel({ recordId, onClose, onOpenFull }: { recordId: strin
 
   const object = objQ.data, record = recQ.data;
   if (!object || !record) {
-    return <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}><aside className="flex h-full w-full max-w-md items-center justify-center border-l border-border bg-background dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></aside></div>;
+    return <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}><aside className="flex h-full w-full max-w-md items-center justify-center rounded-l-2xl border-l border-border bg-background dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></aside></div>;
   }
   const properties = propsQ.data ?? [];
   const relations = relQ.data ?? {};
@@ -415,7 +415,7 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
       {/* Attio-style dark record panel */}
-      <aside className="flex h-full w-full max-w-md flex-col border-l border-border bg-background shadow-2xl dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}>
+      <aside className="flex h-full w-full max-w-md flex-col overflow-hidden rounded-l-2xl border-l border-border bg-background shadow-2xl dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center gap-2.5 px-4 py-3">
           <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
@@ -508,7 +508,7 @@ function ActionsTab({ object, record, actions }: { object: CrmObject; record: Cr
           return (
             <button key={a.id}
               onClick={() => { if (a.kind === "navigate" && a.path) navigate(a.path(record, { workspaceSlug, projectSlug })); else setOpen(a); }}
-              className="flex w-full items-center gap-2.5 rounded-lg border border-border p-2.5 text-left text-sm hover:border-primary/50 hover:bg-muted/30">
+              className="flex w-full items-center gap-2.5 rounded-xl border border-border p-2.5 text-left text-sm hover:border-primary/50 hover:bg-muted/30">
               <span className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-muted-foreground"><AI className="h-3.5 w-3.5" /></span>
               <span className="flex-1">{a.label}</span>
               {a.kind === "navigate" ? <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
@@ -656,7 +656,7 @@ function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
-      <aside className="flex h-full w-full max-w-md flex-col border-l border-border bg-background shadow-2xl dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}>
+      <aside className="flex h-full w-full max-w-md flex-col overflow-hidden rounded-l-2xl border-l border-border bg-background shadow-2xl dark:bg-[#0a0a0b]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           {mode === "blank" && <button onClick={() => setMode("catalog")} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronRight className="h-4 w-4 rotate-180" /></button>}
           <span className="flex-1 text-sm font-semibold">{mode === "catalog" ? "Add object" : "New custom object"}</span>
@@ -669,7 +669,7 @@ function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]
             <div className="grid grid-cols-1 gap-1.5">
               {available.map((t) => { const I = iconByName(t.icon); return (
                 <button key={t.slug} disabled={!!saving} onClick={() => addTemplate(t.slug)}
-                  className="flex items-start gap-2.5 rounded-lg border border-border p-3 text-left hover:border-primary/50 hover:bg-muted/30 disabled:opacity-50">
+                  className="flex items-start gap-2.5 rounded-xl border border-border p-3 text-left hover:border-primary/50 hover:bg-muted/30 disabled:opacity-50">
                   <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted", t.color)}>
                     {saving === t.slug ? <Loader2 className="h-4 w-4 animate-spin" /> : <I className="h-4 w-4" />}
                   </span>

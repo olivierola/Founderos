@@ -163,7 +163,7 @@ function DeliverableList({ load, empty }: { load: () => Promise<Deliverable[]>; 
   return (
     <div className="space-y-2 p-4">
       {data.map((d) => (
-        <div key={d.id} className="rounded-lg border border-border bg-card p-3">
+        <div key={d.id} className="rounded-xl border border-border bg-card p-3">
           <div className="mb-1 flex items-center gap-2">
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{d.kind}</span>
             <span className="text-sm font-medium">{d.name}</span>

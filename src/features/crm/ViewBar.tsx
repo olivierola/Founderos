@@ -28,7 +28,7 @@ export function ViewBar({
   function patch(p: Partial<ViewConfig>) { onConfigChange({ ...config, ...p }); }
 
   return (
-    <div className="flex items-center gap-1 border-b border-border px-3 py-1.5 text-sm">
+    <div className="flex items-center gap-1 px-3 py-1.5 text-sm">
       {/* View tabs */}
       <div className="flex items-center gap-0.5">
         {views.map((v) => (
