@@ -42,6 +42,8 @@ export const OBJECT_TEMPLATES: ObjectTemplate[] = [
   { slug: "job_openings", label: "Job opening", label_plural: "Job openings", icon: "Briefcase", color: "text-teal-500", description: "Open roles." },
   { slug: "onboardings", label: "Onboarding", label_plural: "Onboardings", icon: "UserPlus", color: "text-teal-500", description: "New-hire onboardings." },
   { slug: "resources", label: "Resource", label_plural: "Resources", icon: "Users", color: "text-blue-500", description: "PSA resources." },
+  { slug: "timesheets", label: "Timesheet", label_plural: "Timesheets", icon: "Clock", color: "text-blue-500", description: "Logged hours — linked to project & resource." },
+  { slug: "allocations", label: "Allocation", label_plural: "Allocations", icon: "Calendar", color: "text-blue-500", description: "Capacity allocations per week." },
   // Waves 4+5 — AI / Code / Assets
   { slug: "rag_collections", label: "RAG collection", label_plural: "RAG collections", icon: "Library", color: "text-violet-500", description: "Knowledge collections." },
   { slug: "repositories", label: "Repository", label_plural: "Repositories", icon: "GitBranch", color: "text-zinc-400", description: "Connected code repos." },
