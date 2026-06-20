@@ -29,6 +29,24 @@ export const OBJECT_TEMPLATES: ObjectTemplate[] = [
   { slug: "bills", label: "Bill", label_plural: "Bills", icon: "FileSignature", color: "text-amber-600", description: "AP bills from vendors." },
   { slug: "tickets", label: "Ticket", label_plural: "Tickets", icon: "LifeBuoy", color: "text-sky-500", description: "Support tickets." },
   { slug: "integrations", label: "Integration", label_plural: "Integrations", icon: "Plug", color: "text-fuchsia-500", description: "Connected third-party integrations." },
+  // Wave 2 — Finance + Supply
+  { slug: "bank_accounts", label: "Bank account", label_plural: "Bank accounts", icon: "Wallet", color: "text-emerald-500", description: "Treasury bank accounts." },
+  { slug: "journal_entries", label: "Journal entry", label_plural: "Journal entries", icon: "FileText", color: "text-amber-500", description: "Double-entry journal." },
+  { slug: "purchase_orders", label: "Purchase order", label_plural: "Purchase orders", icon: "Receipt", color: "text-orange-500", description: "POs — linked to suppliers." },
+  { slug: "shipments", label: "Shipment", label_plural: "Shipments", icon: "Truck", color: "text-orange-500", description: "Shipments — linked to POs." },
+  { slug: "sales_orders", label: "Sales order", label_plural: "Sales orders", icon: "Receipt", color: "text-blue-500", description: "Customer sales orders." },
+  { slug: "warehouses", label: "Warehouse", label_plural: "Warehouses", icon: "Package", color: "text-amber-600", description: "Stock locations." },
+  { slug: "returns", label: "Return", label_plural: "Returns", icon: "Package", color: "text-rose-500", description: "RMA returns." },
+  // Wave 3 — HR + PSA
+  { slug: "candidates", label: "Candidate", label_plural: "Candidates", icon: "UserPlus", color: "text-teal-500", description: "Applicants — linked to openings." },
+  { slug: "job_openings", label: "Job opening", label_plural: "Job openings", icon: "Briefcase", color: "text-teal-500", description: "Open roles." },
+  { slug: "onboardings", label: "Onboarding", label_plural: "Onboardings", icon: "UserPlus", color: "text-teal-500", description: "New-hire onboardings." },
+  { slug: "resources", label: "Resource", label_plural: "Resources", icon: "Users", color: "text-blue-500", description: "PSA resources." },
+  // Waves 4+5 — AI / Code / Assets
+  { slug: "rag_collections", label: "RAG collection", label_plural: "RAG collections", icon: "Library", color: "text-violet-500", description: "Knowledge collections." },
+  { slug: "repositories", label: "Repository", label_plural: "Repositories", icon: "GitBranch", color: "text-zinc-400", description: "Connected code repos." },
+  { slug: "servers", label: "Server", label_plural: "Servers", icon: "AppWindow", color: "text-sky-500", description: "Ops servers." },
+  { slug: "asset_canvases", label: "Asset map", label_plural: "Asset maps", icon: "Shapes", color: "text-indigo-500", description: "Asset canvases." },
 ];
 
 // Instantiate a template as a live-synced CRM object (+ backfill existing rows).

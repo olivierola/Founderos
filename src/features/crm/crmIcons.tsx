@@ -5,7 +5,8 @@ import {
   Package, Truck, Receipt, FileText, Bot, Library, Handshake, Star, Mail, Phone,
   Link as LinkIcon, Hash, DollarSign, Percent, Calendar, Clock, Type, AlignLeft,
   Tags, ChevronDownCircle, GitBranch, User, LayoutDashboard, MessageSquare,
-  FlaskConical, FolderKanban, PenSquare, FileSignature, LifeBuoy, Plug, type LucideIcon,
+  FlaskConical, FolderKanban, PenSquare, FileSignature, LifeBuoy, Plug,
+  Wallet, UserPlus, Shapes, type LucideIcon,
 } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -13,7 +14,7 @@ const ICONS: Record<string, LucideIcon> = {
   Package, Truck, Receipt, FileText, Bot, Library, Handshake, Star, Mail, Phone,
   Link: LinkIcon, Hash, DollarSign, Percent, Calendar, Clock, Type, AlignLeft,
   Tags, ChevronDownCircle, GitBranch, User, LayoutDashboard, MessageSquare, FlaskConical,
-  FolderKanban, PenSquare, FileSignature, LifeBuoy, Plug,
+  FolderKanban, PenSquare, FileSignature, LifeBuoy, Plug, Wallet, UserPlus, Shapes,
 };
 
 export function iconByName(name: string | null | undefined): LucideIcon {
