@@ -59,7 +59,7 @@ export function Cell({
                   <span key={c.id} role="button"
                     onClick={(e) => { if (onChipClick) { e.stopPropagation(); onChipClick(c.id); } }}
                     className={cn("flex max-w-full items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-xs", onChipClick && "hover:border-primary/50 hover:bg-primary/5")}>
-                    <Icon className={cn("h-3 w-3 shrink-0", c.objectColor)} />
+                    <Icon className={cn("h-3 w-3 shrink-0 opacity-70", c.objectColor)} />
                     <span className="truncate">{c.label}</span>
                   </span>
                 );

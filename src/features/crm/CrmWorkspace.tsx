@@ -196,7 +196,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">
-        {(() => { const Icon = iconByName(object.icon); return <Icon className={cn("h-4 w-4", object.color)} />; })()}
+        {(() => { const Icon = iconByName(object.icon); return <Icon className={cn("h-4 w-4 opacity-70", object.color)} />; })()}
         <span className="text-sm font-semibold">All {object.label_plural ?? object.label}</span>
         <span className="rounded bg-muted px-1.5 text-xs text-muted-foreground">{records.length}</span>
         <div className="ml-auto flex items-center gap-2">
@@ -277,7 +277,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
                         {/* Title as a clickable badge → opens the record panel. */}
                         <button onClick={() => setOpenRecordId(rec.id)}
                           className="flex min-w-0 items-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-left text-sm hover:border-border hover:bg-card">
-                          {(() => { const TI = iconByName(object.icon); return <TI className={cn("h-3.5 w-3.5 shrink-0", object.color)} />; })()}
+                          {(() => { const TI = iconByName(object.icon); return <TI className={cn("h-3.5 w-3.5 shrink-0 opacity-70", object.color)} />; })()}
                           <span className="truncate font-medium">{String(rec.data[p.key] ?? "Untitled")}</span>
                         </button>
                         <button onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`)}
@@ -419,7 +419,7 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
         {/* Header */}
         <div className="flex items-center gap-2.5 px-4 py-3">
           <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
-          <span className={cn("flex h-7 w-7 items-center justify-center rounded-md bg-muted", object.color)}><Icon className="h-4 w-4" /></span>
+          <span className={cn("flex h-7 w-7 items-center justify-center rounded-md bg-muted opacity-80", object.color)}><Icon className="h-4 w-4" /></span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{title}</div>
           </div>

@@ -56,7 +56,7 @@ export function CrmObjectsItem() {
               )
             }
           >
-            <Icon className={cn("h-4 w-4 shrink-0", o.color)} />
+            <Icon className={cn("h-4 w-4 shrink-0 opacity-60", o.color)} />
             <span className="truncate">{o.label_plural ?? o.label}</span>
           </NavLink>
         );

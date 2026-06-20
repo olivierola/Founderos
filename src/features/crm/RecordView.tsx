@@ -105,7 +105,7 @@ export function RecordViewPage() {
       {/* Breadcrumb header (e.g. "Opportunities / API Integration Deal") */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-sm">
         <button onClick={() => navigate(`${base}/${object.slug}`)} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-          <Icon className={cn("h-4 w-4", object.color)} /> {object.label_plural ?? object.label}
+          <Icon className={cn("h-4 w-4 opacity-70", object.color)} /> {object.label_plural ?? object.label}
         </button>
         <span className="text-muted-foreground/50">/</span>
         <span className="min-w-0 truncate font-medium">{title}</span>
@@ -147,7 +147,7 @@ export function RecordViewPage() {
                             <button key={id} disabled={!slug}
                               onClick={() => slug && navigate(`${base}/${slug}/${id}`)}
                               className="flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-xs hover:border-primary/50">
-                              <RIcon className={cn("h-3 w-3", d?.objectColor)} />
+                              <RIcon className={cn("h-3 w-3 opacity-70", d?.objectColor)} />
                               <span className="truncate">{d?.label ?? "…"}</span>
                             </button>
                           );
