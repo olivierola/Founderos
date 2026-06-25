@@ -85,6 +85,8 @@ export interface InternalToolContext {
   logEvent: (kind: "tool_call" | "tool_result" | "status" | "log", payload: Record<string, unknown>) => Promise<void>;
   /** Re-check whether the run was cancelled by a human. */
   isCancelled: () => Promise<boolean>;
+  /** AIO Sandbox URL when agent runs in sandbox mode. */
+  sandboxUrl?: string | null;
 }
 
 export class RunCancelledError extends Error {
@@ -128,7 +130,7 @@ interface InternalTool {
 // built-in capability implementations
 // ---------------------------------------------------------------------------
 
-async function webSearch(query: string, maxResults: number): Promise<string> {
+export async function webSearch(query: string, maxResults: number): Promise<string> {
   const tavilyKey = Deno.env.get("TAVILY_API_KEY");
   if (tavilyKey) {
     const res = await fetch("https://api.tavily.com/search", {
@@ -215,7 +217,7 @@ function parseDdgLite(html: string, maxResults: number): SearchHit[] {
   return results;
 }
 
-async function readUrl(url: string): Promise<string> {
+export async function readUrl(url: string): Promise<string> {
   if (!/^https?:\/\//i.test(url)) return "ERROR: url must be an absolute http(s) URL.";
   // Jina Reader proxies and extracts readable content; no API key required.
   const res = await fetch(`https://r.jina.ai/${url}`, {
@@ -225,7 +227,7 @@ async function readUrl(url: string): Promise<string> {
   return cap(await res.text());
 }
 
-async function searchKnowledge(
+export async function searchKnowledge(
   ctx: InternalToolContext,
   query: string,
   limit: number,
@@ -289,6 +291,54 @@ async function searchKnowledge(
   const { data } = await kw;
   if (!data || data.length === 0) return "No matching knowledge found.";
   return JSON.stringify(data.map((d: { content?: string }) => ({ text: (d.content ?? "").slice(0, 600) })));
+}
+
+// Deep research: multi-step web research → synthesis
+export async function deepResearch(query: string, maxSources = 5): Promise<string> {
+  const jobs: Promise<string>[] = [
+    webSearch(query, maxSources),
+    webSearch(`${query} latest news analysis`, 3),
+  ];
+  const [mainRaw, newsRaw] = await Promise.allSettled(jobs);
+  const parseResults = (raw: PromiseSettledResult<string>) => {
+    if (raw.status !== "fulfilled") return [];
+    try { return JSON.parse(raw.value)?.results ?? []; } catch { return []; }
+  };
+  const allResults = [...parseResults(mainRaw), ...parseResults(newsRaw)];
+  const seen = new Set<string>();
+  const unique = allResults.filter((r: any) => { if (seen.has(r.url)) return false; seen.add(r.url); return true; });
+  const topUrls = unique.slice(0, maxSources).map((r: any) => r.url);
+
+  // Read top URLs in parallel
+  const readJobs = topUrls.map((url: string) => readUrl(url).catch(() => ""));
+  const contents = await Promise.allSettled(readJobs);
+  const sourceTexts = contents.map((c, i) => {
+    const text = c.status === "fulfilled" ? c.value : "";
+    return `[Source ${i + 1}: ${topUrls[i]}]\n${text.slice(0, 3000)}`;
+  }).join("\n\n---\n\n");
+
+  // Synthesize via LLM
+  const { callAi } = await import("./ai.ts");
+  let synthesis = "";
+  try {
+    const res = await callAi({
+      task: "content_generation",
+      systemPrompt: "You are a research analyst. Synthesize the provided sources into a structured brief with: Executive Summary, Key Findings (bullet points), Data Points, Risks/Concerns, Sources. Be specific and cite source numbers.",
+      userPrompt: `RESEARCH QUERY: ${query}\n\nSOURCES:\n${sourceTexts}`,
+      maxTokens: 2000,
+      temperature: 0.3,
+    });
+    synthesis = res.content ?? "";
+  } catch (e) {
+    synthesis = "Synthesis unavailable: " + (e instanceof Error ? e.message : String(e));
+  }
+
+  return JSON.stringify({
+    query,
+    sources: unique.slice(0, maxSources).map((r: any) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+    synthesis,
+    source_count: unique.length,
+  });
 }
 
 async function queryTable(
@@ -785,6 +835,350 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- list_missions / move_mission: inspect and move missions on your kanban board (always available).");
+
+  // Always-on: deep multi-source web research.
+  tools.set("deep_research", {
+    def: {
+      name: "deep_research",
+      description: "Perform deep web research on a topic. Searches multiple queries, reads top sources, and produces a structured synthesis with citations. Use this for thorough research instead of manual web_search + read_url loops.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "The research question or topic." },
+          max_sources: { type: "number", description: "Max sources to read (default 5, max 8)." },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const query = str(args.query);
+      if (!query) return "ERROR: query is required.";
+      const max = Math.min(Number(args.max_sources) || 5, 8);
+      return deepResearch(query, max);
+    },
+  });
+  summaryLines.push("- deep_research: thorough multi-source web research with synthesis (always available).");
+
+  // Always-on: browse real web pages via runner's Playwright instance.
+  const runnerUrl = Deno.env.get("RUNNER_BROWSER_URL") || Deno.env.get("RUNNER_URL");
+  if (runnerUrl) {
+    tools.set("browse_web", {
+      def: {
+        name: "browse_web",
+        description: "Navigate and interact with real web pages using a browser. Returns a DOM snapshot with numbered element refs. Actions: navigate (open URL), click (ref), fill (ref + value), select (ref + value), scroll (direction), press (key), hover (ref), screenshot, extract_text (ref), extract_links.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["navigate", "click", "fill", "select", "scroll", "press", "hover", "wait", "screenshot", "extract_text", "extract_links"], description: "Browser action to perform." },
+            url: { type: "string", description: "URL (for navigate action)." },
+            ref: { type: "number", description: "Element ref number from the DOM snapshot." },
+            value: { type: "string", description: "Text to fill, option to select, key to press, or scroll direction." },
+            selector: { type: "string", description: "CSS selector fallback if ref is not available." },
+            reason: { type: "string", description: "Why you're performing this action (logged for observability)." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+        if (!action) return "ERROR: action is required.";
+        try {
+          const sessionId = ctx.agentId || "default";
+          const res = await fetch(`${runnerUrl}/api/browser`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Runner-Token": Deno.env.get("PLATFORM_RUNNER_TOKEN") || "",
+            },
+            body: JSON.stringify({ session_id: sessionId, action, ...args }),
+          });
+          if (!res.ok) return `ERROR: browser action failed (${res.status}).`;
+          const result = await res.json();
+          // Log browser event for artifact observability
+          if (ctx.logEvent) {
+            const kind = action === "screenshot" ? "browser_screenshot" : action === "navigate" ? "browser_navigate" : "browser_action";
+            await ctx.logEvent(kind, { action, url: result.current_url, ref: args.ref, value: args.value, reason: args.reason, snapshot_preview: String(result.snapshot ?? "").slice(0, 500) });
+          }
+          return typeof result.snapshot === "string"
+            ? `URL: ${result.current_url}\n\nDOM SNAPSHOT:\n${result.snapshot.slice(0, 8000)}`
+            : JSON.stringify(result).slice(0, 8000);
+        } catch (e) {
+          return `ERROR: browser unreachable — ${e instanceof Error ? e.message : String(e)}`;
+        }
+      },
+    });
+    summaryLines.push("- browse_web: navigate and interact with real web pages via a browser (always available when runner is connected).");
+  }
+
+  // ── Sandbox tools: only available when the agent runs in sandbox mode. ──
+  // All AIO Sandbox responses are wrapped as { success, message, data, hint }.
+  if (ctx.sandboxUrl) {
+    const sbUrl = ctx.sandboxUrl.replace(/\/$/, "");
+    const sbHeaders = {
+      "Content-Type": "application/json",
+      // Bypass ngrok free-tier interstitial warning page (returns HTML otherwise).
+      "ngrok-skip-browser-warning": "true",
+      "User-Agent": "FounderOS-Agent/1.0",
+    };
+
+    async function sb(path: string, body?: Record<string, unknown>): Promise<any> {
+      const res = await fetch(`${sbUrl}/${path}`, {
+        method: "POST", headers: sbHeaders,
+        body: JSON.stringify(body ?? {}),
+      });
+      const text = await res.text();
+      // Detect ngrok/HTML interstitial instead of JSON.
+      if (text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html")) {
+        throw new Error("Sandbox unreachable: got an HTML page (likely an ngrok tunnel warning). Check SANDBOX_URL.");
+      }
+      let json: any = {};
+      try { json = JSON.parse(text); } catch { json = { raw: text }; }
+      if (!res.ok) {
+        const detail = json?.message || json?.detail || json?.raw || res.status;
+        throw new Error(`Sandbox error (${res.status}): ${typeof detail === "string" ? detail.slice(0, 300) : JSON.stringify(detail).slice(0, 300)}`);
+      }
+      return json?.data ?? json;
+    }
+
+    // ── Shell / terminal ──
+    tools.set("shell_exec", {
+      def: {
+        name: "shell_exec",
+        description: "Run a shell command in the sandbox terminal. Use for: installing packages (pip install, npm install), git, running scripts, mkdir, ls, curl, any system command. Returns stdout, stderr and exit code.",
+        parameters: { type: "object", properties: {
+          command: { type: "string", description: "The shell command to run." },
+          timeout: { type: "number", description: "Timeout in seconds (default 60, max 300)." },
+          exec_dir: { type: "string", description: "Working directory (default /home/gem)." },
+        }, required: ["command"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await sb("v1/bash/exec", { command: str(args.command), timeout: Math.min(Number(args.timeout) || 60, 300), exec_dir: str(args.exec_dir) || undefined });
+        if (ctx.logEvent) await ctx.logEvent("tool_call", { tool: "shell_exec", command: str(args.command).slice(0, 120), exit_code: d.exit_code });
+        return `$ ${str(args.command)}\n[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 4000)}` : ""}`;
+      },
+    });
+
+    // ── Code execution (Python / Node) ──
+    tools.set("python_exec", {
+      def: {
+        name: "python_exec",
+        description: "Execute Python code in the sandbox. State persists across calls when stateful=true. Use for data analysis, scripting, computations. Returns stdout, stderr, and any errors.",
+        parameters: { type: "object", properties: {
+          code: { type: "string", description: "Python code to execute." },
+          stateful: { type: "boolean", description: "Keep variables between calls (default true)." },
+        }, required: ["code"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await sb("v1/code/execute", { language: "python", code: str(args.code), stateful: args.stateful !== false });
+        if (ctx.logEvent) await ctx.logEvent("tool_call", { tool: "python_exec", exit_code: d.exit_code });
+        const tb = Array.isArray(d.traceback) ? d.traceback.join("\n") : "";
+        return `[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 3000)}` : ""}${tb ? `\n--- traceback ---\n${tb.slice(0, 3000)}` : ""}`;
+      },
+    });
+
+    tools.set("nodejs_exec", {
+      def: {
+        name: "nodejs_exec",
+        description: "Execute Node.js / JavaScript code in the sandbox. Returns stdout, stderr.",
+        parameters: { type: "object", properties: {
+          code: { type: "string", description: "JavaScript code to execute." },
+        }, required: ["code"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await sb("v1/nodejs/execute", { code: str(args.code) });
+        return `[exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? d.output ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 3000)}` : ""}`;
+      },
+    });
+
+    tools.set("jupyter_exec", {
+      def: {
+        name: "jupyter_exec",
+        description: "Execute Python code in a Jupyter kernel (stateful, ideal for data analysis & plotting). Returns rich outputs including text, tables, and image references.",
+        parameters: { type: "object", properties: {
+          code: { type: "string", description: "Python code to run in Jupyter." },
+        }, required: ["code"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await sb("v1/jupyter/execute", { code: str(args.code) });
+        const outputs = Array.isArray(d.outputs) ? d.outputs.map((o: any) => o.text ?? o.data ?? JSON.stringify(o)).join("\n") : "";
+        return `[status: ${d.status ?? "ok"}]\n\n${(d.stdout ?? "").slice(0, 4000)}${outputs ? `\n${outputs.slice(0, 4000)}` : ""}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 2000)}` : ""}`;
+      },
+    });
+
+    // ── Filesystem ──
+    tools.set("file_write", {
+      def: {
+        name: "file_write",
+        description: "Write content to a file in the sandbox. Creates parent directories. Use absolute paths like /home/gem/script.py.",
+        parameters: { type: "object", properties: {
+          file: { type: "string", description: "Absolute file path (e.g. /home/gem/hn.py)." },
+          content: { type: "string", description: "Full file content." },
+          append: { type: "boolean", description: "Append instead of overwrite (default false)." },
+        }, required: ["file", "content"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await sb("v1/file/write", { file: str(args.file), content: str(args.content), append: !!args.append });
+        if (ctx.logEvent) await ctx.logEvent("tool_call", { tool: "file_write", file: str(args.file) });
+        return `File written: ${str(args.file)} (${d.bytes_written ?? str(args.content).length} bytes)`;
+      },
+    });
+
+    tools.set("file_read", {
+      def: {
+        name: "file_read",
+        description: "Read a file from the sandbox filesystem.",
+        parameters: { type: "object", properties: {
+          file: { type: "string", description: "Absolute file path to read." },
+        }, required: ["file"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await sb("v1/file/read", { file: str(args.file) });
+        return String(d.content ?? "").slice(0, 12000);
+      },
+    });
+
+    tools.set("file_edit", {
+      def: {
+        name: "file_edit",
+        description: "Edit a file: replace exact text (old_str → new_str). The old_str must match exactly once.",
+        parameters: { type: "object", properties: {
+          file: { type: "string", description: "Absolute file path." },
+          old_str: { type: "string", description: "Exact text to find." },
+          new_str: { type: "string", description: "Replacement text." },
+        }, required: ["file", "old_str", "new_str"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await sb("v1/file/replace", { file: str(args.file), old_str: str(args.old_str), new_str: str(args.new_str) });
+        return `File edited: ${str(args.file)}. ${JSON.stringify(d).slice(0, 500)}`;
+      },
+    });
+
+    tools.set("list_files", {
+      def: {
+        name: "list_files",
+        description: "List files and directories in a sandbox path.",
+        parameters: { type: "object", properties: {
+          path: { type: "string", description: "Directory path (default /home/gem)." },
+          recursive: { type: "boolean", description: "List recursively (default false)." },
+        }, additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await sb("v1/file/list", { path: str(args.path) || "/home/gem", recursive: !!args.recursive, include_size: true });
+        return JSON.stringify(d).slice(0, 8000);
+      },
+    });
+
+    tools.set("file_search", {
+      def: {
+        name: "file_search",
+        description: "Search files: by name glob (glob param) or by content (grep param).",
+        parameters: { type: "object", properties: {
+          path: { type: "string", description: "Directory to search (default /home/gem)." },
+          glob: { type: "string", description: "Filename glob, e.g. **/*.py" },
+          grep: { type: "string", description: "Text/regex to find inside files." },
+        }, additionalProperties: false },
+      },
+      run: async (args) => {
+        const p = str(args.path) || "/home/gem";
+        if (str(args.grep)) {
+          const d = await sb("v1/file/grep", { path: p, pattern: str(args.grep), max_results: 50 });
+          return JSON.stringify(d).slice(0, 8000);
+        }
+        const d = await sb("v1/file/find", { path: p, glob: str(args.glob) || "*" });
+        return JSON.stringify(d).slice(0, 8000);
+      },
+    });
+
+    // ── Sandbox browser (Chromium) ──
+    tools.set("sandbox_browser", {
+      def: {
+        name: "sandbox_browser",
+        description: "Control the sandbox's real Chromium browser. Actions: " +
+          "navigate (open url), screenshot (capture page), get_markdown (page as markdown), get_text (visible text), get_html (raw html), " +
+          "click (selector), fill (selector+value), type (selector+value), press_key (value=key), hover (selector), select_option (selector+value), " +
+          "check/uncheck (selector), scroll (value=up|down), find_text (value), evaluate (value=JS expression), wait (selector), " +
+          "back, forward, reload, get_elements (selector), get_console, tabs_list.",
+        parameters: { type: "object", properties: {
+          action: { type: "string", description: "Browser action (see list)." },
+          url: { type: "string", description: "URL for navigate." },
+          selector: { type: "string", description: "CSS selector." },
+          value: { type: "string", description: "Value for fill/type/select/press_key/scroll/find_text/evaluate." },
+        }, required: ["action"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const a = str(args.action);
+        const sel = str(args.selector);
+        const val = str(args.value);
+        const routes: Record<string, { path: string; body?: any }> = {
+          navigate: { path: "v1/browser/page/navigate", body: { url: str(args.url), wait_until: "load" } },
+          screenshot: { path: "v1/browser/screenshot", body: { full_page: false } },
+          get_markdown: { path: "v1/browser/page/markdown", body: {} },
+          get_text: { path: "v1/browser/page/text", body: {} },
+          get_html: { path: "v1/browser/page/html", body: {} },
+          get_elements: { path: "v1/browser/page/elements", body: { selector: sel || "a" } },
+          get_console: { path: "v1/browser/page/console", body: {} },
+          click: { path: "v1/browser/page/click", body: { selector: sel } },
+          fill: { path: "v1/browser/page/fill", body: { selector: sel, value: val } },
+          type: { path: "v1/browser/page/type", body: { selector: sel, text: val } },
+          press_key: { path: "v1/browser/page/press_key", body: { key: val } },
+          hover: { path: "v1/browser/page/hover", body: { selector: sel } },
+          select_option: { path: "v1/browser/page/select_option", body: { selector: sel, value: val } },
+          check: { path: "v1/browser/page/check", body: { selector: sel } },
+          uncheck: { path: "v1/browser/page/uncheck", body: { selector: sel } },
+          scroll: { path: "v1/browser/page/scroll", body: { direction: val || "down" } },
+          find_text: { path: "v1/browser/page/find_text", body: { text: val } },
+          evaluate: { path: "v1/browser/page/evaluate", body: { expression: val } },
+          wait: { path: "v1/browser/page/wait", body: { selector: sel, timeout: 5000 } },
+          back: { path: "v1/browser/page/back", body: {} },
+          forward: { path: "v1/browser/page/forward", body: {} },
+          reload: { path: "v1/browser/page/reload", body: {} },
+          tabs_list: { path: "v1/browser/tabs", body: {} },
+        };
+        const r = routes[a];
+        if (!r) return `ERROR: unknown action "${a}". Available: ${Object.keys(routes).join(", ")}`;
+        const d = await sb(r.path, r.body);
+        if (ctx.logEvent) {
+          const kind = a === "screenshot" ? "browser_screenshot" : a === "navigate" ? "browser_navigate" : "browser_action";
+          await ctx.logEvent(kind, { action: a, url: args.url, selector: sel });
+        }
+        if (a === "screenshot") return `Screenshot captured (base64 length: ${(d.image ?? d.screenshot ?? "").length}). Current URL: ${d.url ?? "?"}`;
+        return JSON.stringify(d).slice(0, 10000);
+      },
+    });
+
+    // ── Environment / packages ──
+    tools.set("sandbox_env", {
+      def: {
+        name: "sandbox_env",
+        description: "Inspect the sandbox environment. Actions: info (system context), python_packages, nodejs_packages, to_markdown (convert a URL or file to markdown).",
+        parameters: { type: "object", properties: {
+          action: { type: "string", enum: ["info", "python_packages", "nodejs_packages", "to_markdown"], description: "What to inspect." },
+          input: { type: "string", description: "URL or file path (for to_markdown)." },
+        }, required: ["action"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const a = str(args.action);
+        if (a === "info") return JSON.stringify(await sb("v1/sandbox", {})).slice(0, 4000);
+        if (a === "python_packages") return JSON.stringify(await sb("v1/sandbox/packages/python", {})).slice(0, 8000);
+        if (a === "nodejs_packages") return JSON.stringify(await sb("v1/sandbox/packages/nodejs", {})).slice(0, 8000);
+        if (a === "to_markdown") {
+          const d = await sb("v1/util/convert_to_markdown", { url: str(args.input) });
+          return String(d.markdown ?? d.content ?? "").slice(0, 10000);
+        }
+        return "ERROR: unknown action.";
+      },
+    });
+
+    summaryLines.push("- shell_exec: run shell commands (pip/npm install, git, scripts, curl, any command).");
+    summaryLines.push("- python_exec / nodejs_exec / jupyter_exec: execute code (stateful Python, Node.js, Jupyter for data analysis).");
+    summaryLines.push("- file_write / file_read / file_edit / list_files / file_search: full filesystem (write, read, edit, list, glob/grep).");
+    summaryLines.push("- sandbox_browser: drive a real Chromium browser (navigate, screenshot, get_markdown, click, fill, evaluate JS, 25+ actions).");
+    summaryLines.push("- sandbox_env: environment info, installed packages, URL→markdown conversion.");
+    summaryLines.push("");
+    summaryLines.push("IMPORTANT: You have a REAL Linux sandbox. To save a file, use file_write. To run code, use python_exec or shell_exec. NEVER say you 'can't access the filesystem' — you can. Actually execute the task.");
+  }
 
   // -------------------------------------------------------------------------
   // Collaboration: discover, message and delegate to peer agents + team memory.

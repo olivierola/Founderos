@@ -1,0 +1,10 @@
+{
+  "name": "founderos-runner-vercel",
+  "version": "1.0.0",
+  "description": "FounderOS runner for Vercel — serverless cron-driven execution of simulations and security scans.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  }
+}

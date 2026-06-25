@@ -8,7 +8,8 @@ import {
   CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
   CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
   ListTree, Gauge, Brain, Pin, PinOff, ArrowLeft, ChevronDown, History,
-  Network, MessagesSquare, Send, ArrowRight, Plug, AlertTriangle,
+  Network, MessagesSquare, Send, ArrowRight, Plug, AlertTriangle, Search,
+  X, FileCode, TerminalSquare, BrainCircuit,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -36,6 +37,7 @@ import { ConnectorDialog } from "@/features/integrations/ConnectorDialog";
 import { findProvider } from "@/lib/providers";
 import { Settings2 } from "lucide-react";
 import { DeliverablesHub } from "./DeliverablesHub";
+import { AgentPlanning, type PlanStep, type PlanStepStatus } from "@/components/ui/ai-planning";
 import { MissionWizard, type MissionDraft } from "./MissionWizard";
 import {
   type InternalAgent, type Mission, type MissionRun, type Deliverable,
@@ -50,6 +52,8 @@ export type InternalAgentTab =
   | "chat"
   | "mission"
   | "deliverables"
+  | "artifacts"
+  | "skills"
   | "memory"
   | "collaboration"
   | "instructions"
@@ -57,7 +61,7 @@ export type InternalAgentTab =
   | "settings";
 
 const VALID_TABS: InternalAgentTab[] = [
-  "chat", "mission", "deliverables", "memory", "collaboration", "instructions", "analytics", "settings",
+  "chat", "mission", "deliverables", "artifacts", "skills", "memory", "collaboration", "instructions", "analytics", "settings",
 ];
 
 export function InternalAgentDetailPage() {
@@ -94,6 +98,8 @@ export function InternalAgentDetailPage() {
       {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "deliverables" && <DeliverablesHub agent={agent} />}
+      {tab === "artifacts" && <AgentArtifactsTab agentId={agent.id} />}
+      {tab === "skills" && <SkillsTab agentId={agent.id} />}
       {tab === "memory" && <MemoryTab agent={agent} />}
       {tab === "collaboration" && <CollaborationTab agent={agent} />}
       {tab === "instructions" && <InstructionsEditor agent={agent} />}
@@ -123,6 +129,8 @@ export function AgentTabContent({ agentId, tab }: { agentId: string; tab: Intern
       {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {tab === "deliverables" && <DeliverablesHub agent={agent} />}
+      {tab === "artifacts" && <AgentArtifactsTab agentId={agent.id} />}
+      {tab === "skills" && <SkillsTab agentId={agent.id} />}
       {tab === "memory" && <MemoryTab agent={agent} />}
       {tab === "collaboration" && <CollaborationTab agent={agent} />}
       {tab === "instructions" && <InstructionsEditor agent={agent} />}
@@ -141,6 +149,10 @@ interface ChatMessage {
   conversation_id: string;
   role: "user" | "assistant" | "tool";
   content: string;
+  tool_calls?: Array<{ name: string; args: Record<string, unknown> }>;
+  tokens_in?: number;
+  tokens_out?: number;
+  cost_usd?: number;
   created_at: string;
 }
 
@@ -202,7 +214,7 @@ function ChatTab({
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agent_messages")
-        .select("id, conversation_id, role, content, created_at")
+        .select("id, conversation_id, role, content, tool_calls, tokens_in, tokens_out, cost_usd, created_at")
         .eq("conversation_id", convoId!)
         .order("created_at", { ascending: true });
       return (data ?? []) as ChatMessage[];
@@ -368,11 +380,7 @@ function ChatTab({
                 />
               );
             })}
-            {sending && (
-              <div className="flex justify-start">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            )}
+            {sending && <LiveRunEvents agentId={agent.id} />}
           </div>
         )}
       </div>
@@ -388,6 +396,177 @@ function ChatTab({
       </div>
     </div>
   );
+}
+
+// Live run events — shows tool calls, LLM reasoning, and errors in real-time
+// while the agent is working, using the AgentPlanning timeline component.
+function LiveRunEvents({ agentId }: { agentId: string }) {
+  const { data } = useQuery({
+    queryKey: ["live_run_events", agentId],
+    refetchInterval: 700,
+    queryFn: async () => {
+      // Find the latest run for this agent (running, queued, OR just completed in last 30s)
+      const { data: runs } = await supabase
+        .from("internal_agent_runs")
+        .select("id, status, started_at, created_at")
+        .eq("agent_id", agentId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const run = runs?.[0];
+      if (!run) return { events: [], status: "idle", runId: null };
+      // Only show if running/queued or completed within last 30s
+      if (run.status !== "running" && run.status !== "queued") {
+        const age = Date.now() - new Date(run.created_at).getTime();
+        if (age > 30000) return { events: [], status: "idle", runId: null };
+      }
+      const { data: events } = await supabase
+        .from("internal_agent_run_events")
+        .select("id, kind, summary, payload, created_at")
+        .eq("run_id", run.id)
+        .order("created_at", { ascending: true })
+        .limit(50);
+      return { events: events ?? [], status: run.status, runId: run.id };
+    },
+  });
+
+  const events = (data?.events ?? []) as any[];
+  const status = data?.status ?? "idle";
+  const isWorking = status === "running" || status === "queued";
+
+  const steps: PlanStep[] = [];
+
+  // Pair tool_call events with their following tool_result.
+  const resultByTool: Record<string, any> = {};
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.kind === "tool_result") {
+      const t = ev.payload?.tool ?? "";
+      resultByTool[`${t}_${i}`] = ev;
+    }
+  }
+
+  // Compute elapsed time (delta) between an event and its result for "took Xs" display.
+  const elapsed = (fromIso: string, toIso?: string): string => {
+    if (!toIso) return "";
+    const ms = new Date(toIso).getTime() - new Date(fromIso).getTime();
+    if (ms < 0) return "";
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const payload = ev.payload ?? {};
+    const ts = new Date(ev.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    if (ev.kind === "tool_call") {
+      const tool = payload.tool ?? payload.name ?? "tool";
+      const args = payload.args ?? payload.arguments ?? {};
+      // Find the matching result (next tool_result with same tool name)
+      let resultEv: any = null;
+      for (let j = i + 1; j < events.length; j++) {
+        if (events[j].kind === "tool_result" && (events[j].payload?.tool ?? "") === tool) { resultEv = events[j]; break; }
+        if (events[j].kind === "tool_call") break;
+      }
+      const summary = toolSummary(tool, args);
+      const icon = toolIcon(tool);
+      const isLast = !resultEv && i >= events.length - 2;
+      const took = elapsed(ev.created_at, resultEv?.created_at);
+      steps.push({
+        id: ev.id,
+        title: summary,
+        status: isLast && isWorking ? "active" : "success",
+        icon,
+        duration: took || ts,
+        defaultExpanded: false,
+        content: (
+          <div className="space-y-1.5 mt-1">
+            {Object.keys(args).length > 0 && (
+              <div className="font-mono text-[11px] rounded-md bg-zinc-950 border border-border/50 p-2.5 text-zinc-400 max-h-40 overflow-y-auto whitespace-pre-wrap">
+                <span className="text-zinc-500">args:</span> {(typeof args === "string" ? args : JSON.stringify(args, null, 2)).slice(0, 2000)}
+              </div>
+            )}
+            {resultEv && (
+              <div className="font-mono text-[11px] rounded-md bg-zinc-950 border border-emerald-500/20 p-2.5 text-emerald-300/90 max-h-48 overflow-y-auto whitespace-pre-wrap">
+                <span className="text-emerald-500/70">result:</span> {String(resultEv.payload?.result ?? resultEv.payload?.preview ?? "(empty)").slice(0, 2000)}
+              </div>
+            )}
+          </div>
+        ),
+      });
+    } else if (ev.kind === "error") {
+      steps.push({
+        id: ev.id, title: `Error: ${payload.message ?? payload.error ?? "unknown"}`,
+        status: "error", icon: <AlertTriangle className="w-3.5 h-3.5" />, duration: ts, defaultExpanded: true,
+        content: <div className="font-mono text-[11px] mt-1 p-2.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-400">{String(payload.message ?? payload.error ?? "Unknown error").slice(0, 800)}</div>,
+      });
+    } else if (ev.kind === "llm_call") {
+      steps.push({
+        id: ev.id, title: `Reasoning (${payload.model ?? "LLM"}, ${payload.rounds ?? "?"} rounds)`,
+        status: "success", icon: <BrainCircuit className="w-3.5 h-3.5" />, duration: ts,
+      });
+    } else if (ev.kind === "browser_navigate") {
+      steps.push({ id: ev.id, title: `Navigate → ${payload.url ?? ""}`, status: "success", icon: <Globe className="w-3.5 h-3.5" />, duration: ts });
+    } else if (ev.kind === "browser_screenshot") {
+      steps.push({ id: ev.id, title: `Screenshot: ${payload.url ?? "page"}`, status: "success", icon: <Globe className="w-3.5 h-3.5" />, duration: ts });
+    } else if (ev.kind === "status" || ev.kind === "log") {
+      // Skip generic status to reduce noise (but keep first one)
+      if (i === 0) steps.push({ id: ev.id, title: payload.message ?? "Started", status: "success", icon: <Check className="w-3.5 h-3.5" />, duration: ts });
+    }
+    // tool_result events are folded into their tool_call above — skip standalone
+  }
+
+  // Leading/trailing "thinking" step while working.
+  if (steps.length === 0) {
+    steps.push({
+      id: "thinking", title: "Agent is thinking…", status: "active" as PlanStepStatus,
+      icon: <BrainCircuit className="w-3.5 h-3.5" />, defaultExpanded: true,
+      content: <div className="font-mono text-[11px] flex items-center gap-2 text-blue-400"><Loader2 className="w-3 h-3 animate-spin" />Analyzing your request…</div>,
+    });
+  } else if (isWorking && steps[steps.length - 1].status !== "active") {
+    steps.push({ id: "next", title: "Processing next step…", status: "active" as PlanStepStatus, icon: <BrainCircuit className="w-3.5 h-3.5" /> });
+  }
+
+  return <AgentPlanning live={isWorking} title={isWorking ? "Agent is working" : `Agent completed · ${steps.filter((s) => s.id !== "next").length} steps`} steps={steps} />;
+}
+
+// Human-readable summary for a tool call.
+function toolSummary(tool: string, args: any): string {
+  const a = args ?? {};
+  switch (tool) {
+    case "shell_exec": return `$ ${String(a.command ?? "").slice(0, 70)}`;
+    case "python_exec": return `Python: ${String(a.code ?? "").replace(/\n/g, " ").slice(0, 55)}…`;
+    case "nodejs_exec": return `Node: ${String(a.code ?? "").replace(/\n/g, " ").slice(0, 55)}…`;
+    case "jupyter_exec": return `Jupyter: ${String(a.code ?? "").replace(/\n/g, " ").slice(0, 55)}…`;
+    case "file_write": return `Write → ${String(a.file ?? "").slice(0, 50)}`;
+    case "file_read": return `Read ← ${String(a.file ?? "").slice(0, 50)}`;
+    case "file_edit": return `Edit ${String(a.file ?? "").slice(0, 45)}`;
+    case "list_files": return `List ${String(a.path ?? "/home/gem").slice(0, 45)}`;
+    case "file_search": return `Search ${a.grep ? `"${String(a.grep).slice(0, 30)}"` : String(a.glob ?? "")}`;
+    case "sandbox_browser": return `Browser: ${a.action}${a.url ? ` → ${String(a.url).slice(0, 40)}` : a.selector ? ` ${String(a.selector).slice(0, 30)}` : ""}`;
+    case "sandbox_env": return `Env: ${a.action}`;
+    case "browse_web": return a.url ? `Browse → ${String(a.url).slice(0, 50)}` : `Browser: ${a.action ?? ""}`;
+    case "http_get": return `GET ${String(a.url ?? "").slice(0, 55)}`;
+    case "web_search": return `Search: "${String(a.query ?? "").slice(0, 45)}"`;
+    case "deep_research": return `Research: "${String(a.query ?? "").slice(0, 45)}"`;
+    case "create_deliverable": return `Create: ${String(a.name ?? "deliverable")}`;
+    case "create_task": return `Task: ${String(a.title ?? "")}`;
+    case "create_mission": return `Mission: ${String(a.title ?? "")}`;
+    case "save_memory": return `Remember: ${String(a.content ?? "").slice(0, 40)}…`;
+    case "search_memory": return `Recall: "${String(a.query ?? "").slice(0, 40)}"`;
+    case "send_email": return `Email → ${String(a.to ?? "")}`;
+    default: return tool.replace(/_/g, " ");
+  }
+}
+
+function toolIcon(tool: string): React.ReactNode {
+  if (tool.includes("browser") || tool === "browse_web" || tool === "http_get") return <Globe className="w-3.5 h-3.5" />;
+  if (tool.includes("search") || tool === "deep_research") return <Search className="w-3.5 h-3.5" />;
+  if (tool.includes("file") || tool === "list_files") return <FileText className="w-3.5 h-3.5" />;
+  if (tool.includes("python") || tool.includes("nodejs") || tool.includes("shell") || tool.includes("jupyter")) return <TerminalSquare className="w-3.5 h-3.5" />;
+  if (tool === "create_deliverable") return <Package className="w-3.5 h-3.5" />;
+  if (tool.includes("memory")) return <Brain className="w-3.5 h-3.5" />;
+  return <TerminalSquare className="w-3.5 h-3.5" />;
 }
 
 interface ChatArtifact { id: string; kind: string; name: string; summary: string | null }
@@ -415,9 +594,68 @@ function ChatBubble({
       </div>
     );
   }
+  const toolCalls = msg.tool_calls ?? [];
+
+  // Build rich tool call steps for AgentPlanning
+  const toolSteps: PlanStep[] = toolCalls.map((tc, i) => {
+    const name = tc.name;
+    const args = tc.args ?? {};
+    const argsStr = JSON.stringify(args, null, 2);
+
+    // Icon based on tool type
+    let icon: React.ReactNode = <TerminalSquare className="w-3.5 h-3.5" />;
+    if (name.includes("browser") || name === "browse_web") icon = <Globe className="w-3.5 h-3.5" />;
+    else if (name.includes("search") || name === "deep_research") icon = <Search className="w-3.5 h-3.5" />;
+    else if (name.includes("file") || name === "list_files") icon = <FileText className="w-3.5 h-3.5" />;
+    else if (name.includes("python") || name.includes("nodejs") || name === "shell_exec" || name === "jupyter_exec") icon = <TerminalSquare className="w-3.5 h-3.5" />;
+    else if (name === "create_deliverable") icon = <Package className="w-3.5 h-3.5" />;
+    else if (name === "save_memory" || name === "search_memory") icon = <Brain className="w-3.5 h-3.5" />;
+    else if (name === "send_email") icon = <Globe className="w-3.5 h-3.5" />;
+    else if (name === "http_get") icon = <Globe className="w-3.5 h-3.5" />;
+
+    // Build a human-readable summary
+    let summary = name;
+    if (name === "http_get" && args.url) summary = `GET ${String(args.url).slice(0, 60)}`;
+    else if (name === "browse_web" && args.url) summary = `Navigate → ${String(args.url).slice(0, 60)}`;
+    else if (name === "browse_web" && args.action) summary = `Browser: ${args.action} ${args.selector ? `on ${String(args.selector).slice(0, 30)}` : ""}`;
+    else if (name === "web_search") summary = `Search: "${String(args.query ?? "").slice(0, 50)}"`;
+    else if (name === "deep_research") summary = `Research: "${String(args.query ?? "").slice(0, 50)}"`;
+    else if (name === "file_write") summary = `Write file: ${String(args.path ?? "").slice(0, 40)}`;
+    else if (name === "file_read") summary = `Read file: ${String(args.path ?? "").slice(0, 40)}`;
+    else if (name === "shell_exec") summary = `$ ${String(args.command ?? "").slice(0, 60)}`;
+    else if (name === "python_exec") summary = `Python: ${String(args.code ?? "").slice(0, 50)}…`;
+    else if (name === "nodejs_exec") summary = `Node: ${String(args.code ?? "").slice(0, 50)}…`;
+    else if (name === "jupyter_exec") summary = `Jupyter: ${String(args.code ?? "").slice(0, 50)}…`;
+    else if (name === "create_deliverable") summary = `Create: ${String(args.name ?? "deliverable")}`;
+    else if (name === "create_task") summary = `Task: ${String(args.title ?? "")}`;
+    else if (name === "save_memory") summary = `Remember: ${String(args.content ?? "").slice(0, 40)}…`;
+    else if (name === "sandbox_browser_action") summary = `Browser ${String(args.action ?? "")}`;
+    else if (name === "mcp_call_tool") summary = `MCP: ${String(args.tool_name ?? "")}`;
+
+    return {
+      id: String(i),
+      title: summary,
+      status: "success" as PlanStepStatus,
+      icon,
+      content: argsStr.length > 5 ? (
+        <div className="font-mono text-[11px] mt-1 rounded-md bg-zinc-950 border border-border/50 p-2.5 text-zinc-400 max-h-48 overflow-y-auto whitespace-pre-wrap">
+          {argsStr.slice(0, 3000)}
+        </div>
+      ) : undefined,
+    };
+  });
+
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[95%]">
+        {/* Tool calls timeline */}
+        {toolSteps.length > 0 && (
+          <AgentPlanning
+            title={`${toolSteps.length} tool${toolSteps.length > 1 ? "s" : ""} used · ${msg.tokens_in ?? 0} tokens in · ${msg.tokens_out ?? 0} out${msg.cost_usd ? ` · $${msg.cost_usd.toFixed(4)}` : ""}`}
+            steps={toolSteps}
+          />
+        )}
+        {/* Message content */}
         <div className="prose prose-sm dark:prose-invert">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
         </div>
@@ -2254,6 +2492,7 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   const [skills, setSkills] = useState<string[]>(agent.skills ?? []);
   const [skillInput, setSkillInput] = useState("");
   const [collabEnabled, setCollabEnabled] = useState(agent.collaboration_enabled ?? true);
+  const [sandboxMode, setSandboxMode] = useState<"cloud" | "sandbox">(agent.sandbox_mode ?? "cloud");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [section, setSection] = useState<SettingsSectionKey>("general");
@@ -2275,6 +2514,7 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
           role: role.trim() || null,
           skills,
           collaboration_enabled: collabEnabled,
+          sandbox_mode: sandboxMode,
           updated_at: new Date().toISOString(),
         })
         .eq("id", agent.id);
@@ -2412,6 +2652,73 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
       </SettingsSection>
       )}
 
+      {/* Infrastructure — sandbox mode */}
+      {section === "infrastructure" && (
+      <SettingsSection
+        title="Execution Environment" icon={Database}
+        description="Choose how this agent runs its missions. Cloud mode uses serverless edge functions (fast, stateless). Sandbox mode gives the agent a dedicated Docker container with terminal, browser, filesystem, and code execution."
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => setSandboxMode("cloud")}
+              className={cn("rounded-xl border p-4 text-left transition-all",
+                sandboxMode === "cloud" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="h-4 w-4 text-amber-500" />
+                <span className="text-sm font-semibold">Cloud</span>
+                {sandboxMode === "cloud" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Serverless edge functions. Fast cold start, stateless, pay-per-use. Best for chat, research, and simple missions.</p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">web_search</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">deep_research</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">db_read</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">browse_web</span>
+              </div>
+            </button>
+
+            <button onClick={() => setSandboxMode("sandbox")}
+              className={cn("rounded-xl border p-4 text-left transition-all",
+                sandboxMode === "sandbox" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
+              <div className="flex items-center gap-2 mb-2">
+                <TerminalSquare className="h-4 w-4 text-emerald-500" />
+                <span className="text-sm font-semibold">Sandbox</span>
+                {sandboxMode === "sandbox" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Dedicated Docker container with terminal, browser, filesystem, VSCode, Jupyter. Persistent between steps. Best for code, analysis, testing.</p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">execute_code</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">file_read/write</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">browser</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">terminal</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">jupyter</span>
+              </div>
+            </button>
+          </div>
+
+          {sandboxMode === "sandbox" && (
+            <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                <span className="font-medium">Sandbox requires Docker running on the runner host.</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                The runner will spin up an AIO Sandbox container (ghcr.io/agent-infra/sandbox) for each mission.
+                The container provides a full Linux environment with Python, Node.js, shell, browser, and file access.
+                It is destroyed after the mission completes.
+              </p>
+              {agent.sandbox_url && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Globe className="h-3 w-3 text-muted-foreground" />
+                  <span className="font-mono text-[10px] text-muted-foreground">{agent.sandbox_url}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </SettingsSection>
+      )}
+
       {/* Collaboration profile */}
       {section === "collaboration" && (
       <SettingsSection
@@ -2486,11 +2793,12 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   );
 }
 
-type SettingsSectionKey = "general" | "autonomy" | "collaboration" | "tools" | "members" | "danger";
+type SettingsSectionKey = "general" | "autonomy" | "infrastructure" | "collaboration" | "tools" | "members" | "danger";
 
 const SETTINGS_SECTIONS: { key: SettingsSectionKey; label: string; icon: any }[] = [
   { key: "general", label: "General", icon: SettingsIcon },
   { key: "autonomy", label: "Autonomy", icon: Gauge },
+  { key: "infrastructure", label: "Infrastructure", icon: Database },
   { key: "collaboration", label: "Collaboration", icon: Network },
   { key: "tools", label: "Tools & integrations", icon: Wrench },
   { key: "members", label: "Members", icon: UsersIcon },
@@ -2660,11 +2968,345 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
   );
 }
 
+// ── Skills tab: toggle skills on/off per agent ──────────────────────────────
+type SkillRow = { id: string; name: string; slug: string; description: string | null; category: string | null; icon: string; required_tools: string[]; config: any; is_system: boolean; system_prompt_extension: string | null };
+
+function SkillsTab({ agentId }: { agentId: string }) {
+  const { workspaceId } = useCurrentContext();
+  const queryClient = useQueryClient();
+  const [activeCat, setActiveCat] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<SkillRow | null>(null);
+
+  const { data: allSkills } = useQuery({
+    queryKey: ["agent_skills_all"],
+    queryFn: async () => {
+      const { data } = await supabase.from("agent_skills").select("*")
+        .or(`workspace_id.is.null,workspace_id.eq.${workspaceId}`).order("category, name");
+      return (data ?? []) as SkillRow[];
+    },
+  });
+
+  const { data: activations } = useQuery({
+    queryKey: ["agent_skill_activations", agentId],
+    queryFn: async () => {
+      const { data } = await supabase.from("agent_skill_activations").select("skill_id").eq("agent_id", agentId);
+      return new Set((data ?? []).map((a: any) => a.skill_id));
+    },
+  });
+
+  const activeSet = activations ?? new Set<string>();
+
+  async function toggle(skillId: string) {
+    if (activeSet.has(skillId)) {
+      await supabase.from("agent_skill_activations").delete().eq("agent_id", agentId).eq("skill_id", skillId);
+    } else {
+      await supabase.from("agent_skill_activations").insert({ agent_id: agentId, skill_id: skillId });
+    }
+    queryClient.invalidateQueries({ queryKey: ["agent_skill_activations", agentId] });
+  }
+
+  const skillsList = allSkills ?? [];
+  const categories = [...new Set(skillsList.map((s) => s.category || "other"))];
+  const currentCat = activeCat ?? categories[0] ?? "other";
+
+  const filtered = skillsList.filter((s) => {
+    if ((s.category || "other") !== currentCat) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return s.name.toLowerCase().includes(q) || (s.description ?? "").toLowerCase().includes(q) || s.slug.includes(q);
+    }
+    return true;
+  });
+
+  const activatedCount = skillsList.filter((s) => activeSet.has(s.id)).length;
+  const tags = (s: SkillRow) => Array.isArray(s.config?.tags) ? s.config.tags as string[] : [];
+
+  const CAT_LABELS: Record<string, string> = {
+    cybersecurity: "Cybersecurity", "data-analytics": "Data Analytics", general: "General",
+    research: "Research", browser: "Browser", code: "Code", data: "Data",
+    communication: "Communication", security: "Security", hr: "HR", other: "Other",
+  };
+
+  const CAT_COLORS: Record<string, string> = {
+    cybersecurity: "#ef4444", "data-analytics": "#3b82f6", general: "#8b5cf6",
+    research: "#10b981", browser: "#f59e0b", code: "#6366f1", data: "#0ea5e9",
+    communication: "#ec4899", security: "#dc2626", hr: "#14b8a6", other: "#6b7280",
+  };
+
+  return (
+    <div className="flex h-full">
+      {/* ── Main: tabs + grid ── */}
+      <div className="flex min-w-0 flex-1 flex-col px-6 py-4 lg:px-10">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-semibold">Agent Skills</h3>
+            <p className="text-xs text-muted-foreground">{activatedCount} active · {skillsList.length} available</p>
+          </div>
+          <div className="relative w-56">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search skills…" className="h-8 pl-8 text-xs" />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-border mb-3 pb-px">
+          {categories.map((cat) => {
+            const count = skillsList.filter((s) => (s.category || "other") === cat).length;
+            const activeInCat = skillsList.filter((s) => (s.category || "other") === cat && activeSet.has(s.id)).length;
+            return (
+              <button key={cat} onClick={() => { setActiveCat(cat); setSelected(null); }}
+                className={cn("flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-xs transition-colors",
+                  cat === currentCat ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+                {CAT_LABELS[cat] ?? cat}
+                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] tabular-nums">{count}</span>
+                {activeInCat > 0 && <span className="rounded-full bg-primary/20 text-primary px-1.5 py-0.5 text-[9px] tabular-nums">{activeInCat}</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Card grid */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {filtered.length === 0 && <p className="py-8 text-center text-xs text-muted-foreground">No skills found{search ? ` for "${search}"` : ""}.</p>}
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filtered.map((s) => {
+              const isActive = activeSet.has(s.id);
+              const isSelected = selected?.id === s.id;
+              const color = CAT_COLORS[s.category || "other"] ?? "#6b7280";
+              return (
+                <div key={s.id} onClick={() => setSelected(s)}
+                  className={cn("group cursor-pointer rounded-xl border p-3 transition-all hover:-translate-y-0.5 hover:shadow-md",
+                    isSelected ? "border-primary ring-1 ring-primary/30" : isActive ? "border-primary/40 bg-primary/5" : "border-border")}>
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="text-xs font-semibold leading-tight line-clamp-2 flex-1">{s.name}</h4>
+                    <button onClick={(e) => { e.stopPropagation(); toggle(s.id); }}
+                      className={cn("flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors", isActive ? "bg-primary" : "bg-secondary")}>
+                      <span className={cn("block h-4 w-4 rounded-full bg-white transition-transform", isActive && "translate-x-4")} />
+                    </button>
+                  </div>
+                  {s.description && <p className="mt-1 text-[10px] text-muted-foreground line-clamp-2">{s.description}</p>}
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {tags(s).slice(0, 3).map((t) => (
+                      <span key={t} className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Right sidebar overlay: skill detail ── */}
+      {selected && (
+        <>
+        <div className="fixed inset-0 z-50 bg-black/30" onClick={() => setSelected(null)} />
+        <aside className="fixed inset-y-0 right-0 z-50 flex w-96 flex-col border-l border-border bg-card shadow-2xl">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <h3 className="text-sm font-semibold truncate">{selected.name}</h3>
+            <button onClick={() => setSelected(null)} className="rounded p-1 text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex-1 px-4 py-4 space-y-4">
+            {/* Toggle */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium">{activeSet.has(selected.id) ? "Active" : "Inactive"}</span>
+              <button onClick={() => toggle(selected.id)}
+                className={cn("flex h-6 w-11 items-center rounded-full p-0.5 transition-colors", activeSet.has(selected.id) ? "bg-primary" : "bg-secondary")}>
+                <span className={cn("block h-5 w-5 rounded-full bg-white transition-transform", activeSet.has(selected.id) && "translate-x-5")} />
+              </button>
+            </div>
+
+            {/* Description */}
+            {selected.description && (
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Description</div>
+                <p className="text-xs text-foreground/80 leading-relaxed">{selected.description}</p>
+              </div>
+            )}
+
+            {/* Tags */}
+            {tags(selected).length > 0 && (
+              <div>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tags</div>
+                <div className="flex flex-wrap gap-1">
+                  {tags(selected).map((t) => (
+                    <span key={t} className="rounded-md bg-secondary px-2 py-0.5 text-[10px] text-foreground/70">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Required tools */}
+            <div>
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Required Tools</div>
+              <div className="space-y-1">
+                {(selected.required_tools ?? []).map((t) => (
+                  <div key={t} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
+                    <Wrench className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span className="text-xs font-mono">{t}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Scripts */}
+            {Array.isArray(selected.config?.scripts) && selected.config.scripts.length > 0 && (
+              <div>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Scripts ({selected.config.scripts.length})</div>
+                <div className="space-y-1.5">
+                  {selected.config.scripts.map((sc: any, i: number) => (
+                    <details key={i} className="rounded-md border border-border">
+                      <summary className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-secondary/30">
+                        <FileCode className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="font-mono">{sc.name}</span>
+                      </summary>
+                      <pre className="bg-zinc-950 px-3 py-2 text-[10px] text-zinc-300 font-mono overflow-x-auto max-h-48 overflow-y-auto">{sc.content}</pre>
+                    </details>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* References */}
+            {Array.isArray(selected.config?.references) && selected.config.references.length > 0 && (
+              <div>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">References ({selected.config.references.length})</div>
+                <div className="space-y-1.5">
+                  {selected.config.references.map((ref: any, i: number) => (
+                    <details key={i} className="rounded-md border border-border">
+                      <summary className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-secondary/30">
+                        <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span>{ref.name}</span>
+                      </summary>
+                      <div className="px-3 py-2 text-[10px] text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">{ref.content}</div>
+                    </details>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* System prompt extension */}
+            {selected.system_prompt_extension && (
+              <details className="rounded-md border border-border">
+                <summary className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-secondary/30">
+                  <Brain className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Prompt Extension</span>
+                </summary>
+                <div className="px-3 py-2 text-[10px] text-muted-foreground whitespace-pre-wrap max-h-64 overflow-y-auto">{selected.system_prompt_extension}</div>
+              </details>
+            )}
+
+            {/* Metadata */}
+            <div className="border-t border-border pt-3 space-y-1 text-[10px] text-muted-foreground">
+              <div>Slug: <span className="font-mono text-foreground/70">{selected.slug}</span></div>
+              <div>Category: <span className="text-foreground/70">{CAT_LABELS[selected.category || "other"] ?? selected.category}</span></div>
+              {selected.is_system && <div className="text-primary font-medium">System skill</div>}
+            </div>
+          </div>
+        </aside>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Agent Artifacts tab: live run activity + deliverables ────────────────────
+function AgentArtifactsTab({ agentId }: { agentId: string }) {
+  const { projectId } = useCurrentContext();
+
+  const { data } = useQuery({
+    queryKey: ["agent_artifacts_runs", agentId],
+    enabled: !!agentId,
+    queryFn: async () => {
+      const { data: runs } = await supabase.from("internal_agent_runs")
+        .select("id, mission_id, status, created_at, finished_at")
+        .eq("agent_id", agentId).order("created_at", { ascending: false }).limit(10);
+      const runIds = (runs ?? []).map((r: any) => r.id);
+      const { data: events } = runIds.length
+        ? await supabase.from("internal_agent_run_events")
+            .select("id, run_id, kind, summary, created_at")
+            .in("run_id", runIds).order("created_at", { ascending: true }).limit(100)
+        : { data: [] };
+      const { data: deliverables } = await supabase.from("internal_agent_deliverables")
+        .select("id, run_id, kind, title, body, created_at")
+        .eq("agent_id", agentId).order("created_at", { ascending: false }).limit(20);
+      return { runs: runs ?? [], events: events ?? [], deliverables: deliverables ?? [] };
+    },
+    refetchInterval: 5000,
+  });
+
+  const runs = data?.runs ?? [];
+  const events = data?.events ?? [];
+  const deliverables = data?.deliverables ?? [];
+
+  const planningCards = runs.slice(0, 5).map((run: any) => {
+    const runEvents = events.filter((e: any) => e.run_id === run.id);
+    const steps: PlanStep[] = runEvents.map((ev: any, i: number): PlanStep => ({
+      id: ev.id,
+      title: ev.summary || ev.kind,
+      status: i === runEvents.length - 1 && run.status === "running" ? "active" :
+              ev.kind === "error" ? "error" : "success",
+      duration: new Date(ev.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    }));
+    if (run.status === "running" && steps.length === 0) {
+      steps.push({ id: "init", title: "Initializing…", status: "active" });
+    }
+    return { runId: run.id, status: run.status, steps };
+  });
+
+  return (
+    <div className="space-y-6 px-6 py-6 lg:px-10">
+      <h3 className="text-sm font-semibold">Agent Activity & Artifacts</h3>
+
+      {/* Live runs */}
+      {planningCards.filter((r) => r.status === "running").map((r) => (
+        <AgentPlanning key={r.runId} title="Agent is working" steps={r.steps} />
+      ))}
+
+      {/* Recent completed runs */}
+      {planningCards.filter((r) => r.status !== "running").slice(0, 3).map((r) => (
+        <AgentPlanning key={r.runId} title={`Run ${r.status}`} steps={r.steps} />
+      ))}
+
+      {/* Deliverables */}
+      {deliverables.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deliverables</h4>
+          <div className="space-y-1.5">
+            {deliverables.map((d: any) => (
+              <div key={d.id} className="rounded-lg border border-border p-3">
+                <div className="flex items-center gap-2">
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">{d.title}</span>
+                  <Badge variant="outline" className="text-[9px]">{d.kind}</Badge>
+                  <span className="ml-auto text-[10px] text-muted-foreground">
+                    {new Date(d.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+                {d.body && <p className="mt-1.5 text-xs text-muted-foreground line-clamp-3">{d.body}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {runs.length === 0 && deliverables.length === 0 && (
+        <p className="py-8 text-center text-sm text-muted-foreground">No activity yet. Assign a mission to this agent to see its work here.</p>
+      )}
+    </div>
+  );
+}
+
 // Re-export tab metadata so the sidebar can show the same labels/icons.
 export const INTERNAL_AGENT_TABS: { slug: InternalAgentTab; label: string; icon: any }[] = [
   { slug: "chat", label: "Chat", icon: MessageSquare },
   { slug: "mission", label: "Missions", icon: Target },
   { slug: "deliverables", label: "Deliverables", icon: Package },
+  { slug: "artifacts", label: "Artifacts", icon: Package },
+  { slug: "skills", label: "Skills", icon: Zap },
   { slug: "memory", label: "Memory", icon: Brain },
   { slug: "collaboration", label: "Collaboration", icon: Network },
   { slug: "instructions", label: "Instructions", icon: FileText },

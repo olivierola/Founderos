@@ -4,6 +4,7 @@
 import {
   Users, Handshake, FileText, Receipt, FolderKanban, ListChecks, Bot, Library,
   UserRound, UserPlus, LifeBuoy, Package, Truck, FileSignature, type LucideIcon,
+  MessageSquare, Server, GitBranch, Plug, Phone, Globe,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -28,10 +29,18 @@ export const ASSET_TYPES: AssetTypeDef[] = [
   { type: "invoice", label: "Invoice", plural: "Invoices", table: "fin_invoices", labelCol: "client_name", subCol: "number", icon: Receipt, color: "text-amber-500", group: "Finance" },
   { type: "bill", label: "Bill (AP)", plural: "Bills", table: "fin_bills", labelCol: "number", icon: FileSignature, color: "text-amber-500", group: "Finance" },
 
+  { type: "inbox", label: "Inbox / Channel", plural: "Channels", table: "project_channels", labelCol: "name", subCol: "description", icon: MessageSquare, color: "text-violet-500", group: "Communication" },
+  { type: "phone_line", label: "Phone line", plural: "Phone lines", table: "support_voice_lines", labelCol: "label", icon: Phone, color: "text-emerald-500", group: "Communication" },
+
   { type: "project", label: "Project", plural: "Projects", table: "pm_projects", labelCol: "name", icon: FolderKanban, color: "text-blue-500", group: "Delivery" },
   { type: "task", label: "Task", plural: "Tasks", table: "pm_tasks", labelCol: "title", icon: ListChecks, color: "text-blue-500", group: "Delivery" },
 
   { type: "ticket", label: "Ticket", plural: "Support tickets", table: "support_tickets", labelCol: "subject", subCol: "requester_email", icon: LifeBuoy, color: "text-sky-500", group: "Support" },
+
+  { type: "server", label: "Server", plural: "Servers", table: "ops_servers", labelCol: "name", subCol: "ip_address", icon: Server, color: "text-red-500", group: "Infrastructure" },
+  { type: "repo", label: "Repository", plural: "Repositories", table: "repositories", labelCol: "name", subCol: "full_name", icon: GitBranch, color: "text-indigo-500", group: "Infrastructure" },
+  { type: "connector", label: "Integration", plural: "Integrations", table: "connectors", labelCol: "provider", icon: Plug, color: "text-pink-500", group: "Infrastructure" },
+  { type: "website", label: "Website", plural: "Websites", table: "app_health_monitors", labelCol: "url", icon: Globe, color: "text-amber-500", group: "Infrastructure" },
 
   { type: "agent", label: "Agent", plural: "Agents", table: "internal_agents", labelCol: "name", icon: Bot, color: "text-fuchsia-500", group: "AI & Knowledge" },
   { type: "rag_collection", label: "RAG collection", plural: "RAG collections", table: "rag_collections", labelCol: "name", icon: Library, color: "text-violet-500", group: "AI & Knowledge" },

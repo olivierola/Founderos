@@ -280,7 +280,15 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
                           {(() => { const TI = iconByName(object.icon); return <TI className={cn("h-3.5 w-3.5 shrink-0 opacity-70", object.color)} />; })()}
                           <span className="truncate font-medium">{String(rec.data[p.key] ?? "Untitled")}</span>
                         </button>
-                        <button onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`)}
+                        <button onClick={() => {
+                          if (object.source_table === "module_projects" && rec.source_id) {
+                            const mp = rec.data as any;
+                            const slug = mp?.module_slug ?? "";
+                            navigate(`/app/${workspaceSlug}/${projectSlug}/${slug}/project/${rec.source_id}`);
+                          } else {
+                            navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`);
+                          }
+                        }}
                           className="ml-auto mr-1 hidden shrink-0 items-center gap-1 rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground group-hover/r:flex">
                           <Maximize2 className="h-3 w-3" /> Open
                         </button>

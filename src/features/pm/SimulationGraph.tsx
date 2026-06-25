@@ -8,31 +8,59 @@ import { cn } from "@/lib/utils";
 export interface GraphPersona {
   id: string; name: string; role: string | null; avatar_emoji: string | null;
   population: number; sentiment_score: number; cluster: string | null;
+  persona_type?: string | null;
 }
 export interface GraphRelation { source_id: string; target_id: string; kind: string; label: string | null; strength: number }
 
 interface SimNode extends GraphPersona { x?: number; y?: number; fx?: number | null; fy?: number | null }
 interface SimLink { source: any; target: any; kind: string; label: string | null; strength: number }
 
-// Sentiment color: red (negative) → grey (neutral) → green (positive).
 function sentimentColor(s: number): string {
   if (s > 0.15) return "#22c55e";
   if (s < -0.15) return "#ef4444";
   return "#94a3b8";
 }
 
-// MiroFish-style force-directed persona graph: nodes = archetypes (radius ∝
-// population), curved links = relations (width ∝ strength, label = kind). Pan,
-// zoom and drag; click a node to inspect / chat.
+const PERSONA_TYPE_COLORS: Record<string, string> = {
+  early_adopter: "#8b5cf6",
+  mainstream: "#3b82f6",
+  skeptic: "#ef4444",
+  power_user: "#f59e0b",
+  decision_maker: "#10b981",
+  influencer: "#ec4899",
+  price_sensitive: "#f97316",
+  loyalist: "#06b6d4",
+  churner: "#6b7280",
+  edge_case: "#a855f7",
+};
+
+function personaTypeColor(type: string | null | undefined): string {
+  return PERSONA_TYPE_COLORS[type ?? ""] ?? "#94a3b8";
+}
+
+const RELATION_KIND_COLORS: Record<string, string> = {
+  family: "#f43f5e", friend: "#f97316", colleague: "#3b82f6",
+  mentor: "#10b981", follower: "#8b5cf6", influencer_to_community: "#ec4899",
+  media_influence: "#eab308", competitor: "#ef4444", rival: "#dc2626",
+  ally: "#22c55e", peer: "#94a3b8", authority: "#6366f1",
+  customer_of: "#14b8a6", community_member: "#a855f7",
+};
+
+function relationColor(kind: string): string {
+  return RELATION_KIND_COLORS[kind] ?? "#8b93a1";
+}
+
 export function SimulationGraph({
   personas, relations, onSelect, height, showLabels = true, fill = false,
+  colorBy = "sentiment",
 }: {
   personas: GraphPersona[];
   relations: GraphRelation[];
   onSelect?: (p: GraphPersona) => void;
   height?: number;
   showLabels?: boolean;
-  fill?: boolean; // fill the parent container's height
+  fill?: boolean;
+  colorBy?: "sentiment" | "persona_type";
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const simRef = useRef<Simulation<SimNode, undefined> | null>(null);
@@ -44,10 +72,15 @@ export function SimulationGraph({
     const h = el.clientHeight || height || 460;
     el.innerHTML = "";
 
-    const big = personas.length > 120; // dense graph → simplify for performance
+    const big = personas.length > 120;
     const maxPop = Math.max(1, ...personas.map((p) => p.population || 1));
-    // Dot nodes (MiroFish-style). Keep them comfortably visible even when dense.
-    const radius = (p: GraphPersona) => (big ? 6 : 5 + 7 * Math.sqrt((p.population || 1) / maxPop));
+    const radius = (p: GraphPersona) => {
+      const normPop = Math.sqrt((p.population || 1) / maxPop);
+      return big ? 6 : 8 + 20 * normPop;
+    };
+
+    const nodeColor = (d: GraphPersona) =>
+      colorBy === "persona_type" ? personaTypeColor(d.persona_type) : sentimentColor(d.sentiment_score);
 
     const nodes: SimNode[] = personas.map((p) => ({ ...p }));
     const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -57,7 +90,6 @@ export function SimulationGraph({
 
     const svg = select(el).append("svg").attr("width", "100%").attr("height", h).attr("viewBox", `0 0 ${width} ${h}`);
     const g = svg.append("g");
-    // defs: arrowhead for directed influence (sized for small dot nodes).
     svg.append("defs").append("marker")
       .attr("id", "sim-arrow").attr("viewBox", "0 -5 10 10").attr("refX", 14).attr("refY", 0)
       .attr("markerWidth", 5).attr("markerHeight", 5).attr("orient", "auto")
@@ -65,13 +97,12 @@ export function SimulationGraph({
 
     svg.call(d3zoom<SVGSVGElement, unknown>().scaleExtent([0.2, 4]).on("zoom", (e) => g.attr("transform", e.transform)) as any);
 
-    // Links — clearly visible grey lines, width ∝ strength. Straight + lighter
-    // when the graph is dense (perf).
     const link = g.append("g").selectAll("path").data(links).enter().append("path")
       .attr("fill", "none")
-      .attr("stroke", "#8b93a1")
-      .attr("stroke-opacity", big ? 0.4 : 0.55)
+      .attr("stroke", (d) => relationColor(d.kind))
+      .attr("stroke-opacity", big ? 0.4 : 0.6)
       .attr("stroke-width", (d) => (big ? 0.9 : 1 + 2 * (d.strength || 0.5)))
+      .attr("stroke-dasharray", (d) => (d.kind === "rival" || d.kind === "competitor") ? "4,3" : null)
       .attr("marker-end", big ? null : "url(#sim-arrow)");
 
     const linkLabel = g.append("g").selectAll("text").data(big ? [] : links).enter().append("text")
@@ -82,33 +113,38 @@ export function SimulationGraph({
     const node = g.append("g").selectAll("g").data(nodes).enter().append("g").style("cursor", "pointer")
       .on("click", (_e, d) => onSelect?.(d));
 
-    // Solid dot, colored by sentiment, with a subtle ring.
     node.append("circle")
       .attr("r", (d) => radius(d))
-      .attr("fill", (d) => sentimentColor(d.sentiment_score))
+      .attr("fill", (d) => nodeColor(d))
       .attr("stroke", "hsl(var(--background))")
       .attr("stroke-width", 1.5);
 
     if (!big) {
       node.append("text").text((d) => d.name)
-        .attr("text-anchor", "middle").attr("dy", (d) => radius(d) + 11)
+        .attr("text-anchor", "middle").attr("dy", (d) => radius(d) + 12)
         .attr("font-size", 10).attr("fill", "hsl(var(--foreground))").attr("pointer-events", "none");
+
+      node.append("text").text((d) => (d.population > 1 ? d.population.toLocaleString() : ""))
+        .attr("text-anchor", "middle").attr("dy", (d) => radius(d) + 23)
+        .attr("font-size", 8).attr("fill", "hsl(var(--muted-foreground))").attr("opacity", 0.7).attr("pointer-events", "none");
     }
 
-    node.append("title").text((d) => `${d.name}\n${d.role ?? ""}\npopulation: ${d.population}\nsentiment: ${d.sentiment_score.toFixed(2)}`);
+    node.append("title").text((d) =>
+      `${d.name}\n${d.role ?? ""}\nType: ${d.persona_type ?? "?"}\nPopulation: ${d.population.toLocaleString()}\nSentiment: ${d.sentiment_score.toFixed(2)}`
+    );
 
     const sim = forceSimulation<SimNode>(nodes)
-      .force("link", forceLink<SimNode, SimLink>(links).id((d: any) => d.id).distance(90).strength((d) => 0.15 + 0.5 * (d.strength || 0.5)))
-      .force("charge", forceManyBody().strength(-220))
+      .force("link", forceLink<SimNode, SimLink>(links).id((d: any) => d.id).distance(100).strength((d) => 0.15 + 0.5 * (d.strength || 0.5)))
+      .force("charge", forceManyBody().strength(-280))
       .force("center", forceCenter(width / 2, h / 2))
-      .force("collide", forceCollide<SimNode>().radius((d) => radius(d) + (big ? 6 : 24)))
+      .force("collide", forceCollide<SimNode>().radius((d) => radius(d) + (big ? 6 : 28)))
       .force("x", forceX(width / 2).strength(0.04))
       .force("y", forceY(h / 2).strength(0.04));
     simRef.current = sim;
 
     function curve(d: SimLink): string {
       const sx = d.source.x ?? 0, sy = d.source.y ?? 0, tx = d.target.x ?? 0, ty = d.target.y ?? 0;
-      if (big) return `M${sx},${sy} L${tx},${ty}`; // straight lines when dense
+      if (big) return `M${sx},${sy} L${tx},${ty}`;
       const dx = tx - sx, dy = ty - sy, dist = Math.hypot(dx, dy) || 1;
       const off = Math.max(20, dist * 0.16);
       const cx = (sx + tx) / 2 - dy / dist * off, cy = (sy + ty) / 2 + dx / dist * off;
@@ -129,7 +165,7 @@ export function SimulationGraph({
     );
 
     return () => { sim.stop(); el.innerHTML = ""; };
-  }, [personas, relations, height, onSelect, showLabels]);
+  }, [personas, relations, height, onSelect, showLabels, colorBy]);
 
   return (
     <div

@@ -42,6 +42,8 @@ interface AgentRow {
   project_id: string;
   is_archived: boolean;
   collaboration_enabled: boolean;
+  sandbox_mode: "cloud" | "sandbox";
+  sandbox_url: string | null;
 }
 
 // Rough per-1k-token rates (USD). Adjust as providers change pricing.
@@ -61,8 +63,10 @@ function estimateCost(
 // All internal agents run on DeepSeek for stronger reasoning, unless an agent
 // explicitly pins "groq" or DeepSeek isn't configured (then we fall back).
 function providerFor(agent: AgentRow): "groq" | "deepseek" {
-  if (agent.model === "groq") return "groq";
-  return Deno.env.get("DEEPSEEK_API_KEY") ? "deepseek" : "groq";
+  // DeepSeek is strongly preferred for agents — much better at tool calling.
+  // Only use Groq if explicitly set AND no DeepSeek key is available.
+  if (Deno.env.get("DEEPSEEK_API_KEY")) return "deepseek";
+  return "groq";
 }
 const AGENT_MODEL: Record<"groq" | "deepseek", string | undefined> = {
   deepseek: Deno.env.get("AGENT_MODEL_DEEPSEEK") || "deepseek-v4-pro",
@@ -91,12 +95,16 @@ function buildSystemPrompt(
   mode: "chat" | "mission",
   memorySection: string,
   teamMemorySection: string,
+  skillPrompts: string = "",
 ): string {
   const lines: string[] = [];
   lines.push(`You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`);
   lines.push(`You work as part of a TEAM of agents — you can discover, message and delegate to peers, and share knowledge through the team memory.`);
   if (agent.instructions) {
     lines.push("", "Your detailed instructions:", agent.instructions);
+  }
+  if (skillPrompts) {
+    lines.push("", "## Activated Skills", skillPrompts);
   }
   if (memorySection) {
     lines.push(
@@ -146,7 +154,7 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled")
+      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -242,6 +250,7 @@ function makeToolContext(opts: {
     autopilot: false,
     runId,
     conversationId: opts.conversationId ?? null,
+    sandboxUrl: agent.sandbox_mode === "sandbox" ? (agent.sandbox_url || Deno.env.get("SANDBOX_URL") || null) : null,
     createDeliverable: async (d) => {
       await admin.from("internal_agent_deliverables").insert({
         run_id: runId,
@@ -305,6 +314,18 @@ function makeToolContext(opts: {
 
 async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: string) {
   const admin = createServiceClient();
+
+  // Create a lightweight run so tool calls are logged and visible in real-time.
+  const { data: chatRun } = await admin.from("internal_agent_runs").insert({
+    agent_id: agent.id,
+    workspace_id: agent.workspace_id,
+    project_id: agent.project_id,
+    status: "running",
+    started_at: new Date().toISOString(),
+    triggered_via: "chat",
+  }).select("id").single();
+  const chatRunId = chatRun?.id ?? null;
+
   const { data: history } = await admin
     .from("internal_agent_messages")
     .select("role, content")
@@ -312,26 +333,38 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
     .order("created_at", { ascending: true })
     .limit(30);
 
-  const ctx = makeToolContext({ admin, agent, runId: null, missionId: null, conversationId });
+  const ctx = makeToolContext({ admin, agent, runId: chatRunId, missionId: null, conversationId });
   const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
-  const [memorySection, teamMemorySection] = await Promise.all([
+  const [memorySection, teamMemorySection, chatSkillActivations] = await Promise.all([
     loadMemorySection(admin, agent.id),
     loadTeamMemorySection(admin, agent.project_id),
+    admin.from("agent_skill_activations").select("skill:agent_skills(system_prompt_extension)").eq("agent_id", agent.id).then((r) => r.data ?? []),
   ]);
+  const chatSkillPrompts = chatSkillActivations.map((a: any) => a.skill?.system_prompt_extension).filter(Boolean).join("\n\n");
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "chat", memorySection, teamMemorySection) },
+    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "chat", memorySection, teamMemorySection, chatSkillPrompts) },
     ...(history ?? [])
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
   ];
   if (messages.length === 1) messages.push({ role: "user", content: "Greet the user." });
 
+  if (chatRunId) await ctx.logEvent("status", { message: "Chat started — thinking…" });
+
+  // Wrap executor to auto-log every tool call and result.
+  const loggingExecutor: typeof executor = async (toolName, args) => {
+    await ctx.logEvent("tool_call", { tool: toolName, args });
+    const result = await executor(toolName, args);
+    await ctx.logEvent("tool_result", { tool: toolName, preview: String(result).slice(0, 500) });
+    return result;
+  };
+
   const provider = providerFor(agent);
   const result = await runTools(provider, {
     messages,
     tools: defs,
-    executor,
+    executor: chatRunId ? loggingExecutor : executor,
     temperature: agent.temperature,
     maxTokens: 1500,
     maxRounds: Math.min(agent.max_steps, 6),
@@ -349,7 +382,19 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
     cost_usd: cost,
   });
 
-  // Bump the session so the conversation list sorts by recency.
+  // Mark chat run as complete.
+  if (chatRunId) {
+    await admin.from("internal_agent_runs").update({
+      status: "succeeded",
+      finished_at: new Date().toISOString(),
+      final_output: result.content?.slice(0, 2000),
+      tokens_in: result.usage?.prompt_tokens ?? 0,
+      tokens_out: result.usage?.completion_tokens ?? 0,
+      cost_usd: cost,
+      action_count: result.toolCalls.length,
+    }).eq("id", chatRunId);
+  }
+
   await admin
     .from("internal_agent_conversations")
     .update({ updated_at: new Date().toISOString() })
@@ -408,10 +453,15 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
   const { defs, executor, capabilitySummary } = buildInternalToolset(tools, ctx);
   await ctx.logEvent("log", { message: `Run started — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
 
-  const [memorySection, teamMemorySection] = await Promise.all([
+  const [memorySection, teamMemorySection, skillActivations] = await Promise.all([
     loadMemorySection(admin, agent.id),
     loadTeamMemorySection(admin, agent.project_id),
+    admin.from("agent_skill_activations").select("skill:agent_skills(system_prompt_extension)").eq("agent_id", agent.id).then((r) => r.data ?? []),
   ]);
+  const skillPrompts = skillActivations
+    .map((a: any) => a.skill?.system_prompt_extension)
+    .filter(Boolean)
+    .join("\n\n");
 
   // Continuity for re-runs (especially scheduled missions): show the agent
   // what its last successful run produced so it builds on it instead of
@@ -443,15 +493,23 @@ ${mission.acceptance_criteria ? `## Acceptance criteria\n${mission.acceptance_cr
 ${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}${previousRunSection}
 Execute this mission now. Use your tools to gather what you need, save each expected deliverable with create_deliverable, then write your final mission report.`;
 
+  // Wrap executor to auto-log every tool call and result for observability.
+  const missionLoggingExecutor: typeof executor = async (toolName, args) => {
+    await ctx.logEvent("tool_call", { tool: toolName, args });
+    const result = await executor(toolName, args);
+    await ctx.logEvent("tool_result", { tool: toolName, preview: String(result).slice(0, 500) });
+    return result;
+  };
+
   const provider = providerFor(agent);
   try {
     const result = await runTools(provider, {
       messages: [
-        { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection, teamMemorySection) },
+        { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection, teamMemorySection, skillPrompts) },
         { role: "user", content: userPrompt },
       ],
       tools: defs,
-      executor,
+      executor: missionLoggingExecutor,
       temperature: agent.temperature,
       maxTokens: 4000,
       maxRounds: agent.max_steps,

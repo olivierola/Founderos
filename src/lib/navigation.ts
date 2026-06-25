@@ -11,6 +11,8 @@ import {
   Wallet,
   Truck,
   Shapes,
+  LayoutDashboard,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react";
 
@@ -77,159 +79,30 @@ export function itemsInGroup(module: ModuleNavItem, group: string): SubNavItem[]
 
 export const MODULES: ModuleNavItem[] = [
   {
-    slug: "assets",
-    label: "Assets",
-    icon: Shapes,
-    color: "text-indigo-400/60",
+    slug: "hq",
+    label: "AI HQ",
+    icon: LayoutDashboard,
+    color: "text-primary",
     subItems: [
-      { label: "Asset map", slug: "map" },
+      { label: "Dashboard", slug: "dashboard" },
     ],
   },
   {
-    slug: "software",
-    label: "Software",
-    icon: AppWindow,
+    slug: "projects",
+    label: "Projects",
+    icon: FolderKanban,
+    color: "text-amber-400/60",
+    subItems: [
+      { label: "All projects", slug: "all" },
+    ],
+  },
+  {
+    slug: "simulations",
+    label: "Simulations",
+    icon: FlaskConical,
     color: "text-violet-400/60",
-    // The `group` is the primary nav axis (rendered as sidebar sections); the
-    // items within each group are the horizontal tabs.
-    groupsAsTabs: true,
     subItems: [
-      // Overview and Session Replay are single-tab groups.
-      { label: "Overview", slug: "overview", group: "Overview" },
-      { label: "Session Replay", slug: "session-replay", group: "Session Replay" },
-
-      { label: "Events",             slug: "events",               group: "Behavior" },
-      { label: "Growth",             slug: "growth" },
-      { label: "Activation",         slug: "activation" },
-      { label: "Funnels",            slug: "funnels" },
-      { label: "Cohorts & Retention", slug: "retention" },
-      { label: "Journeys",           slug: "users-journeys" },
-
-      { label: "All Users",          slug: "users-all",            group: "Users" },
-      { label: "User 360",           slug: "users-360" },
-      { label: "Per-User Analytics", slug: "users-per-user" },
-      { label: "Group Analytics",    slug: "users-groups" },
-      { label: "Segments",           slug: "users-segments" },
-      { label: "Engagement",         slug: "users-engagement" },
-      { label: "Health Scores",      slug: "users-health-scores" },
-      { label: "Churn Risk",         slug: "users-churn" },
-
-      // ── merged from the former Finance module ──
-      { label: "Revenue",            slug: "revenue",              group: "Revenue" },
-      { label: "Transactions",       slug: "transactions" },
-      { label: "MRR Movement",       slug: "mrr-movement" },
-      { label: "Subscriptions",      slug: "subscriptions" },
-      { label: "Customers",          slug: "customers" },
-      { label: "Cohorts",            slug: "cohorts" },
-      { label: "LTV by cohort",      slug: "users-cohorts" },
-      { label: "Forecasting",        slug: "forecasting" },
-      { label: "Investor Metrics",   slug: "investor-metrics" },
-      { label: "Billing funnel",     slug: "users-funnels" },
-      { label: "Reports",            slug: "reports" },
-
-      { label: "Overview",           slug: "costs-overview",       group: "Costs" },
-      { label: "Providers",          slug: "costs-providers" },
-      { label: "LLM Costs",          slug: "costs-llm" },
-      { label: "Cost per User",      slug: "costs-per-user" },
-      { label: "Budgets",            slug: "costs-budgets" },
-      { label: "Optimization",       slug: "costs-optimization" },
-      { label: "Invoices",           slug: "costs-invoices" },
-
-      { label: "App Status",         slug: "health-status",        group: "App Health" },
-      { label: "Uptime",             slug: "health-uptime" },
-      { label: "Errors",             slug: "health-errors" },
-      { label: "Performance",        slug: "health-performance" },
-      { label: "Incidents",          slug: "health-incidents" },
-
-      // ── Admin tools (merged from the former Admin panel) ──
-      { label: "Actions Center",     slug: "quick-actions",        group: "Admin" },
-      { label: "User Management",    slug: "user-management" },
-      { label: "Billing Operations", slug: "stripe-operations" },
-      { label: "Database Console",   slug: "database-console" },
-      { label: "Email Sender",       slug: "email-sender" },
-      { label: "Webhooks",           slug: "webhooks" },
-      { label: "Runbooks",           slug: "runbooks" },
-      { label: "Audit Log",          slug: "audit-log" },
-    ],
-  },
-  {
-    slug: "devops",
-    label: "DevOps",
-    icon: TerminalSquare,
-    color: "text-sky-500/55",
-    // Code, Security and Ops are sidebar sections; their pages are tabs.
-    groupsAsTabs: true,
-    subItems: [
-      // ── Code ──
-      { label: "Overview", slug: "overview", group: "Code" },
-      { label: "Repositories", slug: "repositories" },
-      { label: "Scan Results", slug: "scan-results" },
-      { label: "Compare Scans", slug: "compare-scans" },
-      { label: "Architecture Map", slug: "architecture-map" },
-      { label: "Dependencies", slug: "dependencies" },
-      { label: "API Usage", slug: "api-usage" },
-      { label: "Database Schema", slug: "database-schema" },
-      { label: "Tech Debt", slug: "tech-debt" },
-
-      // ── Security ──
-      { label: "Overview", slug: "security-overview", group: "Security" },
-      { label: "Risk Score", slug: "security-risk-score" },
-      { label: "CVE Alerts", slug: "security-cve-alerts" },
-      { label: "Secrets Detection", slug: "security-secrets" },
-      { label: "License Audit", slug: "security-license-audit" },
-      { label: "Compliance Watch", slug: "security-compliance" },
-      { label: "Scans & Pentest", slug: "security-scans" },
-
-      // ── Ops (merged from the former Ops module) ──
-      { label: "Overview", slug: "ops-overview", group: "Ops" },
-      { label: "Servers", slug: "servers" },
-      { label: "Deployments", slug: "deployments" },
-      { label: "Workflows", slug: "workflows" },
-      { label: "Checks", slug: "checks" },
-      { label: "Jobs & Audit", slug: "jobs" },
-      { label: "Settings", slug: "settings" },
-
-      // ── Testing (agentic E2E) ──
-      { label: "E2E Tests", slug: "testing", group: "Testing" },
-    ],
-  },
-  {
-    slug: "agent",
-    label: "RAG Agent",
-    icon: BrainCircuit,
-    color: "text-white",
-    subItems: [
-      { label: "Public agents", slug: "agents", group: "Agents" },
-      { label: "Autonomous agents", slug: "internal-agents" },
-      { label: "Agent ecosystem", slug: "ecosystem" },
-      { label: "Tasks", slug: "tasks" },
-      { label: "Onboarding", slug: "onboarding" },
-
-      // ── Centralised knowledge bases ("RAG centers") reusable across agents. ──
-      { label: "RAG Center", slug: "knowledge", group: "Knowledge" },
-
-      // ── AI Agent tools (the Assistant "Chat" now lives in the global
-      //    top-bar panel, so it's intentionally not listed here; route kept). ──
-      { label: "Insights", slug: "insights", group: "AI Agent" },
-      { label: "Reports", slug: "reports" },
-      { label: "Workflows", slug: "workflows" },
-      { label: "Prompt Templates", slug: "prompt-templates" },
-      { label: "Guardrails", slug: "guardrails" },
-    ],
-  },
-  {
-    slug: "office",
-    label: "Création",
-    icon: FileStack,
-    color: "text-orange-400/60",
-    subItems: [
-      { label: "Library", slug: "library", group: "Documents" },
-      { label: "Documents", slug: "documents", group: "Documents" },
-      { label: "Spreadsheets", slug: "spreadsheets", group: "Documents" },
-      { label: "Presentations", slug: "presentations", group: "Documents" },
-      { label: "Image studio", slug: "gen-image", group: "Gen AI" },
-      { label: "Video studio", slug: "gen-video", group: "Gen AI" },
-      { label: "Copywriter", slug: "gen-copy", group: "Gen AI" },
+      { label: "Simulations", slug: "list" },
     ],
   },
   {
@@ -238,82 +111,19 @@ export const MODULES: ModuleNavItem[] = [
     icon: Handshake,
     color: "text-emerald-400/60",
     subItems: [
-      // Object workspace (Attio/Notion-style: People, Companies, Opportunities,
-      // Tasks, Notes, Dashboards, Software + custom objects). Full-bleed page
-      // with its own object sidebar.
       { label: "Records", slug: "workspace", group: "CRM" },
-
-      // Admin cockpit merged into CRM (more relevant alongside customer data).
       { label: "Dashboard", slug: "admin-dashboard", group: "Admin" },
       { label: "Custom Dashboards", slug: "admin-custom-dashboards" },
       { label: "Alerts", slug: "admin-alerts" },
     ],
   },
   {
-    slug: "support",
-    label: "Support",
-    icon: LifeBuoy,
-    color: "text-sky-400/60",
+    slug: "agent",
+    label: "AI Workforce",
+    icon: BrainCircuit,
+    color: "text-white",
     subItems: [
-      { label: "Overview", slug: "overview", group: "Inbox" },
-      { label: "Tickets", slug: "tickets" },
-      { label: "Call center", slug: "calls" },
-      { label: "Analytics", slug: "analytics" },
-
-      { label: "Knowledge base", slug: "knowledge-base", group: "Self-service" },
-      { label: "Help center portal", slug: "portal" },
-      { label: "Macros", slug: "macros" },
-
-      { label: "Channels", slug: "channels", group: "Configuration" },
-      { label: "SLA & routing", slug: "sla-routing" },
-    ],
-  },
-  {
-    slug: "pm",
-    label: "Projets",
-    icon: FolderKanban,
-    color: "text-amber-400/60",
-    subItems: [
-      { label: "Boards", slug: "boards", group: "Delivery" },
-      { label: "Gantt", slug: "gantt", group: "Delivery" },
-      { label: "My tasks", slug: "my-tasks", group: "Delivery" },
-      { label: "Timesheets", slug: "timesheets", group: "PSA" },
-      { label: "Resourcing", slug: "resourcing", group: "PSA" },
-      { label: "Profitability", slug: "profitability", group: "PSA" },
-      { label: "Inbox", slug: "inbox", group: "Collaboration" },
-      { label: "Whiteboard", slug: "whiteboard", group: "Collaboration" },
-      { label: "Simulations", slug: "simulations", group: "Collaboration" },
-    ],
-  },
-  {
-    slug: "supply",
-    label: "Supply Chain",
-    icon: Truck,
-    color: "text-orange-400/60",
-    subItems: [
-      { label: "Control tower", slug: "overview", group: "Visibility" },
-      { label: "Inventory", slug: "inventory", group: "Operations" },
-      { label: "Sales orders", slug: "sales-orders", group: "Operations" },
-      { label: "Returns (RMA)", slug: "returns", group: "Operations" },
-      { label: "Purchase orders", slug: "purchase-orders", group: "Procurement" },
-      { label: "Suppliers", slug: "suppliers", group: "Procurement" },
-      { label: "Shipments", slug: "shipments", group: "Logistics" },
-    ],
-  },
-  {
-    slug: "finance-mod",
-    label: "Finance",
-    icon: Wallet,
-    color: "text-lime-400/60",
-    subItems: [
-      { label: "Overview", slug: "overview", group: "Reporting" },
-      { label: "Reporting", slug: "reporting", group: "Reporting" },
-      { label: "Budgets", slug: "budgets", group: "Reporting" },
-      { label: "Invoices (AR)", slug: "invoices", group: "Receivable" },
-      { label: "Bills (AP)", slug: "bills", group: "Payable" },
-      { label: "Expenses", slug: "expenses", group: "Payable" },
-      { label: "Treasury", slug: "treasury", group: "Cash" },
-      { label: "General ledger", slug: "ledger", group: "Accounting" },
+      { label: "Agents", slug: "internal-agents" },
     ],
   },
   {

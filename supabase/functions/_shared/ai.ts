@@ -57,6 +57,10 @@ const GROQ_MODEL = "llama-3.3-70b-versatile";
 const DEEPSEEK_MODEL = "deepseek-chat";
 
 export async function callAi(opts: CallOpts): Promise<{ content: string; provider: "groq" | "deepseek"; model: string; usage?: ChatResponse["usage"] }> {
+  // Admin kill-switch: set LLM_GLOBAL_BLOCK=1 to immediately prevent any LLM calls.
+  if (Deno.env.get("LLM_GLOBAL_BLOCK") === "1") {
+    throw new Error("LLM calls are disabled by environment (LLM_GLOBAL_BLOCK=1)");
+  }
   const provider = opts.provider ?? routeAiRequest(opts.task);
   const apiKey =
     provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
@@ -159,6 +163,10 @@ const TOOL_ENDPOINTS = {
 } as const;
 
 export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResult> {
+  // Admin kill-switch: set LLM_GLOBAL_BLOCK=1 to immediately prevent any LLM calls.
+  if (Deno.env.get("LLM_GLOBAL_BLOCK") === "1") {
+    throw new Error("LLM calls are disabled by environment (LLM_GLOBAL_BLOCK=1)");
+  }
   const provider = opts.provider ?? "groq";
   const apiKey =
     provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
@@ -189,7 +197,21 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
     }
 
     const choice = json.choices?.[0]?.message;
-    const calls = choice?.tool_calls ?? [];
+    let calls = choice?.tool_calls ?? [];
+
+    // Recover tool calls that leaked into the content as text. Some models
+    // (DeepSeek's <｜｜DSML｜｜invoke> markers, Groq's <function=…>) emit tool
+    // calls as plain text instead of proper tool_calls → parse and execute.
+    if (!calls.length && choice?.content) {
+      const recovered = parseEmbeddedToolCalls(choice.content);
+      if (recovered.length) {
+        calls = recovered.map((r, i) => ({
+          id: `embedded_${round}_${i}`,
+          type: "function",
+          function: { name: r.name, arguments: JSON.stringify(r.args) },
+        }));
+      }
+    }
 
     // No tool calls → final answer.
     if (!calls.length) {
@@ -204,6 +226,19 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
 
     // Echo the assistant message that requested the tools, then run each tool
     // and append its result so the model can continue.
+    // Fix Groq malformed tool calls: name sometimes contains args fused
+    // e.g. 'http_get{"url":"..."}' → split into name='http_get', args={url:...}
+    for (const call of calls) {
+      const raw = call.function.name ?? "";
+      const braceIdx = raw.indexOf("{");
+      if (braceIdx > 0) {
+        call.function.name = raw.slice(0, braceIdx);
+        try {
+          const embeddedArgs = JSON.parse(raw.slice(braceIdx));
+          call.function.arguments = JSON.stringify({ ...embeddedArgs, ...JSON.parse(call.function.arguments || "{}") });
+        } catch { /* keep original */ }
+      }
+    }
     messages.push({ role: "assistant", content: choice?.content ?? null, tool_calls: calls });
     for (const call of calls) {
       let args: Record<string, unknown> = {};
@@ -251,6 +286,56 @@ interface ToolChatResponse {
   model: string;
 }
 
+// Parse tool calls that a model emitted as plain TEXT in its content instead of
+// proper tool_calls. Handles two leaked formats:
+//   1. DeepSeek DSML/XML:  <…invoke name="TOOL">…<…parameter name="P" …>VALUE</…parameter>…</…invoke>
+//   2. Groq function tag:  <function=TOOL>{json}</function>
+// Returns parsed { name, args } pairs (empty if none / not a leaked tool call).
+export function parseEmbeddedToolCalls(content: string): Array<{ name: string; args: Record<string, unknown> }> {
+  const out: Array<{ name: string; args: Record<string, unknown> }> = [];
+  if (!content || (!content.includes("invoke name=") && !content.includes("<function="))) return out;
+
+  // Format 1: XML-style invoke/parameter blocks (DeepSeek <｜｜DSML｜｜…> and similar).
+  // Match each `invoke name="TOOL"` … up to the matching closing invoke (or end).
+  const invokeRe = /invoke\s+name\s*=\s*"([^"]+)"\s*>([\s\S]*?)(?:<[^>]*\/\s*invoke\s*>|<\/[^>]*invoke>|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = invokeRe.exec(content))) {
+    const name = m[1].trim();
+    const body = m[2];
+    const args: Record<string, unknown> = {};
+    // Each parameter: `parameter name="P" …>VALUE</…parameter>`
+    const paramRe = /parameter\s+name\s*=\s*"([^"]+)"[^>]*>([\s\S]*?)(?:<[^>]*\/\s*parameter\s*>|<\/[^>]*parameter>)/g;
+    let p: RegExpExecArray | null;
+    while ((p = paramRe.exec(body))) {
+      const key = p[1].trim();
+      let val: string = p[2];
+      // Trim a single leading/trailing newline that the format usually adds.
+      val = val.replace(/^\r?\n/, "").replace(/\r?\n\s*$/, "");
+      // Coerce JSON-looking values; otherwise keep as string.
+      const t = val.trim();
+      if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+        try { args[key] = JSON.parse(t); continue; } catch { /* keep string */ }
+      }
+      if (t === "true" || t === "false") { args[key] = t === "true"; continue; }
+      if (t !== "" && !isNaN(Number(t)) && /^-?\d+(\.\d+)?$/.test(t)) { args[key] = Number(t); continue; }
+      args[key] = val;
+    }
+    if (name) out.push({ name, args });
+  }
+  if (out.length) return out;
+
+  // Format 2: <function=TOOL>{json}</function>
+  const fnRe = /<function\s*=\s*([a-zA-Z0-9_-]+)\s*>([\s\S]*?)(?:<\/function>|$)/g;
+  while ((m = fnRe.exec(content))) {
+    const name = m[1].trim();
+    const jsonStr = extractFirstJsonObject(m[2]) ?? "{}";
+    let args: Record<string, unknown> = {};
+    try { args = JSON.parse(jsonStr); } catch { /* keep {} */ }
+    if (name) out.push({ name, args });
+  }
+  return out;
+}
+
 // Groq/Llama sometimes emit a tool call as text — "<function=NAME>{json}" — and
 // the API rejects it with 400 tool_use_failed, exposing the attempt in
 // `failed_generation`. Recover it into a proper tool_calls response so the loop
@@ -258,7 +343,27 @@ interface ToolChatResponse {
 function recoverFailedToolCall(rawBody: string): ToolChatResponse | null {
   try {
     const err = JSON.parse(rawBody)?.error;
-    if (!err || err.code !== "tool_use_failed" || !err.failed_generation) return null;
+    if (!err) return null;
+
+    // Pattern: "attempted to call tool 'toolName{args}' which was not in request.tools"
+    // The model fused the tool name with its arguments.
+    if (err.message && /which was not in request\.tools/.test(err.message)) {
+      const m = err.message.match(/call tool '([a-zA-Z_]+)(\{[\s\S]*?\})'/);
+      if (m) {
+        const name = m[1];
+        const args = m[2];
+        return {
+          choices: [{ message: {
+            role: "assistant", content: null,
+            tool_calls: [{ id: `recovered_${Date.now()}`, type: "function", function: { name, arguments: args } }],
+          } }],
+          usage: undefined,
+          model: "recovered",
+        };
+      }
+    }
+
+    if (err.code !== "tool_use_failed" || !err.failed_generation) return null;
     let gen: string = err.failed_generation;
     // Some providers double-escape the failed generation (\" instead of "). If
     // there are no real quotes but plenty of escaped ones, unescape first.

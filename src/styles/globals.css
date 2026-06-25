@@ -19,11 +19,11 @@
     --popover: 240 6% 9%;
     --popover-foreground: 240 5% 96%;
 
-    --primary: 343 66% 48%;            /* #CB2957 raspberry */
+    --primary: 74 32% 43%;              /* #84934A olive green */
     --primary-foreground: 0 0% 100%;   /* white text on the accent */
 
     /* Soft accent used for text/icons/links where the solid accent feels harsh. */
-    --primary-soft: 343 80% 70%;
+    --primary-soft: 74 35% 58%;
     /* Secondary accent — soft sage green (matches reference badges). */
     --accent-2: 140 40% 65%;
     --accent-2-foreground: 140 35% 18%;
@@ -49,7 +49,7 @@
 
     --border: 240 4% 16%;              /* visible against the darker canvas */
     --input: 240 4% 16%;
-    --ring: 343 66% 48%;               /* raspberry ring */
+    --ring: 74 32% 43%;                /* olive green ring */
 
     --sidebar: 240 8% 4%;              /* slightly darker than the darker bg */
     --sidebar-foreground: 240 5% 65%;
@@ -69,11 +69,11 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 8% 20%;
 
-    --primary: 343 66% 48%;            /* #CB2957 raspberry */
+    --primary: 74 32% 43%;              /* #84934A olive green */
     --primary-foreground: 0 0% 100%;
 
     /* Soft accent for inline text/icons in light mode — darker so it stays readable on white. */
-    --primary-soft: 343 65% 45%;
+    --primary-soft: 74 30% 35%;
     --accent-2: 140 40% 50%;
     --accent-2-foreground: 0 0% 100%;
 

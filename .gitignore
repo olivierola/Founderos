@@ -22,3 +22,14 @@ tsconfig.tsbuildinfo
 # Supabase local
 supabase/.temp
 supabase/.branches
+
+# Third-party reference repos (imported into DB / used as SDK references)
+sandbox/
+skills_repo/
+MiroFish/
+
+# Personal documents (not part of the project)
+applications/
+Attestation-*.html
+*.xlsx
+~$*.xlsx

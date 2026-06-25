@@ -1,6 +1,10 @@
 import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { MODULE_PROJECT_CONFIGS } from "@/lib/module-project-config";
+import { ModuleProjectList } from "@/features/module-projects/ModuleProjectList";
+import { ModuleProjectDetail } from "@/features/module-projects/ModuleProjectDetail";
+import { AiHqDashboard } from "@/features/dashboard/AiHqDashboard";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { LoginPage } from "@/features/auth/Login";
 import { SignupPage } from "@/features/auth/Signup";
@@ -46,7 +50,6 @@ import {
 } from "@/features/users/Extra";
 import { EngagementPage } from "@/features/users/Engagement";
 
-import { RagAgentsPage } from "@/features/agent-rag/Agents";
 import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
 import { RagCenterPage, RagCollectionDetailPage } from "@/features/rag-center/RagCenter";
 import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
@@ -64,13 +67,8 @@ import { OpsTestingPage } from "@/features/ops/TestingWorkspace";
 import { OpsTestRunPage } from "@/features/ops/TestRunPage";
 import { OpsJobsPage } from "@/features/ops/JobsPage";
 import { OpsSettingsPage } from "@/features/ops/SettingsPage";
-import { OnboardingPage as RagOnboardingPage } from "@/features/agent-rag/onboarding/OnboardingPage";
 
-// Business modules — CRM / Support / Projects / Finance
-// (Marketing and HR modules are temporarily hidden — not yet mature.)
-import {
-  CrmOverviewPage, CrmContactsPage, CrmPipelinePage, CrmActivitiesPage,
-} from "@/features/crm/CrmPages";
+// CRM
 import { CrmWorkspacePage } from "@/features/crm/CrmWorkspace";
 import { RecordViewPage } from "@/features/crm/RecordView";
 import {
@@ -81,7 +79,6 @@ import {
   SupportChannelsPage, SupportSlaRoutingPage, SupportCallCenterPage, SupportPortalPage,
 } from "@/features/support/SupportAdvanced";
 import { HelpCenterPage } from "@/features/support/HelpCenter";
-import { AssetMapPage } from "@/features/assets/AssetMap";
 import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
 import { PmInboxPage } from "@/features/pm/PmInbox";
 import { PmWhiteboardPage } from "@/features/pm/PmWhiteboard";
@@ -168,15 +165,6 @@ import { PerUserAnalyticsPage } from "@/features/actions/PerUserAnalytics";
 import { GroupAnalyticsPage } from "@/features/actions/GroupAnalytics";
 import { UserJourneysPage } from "@/features/actions/UserJourneys";
 
-// AI Agent
-import { AiChatPage } from "@/features/ai-agent/Chat";
-import {
-  AiInsightsPage,
-  AiReportsPage,
-  PromptTemplatesPage,
-  GuardrailsPage,
-} from "@/features/ai-agent/Extra";
-import { AiWorkflowsPage } from "@/features/ai-agent/Workflows";
 
 // Integrations
 import { CatalogPage } from "@/features/integrations/Catalog";
@@ -211,12 +199,12 @@ import {
 type PageEl = import("react").ReactElement;
 
 const PAGES: Record<string, PageEl> = {
-  // Assets — infinite modular canvas of the company's objects + relations.
-  "assets/map": <AssetMapPage />,
-  // Overview was merged into the Admin panel — these three tabs were kept.
-  "actions/dashboard": <OverviewDashboard />,
-  "actions/custom-dashboards": <CustomDashboardsPage />,
-  "actions/alerts": <AlertsPage />,
+  // AI HQ dashboard
+  "hq/dashboard": <AiHqDashboard />,
+  // Projects super-module — landing handled by ModuleProjectList via buildModuleRoutes
+  "projects/all": <ModuleProjectList />,
+  // Legacy redirects — old actions/* routes point to CRM admin.
+  // (kept for backward compat bookmarks, will be served via buildModuleRoutes fallback)
 
   // Finance was merged into SaaS Analytics (Revenue + Costs groups). The pages
   // are unchanged; only their route prefix moved to saas-analytics/*.
@@ -258,11 +246,9 @@ const PAGES: Record<string, PageEl> = {
   "software/users-groups": <GroupAnalyticsPage />,
   "software/users-journeys": <UserJourneysPage />,
 
-  "agent/agents": <RagAgentsPage />,
   "agent/internal-agents": <InternalAgentsListPage />,
   "agent/ecosystem": <AgentEcosystemPage />,
   "agent/tasks": <AgentTasksPage />,
-  "agent/onboarding": <RagOnboardingPage />,
   "agent/knowledge": <RagCenterPage />,
 
   // Ops group (under the merged DevOps module)
@@ -278,11 +264,9 @@ const PAGES: Record<string, PageEl> = {
   // Marketing and HR modules are temporarily hidden (not yet mature) — their
   // nav entries, page routes and the hr/opening detail route were removed.
 
-  // CRM (+ Admin cockpit merged in — same components as the old actions/* routes)
-  "crm/overview": <CrmOverviewPage />,
-  "crm/contacts": <CrmContactsPage />,
-  "crm/pipeline": <CrmPipelinePage />,
-  "crm/activities": <CrmActivitiesPage />,
+  // Simulations
+  "simulations/list": <PmSimulationsPage />,
+  // CRM
   "crm/workspace": <CrmWorkspacePage />,
   "crm/admin-dashboard": <OverviewDashboard />,
   "crm/admin-custom-dashboards": <CustomDashboardsPage />,
@@ -375,20 +359,10 @@ const PAGES: Record<string, PageEl> = {
   "software/runbooks": <RunbooksPage />,
   "software/audit-log": <AuditLogPage />,
 
-  // AI Assistant pages live in the RAG Agent module ("agent/…") since the two
-  // modules were merged; the old "ai/…" paths stay registered for deep links.
-  "agent/chat": <AiChatPage />,
-  "agent/insights": <AiInsightsPage />,
-  "agent/reports": <AiReportsPage />,
-  "agent/workflows": <AiWorkflowsPage />,
-  "agent/prompt-templates": <PromptTemplatesPage />,
-  "agent/guardrails": <GuardrailsPage />,
-  "ai/chat": <AiChatPage />,
-  "ai/insights": <AiInsightsPage />,
-  "ai/reports": <AiReportsPage />,
-  "ai/workflows": <AiWorkflowsPage />,
-  "ai/prompt-templates": <PromptTemplatesPage />,
-  "ai/guardrails": <GuardrailsPage />,
+  "agent/internal-agents": <InternalAgentsListPage />,
+  "agent/ecosystem": <AgentEcosystemPage />,
+  "agent/tasks": <AgentTasksPage />,
+  "agent/knowledge": <RagCenterPage />,
 
   "integrations/connected": <ConnectedPage />,
   "integrations/catalog": <CatalogPage />,
@@ -476,6 +450,8 @@ function LegacyBuilderRedirect() {
 
 function buildModuleRoutes() {
   return MODULES.flatMap((mod) => {
+    const hasProjectConfig = MODULE_PROJECT_CONFIGS[mod.slug] != null;
+
     const subRoutes = mod.subItems.map((sub) => {
       const key = `${mod.slug}/${sub.slug}`;
       const element = PAGES[key] ?? <GenericSubPage moduleSlug={mod.slug} subSlug={sub.slug} />;
@@ -484,8 +460,14 @@ function buildModuleRoutes() {
     return [
       {
         path: mod.slug,
-        element: <Navigate to={mod.subItems[0]!.slug} replace />,
+        element: hasProjectConfig
+          ? <ErrorBoundary><ModuleProjectList /></ErrorBoundary>
+          : <Navigate to={mod.subItems[0]!.slug} replace />,
       },
+      ...(hasProjectConfig ? [
+        { path: `${mod.slug}/project/:moduleProjectId`, element: <ErrorBoundary><ModuleProjectDetail /></ErrorBoundary> },
+        { path: `${mod.slug}/project/:moduleProjectId/:tabSlug`, element: <ErrorBoundary><ModuleProjectDetail /></ErrorBoundary> },
+      ] : []),
       ...subRoutes,
     ];
   });
@@ -531,7 +513,7 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <Navigate to="crm/admin-dashboard" replace /> },
+      { index: true, element: <ErrorBoundary><AiHqDashboard /></ErrorBoundary> },
       // The Admin panel was merged into CRM — old /actions/* cockpit links
       // redirect (absolute, slug-based) to the new crm/admin-* locations.
       { path: "actions", element: <AdminMergeRedirect to="admin-dashboard" /> },

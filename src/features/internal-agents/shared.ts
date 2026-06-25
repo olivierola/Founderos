@@ -25,6 +25,8 @@ export interface InternalAgent {
   role: string | null;
   skills: string[];
   collaboration_enabled: boolean;
+  sandbox_mode: "cloud" | "sandbox";
+  sandbox_url: string | null;
   created_by: string;
   is_archived: boolean;
   created_at: string;

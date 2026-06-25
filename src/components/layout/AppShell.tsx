@@ -119,9 +119,9 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/pm\/whiteboard(\/.*)?$/.test(pathname)) return true;
   // Project Simulations — MiroFish-style two-pane full-screen workspace.
   if (/\/app\/[^/]+\/[^/]+\/pm\/simulations(\/.*)?$/.test(pathname)) return true;
-  // Assets — infinite modular canvas of the company's objects + relations.
-  if (/\/app\/[^/]+\/[^/]+\/assets\/map(\/.*)?$/.test(pathname)) return true;
   // CRM full record view (crm/workspace/<obj>/<recordId>) — Attio-style.
   if (/\/app\/[^/]+\/[^/]+\/crm\/workspace\/[^/]+\/[^/]+/.test(pathname)) return true;
+  // Module project detail view — sidebar + tabs, same pattern as CRM record view.
+  if (/\/app\/[^/]+\/[^/]+\/[^/]+\/project\/[^/]+/.test(pathname)) return true;
   return false;
 }

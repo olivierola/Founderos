@@ -69,7 +69,8 @@ export function tryParseReport(content: string | null | undefined): ReportDoc | 
 // ===========================================================================
 
 export function DeliverableReport({ report }: { report: ReportDoc }) {
-  const sections = report.sections ?? [];
+  if (!report) return null;
+  const sections = Array.isArray(report.sections) ? report.sections : [];
   const toc = sections.map((s, i) => ({ i, heading: s.heading })).filter((t) => t.heading);
   return (
     <div className="report-root mx-auto max-w-4xl">
@@ -335,6 +336,7 @@ export function ChartView({ chart }: { chart: ChartSpec }) {
 }
 
 function TableView({ table }: { table: TableSpec }) {
+  if (!Array.isArray(table?.columns) || !Array.isArray(table?.rows)) return null;
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full text-sm">
@@ -348,7 +350,7 @@ function TableView({ table }: { table: TableSpec }) {
         <tbody>
           {table.rows.map((r, ri) => (
             <tr key={ri} className="border-t border-border/60">
-              {r.map((cell, ci) => (
+              {(Array.isArray(r) ? r : []).map((cell, ci) => (
                 <td key={ci} className={cn("px-3 py-2", ci === 0 ? "text-left font-medium" : "text-right tabular-nums")}>
                   {cell == null ? "" : String(cell)}
                 </td>
