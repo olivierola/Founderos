@@ -147,6 +147,9 @@ interface ToolLoopOpts {
   temperature?: number;
   maxTokens?: number;
   maxRounds?: number; // safety cap on tool-call iterations
+  /** Out-of-band notices (e.g. a detected incomplete/malformed tool call) so
+   *  the caller can surface them in the run timeline. Best-effort. */
+  onNotice?: (n: { type: "tool_error" | "info"; message: string; detail?: string }) => Promise<void>;
 }
 
 interface ToolLoopResult {
@@ -161,6 +164,23 @@ const TOOL_ENDPOINTS = {
   groq: "https://api.groq.com/openai/v1/chat/completions",
   deepseek: "https://api.deepseek.com/chat/completions",
 } as const;
+
+// Bound context growth on long runs: keep the most recent tool results in full
+// but truncate OLDER ones to a short stub. We never drop messages, so message
+// order and the assistant↔tool pairing required by the function-calling API are
+// preserved. Applied to the payload sent each round (the stored history keeps
+// full results).
+function shrinkOldToolResults(msgs: ChatMessage[], keepRecentTools = 8, stub = 600): ChatMessage[] {
+  const toolPositions: number[] = [];
+  for (let i = 0; i < msgs.length; i++) if (msgs[i].role === "tool") toolPositions.push(i);
+  if (toolPositions.length <= keepRecentTools) return msgs;
+  const cutoff = toolPositions[toolPositions.length - keepRecentTools];
+  return msgs.map((m, i) =>
+    (m.role === "tool" && i < cutoff && (m.content?.length ?? 0) > stub)
+      ? { ...m, content: (m.content as string).slice(0, stub) + "\n…[older result truncated to save context]" }
+      : m,
+  );
+}
 
 export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResult> {
   // Admin kill-switch: set LLM_GLOBAL_BLOCK=1 to immediately prevent any LLM calls.
@@ -179,11 +199,35 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
   const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const maxRounds = opts.maxRounds ?? 6;
   let modelName = model;
+  let incompleteRetries = 0;
+
+  // Produce the final user-facing answer. Sanitises leaked tool-call markup; and
+  // if the model used tools but ended with an EMPTY reply (e.g. its last output
+  // was a pure leaked tool-call block that sanitising removed), force one
+  // no-tools "write your summary now" call so the user never gets "(no reply)".
+  async function finalizeAnswer(rawContent: string | null | undefined): Promise<string> {
+    let c = sanitizeLeakedToolCalls(rawContent ?? "");
+    if (c || toolCalls.length === 0) return c;
+    messages.push({
+      role: "user",
+      content: "You've finished using tools. Write your FINAL reply to the user now in markdown: a concise summary of what you did, the key results/findings, and any deliverables produced. Do NOT call any tools and do NOT output any tool-call markup.",
+    });
+    try {
+      const sj = await postChat(url, apiKey, { model, messages, temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 1500 });
+      if (sj.usage) {
+        usageTotal.prompt_tokens += sj.usage.prompt_tokens ?? 0;
+        usageTotal.completion_tokens += sj.usage.completion_tokens ?? 0;
+        usageTotal.total_tokens += sj.usage.total_tokens ?? 0;
+      }
+      c = sanitizeLeakedToolCalls(sj.choices?.[0]?.message?.content ?? "");
+    } catch { /* keep fallback */ }
+    return c || "Travail terminé — voir le détail des étapes et des livrables ci-dessus.";
+  }
 
   for (let round = 0; round < maxRounds; round++) {
     const json = await postChat(url, apiKey, {
       model,
-      messages,
+      messages: shrinkOldToolResults(messages),
       tools: opts.tools,
       tool_choice: "auto",
       temperature: opts.temperature ?? 0.3,
@@ -213,10 +257,30 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
       }
     }
 
-    // No tool calls → final answer.
+    // No tool calls. Before treating this as the final answer, detect a
+    // MALFORMED / INCOMPLETE tool call leaked into the content (e.g. a DSML or
+    // <function=…> fragment truncated mid-call). These silently stall agents.
+    // Surface it and ask the model to re-issue the call cleanly (bounded retry).
     if (!calls.length) {
+      if (hasToolCallMarkers(choice?.content ?? "") && incompleteRetries < 2) {
+        incompleteRetries++;
+        if (opts.onNotice) {
+          await opts.onNotice({
+            type: "tool_error",
+            message: "Incomplete tool call detected — asking the agent to re-issue it cleanly",
+            detail: String(choice?.content ?? "").slice(0, 400),
+          }).catch(() => {});
+        }
+        messages.push({ role: "assistant", content: choice?.content ?? "" });
+        messages.push({
+          role: "user",
+          content:
+            "Your previous message contained a PARTIAL or MALFORMED tool call that could not be executed (it looks truncated or used raw DSML/function-tag text). Re-issue it now as ONE complete, valid tool call via the proper tool-calling interface. Do not put any DSML, <function=…> or <invoke> markup in your text content.",
+        });
+        continue;
+      }
       return {
-        content: choice?.content ?? "",
+        content: await finalizeAnswer(choice?.content),
         provider,
         model: modelName,
         usage: usageTotal,
@@ -248,6 +312,10 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
       try {
         result = await opts.executor(call.function.name, args);
       } catch (e) {
+        // Control-flow signals (run cancelled, awaiting human input) must
+        // unwind the whole loop, not be turned into a tool error string.
+        const nm = (e as { name?: string } | null)?.name;
+        if (nm === "RunCancelledError" || nm === "AwaitingInputError") throw e;
         result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
       }
       // Cap tool output so a huge payload doesn't blow the context window.
@@ -259,7 +327,48 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
     }
   }
 
-  // Ran out of rounds — ask once more without tools to force a final answer.
+  // Ran out of rounds. The model often tries ONE more tool call here, frequently
+  // leaked as DSML text. Drain up to 2 more recovered calls so the agent doesn't
+  // abandon work mid-flight, then force a clean (sanitized) final answer.
+  for (let drain = 0; drain < 2; drain++) {
+    const dj = await postChat(url, apiKey, {
+      model, messages, tools: opts.tools, tool_choice: "auto",
+      temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 1500,
+    });
+    if (dj.usage) {
+      usageTotal.prompt_tokens += dj.usage.prompt_tokens ?? 0;
+      usageTotal.completion_tokens += dj.usage.completion_tokens ?? 0;
+      usageTotal.total_tokens += dj.usage.total_tokens ?? 0;
+    }
+    const dchoice = dj.choices?.[0]?.message;
+    let dcalls = dchoice?.tool_calls ?? [];
+    if (!dcalls.length && dchoice?.content) {
+      const rec = parseEmbeddedToolCalls(dchoice.content);
+      if (rec.length) {
+        dcalls = rec.map((r, i) => ({ id: `drain_${drain}_${i}`, type: "function", function: { name: r.name, arguments: JSON.stringify(r.args) } }));
+      }
+    }
+    if (!dcalls.length) {
+      return { content: await finalizeAnswer(dchoice?.content), provider, model: dj.model ?? modelName, usage: usageTotal, toolCalls };
+    }
+    messages.push({ role: "assistant", content: dchoice?.content ?? null, tool_calls: dcalls });
+    for (const call of dcalls) {
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* keep {} */ }
+      toolCalls.push({ name: call.function.name, args });
+      let result: string;
+      try {
+        result = await opts.executor(call.function.name, args);
+      } catch (e) {
+        const nm = (e as { name?: string } | null)?.name;
+        if (nm === "RunCancelledError" || nm === "AwaitingInputError") throw e;
+        result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      messages.push({ role: "tool", tool_call_id: call.id, content: result.length > 12000 ? result.slice(0, 12000) + "\n…(truncated)" : result });
+    }
+  }
+
+  // Final answer, no tools.
   const json = await postChat(url, apiKey, {
     model,
     messages,
@@ -272,7 +381,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
     usageTotal.total_tokens += json.usage.total_tokens ?? 0;
   }
   return {
-    content: json.choices?.[0]?.message?.content ?? "",
+    content: await finalizeAnswer(json.choices?.[0]?.message?.content),
     provider,
     model: json.model ?? modelName,
     usage: usageTotal,
@@ -284,6 +393,135 @@ interface ToolChatResponse {
   choices: { message: ChatMessage }[];
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
   model: string;
+}
+
+// ---------------------------------------------------------------------------
+// RESUMABLE tool loop — runs a BOUNDED number of rounds against an existing
+// `messages` array and RETURNS the updated array + whether it finished. Used by
+// the tick-based mission runtime: each tick runs a few rounds, persists the
+// returned messages, and re-enqueues itself until `finished`. Control-flow
+// errors (RunCancelled / AwaitingInput) propagate to the caller.
+// ---------------------------------------------------------------------------
+export interface ToolRoundsOpts {
+  provider?: "groq" | "deepseek";
+  model?: string;
+  messages: ChatMessage[];
+  tools: ToolDef[];
+  executor: ToolExecutor;
+  temperature?: number;
+  maxTokens?: number;
+  maxRounds: number; // budget for THIS tick
+  onNotice?: ToolLoopOpts["onNotice"];
+}
+export interface ToolRoundsResult {
+  messages: ChatMessage[];
+  finished: boolean;
+  content: string;
+  roundsRun: number;
+  toolCalls: Array<{ name: string; args: Record<string, unknown> }>;
+  /** Tool results in THIS tick that came back as errors — drives re-planning. */
+  errorCount: number;
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  provider: "groq" | "deepseek";
+  model: string;
+}
+
+export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsResult> {
+  if (Deno.env.get("LLM_GLOBAL_BLOCK") === "1") throw new Error("LLM calls are disabled (LLM_GLOBAL_BLOCK=1)");
+  const provider = opts.provider ?? "deepseek";
+  const apiKey = provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
+  if (!apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
+  const url = TOOL_ENDPOINTS[provider];
+  const model = opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
+  const messages = opts.messages;
+  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  let modelName = model;
+  let incompleteRetries = 0;
+  let roundsRun = 0;
+  let errorCount = 0;
+
+  for (let round = 0; round < opts.maxRounds; round++) {
+    roundsRun++;
+    const json = await postChat(url, apiKey, {
+      model, messages: shrinkOldToolResults(messages), tools: opts.tools, tool_choice: "auto",
+      temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000,
+    });
+    modelName = json.model ?? model;
+    if (json.usage) {
+      usage.prompt_tokens += json.usage.prompt_tokens ?? 0;
+      usage.completion_tokens += json.usage.completion_tokens ?? 0;
+      usage.total_tokens += json.usage.total_tokens ?? 0;
+    }
+    const choice = json.choices?.[0]?.message;
+    let calls = choice?.tool_calls ?? [];
+    if (!calls.length && choice?.content) {
+      const recovered = parseEmbeddedToolCalls(choice.content);
+      if (recovered.length) calls = recovered.map((r, i) => ({ id: `embedded_${round}_${i}`, type: "function", function: { name: r.name, arguments: JSON.stringify(r.args) } }));
+    }
+    if (!calls.length) {
+      if (hasToolCallMarkers(choice?.content ?? "") && incompleteRetries < 2) {
+        incompleteRetries++;
+        if (opts.onNotice) await opts.onNotice({ type: "tool_error", message: "Incomplete tool call detected — asking the agent to re-issue it cleanly", detail: String(choice?.content ?? "").slice(0, 400) }).catch(() => {});
+        messages.push({ role: "assistant", content: choice?.content ?? "" });
+        messages.push({ role: "user", content: "Your previous message contained a PARTIAL or MALFORMED tool call that could not be executed. Re-issue it now as ONE complete, valid tool call via the proper tool-calling interface. No DSML/function-tag markup in your text." });
+        continue;
+      }
+      return { messages, finished: true, content: sanitizeLeakedToolCalls(choice?.content ?? ""), roundsRun, toolCalls, errorCount, usage, provider, model: modelName };
+    }
+    for (const call of calls) {
+      const raw = call.function.name ?? "";
+      const braceIdx = raw.indexOf("{");
+      if (braceIdx > 0) {
+        call.function.name = raw.slice(0, braceIdx);
+        try { const ea = JSON.parse(raw.slice(braceIdx)); call.function.arguments = JSON.stringify({ ...ea, ...JSON.parse(call.function.arguments || "{}") }); } catch { /* keep */ }
+      }
+    }
+    messages.push({ role: "assistant", content: choice?.content ?? null, tool_calls: calls });
+    for (const call of calls) {
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* {} */ }
+      toolCalls.push({ name: call.function.name, args });
+      let result: string;
+      try {
+        result = await opts.executor(call.function.name, args);
+      } catch (e) {
+        const nm = (e as { name?: string } | null)?.name;
+        if (nm === "RunCancelledError" || nm === "AwaitingInputError") throw e;
+        result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      if (result.startsWith("ERROR")) errorCount++;
+      messages.push({ role: "tool", tool_call_id: call.id, content: result.length > 12000 ? result.slice(0, 12000) + "\n…(truncated)" : result });
+    }
+  }
+  // Tick budget exhausted without a final answer — resume on the next tick.
+  return { messages, finished: false, content: "", roundsRun, toolCalls, errorCount, usage, provider, model: modelName };
+}
+
+// Heuristic: does this content carry the tell-tale markers of a tool call the
+// model tried (and failed) to emit as text? Used to catch INCOMPLETE/truncated
+// tool calls that parseEmbeddedToolCalls couldn't fully recover, so the loop can
+// ask the model to re-issue them instead of silently stalling. Kept specific to
+// avoid false positives on normal prose/code.
+export function hasToolCallMarkers(content: string): boolean {
+  if (!content) return false;
+  return /｜｜DSML｜｜|<｜tool▁call|<\s*function\s*=|<\s*invoke\s+name\s*=|<\s*tool_call\b|<\s*tool_calls\b/i.test(content);
+}
+
+// Strip any leaked tool-call markup (DeepSeek DSML / <function=…> / dangling
+// invoke·parameter tags) from content destined for the USER, so a leak never
+// surfaces as raw markup in the reply.
+export function sanitizeLeakedToolCalls(content: string): string {
+  if (!content) return content;
+  let c = content;
+  // Whole closed tool_calls / function blocks.
+  c = c.replace(/<[^>]*\btool_calls\b[\s\S]*?<[^>]*\/[^>]*\btool_calls\b\s*>/gi, "");
+  c = c.replace(/<function\s*=\s*[a-zA-Z0-9_-]+\s*>[\s\S]*?<\/function>/gi, "");
+  // Dangling / unclosed fragments: cut from the first leaked open marker to end.
+  c = c.replace(/<[^>]*\b(?:tool_calls|invoke)\b[\s\S]*$/i, "");
+  c = c.replace(/<function\s*=\s*[a-zA-Z0-9_-]+\s*>[\s\S]*$/i, "");
+  c = c.replace(/｜｜DSML｜｜/g, "");
+  return c.trim();
 }
 
 // Parse tool calls that a model emitted as plain TEXT in its content instead of
@@ -303,8 +541,10 @@ export function parseEmbeddedToolCalls(content: string): Array<{ name: string; a
     const name = m[1].trim();
     const body = m[2];
     const args: Record<string, unknown> = {};
-    // Each parameter: `parameter name="P" …>VALUE</…parameter>`
-    const paramRe = /parameter\s+name\s*=\s*"([^"]+)"[^>]*>([\s\S]*?)(?:<[^>]*\/\s*parameter\s*>|<\/[^>]*parameter>)/g;
+    // Each parameter: `parameter name="P" …>VALUE</…parameter>`. The closing tag
+    // is optional so we still recover a TRUNCATED final parameter (the model ran
+    // out of tokens mid-file-write): capture up to the next param/invoke tag or end.
+    const paramRe = /parameter\s+name\s*=\s*"([^"]+)"[^>]*>([\s\S]*?)(?:<[^>]*\/\s*parameter\s*>|<\/[^>]*parameter>|(?=<[^>]*parameter\s+name)|(?=<[^>]*\/\s*invoke)|$)/g;
     let p: RegExpExecArray | null;
     while ((p = paramRe.exec(body))) {
       const key = p[1].trim();

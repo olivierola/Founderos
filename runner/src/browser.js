@@ -5,6 +5,7 @@
 import { chromium } from "playwright";
 import http from "node:http";
 import { RUNNER_TOKEN, ts } from "./env.js";
+import { handleExec, handleCode, handleFiles, handleInfo, handleProc, handleDownload, WORKSPACE_ROOT, EXEC_DISABLED } from "./machine.js";
 
 let browser = null;
 const sessions = new Map(); // session_id → { page, lastUsed }
@@ -148,6 +149,18 @@ async function handleAction(body) {
 
 // ── HTTP Server ─────────────────────────────────────────────────────────────
 
+// POST handlers by path. Browser actions + machine capabilities (shell, code,
+// files, info from machine.js) share one server, one port, one token.
+const POST_ROUTES = {
+  "/api/browser": handleAction,
+  "/api/exec": handleExec,
+  "/api/code": handleCode,
+  "/api/files": handleFiles,
+  "/api/info": handleInfo,
+  "/api/proc": handleProc,
+  "/api/download": handleDownload,
+};
+
 export function startBrowserServer(port = 3847) {
   const server = http.createServer(async (req, res) => {
     // Auth check
@@ -158,13 +171,15 @@ export function startBrowserServer(port = 3847) {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/api/browser") {
+    const url = (req.url || "").split("?")[0];
+    const route = POST_ROUTES[url];
+    if (req.method === "POST" && route) {
       let body = "";
       req.on("data", (c) => { body += c; });
       req.on("end", async () => {
         try {
-          const parsed = JSON.parse(body);
-          const result = await handleAction(parsed);
+          const parsed = body ? JSON.parse(body) : {};
+          const result = await route(parsed);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(result));
         } catch (e) {
@@ -172,17 +187,30 @@ export function startBrowserServer(port = 3847) {
           res.end(JSON.stringify({ error: e.message }));
         }
       });
-    } else if (req.method === "GET" && req.url === "/health") {
+    } else if (req.method === "GET" && url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, sessions: sessions.size }));
+      res.end(JSON.stringify({ ok: true, sessions: sessions.size, exec: !EXEC_DISABLED, workspace_root: WORKSPACE_ROOT }));
     } else {
       res.writeHead(404);
       res.end("Not found");
     }
   });
 
+  // Attach an error handler so we can present a helpful message if the port
+  // is already in use instead of letting an unhandled 'error' crash the app.
+  server.on("error", (err) => {
+    if (err && err.code === "EADDRINUSE") {
+      console.error(`[${ts()}] Port ${port} already in use. Set BROWSER_PORT to another free port or stop the process using it.`);
+      console.error(`[${ts()}] On Windows: run 'netstat -ano | findstr :${port}' then 'taskkill /PID <pid> /F'`);
+      process.exit(1);
+    }
+    console.error(`[${ts()}] Server error:`, err);
+  });
+
   server.listen(port, () => {
     console.log(`  browser:   http://localhost:${port}/api/browser`);
+    console.log(`  machine:   http://localhost:${port}/api/{exec,code,files,info,proc,download}${EXEC_DISABLED ? " (exec disabled)" : ""}`);
+    console.log(`  workspace: ${WORKSPACE_ROOT}`);
   });
 
   // Cleanup idle sessions every minute

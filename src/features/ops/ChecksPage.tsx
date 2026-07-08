@@ -177,7 +177,7 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone?:
       <CardContent className="p-4">
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className={cn(
-          "mt-1 text-2xl font-semibold",
+          "font-stat-number mt-1 text-2xl font-semibold",
           tone === "good" && "text-emerald-500",
           tone === "warn" && "text-amber-500",
           tone === "bad" && "text-destructive",

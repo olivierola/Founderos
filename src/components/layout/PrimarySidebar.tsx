@@ -1,96 +1,133 @@
-import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
-import { LogOut } from "lucide-react";
-import { MODULES } from "@/lib/navigation";
+import { NavLink, useParams, useLocation } from "react-router-dom";
+import { ChevronRight, HelpCircle } from "lucide-react";
+import { ZONES, modulesInZone, type ModuleNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useAuth } from "@/lib/auth-context";
-import { Logo } from "@/components/Logo";
+import { useShellNav } from "./AppShell";
+import { useAssistant } from "@/lib/assistant-context";
 
 export function PrimarySidebar() {
   const { workspaceSlug = "default", projectSlug = "default" } = useParams();
-  const navigate = useNavigate();
   const location = useLocation();
-  const { user, signOut } = useAuth();
-  const initial = user?.email?.[0]?.toUpperCase() ?? "?";
+  const assistant = useAssistant();
+  // Expand/collapse is shared shell state, driven from the logo (hover) in the
+  // navbar; here we only read the width.
+  const { primaryExpanded: expanded } = useShellNav();
 
   // Active module = the 4th segment of /app/:ws/:proj/<module>/...
   const segs = location.pathname.split("/").filter(Boolean);
   const appIdx = segs.indexOf("app");
   const activeModule = appIdx >= 0 ? segs[appIdx + 3] : undefined;
 
+  const renderModule = (mod: ModuleNavItem) => {
+    const Icon = mod.icon;
+    const to = `/app/${workspaceSlug}/${projectSlug}/${mod.slug}`;
+    const isActive = activeModule === mod.slug;
+    const hasChildren = mod.subItems.length > 1;
+
+    if (!expanded) {
+      return (
+        <Tooltip key={mod.slug}>
+          <TooltipTrigger asChild>
+            <NavLink
+              to={to}
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+                isActive
+                  ? "bg-sidebar-accent text-foreground"
+                  : "text-foreground/55 hover:bg-sidebar-accent/60 hover:text-foreground",
+              )}
+            >
+              <Icon className="h-[18px] w-[18px]" weight={isActive ? "fill" : "regular"} />
+            </NavLink>
+          </TooltipTrigger>
+          <TooltipContent side="right">{mod.label}</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <NavLink
+        key={mod.slug}
+        to={to}
+        className={cn(
+          "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+          isActive
+            ? "bg-sidebar-accent font-medium text-foreground"
+            : "text-foreground/80 hover:bg-sidebar-accent/60 hover:text-foreground",
+        )}
+      >
+        <Icon
+          className={cn("h-[18px] w-[18px] shrink-0", isActive ? "text-foreground" : "text-foreground/70")}
+          weight={isActive ? "fill" : "regular"}
+        />
+        <span className="min-w-0 flex-1 truncate">{mod.label}</span>
+        {hasChildren && (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
+        )}
+      </NavLink>
+    );
+  };
+
   return (
     <TooltipProvider delayDuration={100}>
-      <aside data-primary-sidebar className="flex h-full w-16 flex-col items-center justify-between border-r border-border bg-sidebar">
-        <div className="flex w-full flex-col items-center">
-          <div className="flex h-14 w-full items-center justify-center border-b border-border">
+      <aside
+        data-primary-sidebar
+        className={cn(
+          "flex h-full flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200",
+          expanded ? "w-64" : "w-16",
+        )}
+      >
+        {/* Nav — sections (zones) with grey labels + item pills, no dividers.
+            The expand control now lives on the logo (hover) in the navbar. */}
+        <nav className={cn("scrollbar-slim flex-1 overflow-y-auto", expanded ? "px-3 py-3" : "px-2 py-3")}>
+          {ZONES.map((zone, zi) => {
+            const mods = modulesInZone(zone.id);
+            if (mods.length === 0) return null;
+            return (
+              <div
+                key={zone.id}
+                className={cn(
+                  "flex flex-col",
+                  expanded ? "gap-0.5" : "items-center gap-1",
+                  zi > 0 && (expanded ? "mt-4" : "mt-2"),
+                )}
+              >
+                {/* Section label — skipped for the first (primary) zone and when
+                    collapsed, exactly like the reference. */}
+                {expanded && zi > 0 && (
+                  <div className="px-3 pb-1 pt-1 text-xs font-medium text-muted-foreground">{zone.label}</div>
+                )}
+                {mods.map(renderModule)}
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Bottom — help & resources (account lives in the navbar now). */}
+        <div className={cn("mt-auto shrink-0", expanded ? "px-3 pb-3 pt-1" : "px-2 pb-3 pt-1")}>
+          {expanded ? (
+            <button
+              onClick={() => assistant.toggle()}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+            >
+              <HelpCircle className="h-[18px] w-[18px] shrink-0 text-foreground/70" />
+              <span className="min-w-0 flex-1 truncate text-left">Aide et ressources</span>
+            </button>
+          ) : (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => navigate(`/orgs/${workspaceSlug}/projects`)}
-                  className="transition-transform hover:scale-105"
-                  aria-label="Switch project"
+                  onClick={() => assistant.toggle()}
+                  className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-foreground/55 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+                  aria-label="Aide et ressources"
                 >
-                  <Logo size={34} />
+                  <HelpCircle className="h-[18px] w-[18px]" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="right">Switch project</TooltipContent>
+              <TooltipContent side="right">Aide et ressources</TooltipContent>
             </Tooltip>
-          </div>
-          <nav className="flex flex-col gap-1 pt-3">
-            {(() => {
-              const main = MODULES.filter((m) => !m.pinBottom);
-              const bottom = MODULES.filter((m) => m.pinBottom);
-              const renderModule = (mod: typeof MODULES[number]) => {
-                const Icon = mod.icon;
-                const to = `/app/${workspaceSlug}/${projectSlug}/${mod.slug}`;
-                const isActive = activeModule === mod.slug;
-                return (
-                  <Tooltip key={mod.slug}>
-                    <TooltipTrigger asChild>
-                      <NavLink
-                        to={to}
-                        className={cn(
-                          "relative flex h-10 w-10 items-center justify-center rounded-md transition-colors",
-                          isActive
-                            ? "bg-secondary opacity-100 ring-1 ring-border"
-                            : "opacity-60 hover:bg-sidebar-accent/40 hover:opacity-90",
-                        )}
-                      >
-                        <Icon className={cn("h-[18px] w-[18px]", mod.color)} strokeWidth={1.5} />
-                      </NavLink>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">{mod.label}</TooltipContent>
-                  </Tooltip>
-                );
-              };
-              return (
-                <>
-                  {main.map(renderModule)}
-                  {bottom.length > 0 && (
-                    <div className="mt-12 flex flex-col gap-1 border-t border-border/40 pt-6">
-                      {bottom.map(renderModule)}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </nav>
-        </div>
-        <div className="flex flex-col items-center gap-2 pb-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => signOut()}
-                className="flex h-10 w-10 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Sign out</TooltipContent>
-          </Tooltip>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-sm font-medium">
-            {initial}
-          </div>
+          )}
         </div>
       </aside>
     </TooltipProvider>

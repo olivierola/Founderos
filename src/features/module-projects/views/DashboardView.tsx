@@ -52,7 +52,7 @@ export function DashboardView({ moduleProject: mp }: { moduleProject: ModuleProj
             <button onClick={() => remove(k.id)} className="absolute right-2 top-2 hidden rounded p-0.5 text-muted-foreground hover:text-destructive group-hover:block"><Trash2 className="h-3 w-3" /></button>
             <div className="text-xs text-muted-foreground">{k.label}</div>
             <div className="mt-1 flex items-end gap-2">
-              <span className="text-2xl font-bold">{k.value}{k.unit ? <span className="ml-0.5 text-sm font-normal text-muted-foreground">{k.unit}</span> : null}</span>
+              <span className="font-stat-number text-2xl font-bold">{k.value}{k.unit ? <span className="ml-0.5 text-sm font-normal text-muted-foreground">{k.unit}</span> : null}</span>
               {trend(k)}
             </div>
             {k.prev && <div className="mt-1 text-[11px] text-muted-foreground">vs {k.prev}{k.unit ?? ""}</div>}

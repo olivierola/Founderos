@@ -140,7 +140,7 @@ function InlineInput({ type, initial, onCommit, onCancel }: {
   return (
     <input ref={ref as React.RefObject<HTMLInputElement>} type={inputType} value={val} onChange={(e) => setVal(e.target.value)}
       onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") onCancel(); }}
-      className="h-full w-full bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-inset focus:ring-primary" />
+      className="h-full w-full bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring" />
   );
 }
 

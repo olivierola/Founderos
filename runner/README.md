@@ -52,6 +52,35 @@ row, `config.runner_ws`). The support-voice edge function returns TwiML pointing
 Twilio's Media Stream at `runner_ws?call_sid=…&project_id=…`. Set the Twilio
 number's Voice webhook to the URL shown in the channel card (Support → Channels).
 
+## Machine tools for runner-mode agents
+
+Internal agents whose execution environment is **Runner** get more than the
+Playwright browser: the same HTTP server (port `BROWSER_PORT`, default 3847)
+also exposes machine capabilities, all authenticated by the same
+`X-Runner-Token`:
+
+- `POST /api/exec` — shell commands (`powershell` / `cmd` / `bash` / `sh`;
+  default matches the host OS). Timeout-killed with full process-tree cleanup;
+  PowerShell exit codes are propagated faithfully.
+- `POST /api/code` — Python or Node.js snippets (fresh process per call).
+- `POST /api/files` — `write` / `read` / `replace` / `list` / `find` (glob) /
+  `grep` / `mkdir` / `delete` / `move` / `copy`, rooted in the agent's workspace.
+- `POST /api/proc` — long-running processes that survive between calls:
+  `start` (returns a `proc_id`) / `list` / `logs` / `stop`. For dev servers,
+  watchers and jobs that `/api/exec` (timeout-bounded) can't host.
+- `POST /api/download` — fetch a http(s) URL straight to a workspace file
+  (100 MB cap).
+- `POST /api/info` — OS, shells, Python/Node/git versions, workspace paths.
+
+Each agent gets a **persistent workspace** at
+`RUNNER_WORKSPACE_ROOT/<agent_id>` (default `./workspace/…`) — relative paths
+resolve there and files survive across runs. Absolute paths reach the whole
+machine (the agent runs with your user's privileges) unless you set
+`RUNNER_RESTRICT_TO_WORKSPACE=1`; set `RUNNER_DISABLE_EXEC=1` to switch off
+shell/code execution entirely. Expose the port to the edge functions via a
+tunnel and keep `runner_browser_url` in `app_config` pointing at it (see
+`scripts/start-agents-infra.ps1`).
+
 ## Security scanning scope
 
 Active scans are **non-destructive**: connect-and-close port checks and surface

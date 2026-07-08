@@ -43,12 +43,15 @@ async function dispatchAgent(
   } else {
     const { data: created } = await admin
       .from("internal_agent_conversations")
-      .insert({ agent_id: agentId, workspace_id: workspaceId, project_id: projectId, title: convoTitle })
+      .insert({ agent_id: agentId, workspace_id: workspaceId, project_id: projectId, title: convoTitle, inbox_channel_id: channelId })
       .select("id")
       .single();
     conversationId = created?.id ?? null;
   }
   if (!conversationId) return;
+  // Bind the conversation to this inbox channel so internal-agent-run's finalizer
+  // mirrors the (async) reply back here — the run no longer completes inline.
+  await admin.from("internal_agent_conversations").update({ inbox_channel_id: channelId }).eq("id", conversationId);
 
   // Append the human turn (prefixed with who's speaking, for context).
   await admin.from("internal_agent_messages").insert({
@@ -58,39 +61,17 @@ async function dispatchAgent(
     content: `[${authorName} in the team chat] ${humanText}`,
   });
 
-  // Run the agent (chat mode) — it persists an assistant message.
+  // Fire the durable chat run (init + enqueue returns fast). The agent's reply is
+  // posted back into this channel by internal-agent-run's finalizer, keyed off the
+  // conversation's inbox_channel_id binding set above.
   const base = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!base || !key) return;
-  try {
-    await fetch(`${base}/functions/v1/internal-agent-run`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ agent_id: agentId, mode: "chat", conversation_id: conversationId }),
-    });
-  } catch {
-    // fall through — we still try to read whatever reply exists
-  }
-
-  // Read the latest assistant reply and mirror it into the channel.
-  const { data: reply } = await admin
-    .from("internal_agent_messages")
-    .select("content, created_at")
-    .eq("conversation_id", conversationId)
-    .eq("role", "assistant")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const text = reply?.content?.trim() || "(no reply)";
-  await admin.from("project_messages").insert({
-    workspace_id: workspaceId,
-    project_id: projectId,
-    channel_id: channelId,
-    author_kind: "agent",
-    agent_id: agentId,
-    body: text,
-  });
+  fetch(`${base}/functions/v1/internal-agent-run`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_id: agentId, mode: "chat", conversation_id: conversationId }),
+  }).catch(() => {});
 }
 
 Deno.serve(async (req) => {

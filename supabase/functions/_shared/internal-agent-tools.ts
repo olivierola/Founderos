@@ -29,6 +29,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import type { ToolDef, ToolExecutor } from "./ai.ts";
 import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
+import { embedTexts, toVectorLiteral } from "./jina.ts";
 
 export interface AgentToolRow {
   id: string;
@@ -82,17 +83,79 @@ export interface InternalToolContext {
   /** Queue a sensitive action for human approval. Returns the approval id. */
   requestApproval: (r: ApprovalRequest) => Promise<string>;
   /** Append a run event (no-op when runId is null). */
-  logEvent: (kind: "tool_call" | "tool_result" | "status" | "log", payload: Record<string, unknown>) => Promise<void>;
+  logEvent: (kind: "tool_call" | "tool_result" | "status" | "log" | "plan" | "plan_step" | "tool_error" | "question" | "todos", payload: Record<string, unknown>) => Promise<void>;
+  /** True when this context belongs to a MISSION run (gates meta-tools like
+   *  self-mission creation that fueled the fork-bomb incident). */
+  missionMode?: boolean;
+  /** Missions created during THIS run (budget: 2). Mutated by the guard. */
+  missionCreates?: number;
   /** Re-check whether the run was cancelled by a human. */
   isCancelled: () => Promise<boolean>;
   /** AIO Sandbox URL when agent runs in sandbox mode. */
   sandboxUrl?: string | null;
+  /** Whether the agent may drive the Playwright runner (browse_web). */
+  runnerEnabled?: boolean;
+  /** Runner browser URL from the live DB config (fallback: env). */
+  runnerUrl?: string | null;
+  /** Skills activated for this agent — their full playbooks are loaded on
+   *  demand via use_skill (progressive disclosure), not injected up-front. */
+  skills?: AgentSkill[];
+  /** Depth of this run in a delegation chain (0 = user-initiated). create_mission
+   *  refuses to delegate beyond MAX_DELEGATION_DEPTH to stop infinite loops. */
+  delegationDepth?: number;
+}
+
+export const MAX_DELEGATION_DEPTH = 3;
+
+// Fork-bomb guards shared by create_mission / delegate_mission: a per-run
+// creation budget (2) and a per-agent hourly flood cap (10). Returns an error
+// string to send back to the model, or null when allowed.
+async function missionCreationGuard(ctx: InternalToolContext): Promise<string | null> {
+  ctx.missionCreates = (ctx.missionCreates ?? 0) + 1;
+  if (ctx.missionCreates > 2) {
+    return "ERROR: mission-creation budget for this run is exhausted (max 2). Execute the remaining work YOURSELF with your execution tools.";
+  }
+  const { count } = await ctx.admin
+    .from("internal_agent_missions")
+    .select("id", { count: "exact", head: true })
+    .eq("delegated_by_agent", ctx.agentId)
+    .gt("created_at", new Date(Date.now() - 3600_000).toISOString());
+  if ((count ?? 0) >= 10) {
+    return "ERROR: this agent already created 10 missions in the last hour (flood guard). Execute the work directly instead of creating missions.";
+  }
+  return null;
+}
+
+export interface AgentSkill {
+  slug: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  /** Full playbook / methodology — returned by use_skill when loaded. */
+  instructions?: string | null;
+  /** Tool kinds this skill expects to use. */
+  tools?: string[] | null;
 }
 
 export class RunCancelledError extends Error {
   constructor() {
     super("Run cancelled by user");
     this.name = "RunCancelledError";
+  }
+}
+
+// Thrown by the ask_user tool to PAUSE the run and surface a question to the
+// human (Claude-Code-style clarification). It is a control-flow signal, not a
+// failure — the tool loop re-throws it (by name) and the run handler turns it
+// into an awaiting_input state instead of an error.
+export class AwaitingInputError extends Error {
+  question: string;
+  options: string[];
+  constructor(question: string, options: string[] = []) {
+    super("Agent is awaiting human input");
+    this.name = "AwaitingInputError";
+    this.question = question;
+    this.options = options;
   }
 }
 
@@ -106,6 +169,57 @@ function str(v: unknown, fallback = ""): string {
 
 function cap(s: string, max = 8000): string {
   return s.length > max ? s.slice(0, max) + "\n…(truncated)" : s;
+}
+
+// Best-effort embedding for a memory (Jina v3, 1024 dims — same pipeline as the
+// RAG Center). Returns a pgvector literal, or null when embeddings are
+// unavailable — a memory without an embedding still works via keyword fallback.
+export async function embedMemoryVector(content: string): Promise<string | null> {
+  try {
+    if (!Deno.env.get("JINA_API_KEY")) return null;
+    const [vec] = await embedTexts([content.slice(0, 2000)], "retrieval.passage");
+    return vec ? toVectorLiteral(vec) : null;
+  } catch { return null; }
+}
+
+// Best-effort: when a sandbox command installs packages or fetches a
+// dataset/repo, record it in the agent's persistent memory so it doesn't lose
+// track of its environment (and won't re-install needlessly) across sessions.
+async function rememberSandboxAction(ctx: InternalToolContext, command: string): Promise<void> {
+  try {
+    const cmd = command.trim();
+    let content: string | null = null;
+    const inst =
+      cmd.match(/(?:pip3?|python3?\s+-m\s+pip|uv\s+pip)\s+install\s+(.+)/i) ??
+      cmd.match(/(?:npm\s+(?:install|i)|yarn\s+add|pnpm\s+add)\s+(.+)/i) ??
+      cmd.match(/(?:apt-get|apt)\s+install\s+(?:-y\s+)?(.+)/i) ??
+      cmd.match(/conda\s+install\s+(?:-y\s+)?(.+)/i);
+    if (inst) {
+      const pkgs = inst[1].replace(/--?\S+/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+      if (pkgs) content = `Installed in sandbox: ${pkgs}`;
+    }
+    if (!content) {
+      const dl =
+        cmd.match(/(?:wget|curl)\b[^|]*?(https?:\/\/\S+)/i) ??
+        cmd.match(/git\s+clone\s+(\S+)/i) ??
+        cmd.match(/kaggle\s+datasets\s+download\s+(\S+)/i) ??
+        cmd.match(/huggingface-cli\s+download\s+(\S+)/i);
+      if (dl) content = `Fetched into sandbox: ${dl[1].slice(0, 200)}`;
+    }
+    if (!content) return;
+    // Skip exact duplicates so re-runs don't pile up the same line.
+    const { data: dup } = await ctx.admin
+      .from("internal_agent_memories").select("id").eq("agent_id", ctx.agentId).eq("content", content).limit(1);
+    if (dup && dup.length) return;
+    const { count } = await ctx.admin
+      .from("internal_agent_memories").select("id", { count: "exact", head: true }).eq("agent_id", ctx.agentId);
+    if ((count ?? 0) >= 300) return;
+    await ctx.admin.from("internal_agent_memories").insert({
+      agent_id: ctx.agentId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+      kind: "context", content, importance: 2, source: "agent", source_run_id: ctx.runId ?? null,
+      embedding: await embedMemoryVector(content),
+    });
+  } catch { /* best-effort */ }
 }
 
 function decodeEntities(s: string): string {
@@ -351,7 +465,14 @@ async function queryTable(
   if (!allowedTables.includes(table)) {
     return `ERROR: table "${table}" is not allowed. Allowed tables: ${allowedTables.join(", ") || "(none configured)"}.`;
   }
-  const columns = str(args.columns, "*");
+  let columns = str(args.columns, "*");
+  // SECURITY: only plain column names / "*" — block PostgREST embed `other(*)`,
+  // rename `a:b`, casts `::` and FK hints `!`, which (on a service-role client
+  // that bypasses RLS) could pull data from non-allowlisted related tables.
+  if (!/^[\w\s,*]+$/.test(columns)) {
+    return `ERROR: invalid columns. Use a comma-separated list of plain column names or "*" (no joins/embeds).`;
+  }
+  columns = columns.replace(/\s+/g, "");
   const limit = Math.min(Math.max(Number(args.limit ?? 25) || 25, 1), 100);
   const orderBy = str(args.order_by);
   const filters = (args.filters && typeof args.filters === "object" ? args.filters : {}) as Record<string, unknown>;
@@ -492,6 +613,8 @@ export function buildInternalToolset(
 ): { defs: ToolDef[]; executor: ToolExecutor; capabilitySummary: string } {
   const tools = new Map<string, InternalTool>();
   const summaryLines: string[] = [];
+  // Execution-family guidance rendered under the EXECUTION section of the tree.
+  const sandboxGuidance: string[] = [];
 
   // Always-on: deliverable materialisation.
   tools.set("create_deliverable", {
@@ -536,7 +659,125 @@ export function buildInternalToolset(
   });
   summaryLines.push("- create_deliverable: save your outputs as durable deliverables, ideally as a structured 'report' with charts/KPIs (always available).");
 
-  // Always-on: file a trackable task.
+  // Always-on: the run's todo list (TodoWrite-style). The FULL list is sent on
+  // every call and persisted structurally on the run — it drives the checklist
+  // the user watches live. Replaces the old per-step update_plan_step.
+  tools.set("update_todos", {
+    def: {
+      name: "update_todos",
+      description:
+        "Maintain your run's todo checklist — the user watches it live. Send the COMPLETE list every time (all items, not a diff). Rules: exactly ONE item 'active' at a time; update it right BEFORE starting a step (mark it active) and right AFTER finishing it (mark it done — only once VERIFIED); mark 'blocked' with a note when stuck; add new items when you discover extra work. Keep titles short and action-oriented.",
+      parameters: {
+        type: "object",
+        properties: {
+          todos: {
+            type: "array",
+            description: "The full, ordered todo list.",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "Stable id, e.g. 'step-1'." },
+                title: { type: "string", description: "Short action title." },
+                status: { type: "string", enum: ["pending", "active", "done", "blocked"] },
+                note: { type: "string", description: "Optional one-liner (verification result, blocker reason)." },
+              },
+              required: ["id", "title", "status"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["todos"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const raw = Array.isArray(args.todos) ? args.todos : null;
+      if (!raw || raw.length === 0) return "ERROR: todos (non-empty array) is required.";
+      const todos = raw.slice(0, 20).map((t: any, i: number) => ({
+        id: str(t?.id) || `step-${i + 1}`,
+        title: str(t?.title).slice(0, 140) || `Step ${i + 1}`,
+        status: ["pending", "active", "done", "blocked"].includes(str(t?.status)) ? str(t?.status) : "pending",
+        ...(str(t?.note) ? { note: str(t?.note).slice(0, 300) } : {}),
+      }));
+      if (ctx.runId) {
+        await ctx.admin.from("internal_agent_runs").update({ todos }).eq("id", ctx.runId);
+      }
+      await ctx.logEvent("todos", { todos });
+      const active = todos.filter((t) => t.status === "active").length;
+      const done = todos.filter((t) => t.status === "done").length;
+      const warn = active > 1 ? " WARNING: more than one item is 'active' — keep exactly one." : "";
+      return `Todos updated (${done}/${todos.length} done).${warn}`;
+    },
+  });
+  summaryLines.push("- update_todos: maintain your live todo checklist (send the FULL list; one item active at a time).");
+
+  // Always-on: pause and ask the human (Claude-Code-style clarification). Use
+  // ONLY when genuinely blocked on missing info, an ambiguous choice, or before
+  // an irreversible action. Throws AwaitingInputError to stop the run cleanly.
+  tools.set("ask_user", {
+    def: {
+      name: "ask_user",
+      description:
+        "Pause and ask the human a clarifying question, then STOP. Use this ONLY when you genuinely cannot proceed correctly without more information: an ambiguous/under-specified request, a missing input, a fork in direction, or confirmation before an irreversible action. Do NOT use it for things you can reasonably decide or look up yourself — prefer acting autonomously. The run pauses until the human replies.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The single, specific question to ask. Be concise and explain why you need it." },
+          options: { type: "array", items: { type: "string" }, description: "Optional suggested answers / choices to make replying quick." },
+        },
+        required: ["question"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const question = str(args.question).trim();
+      if (!question) return "ERROR: question is required.";
+      const options = Array.isArray(args.options) ? (args.options as unknown[]).map((o) => str(o)).filter(Boolean).slice(0, 6) : [];
+      await ctx.logEvent("question", { question, options });
+      // Control-flow signal: unwinds the tool loop and pauses the run.
+      throw new AwaitingInputError(question, options);
+    },
+  });
+  summaryLines.push("- ask_user: pause and ask the human for clarification when (and only when) you truly cannot proceed correctly without it (always available).");
+
+  // Contextual skills (progressive disclosure): the agent's activated skills are
+  // listed by name/description in the system prompt; their FULL playbook is
+  // pulled into context on demand with use_skill, right before a step needs it.
+  if (ctx.skills && ctx.skills.length) {
+    const bySlug = new Map(ctx.skills.map((s) => [s.slug, s]));
+    tools.set("use_skill", {
+      def: {
+        name: "use_skill",
+        description:
+          "Load the FULL playbook of one of your activated skills into context — call it right before a step that needs that expertise. Returns the skill's detailed methodology and the tools it relies on. The list of skills available to you (name + slug + description) is in your system prompt under 'Activated skills'.",
+        parameters: {
+          type: "object",
+          properties: {
+            slug: { type: "string", description: "The slug of the activated skill to load." },
+          },
+          required: ["slug"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const slug = str(args.slug);
+        const sk = bySlug.get(slug);
+        if (!sk) return `ERROR: "${slug}" is not one of your activated skills. Available: ${[...bySlug.keys()].join(", ") || "(none)"}.`;
+        const parts: string[] = [`# Skill loaded: ${sk.name} (${sk.slug})`];
+        if (sk.description) parts.push(sk.description);
+        if (sk.tools && sk.tools.length) parts.push(`Tools this skill uses: ${sk.tools.join(", ")}.`);
+        parts.push("", "## Playbook", sk.instructions || "(no detailed instructions provided — apply the skill's intent.)");
+        parts.push("", "Now apply this skill to the current step.");
+        return cap(parts.join("\n"), 6000);
+      },
+    });
+    const skillIndex = ctx.skills.map((s) => `${s.name} (${s.slug})`).join(", ");
+    summaryLines.push(`- use_skill: load the full playbook of an activated skill on demand. Activated: ${skillIndex}.`);
+  }
+
+  // Chat only: filing tasks is coordination noise during a mission run (it fed
+  // the meta-work spiral) — a mission should EXECUTE, not file to-dos.
+  if (!ctx.missionMode) {
   tools.set("create_task", {
     def: {
       name: "create_task",
@@ -568,6 +809,7 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- create_task: file trackable to-dos / action items (always available).");
+  }
 
   // Always-on: spin up a full background mission (assigned to self by default,
   // or to a teammate agent). Use this when the user asks the agent to "do X" as
@@ -602,11 +844,29 @@ export function buildInternalToolset(
         if (mate) agentId = mate.id;
       }
       if (!agentId) return "ERROR: no agent to assign the mission to.";
+      const isDelegation = agentId !== ctx.agentId;
+      // FORK-BOMB GUARD 1: inside a MISSION run, an agent may never create a
+      // mission for ITSELF (this is how one bad run self-replicated 269 times).
+      if (ctx.missionMode && !isDelegation) {
+        return "ERROR: you are ALREADY in a mission run. Do NOT create missions for yourself — that produces no work. Execute the task directly NOW with your execution tools (shell_exec, file_write, python_exec, …). If a step fails, read the error and try a different approach.";
+      }
+      // FORK-BOMB GUARD 2: any mission creation counts a step down the chain,
+      // self-missions included (chat mode), capped by MAX_DELEGATION_DEPTH.
+      const depth = ctx.delegationDepth ?? 0;
+      const childDepth = depth + 1;
+      if (childDepth > MAX_DELEGATION_DEPTH) {
+        return `ERROR: delegation depth limit (${MAX_DELEGATION_DEPTH}) reached — cannot create more missions from this chain. Do the work yourself or report back instead.`;
+      }
+      // FORK-BOMB GUARD 3: per-run budget (2) and per-hour flood cap (10).
+      const guard = await missionCreationGuard(ctx);
+      if (guard) return guard;
       const startNow = args.start_now !== false;
       const { data: mission, error } = await ctx.admin.from("internal_agent_missions").insert({
         agent_id: agentId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
         title, brief, acceptance_criteria: str(args.acceptance_criteria) || null,
         status: startNow ? "active" : "draft",
+        delegation_depth: childDepth,
+        delegated_by_agent: ctx.agentId,
       }).select("id").single();
       if (error) return `ERROR creating mission: ${error.message}`;
       // Kick it off now via the run function (best-effort, fire-and-forget).
@@ -737,6 +997,7 @@ export function buildInternalToolset(
         source: "agent",
         source_run_id: ctx.runId,
         source_conversation_id: ctx.conversationId ?? null,
+        embedding: await embedMemoryVector(content),
       });
       if (error) return `ERROR: ${error.message}`;
       return `Memory saved (${kind}, importance ${importance}).`;
@@ -759,6 +1020,26 @@ export function buildInternalToolset(
     run: async (args) => {
       const query = str(args.query).trim();
       if (!query) return "ERROR: query is required.";
+      // Semantic search first (meaning-based, finds memories that don't share
+      // the exact words), keyword ilike as fallback.
+      try {
+        if (Deno.env.get("JINA_API_KEY")) {
+          const [qvec] = await embedTexts([query.slice(0, 500)], "retrieval.query");
+          if (qvec) {
+            const { data: sem } = await ctx.admin.rpc("match_agent_memories", {
+              p_agent_id: ctx.agentId,
+              p_query_embedding: toVectorLiteral(qvec),
+              p_match_count: 10,
+            });
+            if (Array.isArray(sem) && sem.length > 0) {
+              return JSON.stringify(sem.map((m: any) => ({
+                kind: m.kind, content: m.content, importance: m.importance,
+                similarity: Number(m.similarity ?? 0).toFixed(2),
+              })));
+            }
+          }
+        }
+      } catch { /* fall back to keyword */ }
       const { data } = await ctx.admin
         .from("internal_agent_memories")
         .select("kind, content, importance, created_at")
@@ -773,8 +1054,10 @@ export function buildInternalToolset(
   });
   summaryLines.push("- save_memory / search_memory: your persistent cross-session memory (always available).");
 
-  // Always-on: the agent manages its own kanban board.
+  // Chat only: kanban housekeeping is meta-work — during a mission run the
+  // board is driven by the run lifecycle itself, not by the model.
   const BOARD_COLUMNS = ["backlog", "todo", "in_progress", "review", "done"];
+  if (!ctx.missionMode) {
   tools.set("list_missions", {
     def: {
       name: "list_missions",
@@ -835,6 +1118,7 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- list_missions / move_mission: inspect and move missions on your kanban board (always available).");
+  }
 
   // Always-on: deep multi-source web research.
   tools.set("deep_research", {
@@ -860,9 +1144,12 @@ export function buildInternalToolset(
   });
   summaryLines.push("- deep_research: thorough multi-source web research with synthesis (always available).");
 
-  // Always-on: browse real web pages via runner's Playwright instance.
-  const runnerUrl = Deno.env.get("RUNNER_BROWSER_URL") || Deno.env.get("RUNNER_URL");
-  if (runnerUrl) {
+  // Runner mode: drive a real Playwright browser (browse_web) AND execute on
+  // the machine hosting the runner — shell, Python/Node, files. Available only
+  // when the agent's execution environment is "runner" (per-agent choice) and
+  // a runner URL is configured.
+  const runnerUrl = ctx.runnerUrl || Deno.env.get("RUNNER_BROWSER_URL") || Deno.env.get("RUNNER_URL");
+  if (ctx.runnerEnabled && runnerUrl) {
     tools.set("browse_web", {
       def: {
         name: "browse_web",
@@ -910,6 +1197,287 @@ export function buildInternalToolset(
       },
     });
     summaryLines.push("- browse_web: navigate and interact with real web pages via a browser (always available when runner is connected).");
+
+    // ── Machine tools: shell, code and files on the runner host. ──
+    // Same tool names as sandbox mode (the two modes are exclusive) so the
+    // UI icons, timeline rendering and EXECUTION family mapping work unchanged.
+    const rnBase = String(runnerUrl).replace(/\/$/, "");
+    const rn = async (path: string, body?: Record<string, unknown>): Promise<any> => {
+      const res = await fetch(`${rnBase}${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Runner-Token": Deno.env.get("PLATFORM_RUNNER_TOKEN") || "",
+          // Bypass ngrok free-tier interstitial warning page (returns HTML otherwise).
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({ session_id: ctx.agentId, ...(body ?? {}) }),
+      });
+      const text = await res.text();
+      if (text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html")) {
+        throw new Error("Runner unreachable: got an HTML page (likely an ngrok tunnel warning). Check runner_browser_url in app_config.");
+      }
+      let json: any = {};
+      try { json = JSON.parse(text); } catch { json = { raw: text }; }
+      if (!res.ok || json?.error) {
+        const detail = json?.error || json?.raw || `HTTP ${res.status}`;
+        throw new Error(`Runner error: ${typeof detail === "string" ? detail.slice(0, 300) : JSON.stringify(detail).slice(0, 300)}`);
+      }
+      return json;
+    };
+    const fmtExec = (d: any) =>
+      `[exit: ${d.exit_code ?? "?"}${d.timed_out ? " | TIMED OUT" : ""} | ${d.duration_ms ?? "?"}ms]\n\n${String(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${String(d.stderr).slice(0, 4000)}` : ""}`;
+
+    tools.set("shell_exec", {
+      def: {
+        name: "shell_exec",
+        description: "Run a shell command on the runner machine (the operator's real computer). Use for: installing packages (pip/npm install), git, running scripts, builds, curl, any CLI. Relative paths resolve inside your persistent agent workspace. Returns stdout, stderr and exit code. Call machine_info first if unsure of the OS/default shell.",
+        parameters: { type: "object", properties: {
+          command: { type: "string", description: "The shell command to run." },
+          shell: { type: "string", enum: ["powershell", "cmd", "bash", "sh"], description: "Shell to use (default: powershell on Windows, bash elsewhere)." },
+          cwd: { type: "string", description: "Working directory (default: your agent workspace)." },
+          timeout: { type: "number", description: "Timeout in seconds (default 60, max 300)." },
+        }, required: ["command"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/exec", {
+          command: str(args.command),
+          shell: str(args.shell) || undefined,
+          cwd: str(args.cwd) || undefined,
+          timeout: Math.min(Number(args.timeout) || 60, 300),
+        });
+        if ((d.exit_code ?? 1) === 0) await rememberSandboxAction(ctx, str(args.command));
+        return `$ ${str(args.command)}\n${fmtExec(d)}`;
+      },
+    });
+
+    tools.set("python_exec", {
+      def: {
+        name: "python_exec",
+        description: "Execute Python code on the runner machine, inside your persistent workspace. Each call is a FRESH process — no in-memory state survives between calls, but files do. For multi-step pipelines, write ONE script with file_write and run it via shell_exec, saving intermediate results to files.",
+        parameters: { type: "object", properties: {
+          code: { type: "string", description: "Python code to execute." },
+          timeout: { type: "number", description: "Timeout in seconds (default 60, max 300)." },
+        }, required: ["code"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/code", { language: "python", code: str(args.code), timeout: Math.min(Number(args.timeout) || 60, 300) });
+        return fmtExec(d);
+      },
+    });
+
+    tools.set("nodejs_exec", {
+      def: {
+        name: "nodejs_exec",
+        description: "Execute Node.js / JavaScript code on the runner machine (fresh process, top-level import/await supported). Files persist in your workspace; in-memory state does not.",
+        parameters: { type: "object", properties: {
+          code: { type: "string", description: "JavaScript code to execute." },
+          timeout: { type: "number", description: "Timeout in seconds (default 60, max 300)." },
+        }, required: ["code"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/code", { language: "node", code: str(args.code), timeout: Math.min(Number(args.timeout) || 60, 300) });
+        return fmtExec(d);
+      },
+    });
+
+    tools.set("file_write", {
+      def: {
+        name: "file_write",
+        description: "Write content to a file on the runner machine. Creates parent directories. Relative paths go inside your persistent agent workspace (preferred).",
+        parameters: { type: "object", properties: {
+          file: { type: "string", description: "File path (relative = inside your workspace, e.g. scripts/analyse.py)." },
+          content: { type: "string", description: "Full file content." },
+          append: { type: "boolean", description: "Append instead of overwrite (default false)." },
+        }, required: ["file", "content"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/files", { action: "write", file: str(args.file), content: str(args.content), append: !!args.append });
+        return `File written: ${d.file ?? str(args.file)} (${d.bytes_written ?? str(args.content).length} bytes)`;
+      },
+    });
+
+    tools.set("file_read", {
+      def: {
+        name: "file_read",
+        description: "Read a file from the runner machine (relative paths = your workspace).",
+        parameters: { type: "object", properties: {
+          file: { type: "string", description: "File path to read." },
+        }, required: ["file"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/files", { action: "read", file: str(args.file) });
+        return String(d.content ?? "").slice(0, 12000);
+      },
+    });
+
+    tools.set("file_edit", {
+      def: {
+        name: "file_edit",
+        description: "Edit a file on the runner machine: replace exact text (old_str → new_str). The old_str must match exactly once.",
+        parameters: { type: "object", properties: {
+          file: { type: "string", description: "File path." },
+          old_str: { type: "string", description: "Exact text to find." },
+          new_str: { type: "string", description: "Replacement text." },
+        }, required: ["file", "old_str", "new_str"], additionalProperties: false },
+      },
+      run: async (args) => {
+        await rn("/api/files", { action: "replace", file: str(args.file), old_str: str(args.old_str), new_str: str(args.new_str) });
+        return `File edited: ${str(args.file)} (1 replacement).`;
+      },
+    });
+
+    tools.set("list_files", {
+      def: {
+        name: "list_files",
+        description: "List files and directories on the runner machine (relative paths = your workspace).",
+        parameters: { type: "object", properties: {
+          path: { type: "string", description: "Directory path (default: your workspace root)." },
+          recursive: { type: "boolean", description: "List recursively (default false)." },
+        }, additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/files", { action: "list", path: str(args.path) || ".", recursive: !!args.recursive });
+        return JSON.stringify(d).slice(0, 8000);
+      },
+    });
+
+    tools.set("file_search", {
+      def: {
+        name: "file_search",
+        description: "Search files on the runner machine: by name glob (glob param) or by content (grep param).",
+        parameters: { type: "object", properties: {
+          path: { type: "string", description: "Directory to search (default: your workspace)." },
+          glob: { type: "string", description: "Filename glob, e.g. **/*.py" },
+          grep: { type: "string", description: "Text/regex to find inside files." },
+        }, additionalProperties: false },
+      },
+      run: async (args) => {
+        const p = str(args.path) || ".";
+        const d = str(args.grep)
+          ? await rn("/api/files", { action: "grep", path: p, pattern: str(args.grep), max_results: 50 })
+          : await rn("/api/files", { action: "find", path: p, glob: str(args.glob) || "*" });
+        return JSON.stringify(d).slice(0, 8000);
+      },
+    });
+
+    tools.set("machine_info", {
+      def: {
+        name: "machine_info",
+        description: "Inspect the runner machine: OS, available shells, Python/Node/git versions, your workspace path, CPU/RAM. Call it once before machine work to know your environment.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      },
+      run: async () => JSON.stringify(await rn("/api/info")).slice(0, 4000),
+    });
+
+    tools.set("manage_files", {
+      def: {
+        name: "manage_files",
+        description: "Filesystem housekeeping on the runner machine: create a directory, delete a file/folder, move/rename, or copy. Relative paths resolve inside your workspace.",
+        parameters: { type: "object", properties: {
+          action: { type: "string", enum: ["mkdir", "delete", "move", "copy"], description: "Operation to perform." },
+          path: { type: "string", description: "Target path (for mkdir / delete)." },
+          from: { type: "string", description: "Source path (for move / copy)." },
+          to: { type: "string", description: "Destination path (for move / copy)." },
+          recursive: { type: "boolean", description: "For delete: remove folders and their contents (default false)." },
+        }, required: ["action"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/files", {
+          action: str(args.action), path: str(args.path) || undefined,
+          from: str(args.from) || undefined, to: str(args.to) || undefined,
+          recursive: !!args.recursive,
+        });
+        return JSON.stringify(d).slice(0, 2000);
+      },
+    });
+
+    tools.set("download_file", {
+      def: {
+        name: "download_file",
+        description: "Download a file from a http(s) URL directly onto the runner machine (into your workspace). Use for datasets, repos' release assets, images, models — faster and more reliable than piping through code. Max 100 MB.",
+        parameters: { type: "object", properties: {
+          url: { type: "string", description: "The http(s) URL to download." },
+          file: { type: "string", description: "Destination path (default: filename from the URL, inside your workspace)." },
+        }, required: ["url"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/download", { url: str(args.url), file: str(args.file) || undefined });
+        return `Downloaded ${d.bytes ?? "?"} bytes → ${d.file ?? "?"}${d.content_type ? ` (${d.content_type})` : ""}`;
+      },
+    });
+
+    // Long-running processes: handleExec is timeout-bounded, so servers/watchers
+    // need this manager. Start returns a proc_id; tail with process_logs, stop
+    // with process_stop. Critical for coding tasks (dev servers, test watchers).
+    tools.set("run_background", {
+      def: {
+        name: "run_background",
+        description: "Start a LONG-RUNNING process on the runner machine that keeps running between tool calls (e.g. a dev server, a watcher, a training job). Returns a proc_id. Use process_logs to read its output and process_stop to kill it. For short commands that finish on their own, use shell_exec instead.",
+        parameters: { type: "object", properties: {
+          command: { type: "string", description: "The command to launch (e.g. 'npm run dev', 'python app.py')." },
+          shell: { type: "string", enum: ["powershell", "cmd", "bash", "sh"], description: "Shell to use (default matches the OS)." },
+          cwd: { type: "string", description: "Working directory (default: your workspace)." },
+        }, required: ["command"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/proc", { action: "start", command: str(args.command), shell: str(args.shell) || undefined, cwd: str(args.cwd) || undefined });
+        return `Started ${d.proc_id} [${d.status}${d.exit_code != null ? ` exit ${d.exit_code}` : ""}] pid ${d.pid}\n${d.stdout ? `stdout:\n${d.stdout}` : ""}${d.stderr ? `\nstderr:\n${d.stderr}` : ""}`;
+      },
+    });
+
+    tools.set("list_processes", {
+      def: {
+        name: "list_processes",
+        description: "List the background processes you started on the runner machine, with their status (running/exited/killed) and uptime.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      },
+      run: async () => {
+        const d = await rn("/api/proc", { action: "list" });
+        const list = Array.isArray(d.processes) ? d.processes : [];
+        if (list.length === 0) return "No background processes.";
+        return JSON.stringify(list).slice(0, 4000);
+      },
+    });
+
+    tools.set("process_logs", {
+      def: {
+        name: "process_logs",
+        description: "Read the latest stdout/stderr of a background process (by proc_id). ALWAYS check the logs after run_background to confirm it actually started and didn't crash.",
+        parameters: { type: "object", properties: {
+          proc_id: { type: "string", description: "The proc_id returned by run_background." },
+          tail: { type: "number", description: "Max characters of output to return (default 8000)." },
+        }, required: ["proc_id"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/proc", { action: "logs", proc_id: str(args.proc_id), tail: Number(args.tail) || undefined });
+        return `[${d.proc_id} · ${d.status}${d.exit_code != null ? ` · exit ${d.exit_code}` : ""}]\n${d.stdout ? `stdout:\n${d.stdout}` : "(no stdout)"}${d.stderr ? `\nstderr:\n${d.stderr}` : ""}`;
+      },
+    });
+
+    tools.set("process_stop", {
+      def: {
+        name: "process_stop",
+        description: "Stop (kill) a background process you started, by proc_id. Always stop servers/watchers you no longer need before finishing.",
+        parameters: { type: "object", properties: {
+          proc_id: { type: "string", description: "The proc_id to stop." },
+        }, required: ["proc_id"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const d = await rn("/api/proc", { action: "stop", proc_id: str(args.proc_id) });
+        return `Process ${d.proc_id} stopped (status: ${d.status}).`;
+      },
+    });
+
+    summaryLines.push("- shell_exec: run shell commands on the runner machine (pip/npm install, git, scripts, any CLI).");
+    summaryLines.push("- python_exec / nodejs_exec: execute code on the runner machine (fresh process each call, files persist).");
+    summaryLines.push("- file_write / file_read / file_edit / list_files / file_search / manage_files: full filesystem in your persistent workspace (read, write, edit, glob/grep, mkdir/delete/move/copy).");
+    summaryLines.push("- download_file: fetch a URL straight to disk (datasets, assets, models).");
+    summaryLines.push("- run_background / list_processes / process_logs / process_stop: manage long-running processes (dev servers, watchers, jobs).");
+    summaryLines.push("- machine_info: OS, runtimes and workspace inventory of the runner machine.");
+    sandboxGuidance.push("  RUNNER MACHINE — your execution tools run on the operator's REAL machine, not a disposable container. Your workspace directory persists across runs: files you create remain available next time. Work INSIDE the workspace (use relative paths). NEVER run destructive or system-wide commands (deleting outside the workspace, formatting, registry edits, shutdown/reboot, killing processes you didn't start) and never read or exfiltrate credentials or personal files unrelated to the task.");
+    sandboxGuidance.push("  EFFICIENCY: python_exec/nodejs_exec start a FRESH process each call — in-memory state is lost between calls. For any multi-step pipeline (load → analyse → save), write ONE self-contained script with file_write and run it with shell_exec, saving intermediate results (CSV/JSON) to files. The default shell may be PowerShell (Windows) — call machine_info first when unsure, and prefer cross-platform commands or explicit shell selection.");
+    sandboxGuidance.push("  LONG-RUNNING PROCESSES: shell_exec is timeout-bounded and kills its process tree, so NEVER start a server/watcher with it — use run_background, which survives between calls. After run_background, ALWAYS call process_logs to confirm it started (a printed URL, 'listening on…') and didn't crash; if it crashed, fix and relaunch. Stop every process you started with process_stop before finishing the task.");
   }
 
   // ── Sandbox tools: only available when the agent runs in sandbox mode. ──
@@ -955,7 +1523,8 @@ export function buildInternalToolset(
       },
       run: async (args) => {
         const d = await sb("v1/bash/exec", { command: str(args.command), timeout: Math.min(Number(args.timeout) || 60, 300), exec_dir: str(args.exec_dir) || undefined });
-        if (ctx.logEvent) await ctx.logEvent("tool_call", { tool: "shell_exec", command: str(args.command).slice(0, 120), exit_code: d.exit_code });
+        // Auto-remember installs / dataset fetches when the command succeeded.
+        if ((d.exit_code ?? 1) === 0) await rememberSandboxAction(ctx, str(args.command));
         return `$ ${str(args.command)}\n[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 4000)}` : ""}`;
       },
     });
@@ -971,10 +1540,27 @@ export function buildInternalToolset(
         }, required: ["code"], additionalProperties: false },
       },
       run: async (args) => {
-        const d = await sb("v1/code/execute", { language: "python", code: str(args.code), stateful: args.stateful !== false });
-        if (ctx.logEvent) await ctx.logEvent("tool_call", { tool: "python_exec", exit_code: d.exit_code });
+        const code = str(args.code);
+        const stateful = args.stateful !== false;
+        const exec = () => sb("v1/code/execute", { language: "python", code, stateful });
+        const kernelLost = (s: any) =>
+          /kernel|no kernel|died|dead|restart|disconnect|connection/i.test(
+            `${s?.status ?? ""} ${s?.stderr ?? ""} ${Array.isArray(s?.traceback) ? s.traceback.join(" ") : ""}`,
+          );
+        let d = await exec();
+        // The stateful Jupyter kernel can die between calls. It auto-restarts, so
+        // retry ONCE; the model is told its in-memory state was reset.
+        let restarted = false;
+        if (kernelLost(d)) {
+          restarted = true;
+          await new Promise((r) => setTimeout(r, 1500));
+          d = await exec();
+        }
         const tb = Array.isArray(d.traceback) ? d.traceback.join("\n") : "";
-        return `[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 3000)}` : ""}${tb ? `\n--- traceback ---\n${tb.slice(0, 3000)}` : ""}`;
+        const hint = restarted
+          ? "\n\n[hint: the Python kernel had restarted — in-memory variables were reset. Re-load data from disk (re-read your CSV / re-import) before relying on previous state.]"
+          : "";
+        return `[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 3000)}` : ""}${tb ? `\n--- traceback ---\n${tb.slice(0, 3000)}` : ""}${hint}`;
       },
     });
 
@@ -1020,7 +1606,7 @@ export function buildInternalToolset(
       },
       run: async (args) => {
         const d = await sb("v1/file/write", { file: str(args.file), content: str(args.content), append: !!args.append });
-        if (ctx.logEvent) await ctx.logEvent("tool_call", { tool: "file_write", file: str(args.file) });
+        // (the run loop's logging executor already records this call with full args)
         return `File written: ${str(args.file)} (${d.bytes_written ?? str(args.content).length} bytes)`;
       },
     });
@@ -1176,8 +1762,9 @@ export function buildInternalToolset(
     summaryLines.push("- file_write / file_read / file_edit / list_files / file_search: full filesystem (write, read, edit, list, glob/grep).");
     summaryLines.push("- sandbox_browser: drive a real Chromium browser (navigate, screenshot, get_markdown, click, fill, evaluate JS, 25+ actions).");
     summaryLines.push("- sandbox_env: environment info, installed packages, URL→markdown conversion.");
-    summaryLines.push("");
-    summaryLines.push("IMPORTANT: You have a REAL Linux sandbox. To save a file, use file_write. To run code, use python_exec or shell_exec. NEVER say you 'can't access the filesystem' — you can. Actually execute the task.");
+    sandboxGuidance.push("  SANDBOX DISCIPLINE — use the sandbox ONLY when the task actually needs it: running code, reading/writing files, installing packages, fetching or processing data, or building/testing something. For greetings, simple questions, explanations, advice, opinions or planning, ANSWER DIRECTLY from your own knowledge and do NOT call any sandbox / shell / python / file tool. Don't 'check the sandbox' by reflex. When the work genuinely requires it: save files with file_write, run code with python_exec or shell_exec — and never claim you 'can't access the filesystem' (you can).");
+    sandboxGuidance.push("  EFFICIENCY: the python_exec kernel can RESET between calls (state is lost), so do NOT split one analysis into many tiny python_exec calls that each re-import and re-read the data — that wastes huge amounts of tokens. For any multi-step pipeline (load → analyse → model → save), write ONE self-contained script with file_write and run it with shell_exec \"python3 script.py\", saving intermediate results (CSV/JSON/pickle) to disk. Re-use those files instead of recomputing.");
+    sandboxGuidance.push("  VERIFY BACKGROUND PROCESSES: after launching anything with `nohup … &` (a server, a Gradio app), you MUST read its log (e.g. `cat gradio.log`) to confirm it actually started — never assume success. If the log shows a traceback/error, FIX the script and relaunch before continuing. For a web app: a 'public URL' only counts if the log printed it AND a test request to it succeeds. Gradio `demo.launch(share=True)` prints a *.gradio.live URL; avoid version-specific kwargs (e.g. show_copy_button) that crash on launch.");
   }
 
   // -------------------------------------------------------------------------
@@ -1292,6 +1879,15 @@ export function buildInternalToolset(
         if (!peer || (peer as any).is_archived || (peer as any).collaboration_enabled === false) {
           return "ERROR: recipient is not a collaborating agent on this project.";
         }
+        // Anti-loop: delegation steps down the chain (was previously NOT
+        // propagated — a delegated agent could delegate forever) + shared
+        // per-run budget and hourly flood cap.
+        const childDepth = (ctx.delegationDepth ?? 0) + 1;
+        if (childDepth > MAX_DELEGATION_DEPTH) {
+          return `ERROR: delegation depth limit (${MAX_DELEGATION_DEPTH}) reached — cannot delegate further. Do this work yourself or report back instead.`;
+        }
+        const guard = await missionCreationGuard(ctx);
+        if (guard) return guard;
         const reportBack = args.report_back !== false;
         const { data: mission, error } = await ctx.admin
           .from("internal_agent_missions")
@@ -1304,6 +1900,7 @@ export function buildInternalToolset(
             status: "active",
             board_column: "todo",
             priority: "high",
+            delegation_depth: childDepth,
             delegated_by_agent: ctx.agentId,
             report_back_to_agent: reportBack ? ctx.agentId : null,
           })
@@ -1704,22 +2301,89 @@ export function buildInternalToolset(
 
   const defs: ToolDef[] = [...tools.values()].map((t) => ({ type: "function", function: t.def }));
 
+  // NOTE: the executor does NOT log run events itself — the run loop's logging
+  // wrapper (internal-agent-run) is the single source of tool_call/tool_result
+  // events. Logging in both places was double-rendering every action in the UI.
   const executor: ToolExecutor = async (name, args) => {
     if (await ctx.isCancelled()) throw new RunCancelledError();
     const tool = tools.get(name);
     if (!tool) return `ERROR: unknown tool "${name}".`;
-    await ctx.logEvent("tool_call", { tool: name, args });
     try {
-      const result = await tool.run(args);
-      await ctx.logEvent("tool_result", { tool: name, ok: !result.startsWith("ERROR"), preview: result.slice(0, 500) });
-      return result;
+      return await tool.run(args);
     } catch (e) {
-      if (e instanceof RunCancelledError) throw e;
+      if (e instanceof RunCancelledError || e instanceof AwaitingInputError) throw e;
       const msg = e instanceof Error ? e.message : String(e);
-      await ctx.logEvent("tool_result", { tool: name, ok: false, preview: `ERROR: ${msg}`.slice(0, 500) });
       return `ERROR: ${msg}`;
     }
   };
 
-  return { defs, executor, capabilitySummary: summaryLines.join("\n") };
+  return { defs, executor, capabilitySummary: buildCapabilityTree(tools, sandboxGuidance, summaryLines) };
+}
+
+// ── Structured toolbox tree ───────────────────────────────────────────────────
+// The system prompt's tool inventory, grouped by FAMILY in order of preference,
+// with one usage rule per family. Replaces the old flat summaryLines dump —
+// the flat list buried execution tools among meta-tools, which fed the
+// "meta-work instead of real work" failure mode.
+const FAMILY_ORDER = ["EXECUTION", "WEB", "DATA", "PLAN", "DELIVER", "MEMORY", "TEAM", "INTEGRATIONS"] as const;
+type ToolFamily = (typeof FAMILY_ORDER)[number];
+const FAMILY_META: Record<ToolFamily, { label: string; rule: string }> = {
+  EXECUTION: { label: "EXECUTION — files, code, shell, browser", rule: "Your hands. REAL work happens here: create files, run commands, process data, build and test. Prefer these tools for any concrete task." },
+  WEB: { label: "WEB — research & retrieval", rule: "Gather external information, then ACT on it with EXECUTION tools." },
+  DATA: { label: "DATA — internal data & knowledge", rule: "Read project data and knowledge bases (read-only)." },
+  PLAN: { label: "PLAN & PROGRESS", rule: "Keep your todo checklist current with update_todos (before AND after each step). Load skill playbooks on demand with use_skill." },
+  DELIVER: { label: "DELIVERABLES", rule: "Persist each final output ONCE. Never call create_deliverable repeatedly for the same artifact." },
+  MEMORY: { label: "MEMORY", rule: "Save a durable fact once; recall with search_memory. Memory records knowledge — it does not do work." },
+  TEAM: { label: "TEAM & DELEGATION", rule: "STRICT: creating missions/messages is coordination, NOT execution. Never create a mission for yourself during a mission run. Max 2 delegations per run. When in doubt, do the work yourself with EXECUTION tools." },
+  INTEGRATIONS: { label: "INTEGRATIONS & OTHER", rule: "Connectors, internal functions, custom webhooks — check each tool's description." },
+};
+const TOOL_FAMILY: Record<string, ToolFamily> = {
+  shell_exec: "EXECUTION", python_exec: "EXECUTION", nodejs_exec: "EXECUTION", jupyter_exec: "EXECUTION",
+  file_write: "EXECUTION", file_read: "EXECUTION", file_edit: "EXECUTION", list_files: "EXECUTION",
+  file_search: "EXECUTION", sandbox_browser: "EXECUTION", sandbox_env: "EXECUTION", browse_web: "EXECUTION",
+  machine_info: "EXECUTION", manage_files: "EXECUTION", download_file: "EXECUTION",
+  run_background: "EXECUTION", list_processes: "EXECUTION", process_logs: "EXECUTION", process_stop: "EXECUTION",
+  web_search: "WEB", read_url: "WEB", deep_research: "WEB", http_get: "WEB",
+  search_knowledge: "DATA", query_table: "DATA", list_connectors: "DATA",
+  update_todos: "PLAN", use_skill: "PLAN", ask_user: "PLAN",
+  create_deliverable: "DELIVER",
+  save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY",
+  create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
+  create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM",
+  send_email: "INTEGRATIONS", security_scan: "INTEGRATIONS",
+};
+
+function buildCapabilityTree(
+  tools: Map<string, { def: { name: string; description: string } } & Record<string, unknown>>,
+  sandboxGuidance: string[],
+  legacyLines: string[],
+): string {
+  const byFamily = new Map<ToolFamily, string[]>();
+  for (const [name, t] of tools) {
+    const fam = TOOL_FAMILY[name] ?? "INTEGRATIONS";
+    // First sentence of the description keeps the inventory scannable.
+    const firstSentence = (t.def.description ?? "").split(/(?<=\.)\s+/)[0] ?? "";
+    const arr = byFamily.get(fam) ?? [];
+    arr.push(`  - ${name}: ${firstSentence.slice(0, 200)}`);
+    byFamily.set(fam, arr);
+  }
+  const out: string[] = [
+    "# TOOLBOX — grouped by family, in order of preference",
+    "RULE #1 — PREFER EXECUTION TOOLS. Real progress = files created, commands run, data processed, things built and verified. Meta-tools (missions, tasks, messages, memory) only RECORD or COORDINATE work — they never DO it. If you notice several consecutive meta-tool calls with no new file/command/result, STOP and switch to EXECUTION tools.",
+    "",
+  ];
+  for (const fam of FAMILY_ORDER) {
+    const lines = byFamily.get(fam);
+    if (!lines?.length) continue;
+    out.push(`## ${FAMILY_META[fam].label}`);
+    out.push(`Rule: ${FAMILY_META[fam].rule}`);
+    out.push(...lines);
+    if (fam === "EXECUTION" && sandboxGuidance.length) out.push(...sandboxGuidance);
+    out.push("");
+  }
+  // Legacy free-form guidance lines that aren't per-tool descriptions (kept for
+  // notes like the activated-skills index).
+  const extras = legacyLines.filter((l) => !l.startsWith("- "));
+  if (extras.length) out.push(...extras);
+  return out.join("\n");
 }

@@ -204,7 +204,7 @@ export function WidgetView({
         : value;
     return (
       <div className="flex h-full flex-col justify-center">
-        <div className="text-3xl font-semibold tracking-tight">{fmt(kpiValue, cfg)}</div>
+        <div className="font-stat-number text-3xl font-semibold tracking-tight">{fmt(kpiValue, cfg)}</div>
         {delta !== null && (
           <div className={`mt-1 text-xs ${delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}% vs previous

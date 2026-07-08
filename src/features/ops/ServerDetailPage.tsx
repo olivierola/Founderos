@@ -227,7 +227,7 @@ function SecurityTab({ server }: { server: OpsServer }) {
             <div>
               <div className="text-xs text-muted-foreground">Security score</div>
               <div className={cn(
-                "mt-1 text-3xl font-bold",
+                "font-stat-number mt-1 text-3xl font-bold",
                 tone === "good" && "text-emerald-500",
                 tone === "warn" && "text-amber-500",
                 tone === "bad" && "text-destructive",

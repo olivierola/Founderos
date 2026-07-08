@@ -1,6 +1,6 @@
 import { useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ExternalLink, Loader2, Settings2, X } from "lucide-react";
+import { ExternalLink, Loader2, Settings2, X, Zap, ArrowUpRight, Eye } from "lucide-react";
 import {
   Dialog,
   DialogPortal,
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { callEdge } from "@/lib/edge";
 import type { ProviderDef } from "@/lib/providers";
+import { connectorActionsMeta } from "./connectorActionsCatalog";
 
 interface ConnectorDialogProps {
   open: boolean;
@@ -110,6 +111,7 @@ export function ConnectorDialog({
 
   if (!provider) return null;
   const Icon = provider.icon;
+  const actions = connectorActionsMeta(provider.slug);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -199,6 +201,37 @@ export function ConnectorDialog({
             )}
 
             {error && <p className="text-sm text-destructive">{error}</p>}
+
+            {actions.length > 0 && (
+              <div className="space-y-2 rounded-md border border-border bg-secondary/20 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
+                  <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                  Actions accordées ({actions.length})
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Une fois connecté, un agent pourra effectuer ces actions via l'API officielle de {provider.name}.
+                </p>
+                <ul className="space-y-1.5">
+                  {actions.map((a) => (
+                    <li key={a.name} className="flex items-start gap-2">
+                      <span
+                        className={
+                          "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded " +
+                          (a.write ? "bg-amber-500/15 text-amber-500" : "bg-emerald-500/15 text-emerald-500")
+                        }
+                        title={a.write ? "Écriture — action sortante" : "Lecture seule"}
+                      >
+                        {a.write ? <ArrowUpRight className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      </span>
+                      <div className="min-w-0">
+                        <code className="text-xs font-medium text-foreground">{a.name}</code>
+                        <span className="ml-1.5 text-[11px] text-muted-foreground">{a.description}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* Footer pinned at the bottom of the full-height drawer */}

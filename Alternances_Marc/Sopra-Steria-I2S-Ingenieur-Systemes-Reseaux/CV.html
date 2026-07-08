@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CV · Kamga Marc Olivier · Ingénieur Systèmes & Réseaux</title>
+<style>
+  :root{
+    --accent:#15604D;
+    --accent-tint:#E7F1EC;
+    --accent-tint-2:#C7DED5;
+    --ink:#1f2a26;
+    --muted:#5d6b65;
+    --line:#dde7e2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Arial,sans-serif;
+    color:var(--ink);background:#eef3f0;line-height:1.5;font-size:13px;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .page{max-width:880px;margin:18px auto;background:#fff;padding:16px 16px 16px}
+
+  /* ---- Print button ---- */
+  .toolbar{position:fixed;top:18px;right:18px;z-index:50}
+  .btn-pdf{
+    background:var(--accent);color:#fff;border:none;padding:11px 20px;border-radius:9px;
+    font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(21,96,77,.32);
+    font-family:inherit;letter-spacing:.2px}
+  .btn-pdf:hover{background:#0f4a3b}
+
+  /* ---- Header (full width) ---- */
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;
+    border-bottom:2.5px solid var(--accent);padding-bottom:11px;margin-bottom:14px}
+  .name{font-size:28px;font-weight:800;letter-spacing:.5px;color:var(--ink);line-height:1.05}
+  .role{font-size:13.2px;color:var(--accent);font-weight:700;margin-top:5px;text-transform:uppercase;letter-spacing:.6px}
+  .seek{font-size:12px;color:#46544e;margin-top:5px;font-weight:500}
+  .avail{flex-shrink:0;text-align:center;background:var(--accent-tint);color:var(--accent);
+    border:1px solid var(--accent-tint-2);border-radius:9px;padding:9px 13px;font-weight:700;font-size:12px;line-height:1.4}
+  .avail small{display:block;font-weight:500;color:var(--muted);font-size:10.5px;margin-top:2px}
+
+  /* ---- Two-column body (float, print-robust) ---- */
+  .cols{display:block;position:relative}
+  .cols::after{content:"";display:block;clear:both}
+  .cols::before{content:"";position:absolute;top:0;bottom:0;left:243px;width:1px;background:var(--accent-tint-2)}
+  aside{float:left;width:230px}
+  main{float:right;width:calc(100% - 256px)}
+  main section{margin-top:15px}
+  main .entry{margin-bottom:15px}
+  main .profile{margin-bottom:6px}
+
+  /* ---- Section headers ---- */
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);
+    border-bottom:1.5px solid var(--line);padding-bottom:2px;margin-bottom:6px;font-weight:800}
+  section{margin-top:8px}
+  section:first-child{margin-top:0}
+
+  /* ---- Profile ---- */
+  .profile{font-size:12.3px;color:#39423d;text-align:justify;line-height:1.46;
+    border-left:3px solid var(--accent-tint-2);padding-left:13px;margin-bottom:2px}
+
+  /* ---- Entries (experience + projects) ---- */
+  .entry{margin-bottom:9px;page-break-inside:avoid}
+  .entry:last-child{margin-bottom:0}
+  .entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .entry-title{font-size:13px;font-weight:700;color:var(--ink)}
+  .entry-date{font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap}
+  .entry-sub{font-size:11.6px;color:var(--accent);font-weight:600;margin:1px 0 4px}
+  ul{list-style:none;margin:0}
+  li{position:relative;padding-left:15px;font-size:12.1px;color:#363f3a;margin-bottom:3px;line-height:1.5}
+  li::before{content:"";position:absolute;left:2px;top:7px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  li b{color:var(--ink)}
+
+  .badges{margin-top:4px;display:flex;flex-wrap:wrap;gap:3px}
+  .badge{background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent-tint-2);
+    border-radius:6px;padding:1.5px 7px;font-size:9.8px;font-weight:600;line-height:1.4;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+
+  /* ---- Formation ---- */
+  .mini{margin-bottom:8px}
+  .mini-title{font-size:12.4px;font-weight:700;color:var(--ink)}
+  .mini-sub{font-size:11.4px;color:var(--muted)}
+  .mini-date{font-size:11px;color:var(--accent);font-weight:600}
+  aside .mini{margin-bottom:4px}
+  aside .mini-title{font-size:11.4px;line-height:1.28}
+  aside .mini-sub{font-size:10.8px}
+
+  /* ---- Sidebar ---- */
+  aside h2{font-size:11px}
+  .contact-list{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:#39423d}
+  .contact-list b{color:var(--accent);font-weight:700}
+
+  .side-group{margin-bottom:4px}
+  .side-group:last-child{margin-bottom:0}
+  .side-group h3{font-size:10px;color:var(--ink);font-weight:800;margin-bottom:2px;text-transform:uppercase;letter-spacing:.3px}
+
+  .lc-row{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:2px 0;border-bottom:1px dashed var(--line)}
+  .lc-row:last-child{border-bottom:none}
+  .lc-row b{color:var(--ink);font-weight:700}
+  .lc-row span{color:var(--muted);white-space:nowrap}
+
+  .hobbies{display:flex;flex-wrap:wrap;gap:4px}
+  .hobby{background:#fff;border:1px solid var(--accent-tint-2);border-radius:20px;padding:2.5px 9px;font-size:11px;color:var(--ink)}
+
+  @media print{
+    body{background:#fff;font-size:10.8px}
+    .page{margin:0;max-width:none;padding:7mm 7mm 4mm;width:100%}
+    .toolbar{display:none!important}
+    @page{size:A4;margin:0}
+    .badge{border-color:#b9d3c8}
+    aside{width:214px}
+    main{width:calc(100% - 236px)}
+    .cols::before{left:225px}
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn-pdf" onclick="window.print()">Exporter en PDF</button>
+  </div>
+
+  <div class="page">
+    <header>
+      <div>
+        <div class="name">KAMGA MARC OLIVIER</div>
+        <div class="role">Ingénieur Systèmes &amp; Réseaux · Alternance</div>
+        <div class="seek">Recherche une alternance en administration Systèmes &amp; Réseaux</div>
+      </div>
+      <div class="avail">
+        Disponible dès septembre 2026
+        <small>Alternance 1 ou 2 ans · 3 semaines en entreprise / 1 semaine en école</small>
+      </div>
+    </header>
+
+    <div class="cols">
+
+      <!-- ====== MAIN (right) ====== -->
+      <main>
+        <p class="profile">
+          Construire des infrastructures stables et bien documentées, voilà ce qui me motive. De mon home lab virtualisé à
+          mes stages, j'administre Linux et Windows Server, je virtualise (Proxmox, VMware / ESXi), je configure des
+          équipements réseau et des pare-feu, et j'automatise l'exploitation avec Python et Ansible. Étudiant ingénieur à
+          l'EFREI Paris (M1 Réseaux, Cybersécurité, Cloud &amp; DevOps) et certifié CSNA Stormshield (89%), adaptable et
+          curieux, j'aime mener des études techniques et documenter clairement mes solutions. Ce que je veux apporter à
+          l'agence I2S : de la rigueur, un vrai esprit d'analyse, le sens du collectif et l'envie d'être force de proposition
+          sur des projets clients exigeants.
+        </p>
+
+        <section>
+          <h2>Expériences professionnelles</h2>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Analyste IT · Systèmes &amp; Sécurité · Stage</span>
+              <span class="entry-date">Juin – Août 2024</span>
+            </div>
+            <div class="entry-sub">CAMRAIL (Cameroon Railways) · Douala, Cameroun</div>
+            <ul>
+              <li><b>Études techniques :</b> analyses sur les systèmes, restitution via documentations et rapports clairs.</li>
+              <li><b>Amélioration continue :</b> participation à l'optimisation des processus et à la sécurisation des SI.</li>
+              <li><b>Relationnel :</b> collaboration avec des équipes et des métiers variés.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Études techniques</span><span class="badge">Documentation</span>
+              <span class="badge">Sécurité SI</span><span class="badge">Collaboration</span>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Technicien Systèmes &amp; Réseaux · Stage</span>
+              <span class="entry-date">Juin – Août 2023</span>
+            </div>
+            <div class="entry-sub">CyberCafe · Yaoundé, Cameroun</div>
+            <ul>
+              <li><b>Administration du parc :</b> configuration et maintenance de 20+ postes (Windows / Linux).</li>
+              <li><b>Réseau :</b> câblage, switches et routeurs, plan d'adressage IP, DNS / DHCP / NAT.</li>
+              <li><b>Pare-feu :</b> participation à la mise en place d'un pare-feu centralisé (VLAN, filtrage).</li>
+              <li><b>Automatisation :</b> scripts d'exploitation (Bash) et rédaction de procédures.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Windows / Linux</span><span class="badge">Switch / Routeur</span><span class="badge">Pare-feu</span>
+              <span class="badge">DNS / DHCP</span><span class="badge">Scripts</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Projets techniques</h2>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Lab virtuel multi-serveurs · Proxmox / Windows Server / AD</span>
+              <span class="entry-date">2024 – 2025</span>
+            </div>
+            <div class="entry-sub">Projet académique · EFREI Paris</div>
+            <ul>
+              <li>Virtualisation Proxmox VE : déploiement de 6 VMs (Debian, Ubuntu, Windows Server 2022).</li>
+              <li>Active Directory : contrôleur de domaine, GPO, OU, comptes et groupes de sécurité.</li>
+              <li>Services : DNS / DHCP, partages NFS / iSCSI (SAN), certificats SSL/TLS.</li>
+              <li>Documentation : procédures d'installation et runbooks (Markdown + PDF).</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Proxmox</span><span class="badge">VMware / ESXi</span><span class="badge">Active Directory</span>
+              <span class="badge">Windows Server</span><span class="badge">DNS / DHCP</span><span class="badge">NFS / iSCSI</span>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Automatisation &amp; déploiement · Ansible + scripts</span>
+              <span class="entry-date">2025</span>
+            </div>
+            <div class="entry-sub">Projet académique · EFREI Paris</div>
+            <ul>
+              <li>Playbooks Ansible : provisioning de serveurs Linux (paquets, configuration SSH, services).</li>
+              <li>Scripts Python / Bash : supervision (disque, CPU, services) avec alertes automatiques.</li>
+              <li>Gestion versionnée des configurations (Git) ; temps de provisioning réduit de 45 min à ~8 min.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Ansible</span><span class="badge">Python</span><span class="badge">Bash</span>
+              <span class="badge">Linux</span><span class="badge">Git</span><span class="badge">Supervision</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ====== SIDEBAR (left) ====== -->
+      <aside>
+        <section>
+          <h2>Contact</h2>
+          <div class="contact-list">
+            <b>kamgaolivier104@gmail.com</b>
+            <span>+33 7 44 41 92 95</span>
+            <span>Paris · mobilité nationale</span>
+            <span>linkedin.com/in/marc-olivier-kamga-simo</span>
+          </div>
+        </section>
+
+        <section>
+          <h2>Formation</h2>
+          <div class="mini">
+            <div class="mini-title">Cycle Ingénieur · Réseaux, Cybersécurité, Cloud &amp; DevOps (Bac+5)</div>
+            <div class="mini-sub">EFREI Paris · Villejuif</div>
+            <div class="mini-date">09/2025 – 07/2027</div>
+          </div>
+          <div class="mini">
+            <div class="mini-title">Bachelor Informatique (Bac+3)</div>
+            <div class="mini-sub">EFREI Paris</div>
+            <div class="mini-date">09/2024 – 07/2025</div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Compétences</h2>
+          <div class="side-group">
+            <h3>Systèmes &amp; virtualisation</h3>
+            <div class="badges">
+              <span class="badge">Linux (Debian / Ubuntu)</span><span class="badge">Windows Server</span><span class="badge">Active Directory</span>
+              <span class="badge">Proxmox</span><span class="badge">VMware / ESXi</span><span class="badge">Cluster</span><span class="badge">Docker</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Réseaux &amp; sécurité</h3>
+            <div class="badges">
+              <span class="badge">TCP/IP</span><span class="badge">Switch / Routage</span><span class="badge">VLAN</span>
+              <span class="badge">DNS / DHCP / NAT</span><span class="badge">Pare-feu (Stormshield / pfSense)</span>
+              <span class="badge">Cisco / Juniper</span><span class="badge">Proxy</span><span class="badge">VPN</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Scripting &amp; automatisation</h3>
+            <div class="badges">
+              <span class="badge">Python</span><span class="badge">Bash</span><span class="badge">Ansible</span>
+              <span class="badge">Git</span><span class="badge">CI/CD</span><span class="badge">Prometheus / Grafana</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Transverses</h3>
+            <div class="badges">
+              <span class="badge">Esprit d'analyse</span><span class="badge">Adaptabilité</span><span class="badge">Curiosité</span>
+              <span class="badge">Force de proposition</span><span class="badge">Travail en équipe</span><span class="badge">Documentation</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Certifications</h2>
+          <div class="lc-row"><b>CSNA · Stormshield</b><span>2025 · 89%</span></div>
+          <div class="lc-row"><b>Cisco Junior Cyber. Analyst</b><span>2025</span></div>
+          <div class="lc-row"><b>TOEIC · Anglais B2</b><span>2025 · 770</span></div>
+        </section>
+
+        <section>
+          <h2>Langues</h2>
+          <div class="lc-row"><b>Français</b><span>Langue maternelle</span></div>
+          <div class="lc-row"><b>Anglais</b><span>B2 · TOEIC 770</span></div>
+        </section>
+
+        <section>
+          <h2>Centres d'intérêt</h2>
+          <div class="hobbies">
+            <span class="hobby">Basketball</span>
+            <span class="hobby">Football</span>
+            <span class="hobby">Canoë-kayak</span>
+          </div>
+        </section>
+      </aside>
+
+    </div>
+  </div>
+</body>
+</html>

@@ -649,7 +649,7 @@ function StatTile({
         <span className="text-xs text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground" />
       </div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="font-stat-number mt-2 text-2xl font-semibold tabular-nums">{value}</div>
       {hint && <div className="mt-0.5 text-[10px] text-muted-foreground">{hint}</div>}
     </div>
   );

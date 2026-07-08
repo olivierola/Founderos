@@ -27,6 +27,8 @@ import {
 import { MarketingShell, DotGrid } from "./MarketingShell";
 import { ArchitectureDiagram } from "./Illustrations";
 import { MarketingHero } from "./MarketingHero";
+import { AgentShowcase } from "./AgentShowcase";
+import { PartnersIntro } from "./PartnersIntro";
 
 const STATS = [
   { value: "57", label: "Integrations" },
@@ -60,13 +62,13 @@ const TRUST_PILLARS = [
 ];
 
 const TESTIMONIALS = [
-  { quote: "We replaced 6 dashboards with FounderOS. Refunds that used to take 3 days now take 30 seconds.", author: "Léa Vermont", role: "CTO, Frictionless Studio" },
+  { quote: "We replaced 6 dashboards with RedAI. Refunds that used to take 3 days now take 30 seconds.", author: "Léa Vermont", role: "CTO, Frictionless Studio" },
   { quote: "The audit log alone is worth the price. We finally pass SOC2 reviews without spreadsheets.", author: "Marcus Tan", role: "Founder, Tan & Co" },
   { quote: "Our junior devs ship admin tools through approval flows instead of running scripts in prod.", author: "Aïcha Diallo", role: "Head of Eng, Loom Agency" },
 ];
 
 const FAQ = [
-  { q: "Do I host my customers' data?", a: "No. FounderOS connects to your customers' existing Stripe, Supabase, GitHub. We store metadata and encrypted credentials, never their raw user data." },
+  { q: "Do I host my customers' data?", a: "No. RedAI connects to your customers' existing Stripe, Supabase, GitHub. We store metadata and encrypted credentials, never their raw user data." },
   { q: "Can I white-label the cockpit for my clients?", a: "Pro and Enterprise plans support custom branding. Full white-label with custom email senders is on Enterprise." },
   { q: "What about SSO and SCIM?", a: "SSO via SAML and SCIM provisioning are included on Enterprise. Free and Pro use email + 2FA." },
   { q: "How fast are updates?", a: "We ship multiple times a week. Every release is documented in /changelog." },
@@ -78,6 +80,12 @@ export function HomePage() {
     <MarketingShell hideHeader>
       {/* ====== Hero — full-screen video hero ====== */}
       <MarketingHero />
+
+      {/* ====== Partenaires + texte de présentation qui se colore au scroll ====== */}
+      <PartnersIntro />
+
+      {/* ====== How it works — agent + SaaS bento ====== */}
+      <AgentShowcase />
 
       {/* ====== Logo marquee — deux rangées de pastilles qui défilent ====== */}
       <div className="overflow-hidden border-y border-border/40 bg-card/30 py-10">
@@ -102,7 +110,7 @@ export function HomePage() {
       <section className="relative mx-auto max-w-7xl px-4 py-24 sm:px-6">
         <div className="grid items-start gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h2 className="font-metamorphous text-balance text-3xl tracking-tight sm:text-4xl">
               Plugs in. Doesn't replace.
             </h2>
             <p className="mt-4 max-w-md text-muted-foreground">
@@ -141,7 +149,7 @@ export function HomePage() {
         <div className="grid gap-10 lg:grid-cols-12">
           {/* Workflow */}
           <div className="lg:col-span-7">
-            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h2 className="font-metamorphous text-balance text-3xl tracking-tight sm:text-4xl">
               From zero to operating in 90 seconds.
             </h2>
             <p className="mt-3 max-w-xl text-muted-foreground">
@@ -155,7 +163,7 @@ export function HomePage() {
                 { num: "04", title: "Automate & onboard", body: "AI agents drive support and user onboarding live." },
               ].map((w) => (
                 <div key={w.num} className="rounded-xl border border-border bg-card/60 p-5">
-                  <span className="font-mono text-xs text-muted-foreground">{w.num}</span>
+                  <span className="font-bitcount text-sm text-muted-foreground">{w.num}</span>
                   <h3 className="mt-2 text-sm font-semibold">{w.title}</h3>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{w.body}</p>
                 </div>
@@ -169,7 +177,7 @@ export function HomePage() {
               <div className="rounded-lg border border-border/60 bg-background p-5">
                 <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
                   <span>Your clients</span>
-                  <span className="rounded-full bg-[hsl(var(--accent-2)/0.15)] px-2 py-0.5 text-[hsl(var(--accent-2))]">4 active</span>
+                  <span className="rounded-full bg-[hsl(var(--accent-2)/0.15)] px-2 py-0.5 text-[hsl(var(--accent-2))]"><span className="font-bitcount">4</span> active</span>
                 </div>
                 <div className="space-y-2.5">
                   <ProjectRow name="acme-inc.com" mrr="€12,440" status="healthy" growth="+8%" />
@@ -180,11 +188,11 @@ export function HomePage() {
                 <div className="mt-4 border-t border-border/60 pt-4 text-xs">
                   <div className="flex items-center justify-between text-muted-foreground">
                     <span>Total MRR</span>
-                    <span className="font-mono text-foreground">€45,230</span>
+                    <span className="font-bitcount text-foreground">€45,230</span>
                   </div>
                   <div className="mt-1 flex items-center justify-between text-muted-foreground">
                     <span>Avg growth</span>
-                    <span className="text-[hsl(var(--accent-2))]">+5.3%</span>
+                    <span className="font-bitcount text-[hsl(var(--accent-2))]">+5.3%</span>
                   </div>
                 </div>
               </div>
@@ -196,7 +204,7 @@ export function HomePage() {
       {/* ====== Features — grille non-bordée, fond uniforme ====== */}
       <section className="relative mx-auto max-w-7xl px-4 pb-24 sm:px-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h2 className="font-metamorphous text-balance text-3xl tracking-tight sm:text-4xl">
             Everything you'd build yourself, already running.
           </h2>
           <Link to="/features" className="text-sm text-muted-foreground hover:text-foreground">
@@ -230,7 +238,7 @@ export function HomePage() {
           <figure className="lg:col-span-7 rounded-2xl border border-border bg-card p-8">
             <Quote className="h-6 w-6 text-[hsl(var(--primary-soft))]" />
             <blockquote className="mt-4 text-xl font-medium leading-relaxed">
-              "We replaced 6 dashboards with FounderOS. Refunds that used to take 3 days now take 30 seconds. The audit log alone is worth it."
+              "We replaced 6 dashboards with RedAI. Refunds that used to take 3 days now take 30 seconds. The audit log alone is worth it."
             </blockquote>
             <figcaption className="mt-6 flex items-center gap-3 text-sm">
               <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[hsl(var(--primary-soft))] to-[hsl(var(--accent-2))]" />
@@ -279,7 +287,7 @@ export function HomePage() {
       <section className="relative mx-auto max-w-7xl px-4 pb-24 sm:px-6">
         <div className="grid gap-10 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h2 className="font-metamorphous text-balance text-3xl tracking-tight sm:text-4xl">
               Questions, answered.
             </h2>
             <div className="mt-8 space-y-2">
@@ -395,8 +403,8 @@ function CockpitMockup() {
             ].map((k) => (
               <div key={k.l} className="rounded-lg border border-border/60 bg-secondary/30 p-2.5">
                 <div className="text-[9px] uppercase tracking-wide text-muted-foreground">{k.l}</div>
-                <div className="mt-0.5 text-sm font-semibold tabular-nums">{k.v}</div>
-                <div className="text-[9px] text-[hsl(var(--accent-2))]">{k.d}</div>
+                <div className="font-bitcount mt-0.5 text-sm font-semibold tabular-nums">{k.v}</div>
+                <div className="font-bitcount text-[9px] text-[hsl(var(--accent-2))]">{k.d}</div>
               </div>
             ))}
           </div>
@@ -443,8 +451,8 @@ function ProjectRow({ name, mrr, status, growth }: { name: string; mrr: string; 
         <span className="font-mono text-xs">{name}</span>
       </div>
       <div className="flex items-center gap-3">
-        <span className={`text-xs tabular-nums ${trend}`}>{growth}</span>
-        <span className="text-xs tabular-nums text-foreground">{mrr}</span>
+        <span className={`font-bitcount text-xs tabular-nums ${trend}`}>{growth}</span>
+        <span className="font-bitcount text-xs tabular-nums text-foreground">{mrr}</span>
       </div>
     </div>
   );

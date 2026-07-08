@@ -11,6 +11,7 @@ export interface InternalAgent {
   name: string;
   description: string | null;
   avatar_emoji: string | null;
+  avatar_url: string | null;
   accent_color: string | null;
   persona: string | null;
   instructions: string | null;
@@ -25,7 +26,7 @@ export interface InternalAgent {
   role: string | null;
   skills: string[];
   collaboration_enabled: boolean;
-  sandbox_mode: "cloud" | "sandbox";
+  sandbox_mode: "cloud" | "runner" | "sandbox";
   sandbox_url: string | null;
   created_by: string;
   is_archived: boolean;
@@ -138,7 +139,7 @@ export interface MissionRun {
 export interface RunEvent {
   id: string;
   run_id: string;
-  kind: "llm_call" | "tool_call" | "tool_result" | "status" | "log" | "error";
+  kind: "llm_call" | "tool_call" | "tool_result" | "status" | "log" | "error" | "plan" | "plan_step" | "tool_error" | "question";
   payload: Record<string, any>;
   tokens_in: number;
   tokens_out: number;

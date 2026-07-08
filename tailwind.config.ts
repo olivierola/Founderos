@@ -51,6 +51,22 @@ const config: Config = {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
         },
+        // Three-accent system (globals.css defines the HSL vars). <alpha-value>
+        // lets `bg-coral/20`, `ring-coral`, `border-teal-accent/40`, … all work.
+        // `teal-accent` (not `teal`) avoids clobbering Tailwind's built-in teal
+        // scale used for object/icon colors elsewhere.
+        coral: {
+          DEFAULT: "hsl(var(--accent-coral) / <alpha-value>)",
+          foreground: "hsl(var(--accent-coral-foreground))",
+        },
+        "teal-accent": {
+          DEFAULT: "hsl(var(--accent-teal) / <alpha-value>)",
+          foreground: "hsl(var(--accent-teal-foreground))",
+        },
+        aqua: {
+          DEFAULT: "hsl(var(--accent-aqua) / <alpha-value>)",
+          foreground: "hsl(var(--accent-aqua-foreground))",
+        },
         "surface-deep": "hsl(var(--surface-deep))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar))",
@@ -60,6 +76,8 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
+          "Roboto",
+          "Elms Sans",
           "Vend Sans",
           "ui-sans-serif",
           "system-ui",

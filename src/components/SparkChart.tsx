@@ -137,7 +137,7 @@ export function SparkChart({
         )}
       </div>
       {subtitle && <div className="text-xs text-muted-foreground">{subtitle}</div>}
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{totalNode}</div>
+      <div className="font-stat-number mt-1 text-2xl font-semibold tabular-nums">{totalNode}</div>
 
       <svg
         viewBox={`0 0 ${W} ${H}`}

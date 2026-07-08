@@ -41,19 +41,13 @@ verify_jwt = false
 [functions.github-list-repos]
 verify_jwt = false
 
-[functions.start-repo-scan]
-verify_jwt = false
-
-[functions.process-repo-scan]
-verify_jwt = false
-
 [functions.ai-fast-summary]
 verify_jwt = false
 
-[functions.ai-code-analysis]
+[functions.connect-provider]
 verify_jwt = false
 
-[functions.connect-provider]
+[functions.aiops-infra]
 verify_jwt = false
 
 [functions.disconnect-provider]
@@ -98,9 +92,6 @@ verify_jwt = false
 [functions.run-workflow]
 verify_jwt = false
 
-[functions.generate-runbook]
-verify_jwt = false
-
 [functions.dispatch-webhook]
 verify_jwt = false
 
@@ -114,9 +105,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.send-email]
-verify_jwt = false
-
-[functions.sync-github-deployments]
 verify_jwt = false
 
 [functions.run-sql]
@@ -166,6 +154,11 @@ verify_jwt = false
 
 # Project inbox: post a channel message + dispatch @mentioned agents.
 [functions.project-inbox-post]
+verify_jwt = false
+
+# Slack gateway: OAuth callback + Events API webhook. Public (Slack sends no
+# Supabase JWT); the function does its own auth (Slack request-signature HMAC).
+[functions.slack-gateway]
 verify_jwt = false
 
 # Simulations (MiroFish-inspired): single endpoint dispatching by `action`

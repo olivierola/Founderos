@@ -2,6 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Elms Sans — primary application typeface. Not a Google font, so the files
+   aren't bundled: drop ElmsSans-Regular/Medium/SemiBold/Bold (.woff2, .woff) into
+   public/fonts/ and they load automatically. Until then (or if Elms Sans is
+   installed as a system font) the stack falls back to Vend Sans. */
+@font-face {
+  font-family: 'Elms Sans'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/fonts/ElmsSans-Regular.woff2') format('woff2'), url('/fonts/ElmsSans-Regular.woff') format('woff');
+}
+@font-face {
+  font-family: 'Elms Sans'; font-style: normal; font-weight: 500; font-display: swap;
+  src: url('/fonts/ElmsSans-Medium.woff2') format('woff2'), url('/fonts/ElmsSans-Medium.woff') format('woff');
+}
+@font-face {
+  font-family: 'Elms Sans'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('/fonts/ElmsSans-SemiBold.woff2') format('woff2'), url('/fonts/ElmsSans-SemiBold.woff') format('woff');
+}
+@font-face {
+  font-family: 'Elms Sans'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url('/fonts/ElmsSans-Bold.woff2') format('woff2'), url('/fonts/ElmsSans-Bold.woff') format('woff');
+}
+
 @layer base {
   /* Palette: zinc dark base (not pure black) + accents.
      Accent primary  #CB2957 (raspberry) -> 343 66% 48%  (white text on it)
@@ -10,50 +31,64 @@
      Base is a zinc-950-ish neutral kept slightly warm-neutral, never #000. */
   :root,
   .dark {
-    --background: 240 7% 5%;           /* deep zinc, darker app canvas */
+    --background: 30 5% 9%;            /* #171615 — odin-dark-100 (content) */
     --foreground: 240 5% 96%;          /* ~zinc-100 */
 
-    --card: 240 6% 8%;                 /* raised surface above the darker bg */
+    --card: 30 3% 11%;                 /* #1e1d1c — odin-dark-200 (cards/inputs) */
     --card-foreground: 240 5% 96%;
 
-    --popover: 240 6% 9%;
+    --popover: 30 3% 13%;              /* #242322 — odin-dark-300 */
     --popover-foreground: 240 5% 96%;
 
-    --primary: 74 32% 43%;              /* #84934A olive green */
-    --primary-foreground: 0 0% 100%;   /* white text on the accent */
+    /* ── Three-accent system ──────────────────────────────────────────────
+       Aqua  #AFE9F0 → 187 68% 81%  (soft light — info surfaces / badges)
+       Coral #F86134 → 14 93% 59%   (warm pop — primary CTA, focus, active)
+       Teal  #378F98 → 186 47% 41%  (cool anchor — secondary accent, links)
+       Two cyans + a complementary coral = one cohesive teal/coral identity. */
+    --accent-coral: 14 93% 59%;
+    --accent-coral-foreground: 20 40% 98%;
+    --accent-teal: 186 47% 41%;
+    --accent-teal-foreground: 186 40% 96%;
+    --accent-aqua: 187 68% 81%;
+    --accent-aqua-foreground: 187 60% 15%;
 
-    /* Soft accent used for text/icons/links where the solid accent feels harsh. */
-    --primary-soft: 74 35% 58%;
-    /* Secondary accent — soft sage green (matches reference badges). */
+    /* Coral is the PRIMARY accent — buttons, CTAs, active states, links, focus.
+       Teal is the secondary anchor (the primary rail); aqua the soft info tint. */
+    --primary: 14 93% 59%;              /* #F86134 coral */
+    --primary-foreground: 20 40% 98%;   /* near-white on coral */
+
+    /* Soft accent for inline text/icons/links — a brighter coral, legible on dark. */
+    --primary-soft: 16 92% 67%;
+    /* Secondary accent — soft sage green (success badges). */
     --accent-2: 140 40% 65%;
     --accent-2-foreground: 140 35% 18%;
 
-    --secondary: 240 4% 16%;           /* ~zinc-800 */
+    --secondary: 30 3% 14%;            /* #242322 — odin-dark-300 */
     --secondary-foreground: 240 5% 96%;
 
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;    /* ~zinc-400 */
+    --muted: 30 3% 14%;
+    --muted-foreground: 30 4% 64%;     /* warm muted text */
 
-    --accent: 240 4% 16%;
+    --accent: 30 3% 14%;
     --accent-foreground: 240 5% 96%;
 
-    /* Info accent (sky #BBE0EF) for highlights, links, info badges */
-    --info: 200 58% 84%;
-    --info-foreground: 232 59% 21%;
+    /* Info accent — pale aqua #AFE9F0 for highlights, links, info badges */
+    --info: 187 68% 81%;
+    --info-foreground: 187 60% 15%;
 
-    /* Deep navy surface (#161E54) for emphasis panels */
-    --surface-deep: 232 59% 21%;
+    /* Deep teal surface for emphasis panels (harmonises with the accent trio). */
+    --surface-deep: 186 46% 15%;
 
     --destructive: 0 72% 51%;          /* red-500 */
     --destructive-foreground: 240 5% 96%;
 
-    --border: 240 4% 16%;              /* visible against the darker canvas */
-    --input: 240 4% 16%;
-    --ring: 74 32% 43%;                /* olive green ring */
+    --border: 30 2% 16%;               /* #2a2928 — odin-dark-400 */
+    --input: 30 2% 16%;
+    --ring: 30 4% 48%;                 /* neutral grey focus ring for fields */
 
-    --sidebar: 240 8% 4%;              /* slightly darker than the darker bg */
-    --sidebar-foreground: 240 5% 65%;
-    --sidebar-accent: 240 6% 10%;
+    --sidebar: 30 3% 11%;              /* #1e1d1c — odin-dark-200 */
+    --sidebar-foreground: 30 3% 65%;
+    --sidebar-accent: 30 2% 16%;       /* #2a2928 — odin-dark-400 (active item) */
 
     --radius: 0.3rem;                  /* tighter corners, sharper/sober */
   }
@@ -69,12 +104,20 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 8% 20%;
 
-    --primary: 74 32% 43%;              /* #84934A olive green */
+    /* Three-accent system — deepened for legibility on white surfaces. */
+    --accent-coral: 12 84% 53%;
+    --accent-coral-foreground: 0 0% 100%;
+    --accent-teal: 186 47% 37%;
+    --accent-teal-foreground: 0 0% 100%;
+    --accent-aqua: 187 66% 84%;
+    --accent-aqua-foreground: 187 55% 22%;
+
+    --primary: 12 84% 53%;              /* #F86134 coral, deepened for white bg */
     --primary-foreground: 0 0% 100%;
 
-    /* Soft accent for inline text/icons in light mode — darker so it stays readable on white. */
-    --primary-soft: 74 30% 35%;
-    --accent-2: 140 40% 50%;
+    /* Soft accent for inline text/icons in light mode — darker coral, readable on white. */
+    --primary-soft: 12 78% 46%;
+    --accent-2: 140 40% 42%;            /* sage green (success) */
     --accent-2-foreground: 0 0% 100%;
 
     --secondary: 240 8% 96%;           /* very light grey */
@@ -86,21 +129,21 @@
     --accent: 240 8% 96%;
     --accent-foreground: 240 8% 20%;
 
-    --info: 200 58% 84%;
-    --info-foreground: 232 59% 21%;
+    --info: 187 66% 84%;               /* aqua */
+    --info-foreground: 187 55% 22%;
 
-    --surface-deep: 232 59% 21%;
+    --surface-deep: 186 46% 20%;       /* deep teal */
 
     --destructive: 0 65% 50%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 240 6% 92%;              /* very soft border */
     --input: 240 6% 92%;
-    --ring: 343 66% 48%;
+    --ring: 240 5% 70%;                /* neutral grey focus ring for fields */
 
-    --sidebar: 0 0% 99%;               /* nearly white, lifts off content */
+    --sidebar: 40 33% 97%;             /* warm cream, lifts off content */
     --sidebar-foreground: 240 5% 45%;
-    --sidebar-accent: 240 8% 95%;
+    --sidebar-accent: 40 18% 92%;      /* warm light-grey active/hover pill */
   }
 
   * {
@@ -127,33 +170,6 @@
   }
 }
 
-/* PrimarySidebar in light mode — deep dark grey rail, contrasts with light content. */
-.light [data-primary-sidebar] {
-  --sidebar: 240 5% 12%;               /* deep dark grey */
-  --sidebar-foreground: 240 5% 80%;
-  --sidebar-accent: 240 5% 20%;
-  --border: 240 5% 22%;
-  --secondary: 240 5% 20%;
-  --foreground: 240 5% 98%;
-  color-scheme: dark;
-}
-
-/* Boost icon visibility on the dark rail in light mode — Tailwind's text-*-500/55 etc.
-   relies on opacity that washes out on this background. Bump saturation/opacity. */
-.light [data-primary-sidebar] .text-slate-400 { color: rgb(203 213 225); }       /* slate-300 */
-.light [data-primary-sidebar] .text-emerald-500\/55 { color: rgb(52 211 153); }  /* emerald-400 */
-.light [data-primary-sidebar] .text-amber-500\/55 { color: rgb(251 191 36); }    /* amber-400 */
-.light [data-primary-sidebar] .text-indigo-400\/55 { color: rgb(165 180 252); }  /* indigo-300 */
-.light [data-primary-sidebar] .text-fuchsia-400\/55 { color: rgb(240 171 252); } /* fuchsia-300 */
-.light [data-primary-sidebar] .text-sky-500\/55 { color: rgb(56 189 248); }      /* sky-400 */
-.light [data-primary-sidebar] .text-rose-500\/55 { color: rgb(251 113 133); }    /* rose-400 */
-.light [data-primary-sidebar] .text-teal-500\/55 { color: rgb(45 212 191); }     /* teal-400 */
-.light [data-primary-sidebar] .text-cyan-500\/55 { color: rgb(34 211 238); }     /* cyan-400 */
-.light [data-primary-sidebar] .text-primary\/60 { color: rgb(196 181 253); }     /* violet-300 */
-
-/* Inactive nav items use opacity-60; bump it in light mode so colors don't fade. */
-.light [data-primary-sidebar] nav a.opacity-60 { opacity: 0.9; }
-
 /* Soften `text-primary` (and its opacity variants) globally — the raw #001BB7 deep
    blue is too saturated for inline text, links and small icons. Solid backgrounds
    (`bg-primary`, buttons) still use the original deep blue. */
@@ -173,6 +189,12 @@
 .text-accent-2-foreground { color: hsl(var(--accent-2-foreground)); }
 .border-accent-2 { border-color: hsl(var(--accent-2)); }
 
+/* Text selection + text caret pick up the coral accent — a small, global cue
+   that ties the whole UI back to the accent trio. (The bg-coral / text-teal-accent
+   / bg-aqua utilities themselves are generated by Tailwind, see tailwind.config.) */
+::selection { background: hsl(var(--accent-coral) / 0.26); }
+textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)); }
+
 /* Marketing site — darker canvas + animations */
 .marketing {
   --background: 240 10% 4%;
@@ -181,6 +203,8 @@
   --border: 240 6% 14%;
   --muted-foreground: 240 5% 60%;
   color-scheme: dark;
+  /* Roboto is the dashboard face only — keep the marketing site on its own stack. */
+  font-family: 'Elms Sans', 'Vend Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
 @keyframes mkt-fade-up {
@@ -229,6 +253,29 @@
 .mkt-rise { animation: mkt-rise 800ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .mkt-dash { stroke-dasharray: 4 4; animation: mkt-dash 1.6s linear infinite; }
 
+/* Hero background — bold, organic drift + colour breathing for the blobs. */
+@keyframes hero-blob-1 {
+  0%, 100% { transform: translate(0, 0) scale(1);      opacity: 0.85; }
+  33%      { transform: translate(14%, 9%) scale(1.25); opacity: 1; }
+  66%      { transform: translate(-8%, 16%) scale(1.08); opacity: 0.72; }
+}
+@keyframes hero-blob-2 {
+  0%, 100% { transform: translate(0, 0) scale(1.05);    opacity: 0.8; }
+  33%      { transform: translate(-16%, -10%) scale(1.3); opacity: 1; }
+  66%      { transform: translate(10%, -6%) scale(1.12); opacity: 0.7; }
+}
+@keyframes hero-blob-3 {
+  0%, 100% { transform: translate(0, 0) scale(1.1);     opacity: 0.78; }
+  33%      { transform: translate(12%, -12%) scale(0.9); opacity: 1; }
+  66%      { transform: translate(-12%, 8%) scale(1.18); opacity: 0.72; }
+}
+.hero-blob-1 { animation: hero-blob-1 16s ease-in-out infinite; }
+.hero-blob-2 { animation: hero-blob-2 13s ease-in-out infinite; }
+.hero-blob-3 { animation: hero-blob-3 19s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-blob-1, .hero-blob-2, .hero-blob-3 { animation: none; }
+}
+
 /* react-grid-layout theming */
 .react-grid-item.react-grid-placeholder {
   background: hsl(var(--primary) / 0.2) !important;
@@ -260,6 +307,68 @@
 }
 *::-webkit-scrollbar-corner {
   background: transparent;
+}
+/* Slimmer scrollbar for the secondary sidebar */
+.scrollbar-slim {
+  scrollbar-width: thin;
+}
+.scrollbar-slim::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+/* Hide the window scrollbar while a marketing/landing page is mounted (the
+   MarketingShell toggles this class on <html>). Scrolling still works. */
+html.mkt-no-scrollbar {
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* legacy Edge/IE */
+}
+html.mkt-no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;              /* Chrome/Safari */
+}
+
+/* Rotating "run active" border for the prompt input: a comet of the accent colour
+   travels around the rounded border while an agent run is in progress. */
+@property --prompt-run-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes prompt-run-spin {
+  to {
+    --prompt-run-angle: 360deg;
+  }
+}
+.prompt-run-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.6px; /* border thickness */
+  background: conic-gradient(
+    from var(--prompt-run-angle),
+    hsl(var(--primary) / 0) 0deg,
+    hsl(var(--primary) / 0.95) 55deg,
+    hsl(var(--primary) / 0) 135deg,
+    hsl(var(--primary) / 0) 180deg,
+    hsl(var(--primary) / 0.6) 235deg,
+    hsl(var(--primary) / 0) 300deg,
+    hsl(var(--primary) / 0) 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: prompt-run-spin 1.8s linear infinite;
+  pointer-events: none;
+  z-index: 20;
+}
+@media (prefers-reduced-motion: reduce) {
+  .prompt-run-border::before {
+    animation-duration: 4s;
+  }
 }
 
 /* Animated multicolour glow that fades INWARD over the E2E preview edges: a
@@ -382,6 +491,21 @@
 .animate-fade-rise { animation: fade-rise 0.8s ease-out both; }
 .animate-fade-rise-delay { animation: fade-rise 0.8s ease-out 0.2s both; }
 .animate-fade-rise-delay-2 { animation: fade-rise 0.8s ease-out 0.4s both; }
+
+/* ── Chat-preview channel feed (agent collaboration + <ChatPreview />) ─────── */
+@keyframes message-appear {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-message-appear {
+  animation: message-appear 0.3s ease-out forwards;
+}
 .liquid-glass {
   background: rgba(255, 255, 255, 0.01);
   background-blend-mode: luminosity;
@@ -408,6 +532,66 @@
   pointer-events: none;
 }
 .font-jakarta { font-family: 'Plus Jakarta Sans', sans-serif; }
+.font-poppins { font-family: 'Poppins', 'Inter', sans-serif; }
+/* Metamorphous — decorative display serif for the hero + section headings. */
+.font-metamorphous { font-family: 'Metamorphous', 'Instrument Serif', serif; }
+/* Doto display face for numeric/stat figures. Keep font-bitcount as a legacy alias. */
+.font-stat-number,
+.font-bitcount {
+  font-family: 'Doto', 'Courier New', monospace;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Agent chat reply formatting — Elms Sans, comfortable rhythm, bordered tables. */
+.chat-prose {
+  font-family: 'Roboto', 'Elms Sans', 'Poppins', 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+  color: hsl(var(--foreground));
+}
+.chat-prose > :first-child { margin-top: 0; }
+.chat-prose > :last-child { margin-bottom: 0; }
+.chat-prose p { margin: 0.6em 0; }
+.chat-prose h1, .chat-prose h2, .chat-prose h3, .chat-prose h4 {
+  font-weight: 600; line-height: 1.3; margin: 1.2em 0 0.5em;
+}
+.chat-prose h1 { font-size: 1.35em; }
+.chat-prose h2 { font-size: 1.2em; }
+.chat-prose h3 { font-size: 1.05em; }
+.chat-prose ul, .chat-prose ol { margin: 0.6em 0; padding-left: 1.4em; }
+.chat-prose li { margin: 0.25em 0; }
+.chat-prose ul { list-style: disc; }
+.chat-prose ol { list-style: decimal; }
+.chat-prose a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
+.chat-prose strong { font-weight: 600; }
+.chat-prose code {
+  font-family: ui-monospace, 'SFMono-Regular', monospace;
+  font-size: 0.86em; padding: 0.12em 0.38em; border-radius: 5px;
+  background: hsl(var(--secondary)); border: 1px solid hsl(var(--border));
+}
+.chat-prose pre {
+  margin: 0.8em 0; padding: 0.9em 1em; border-radius: 10px; overflow-x: auto;
+  background: #0b0b0f; border: 1px solid hsl(var(--border)); color: #e4e4e7;
+}
+.chat-prose pre code { background: transparent; border: 0; padding: 0; font-size: 0.82em; }
+.chat-prose blockquote {
+  margin: 0.8em 0; padding: 0.2em 0 0.2em 1em;
+  border-left: 3px solid hsl(var(--primary) / 0.5); color: hsl(var(--muted-foreground));
+}
+.chat-prose hr { margin: 1.2em 0; border: 0; border-top: 1px solid hsl(var(--border)); }
+/* Bordered, readable tables */
+.chat-prose table {
+  width: 100%; margin: 0.9em 0; border-collapse: collapse; font-size: 0.9em;
+  border: 1px solid hsl(var(--border)); border-radius: 10px; overflow: hidden; display: table;
+}
+.chat-prose thead { background: hsl(var(--secondary)); }
+.chat-prose th {
+  text-align: left; font-weight: 600; padding: 0.55em 0.8em;
+  border-bottom: 1px solid hsl(var(--border)); white-space: nowrap;
+}
+.chat-prose td { padding: 0.5em 0.8em; border-top: 1px solid hsl(var(--border) / 0.6); }
+.chat-prose tbody tr:nth-child(even) { background: hsl(var(--muted) / 0.35); }
+.chat-prose td + td, .chat-prose th + th { border-left: 1px solid hsl(var(--border) / 0.6); }
 
 /* Print: when a report is on screen, isolate it for clean PDF export. */
 @media print {

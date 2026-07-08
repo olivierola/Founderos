@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "FounderOS Agents",
+    "slug": "founderos-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "founderos",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0a0a0b"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.founderos.agents"
+    },
+    "android": {
+      "package": "com.founderos.agents"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-asset",
+      [
+        "expo-local-authentication",
+        { "faceIDPermission": "Déverrouiller l'app avec Face ID." }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

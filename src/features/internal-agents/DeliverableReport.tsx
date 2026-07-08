@@ -203,7 +203,7 @@ function KpiRow({ kpis }: { kpis: Kpi[] }) {
         const Trend = k.trend === "up" ? TrendingUp : k.trend === "down" ? TrendingDown : Minus;
         return (
           <div key={i} className={cn("rounded-xl bg-gradient-to-br p-4 text-white shadow-sm", KPI_GRADIENTS[i % KPI_GRADIENTS.length])}>
-            <div className="text-2xl font-bold leading-tight">{k.value}</div>
+            <div className="font-stat-number text-2xl font-bold leading-tight">{k.value}</div>
             <div className="mt-1 text-xs text-white/80">{k.label}</div>
             {k.delta && (
               <div className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-white/90">

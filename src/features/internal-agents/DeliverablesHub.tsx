@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -19,6 +18,33 @@ import {
   downloadDeliverable, relativeDate,
 } from "./shared";
 import { DeliverableReport, RichMarkdown, tryParseReport } from "./DeliverableReport";
+import { PerspectiveBook } from "@/components/ui/perspective-book";
+
+// Sober but defined book-cover palette (works on the dark odin theme). Each cover
+// is a muted "clothbound" jewel tone with white text on top.
+const BOOK_COVERS: { bg: string; fg: string; sheen: string }[] = [
+  { bg: "#33414f", fg: "#ffffff", sheen: "#46586a" }, // slate-blue
+  { bg: "#1f4a40", fg: "#ffffff", sheen: "#2e6557" }, // pine
+  { bg: "#4c3d23", fg: "#ffffff", sheen: "#665232" }, // amber
+  { bg: "#46293f", fg: "#ffffff", sheen: "#5e3854" }, // plum
+  { bg: "#263359", fg: "#ffffff", sheen: "#374878" }, // navy
+  { bg: "#522f26", fg: "#ffffff", sheen: "#6e4135" }, // terracotta
+  { bg: "#2f4a2c", fg: "#ffffff", sheen: "#42653d" }, // moss
+  { bg: "#352c52", fg: "#ffffff", sheen: "#493d6e" }, // indigo
+];
+
+function coverFor(id: string): { bg: string; fg: string; sheen: string } {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return BOOK_COVERS[h % BOOK_COVERS.length];
+}
+
+// Mix a hex colour toward black — used for the darker spine / back cloth.
+function darken(hex: string, amt = 0.5): string {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => Math.round(c * (1 - amt)));
+  return "#" + ch.map((c) => c.toString(16).padStart(2, "0")).join("");
+}
 
 const KIND_ICON: Record<string, any> = {
   report: BarChart3,
@@ -211,8 +237,10 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {[0, 1, 2].map((i) => <div key={i} className="h-32 animate-pulse rounded-lg bg-muted/40" />)}
+        <div className="flex flex-wrap gap-x-10 gap-y-8 px-1 pt-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="aspect-[49/60] w-[196px] animate-pulse rounded-[6px_4px_4px_6px] bg-muted/40" />
+          ))}
         </div>
       ) : !deliverables || deliverables.length === 0 ? (
         <EmptyState
@@ -223,15 +251,9 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
       ) : filtered.length === 0 ? (
         <EmptyState icon={Filter} title="No matches" description="No deliverables match the current filters." />
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div className="flex flex-wrap gap-x-10 gap-y-8 px-1 pt-2 pb-4">
           {filtered.map((d) => (
-            <DeliverableCard
-              key={d.id}
-              d={d}
-              missionTitle={missionTitle[d.mission_id]}
-              onOpen={() => selectDeliverable(d.id)}
-              onTogglePin={() => togglePin(d)}
-            />
+            <DeliverableCard key={d.id} d={d} onOpen={() => selectDeliverable(d.id)} />
           ))}
         </div>
       )}
@@ -239,66 +261,50 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
   );
 }
 
-function DeliverableCard({
-  d, missionTitle, onOpen, onTogglePin,
-}: {
-  d: Deliverable;
-  missionTitle?: string;
-  onOpen: () => void;
-  onTogglePin: () => void;
-}) {
-  const Icon = KIND_ICON[d.kind] ?? FileText;
-  const snippet = d.summary ?? d.content?.replace(/[#*`>_]/g, "").slice(0, 160) ?? "";
+// Golden bookmark ribbon for pinned (favourite) deliverables — hangs from the
+// top edge of the book with a forked tail.
+function PinnedRibbon() {
   return (
-    <Card className="group flex flex-col transition-colors hover:border-foreground/30">
-      <CardContent className="flex flex-1 flex-col gap-2 p-3">
-        <div className="flex items-start justify-between gap-2">
-          <button onClick={onOpen} className="flex min-w-0 items-center gap-2 text-left">
-            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="truncate text-sm font-medium">{d.name}</span>
-          </button>
-          <button
-            onClick={onTogglePin}
-            className={cn(
-              "shrink-0 rounded p-0.5 transition-colors",
-              d.is_pinned ? "text-amber-500" : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-amber-500",
-            )}
-            title={d.is_pinned ? "Unpin" : "Pin"}
-          >
-            <Star className={cn("h-4 w-4", d.is_pinned && "fill-current")} />
-          </button>
-        </div>
+    <span
+      className="absolute right-[15%] -top-0.5 block h-[34px] w-[10px]"
+      style={{
+        // Satin sheen: soft dark edges, bright centre — reads as fabric, not a slab.
+        background: "linear-gradient(90deg,#9a6d1a 0%,#d8b04e 26%,#f6e09a 50%,#d3a942 74%,#9a6d1a 100%)",
+        clipPath: "polygon(0 0,100% 0,100% 100%,50% 66%,0 100%)",
+        boxShadow: "0 1px 2px rgba(0,0,0,.3)",
+      }}
+    />
+  );
+}
 
+function DeliverableCard({ d, onOpen }: { d: Deliverable; onOpen: () => void }) {
+  const cover = coverFor(d.id);
+  const snippet = d.summary ?? d.content?.replace(/[#*`>_]/g, "").replace(/\s+/g, " ").trim().slice(0, 220) ?? "";
+  const when = new Date(d.created_at).toLocaleString("fr-FR", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+
+  return (
+    <PerspectiveBook
+      onClick={onOpen}
+      className="text-white"
+      spineColor={darken(cover.bg, 0.55)}
+      banner={d.is_pinned ? <PinnedRibbon /> : undefined}
+      coverStyle={{
+        cursor: "pointer",
+        color: "#ffffff",
+        backgroundColor: cover.bg,
+        backgroundImage: `linear-gradient(160deg, ${cover.sheen}, ${cover.bg} 58%)`,
+      }}
+    >
+      <div className="flex h-full flex-col">
+        <h3 className="line-clamp-2 text-[16px] font-semibold leading-snug tracking-tight">{d.name}</h3>
         {snippet && (
-          <button onClick={onOpen} className="flex-1 text-left">
-            <p className="line-clamp-3 text-xs text-muted-foreground">{snippet}</p>
-          </button>
+          <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed opacity-75">{snippet}</p>
         )}
-
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-            <Badge variant="outline" className="text-[10px]">{d.kind}</Badge>
-            <span>{relativeDate(d.created_at)}</span>
-          </div>
-          <div className="flex items-center gap-0.5">
-            {d.file_url ? (
-              <a href={d.file_url} target="_blank" rel="noreferrer">
-                <Button size="sm" variant="ghost"><ExternalLink className="h-3.5 w-3.5" /></Button>
-              </a>
-            ) : d.content ? (
-              <Button size="sm" variant="ghost" onClick={() => downloadDeliverable(d)}>
-                <Download className="h-3.5 w-3.5" />
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        {missionTitle && (
-          <div className="truncate text-[10px] text-muted-foreground">
-            <Target className="mr-1 inline h-2.5 w-2.5" />{missionTitle}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        <p className="mt-auto pt-2 text-[10px] uppercase tracking-wide opacity-60">{when}</p>
+      </div>
+    </PerspectiveBook>
   );
 }
 

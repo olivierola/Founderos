@@ -306,7 +306,7 @@ function KpiCard({ icon: Icon, label, value, color }: { icon: any; label: string
           <Icon className="h-4 w-4" style={{ color }} />
         </div>
         <div>
-          <div className="text-2xl font-bold">{value}</div>
+          <div className="font-stat-number text-2xl font-bold">{value}</div>
           <div className="text-[11px] text-muted-foreground">{label}</div>
         </div>
       </div>

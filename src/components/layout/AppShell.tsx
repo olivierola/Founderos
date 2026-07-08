@@ -4,26 +4,34 @@ import { PrimarySidebar } from "./PrimarySidebar";
 import { SecondarySidebar } from "./SecondarySidebar";
 import { SubTabBar } from "./SubTabBar";
 import { Topbar } from "./Topbar";
+import { TopbarTabsProvider, useTopbarTabs } from "./TopbarTabs";
+import { TopbarBreadcrumbProvider } from "./TopbarBreadcrumb";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { PermissionsProvider } from "@/lib/permissions";
 import { AssistantProvider } from "@/lib/assistant-context";
 import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
+import { cn } from "@/lib/utils";
 
 interface ShellNavCtx {
   mobileOpen: boolean;
   setMobileOpen: (v: boolean) => void;
+  /** Primary (first) sidebar expanded to full width vs icon-rail. Toggled from
+   *  both the Topbar panel button and the sidebar's own header button. */
+  primaryExpanded: boolean;
+  setPrimaryExpanded: (v: boolean | ((prev: boolean) => boolean)) => void;
 }
 const ShellNavContext = createContext<ShellNavCtx | null>(null);
 
 export function useShellNav() {
   const ctx = useContext(ShellNavContext);
-  if (!ctx) return { mobileOpen: false, setMobileOpen: () => {} };
+  if (!ctx) return { mobileOpen: false, setMobileOpen: () => {}, primaryExpanded: false, setPrimaryExpanded: () => {} };
   return ctx;
 }
 
 export function AppShell() {
   const { loading, notFound } = useCurrentContext();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [primaryExpanded, setPrimaryExpanded] = useState(false);
   const { pathname } = useLocation();
 
   // Close the drawer whenever the route changes.
@@ -44,52 +52,68 @@ export function AppShell() {
   }
 
   return (
-    <ShellNavContext.Provider value={{ mobileOpen, setMobileOpen }}>
+    <ShellNavContext.Provider value={{ mobileOpen, setMobileOpen, primaryExpanded, setPrimaryExpanded }}>
       <PermissionsProvider>
       <AssistantProvider>
-      <div className="flex h-screen w-screen overflow-hidden bg-background">
-        {/* Desktop sidebars */}
-        <div className="hidden md:flex">
-          <PrimarySidebar />
-          <SecondarySidebar />
-        </div>
-
-        {/* Mobile drawer */}
-        {mobileOpen && (
-          <>
-            <button
-              aria-label="Close menu"
-              onClick={() => setMobileOpen(false)}
-              className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
-            />
-            <div className="fixed inset-y-0 left-0 z-50 flex md:hidden">
-              <PrimarySidebar />
-              <SecondarySidebar />
-            </div>
-          </>
-        )}
-
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Soft-black chrome: the topbar and the gutter behind the rounded block. */}
+      <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#101013]">
+        <TopbarTabsProvider>
+        <TopbarBreadcrumbProvider>
           <Topbar />
-          {/* Pages that render a large interactive canvas need the full content
-              width with no horizontal padding and no max-width cap. The pages
-              themselves still scroll/lay out their inner content, so we just
-              relax the wrapper here. */}
-          {isFullbleedRoute(pathname) ? (
-            <main className="flex flex-1 flex-col overflow-hidden">
-              <Outlet />
-            </main>
-          ) : (
-            <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-12 xl:px-20">
-              <div className="mx-auto w-full max-w-6xl">
-                {/* SaaS Analytics renders its in-group pages as compact tabs,
-                    aligned with the page content; null for other modules. */}
-                <SubTabBar />
-                <Outlet />
+
+          <div className="flex flex-1 overflow-hidden bg-[#101013]">
+            {/* Mobile drawer (fixed, above the rounded block) */}
+            {mobileOpen && (
+              <>
+                <button
+                  aria-label="Close menu"
+                  onClick={() => setMobileOpen(false)}
+                  className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
+                />
+                <div className="fixed inset-y-0 left-0 z-50 flex md:hidden">
+                  <PrimarySidebar />
+                  <SecondarySidebar />
+                </div>
+              </>
+            )}
+
+            {/* Everything under the navbar is ONE rounded panel (sidebars +
+                content) floating on the soft-black chrome — the "arrondi". */}
+            <div className="flex flex-1 overflow-hidden rounded-t-2xl border-t border-white/10 bg-background">
+              {/* Desktop sidebars */}
+              <div className="hidden md:flex">
+                <PrimarySidebar />
+                <SecondarySidebar />
               </div>
-            </main>
-          )}
-        </div>
+
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                {/* Page sub-tabs (e.g. agent Settings/Personnaliser sections) — a
+                    light bar that starts after the sidebar, not a full-width dark
+                    navbar strip. Empty when the page publishes none. */}
+                <ContentSubTabs />
+                {/* Pages that render a large interactive canvas need the full content
+                    width with no horizontal padding and no max-width cap. The pages
+                    themselves still scroll/lay out their inner content, so we just
+                    relax the wrapper here. */}
+                {isFullbleedRoute(pathname) ? (
+                  <main className="flex flex-1 flex-col overflow-hidden">
+                    <Outlet />
+                  </main>
+                ) : (
+                  <main className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
+                    <div className="mx-auto w-full max-w-6xl">
+                      {/* SaaS Analytics renders its in-group pages as compact tabs,
+                          aligned with the page content; null for other modules. */}
+                      <SubTabBar />
+                      <Outlet />
+                    </div>
+                  </main>
+                )}
+              </div>
+            </div>
+          </div>
+        </TopbarBreadcrumbProvider>
+        </TopbarTabsProvider>
 
         {/* Global assistant — pushes content (split) when open, full height. */}
         <AssistantPanel />
@@ -97,6 +121,37 @@ export function AppShell() {
       </AssistantProvider>
       </PermissionsProvider>
     </ShellNavContext.Provider>
+  );
+}
+
+/** Page-published sub-tabs, rendered as a light bar at the top of the content
+ *  column (after the sidebar) — not in the dark full-width navbar. Renders
+ *  nothing when the current page has no sub-tabs. */
+function ContentSubTabs() {
+  const subTabs = useTopbarTabs();
+  if (!subTabs || subTabs.tabs.length === 0) return null;
+  return (
+    <div className="scrollbar-hide flex h-14 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-background px-3 lg:px-5">
+      {subTabs.tabs.map((t) => {
+        const Icon = t.icon;
+        const active = t.key === subTabs.activeKey;
+        return (
+          <button
+            key={t.key}
+            onClick={() => subTabs.onSelect(t.key)}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors",
+              active
+                ? "bg-secondary font-medium text-foreground"
+                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+            )}
+          >
+            {Icon && <Icon className="h-3.5 w-3.5" />}
+            <span className="truncate">{t.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -113,12 +168,14 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/devops\/testing(\/.*)?$/.test(pathname)) return true;
   // Agent ecosystem: full-screen infinite collaboration canvas.
   if (/\/app\/[^/]+\/[^/]+\/agent\/ecosystem$/.test(pathname)) return true;
+  // Internal agent detail — full-width chat (scrollbar at the screen edge).
+  if (/\/app\/[^/]+\/[^/]+\/agent\/internal\/[^/]+/.test(pathname)) return true;
   // Project Inbox: Slack-style full-width chatroom.
   if (/\/app\/[^/]+\/[^/]+\/pm\/inbox(\/.*)?$/.test(pathname)) return true;
   // Project Whiteboard canvas (open board) — full-screen collaborative canvas.
   if (/\/app\/[^/]+\/[^/]+\/pm\/whiteboard(\/.*)?$/.test(pathname)) return true;
-  // Project Simulations — MiroFish-style two-pane full-screen workspace.
-  if (/\/app\/[^/]+\/[^/]+\/pm\/simulations(\/.*)?$/.test(pathname)) return true;
+  // Simulations — MiroFish-style two-pane full-screen workspace (now under crm/).
+  if (/\/app\/[^/]+\/[^/]+\/(pm|crm)\/simulations(\/.*)?$/.test(pathname)) return true;
   // CRM full record view (crm/workspace/<obj>/<recordId>) — Attio-style.
   if (/\/app\/[^/]+\/[^/]+\/crm\/workspace\/[^/]+\/[^/]+/.test(pathname)) return true;
   // Module project detail view — sidebar + tabs, same pattern as CRM record view.

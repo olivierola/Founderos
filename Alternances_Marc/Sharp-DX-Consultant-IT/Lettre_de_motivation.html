@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lettre de motivation · Kamga Marc Olivier · Sharp DX</title>
+<style>
+  :root{
+    --accent:#0F766E;
+    --ink:#1f2a28;
+    --muted:#5c6a67;
+    --line:#dbe8e5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Georgia,serif;
+    color:var(--ink);background:#eef3f2;font-size:13.5px;line-height:1.65;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .page{max-width:820px;margin:24px auto;background:#fff;padding:46px 54px 50px}
+
+  .toolbar{position:fixed;top:18px;right:18px;z-index:50}
+  .btn-pdf{
+    background:var(--accent);color:#fff;border:none;padding:11px 20px;border-radius:9px;
+    font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(15,118,110,.32);
+    font-family:"Segoe UI",Arial,sans-serif;letter-spacing:.2px}
+  .btn-pdf:hover{background:#0b5a54}
+
+  .top{display:flex;justify-content:space-between;gap:30px;margin-bottom:30px}
+  .sender .nm{font-size:18px;font-weight:800;color:var(--accent);letter-spacing:.3px}
+  .sender .ti{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+  .sender div, .recipient div{font-size:12.5px;color:var(--ink)}
+  .right-col{text-align:right}
+  .right-col .date{font-size:13px;color:var(--ink);margin-bottom:70px}
+  .recipient .co{font-weight:700;color:var(--ink)}
+  .recipient .muted{color:var(--muted)}
+
+  .objet{font-size:13.5px;margin-bottom:24px;border-left:3px solid var(--accent);padding-left:13px}
+  .objet b{color:var(--accent)}
+
+  p.body{margin-bottom:14px;text-align:justify}
+  p.body strong{color:var(--accent)}
+  .greeting{margin-bottom:14px}
+
+  .signature{margin-top:26px;text-align:right}
+  .signature .sn{font-weight:800;color:var(--accent);font-size:15px}
+
+  @media print{
+    body{background:#fff;font-size:12px}
+    .page{margin:0;max-width:none;padding:0;width:100%}
+    .toolbar{display:none!important}
+    @page{size:A4;margin:18mm}
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn-pdf" onclick="window.print()">Exporter en PDF</button>
+  </div>
+
+  <div class="page">
+    <div class="top">
+      <div class="sender">
+        <div class="nm">Kamga Marc Olivier</div>
+        <div class="ti">Étudiant ingénieur · Tech &amp; Innovation · EFREI Paris</div>
+        <div>Paris, Île-de-France</div>
+        <div>kamgaolivier104@gmail.com</div>
+        <div>+33 7 44 41 92 95</div>
+        <div>linkedin.com/in/marc-olivier-kamga-simo</div>
+      </div>
+      <div class="right-col">
+        <div class="date">À Paris, le 1er juillet 2026</div>
+        <div class="recipient">
+          <div class="co">Sharp DX</div>
+          <div class="muted">Conseil IT · Alternance</div>
+          <div class="muted">Paris 9ᵉ</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="objet">
+      <b>Objet :</b> Candidature à une alternance en conseil IT (F/H) · contrat de 1 ou 2 ans dès septembre 2026
+    </div>
+
+    <div class="greeting">Madame, Monsieur,</div>
+
+    <p class="body">
+      Découvrir le métier du conseil IT auprès d'une équipe passionnée, curieuse et qui « travaille sérieusement sans se
+      prendre au sérieux » : votre annonce m'a tout de suite parlé. Ce qui m'anime, c'est d'<strong>analyser un besoin,
+      concevoir une solution pertinente, l'implémenter puis en assurer le run</strong>, exactement le fil rouge du quotidien
+      de vos Sharpiens, de la phase de cadrage à la mise en œuvre.
+    </p>
+
+    <p class="body">
+      Je ne découvre pas ce cycle par hasard : je développe en autonomie mon propre <strong>SaaS</strong>, de l'analyse du
+      besoin à la mise en production, ce qui m'a appris à <strong>concevoir, prioriser, livrer et faire évoluer</strong> une
+      solution en fonction des retours. Étudiant ingénieur à l'EFREI Paris, je suis à l'aise sur la technique (développement
+      full-stack, cloud, cybersécurité) tout en aimant la relation et la pédagogie, deux qualités indispensables pour
+      <strong>former un client et animer des ateliers</strong>. Mon expérience de projet en mobilité internationale et mon
+      anglais courant (TOEIC B2) me permettront d'évoluer sereinement dans vos contextes clients et internes.
+    </p>
+
+    <p class="body">
+      Impliqué, proactif et animé d'un vrai goût pour la tech et l'innovation, j'ai à cœur la satisfaction de ceux avec qui
+      je travaille. J'aime apprendre, et votre parcours de formation encadré par les Sharpiens est précisément le cadre dans
+      lequel je veux faire mes premiers pas dans le conseil. (Et travailler entre deux Five ou parties de basket ne me fait
+      pas peur !)
+    </p>
+
+    <p class="body">
+      Disponible dès septembre 2026 pour une alternance de 1 ou 2 ans, je serais ravi d'échanger avec vous lors d'un premier
+      call, puis de venir vous rencontrer au QG.
+    </p>
+
+    <p class="body">
+      Je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.
+    </p>
+
+    <div class="signature">
+      <div class="sn">Kamga Marc Olivier</div>
+    </div>
+
+  </div>
+</body>
+</html>

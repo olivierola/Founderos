@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CV · Kamga Marc Olivier · Analyste Cybersécurité SOC</title>
+<style>
+  :root{
+    --accent:#3949AB;
+    --accent-tint:#ECEEF9;
+    --accent-tint-2:#D3D8F0;
+    --ink:#20242e;
+    --muted:#5f6675;
+    --line:#e3e6f3;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Arial,sans-serif;
+    color:var(--ink);background:#eef0f6;line-height:1.5;font-size:13px;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .page{max-width:880px;margin:18px auto;background:#fff;padding:16px 16px 16px}
+
+  /* ---- Print button ---- */
+  .toolbar{position:fixed;top:18px;right:18px;z-index:50}
+  .btn-pdf{
+    background:var(--accent);color:#fff;border:none;padding:11px 20px;border-radius:9px;
+    font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(57,73,171,.32);
+    font-family:inherit;letter-spacing:.2px}
+  .btn-pdf:hover{background:#2c3a8c}
+
+  /* ---- Header (full width) ---- */
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;
+    border-bottom:2.5px solid var(--accent);padding-bottom:11px;margin-bottom:14px}
+  .name{font-size:28px;font-weight:800;letter-spacing:.5px;color:var(--ink);line-height:1.05}
+  .role{font-size:13.2px;color:var(--accent);font-weight:700;margin-top:5px;text-transform:uppercase;letter-spacing:.6px}
+  .seek{font-size:12px;color:#454b5a;margin-top:5px;font-weight:500}
+  .avail{flex-shrink:0;text-align:center;background:var(--accent-tint);color:var(--accent);
+    border:1px solid var(--accent-tint-2);border-radius:9px;padding:9px 13px;font-weight:700;font-size:12px;line-height:1.4}
+  .avail small{display:block;font-weight:500;color:var(--muted);font-size:10.5px;margin-top:2px}
+
+  /* ---- Two-column body (float, print-robust) ---- */
+  .cols{display:block;position:relative}
+  .cols::after{content:"";display:block;clear:both}
+  .cols::before{content:"";position:absolute;top:0;bottom:0;left:243px;width:1px;background:var(--accent-tint-2)}
+  aside{float:left;width:230px}
+  main{float:right;width:calc(100% - 256px)}
+  main section{margin-top:15px}
+  main .entry{margin-bottom:15px}
+  main .profile{margin-bottom:6px}
+
+  /* ---- Section headers ---- */
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);
+    border-bottom:1.5px solid var(--line);padding-bottom:2px;margin-bottom:6px;font-weight:800}
+  section{margin-top:8px}
+  section:first-child{margin-top:0}
+
+  /* ---- Profile ---- */
+  .profile{font-size:12.3px;color:#3a3f4a;text-align:justify;line-height:1.46;
+    border-left:3px solid var(--accent-tint-2);padding-left:13px;margin-bottom:2px}
+
+  /* ---- Entries (experience + projects) ---- */
+  .entry{margin-bottom:9px;page-break-inside:avoid}
+  .entry:last-child{margin-bottom:0}
+  .entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .entry-title{font-size:13px;font-weight:700;color:var(--ink)}
+  .entry-date{font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap}
+  .entry-sub{font-size:11.6px;color:var(--accent);font-weight:600;margin:1px 0 4px}
+  ul{list-style:none;margin:0}
+  li{position:relative;padding-left:15px;font-size:12.1px;color:#373c47;margin-bottom:3px;line-height:1.5}
+  li::before{content:"";position:absolute;left:2px;top:7px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  li b{color:var(--ink)}
+
+  .badges{margin-top:4px;display:flex;flex-wrap:wrap;gap:3px}
+  .badge{background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent-tint-2);
+    border-radius:6px;padding:1.5px 7px;font-size:9.8px;font-weight:600;line-height:1.4;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+
+  /* ---- Formation ---- */
+  .mini{margin-bottom:8px}
+  .mini-title{font-size:12.4px;font-weight:700;color:var(--ink)}
+  .mini-sub{font-size:11.4px;color:var(--muted)}
+  .mini-date{font-size:11px;color:var(--accent);font-weight:600}
+  aside .mini{margin-bottom:4px}
+  aside .mini-title{font-size:11.4px;line-height:1.28}
+  aside .mini-sub{font-size:10.8px}
+
+  /* ---- Sidebar ---- */
+  aside h2{font-size:11px}
+  .contact-list{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:#3a3f4a}
+  .contact-list b{color:var(--accent);font-weight:700}
+
+  .side-group{margin-bottom:4px}
+  .side-group:last-child{margin-bottom:0}
+  .side-group h3{font-size:10px;color:var(--ink);font-weight:800;margin-bottom:2px;text-transform:uppercase;letter-spacing:.3px}
+
+  .lc-row{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:2px 0;border-bottom:1px dashed var(--line)}
+  .lc-row:last-child{border-bottom:none}
+  .lc-row b{color:var(--ink);font-weight:700}
+  .lc-row span{color:var(--muted);white-space:nowrap}
+
+  .hobbies{display:flex;flex-wrap:wrap;gap:4px}
+  .hobby{background:#fff;border:1px solid var(--accent-tint-2);border-radius:20px;padding:2.5px 9px;font-size:11px;color:var(--ink)}
+
+  @media print{
+    body{background:#fff;font-size:10.8px}
+    .page{margin:0;max-width:none;padding:7mm 7mm 4mm;width:100%}
+    .toolbar{display:none!important}
+    @page{size:A4;margin:0}
+    .badge{border-color:#c3caea}
+    aside{width:214px}
+    main{width:calc(100% - 236px)}
+    .cols::before{left:225px}
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn-pdf" onclick="window.print()">Exporter en PDF</button>
+  </div>
+
+  <div class="page">
+    <header>
+      <div>
+        <div class="name">KAMGA MARC OLIVIER</div>
+        <div class="role">Analyste Cybersécurité · SOC · Alternance</div>
+        <div class="seek">Recherche une alternance en Cybersécurité (analyse des risques, protection, SOC)</div>
+      </div>
+      <div class="avail">
+        Disponible dès octobre 2026
+        <small>Alternance 1 ou 2 ans · 3 semaines en entreprise / 1 semaine en formation</small>
+      </div>
+    </header>
+
+    <div class="cols">
+
+      <!-- ====== MAIN (right) ====== -->
+      <main>
+        <p class="profile">
+          Ce qui me passionne en cybersécurité, c'est l'enquête : comprendre comment une menace agit pour mieux protéger les
+          systèmes. De mon stage en SOC et GRC à mon projet entrepreneurial, j'ai pris goût à l'analyse des risques, au
+          déploiement de solutions de protection et au traitement des incidents. Étudiant ingénieur à l'EFREI Paris (M1
+          Réseaux, Cybersécurité, Cloud &amp; DevOps), certifié CSNA Stormshield (89%) et Cisco Cybersecurity Analyst, j'ai
+          de bonnes bases en réseaux, systèmes et sécurité des SI, et une première approche des outils SIEM, EDR et IAM. Ce
+          que je veux apporter à votre équipe cybersécurité : de la curiosité, de la rigueur, un vrai esprit d'équipe et une
+          forte envie d'apprendre auprès de vos experts.
+        </p>
+
+        <section>
+          <h2>Expériences professionnelles</h2>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Analyste SOC &amp; GRC · Stage</span>
+              <span class="entry-date">Juin – Août 2024</span>
+            </div>
+            <div class="entry-sub">CAMRAIL (Cameroon Railways) · Douala, Cameroun</div>
+            <ul>
+              <li><b>Analyse des risques :</b> cartographie des risques SI et écarts vis-à-vis d'ISO 27001.</li>
+              <li><b>Opérations SOC :</b> qualification d'alertes SIEM et suivi des incidents de sécurité.</li>
+              <li><b>Investigation :</b> tentatives de phishing, compromissions et analyse d'IOC.</li>
+              <li><b>Sensibilisation :</b> communications d'incident et bonnes pratiques auprès des utilisateurs.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Analyse des risques</span><span class="badge">SOC</span><span class="badge">SIEM</span>
+              <span class="badge">Investigation</span><span class="badge">ISO 27001</span><span class="badge">Sensibilisation</span>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Technicien Systèmes &amp; Sécurité · Stage</span>
+              <span class="entry-date">Juin – Août 2023</span>
+            </div>
+            <div class="entry-sub">CyberCafe · Yaoundé, Cameroun</div>
+            <ul>
+              <li><b>Protection endpoint :</b> déploiement d'un EDR centralisé et suivi des alertes sur le parc.</li>
+              <li><b>Gestion des accès (IAM) :</b> comptes, droits d'accès et durcissement des postes.</li>
+              <li><b>Pare-feu :</b> participation à la mise en place d'un pare-feu centralisé (VLAN, filtrage).</li>
+              <li><b>Incidents :</b> diagnostic et résolution N1 / N2, supervision de la disponibilité.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">EDR</span><span class="badge">IAM</span><span class="badge">Pare-feu</span>
+              <span class="badge">Hardening</span><span class="badge">Incidents N1/N2</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Projets techniques</h2>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Mastercamp Cybersécurité · Attaque &amp; Défense SOC</span>
+              <span class="entry-date">2025</span>
+            </div>
+            <div class="entry-sub">Exercice red team / blue team · EFREI Paris</div>
+            <ul>
+              <li>Simulation d'attaques (injection SQL, XSS, scan de ports) sur environnement isolé.</li>
+              <li>Analyse et corrélation d'alertes SIEM, détection de patterns et hiérarchisation des incidents.</li>
+              <li>Rapport de remédiation : durcissement système et règles IDS / IPS adaptées.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">SIEM / ELK</span><span class="badge">Nmap</span><span class="badge">Metasploit</span>
+              <span class="badge">Wireshark</span><span class="badge">Hardening</span><span class="badge">IDS / IPS</span>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">FounderOS · SaaS d'agents IA autonomes (que j'entreprends)</span>
+              <span class="entry-date">2025 → présent</span>
+            </div>
+            <div class="entry-sub">Projet entrepreneurial en production · Fondateur · Solo</div>
+            <ul>
+              <li>Plateforme d'agents IA autonomes qui automatisent des tâches métier, dont des contrôles de sécurité.</li>
+              <li>Veille et exploration de l'apport de l'IA (LLM / RAG) à l'optimisation des processus.</li>
+              <li>Stack serverless Supabase + IA Groq / DeepSeek, automatisation Python, CI/CD GitHub Actions.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">IA / LLM</span><span class="badge">Agents autonomes</span><span class="badge">Automatisation</span>
+              <span class="badge">Supabase</span><span class="badge">Python</span><span class="badge">CI/CD</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ====== SIDEBAR (left) ====== -->
+      <aside>
+        <section>
+          <h2>Contact</h2>
+          <div class="contact-list">
+            <b>kamgaolivier104@gmail.com</b>
+            <span>+33 7 44 41 92 95</span>
+            <span>Paris · mobilité nationale</span>
+            <span>linkedin.com/in/marc-olivier-kamga-simo</span>
+          </div>
+        </section>
+
+        <section>
+          <h2>Formation</h2>
+          <div class="mini">
+            <div class="mini-title">Cycle Ingénieur · Réseaux, Cybersécurité, Cloud &amp; DevOps (Bac+5)</div>
+            <div class="mini-sub">EFREI Paris · Villejuif</div>
+            <div class="mini-date">09/2025 – 07/2027</div>
+          </div>
+          <div class="mini">
+            <div class="mini-title">Bachelor Informatique (Bac+3)</div>
+            <div class="mini-sub">EFREI Paris</div>
+            <div class="mini-date">09/2024 – 07/2025</div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Compétences</h2>
+          <div class="side-group">
+            <h3>SOC &amp; réponse à incident</h3>
+            <div class="badges">
+              <span class="badge">Analyse d'alertes</span><span class="badge">SIEM (ELK / Splunk)</span><span class="badge">Investigation</span>
+              <span class="badge">Phishing</span><span class="badge">Malware</span><span class="badge">IOC</span><span class="badge">MITRE ATT&amp;CK</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Protection &amp; gestion des accès</h3>
+            <div class="badges">
+              <span class="badge">Pare-feu (Stormshield / pfSense)</span><span class="badge">EDR</span><span class="badge">IAM</span>
+              <span class="badge">Active Directory</span><span class="badge">Hardening</span><span class="badge">VPN</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Systèmes, réseaux &amp; risques</h3>
+            <div class="badges">
+              <span class="badge">Windows Server</span><span class="badge">Linux</span><span class="badge">Réseaux (TCP/IP, VLAN)</span>
+              <span class="badge">AWS / Azure</span><span class="badge">Analyse des risques</span><span class="badge">ISO 27001</span><span class="badge">Analyse CVE</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Transverses</h3>
+            <div class="badges">
+              <span class="badge">Curiosité</span><span class="badge">Rigueur</span><span class="badge">Esprit d'équipe</span>
+              <span class="badge">Envie d'apprendre</span><span class="badge">Esprit d'analyse</span><span class="badge">Communication</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Certifications</h2>
+          <div class="lc-row"><b>CSNA · Stormshield</b><span>2025 · 89%</span></div>
+          <div class="lc-row"><b>Cisco Junior Cyber. Analyst</b><span>2025</span></div>
+          <div class="lc-row"><b>TOEIC · Anglais B2</b><span>2025 · 770</span></div>
+        </section>
+
+        <section>
+          <h2>Langues</h2>
+          <div class="lc-row"><b>Français</b><span>Langue maternelle</span></div>
+          <div class="lc-row"><b>Anglais</b><span>B2 · TOEIC 770</span></div>
+        </section>
+
+        <section>
+          <h2>Centres d'intérêt</h2>
+          <div class="hobbies">
+            <span class="hobby">Basketball</span>
+            <span class="hobby">Football</span>
+            <span class="hobby">Canoë-kayak</span>
+          </div>
+        </section>
+      </aside>
+
+    </div>
+  </div>
+</body>
+</html>

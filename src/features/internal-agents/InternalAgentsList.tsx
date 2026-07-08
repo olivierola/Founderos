@@ -18,6 +18,9 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { type AgentTemplate } from "./agentTemplates";
 import { instantiateTemplate, type TemplateOverrides } from "./instantiateTemplate";
 import { TemplateDrawer } from "./TemplateDrawer";
+import { cn } from "@/lib/utils";
+import { PixelField } from "./PixelField";
+import { AvatarPicker, AgentAvatar, AVATAR_OPTIONS } from "./AvatarPicker";
 
 const ACCENT_COLORS = [
   "#2F2FE4", "#7c3aed", "#db2777", "#e11d48",
@@ -30,6 +33,7 @@ interface InternalAgent {
   name: string;
   description: string | null;
   avatar_emoji: string | null;
+  avatar_url: string | null;
   accent_color: string | null;
   created_by: string;
   created_at: string;
@@ -49,6 +53,7 @@ export function InternalAgentsListPage() {
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newEmoji, setNewEmoji] = useState(EMOJIS[0]);
+  const [newAvatar, setNewAvatar] = useState<string | null>(AVATAR_OPTIONS[0]);
   const [newColor, setNewColor] = useState(ACCENT_COLORS[0]);
   const [templatesOpen, setTemplatesOpen] = useState(false);
 
@@ -66,7 +71,7 @@ export function InternalAgentsListPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agents")
-        .select("id, name, description, avatar_emoji, accent_color, created_by, created_at, chat_enabled, mission_enabled")
+        .select("id, name, description, avatar_emoji, avatar_url, accent_color, created_by, created_at, chat_enabled, mission_enabled")
         .eq("project_id", projectId!)
         .eq("is_archived", false)
         .order("created_at", { ascending: false });
@@ -107,6 +112,7 @@ export function InternalAgentsListPage() {
           name: newName.trim(),
           description: newDescription.trim() || null,
           avatar_emoji: newEmoji,
+          avatar_url: newAvatar,
           accent_color: newColor,
           created_by: user.id,
         })
@@ -118,6 +124,7 @@ export function InternalAgentsListPage() {
       setNewName("");
       setNewDescription("");
       setNewEmoji(EMOJIS[0]);
+      setNewAvatar(AVATAR_OPTIONS[0]);
       setNewColor(ACCENT_COLORS[0]);
       if (data) navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${data.id}/chat`);
     } finally {
@@ -164,71 +171,15 @@ export function InternalAgentsListPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {agents.map((a) => {
-            const c = counts?.[a.id];
-            const isMine = a.created_by === user?.id;
-            const accent = a.accent_color ?? "#2F2FE4";
-            return (
-              <Card
-                key={a.id}
-                onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${a.id}/chat`)}
-                className="group relative cursor-pointer overflow-hidden p-0 transition-all hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ ['--agent-accent' as string]: accent }}
-              >
-                {/* Accent header band */}
-                <div
-                  className="relative h-16"
-                  style={{ background: `linear-gradient(135deg, ${accent}26, ${accent}0d)` }}
-                >
-                  <div
-                    className="absolute -bottom-5 left-4 flex h-12 w-12 items-center justify-center rounded-xl text-2xl shadow-sm ring-4 ring-card"
-                    style={{ backgroundColor: accent + "22", color: accent }}
-                  >
-                    {a.avatar_emoji ?? "🤖"}
-                  </div>
-                  <ChevronRight className="absolute right-3 top-3 h-4 w-4 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-foreground" />
-                </div>
-
-                <CardContent className="space-y-3 px-4 pb-4 pt-7">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="truncate font-semibold leading-tight">{a.name}</h3>
-                      {isMine && <Badge variant="outline" className="shrink-0 text-[10px]">Owner</Badge>}
-                    </div>
-                    {a.description ? (
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{a.description}</p>
-                    ) : (
-                      <p className="mt-1 text-xs italic text-muted-foreground">No description</p>
-                    )}
-                  </div>
-
-                  {/* Capability chips */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {a.chat_enabled && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        <MessageSquare className="h-3 w-3" /> Chat
-                      </span>
-                    )}
-                    {a.mission_enabled && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        <Target className="h-3 w-3" /> Missions
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Stats footer */}
-                  <div className="flex items-center gap-4 border-t border-border pt-3 text-[11px] text-muted-foreground">
-                    <span className="inline-flex items-center gap-1" title="Missions"><Target className="h-3 w-3" /> {c?.missions ?? 0}</span>
-                    <span className="inline-flex items-center gap-1" title="Tools & integrations"><Wrench className="h-3 w-3" /> {c?.tools ?? 0}</span>
-                    <span className="inline-flex items-center gap-1" title="Members"><UsersIcon className="h-3 w-3" /> {c?.members ?? 0}</span>
-                    <span className="ml-auto inline-flex items-center gap-1 font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                      Open chat <ChevronRight className="h-3 w-3" />
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {agents.map((a) => (
+            <AgentCard
+              key={a.id}
+              agent={a}
+              counts={counts?.[a.id]}
+              isMine={a.created_by === user?.id}
+              onOpen={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${a.id}/chat`)}
+            />
+          ))}
         </div>
       )}
 
@@ -259,16 +210,19 @@ export function InternalAgentsListPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Avatar</label>
-              <div className="flex flex-wrap gap-1.5">
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Avatar</label>
+              <AvatarPicker value={newAvatar} onChange={setNewAvatar} />
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[11px] text-muted-foreground">ou un emoji :</span>
                 {EMOJIS.map((e) => (
                   <button
                     key={e}
                     type="button"
-                    onClick={() => setNewEmoji(e)}
-                    className={`flex h-8 w-8 items-center justify-center rounded text-base transition-colors ${
-                      newEmoji === e ? "bg-foreground/10 ring-1 ring-foreground" : "bg-muted hover:bg-foreground/10"
-                    }`}
+                    onClick={() => { setNewEmoji(e); setNewAvatar(null); }}
+                    className={cn(
+                      "flex h-7 w-7 items-center justify-center rounded text-sm transition-colors",
+                      newAvatar === null && newEmoji === e ? "bg-foreground/10 ring-1 ring-foreground" : "bg-muted hover:bg-foreground/10",
+                    )}
                   >
                     {e}
                   </button>
@@ -299,6 +253,80 @@ export function InternalAgentsListPage() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Agent card: animated pixel field (accent-coloured, intensifies on hover) +
+// the chosen avatar + basic info.
+function AgentCard({
+  agent,
+  counts,
+  isMine,
+  onOpen,
+}: {
+  agent: InternalAgent;
+  counts?: { missions: number; members: number; tools: number };
+  isMine: boolean;
+  onOpen: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const accent = agent.accent_color ?? "#2F2FE4";
+  return (
+    <div
+      onClick={onOpen}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className="group relative cursor-pointer overflow-hidden rounded-2xl border bg-card transition-all duration-300 hover:-translate-y-0.5"
+      style={{
+        borderColor: hover ? accent : "hsl(var(--border))",
+        boxShadow: hover ? `0 16px 40px -16px ${accent}66` : undefined,
+      }}
+    >
+      <PixelField accent={accent} active={hover} />
+      {/* Legibility veil over the pixel field (lets dots glow through, more on hover). */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-card via-card/80 to-card/40 transition-opacity duration-300 group-hover:opacity-90" />
+
+      <div className="relative z-10 p-4">
+        <div className="mb-3 flex items-start justify-between">
+          <div
+            className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl shadow-sm ring-2 ring-card"
+            style={{ outline: `1.5px solid ${accent}66` }}
+          >
+            <AgentAvatar url={agent.avatar_url} emoji={agent.avatar_emoji} accent={accent} className="h-full w-full" />
+          </div>
+          {isMine && <Badge variant="outline" className="shrink-0 text-[10px]">Owner</Badge>}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <h3 className="truncate font-semibold leading-tight">{agent.name}</h3>
+        </div>
+        <p className="mt-1 line-clamp-2 min-h-[2rem] text-xs text-muted-foreground">
+          {agent.description || "No description"}
+        </p>
+
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {agent.chat_enabled && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <MessageSquare className="h-3 w-3" /> Chat
+            </span>
+          )}
+          {agent.mission_enabled && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <Target className="h-3 w-3" /> Missions
+            </span>
+          )}
+        </div>
+
+        <div className="mt-3 flex items-center gap-4 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1" title="Missions"><Target className="h-3 w-3" /> {counts?.missions ?? 0}</span>
+          <span className="inline-flex items-center gap-1" title="Tools & integrations"><Wrench className="h-3 w-3" /> {counts?.tools ?? 0}</span>
+          <span className="inline-flex items-center gap-1" title="Members"><UsersIcon className="h-3 w-3" /> {counts?.members ?? 0}</span>
+          <span className="ml-auto inline-flex items-center gap-1 font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+            Open <ChevronRight className="h-3 w-3" />
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

@@ -248,7 +248,7 @@ function StatTile({ label, value, hint }: { label: string; value: number | strin
   return (
     <div className="rounded-md border border-border p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
+      <div className="font-stat-number mt-1 text-lg font-semibold tabular-nums">{value}</div>
       {hint && <div className="mt-0.5 text-[10px] text-muted-foreground">{hint}</div>}
     </div>
   );
@@ -262,7 +262,7 @@ function KpiTile({ icon: Icon, label, value }: { icon: React.ComponentType<{ cla
           <span className="text-xs text-muted-foreground">{label}</span>
           <Icon className="h-4 w-4 text-muted-foreground" />
         </div>
-        <div className="text-2xl font-semibold tabular-nums">{formatCompact(value)}</div>
+        <div className="font-stat-number text-2xl font-semibold tabular-nums">{formatCompact(value)}</div>
       </CardContent>
     </Card>
   );

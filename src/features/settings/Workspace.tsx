@@ -140,7 +140,7 @@ export function SettingsWorkspacePage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs text-muted-foreground">Health score</label>
-                  <div className="text-2xl font-semibold">{projectFull?.health_score ?? 0}/100</div>
+                  <div className="font-stat-number text-2xl font-semibold">{projectFull?.health_score ?? 0}/100</div>
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-3 pt-1">

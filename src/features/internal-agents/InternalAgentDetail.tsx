@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,12 +7,19 @@ import {
   MessageSquare, Globe, Database, Zap, KeyRound, Play, Clock,
   CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
   CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
-  ListTree, Gauge, Brain, Pin, PinOff, ArrowLeft, ChevronDown, History,
-  Network, MessagesSquare, Send, ArrowRight, Plug, AlertTriangle, Search,
-  X, FileCode, TerminalSquare, BrainCircuit,
+  ListTree, Gauge, Brain, Pin, PinOff, ArrowLeft, ChevronDown, ChevronUp, History,
+  Network, MessagesSquare, Send, ArrowRight, Plug, AlertTriangle, Search, Slack, Workflow,
+  X, FileCode, TerminalSquare, BrainCircuit, Copy, ThumbsUp, ThumbsDown, RotateCcw,
+  SlidersHorizontal, MoreVertical, LayoutGrid, Columns3, Smartphone,
+  type LucideIcon,
 } from "lucide-react";
+import {
+  ChatCircleIcon, TargetIcon, SlidersHorizontalIcon, ShareNetworkIcon,
+  SlackLogoIcon, ChartBarIcon, GearSixIcon,
+} from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +32,7 @@ import {
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/EmptyState";
+import { useRegisterTopbarTabs } from "@/components/layout/TopbarTabs";
 import { ChatComposer } from "@/components/ui/chat-composer";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
@@ -32,9 +40,19 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { InstructionsEditor } from "./InstructionsEditor";
+import { AgentAvatar } from "./AvatarPicker";
+import { AgentChannelsTab } from "./AgentChannelsTab";
+import { AgentAutomationsTab } from "./AgentAutomationsTab";
+import { RunTimeline } from "./RunTimeline";
+import { toolSummary } from "./runEventMeta";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
 import { ConnectorDialog } from "@/features/integrations/ConnectorDialog";
-import { findProvider } from "@/lib/providers";
+import { findProvider, type ProviderDef } from "@/lib/providers";
+import {
+  siDiscord, siTelegram, siHubspot, siIntercom, siStripe, siGreenhouse,
+  siNotion, siLinear, siAirtable, siGithub, siPosthog, siPlausibleanalytics,
+  siSentry, siFigma, siGooglecalendar, siGooglebigquery, siGooglecloud,
+} from "simple-icons";
 import { Settings2 } from "lucide-react";
 import { DeliverablesHub } from "./DeliverablesHub";
 import { AgentPlanning, type PlanStep, type PlanStepStatus } from "@/components/ui/ai-planning";
@@ -53,15 +71,22 @@ export type InternalAgentTab =
   | "mission"
   | "deliverables"
   | "artifacts"
+  | "customize"
+  // Legacy sub-slugs — still valid so old deep-links resolve; they now open the
+  // "Personnaliser" tab on the matching sub-section instead of a standalone tab.
   | "skills"
   | "memory"
-  | "collaboration"
+  | "connectors"
   | "instructions"
+  | "collaboration"
+  | "channels"
   | "analytics"
   | "settings";
 
 const VALID_TABS: InternalAgentTab[] = [
-  "chat", "mission", "deliverables", "artifacts", "skills", "memory", "collaboration", "instructions", "analytics", "settings",
+  "chat", "mission", "deliverables", "artifacts", "customize",
+  "skills", "memory", "connectors", "instructions",
+  "collaboration", "channels", "analytics", "settings",
 ];
 
 export function InternalAgentDetailPage() {
@@ -93,18 +118,32 @@ export function InternalAgentDetailPage() {
   }
   if (!agent) return <EmptyState icon={Bot} title="Agent not found" />;
 
+  // The route is full-bleed: the chat fills the whole area (scrollbar at the
+  // screen edge); the other tabs restore their own padding + max-width + scroll.
+  if (tab === "chat") {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />
+      </div>
+    );
+  }
+  // Collaboration is full-bleed too — a two-panel split that fills the whole area.
+  if (tab === "collaboration") {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6">
+        <CollaborationTab agent={agent} />
+      </div>
+    );
+  }
   return (
-    <div>
-      {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-      {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-      {tab === "deliverables" && <DeliverablesHub agent={agent} />}
-      {tab === "artifacts" && <AgentArtifactsTab agentId={agent.id} />}
-      {tab === "skills" && <SkillsTab agentId={agent.id} />}
-      {tab === "memory" && <MemoryTab agent={agent} />}
-      {tab === "collaboration" && <CollaborationTab agent={agent} />}
-      {tab === "instructions" && <InstructionsEditor agent={agent} />}
-      {tab === "analytics" && <AnalyticsTab agent={agent} />}
-      {tab === "settings" && <SettingsTab agent={agent} />}
+    <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
+      <div className="mx-auto w-full max-w-6xl">
+        {MISSION_TAB_SLUGS.includes(tab) && <MissionsHubTab agent={agent} workspaceId={workspaceId} projectId={projectId} initialSection={missionSectionFor(tab)} />}
+        {CUSTOMIZE_TAB_SLUGS.includes(tab) && <CustomizeTab agent={agent} initialSection={customizeSectionFor(tab)} />}
+        {tab === "channels" && <AgentChannelsTab agent={agent} />}
+        {tab === "analytics" && <AnalyticsTab agent={agent} />}
+        {tab === "settings" && <SettingsTab agent={agent} />}
+      </div>
     </div>
   );
 }
@@ -112,7 +151,7 @@ export function InternalAgentDetailPage() {
 // Reusable agent tab body — lets other surfaces (e.g. the CRM record view)
 // embed the real agent tabs (Chat / Missions / Deliverables / …) by agent id,
 // without leaving their module. Loads the agent then renders the chosen tab.
-export function AgentTabContent({ agentId, tab }: { agentId: string; tab: InternalAgentTab }) {
+export function AgentTabContent({ agentId, tab, embedded }: { agentId: string; tab: InternalAgentTab; embedded?: boolean }) {
   const { workspaceId, projectId } = useCurrentContext();
   const { data: agent, isLoading } = useQuery({
     queryKey: ["internal_agent", agentId],
@@ -127,16 +166,406 @@ export function AgentTabContent({ agentId, tab }: { agentId: string; tab: Intern
   return (
     <>
       {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-      {tab === "mission" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-      {tab === "deliverables" && <DeliverablesHub agent={agent} />}
-      {tab === "artifacts" && <AgentArtifactsTab agentId={agent.id} />}
-      {tab === "skills" && <SkillsTab agentId={agent.id} />}
-      {tab === "memory" && <MemoryTab agent={agent} />}
+      {MISSION_TAB_SLUGS.includes(tab) && <MissionsHubTab agent={agent} workspaceId={workspaceId} projectId={projectId} initialSection={missionSectionFor(tab)} embedded={embedded} />}
+      {CUSTOMIZE_TAB_SLUGS.includes(tab) && <CustomizeTab agent={agent} initialSection={customizeSectionFor(tab)} embedded={embedded} />}
       {tab === "collaboration" && <CollaborationTab agent={agent} />}
-      {tab === "instructions" && <InstructionsEditor agent={agent} />}
+      {tab === "channels" && <AgentChannelsTab agent={agent} />}
       {tab === "analytics" && <AnalyticsTab agent={agent} />}
-      {tab === "settings" && <SettingsTab agent={agent} />}
+      {tab === "settings" && <SettingsTab agent={agent} embedded={embedded} />}
     </>
+  );
+}
+
+// Inline horizontal sub-tab bar — used when the agent tabs are embedded in
+// another surface (the CRM record view), where sub-tabs must render inside the
+// content instead of being published to the global navbar.
+function InlineSubTabs<T extends string>({
+  sections, active, onSelect,
+}: {
+  sections: { key: T; label: string; icon: any }[];
+  active: T;
+  onSelect: (k: T) => void;
+}) {
+  return (
+    <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-border">
+      {sections.map((s) => {
+        const Icon = s.icon;
+        const on = s.key === active;
+        return (
+          <button
+            key={s.key}
+            onClick={() => onSelect(s.key)}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
+              on
+                ? "border-foreground font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {Icon && <Icon className="h-3.5 w-3.5" />} {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================================
+// CUSTOMIZE TAB ("Personnaliser") — one sidebar entry that groups the agent's
+// configuration surfaces (instructions, skills, memory, connectors) behind a
+// horizontal sub-tab bar, mirroring the SettingsTab sub-tab pattern. Keeps the
+// secondary sidebar short instead of one entry per surface.
+// ============================================================================
+
+type CustomizeSection = "instructions" | "skills" | "memory" | "connectors" | "automation";
+
+const CUSTOMIZE_SECTIONS: { key: CustomizeSection; label: string; icon: any }[] = [
+  { key: "instructions", label: "Instructions", icon: FileText },
+  { key: "skills", label: "Skills", icon: Zap },
+  { key: "memory", label: "Memory", icon: Brain },
+  { key: "connectors", label: "Connectors", icon: Plug },
+  { key: "automation", label: "Automation", icon: Workflow },
+];
+
+// Tab slugs that now resolve to the Customize tab. The legacy slugs
+// (skills/memory/instructions/connectors) open it on the matching sub-section so
+// old deep-links keep working.
+const CUSTOMIZE_TAB_SLUGS: InternalAgentTab[] = [
+  "customize", "skills", "memory", "connectors", "instructions",
+];
+
+function customizeSectionFor(tab: InternalAgentTab): CustomizeSection | undefined {
+  if (tab === "skills") return "skills";
+  if (tab === "memory") return "memory";
+  if (tab === "instructions") return "instructions";
+  if (tab === "connectors") return "connectors";
+  return undefined; // "customize" → default (instructions)
+}
+
+function CustomizeTab({ agent, initialSection, embedded }: { agent: InternalAgent; initialSection?: CustomizeSection; embedded?: boolean }) {
+  const [section, setSection] = useState<CustomizeSection>(initialSection ?? "instructions");
+  // The sub-tabs (Instructions · Skills · Memory · Connectors) render up in the
+  // Topbar (where the breadcrumb used to be) — except when embedded (CRM record
+  // view), where they render inline so they don't leak into the global navbar.
+  useRegisterTopbarTabs(embedded ? null : CUSTOMIZE_SECTIONS, section, (k) => setSection(k as CustomizeSection));
+  return (
+    <div>
+      {embedded && <InlineSubTabs sections={CUSTOMIZE_SECTIONS} active={section} onSelect={setSection} />}
+      {section === "instructions" && <InstructionsEditor agent={agent} />}
+      {section === "skills" && <SkillsTab agentId={agent.id} />}
+      {section === "memory" && <MemoryTab agent={agent} />}
+      {section === "connectors" && <AgentConnectorsTab agent={agent} />}
+      {section === "automation" && <AgentAutomationsTab agent={agent} />}
+    </div>
+  );
+}
+
+// ============================================================================
+// CONNECTORS — Perplexity-style gallery of app integrations the agent can use.
+// Real brand logos come from the Simple Icons CDN, with the provider's lucide
+// icon as a fallback when a brand isn't found.
+// ============================================================================
+
+// Real brand logos from the `simple-icons` package (inline SVG, official brand
+// colour). Only the brands Simple Icons actually ships are mapped — the rest
+// (Slack, Salesforce, Teams, LinkedIn… removed upstream for trademark reasons)
+// fall back to the provider's lucide icon.
+type BrandGlyph = { hex: string; path: string; title: string };
+const BRAND_ICONS: Record<string, BrandGlyph> = {
+  discord: siDiscord,
+  telegram: siTelegram,
+  hubspot: siHubspot,
+  intercom: siIntercom,
+  stripe: siStripe,
+  greenhouse: siGreenhouse,
+  notion: siNotion,
+  linear: siLinear,
+  airtable: siAirtable,
+  github: siGithub,
+  posthog: siPosthog,
+  plausible: siPlausibleanalytics,
+  sentry: siSentry,
+  figma: siFigma,
+  "google-calendar": siGooglecalendar,
+  bigquery: siGooglebigquery,
+  gcs: siGooglecloud,
+};
+
+// Brands Simple Icons no longer ships (trademark removals) → real logo by domain
+// via the Clearbit logo CDN, then the lucide icon as a last resort.
+const BRAND_DOMAIN: Record<string, string> = {
+  slack: "slack.com",
+  teams: "microsoft.com",
+  salesforce: "salesforce.com",
+  pipedrive: "pipedrive.com",
+  attio: "attio.com",
+  bamboohr: "bamboohr.com",
+  deel: "deel.com",
+  factorial: "factorialhr.com",
+  lever: "lever.co",
+  workable: "workable.com",
+  "linkedin-talent": "linkedin.com",
+};
+
+function BrandIcon({ slug, fallback: Fallback }: { slug: string; fallback: LucideIcon }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const icon = BRAND_ICONS[slug];
+  if (icon) {
+    return (
+      <svg role="img" viewBox="0 0 24 24" className="h-5 w-5" fill={`#${icon.hex}`} aria-hidden="true">
+        <path d={icon.path} />
+      </svg>
+    );
+  }
+  const domain = BRAND_DOMAIN[slug];
+  if (domain && !imgFailed) {
+    return (
+      <img
+        src={`https://logo.clearbit.com/${domain}`}
+        alt=""
+        className="h-5 w-5 rounded-sm object-contain"
+        loading="lazy"
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
+  return <Fallback className="h-5 w-5 text-zinc-600" />;
+}
+
+const CONNECTOR_FILTERS = [
+  { key: "all", label: "Tous" },
+  { key: "connected", label: "Connecté" },
+  { key: "available", label: "Disponible" },
+] as const;
+
+function AgentConnectorsTab({ agent }: { agent: InternalAgent }) {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "connected" | "available">("all");
+  const [category, setCategory] = useState<string | null>(null);
+  const [configureSlug, setConfigureSlug] = useState<string | null>(null);
+
+  const { data: tools } = useQuery({
+    queryKey: ["internal_agent_tools", agent.id],
+    queryFn: async () => {
+      const { data } = await supabase.from("internal_agent_tools").select("*").eq("agent_id", agent.id);
+      return (data ?? []) as AgentTool[];
+    },
+  });
+  const { data: connectors } = useQuery({
+    queryKey: ["project_connectors_for_tools", agent.project_id],
+    queryFn: async () => {
+      const { data } = await supabase.from("connectors").select("provider, status").eq("project_id", agent.project_id);
+      return (data ?? []) as Array<{ provider: string; status: string }>;
+    },
+  });
+
+  const connectedSet = new Set((connectors ?? []).filter((c) => c.status === "connected").map((c) => c.provider));
+  const enabledSet = new Set(
+    (tools ?? []).filter((t) => t.kind === "connector_action").map((t) => String(t.config?.provider ?? "")),
+  );
+
+  async function toggleIntegration(slug: string) {
+    const existing = (tools ?? []).find(
+      (t) => t.kind === "connector_action" && String(t.config?.provider ?? "") === slug,
+    );
+    if (existing) {
+      await supabase.from("internal_agent_tools").delete().eq("id", existing.id);
+      queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
+      return;
+    }
+    const p = connectorActionProvider(slug);
+    const { error } = await supabase.from("internal_agent_tools").insert({
+      agent_id: agent.id,
+      kind: "connector_action",
+      name: p ? `Use ${p.name}` : `Use ${slug}`,
+      description: p?.description ?? null,
+      config: { provider: slug },
+      requires_approval: false,
+    });
+    if (error) { alert(error.message); return; }
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
+    if (!connectedSet.has(slug)) setConfigureSlug(slug);
+  }
+
+  const q = search.trim().toLowerCase();
+  const sections = CONNECTOR_ACTION_GROUPS
+    .filter((g) => !category || g.label === category)
+    .map((g) => ({
+      label: g.label,
+      items: g.slugs
+        .map((slug) => ({ slug, p: connectorActionProvider(slug) }))
+        .filter((x): x is { slug: string; p: ProviderDef } => !!x.p)
+        .filter(({ slug, p }) => {
+          if (filter === "connected" && !connectedSet.has(slug)) return false;
+          if (filter === "available" && connectedSet.has(slug)) return false;
+          if (q && !`${p.name} ${p.description} ${slug}`.toLowerCase().includes(q)) return false;
+          return true;
+        }),
+    }))
+    .filter((g) => g.items.length > 0);
+
+  return (
+    <div className="mx-auto max-w-5xl">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Connecteurs</h2>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            Connectez des services pour permettre à {agent.name} d'accéder à vos données et d'agir en conséquence.
+          </p>
+        </div>
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher tous les connecteurs"
+            className="h-10 rounded-lg pl-9"
+          />
+        </div>
+      </div>
+
+      {/* Filter pills + category dropdown */}
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {CONNECTOR_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={cn(
+                "rounded-full border px-4 py-1.5 text-sm transition-colors",
+                filter === f.key
+                  ? "border-border bg-secondary text-foreground"
+                  : "border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground">
+              {category ?? "Toutes les catégories"} <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
+            <DropdownMenuItem onClick={() => setCategory(null)}>Toutes les catégories</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {CONNECTOR_ACTION_GROUPS.map((g) => (
+              <DropdownMenuItem key={g.label} onClick={() => setCategory(g.label)}>{g.label}</DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Sections by category */}
+      {sections.length === 0 ? (
+        <p className="py-16 text-center text-sm text-muted-foreground">Aucun connecteur trouvé.</p>
+      ) : (
+        <div className="mt-6 space-y-8">
+          {sections.map((g) => (
+            <div key={g.label}>
+              <h3 className="mb-3 text-sm font-semibold text-foreground">{g.label}</h3>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {g.items.map(({ slug, p }) => {
+                  const on = enabledSet.has(slug);
+                  const connected = connectedSet.has(slug);
+                  return (
+                    <div
+                      key={slug}
+                      onClick={() => toggleIntegration(slug)}
+                      className={cn(
+                        "group relative flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
+                        on ? "border-primary/50 bg-primary/5" : "border-border bg-card/40 hover:bg-card",
+                      )}
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white">
+                        <BrandIcon slug={slug} fallback={p.icon} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-sm font-medium text-foreground">{p.name}</span>
+                          {on && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                        </div>
+                        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{p.description}</p>
+                        <span className={cn("mt-1.5 inline-flex items-center gap-1 text-[10px]", connected ? "text-emerald-500" : "text-muted-foreground")}>
+                          {connected ? <><ShieldCheck className="h-3 w-3" /> Connecté · réutilisé</> : "Non connecté"}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfigureSlug(slug); }}
+                        title={connected ? "Reconfigurer les identifiants" : "Configurer les identifiants"}
+                        className="absolute right-2 top-2 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+                        aria-label="Configurer"
+                      >
+                        <Settings2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <ConnectorDialog
+        open={!!configureSlug}
+        onOpenChange={(o) => { if (!o) setConfigureSlug(null); }}
+        provider={configureSlug ? findProvider(configureSlug) ?? null : null}
+        workspaceId={agent.workspace_id}
+        projectId={agent.project_id}
+        onConnected={() => {
+          setConfigureSlug(null);
+          queryClient.invalidateQueries({ queryKey: ["project_connectors_for_tools", agent.project_id] });
+        }}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// MISSIONS HUB — one sidebar entry grouping Missions · Deliverables · Artifacts
+// behind topbar sub-tabs (same pattern as Personnaliser). Deliverables and
+// artifacts used to be their own sidebar tabs.
+// ============================================================================
+
+type MissionSection = "missions" | "deliverables" | "artifacts";
+
+const MISSION_SECTIONS: { key: MissionSection; label: string; icon: any }[] = [
+  { key: "missions", label: "Missions", icon: Target },
+  { key: "deliverables", label: "Délivrables", icon: Package },
+  { key: "artifacts", label: "Artifacts", icon: FileCode },
+];
+
+const MISSION_TAB_SLUGS: InternalAgentTab[] = ["mission", "deliverables", "artifacts"];
+
+function missionSectionFor(tab: InternalAgentTab): MissionSection | undefined {
+  if (tab === "deliverables") return "deliverables";
+  if (tab === "artifacts") return "artifacts";
+  return undefined; // "mission" → default (missions)
+}
+
+function MissionsHubTab({
+  agent, workspaceId, projectId, initialSection, embedded,
+}: {
+  agent: InternalAgent;
+  workspaceId: string | null;
+  projectId: string | null;
+  initialSection?: MissionSection;
+  embedded?: boolean;
+}) {
+  const [section, setSection] = useState<MissionSection>(initialSection ?? "missions");
+  useRegisterTopbarTabs(embedded ? null : MISSION_SECTIONS, section, (k) => setSection(k as MissionSection));
+  return (
+    <div>
+      {embedded && <InlineSubTabs sections={MISSION_SECTIONS} active={section} onSelect={setSection} />}
+      {section === "missions" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {section === "deliverables" && <DeliverablesHub agent={agent} />}
+      {section === "artifacts" && <AgentArtifactsTab agentId={agent.id} />}
+    </div>
   );
 }
 
@@ -154,7 +583,16 @@ interface ChatMessage {
   tokens_out?: number;
   cost_usd?: number;
   created_at: string;
+  /** The run that produced this assistant turn — anchors its timeline card. */
+  run_id?: string | null;
 }
+
+// Our base models (the agent runs server-side on DeepSeek, Groq as fallback) —
+// shown in the composer's model selector instead of the generic Claude defaults.
+const AGENT_MODELS = [
+  { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "Default — strong reasoning & tool calling" },
+  { id: "groq-llama-3.3", name: "Groq Llama 3.3", description: "Fast fallback for quick replies" },
+];
 
 function ChatTab({
   agent,
@@ -194,6 +632,30 @@ function ChatTab({
     },
   });
 
+  // Is a run for this agent in flight RIGHT NOW (server truth, not local state)?
+  // Keeps the live timeline visible across navigation and blocks a second send
+  // while the agent works (which would spawn a concurrent run that restarts).
+  const { data: activeRun } = useQuery({
+    queryKey: ["agent_active_run", agent.id],
+    refetchInterval: 3000,
+    queryFn: async () => {
+      // Lock the composer while a CHAT run is alive. Chat now runs on the durable
+      // tick runtime, so it can legitimately last well beyond the Edge wall-clock
+      // — no time cap. Genuine zombies are flipped to `failed` by the reconciler
+      // (and so drop out of this status filter), which unlocks the composer.
+      const { data } = await supabase
+        .from("internal_agent_runs")
+        .select("id, status")
+        .eq("agent_id", agent.id)
+        .eq("triggered_via", "chat")
+        .in("status", ["running", "queued"])
+        .order("created_at", { ascending: false })
+        .limit(1);
+      return (data?.[0] ?? null) as { id: string; status: string } | null;
+    },
+  });
+  const isBusy = sending || !!activeRun;
+
   // Resume the most recent session by default.
   useEffect(() => {
     if (!convoId && !startedFresh && conversations && conversations.length > 0) {
@@ -211,10 +673,13 @@ function ChatTab({
   const { data: messages } = useQuery({
     queryKey: ["internal_agent_messages", convoId],
     enabled: !!convoId,
+    // While a run is in flight, poll so the agent's reply appears even if the
+    // user navigated away and came back (the run finishes server-side).
+    refetchInterval: isBusy ? 2500 : false,
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agent_messages")
-        .select("id, conversation_id, role, content, tool_calls, tokens_in, tokens_out, cost_usd, created_at")
+        .select("id, conversation_id, role, content, tool_calls, tokens_in, tokens_out, cost_usd, created_at, run_id")
         .eq("conversation_id", convoId!)
         .order("created_at", { ascending: true });
       return (data ?? []) as ChatMessage[];
@@ -242,6 +707,8 @@ function ChatTab({
 
   async function handleSend(text: string) {
     if (!user || !workspaceId || !projectId || !text.trim() || sending) return;
+    // NB: sending is allowed WHILE a run is active — the message is folded into the
+    // running agent on its next tick (mid-run steering), not queued as a new run.
     if (!agent?.id) { setError("Agent is still loading — please retry in a moment."); return; }
     setSending(true);
     setError(null);
@@ -270,13 +737,30 @@ function ChatTab({
       setInput("");
       queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
 
-      // Call the worker edge in "chat" mode — it runs the agent's tool loop
-      // and persists the assistant reply.
-      await callEdge("internal-agent-run", {
+      // Call the worker edge in "chat" mode. It now runs the agent loop in the
+      // BACKGROUND and returns immediately (avoids the 504 on long runs), so we
+      // poll the run until it finishes while the live timeline streams progress.
+      const resp = await callEdge<{ run_id?: string; async?: boolean }>("internal-agent-run", {
         agent_id: agent.id,
         mode: "chat",
         conversation_id: cid,
       });
+      const runId = resp?.run_id ?? null;
+      if (runId && resp?.async) {
+        const deadline = Date.now() + 8 * 60 * 1000; // safety cap
+        // eslint-disable-next-line no-constant-condition
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 1500));
+          queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
+          const { data: run } = await supabase
+            .from("internal_agent_runs")
+            .select("status")
+            .eq("id", runId)
+            .maybeSingle();
+          const st = (run as { status?: string } | null)?.status;
+          if (st && st !== "running" && st !== "queued") break;
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
       queryClient.invalidateQueries({ queryKey: ["internal_agent_conversations", agent.id] });
       queryClient.invalidateQueries({ queryKey: ["internal_agent_convo_deliverables", cid] });
@@ -291,17 +775,17 @@ function ChatTab({
   const currentConvo = conversations?.find((c) => c.id === convoId) ?? null;
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col">
-      {/* Floating session switcher */}
-      <div className="flex items-center justify-between px-1 pb-2">
+    <div className="font-poppins relative flex h-full min-h-0 flex-col">
+      {/* Floating session switcher — overlays the chat, no full-width navbar */}
+      <div className="absolute left-2 top-2 z-20">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="outline" className="max-w-[320px]">
-              <History className="mr-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">
+            <Button size="sm" variant="ghost" className="h-7 max-w-[240px] gap-1 rounded-lg border border-border/60 bg-background/70 px-2 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground">
+              <History className="mr-1 h-3.5 w-3.5 shrink-0" />
+              <span className="truncate text-xs">
                 {currentConvo ? (currentConvo.title || "Untitled session") : "New session"}
               </span>
-              <ChevronDown className="ml-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <ChevronDown className="ml-0.5 h-3.5 w-3.5 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72">
@@ -341,247 +825,132 @@ function ChatTab({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-        {currentConvo && (
-          <span className="text-[10px] text-muted-foreground">{relativeDate(currentConvo.updated_at)}</span>
-        )}
       </div>
 
-      <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto px-1">
-        {isEmpty ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <div
-              className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg text-xl"
-              style={{
-                backgroundColor: (agent.accent_color ?? "#2F2FE4") + "22",
-                color: agent.accent_color ?? undefined,
-              }}
+      {isEmpty ? (
+        // Perplexity-style hero: centered title + composer + suggestion cards.
+        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10">
+          <AgentAvatar
+            url={agent.avatar_url}
+            emoji={agent.avatar_emoji}
+            accent={agent.accent_color}
+            className="mb-4 h-14 w-14 overflow-hidden rounded-2xl text-2xl"
+          />
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">{agent.name}</h1>
+          {agent.description && (
+            <p className="mt-2 max-w-md text-center text-sm text-muted-foreground">{agent.description}</p>
+          )}
+          <div className="mt-7 w-full max-w-2xl">
+            <ChatComposer
+              value={input}
+              onValueChange={setInput}
+              onSubmit={({ message }) => handleSend(message)}
+              loading={isBusy}
+              disabled={isBusy}
+              placeholder={isBusy ? "L'agent travaille…" : `Demandez à ${agent.name}…`}
+              models={AGENT_MODELS}
+              className="max-w-full"
+            />
+            {error && <p className="mt-2 text-center text-xs text-destructive">{error}</p>}
+          </div>
+          <div className="mt-5 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              onClick={() => setInput("Quelles sont tes capacités, et que peux-tu faire pour moi ?")}
+              className="rounded-2xl border p-4 text-left transition-all hover:brightness-110"
+              style={{ background: "linear-gradient(135deg, hsl(187 48% 18% / 0.6), hsl(187 45% 11% / 0.35))", borderColor: "hsl(187 45% 35% / 0.4)" }}
             >
-              {agent.avatar_emoji ?? "🤖"}
+              <div className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                <Search className="h-4 w-4" style={{ color: "hsl(187 65% 62%)" }} /> Poser une question
+              </div>
+              <p className="text-xs text-foreground/70">Réponses rapides et sourcées à partir du web et de tes données.</p>
+            </button>
+            <button
+              onClick={() => setInput("Analyse un dataset, construis un modèle prédictif et rends-moi un rapport structuré avec graphes.")}
+              className="rounded-2xl border p-4 text-left transition-all hover:brightness-110"
+              style={{ background: "linear-gradient(135deg, hsl(255 40% 24% / 0.55), hsl(255 40% 14% / 0.3))", borderColor: "hsl(255 45% 50% / 0.4)" }}
+            >
+              <div className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                <Target className="h-4 w-4" style={{ color: "hsl(255 65% 74%)" }} /> Confier une tâche
+              </div>
+              <p className="text-xs text-foreground/70">Donne-lui un projet : il produit des livrables fiables, en autonomie.</p>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-4xl space-y-8 px-6 pb-6 pt-14">
+              {messages!.map((m, i) => {
+                const isLastAssistant =
+                  m.role === "assistant" &&
+                  !messages!.slice(i + 1).some((x) => x.role === "assistant");
+                return (
+                  <div key={m.id} className="space-y-3">
+                    {/* Persistent run card: each assistant turn keeps its own
+                        timeline (todos + actions), collapsed, re-openable —
+                        Claude-Code-style. Skipped while that run is still the
+                        ACTIVE one (the live card below already shows it). */}
+                    {m.role === "assistant" && m.run_id && m.run_id !== activeRun?.id && (
+                      <RunTimeline runId={m.run_id} />
+                    )}
+                    <ChatBubble
+                      msg={m}
+                      artifacts={isLastAssistant ? (convoDeliverables ?? []) : []}
+                      onOpenArtifact={openDeliverable}
+                      onEdit={(c) => setInput(c)}
+                      onResend={(c) => handleSend(c)}
+                    />
+                  </div>
+                );
+              })}
+              {/* Live run — anchored on the ACTIVE run id (never "latest run"),
+                  so it can't vanish mid-run or mix runs. */}
+              {activeRun && <RunTimeline runId={activeRun.id} live defaultOpen />}
+              {sending && !activeRun && (
+                <div className="flex items-center gap-2 rounded-xl border border-blue-500/30 bg-card px-3.5 py-2.5 text-sm text-blue-400">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Démarrage du run…
+                </div>
+              )}
             </div>
-            <h3 className="text-base font-semibold">{agent.name}</h3>
-            {agent.description && (
-              <p className="mt-1 max-w-md text-sm text-muted-foreground">{agent.description}</p>
-            )}
-            <p className="mt-4 text-xs text-muted-foreground">Start a conversation below.</p>
           </div>
-        ) : (
-          <div className="mx-auto max-w-3xl space-y-4 py-4">
-            {messages!.map((m, i) => {
-              // Attach all session artifacts to the last assistant message.
-              const isLastAssistant =
-                m.role === "assistant" &&
-                !messages!.slice(i + 1).some((x) => x.role === "assistant");
-              return (
-                <ChatBubble
-                  key={m.id}
-                  msg={m}
-                  artifacts={isLastAssistant ? (convoDeliverables ?? []) : []}
-                  onOpenArtifact={openDeliverable}
-                />
-              );
-            })}
-            {sending && <LiveRunEvents agentId={agent.id} />}
+          <div className="shrink-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-2 pb-7 backdrop-blur">
+            <div className="mx-auto w-full max-w-4xl px-6">
+              <ChatComposer
+                value={input}
+                onValueChange={setInput}
+                onSubmit={({ message }) => handleSend(message)}
+                loading={false}
+                disabled={false}
+                running={isBusy}
+                placeholder={isBusy ? "L'agent travaille — écris pour ajouter ou corriger en cours de route…" : `Message ${agent.name}…`}
+                models={AGENT_MODELS}
+                className="max-w-full"
+              />
+              {error && <p className="mt-2 text-center text-xs text-destructive">{error}</p>}
+            </div>
           </div>
-        )}
-      </div>
-      <div className="bg-background/80 px-1 py-3 backdrop-blur">
-        <ChatComposer
-          value={input}
-          onValueChange={setInput}
-          onSubmit={({ message }) => handleSend(message)}
-          loading={sending}
-          placeholder={`Message ${agent.name}…`}
-        />
-        {error && <p className="mt-2 text-center text-xs text-destructive">{error}</p>}
-      </div>
+        </>
+      )}
     </div>
   );
-}
-
-// Live run events — shows tool calls, LLM reasoning, and errors in real-time
-// while the agent is working, using the AgentPlanning timeline component.
-function LiveRunEvents({ agentId }: { agentId: string }) {
-  const { data } = useQuery({
-    queryKey: ["live_run_events", agentId],
-    refetchInterval: 700,
-    queryFn: async () => {
-      // Find the latest run for this agent (running, queued, OR just completed in last 30s)
-      const { data: runs } = await supabase
-        .from("internal_agent_runs")
-        .select("id, status, started_at, created_at")
-        .eq("agent_id", agentId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      const run = runs?.[0];
-      if (!run) return { events: [], status: "idle", runId: null };
-      // Only show if running/queued or completed within last 30s
-      if (run.status !== "running" && run.status !== "queued") {
-        const age = Date.now() - new Date(run.created_at).getTime();
-        if (age > 30000) return { events: [], status: "idle", runId: null };
-      }
-      const { data: events } = await supabase
-        .from("internal_agent_run_events")
-        .select("id, kind, summary, payload, created_at")
-        .eq("run_id", run.id)
-        .order("created_at", { ascending: true })
-        .limit(50);
-      return { events: events ?? [], status: run.status, runId: run.id };
-    },
-  });
-
-  const events = (data?.events ?? []) as any[];
-  const status = data?.status ?? "idle";
-  const isWorking = status === "running" || status === "queued";
-
-  const steps: PlanStep[] = [];
-
-  // Pair tool_call events with their following tool_result.
-  const resultByTool: Record<string, any> = {};
-  for (let i = 0; i < events.length; i++) {
-    const ev = events[i];
-    if (ev.kind === "tool_result") {
-      const t = ev.payload?.tool ?? "";
-      resultByTool[`${t}_${i}`] = ev;
-    }
-  }
-
-  // Compute elapsed time (delta) between an event and its result for "took Xs" display.
-  const elapsed = (fromIso: string, toIso?: string): string => {
-    if (!toIso) return "";
-    const ms = new Date(toIso).getTime() - new Date(fromIso).getTime();
-    if (ms < 0) return "";
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
-  };
-
-  for (let i = 0; i < events.length; i++) {
-    const ev = events[i];
-    const payload = ev.payload ?? {};
-    const ts = new Date(ev.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-
-    if (ev.kind === "tool_call") {
-      const tool = payload.tool ?? payload.name ?? "tool";
-      const args = payload.args ?? payload.arguments ?? {};
-      // Find the matching result (next tool_result with same tool name)
-      let resultEv: any = null;
-      for (let j = i + 1; j < events.length; j++) {
-        if (events[j].kind === "tool_result" && (events[j].payload?.tool ?? "") === tool) { resultEv = events[j]; break; }
-        if (events[j].kind === "tool_call") break;
-      }
-      const summary = toolSummary(tool, args);
-      const icon = toolIcon(tool);
-      const isLast = !resultEv && i >= events.length - 2;
-      const took = elapsed(ev.created_at, resultEv?.created_at);
-      steps.push({
-        id: ev.id,
-        title: summary,
-        status: isLast && isWorking ? "active" : "success",
-        icon,
-        duration: took || ts,
-        defaultExpanded: false,
-        content: (
-          <div className="space-y-1.5 mt-1">
-            {Object.keys(args).length > 0 && (
-              <div className="font-mono text-[11px] rounded-md bg-zinc-950 border border-border/50 p-2.5 text-zinc-400 max-h-40 overflow-y-auto whitespace-pre-wrap">
-                <span className="text-zinc-500">args:</span> {(typeof args === "string" ? args : JSON.stringify(args, null, 2)).slice(0, 2000)}
-              </div>
-            )}
-            {resultEv && (
-              <div className="font-mono text-[11px] rounded-md bg-zinc-950 border border-emerald-500/20 p-2.5 text-emerald-300/90 max-h-48 overflow-y-auto whitespace-pre-wrap">
-                <span className="text-emerald-500/70">result:</span> {String(resultEv.payload?.result ?? resultEv.payload?.preview ?? "(empty)").slice(0, 2000)}
-              </div>
-            )}
-          </div>
-        ),
-      });
-    } else if (ev.kind === "error") {
-      steps.push({
-        id: ev.id, title: `Error: ${payload.message ?? payload.error ?? "unknown"}`,
-        status: "error", icon: <AlertTriangle className="w-3.5 h-3.5" />, duration: ts, defaultExpanded: true,
-        content: <div className="font-mono text-[11px] mt-1 p-2.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-400">{String(payload.message ?? payload.error ?? "Unknown error").slice(0, 800)}</div>,
-      });
-    } else if (ev.kind === "llm_call") {
-      steps.push({
-        id: ev.id, title: `Reasoning (${payload.model ?? "LLM"}, ${payload.rounds ?? "?"} rounds)`,
-        status: "success", icon: <BrainCircuit className="w-3.5 h-3.5" />, duration: ts,
-      });
-    } else if (ev.kind === "browser_navigate") {
-      steps.push({ id: ev.id, title: `Navigate → ${payload.url ?? ""}`, status: "success", icon: <Globe className="w-3.5 h-3.5" />, duration: ts });
-    } else if (ev.kind === "browser_screenshot") {
-      steps.push({ id: ev.id, title: `Screenshot: ${payload.url ?? "page"}`, status: "success", icon: <Globe className="w-3.5 h-3.5" />, duration: ts });
-    } else if (ev.kind === "status" || ev.kind === "log") {
-      // Skip generic status to reduce noise (but keep first one)
-      if (i === 0) steps.push({ id: ev.id, title: payload.message ?? "Started", status: "success", icon: <Check className="w-3.5 h-3.5" />, duration: ts });
-    }
-    // tool_result events are folded into their tool_call above — skip standalone
-  }
-
-  // Leading/trailing "thinking" step while working.
-  if (steps.length === 0) {
-    steps.push({
-      id: "thinking", title: "Agent is thinking…", status: "active" as PlanStepStatus,
-      icon: <BrainCircuit className="w-3.5 h-3.5" />, defaultExpanded: true,
-      content: <div className="font-mono text-[11px] flex items-center gap-2 text-blue-400"><Loader2 className="w-3 h-3 animate-spin" />Analyzing your request…</div>,
-    });
-  } else if (isWorking && steps[steps.length - 1].status !== "active") {
-    steps.push({ id: "next", title: "Processing next step…", status: "active" as PlanStepStatus, icon: <BrainCircuit className="w-3.5 h-3.5" /> });
-  }
-
-  return <AgentPlanning live={isWorking} title={isWorking ? "Agent is working" : `Agent completed · ${steps.filter((s) => s.id !== "next").length} steps`} steps={steps} />;
-}
-
-// Human-readable summary for a tool call.
-function toolSummary(tool: string, args: any): string {
-  const a = args ?? {};
-  switch (tool) {
-    case "shell_exec": return `$ ${String(a.command ?? "").slice(0, 70)}`;
-    case "python_exec": return `Python: ${String(a.code ?? "").replace(/\n/g, " ").slice(0, 55)}…`;
-    case "nodejs_exec": return `Node: ${String(a.code ?? "").replace(/\n/g, " ").slice(0, 55)}…`;
-    case "jupyter_exec": return `Jupyter: ${String(a.code ?? "").replace(/\n/g, " ").slice(0, 55)}…`;
-    case "file_write": return `Write → ${String(a.file ?? "").slice(0, 50)}`;
-    case "file_read": return `Read ← ${String(a.file ?? "").slice(0, 50)}`;
-    case "file_edit": return `Edit ${String(a.file ?? "").slice(0, 45)}`;
-    case "list_files": return `List ${String(a.path ?? "/home/gem").slice(0, 45)}`;
-    case "file_search": return `Search ${a.grep ? `"${String(a.grep).slice(0, 30)}"` : String(a.glob ?? "")}`;
-    case "sandbox_browser": return `Browser: ${a.action}${a.url ? ` → ${String(a.url).slice(0, 40)}` : a.selector ? ` ${String(a.selector).slice(0, 30)}` : ""}`;
-    case "sandbox_env": return `Env: ${a.action}`;
-    case "browse_web": return a.url ? `Browse → ${String(a.url).slice(0, 50)}` : `Browser: ${a.action ?? ""}`;
-    case "http_get": return `GET ${String(a.url ?? "").slice(0, 55)}`;
-    case "web_search": return `Search: "${String(a.query ?? "").slice(0, 45)}"`;
-    case "deep_research": return `Research: "${String(a.query ?? "").slice(0, 45)}"`;
-    case "create_deliverable": return `Create: ${String(a.name ?? "deliverable")}`;
-    case "create_task": return `Task: ${String(a.title ?? "")}`;
-    case "create_mission": return `Mission: ${String(a.title ?? "")}`;
-    case "save_memory": return `Remember: ${String(a.content ?? "").slice(0, 40)}…`;
-    case "search_memory": return `Recall: "${String(a.query ?? "").slice(0, 40)}"`;
-    case "send_email": return `Email → ${String(a.to ?? "")}`;
-    default: return tool.replace(/_/g, " ");
-  }
-}
-
-function toolIcon(tool: string): React.ReactNode {
-  if (tool.includes("browser") || tool === "browse_web" || tool === "http_get") return <Globe className="w-3.5 h-3.5" />;
-  if (tool.includes("search") || tool === "deep_research") return <Search className="w-3.5 h-3.5" />;
-  if (tool.includes("file") || tool === "list_files") return <FileText className="w-3.5 h-3.5" />;
-  if (tool.includes("python") || tool.includes("nodejs") || tool.includes("shell") || tool.includes("jupyter")) return <TerminalSquare className="w-3.5 h-3.5" />;
-  if (tool === "create_deliverable") return <Package className="w-3.5 h-3.5" />;
-  if (tool.includes("memory")) return <Brain className="w-3.5 h-3.5" />;
-  return <TerminalSquare className="w-3.5 h-3.5" />;
 }
 
 interface ChatArtifact { id: string; kind: string; name: string; summary: string | null }
 
 function ChatBubble({
-  msg, artifacts = [], onOpenArtifact,
+  msg, artifacts = [], onOpenArtifact, onEdit, onResend,
 }: {
   msg: ChatMessage;
   artifacts?: ChatArtifact[];
   onOpenArtifact?: (id: string) => void;
+  onEdit?: (content: string) => void;
+  onResend?: (content: string) => void;
 }) {
   if (msg.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-lg bg-foreground/10 px-3 py-2 text-sm">{msg.content}</div>
+      <div className="group flex flex-col items-end">
+        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-foreground/10 px-4 py-2.5 text-sm leading-relaxed">{msg.content}</div>
+        <UserMessageActions content={msg.content} createdAt={msg.created_at} onEdit={onEdit} onResend={onResend} />
       </div>
     );
   }
@@ -646,7 +1015,7 @@ function ChatBubble({
   });
 
   return (
-    <div className="flex justify-start">
+    <div className="group flex justify-start">
       <div className="w-full max-w-[95%]">
         {/* Tool calls timeline */}
         {toolSteps.length > 0 && (
@@ -656,9 +1025,11 @@ function ChatBubble({
           />
         )}
         {/* Message content */}
-        <div className="prose prose-sm dark:prose-invert">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-        </div>
+        {msg.content && msg.content.trim() && (
+          <div className="chat-prose break-words">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+          </div>
+        )}
         {artifacts.length > 0 && (
           <div className="mt-3 space-y-2">
             {artifacts.map((a) => (
@@ -666,7 +1037,65 @@ function ChatBubble({
             ))}
           </div>
         )}
+        {/* Quick actions under the AI reply */}
+        {msg.content && msg.content.trim() && <MessageActions content={msg.content} />}
       </div>
+    </div>
+  );
+}
+
+// Quick-action row under a USER message (right-aligned, on hover): time, resend,
+// edit (puts the text back in the composer), copy.
+function UserMessageActions({ content, createdAt, onEdit, onResend }: {
+  content: string;
+  createdAt?: string;
+  onEdit?: (content: string) => void;
+  onResend?: (content: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+  };
+  const btn = "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
+  return (
+    <div className="mt-1 mr-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      {createdAt && <span className="mr-1 text-[11px] text-muted-foreground/70 tabular-nums">{new Date(createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>}
+      {onResend && (
+        <button onClick={() => onResend(content)} className={btn} title="Renvoyer" aria-label="Renvoyer">
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {onEdit && (
+        <button onClick={() => onEdit(content)} className={btn} title="Modifier" aria-label="Modifier">
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <button onClick={copy} className={btn} title={copied ? "Copié" : "Copier"} aria-label="Copier">
+        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+// Quick-action row under an assistant reply: copy + thumbs feedback.
+function MessageActions({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  const [vote, setVote] = useState<"up" | "down" | null>(null);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+  };
+  const btn = "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
+  return (
+    <div className="mt-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <button onClick={copy} className={btn} title={copied ? "Copié" : "Copier"} aria-label="Copier">
+        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+      <button onClick={() => setVote(vote === "up" ? null : "up")} className={cn(btn, vote === "up" && "text-emerald-500")} title="Bonne réponse" aria-label="Pouce en haut">
+        <ThumbsUp className="h-3.5 w-3.5" />
+      </button>
+      <button onClick={() => setVote(vote === "down" ? null : "down")} className={cn(btn, vote === "down" && "text-rose-500")} title="Réponse à améliorer" aria-label="Pouce en bas">
+        <ThumbsDown className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -719,6 +1148,7 @@ function MissionTab({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [dragOverCol, setDragOverCol] = useState<BoardColumn | null>(null);
+  const [view, setView] = useState<"board" | "cards">("board");
 
   const { data: missions } = useQuery({
     queryKey: ["internal_agent_missions", agent.id],
@@ -812,13 +1242,18 @@ function MissionTab({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Drag cards between columns — the agent moves them too as it works (running → In progress, output ready → Review).
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          {view === "board"
+            ? "Drag cards between columns — the agent moves them too as it works (running → In progress, output ready → Review)."
+            : "Toutes les missions en cartes. Cliquez une carte pour l'ouvrir."}
         </p>
-        <Button size="sm" onClick={() => setWizardOpen(true)}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Assign mission
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <ViewToggle view={view} onChange={setView} />
+          <Button size="sm" onClick={() => setWizardOpen(true)}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Assign mission
+          </Button>
+        </div>
       </div>
 
       {(!missions || missions.length === 0) ? (
@@ -828,6 +1263,18 @@ function MissionTab({
           description="Give this agent a structured task with a brief, expected deliverables, an owner and a deadline."
           action={<Button onClick={() => setWizardOpen(true)}><Plus className="mr-1.5 h-3.5 w-3.5" /> Assign mission</Button>}
         />
+      ) : view === "cards" ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {(missions ?? []).map((m) => (
+            <MissionCard
+              key={m.id}
+              m={m}
+              showStatus
+              assignee={m.assigned_to ? memberById[m.assigned_to] : undefined}
+              onOpen={() => setSelectedId(m.id)}
+            />
+          ))}
+        </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           {BOARD_COLUMNS.map((col) => {
@@ -855,9 +1302,14 @@ function MissionTab({
                 </div>
                 <div className="flex-1 space-y-2 px-2 pb-2">
                   {cards.map((m) => (
-                    <KanbanCard
+                    <MissionCard
                       key={m.id}
                       m={m}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/mission-id", m.id);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
                       assignee={m.assigned_to ? memberById[m.assigned_to] : undefined}
                       onOpen={() => setSelectedId(m.id)}
                     />
@@ -879,33 +1331,76 @@ function MissionTab({
   );
 }
 
-function KanbanCard({
-  m, assignee, onOpen,
+// Kanban/board view switcher.
+function ViewToggle({ view, onChange }: { view: "board" | "cards"; onChange: (v: "board" | "cards") => void }) {
+  const opts = [
+    { key: "board", label: "Kanban", icon: Columns3 },
+    { key: "cards", label: "Cartes", icon: LayoutGrid },
+  ] as const;
+  return (
+    <div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
+      {opts.map((v) => (
+        <button
+          key={v.key}
+          onClick={() => onChange(v.key)}
+          className={cn(
+            "flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors",
+            view === v.key ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <v.icon className="h-3.5 w-3.5" /> {v.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// A mission rendered as a rich card — used both in the Kanban columns
+// (draggable) and in the flat "Cartes" grid (showStatus adds the column badge).
+function MissionCard({
+  m, assignee, onOpen, draggable, onDragStart, showStatus,
 }: {
   m: Mission;
   assignee?: WorkspaceMemberRow;
   onOpen: () => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  showStatus?: boolean;
 }) {
   const pr = PRIORITY_META[m.priority];
   const due = dueDateMeta(m.due_date);
+  const col = BOARD_COLUMNS.find((c) => c.key === (m.board_column ?? "todo"));
   return (
     <div
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/mission-id", m.id);
-        e.dataTransfer.effectAllowed = "move";
-      }}
+      draggable={draggable}
+      onDragStart={onDragStart}
       onClick={onOpen}
-      className="cursor-grab rounded-md border border-border bg-background p-2.5 shadow-sm transition-colors hover:border-foreground/30 active:cursor-grabbing"
+      className={cn(
+        "group rounded-xl border border-border bg-background p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-md",
+        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+      )}
     >
-      <div className="flex items-center gap-2">
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", pr.dot)} title={pr.label} />
-        <span className="truncate text-xs font-medium">{m.title}</span>
+      <div className="flex items-start gap-2">
+        <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", pr.dot)} title={pr.label} />
+        <span className="line-clamp-2 flex-1 text-sm font-medium leading-tight">{m.title}</span>
         {m.board_column === "in_progress" && (
-          <Loader2 className="ml-auto h-3 w-3 shrink-0 animate-spin text-amber-500" />
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-amber-500" />
         )}
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+      {m.brief && <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{m.brief}</p>}
+      {(showStatus && col) || (m.tags && m.tags.length > 0) ? (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {showStatus && col && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+              <span className={cn("h-1.5 w-1.5 rounded-full", col.accent)} /> {col.label}
+            </span>
+          )}
+          {(m.tags ?? []).slice(0, 2).map((t) => (
+            <span key={t} className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">{t}</span>
+          ))}
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
         {m.schedule && (
           <span className="inline-flex items-center gap-0.5"><Repeat className="h-2.5 w-2.5" />{m.schedule}</span>
         )}
@@ -1346,6 +1841,14 @@ function RunEventLine({ ev }: { ev: RunEvent }) {
     status: { icon: AlertCircle, cls: "text-muted-foreground", text: String(ev.payload?.message ?? "status") },
     log: { icon: FileText, cls: "text-muted-foreground", text: String(ev.payload?.message ?? "log") },
     error: { icon: XCircle, cls: "text-destructive", text: String(ev.payload?.error ?? "error") },
+    plan: { icon: ListTree, cls: "text-primary", text: `Reasoned & planned · ${ev.payload?.plan?.tasks?.length ?? 0} tasks` },
+    plan_step: {
+      icon: ev.payload?.status === "done" ? CheckCircle2 : ev.payload?.status === "blocked" ? AlertCircle : Loader2,
+      cls: ev.payload?.status === "done" ? "text-emerald-600" : ev.payload?.status === "blocked" ? "text-destructive" : "text-primary",
+      text: `${ev.payload?.step_id ?? "step"} → ${ev.payload?.status ?? ""}${ev.payload?.note ? ` · ${ev.payload.note}` : ""}`,
+    },
+    tool_error: { icon: AlertTriangle, cls: "text-amber-600", text: String(ev.payload?.message ?? "Incomplete tool call") },
+    question: { icon: MessageSquare, cls: "text-amber-600", text: `Asked: ${String(ev.payload?.question ?? "").slice(0, 120)}` },
   };
   const m = meta[ev.kind] ?? meta.log;
   const Icon = m.icon;
@@ -1435,7 +1938,12 @@ const EDGE_FUNCTION_CATALOGUE: Array<{ slug: string; label: string; description:
   { slug: "daily-briefing", label: "Daily briefing", description: "Generate the project's daily briefing." },
 ];
 
-function ToolsTab({ agent }: { agent: InternalAgent }) {
+function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; variant?: "full" | "tools" | "connectors" }) {
+  // Which sections render. "connectors" = the agent's integrations only (used by
+  // the Personnaliser → Connectors sub-tab); "tools" = generic capabilities only
+  // (used by Settings → Tools); "full" = both.
+  const showTools = variant !== "connectors";
+  const showIntegrations = variant !== "tools";
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   // Second step of the add dialog: pick a concrete connection from the catalogue.
@@ -1551,6 +2059,7 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
 
   return (
     <div className="flex flex-col">
+      {showTools && (<>
       <div className="order-2 mt-8 flex items-start justify-between gap-3">
         <div className="space-y-1">
           <h3 className="flex items-center gap-2 text-sm font-semibold"><Wrench className="h-4 w-4 text-muted-foreground" /> Generic tools</h3>
@@ -1625,7 +2134,9 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
           );
         })()}
       </div>
+      </>)}
 
+      {showIntegrations && (<>
       {/* Integrations — connector_action data sources (CRM / HR / data lakes). */}
       <div className="order-1">
         <div className="space-y-1">
@@ -1705,7 +2216,9 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
           queryClient.invalidateQueries({ queryKey: ["project_connectors_for_tools", agent.project_id] });
         }}
       />
+      </>)}
 
+      {showTools && (
       <Dialog open={addOpen} onOpenChange={(o) => { if (!o) closeAdd(); else setAddOpen(true); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -1801,6 +2314,7 @@ function ToolsTab({ agent }: { agent: InternalAgent }) {
           )}
         </DialogContent>
       </Dialog>
+      )}
     </div>
   );
 }
@@ -2145,7 +2659,7 @@ function MemoryTab({ agent }: { agent: InternalAgent }) {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visible.map((m) => (
             <MemoryCard
               key={m.id}
@@ -2160,7 +2674,9 @@ function MemoryTab({ agent }: { agent: InternalAgent }) {
   );
 }
 
-// A single memory the agent built (or the team added), shown as a card.
+// A single memory the agent built (or the team added), as a clean glass card —
+// rounded, translucent, a faint top highlight line and a soft hover lift, with
+// the meta pinned to a footer separated by a hairline (no image).
 function MemoryCard({
   m, onTogglePin, onRemove,
 }: {
@@ -2170,13 +2686,21 @@ function MemoryCard({
 }) {
   const meta = MEMORY_KIND_META[m.kind];
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -4 }}
       className={cn(
-        "group relative flex flex-col rounded-xl border bg-card/40 p-3 transition-colors hover:border-foreground/30",
-        m.is_pinned ? "border-amber-500/40 ring-1 ring-amber-500/20" : "border-border",
+        "group relative flex flex-col overflow-hidden rounded-2xl border p-4 backdrop-blur-md transition-[border-color,box-shadow] duration-300",
+        "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-foreground/15 before:to-transparent before:opacity-60",
+        m.is_pinned
+          ? "border-amber-500/40 bg-amber-500/[0.04] hover:shadow-lg hover:shadow-amber-500/10"
+          : "border-border/60 bg-card/30 hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5",
       )}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
+      {/* Header — kind badge + hover actions */}
+      <div className="flex items-center justify-between gap-2">
         <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", meta.cls)}>
           {meta.emoji} {meta.label}
         </span>
@@ -2200,15 +2724,19 @@ function MemoryCard({
           </button>
         </div>
       </div>
-      <p className="flex-1 text-sm leading-relaxed">{m.content}</p>
-      <div className="mt-3 flex items-center gap-2 text-[10px] text-muted-foreground">
+
+      {/* Content */}
+      <p className="mt-3 flex-1 text-sm leading-relaxed text-foreground/90">{m.content}</p>
+
+      {/* Footer — meta on a hairline, like the model */}
+      <div className="mt-4 flex items-center gap-2 border-t border-border/50 pt-3 text-[10px] text-muted-foreground">
         <span title="Importance" className="text-amber-500">{"★".repeat(m.importance)}</span>
         <span className="inline-flex items-center gap-1">
           {m.source === "agent" ? <><Bot className="h-2.5 w-2.5" /> saved by agent</> : <><UserCircle2 className="h-2.5 w-2.5" /> added by team</>}
         </span>
         <span className="ml-auto">{relativeDate(m.updated_at)}</span>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -2461,7 +2989,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
     <Card>
       <CardContent className="p-4">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-1 text-xl font-semibold">{value}</div>
+        <div className="font-stat-number mt-1 text-xl font-semibold">{value}</div>
         {hint && <div className="mt-1 text-[10px] text-muted-foreground">{hint}</div>}
       </CardContent>
     </Card>
@@ -2472,7 +3000,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 // SETTINGS TAB
 // ============================================================================
 
-function SettingsTab({ agent }: { agent: InternalAgent }) {
+function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedded?: boolean }) {
   const navigate = useNavigate();
   const { workspaceSlug, projectSlug } = useParams();
   const { user } = useAuth();
@@ -2492,10 +3020,16 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   const [skills, setSkills] = useState<string[]>(agent.skills ?? []);
   const [skillInput, setSkillInput] = useState("");
   const [collabEnabled, setCollabEnabled] = useState(agent.collaboration_enabled ?? true);
-  const [sandboxMode, setSandboxMode] = useState<"cloud" | "sandbox">(agent.sandbox_mode ?? "cloud");
+  const [sandboxMode, setSandboxMode] = useState<"cloud" | "runner" | "sandbox">(agent.sandbox_mode ?? "cloud");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [section, setSection] = useState<SettingsSectionKey>("general");
+  // Publish the settings sub-tabs to the Topbar (where the breadcrumb was).
+  const settingsTabs = useMemo(
+    () => SETTINGS_SECTIONS.filter((s) => s.key !== "danger" || isOwner),
+    [isOwner],
+  );
+  useRegisterTopbarTabs(embedded ? null : settingsTabs, section, (k) => setSection(k as SettingsSectionKey));
 
   async function save() {
     setSaving(true);
@@ -2535,6 +3069,7 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
 
   return (
     <div className="mx-auto max-w-4xl">
+      {embedded && <InlineSubTabs sections={settingsTabs} active={section} onSelect={setSection} />}
       {/* Header + Save — flush on the background. */}
       <div className="flex items-center justify-between pb-3">
         <h2 className="text-lg font-semibold">Settings</h2>
@@ -2542,32 +3077,13 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
           {savedAt && Date.now() - savedAt < 4000 && (
             <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Saved</span>
           )}
-          {section !== "tools" && section !== "members" && section !== "danger" && (
+          {section !== "tools" && section !== "mobile" && section !== "members" && section !== "danger" && (
             <Button size="sm" onClick={save} disabled={saving || !isOwner}>
               {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
               <span className="ml-1">Save</span>
             </Button>
           )}
         </div>
-      </div>
-
-      {/* Sub-tab bar */}
-      <div className="flex flex-wrap gap-1 border-b border-border">
-        {SETTINGS_SECTIONS.filter((s) => s.key !== "danger" || isOwner).map((s) => (
-          <button
-            key={s.key}
-            onClick={() => setSection(s.key)}
-            className={cn(
-              "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
-              section === s.key
-                ? "border-primary font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-              s.key === "danger" && "text-destructive hover:text-destructive",
-            )}
-          >
-            <s.icon className="h-3.5 w-3.5" /> {s.label}
-          </button>
-        ))}
       </div>
 
       {/* General */}
@@ -2656,10 +3172,10 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
       {section === "infrastructure" && (
       <SettingsSection
         title="Execution Environment" icon={Database}
-        description="Choose how this agent runs its missions. Cloud mode uses serverless edge functions (fast, stateless). Sandbox mode gives the agent a dedicated Docker container with terminal, browser, filesystem, and code execution."
+        description="Choose how this agent runs. Cloud = serverless edge (web/db/connectors). Runner = + a real browser, shell, Python/Node and files on your self-hosted runner machine. Sandbox = + a full Linux container with terminal, files and code execution."
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <button onClick={() => setSandboxMode("cloud")}
               className={cn("rounded-xl border p-4 text-left transition-all",
                 sandboxMode === "cloud" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
@@ -2668,12 +3184,29 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
                 <span className="text-sm font-semibold">Cloud</span>
                 {sandboxMode === "cloud" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
               </div>
-              <p className="text-[11px] text-muted-foreground">Serverless edge functions. Fast cold start, stateless, pay-per-use. Best for chat, research, and simple missions.</p>
+              <p className="text-[11px] text-muted-foreground">Serverless edge functions. Fast, stateless, pay-per-use. Best for chat, research, and data tasks.</p>
               <div className="mt-2 flex flex-wrap gap-1">
                 <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">web_search</span>
                 <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">deep_research</span>
                 <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">db_read</span>
+              </div>
+            </button>
+
+            <button onClick={() => setSandboxMode("runner")}
+              className={cn("rounded-xl border p-4 text-left transition-all",
+                sandboxMode === "runner" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
+              <div className="flex items-center gap-2 mb-2">
+                <Globe className="h-4 w-4 text-sky-500" />
+                <span className="text-sm font-semibold">Runner</span>
+                {sandboxMode === "runner" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Cloud + a real browser, terminal, Python/Node and a persistent file workspace on your runner machine. Best for coding, scripts, data work and web automation.</p>
+              <div className="mt-2 flex flex-wrap gap-1">
                 <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">browse_web</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">shell_exec</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">python_exec</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">file_read/write</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">+ cloud tools</span>
               </div>
             </button>
 
@@ -2695,6 +3228,16 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
               </div>
             </button>
           </div>
+
+          {sandboxMode === "runner" && (
+            <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-1">
+              <div className="flex items-center gap-2 text-xs">
+                <Globe className="h-3.5 w-3.5 text-sky-500" />
+                <span className="font-medium">Runner mode needs the self-hosted runner connected (runner_browser_url in app config).</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground">The agent gets real hands on the runner machine: a Playwright browser (pages, DOM snapshots, clicks, forms, screenshots) plus a terminal (PowerShell/bash), Python & Node.js execution and a persistent per-agent file workspace — enough for coding, scripting and data tasks without a Docker sandbox.</p>
+            </div>
+          )}
 
           {sandboxMode === "sandbox" && (
             <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
@@ -2766,10 +3309,18 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
       </SettingsSection>
       )}
 
-      {/* Tools — merged in from the former Tools tab. */}
+      {/* Tools — generic agent capabilities (web search, DB read, edge functions…).
+          The app integrations live under Personnaliser → Connectors. */}
       {section === "tools" && (
         <div className="py-6">
-          <ToolsTab agent={agent} />
+          <ToolsTab agent={agent} variant="tools" />
+        </div>
+      )}
+
+      {/* Mobile — pair this agent with the FounderOS mobile app via id + secret. */}
+      {section === "mobile" && (
+        <div className="py-6">
+          <MobileAccessSection agent={agent} />
         </div>
       )}
 
@@ -2793,17 +3344,117 @@ function SettingsTab({ agent }: { agent: InternalAgent }) {
   );
 }
 
-type SettingsSectionKey = "general" | "autonomy" | "infrastructure" | "collaboration" | "tools" | "members" | "danger";
+type SettingsSectionKey = "general" | "autonomy" | "infrastructure" | "collaboration" | "tools" | "mobile" | "members" | "danger";
 
 const SETTINGS_SECTIONS: { key: SettingsSectionKey; label: string; icon: any }[] = [
   { key: "general", label: "General", icon: SettingsIcon },
   { key: "autonomy", label: "Autonomy", icon: Gauge },
   { key: "infrastructure", label: "Infrastructure", icon: Database },
   { key: "collaboration", label: "Collaboration", icon: Network },
-  { key: "tools", label: "Tools & integrations", icon: Wrench },
+  { key: "tools", label: "Tools", icon: Wrench },
+  { key: "mobile", label: "Mobile", icon: Smartphone },
   { key: "members", label: "Members", icon: UsersIcon },
   { key: "danger", label: "Danger zone", icon: Trash2 },
 ];
+
+function randomAgentSecret(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function sha256HexWeb(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Pair the agent with the mobile app: generate a random secret, store only its
+// SHA-256 hash, and reveal the plaintext once for the user to paste into the app.
+function MobileAccessSection({ agent }: { agent: InternalAgent }) {
+  const queryClient = useQueryClient();
+  const a = agent as InternalAgent & { mobile_enabled?: boolean; mobile_secret_hash?: string | null };
+  const [enabled, setEnabled] = useState(!!a.mobile_enabled);
+  const [generated, setGenerated] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const hasSecret = !!a.mobile_secret_hash;
+
+  function copy(text: string, which: string) {
+    navigator.clipboard.writeText(text).then(
+      () => { setCopied(which); setTimeout(() => setCopied(null), 1500); },
+      () => {},
+    );
+  }
+
+  async function toggleEnabled(v: boolean) {
+    setEnabled(v);
+    await supabase.from("internal_agents").update({ mobile_enabled: v }).eq("id", agent.id);
+    queryClient.invalidateQueries({ queryKey: ["internal_agent", agent.id] });
+  }
+
+  async function generate() {
+    setBusy(true);
+    try {
+      const secret = randomAgentSecret();
+      const hash = await sha256HexWeb(secret);
+      const { error } = await supabase
+        .from("internal_agents")
+        .update({ mobile_secret_hash: hash, mobile_enabled: true })
+        .eq("id", agent.id);
+      if (error) { alert(error.message); return; }
+      setGenerated(secret);
+      setEnabled(true);
+      queryClient.invalidateQueries({ queryKey: ["internal_agent", agent.id] });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SettingsSection
+      title="Mobile access" icon={Smartphone}
+      description="Pair this agent with the FounderOS mobile app. Register it there with the ID and secret below, then chat from your phone."
+    >
+      <ToggleRow
+        icon={Smartphone}
+        label="Allow this agent to be used from the mobile app"
+        checked={enabled}
+        onChange={toggleEnabled}
+      />
+
+      <div className="rounded-lg border border-border p-3">
+        <div className="text-[11px] font-medium text-muted-foreground">Agent ID</div>
+        <div className="mt-1 flex items-center gap-2">
+          <code className="flex-1 truncate rounded bg-secondary px-2 py-1 font-mono text-xs">{agent.id}</code>
+          <Button size="sm" variant="outline" onClick={() => copy(agent.id, "id")}>
+            <Copy className="mr-1 h-3 w-3" /> {copied === "id" ? "Copied" : "Copy"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={generate} disabled={busy}>
+          {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <KeyRound className="mr-1 h-3 w-3" />}
+          {hasSecret ? "Regenerate secret" : "Generate secret"}
+        </Button>
+        {hasSecret && !generated && (
+          <span className="text-[11px] text-muted-foreground">A secret is set. Regenerate to reveal a new one.</span>
+        )}
+      </div>
+
+      {generated && (
+        <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+          <p className="text-[11px] font-medium text-foreground">Copy this secret now — it won't be shown again.</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 truncate rounded bg-background px-2 py-1 font-mono text-xs">{generated}</code>
+            <Button size="sm" variant="outline" onClick={() => copy(generated, "secret")}>
+              <Copy className="mr-1 h-3 w-3" /> {copied === "secret" ? "Copied" : "Copy"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </SettingsSection>
+  );
+}
 
 // A section of settings laid directly on the page background (no card). Optional
 // title + description sit above the content.
@@ -2862,18 +3513,86 @@ function ToggleRow({
 // COLLABORATION TAB — this agent's inter-agent (A2A) messages + peers
 // ============================================================================
 
+// A stable per-agent colour (username text + avatar-fallback tint), so each
+// teammate reads consistently across the channel feed — same idea as the
+// per-user colours in the <ChatPreview /> component this view is styled after.
+const A2A_COLORS = [
+  { text: "text-sky-400", bg: "bg-sky-500/30" },
+  { text: "text-pink-400", bg: "bg-pink-500/30" },
+  { text: "text-emerald-400", bg: "bg-emerald-500/30" },
+  { text: "text-amber-400", bg: "bg-amber-500/30" },
+  { text: "text-violet-400", bg: "bg-violet-500/30" },
+  { text: "text-indigo-400", bg: "bg-indigo-500/30" },
+  { text: "text-rose-400", bg: "bg-rose-500/30" },
+  { text: "text-teal-400", bg: "bg-teal-500/30" },
+];
+
+function a2aColor(id: string) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(id.length - 1 - i)) >>> 0;
+  return A2A_COLORS[h % A2A_COLORS.length];
+}
+
+const A2A_STATUS_META: Record<A2AMessage["status"], { label: string; dot: string; text: string }> = {
+  pending: { label: "En attente", dot: "bg-amber-500", text: "text-amber-500" },
+  processing: { label: "En cours", dot: "bg-sky-500", text: "text-sky-500" },
+  answered: { label: "Répondu", dot: "bg-emerald-500", text: "text-emerald-500" },
+  ignored: { label: "Ignoré", dot: "bg-muted-foreground", text: "text-muted-foreground" },
+};
+
+// Renders an A2A message body as formatted markdown (agents write rich reports —
+// tables, headings, code fences). Long messages are clamped behind a
+// "Voir plus" toggle so one verbose mission report can't flood the channel.
+const A2A_COLLAPSED_PX = 200;
+
+function A2AMessageBody({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) setOverflowing(el.scrollHeight > A2A_COLLAPSED_PX + 24);
+  }, [content]);
+
+  const clamp = !expanded && overflowing;
+
+  return (
+    <div className="mt-0.5">
+      <div
+        ref={ref}
+        className={cn("chat-prose break-words text-[13px]", clamp && "relative overflow-hidden")}
+        style={clamp ? { maxHeight: A2A_COLLAPSED_PX } : undefined}
+      >
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        {clamp && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-background via-background/80 to-transparent" />
+        )}
+      </div>
+      {overflowing && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:underline"
+        >
+          {expanded ? <>Voir moins <ChevronUp className="h-3 w-3" /></> : <>Voir plus <ChevronDown className="h-3 w-3" /></>}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function CollaborationTab({ agent }: { agent: InternalAgent }) {
   const { data: peers } = useQuery({
     queryKey: ["agent_peers", agent.project_id, agent.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agents")
-        .select("id, name, avatar_emoji, role, skills")
+        .select("id, name, avatar_emoji, avatar_url, role, skills")
         .eq("project_id", agent.project_id)
         .eq("is_archived", false)
         .eq("collaboration_enabled", true)
         .neq("id", agent.id);
-      return (data ?? []) as Array<{ id: string; name: string; avatar_emoji: string | null; role: string | null; skills: string[] }>;
+      return (data ?? []) as Array<{ id: string; name: string; avatar_emoji: string | null; avatar_url: string | null; role: string | null; skills: string[] }>;
     },
   });
 
@@ -2891,8 +3610,14 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
     refetchInterval: 5000,
   });
 
-  const peerName = (id: string) =>
-    id === agent.id ? agent.name : (peers ?? []).find((p) => p.id === id)?.name ?? id.slice(0, 6);
+  // Directory of everyone who can appear in the feed (this agent + peers), so a
+  // message can resolve a sender/recipient's name + avatar by id.
+  const meta = (id: string) => {
+    if (id === agent.id)
+      return { name: agent.name, avatar_url: agent.avatar_url, avatar_emoji: agent.avatar_emoji };
+    const p = (peers ?? []).find((x) => x.id === id);
+    return { name: p?.name ?? id.slice(0, 6), avatar_url: p?.avatar_url ?? null, avatar_emoji: p?.avatar_emoji ?? null };
+  };
 
   if (!agent.collaboration_enabled) {
     return (
@@ -2904,52 +3629,176 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
     );
   }
 
+  // Oldest → newest for a natural chat feed (query returns newest-first).
+  const msgs = messages ?? [];
+  const feed = [...msgs].reverse();
+  const channelName = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agent";
+
+  // Aggregates for the right rail.
+  const statusCounts = msgs.reduce<Record<string, number>>((acc, m) => {
+    acc[m.status] = (acc[m.status] ?? 0) + 1;
+    return acc;
+  }, {});
+  const pendingCount = (statusCounts.pending ?? 0) + (statusCounts.processing ?? 0);
+  const threadCount = new Set(msgs.map((m) => m.thread_id)).size;
+
+  // Agents that actually appear in the feed, with sent/received tallies —
+  // "les agents concernés" by this agent's collaboration.
+  const partMap = new Map<string, { sent: number; received: number }>();
+  for (const m of msgs) {
+    const s = partMap.get(m.from_agent) ?? { sent: 0, received: 0 }; s.sent++; partMap.set(m.from_agent, s);
+    const r = partMap.get(m.to_agent) ?? { sent: 0, received: 0 }; r.received++; partMap.set(m.to_agent, r);
+  }
+  const participants = [...partMap.entries()]
+    .map(([id, c]) => ({ id, ...c, total: c.sent + c.received, ...meta(id) }))
+    .sort((a, b) => b.total - a.total);
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <Card className="flex max-h-[calc(100vh-14rem)] flex-col">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm"><MessagesSquare className="h-4 w-4" /> Agent-to-agent messages</CardTitle>
-        </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto">
-          {!messages || messages.length === 0 ? (
-            <p className="py-8 text-center text-xs text-muted-foreground">
-              No messages yet. This agent will message or delegate to peers autonomously when a task fits their skills.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {messages.map((m) => {
-                const outgoing = m.from_agent === agent.id;
-                return (
-                  <div key={m.id} className={cn("rounded-md border p-2.5", outgoing ? "border-primary/30 bg-primary/5" : "border-border")}>
-                    <div className="mb-1 flex items-center gap-1.5 text-xs">
-                      <span className="font-medium">{peerName(m.from_agent)}</span>
-                      <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                      <span className="font-medium">{peerName(m.to_agent)}</span>
-                      <Badge variant="outline" className="ml-auto text-[10px]">{m.status}</Badge>
-                      <span className="text-[10px] text-muted-foreground">{relativeDate(m.created_at)}</span>
+    <div className="flex h-full min-h-0 w-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
+      {/* LEFT — channel-style A2A feed, fills width + height. Styled after the
+          ChatPreview component, wired to real agent-to-agent messages. */}
+      <div className="relative flex h-[60vh] flex-col lg:h-auto lg:min-h-0 lg:min-w-0 lg:flex-1">
+        <div className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-orange-500/15 via-pink-500/15 to-purple-500/15 opacity-70 blur-2xl" />
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-foreground/10 bg-background/50 shadow-2xl backdrop-blur-xl">
+          <div className="border-b px-4 py-3">
+            <div className="flex items-center gap-2 text-sm">
+              <MessagesSquare className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">#{channelName}-collab</span>
+              <span className="text-muted-foreground">|</span>
+              <span className="flex-1 truncate text-muted-foreground">Messages &amp; délégations entre agents</span>
+            </div>
+          </div>
+
+          <div className="relative min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background/60 to-transparent" />
+            {feed.length === 0 ? (
+              <p className="py-10 text-center text-xs text-muted-foreground">
+                Aucun message pour l'instant. Cet agent contactera ou déléguera à ses pairs de façon autonome lorsqu'une tâche correspond à leurs compétences.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {feed.map((m, i) => {
+                  const from = meta(m.from_agent);
+                  const to = meta(m.to_agent);
+                  const c = a2aColor(m.from_agent);
+                  const outgoing = m.from_agent === agent.id;
+                  return (
+                    <div
+                      key={m.id}
+                      className={cn("flex items-start gap-3", i === feed.length - 1 && "animate-message-appear")}
+                    >
+                      <AgentAvatar
+                        url={from.avatar_url}
+                        emoji={from.avatar_emoji}
+                        className={cn("h-8 w-8 shrink-0 overflow-hidden rounded-full text-sm", !from.avatar_url && c.bg)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("text-sm font-medium", c.text)}>{from.name}</span>
+                          <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="truncate text-xs text-muted-foreground">{to.name}</span>
+                          {outgoing && <Badge variant="outline" className="shrink-0 text-[9px]">envoyé</Badge>}
+                          <Badge variant="outline" className="shrink-0 text-[9px] capitalize">{m.status}</Badge>
+                          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{relativeDate(m.created_at)}</span>
+                        </div>
+                        <A2AMessageBody content={m.content} />
+                      </div>
                     </div>
-                    <p className="whitespace-pre-wrap text-xs leading-relaxed">{m.content}</p>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* RIGHT — info rail: overview stats, status breakdown, involved agents,
+          and the full teammate roster. Scrolls independently. */}
+      <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-80 lg:min-h-0 lg:overflow-y-auto xl:w-96 scrollbar-slim">
+        {/* Overview */}
+        <div className="rounded-xl border border-border bg-card/40 p-4">
+          <div className="flex items-center gap-2">
+            <AgentAvatar
+              url={agent.avatar_url}
+              emoji={agent.avatar_emoji}
+              accent={agent.accent_color}
+              className="h-9 w-9 shrink-0 overflow-hidden rounded-lg text-base"
+            />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold">#{channelName}-collab</div>
+              <div className="truncate text-[11px] text-muted-foreground">{agent.role ?? "Collaboration inter-agents"}</div>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <StatTile label="Messages" value={msgs.length} />
+            <StatTile label="Coéquipiers" value={peers?.length ?? 0} />
+            <StatTile label="En cours" value={pendingCount} accent={pendingCount > 0 ? "text-amber-500" : undefined} />
+            <StatTile label="Fils" value={threadCount} />
+          </div>
+        </div>
+
+        {/* Status breakdown */}
+        {msgs.length > 0 && (
+          <div className="rounded-xl border border-border bg-card/40 p-4">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Statuts</div>
+            <div className="space-y-1.5">
+              {(Object.keys(A2A_STATUS_META) as Array<A2AMessage["status"]>)
+                .filter((k) => (statusCounts[k] ?? 0) > 0)
+                .map((k) => {
+                  const sm = A2A_STATUS_META[k];
+                  const n = statusCounts[k] ?? 0;
+                  const pct = Math.round((n / msgs.length) * 100);
+                  return (
+                    <div key={k} className="flex items-center gap-2 text-xs">
+                      <span className={cn("h-2 w-2 shrink-0 rounded-full", sm.dot)} />
+                      <span className="flex-1 truncate">{sm.label}</span>
+                      <span className="tabular-nums text-muted-foreground">{n} · {pct}%</span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
+        {/* Agents concernés — participants in this agent's feed */}
+        {participants.length > 0 && (
+          <div className="rounded-xl border border-border bg-card/40 p-4">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Agents concernés</div>
+            <div className="space-y-2">
+              {participants.map((p) => {
+                const c = a2aColor(p.id);
+                const isSelf = p.id === agent.id;
+                return (
+                  <div key={p.id} className="flex items-center gap-2">
+                    <AgentAvatar url={p.avatar_url} emoji={p.avatar_emoji} className={cn("h-7 w-7 shrink-0 overflow-hidden rounded-md text-sm", !p.avatar_url && c.bg)} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("truncate text-sm font-medium", c.text)}>{p.name}</span>
+                        {isSelf && <Badge variant="outline" className="shrink-0 text-[9px]">cet agent</Badge>}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">{p.sent} envoyé{p.sent > 1 ? "s" : ""} · {p.received} reçu{p.received > 1 ? "s" : ""}</div>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] tabular-nums text-muted-foreground">{p.total}</span>
                   </div>
                 );
               })}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
 
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Teammates</CardTitle></CardHeader>
-        <CardContent>
+        {/* Full teammate roster */}
+        <div className="rounded-xl border border-border bg-card/40 p-4">
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Coéquipiers</div>
           {!peers || peers.length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">No other collaborating agents on this project.</p>
+            <p className="py-2 text-center text-xs text-muted-foreground">Aucun autre agent collaboratif sur ce projet.</p>
           ) : (
             <div className="space-y-2">
               {peers.map((p) => (
-                <div key={p.id} className="rounded-md border border-border p-2.5">
+                <div key={p.id} className="rounded-lg border border-border/70 p-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-base">{p.avatar_emoji ?? "🤖"}</span>
+                    <AgentAvatar url={p.avatar_url} emoji={p.avatar_emoji} className={cn("h-7 w-7 shrink-0 overflow-hidden rounded-md text-sm", !p.avatar_url && a2aColor(p.id).bg)} />
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{p.name}</div>
+                      <div className={cn("truncate text-sm font-medium", a2aColor(p.id).text)}>{p.name}</div>
                       {p.role && <div className="truncate text-[10px] text-muted-foreground">{p.role}</div>}
                     </div>
                   </div>
@@ -2962,8 +3811,18 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+// Small labelled metric tile for the collaboration info rail.
+function StatTile({ label, value, accent }: { label: string; value: number; accent?: string }) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/40 px-2.5 py-2">
+      <div className={cn("font-stat-number text-lg font-semibold leading-none tabular-nums", accent)}>{value}</div>
+      <div className="mt-1 text-[10px] text-muted-foreground">{label}</div>
     </div>
   );
 }
@@ -2971,12 +3830,76 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
 // ── Skills tab: toggle skills on/off per agent ──────────────────────────────
 type SkillRow = { id: string; name: string; slug: string; description: string | null; category: string | null; icon: string; required_tools: string[]; config: any; is_system: boolean; system_prompt_extension: string | null };
 
+const SKILL_FILTERS: { key: "all" | "mine" | "examples"; label: string }[] = [
+  { key: "all", label: "Tous" },
+  { key: "mine", label: "Mes Skills" },
+  { key: "examples", label: "Exemples de Skills" },
+];
+
+// Lightweight lexical-semantic search for skills. Beyond substring matching we
+// expand each query term with a small FR/EN domain synonym map and score hits
+// per field, so a query like "marketing" still surfaces a "content-creation"
+// skill even without the exact word. Results are ranked by score.
+const SKILL_SYNONYMS: Record<string, string[]> = {
+  marketing: ["content", "copywriting", "seo", "social", "communication", "growth", "campaign"],
+  content: ["marketing", "writing", "copywriting", "editorial", "blog", "redaction"],
+  writing: ["content", "copywriting", "editorial", "redaction"],
+  security: ["cybersecurity", "securite", "audit", "vulnerability", "compliance", "pentest"],
+  securite: ["security", "cybersecurity", "audit", "vulnerabilite"],
+  data: ["donnees", "analytics", "analysis", "sql", "dataset", "bi", "metrics"],
+  donnees: ["data", "analytics", "analyse", "metrics"],
+  analytics: ["data", "analysis", "metrics", "bi", "dashboard"],
+  dataviz: ["visualization", "chart", "graph", "dashboard", "design"],
+  research: ["recherche", "search", "web", "investigation", "sourcing"],
+  recherche: ["research", "search", "web"],
+  code: ["programming", "developpement", "software", "engineering", "dev"],
+  hr: ["recruiting", "recruitment", "talent", "candidate", "rh", "sourcing"],
+  rh: ["hr", "recruiting", "talent", "recrutement"],
+  sales: ["ventes", "crm", "prospect", "account", "outreach", "commercial"],
+  ventes: ["sales", "crm", "commercial", "prospect"],
+  support: ["helpdesk", "customer", "ticket", "service", "sav"],
+  podcast: ["audio", "episode", "recording", "voice"],
+};
+
+function expandSkillTerms(terms: string[]): string[] {
+  const out = new Set(terms);
+  for (const t of terms) for (const syn of SKILL_SYNONYMS[t] ?? []) out.add(syn);
+  return [...out];
+}
+
+/** Relevance score of a skill for a set of query terms (0 = no match). */
+function scoreSkill(s: SkillRow, terms: string[]): number {
+  if (terms.length === 0) return 1;
+  const name = s.name.toLowerCase();
+  const slug = s.slug.toLowerCase();
+  const domain = (s.category ?? "").toLowerCase();
+  const tagStr = (Array.isArray(s.config?.tags) ? (s.config.tags as string[]) : []).join(" ").toLowerCase();
+  const toolStr = (s.required_tools ?? []).join(" ").toLowerCase();
+  const desc = (s.description ?? "").toLowerCase();
+  const hay = [name, slug, domain, tagStr, toolStr, desc].join(" ");
+  let score = 0;
+  for (const t of terms) {
+    if (name.includes(t)) score += 10;
+    else if (slug.includes(t)) score += 8;
+    else if (domain.includes(t)) score += 6;
+    else if (tagStr.includes(t)) score += 5;
+    else if (toolStr.includes(t)) score += 4;
+    else if (desc.includes(t)) score += 3;
+  }
+  // Synonym (semantic) hits — only the expanded extras, at a lower weight.
+  const extras = expandSkillTerms(terms).filter((t) => !terms.includes(t));
+  for (const t of extras) if (hay.includes(t)) score += 2;
+  return score;
+}
+
 function SkillsTab({ agentId }: { agentId: string }) {
   const { workspaceId } = useCurrentContext();
   const queryClient = useQueryClient();
-  const [activeCat, setActiveCat] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | "mine" | "examples">("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SkillRow | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   const { data: allSkills } = useQuery({
     queryKey: ["agent_skills_all"],
@@ -3006,20 +3929,46 @@ function SkillsTab({ agentId }: { agentId: string }) {
     queryClient.invalidateQueries({ queryKey: ["agent_skill_activations", agentId] });
   }
 
+  async function removeSkill(s: SkillRow) {
+    if (!confirm(`Supprimer le skill « ${s.name} » ? Cette action est irréversible.`)) return;
+    await supabase.from("agent_skills").delete().eq("id", s.id);
+    if (selected?.id === s.id) setSelected(null);
+    queryClient.invalidateQueries({ queryKey: ["agent_skills_all"] });
+  }
+
   const skillsList = allSkills ?? [];
-  const categories = [...new Set(skillsList.map((s) => s.category || "other"))];
-  const currentCat = activeCat ?? categories[0] ?? "other";
+  const base = filter === "mine" ? skillsList.filter((s) => !s.is_system)
+    : filter === "examples" ? skillsList.filter((s) => s.is_system)
+    : skillsList;
 
-  const filtered = skillsList.filter((s) => {
-    if ((s.category || "other") !== currentCat) return false;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      return s.name.toLowerCase().includes(q) || (s.description ?? "").toLowerCase().includes(q) || s.slug.includes(q);
+  // Semantic-ish search: score each skill across name, slug, domain, tags,
+  // tools and description (with synonym expansion) and rank by relevance, so
+  // related skills surface even without an exact word match.
+  const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const filtered = terms.length === 0
+    ? base
+    : base
+        .map((s) => ({ s, score: scoreSkill(s, terms) }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.s);
+
+  // Autocomplete: the top ranked skills + the domains/tags matching the query.
+  const suggestions = (() => {
+    if (terms.length === 0) return { skills: [] as SkillRow[], facets: [] as string[] };
+    const facetSet = new Set<string>();
+    for (const s of base) {
+      const cat = s.category ?? "";
+      if (cat && terms.some((t) => cat.toLowerCase().includes(t))) facetSet.add(cat);
+      for (const tag of Array.isArray(s.config?.tags) ? (s.config.tags as string[]) : []) {
+        if (terms.some((t) => tag.toLowerCase().includes(t))) facetSet.add(tag);
+      }
     }
-    return true;
-  });
+    return { skills: filtered.slice(0, 6), facets: [...facetSet].slice(0, 8) };
+  })();
+  const showSuggestions = focused && terms.length > 0
+    && (suggestions.skills.length > 0 || suggestions.facets.length > 0);
 
-  const activatedCount = skillsList.filter((s) => activeSet.has(s.id)).length;
   const tags = (s: SkillRow) => Array.isArray(s.config?.tags) ? s.config.tags as string[] : [];
 
   const CAT_LABELS: Record<string, string> = {
@@ -3035,67 +3984,149 @@ function SkillsTab({ agentId }: { agentId: string }) {
   };
 
   return (
-    <div className="flex h-full">
-      {/* ── Main: tabs + grid ── */}
-      <div className="flex min-w-0 flex-1 flex-col px-6 py-4 lg:px-10">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-sm font-semibold">Agent Skills</h3>
-            <p className="text-xs text-muted-foreground">{activatedCount} active · {skillsList.length} available</p>
-          </div>
-          <div className="relative w-56">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search skills…" className="h-8 pl-8 text-xs" />
-          </div>
+    <div className="mx-auto max-w-5xl">
+      {/* Header — title + description on the left, search on the right. */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Skills</h2>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            Étendez les capacités de vos agents grâce à des compétences réutilisables.{" "}
+            <span className="cursor-pointer text-primary hover:underline">En savoir plus</span>
+          </p>
         </div>
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setTimeout(() => setFocused(false), 120)}
+            onKeyDown={(e) => { if (e.key === "Escape") setFocused(false); }}
+            placeholder="Rechercher par nom, domaine, tag…"
+            className="h-10 rounded-lg pl-9"
+          />
 
-        <div className="flex items-center gap-1 overflow-x-auto border-b border-border mb-3 pb-px">
-          {categories.map((cat) => {
-            const count = skillsList.filter((s) => (s.category || "other") === cat).length;
-            const activeInCat = skillsList.filter((s) => (s.category || "other") === cat && activeSet.has(s.id)).length;
-            return (
-              <button key={cat} onClick={() => { setActiveCat(cat); setSelected(null); }}
-                className={cn("flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-xs transition-colors",
-                  cat === currentCat ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
-                {CAT_LABELS[cat] ?? cat}
-                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] tabular-nums">{count}</span>
-                {activeInCat > 0 && <span className="rounded-full bg-primary/20 text-primary px-1.5 py-0.5 text-[9px] tabular-nums">{activeInCat}</span>}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Card grid */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {filtered.length === 0 && <p className="py-8 text-center text-xs text-muted-foreground">No skills found{search ? ` for "${search}"` : ""}.</p>}
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((s) => {
-              const isActive = activeSet.has(s.id);
-              const isSelected = selected?.id === s.id;
-              const color = CAT_COLORS[s.category || "other"] ?? "#6b7280";
-              return (
-                <div key={s.id} onClick={() => setSelected(s)}
-                  className={cn("group cursor-pointer rounded-xl border p-3 transition-all hover:-translate-y-0.5 hover:shadow-md",
-                    isSelected ? "border-primary ring-1 ring-primary/30" : isActive ? "border-primary/40 bg-primary/5" : "border-border")}>
-                  <div className="flex items-start justify-between gap-2">
-                    <h4 className="text-xs font-semibold leading-tight line-clamp-2 flex-1">{s.name}</h4>
-                    <button onClick={(e) => { e.stopPropagation(); toggle(s.id); }}
-                      className={cn("flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors", isActive ? "bg-primary" : "bg-secondary")}>
-                      <span className={cn("block h-4 w-4 rounded-full bg-white transition-transform", isActive && "translate-x-4")} />
+          {/* Autocomplete dropdown */}
+          {showSuggestions && (
+            <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+              {suggestions.skills.length > 0 && (
+                <div className="py-1">
+                  <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Skills</div>
+                  {suggestions.skills.map((s) => (
+                    <button
+                      key={s.id}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => { setSelected(s); setFocused(false); }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-secondary"
+                    >
+                      <Zap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{s.name}</span>
+                      {s.category && <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{s.category}</span>}
                     </button>
-                  </div>
-                  {s.description && <p className="mt-1 text-[10px] text-muted-foreground line-clamp-2">{s.description}</p>}
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {tags(s).slice(0, 3).map((t) => (
-                      <span key={t} className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">{t}</span>
+                  ))}
+                </div>
+              )}
+              {suggestions.facets.length > 0 && (
+                <div className="border-t border-border px-3 py-2">
+                  <div className="pb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Domaines / tags</div>
+                  <div className="flex flex-wrap gap-1">
+                    {suggestions.facets.map((f) => (
+                      <button
+                        key={f}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setSearch(f); setFocused(false); }}
+                        className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      >
+                        {f}
+                      </button>
                     ))}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Filter pills + create. */}
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {SKILL_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => { setFilter(f.key); setSelected(null); }}
+              className={cn(
+                "rounded-full border px-4 py-1.5 text-sm transition-colors",
+                filter === f.key
+                  ? "border-border bg-secondary text-foreground"
+                  : "border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <Button variant="outline" size="sm" className="rounded-full" onClick={() => setCreateOpen(true)}>
+          <Plus className="mr-1 h-4 w-4" /> Créer un Skill
+        </Button>
+      </div>
+
+      {/* Card grid — 2 columns, title + description + ⋮ menu. */}
+      {filtered.length === 0 ? (
+        <p className="py-16 text-center text-sm text-muted-foreground">
+          Aucun skill trouvé{search ? ` pour « ${search} »` : ""}.
+        </p>
+      ) : (
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {filtered.map((s) => {
+            const isActive = activeSet.has(s.id);
+            return (
+              <div
+                key={s.id}
+                onClick={() => setSelected(s)}
+                className="group relative cursor-pointer rounded-xl border border-border bg-card/40 p-4 transition-colors hover:bg-card"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="truncate text-sm font-medium text-foreground">{s.name}</h3>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        onClick={(e) => e.stopPropagation()}
+                        className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-muted-foreground opacity-70 transition-colors hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+                        aria-label="Actions"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setSelected(s)}>Voir les détails</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => toggle(s.id)}>
+                        {isActive ? "Désactiver" : "Activer"}
+                      </DropdownMenuItem>
+                      {!s.is_system && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => removeSkill(s)}>
+                            Supprimer
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                {s.description && (
+                  <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{s.description}</p>
+                )}
+                {isActive && (
+                  <span className="mt-2.5 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                    <Check className="h-3 w-3" /> Activé
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Right sidebar overlay: skill detail ── */}
       {selected && (
@@ -3209,11 +4240,130 @@ function SkillsTab({ agentId }: { agentId: string }) {
         </aside>
         </>
       )}
+
+      <CreateSkillDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        workspaceId={workspaceId}
+        onCreated={() => queryClient.invalidateQueries({ queryKey: ["agent_skills_all"] })}
+      />
     </div>
   );
 }
 
+// Minimal "create a skill" form — inserts a workspace-owned (non-system) skill.
+function CreateSkillDialog({
+  open, onOpenChange, workspaceId, onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  workspaceId: string | null;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+  function reset() {
+    setName(""); setDescription(""); setCategory(""); setPrompt("");
+  }
+
+  async function create() {
+    if (!name.trim() || !workspaceId) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("agent_skills").insert({
+        workspace_id: workspaceId,
+        name: name.trim(),
+        slug: slug || `skill-${Date.now()}`,
+        description: description.trim() || null,
+        category: category.trim() || null,
+        system_prompt_extension: prompt.trim() || null,
+        is_system: false,
+      });
+      if (error) { alert(error.message); return; }
+      onCreated();
+      onOpenChange(false);
+      reset();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const textareaClass = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring";
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) reset(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Créer un Skill</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Nom</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex. Rédacteur SEO" />
+            {slug && <p className="mt-1 text-[10px] text-muted-foreground">slug : <span className="font-mono">{slug}</span></p>}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Quand charger ce skill…"
+              className={textareaClass}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Catégorie (optionnel)</label>
+            <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="ex. communication" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Instructions / prompt (optionnel)</label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={4}
+              placeholder="Le playbook injecté dans le prompt quand ce skill est chargé…"
+              className={textareaClass}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => { onOpenChange(false); reset(); }}>Annuler</Button>
+            <Button size="sm" onClick={create} disabled={saving || !name.trim()}>
+              {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />} Créer
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Agent Artifacts tab: live run activity + deliverables ────────────────────
+// Human-readable label for a run event, derived from its payload (the events
+// table has no `summary` column — it stores a jsonb `payload`).
+function artifactEventLabel(ev: any): string {
+  const p = ev.payload ?? {};
+  switch (ev.kind) {
+    case "tool_call": return toolSummary(p.tool ?? p.name ?? "tool", p.args ?? p.arguments ?? {});
+    case "tool_result": return String(p.preview ?? "").slice(0, 120) || "Tool result";
+    case "llm_call": return `LLM ${p.model ?? ""}`.trim();
+    case "plan": return `Reasoned & planned · ${p.plan?.tasks?.length ?? 0} tasks`;
+    case "plan_step": return `${p.step_id ?? "step"} → ${p.status ?? ""}`.trim();
+    case "status": return String(p.message ?? "Status update");
+    case "log": return String(p.message ?? "Log");
+    case "error": return String(p.error ?? "Error");
+    case "tool_error": return String(p.message ?? "Incomplete tool call");
+    case "question": return `Asked: ${String(p.question ?? "").slice(0, 100)}`;
+    default: return ev.kind;
+  }
+}
+
 function AgentArtifactsTab({ agentId }: { agentId: string }) {
   const { projectId } = useCurrentContext();
 
@@ -3227,11 +4377,11 @@ function AgentArtifactsTab({ agentId }: { agentId: string }) {
       const runIds = (runs ?? []).map((r: any) => r.id);
       const { data: events } = runIds.length
         ? await supabase.from("internal_agent_run_events")
-            .select("id, run_id, kind, summary, created_at")
+            .select("id, run_id, kind, payload, created_at")
             .in("run_id", runIds).order("created_at", { ascending: true }).limit(100)
         : { data: [] };
       const { data: deliverables } = await supabase.from("internal_agent_deliverables")
-        .select("id, run_id, kind, title, body, created_at")
+        .select("id, run_id, kind, name, content, created_at")
         .eq("agent_id", agentId).order("created_at", { ascending: false }).limit(20);
       return { runs: runs ?? [], events: events ?? [], deliverables: deliverables ?? [] };
     },
@@ -3246,9 +4396,9 @@ function AgentArtifactsTab({ agentId }: { agentId: string }) {
     const runEvents = events.filter((e: any) => e.run_id === run.id);
     const steps: PlanStep[] = runEvents.map((ev: any, i: number): PlanStep => ({
       id: ev.id,
-      title: ev.summary || ev.kind,
+      title: artifactEventLabel(ev),
       status: i === runEvents.length - 1 && run.status === "running" ? "active" :
-              ev.kind === "error" ? "error" : "success",
+              ev.kind === "error" || ev.kind === "tool_error" ? "error" : "success",
       duration: new Date(ev.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     }));
     if (run.status === "running" && steps.length === 0) {
@@ -3280,13 +4430,13 @@ function AgentArtifactsTab({ agentId }: { agentId: string }) {
               <div key={d.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center gap-2">
                   <Package className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">{d.title}</span>
+                  <span className="text-sm font-medium">{d.name}</span>
                   <Badge variant="outline" className="text-[9px]">{d.kind}</Badge>
                   <span className="ml-auto text-[10px] text-muted-foreground">
                     {new Date(d.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
-                {d.body && <p className="mt-1.5 text-xs text-muted-foreground line-clamp-3">{d.body}</p>}
+                {d.content && <p className="mt-1.5 text-xs text-muted-foreground line-clamp-3">{d.content}</p>}
               </div>
             ))}
           </div>
@@ -3302,14 +4452,13 @@ function AgentArtifactsTab({ agentId }: { agentId: string }) {
 
 // Re-export tab metadata so the sidebar can show the same labels/icons.
 export const INTERNAL_AGENT_TABS: { slug: InternalAgentTab; label: string; icon: any }[] = [
-  { slug: "chat", label: "Chat", icon: MessageSquare },
-  { slug: "mission", label: "Missions", icon: Target },
-  { slug: "deliverables", label: "Deliverables", icon: Package },
-  { slug: "artifacts", label: "Artifacts", icon: Package },
-  { slug: "skills", label: "Skills", icon: Zap },
-  { slug: "memory", label: "Memory", icon: Brain },
-  { slug: "collaboration", label: "Collaboration", icon: Network },
-  { slug: "instructions", label: "Instructions", icon: FileText },
-  { slug: "analytics", label: "Analytics", icon: BarChart3 },
-  { slug: "settings", label: "Settings", icon: SettingsIcon },
+  { slug: "chat", label: "Chat", icon: ChatCircleIcon },
+  // Missions · Deliverables · Artifacts are now sub-tabs of the Missions hub.
+  { slug: "mission", label: "Missions", icon: TargetIcon },
+  // Instructions · Skills · Memory · Connectors are now sub-tabs of Personnaliser.
+  { slug: "customize", label: "Personnaliser", icon: SlidersHorizontalIcon },
+  { slug: "collaboration", label: "Collaboration", icon: ShareNetworkIcon },
+  { slug: "channels", label: "Channels", icon: SlackLogoIcon },
+  { slug: "analytics", label: "Analytics", icon: ChartBarIcon },
+  { slug: "settings", label: "Settings", icon: GearSixIcon },
 ];

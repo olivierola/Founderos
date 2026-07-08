@@ -20,7 +20,7 @@ export function MetricCard({ label, value, delta, hint, icon: Icon, trend = "fla
           <span className="text-sm text-muted-foreground">{label}</span>
           {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
         </div>
-        <div className="mt-3 text-2xl font-semibold tracking-tight">{value}</div>
+        <div className="font-stat-number mt-3 text-2xl font-semibold tracking-tight">{value}</div>
         {delta && <div className={`mt-1 text-xs ${trendColor}`}>{delta}</div>}
         {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
       </CardContent>

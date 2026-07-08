@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lettre de motivation · Kamga Marc Olivier · IT Co-packing</title>
+<style>
+  :root{
+    --accent:#334155;
+    --ink:#1f2730;
+    --muted:#5f6b7a;
+    --line:#e2e8f0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Georgia,serif;
+    color:var(--ink);background:#eef1f5;font-size:13.5px;line-height:1.65;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .page{max-width:820px;margin:24px auto;background:#fff;padding:46px 54px 50px}
+
+  .toolbar{position:fixed;top:18px;right:18px;z-index:50}
+  .btn-pdf{
+    background:var(--accent);color:#fff;border:none;padding:11px 20px;border-radius:9px;
+    font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(51,65,85,.32);
+    font-family:"Segoe UI",Arial,sans-serif;letter-spacing:.2px}
+  .btn-pdf:hover{background:#232f3e}
+
+  .top{display:flex;justify-content:space-between;gap:30px;margin-bottom:30px}
+  .sender .nm{font-size:18px;font-weight:800;color:var(--accent);letter-spacing:.3px}
+  .sender .ti{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+  .sender div, .recipient div{font-size:12.5px;color:var(--ink)}
+  .right-col{text-align:right}
+  .right-col .date{font-size:13px;color:var(--ink);margin-bottom:70px}
+  .recipient .co{font-weight:700;color:var(--ink)}
+  .recipient .muted{color:var(--muted)}
+
+  .objet{font-size:13.5px;margin-bottom:24px;border-left:3px solid var(--accent);padding-left:13px}
+  .objet b{color:var(--accent)}
+
+  p.body{margin-bottom:14px;text-align:justify}
+  p.body strong{color:var(--accent)}
+  .greeting{margin-bottom:14px}
+
+  .signature{margin-top:26px;text-align:right}
+  .signature .sn{font-weight:800;color:var(--accent);font-size:15px}
+
+  @media print{
+    body{background:#fff;font-size:12px}
+    .page{margin:0;max-width:none;padding:0;width:100%}
+    .toolbar{display:none!important}
+    @page{size:A4;margin:18mm}
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn-pdf" onclick="window.print()">Exporter en PDF</button>
+  </div>
+
+  <div class="page">
+    <div class="top">
+      <div class="sender">
+        <div class="nm">Kamga Marc Olivier</div>
+        <div class="ti">Étudiant ingénieur · Développement &amp; DevOps · EFREI Paris</div>
+        <div>Paris, Île-de-France</div>
+        <div>kamgaolivier104@gmail.com</div>
+        <div>+33 7 44 41 92 95</div>
+        <div>linkedin.com/in/marc-olivier-kamga-simo</div>
+      </div>
+      <div class="right-col">
+        <div class="date">À Paris, le 26 juin 2026</div>
+        <div class="recipient">
+          <div class="co">Service Informatique France</div>
+          <div class="muted">Département IT Co-packing</div>
+          <div class="muted">France</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="objet">
+      <b>Objet :</b> Candidature à une alternance en développement informatique (F/H) · IT Co-packing · contrat de 1 ou 2 ans dès septembre 2026
+    </div>
+
+    <div class="greeting">Madame, Monsieur,</div>
+
+    <p class="body">
+      Votre département IT Co-packing conçoit des solutions au plus près des utilisateurs et des activités réparties dans
+      toute la France : c'est exactement le type d'environnement dans lequel je souhaite progresser. Passionné de
+      développement, j'aime <strong>partir d'un besoin métier pour le transformer en une solution concrète</strong>, la
+      tester, puis l'améliorer. Rejoindre votre équipe en alternance serait pour moi l'occasion de contribuer à vos
+      innovations tout en montant en compétence auprès de développeurs expérimentés.
+    </p>
+
+    <p class="body">
+      Mon expérience de projets m'a apporté de vraies bases. Je développe en autonomie un <strong>SaaS full-stack</strong>
+      (Node.js / TypeScript, React, API REST, base PostgreSQL) que j'ai mis en production, et j'ai conçu en projet une
+      <strong>architecture multi-services</strong> conteneurisée avec un pipeline d'intégration et de tests automatisés.
+      J'y ai pris l'habitude de <strong>modéliser des bases de données, d'écrire des requêtes SQL</strong> et de tester
+      chaque fonctionnalité avant de la livrer. Je suis impatient d'approfondir des technologies comme
+      <strong>SQL / PL-SQL, PHP, C# et Node.js</strong> sur vos projets, et d'analyser vos outils existants pour proposer
+      des améliorations utiles.
+    </p>
+
+    <p class="body">
+      Au-delà de la technique, je crois beaucoup à la rigueur, à l'exigence et au dialogue. Habitué à travailler avec des
+      interlocuteurs et des métiers variés, réactif et curieux, je m'attache à comprendre le besoin réel avant de coder. Je
+      pratique par ailleurs un anglais courant (TOEIC B2), utile pour la veille technologique et la documentation.
+    </p>
+
+    <p class="body">
+      Disponible dès septembre 2026 pour une alternance de 1 ou 2 ans (trois semaines en entreprise pour une semaine
+      d'école), je serais ravi d'échanger avec vous sur ma motivation lors d'un entretien.
+    </p>
+
+    <p class="body">
+      Je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.
+    </p>
+
+    <div class="signature">
+      <div class="sn">Kamga Marc Olivier</div>
+    </div>
+
+  </div>
+</body>
+</html>

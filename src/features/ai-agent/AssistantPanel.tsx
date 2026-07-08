@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChatCircleDotsIcon } from "@phosphor-icons/react";
 import {
   Loader2, Bot, X, Plus, History, ChevronDown, FileText, BarChart3, ArrowRight, Sparkles,
 } from "lucide-react";
@@ -171,8 +172,8 @@ export function AssistantPanel() {
       />
       {/* Header — h-14 to align its bottom border with the app topbar. */}
       <div className="flex h-14 items-center gap-2 border-b border-border px-3">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/20 text-primary">
-          <Bot className="h-4 w-4" />
+        <span className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-900">
+          <ChatCircleDotsIcon weight="duotone" className="h-4 w-4" />
         </span>
         <span className="text-sm font-semibold">Assistant</span>
         <DropdownMenu>

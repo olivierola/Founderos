@@ -303,7 +303,7 @@ function StatCard({
           <Icon className="h-3.5 w-3.5" /> {label}
         </div>
         <div className={cn(
-          "mt-1 text-2xl font-semibold",
+          "font-stat-number mt-1 text-2xl font-semibold",
           tone === "warn" && "text-amber-500",
           tone === "good" && "text-emerald-500",
         )}>{value}</div>

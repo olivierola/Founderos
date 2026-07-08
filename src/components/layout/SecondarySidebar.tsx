@@ -1,5 +1,6 @@
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, FolderKanban, Loader2 } from "lucide-react";
+import { ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, ChartBarIcon, GearSixIcon } from "@phosphor-icons/react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
@@ -9,24 +10,25 @@ import { AccordionNavItem } from "./AccordionNavItem";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { INTERNAL_AGENT_TABS } from "@/features/internal-agents/InternalAgentDetail";
+import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 import { MODULE_PROJECT_CONFIGS, type ModuleProjectConfig } from "@/lib/module-project-config";
 import { fetchModuleProjects, type ModuleProject } from "@/features/module-projects/moduleProjectModel";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 
 // Agent builder sub-tabs, shown in the secondary sidebar once an agent is opened.
 const AGENT_TABS = [
-  { slug: "playground", label: "Playground" },
-  { slug: "knowledge", label: "Knowledge" },
-  { slug: "widget", label: "Widget" },
-  { slug: "analytics", label: "Analytics" },
-  { slug: "settings", label: "Settings" },
+  { slug: "playground", label: "Playground", icon: ChatCircleIcon },
+  { slug: "knowledge", label: "Knowledge", icon: BookOpenIcon },
+  { slug: "widget", label: "Widget", icon: PuzzlePieceIcon },
+  { slug: "analytics", label: "Analytics", icon: ChartBarIcon },
+  { slug: "settings", label: "Settings", icon: GearSixIcon },
 ];
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
+    "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
     isActive
-      ? "bg-sidebar-accent text-foreground"
+      ? "bg-sidebar-accent text-foreground shadow-[inset_2px_0_0_0_hsl(var(--accent-coral))]"
       : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
   );
 
@@ -67,16 +69,17 @@ export function SecondarySidebar() {
   if (moduleSlug === "agent" && segments[appIdx + 4] === "builder") {
     const agentId = segments[appIdx + 5];
     return (
-      <aside className="flex h-full w-56 flex-col border-r border-border bg-sidebar">
+      <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
         <div className="flex h-14 items-center border-b border-border px-4">
           <NavLink to={`${base}/agent/agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" /> All agents
           </NavLink>
         </div>
-        <nav className="flex-1 overflow-y-auto p-2">
+        <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
           {AGENT_TABS.map((t) => (
             <NavLink key={t.slug} end to={`${base}/agent/builder/${agentId}/${t.slug}`} className={linkClass}>
-              {t.label}
+              <t.icon weight="duotone" className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t.label}</span>
             </NavLink>
           ))}
         </nav>
@@ -89,16 +92,17 @@ export function SecondarySidebar() {
   if (moduleSlug === "agent" && segments[appIdx + 4] === "internal") {
     const agentId = segments[appIdx + 5];
     return (
-      <aside className="flex h-full w-56 flex-col border-r border-border bg-sidebar">
+      <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
         <div className="flex h-14 items-center border-b border-border px-4">
           <NavLink to={`${base}/agent/internal-agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" /> Internal agents
           </NavLink>
         </div>
-        <nav className="flex-1 overflow-y-auto p-2">
+        <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
           {INTERNAL_AGENT_TABS.map((t) => (
             <NavLink key={t.slug} end to={`${base}/agent/internal/${agentId}/${t.slug}`} className={linkClass}>
-              {t.label}
+              <t.icon weight="duotone" className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t.label}</span>
             </NavLink>
           ))}
         </nav>
@@ -129,16 +133,19 @@ export function SecondarySidebar() {
   // page chrome) shows the items within the active group. ──
   if (module.groupsAsTabs) {
     const groups = moduleGroups(module);
+    // Single-group module (the split AI-control modules): the tabs live in the
+    // Topbar (SubTabBar), so a left rail listing one group is redundant — hide it.
+    if (groups.length <= 1) return null;
     const activeSlug = segments[appIdx + 4];
     const activeGroup = groups.find((g) =>
       itemsInGroup(module, g).some((it) => it.slug === activeSlug),
     );
     return (
-      <aside className="flex h-full w-56 flex-col border-r border-border bg-sidebar">
+      <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
         <div className="flex h-14 items-center border-b border-border px-4">
           <div className="text-base font-semibold text-foreground">{module.label}</div>
         </div>
-        <nav className="flex-1 overflow-y-auto p-2">
+        <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
           {groups.map((g) => {
             const items = itemsInGroup(module, g);
             const first = items[0];
@@ -172,11 +179,11 @@ export function SecondarySidebar() {
   const topLevel = module.subItems.filter((s) => !s.parent);
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center border-b border-border px-4">
         <div className="text-base font-semibold text-foreground">{module.label}</div>
       </div>
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
         {topLevel.map((sub, i) => {
           const to = `${base}/${module.slug}/${sub.slug}`;
           const prevGroup = i > 0 ? topLevel[i - 1].group : undefined;
@@ -206,7 +213,8 @@ export function SecondarySidebar() {
             }
             return (
               <NavLink key={sub.slug} to={to} className={linkClass}>
-                {sub.label}
+                {sub.icon && <sub.icon weight="duotone" className="h-[18px] w-[18px] shrink-0" />}
+                <span className="truncate">{sub.label}</span>
               </NavLink>
             );
           })();
@@ -252,12 +260,12 @@ function ProjectsSidebar({ config, base, moduleSlug }: { config: ModuleProjectCo
   })();
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
         <div className="text-base font-semibold text-foreground">{config.label}</div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="scrollbar-slim flex-1 overflow-y-auto p-2">
         {/* New project button */}
         <button
           onClick={() => navigate(`${base}/${moduleSlug}`)}
@@ -303,7 +311,7 @@ function ProjectsSidebar({ config, base, moduleSlug }: { config: ModuleProjectCo
 
 // ── Agent workforce sidebar ─────────────────────────────────────────────────
 
-interface HiredAgent { id: string; name: string; description: string | null; avatar_emoji: string | null; accent_color: string | null }
+interface HiredAgent { id: string; name: string; description: string | null; avatar_emoji: string | null; avatar_url: string | null; accent_color: string | null }
 
 function AgentWorkforceSidebar({ base }: { base: string }) {
   const { projectId } = useCurrentContext();
@@ -315,7 +323,7 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
     enabled: !!projectId,
     queryFn: async () => {
       const { data } = await (await import("@/lib/supabase")).supabase
-        .from("internal_agents").select("id, name, description, avatar_emoji, accent_color")
+        .from("internal_agents").select("id, name, description, avatar_emoji, avatar_url, accent_color")
         .eq("project_id", projectId!).order("created_at", { ascending: false });
       return (data ?? []) as HiredAgent[];
     },
@@ -329,12 +337,12 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
   })();
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
         <div className="text-base font-semibold text-foreground">AI Workforce</div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="scrollbar-slim flex-1 overflow-y-auto p-2">
         <button
           onClick={() => navigate(`${base}/agent/internal-agents`)}
           className="mb-2 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-primary hover:bg-sidebar-accent/60"
@@ -359,10 +367,8 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
                   : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
               )}
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm"
-                style={{ backgroundColor: (a.accent_color ?? "#6366f1") + "20" }}>
-                {a.avatar_emoji ?? "🤖"}
-              </span>
+              <AgentAvatar url={a.avatar_url} emoji={a.avatar_emoji} accent={a.accent_color}
+                className="h-6 w-6 shrink-0 overflow-hidden rounded-md text-sm" />
               <span className="min-w-0 flex-1 truncate">{a.name}</span>
             </button>
           );

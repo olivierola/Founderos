@@ -19,37 +19,6 @@ import { AlertsPage } from "@/features/overview/Alerts";
 import { CustomDashboardsPage } from "@/features/overview/dashboards/CustomDashboards";
 import { DashboardBuilderPage } from "@/features/overview/dashboards/DashboardBuilder";
 
-// Finance
-import { RevenuePage } from "@/features/finance/Revenue";
-import { TransactionsPage } from "@/features/finance/Transactions";
-import { MrrMovementPage } from "@/features/finance/MrrMovement";
-import { CustomersPage } from "@/features/finance/Customers";
-import { SubscriptionsPage } from "@/features/finance/Subscriptions";
-import {
-  CohortsPage,
-  ForecastingPage,
-  InvestorMetricsPage,
-  FinanceReportsPage,
-} from "@/features/finance/Extra";
-
-// Costs
-import { CostsOverviewPage } from "@/features/costs/Overview";
-import { CostsProvidersPage } from "@/features/costs/Providers";
-import { LlmCostsPage } from "@/features/costs/LlmCosts";
-import { OptimizationPage } from "@/features/costs/Optimization";
-import { CostPerUserPage, BudgetsPage, InvoicesPage } from "@/features/costs/Extra";
-
-// Users
-import { AllUsersPage } from "@/features/users/AllUsers";
-import {
-  SegmentsPage,
-  UserCohortsPage,
-  User360Page,
-  HealthScoresPage,
-  ChurnRiskPage,
-} from "@/features/users/Extra";
-import { EngagementPage } from "@/features/users/Engagement";
-
 import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
 import { RagCenterPage, RagCollectionDetailPage } from "@/features/rag-center/RagCenter";
 import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
@@ -83,15 +52,6 @@ import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
 import { PmInboxPage } from "@/features/pm/PmInbox";
 import { PmWhiteboardPage } from "@/features/pm/PmWhiteboard";
 import { PmSimulationsPage } from "@/features/pm/PmSimulations";
-import {
-  ScOverviewPage, ScInventoryPage, ScSuppliersPage, ScPurchaseOrdersPage, ScShipmentsPage,
-} from "@/features/supply/ScPages";
-import { ScControlTowerPage, ScSalesOrdersPage, ScReturnsPage } from "@/features/supply/ScAdvanced";
-import {
-  FinanceOverviewPage, FinanceInvoicesPage, FinanceExpensesPage, FinanceBudgetsPage,
-} from "@/features/finance-mod/FinancePages";
-import { FinanceBillsPage, FinanceTreasuryPage } from "@/features/finance-mod/FinanceAdvanced";
-import { FinanceLedgerPage, FinanceReportingPage } from "@/features/finance-mod/FinanceLedger";
 import { PmTimesheetsPage, PmResourcingPage, PmProfitabilityPage, PmGanttPage } from "@/features/pm/PmPsa";
 
 // Office (Bureautique)
@@ -110,61 +70,6 @@ const PresentationEditorPage = lazy(() =>
 function OfficeEditorFallback() {
   return <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">Loading editor…</div>;
 }
-
-// Code
-import { RepositoriesPage } from "@/features/code/Repositories";
-import { ScanResultsPage } from "@/features/code/ScanResults";
-import {
-  CodeOverviewPage,
-  ScanComparePage,
-  ArchitectureMapPage,
-  DependenciesPage,
-  ApiUsagePage,
-  DatabaseSchemaPage,
-  TechDebtPage,
-} from "@/features/code/Extra";
-
-// Security
-import { SecurityFindingsPage } from "@/features/security/Findings";
-import { CveAlertsPage } from "@/features/security/CveAlerts";
-import { SecretsDetectionPage } from "@/features/security/Secrets";
-import { LicenseAuditPage, RiskScorePage } from "@/features/security/Extra";
-import { ComplianceWatchPage } from "@/features/security/Compliance";
-import { SecurityScansPage } from "@/features/security/SecurityScans";
-
-// Health
-import {
-  HealthStatusPage,
-  UptimePage,
-  ErrorsPage,
-  PerformancePage,
-  DeploymentsPage,
-  IncidentsPage,
-  DatabasePage,
-} from "@/features/health/Health";
-
-// Actions
-import { QuickActionsPage } from "@/features/actions/QuickActions";
-import { StripeOperationsPage } from "@/features/actions/StripeOperations";
-import { UserManagementPage } from "@/features/actions/UserManagement";
-import { AuditLogPage } from "@/features/actions/AuditLog";
-import {
-  DatabaseConsolePage,
-  EmailSenderPage,
-  ActionsWebhooksPage,
-} from "@/features/actions/Extra";
-import { RunbooksPage } from "@/features/actions/Runbooks";
-import { SaasAnalyticsPage } from "@/features/actions/SaasAnalytics";
-import { SessionReplayPage } from "@/features/saas-analytics/SessionReplay";
-import { EventsPage } from "@/features/saas-analytics/Events";
-import { GrowthPage } from "@/features/saas-analytics/Growth";
-import { FunnelsPage as AnalyticsFunnelsPage } from "@/features/saas-analytics/Funnels";
-import { RetentionPage } from "@/features/saas-analytics/Retention";
-import { ActivationPage } from "@/features/saas-analytics/Activation";
-import { PerUserAnalyticsPage } from "@/features/actions/PerUserAnalytics";
-import { GroupAnalyticsPage } from "@/features/actions/GroupAnalytics";
-import { UserJourneysPage } from "@/features/actions/UserJourneys";
-
 
 // Integrations
 import { CatalogPage } from "@/features/integrations/Catalog";
@@ -185,6 +90,43 @@ import { SettingsDataPrivacyPage } from "@/features/settings/DataPrivacy";
 import { GenericSubPage } from "@/features/GenericSubPage";
 import { MODULES } from "@/lib/navigation";
 
+// Governance
+import { GovernanceDashboard } from "@/features/governance/Dashboard";
+import { GovRegistryPage } from "@/features/governance/Registry";
+import { GovRisksPage } from "@/features/governance/RiskRegister";
+import { GovPoliciesPage } from "@/features/governance/Policies";
+import { GovControlsPage } from "@/features/governance/Controls";
+import { GovApprovalsPage } from "@/features/governance/Approvals";
+import { GovIncidentsPage } from "@/features/governance/Incidents";
+import { GovDataAssetsPage } from "@/features/governance/DataAssets";
+import { GovAuditPage } from "@/features/governance/AuditTrail";
+// AI Ops & Governance — onglet "AI Governance"
+import { GovGuardrailsPage } from "@/features/governance/aiops/Guardrails";
+import { GovAccessLogsPage } from "@/features/governance/aiops/AccessLogs";
+import { GovPromptMonitoringPage } from "@/features/governance/aiops/PromptMonitoring";
+import { GovCostsPage } from "@/features/governance/aiops/Costs";
+import { GovOpsIncidentsPage } from "@/features/governance/aiops/OpsIncidents";
+// AI Ops & Governance — onglet "Ops"
+import { GovOpsServersPage } from "@/features/governance/aiops/OpsServers";
+import { GovOpsLivePage } from "@/features/governance/aiops/OpsLive";
+import { GovOpsInfraIncidentsPage } from "@/features/governance/aiops/OpsInfraIncidents";
+import { GovOpsFinetuningPage } from "@/features/governance/aiops/OpsFinetuning";
+import { GovOpsModelsPage } from "@/features/governance/aiops/OpsModels";
+// AI Ops & Governance — onglet "Fine-tuning Studio"
+import { GovFtOverviewPage } from "@/features/governance/aiops/FtOverview";
+import { GovFtDatasetsPage } from "@/features/governance/aiops/FtDatasets";
+import { GovFtDataPrepPage } from "@/features/governance/aiops/FtDataPrep";
+import { GovFtLabelingPage } from "@/features/governance/aiops/FtLabeling";
+import { GovFtExperimentsPage } from "@/features/governance/aiops/FtExperiments";
+import { GovFtEvaluationPage } from "@/features/governance/aiops/FtEvaluation";
+import { GovFtPromptTestsPage } from "@/features/governance/aiops/FtPromptTests";
+import { GovFtVersionsPage } from "@/features/governance/aiops/FtVersions";
+import { GovFtDeploymentPage } from "@/features/governance/aiops/FtDeployment";
+import { GovFtMonitoringPage } from "@/features/governance/aiops/FtMonitoring";
+import { GovFtCostsPage } from "@/features/governance/aiops/FtCosts";
+import { GovFtSecurityPage } from "@/features/governance/aiops/FtSecurity";
+import { GovFtSettingsPage } from "@/features/governance/aiops/FtSettings";
+
 // Marketing site
 import { HomePage } from "@/features/marketing-site/HomePage";
 import {
@@ -201,76 +143,28 @@ type PageEl = import("react").ReactElement;
 const PAGES: Record<string, PageEl> = {
   // AI HQ dashboard
   "hq/dashboard": <AiHqDashboard />,
-  // Projects super-module — landing handled by ModuleProjectList via buildModuleRoutes
-  "projects/all": <ModuleProjectList />,
-  // Legacy redirects — old actions/* routes point to CRM admin.
-  // (kept for backward compat bookmarks, will be served via buildModuleRoutes fallback)
-
-  // Finance was merged into SaaS Analytics (Revenue + Costs groups). The pages
-  // are unchanged; only their route prefix moved to saas-analytics/*.
-  "software/revenue": <RevenuePage />,
-  "software/transactions": <TransactionsPage />,
-  "software/mrr-movement": <MrrMovementPage />,
-  "software/customers": <CustomersPage />,
-  "software/subscriptions": <SubscriptionsPage />,
-  "software/cohorts": <CohortsPage />,
-  "software/forecasting": <ForecastingPage />,
-  "software/investor-metrics": <InvestorMetricsPage />,
-  "software/reports": <FinanceReportsPage />,
-
-  "software/costs-overview": <CostsOverviewPage />,
-  "software/costs-providers": <CostsProvidersPage />,
-  "software/costs-llm": <LlmCostsPage />,
-  "software/costs-optimization": <OptimizationPage />,
-  "software/costs-per-user": <CostPerUserPage />,
-  "software/costs-budgets": <BudgetsPage />,
-  "software/costs-invoices": <InvoicesPage />,
-
-  // SaaS Analytics module — overview + user & health sub-tabs
-  "software/overview": <SaasAnalyticsPage />,
-  "software/session-replay": <SessionReplayPage />,
-  "software/events": <EventsPage />,
-  "software/growth": <GrowthPage />,
-  "software/activation": <ActivationPage />,
-  "software/funnels": <AnalyticsFunnelsPage />,
-  "software/retention": <RetentionPage />,
-  "software/users-all": <AllUsersPage />,
-  "software/users-segments": <SegmentsPage />,
-  "software/users-cohorts": <UserCohortsPage />,
-  "software/users-360": <User360Page />,
-  "software/users-engagement": <EngagementPage />,
-  "software/users-health-scores": <HealthScoresPage />,
-  "software/users-churn": <ChurnRiskPage />,
-  "software/users-funnels": <UserJourneysPage />,
-  "software/users-per-user": <PerUserAnalyticsPage />,
-  "software/users-groups": <GroupAnalyticsPage />,
-  "software/users-journeys": <UserJourneysPage />,
 
   "agent/internal-agents": <InternalAgentsListPage />,
   "agent/ecosystem": <AgentEcosystemPage />,
   "agent/tasks": <AgentTasksPage />,
   "agent/knowledge": <RagCenterPage />,
 
-  // Ops group (under the merged DevOps module)
+  // Ops group (infra/servers/workflows — reachable via explicit detail routes)
   "devops/ops-overview": <OpsOverviewPage />,
   "devops/servers": <OpsServersPage />,
-  "devops/deployments": <DeploymentsPage />,
   "devops/workflows": <OpsWorkflowsPage />,
   "devops/checks": <OpsChecksPage />,
   "devops/testing": <OpsTestingPage />,
   "devops/jobs": <OpsJobsPage />,
   "devops/settings": <OpsSettingsPage />,
 
-  // Marketing and HR modules are temporarily hidden (not yet mature) — their
-  // nav entries, page routes and the hr/opening detail route were removed.
-
-  // Simulations
-  "simulations/list": <PmSimulationsPage />,
-  // CRM
+  // CRM (Projects, App Testing & Simulations were folded in here)
   "crm/workspace": <CrmWorkspacePage />,
   "crm/admin-dashboard": <OverviewDashboard />,
   "crm/admin-custom-dashboards": <CustomDashboardsPage />,
   "crm/admin-alerts": <AlertsPage />,
+  "crm/testing": <OpsTestingPage />,
+  "crm/simulations": <PmSimulationsPage />,
 
   // Support
   "support/overview": <SupportOverviewPage />,
@@ -294,25 +188,6 @@ const PAGES: Record<string, PageEl> = {
   "pm/resourcing": <PmResourcingPage />,
   "pm/profitability": <PmProfitabilityPage />,
 
-  // Supply Chain
-  "supply/overview": <ScControlTowerPage />,
-  "supply/inventory": <ScInventoryPage />,
-  "supply/sales-orders": <ScSalesOrdersPage />,
-  "supply/returns": <ScReturnsPage />,
-  "supply/suppliers": <ScSuppliersPage />,
-  "supply/purchase-orders": <ScPurchaseOrdersPage />,
-  "supply/shipments": <ScShipmentsPage />,
-
-  // Finance
-  "finance-mod/overview": <FinanceOverviewPage />,
-  "finance-mod/invoices": <FinanceInvoicesPage />,
-  "finance-mod/bills": <FinanceBillsPage />,
-  "finance-mod/expenses": <FinanceExpensesPage />,
-  "finance-mod/treasury": <FinanceTreasuryPage />,
-  "finance-mod/budgets": <FinanceBudgetsPage />,
-  "finance-mod/reporting": <FinanceReportingPage />,
-  "finance-mod/ledger": <FinanceLedgerPage />,
-
   // Office (Bureautique) — library + per-kind filtered lists.
   "office/library": <OfficeLibraryPage />,
   "office/documents": <OfficeLibraryPage initialKind="document" />,
@@ -322,54 +197,39 @@ const PAGES: Record<string, PageEl> = {
   "office/gen-video": <OfficeVideoStudioPage />,
   "office/gen-copy": <OfficeCopywriterPage />,
 
-  // Code group (under the merged DevOps module)
-  "devops/overview": <CodeOverviewPage />,
-  "devops/repositories": <RepositoriesPage />,
-  "devops/scan-results": <ScanResultsPage />,
-  "devops/compare-scans": <ScanComparePage />,
-  "devops/architecture-map": <ArchitectureMapPage />,
-  "devops/dependencies": <DependenciesPage />,
-  "devops/api-usage": <ApiUsagePage />,
-  "devops/database-schema": <DatabaseSchemaPage />,
-  "devops/tech-debt": <TechDebtPage />,
-
-  // Security group
-  "devops/security-overview": <SecurityFindingsPage filter="all" />,
-  "devops/security-cve-alerts": <CveAlertsPage />,
-  "devops/security-secrets": <SecretsDetectionPage />,
-  "devops/security-risk-score": <RiskScorePage />,
-  "devops/security-license-audit": <LicenseAuditPage />,
-  "devops/security-compliance": <ComplianceWatchPage />,
-  "devops/security-scans": <SecurityScansPage />,
-
-  // Health sub-tabs under SaaS Analytics
-  "software/health-status": <HealthStatusPage />,
-  "software/health-uptime": <UptimePage />,
-  "software/health-errors": <ErrorsPage />,
-  "software/health-performance": <PerformancePage />,
-  "software/health-incidents": <IncidentsPage />,
-  "software/health-database": <DatabasePage />,
-
-  "software/quick-actions": <QuickActionsPage />,
-  "software/user-management": <UserManagementPage />,
-  "software/stripe-operations": <StripeOperationsPage />,
-  "software/database-console": <DatabaseConsolePage />,
-  "software/email-sender": <EmailSenderPage />,
-  "software/webhooks": <ActionsWebhooksPage />,
-  "software/runbooks": <RunbooksPage />,
-  "software/audit-log": <AuditLogPage />,
-
-  "agent/internal-agents": <InternalAgentsListPage />,
-  "agent/ecosystem": <AgentEcosystemPage />,
-  "agent/tasks": <AgentTasksPage />,
-  "agent/knowledge": <RagCenterPage />,
-
   "integrations/connected": <ConnectedPage />,
   "integrations/catalog": <CatalogPage />,
   "integrations/credentials-vault": <CredentialsVaultPage />,
   "integrations/api-keys": <ApiKeysPage />,
   "integrations/webhooks": <WebhooksOutPage />,
   "integrations/automation": <AutomationPage />,
+
+  // ── AI Governance module ──
+  "governance/guardrails": <GovGuardrailsPage />,
+  "governance/agent-access": <GovAccessLogsPage />,
+  "governance/prompts": <GovPromptMonitoringPage />,
+  "governance/costs": <GovCostsPage />,
+  "governance/ops-incidents": <GovOpsIncidentsPage />,
+  "governance/ft-security": <GovFtSecurityPage />,
+  // ── AI Ops module ──
+  "aiops/ops-servers": <GovOpsServersPage />,
+  "aiops/ops-live": <GovOpsLivePage />,
+  "aiops/ops-infra": <GovOpsInfraIncidentsPage />,
+  "aiops/ops-models": <GovOpsModelsPage />,
+  "aiops/ft-deployment": <GovFtDeploymentPage />,
+  "aiops/ft-monitoring": <GovFtMonitoringPage />,
+  "aiops/ft-costs": <GovFtCostsPage />,
+  // ── Fine-tuning Studio module ──
+  "finetuning/ft-overview": <GovFtOverviewPage />,
+  "finetuning/ft-datasets": <GovFtDatasetsPage />,
+  "finetuning/ft-dataprep": <GovFtDataPrepPage />,
+  "finetuning/ft-labeling": <GovFtLabelingPage />,
+  "finetuning/ft-experiments": <GovFtExperimentsPage />,
+  "finetuning/ops-finetuning": <GovOpsFinetuningPage />,
+  "finetuning/ft-evaluation": <GovFtEvaluationPage />,
+  "finetuning/ft-prompt-tests": <GovFtPromptTestsPage />,
+  "finetuning/ft-versions": <GovFtVersionsPage />,
+  "finetuning/ft-settings": <GovFtSettingsPage />,
 
   "settings/profile": <SettingsProfilePage />,
   "settings/workspace": <SettingsWorkspacePage />,
@@ -382,32 +242,6 @@ const PAGES: Record<string, PageEl> = {
   "settings/data-privacy": <SettingsDataPrivacyPage />,
 };
 
-/** Redirects an old /finance/:sub path to /software/:sub (same suffix). */
-function LegacyFinanceRedirect() {
-  const { sub } = useParams();
-  return <Navigate to={`../../software/${sub}`} replace />;
-}
-
-/** SaaS Analytics was renamed/merged into the Software module. Old
- *  /saas-analytics/:sub deep links map 1:1 to /software/:sub. */
-function LegacySaasRedirect() {
-  const { sub } = useParams();
-  return <Navigate to={`../../software/${sub}`} replace />;
-}
-
-/** The admin tools moved from Admin panel (/actions/*) into Software. These
- *  specific slugs redirect; the kept Overview tabs stay under /actions/*. */
-const MOVED_ADMIN = new Set([
-  "quick-actions", "user-management", "stripe-operations", "database-console",
-  "email-sender", "webhooks", "runbooks", "audit-log",
-]);
-function LegacyActionsRedirect() {
-  const { sub } = useParams();
-  if (sub && MOVED_ADMIN.has(sub)) return <Navigate to={`../../software/${sub}`} replace />;
-  // Unknown/overview slug → keep on the dashboard.
-  return <Navigate to="../dashboard" replace />;
-}
-
 /** Admin panel cockpit was merged into CRM. Redirect old /actions/* links to
  *  /app/:ws/:proj/crm/admin-* using an absolute, slug-based path (relative
  *  ../.. math across two dynamic segments is fragile and could drop to the root). */
@@ -416,12 +250,7 @@ function AdminMergeRedirect({ to }: { to: string }) {
   return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/crm/${to}`} replace />;
 }
 
-/** Code + Ops were merged into the DevOps module. Old /code/:sub and /ops/:sub
- *  deep links map to /devops/:sub, except the Ops overview which was renamed. */
-function LegacyCodeRedirect() {
-  const { sub } = useParams();
-  return <Navigate to={`../../devops/${sub}`} replace />;
-}
+/** Ops deep links map to /devops/:sub, except the Ops overview which was renamed. */
 function LegacyOpsRedirect() {
   const { sub } = useParams();
   const target = sub === "overview" ? "ops-overview" : sub;
@@ -520,6 +349,14 @@ export const router = createBrowserRouter([
       { path: "actions/dashboard", element: <AdminMergeRedirect to="admin-dashboard" /> },
       { path: "actions/custom-dashboards", element: <AdminMergeRedirect to="admin-custom-dashboards" /> },
       { path: "actions/alerts", element: <AdminMergeRedirect to="admin-alerts" /> },
+      // The Projects super-module, App Testing and Simulations were folded into
+      // CRM — redirect their old top-level links to the new crm/* locations.
+      { path: "projects", element: <AdminMergeRedirect to="admin-dashboard" /> },
+      { path: "projects/all", element: <AdminMergeRedirect to="admin-dashboard" /> },
+      { path: "testing", element: <AdminMergeRedirect to="testing" /> },
+      { path: "testing/workspace", element: <AdminMergeRedirect to="testing" /> },
+      { path: "simulations", element: <AdminMergeRedirect to="simulations" /> },
+      { path: "simulations/list", element: <AdminMergeRedirect to="simulations" /> },
       {
         path: "actions/dashboard-builder/:dashboardId",
         element: (
@@ -612,16 +449,9 @@ export const router = createBrowserRouter([
           </ErrorBoundary>
         ),
       },
-      // Legacy redirects: Finance / SaaS Analytics merged into the Software module.
-      { path: "finance", element: <Navigate to="../software/revenue" replace /> },
-      { path: "finance/:sub", element: <LegacyFinanceRedirect /> },
-      { path: "saas-analytics", element: <Navigate to="../software/overview" replace /> },
-      { path: "saas-analytics/:sub", element: <LegacySaasRedirect /> },
-      // Admin tools moved from Admin panel (/actions/*) into Software.
-      { path: "actions/:sub", element: <LegacyActionsRedirect /> },
-      // Legacy redirects: Code + Ops were merged into DevOps.
-      { path: "code", element: <Navigate to="../devops/overview" replace /> },
-      { path: "code/:sub", element: <LegacyCodeRedirect /> },
+      // Any other old /actions/* cockpit link → CRM admin dashboard.
+      { path: "actions/:sub", element: <AdminMergeRedirect to="admin-dashboard" /> },
+      // Legacy redirects: Ops deep links map to DevOps detail routes.
       { path: "ops", element: <Navigate to="../devops/ops-overview" replace /> },
       { path: "ops/servers/:id", element: <LegacyOpsDetailRedirect kind="servers" /> },
       { path: "ops/workflows/:id", element: <LegacyOpsDetailRedirect kind="workflows" /> },

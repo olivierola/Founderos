@@ -42,7 +42,8 @@ function LiveTimer() {
     const t = setInterval(() => setSecs((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, []);
-  return <span className="text-[11px] font-mono text-blue-500 tabular-nums">{secs}s</span>;
+  const label = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
+  return <span className="text-[11px] font-mono text-blue-500 tabular-nums">{label}</span>;
 }
 
 export const AgentPlanning: React.FC<AgentPlanningProps> = ({

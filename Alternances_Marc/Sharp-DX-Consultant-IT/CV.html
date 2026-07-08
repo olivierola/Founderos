@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CV · Kamga Marc Olivier · Consultant IT</title>
+<style>
+  :root{
+    --accent:#0F766E;
+    --accent-tint:#E6F2F0;
+    --accent-tint-2:#C4E0DB;
+    --ink:#1f2a28;
+    --muted:#5c6a67;
+    --line:#dbe8e5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Arial,sans-serif;
+    color:var(--ink);background:#eef3f2;line-height:1.5;font-size:13px;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .page{max-width:880px;margin:18px auto;background:#fff;padding:16px 16px 16px}
+
+  /* ---- Print button ---- */
+  .toolbar{position:fixed;top:18px;right:18px;z-index:50}
+  .btn-pdf{
+    background:var(--accent);color:#fff;border:none;padding:11px 20px;border-radius:9px;
+    font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(15,118,110,.32);
+    font-family:inherit;letter-spacing:.2px}
+  .btn-pdf:hover{background:#0b5a54}
+
+  /* ---- Header (full width) ---- */
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;
+    border-bottom:2.5px solid var(--accent);padding-bottom:11px;margin-bottom:14px}
+  .name{font-size:28px;font-weight:800;letter-spacing:.5px;color:var(--ink);line-height:1.05}
+  .role{font-size:13.2px;color:var(--accent);font-weight:700;margin-top:5px;text-transform:uppercase;letter-spacing:.6px}
+  .seek{font-size:12px;color:#44514e;margin-top:5px;font-weight:500}
+  .avail{flex-shrink:0;text-align:center;background:var(--accent-tint);color:var(--accent);
+    border:1px solid var(--accent-tint-2);border-radius:9px;padding:9px 13px;font-weight:700;font-size:12px;line-height:1.4}
+  .avail small{display:block;font-weight:500;color:var(--muted);font-size:10.5px;margin-top:2px}
+
+  /* ---- Two-column body (float, print-robust) ---- */
+  .cols{display:block;position:relative}
+  .cols::after{content:"";display:block;clear:both}
+  .cols::before{content:"";position:absolute;top:0;bottom:0;left:243px;width:1px;background:var(--accent-tint-2)}
+  aside{float:left;width:230px}
+  main{float:right;width:calc(100% - 256px)}
+  main section{margin-top:15px}
+  main .entry{margin-bottom:15px}
+  main .profile{margin-bottom:6px}
+
+  /* ---- Section headers ---- */
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);
+    border-bottom:1.5px solid var(--line);padding-bottom:2px;margin-bottom:6px;font-weight:800}
+  section{margin-top:8px}
+  section:first-child{margin-top:0}
+
+  /* ---- Profile ---- */
+  .profile{font-size:12.3px;color:#39433f;text-align:justify;line-height:1.46;
+    border-left:3px solid var(--accent-tint-2);padding-left:13px;margin-bottom:2px}
+
+  /* ---- Entries (experience + projects) ---- */
+  .entry{margin-bottom:9px;page-break-inside:avoid}
+  .entry:last-child{margin-bottom:0}
+  .entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .entry-title{font-size:13px;font-weight:700;color:var(--ink)}
+  .entry-date{font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap}
+  .entry-sub{font-size:11.6px;color:var(--accent);font-weight:600;margin:1px 0 4px}
+  ul{list-style:none;margin:0}
+  li{position:relative;padding-left:15px;font-size:12.1px;color:#363f3c;margin-bottom:3px;line-height:1.5}
+  li::before{content:"";position:absolute;left:2px;top:7px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  li b{color:var(--ink)}
+
+  .badges{margin-top:4px;display:flex;flex-wrap:wrap;gap:3px}
+  .badge{background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent-tint-2);
+    border-radius:6px;padding:1.5px 7px;font-size:9.8px;font-weight:600;line-height:1.4;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+
+  /* ---- Formation ---- */
+  .mini{margin-bottom:8px}
+  .mini-title{font-size:12.4px;font-weight:700;color:var(--ink)}
+  .mini-sub{font-size:11.4px;color:var(--muted)}
+  .mini-date{font-size:11px;color:var(--accent);font-weight:600}
+  aside .mini{margin-bottom:4px}
+  aside .mini-title{font-size:11.4px;line-height:1.28}
+  aside .mini-sub{font-size:10.8px}
+
+  /* ---- Sidebar ---- */
+  aside h2{font-size:11px}
+  .contact-list{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:#39433f}
+  .contact-list b{color:var(--accent);font-weight:700}
+
+  .side-group{margin-bottom:4px}
+  .side-group:last-child{margin-bottom:0}
+  .side-group h3{font-size:10px;color:var(--ink);font-weight:800;margin-bottom:2px;text-transform:uppercase;letter-spacing:.3px}
+
+  .lc-row{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:2px 0;border-bottom:1px dashed var(--line)}
+  .lc-row:last-child{border-bottom:none}
+  .lc-row b{color:var(--ink);font-weight:700}
+  .lc-row span{color:var(--muted);white-space:nowrap}
+
+  .hobbies{display:flex;flex-wrap:wrap;gap:4px}
+  .hobby{background:#fff;border:1px solid var(--accent-tint-2);border-radius:20px;padding:2.5px 9px;font-size:11px;color:var(--ink)}
+
+  @media print{
+    body{background:#fff;font-size:10.8px}
+    .page{margin:0;max-width:none;padding:7mm 7mm 4mm;width:100%}
+    .toolbar{display:none!important}
+    @page{size:A4;margin:0}
+    .badge{border-color:#b6d6d0}
+    aside{width:214px}
+    main{width:calc(100% - 236px)}
+    .cols::before{left:225px}
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn-pdf" onclick="window.print()">Exporter en PDF</button>
+  </div>
+
+  <div class="page">
+    <header>
+      <div>
+        <div class="name">KAMGA MARC OLIVIER</div>
+        <div class="role">Consultant IT · Alternance</div>
+        <div class="seek">Recherche une alternance en conseil IT (du cadrage à la mise en œuvre)</div>
+      </div>
+      <div class="avail">
+        Disponible dès septembre 2026
+        <small>Alternance 1 ou 2 ans · 3 semaines en entreprise / 1 semaine en école</small>
+      </div>
+    </header>
+
+    <div class="cols">
+
+      <!-- ====== MAIN (right) ====== -->
+      <main>
+        <p class="profile">
+          Ce qui me plaît, c'est de partir d'un besoin, d'imaginer la solution, de la construire, puis de la faire vivre. En
+          lançant mon propre SaaS, j'ai vécu tout le cycle d'un projet, du cadrage à la mise en production, et j'y ai pris
+          goût. Étudiant ingénieur à l'EFREI Paris (M1 Réseaux, Cybersécurité, Cloud &amp; DevOps), à l'aise autant sur la
+          technique (développement, cloud, cybersécurité) que dans la relation, je souhaite découvrir le métier du conseil
+          IT. Ce que je veux apporter aux Sharpiens : de la curiosité, un vrai goût pour la tech et l'innovation, de
+          l'intelligence relationnelle et l'implication de quelqu'un qui a à cœur la satisfaction de ses clients.
+        </p>
+
+        <section>
+          <h2>Expériences professionnelles</h2>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Analyste IT · Stage</span>
+              <span class="entry-date">Juin – Août 2024</span>
+            </div>
+            <div class="entry-sub">CAMRAIL (Cameroon Railways) · Douala, Cameroun</div>
+            <ul>
+              <li><b>Analyse &amp; diagnostic :</b> études sur les systèmes, restitution via rapports et livrables clairs.</li>
+              <li><b>Amélioration continue :</b> recommandations sur les processus et les procédures.</li>
+              <li><b>Relationnel :</b> collaboration avec des équipes et des métiers variés.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Analyse du besoin</span><span class="badge">Livrables</span>
+              <span class="badge">Amélioration continue</span><span class="badge">Collaboration</span>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Support &amp; accompagnement utilisateurs · Stage</span>
+              <span class="entry-date">Juin – Août 2023</span>
+            </div>
+            <div class="entry-sub">CyberCafe · Yaoundé, Cameroun</div>
+            <ul>
+              <li><b>Analyse des besoins :</b> recueil et résolution des demandes des utilisateurs.</li>
+              <li><b>Accompagnement :</b> formation des utilisateurs aux bons usages et aux outils.</li>
+              <li><b>Documentation :</b> rédaction de procédures et de bonnes pratiques.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Analyse des besoins</span><span class="badge">Accompagnement</span>
+              <span class="badge">Formation</span><span class="badge">Documentation</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Projets</h2>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">FounderOS · SaaS, du cadrage au run (que j'entreprends)</span>
+              <span class="entry-date">2025 → présent</span>
+            </div>
+            <div class="entry-sub">Projet entrepreneurial en production · Fondateur · Solo</div>
+            <ul>
+              <li><b>Cadrage :</b> analyse du besoin, définition du périmètre, des cas d'usage et des priorités d'un SaaS d'agents IA autonomes pour les entreprises.</li>
+              <li><b>Conception :</b> architecture applicative, modèle de données et parcours utilisateur pensés pour la valeur métier.</li>
+              <li><b>Implémentation :</b> développement full-stack (React / TypeScript, Node, API REST, PostgreSQL) et intégration de briques IA (LLM / RAG).</li>
+              <li><b>Run :</b> mise en production continue, supervision et itérations d'amélioration au fil des retours d'usage.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Cadrage → Run</span><span class="badge">Conception</span><span class="badge">Architecture</span>
+              <span class="badge">Full-stack</span><span class="badge">PostgreSQL</span><span class="badge">IA / LLM</span><span class="badge">Innovation</span>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Architecture multi-services &amp; CI/CD</span>
+              <span class="entry-date">2025</span>
+            </div>
+            <div class="entry-sub">Projet académique · Mobilité internationale · AGH University, Cracovie</div>
+            <ul>
+              <li><b>Analyse &amp; conception :</b> définition d'une architecture multi-services (frontend, backend, base de données) répondant au besoin.</li>
+              <li><b>Implémentation :</b> développement des services et de leurs échanges via API, avec une séparation claire des responsabilités.</li>
+              <li><b>Pipeline CI/CD :</b> intégration, tests automatisés et déploiement à chaque évolution.</li>
+              <li><b>Équipe :</b> projet mené dans un contexte international et anglophone, du cadrage à la livraison.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Architecture</span><span class="badge">API REST</span><span class="badge">CI/CD</span>
+              <span class="badge">Tests automatisés</span><span class="badge">International</span><span class="badge">Travail en équipe</span><span class="badge">Anglais</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ====== SIDEBAR (left) ====== -->
+      <aside>
+        <section>
+          <h2>Contact</h2>
+          <div class="contact-list">
+            <b>kamgaolivier104@gmail.com</b>
+            <span>+33 7 44 41 92 95</span>
+            <span>Paris · mobilité Île-de-France</span>
+            <span>linkedin.com/in/marc-olivier-kamga-simo</span>
+          </div>
+        </section>
+
+        <section>
+          <h2>Formation</h2>
+          <div class="mini">
+            <div class="mini-title">Cycle Ingénieur · Réseaux, Cybersécurité, Cloud &amp; DevOps (Bac+5)</div>
+            <div class="mini-sub">EFREI Paris · Villejuif</div>
+            <div class="mini-date">09/2025 – 07/2027</div>
+          </div>
+          <div class="mini">
+            <div class="mini-title">Bachelor Informatique (Bac+3)</div>
+            <div class="mini-sub">EFREI Paris</div>
+            <div class="mini-date">09/2024 – 07/2025</div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Compétences</h2>
+          <div class="side-group">
+            <h3>Conseil &amp; delivery</h3>
+            <div class="badges">
+              <span class="badge">Analyse du besoin</span><span class="badge">Conception de solutions</span><span class="badge">Rédaction de livrables</span>
+              <span class="badge">Animation d'ateliers</span><span class="badge">Amélioration continue</span><span class="badge">Run / support</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Compétences techniques</h3>
+            <div class="badges">
+              <span class="badge">Full-stack (Node.js / TS, Python)</span><span class="badge">SQL / bases de données</span><span class="badge">Cloud (AWS / Azure)</span>
+              <span class="badge">DevOps (Docker, CI/CD)</span><span class="badge">IA / LLM</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Cybersécurité &amp; réseaux</h3>
+            <div class="badges">
+              <span class="badge">Sécurité des SI</span><span class="badge">Réseaux</span><span class="badge">Pare-feu</span>
+              <span class="badge">SOC / SIEM</span><span class="badge">CSNA Stormshield</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Savoir-être</h3>
+            <div class="badges">
+              <span class="badge">Intelligence relationnelle</span><span class="badge">Proactivité</span><span class="badge">Goût tech &amp; innovation</span>
+              <span class="badge">Esprit d'équipe</span><span class="badge">Implication</span><span class="badge">Curiosité</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Certifications</h2>
+          <div class="lc-row"><b>CSNA · Stormshield</b><span>2025 · 89%</span></div>
+          <div class="lc-row"><b>Cisco Junior Cyber. Analyst</b><span>2025</span></div>
+          <div class="lc-row"><b>TOEIC · Anglais B2</b><span>2025 · 770</span></div>
+        </section>
+
+        <section>
+          <h2>Langues</h2>
+          <div class="lc-row"><b>Français</b><span>Langue maternelle</span></div>
+          <div class="lc-row"><b>Anglais</b><span>B2 · écrit &amp; oral</span></div>
+        </section>
+
+        <section>
+          <h2>Centres d'intérêt</h2>
+          <div class="hobbies">
+            <span class="hobby">Basketball</span>
+            <span class="hobby">Football</span>
+            <span class="hobby">Canoë-kayak</span>
+          </div>
+        </section>
+      </aside>
+
+    </div>
+  </div>
+</body>
+</html>

@@ -2,8 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Clock, CheckSquare, StickyNote, Zap, MessageSquare, Trash2,
-  Target, Package, Brain, Network, FileText, BarChart3, Settings as SettingsIcon, ChevronUp,
+  Loader2, Clock, CheckSquare, StickyNote, Zap, MessageSquare, Trash2, ChevronUp,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
@@ -17,7 +16,8 @@ import {
   type CrmObject, type CrmProperty, type CrmRecord, type RelatedDisplay,
 } from "./objectModel";
 import { actionsForSlug } from "./objectActions";
-import { AgentTabContent, type InternalAgentTab } from "@/features/internal-agents/InternalAgentDetail";
+import { AgentTabContent, INTERNAL_AGENT_TABS, type InternalAgentTab } from "@/features/internal-agents/InternalAgentDetail";
+import { useRegisterTopbarBreadcrumb, type Crumb } from "@/components/layout/TopbarBreadcrumb";
 
 // Full-screen Attio-style record view: left = grouped fields + clickable
 // relations, center = tabs (Content / Timeline / Tasks / Notes). Route:
@@ -57,19 +57,12 @@ export function RecordViewPage() {
   const displays = dispQ.data ?? {};
   const targetSlugs = slugQ.data ?? {};
 
-  // Tabs are type-aware: an autonomous agent shows its real tabs (Chat /
-  // Missions / Deliverables / …) embedded in this CRM view (no redirect).
+  // Tabs are type-aware: an autonomous agent shows its real tabs embedded in this
+  // CRM view (no redirect). The tab set is calqued 1:1 on the agent detail page
+  // (INTERNAL_AGENT_TABS) so the CRM never drifts from the canonical agent UI —
+  // Deliverables/Artifacts live under Missions and Instructions/Skills/Memory/
+  // Connectors under Personnaliser as sub-tabs, exactly like the real view.
   const isAgent = objectSlug === "autonomous_agents";
-  const AGENT_TAB_DEFS = [
-    { key: "chat", label: "Chat", icon: MessageSquare },
-    { key: "mission", label: "Missions", icon: Target },
-    { key: "deliverables", label: "Deliverables", icon: Package },
-    { key: "memory", label: "Memory", icon: Brain },
-    { key: "collaboration", label: "Collaboration", icon: Network },
-    { key: "instructions", label: "Instructions", icon: FileText },
-    { key: "analytics", label: "Analytics", icon: BarChart3 },
-    { key: "settings", label: "Settings", icon: SettingsIcon },
-  ] as const;
   const [tab, setTab] = useState<string>(isAgent ? "chat" : hasContent(objectSlug) ? "content" : "timeline");
 
   const grouped = useMemo(() => {
@@ -77,6 +70,19 @@ export function RecordViewPage() {
     const rels = properties.filter((p) => p.type === "relation");
     return { fields, rels };
   }, [properties]);
+
+  // Publish this record's breadcrumb into the main navbar (instead of a separate
+  // breadcrumb bar inside the page): "<Object plural> / <Record title>".
+  const crumbs = useMemo<Crumb[] | null>(() => {
+    if (!object || !record) return null;
+    const tKey = properties.find((p) => p.is_title)?.key ?? "name";
+    const t = String(record.data[tKey] ?? "Untitled");
+    return [
+      { label: object.label_plural ?? object.label, to: `${base}/${object.slug}`, icon: iconByName(object.icon) },
+      { label: t },
+    ];
+  }, [object, record, properties, base]);
+  useRegisterTopbarBreadcrumb(crumbs);
 
   if (objQ.isLoading || recQ.isLoading) return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   if (!object || !record) return <EmptyState icon={MessageSquare} title="Record not found" />;
@@ -92,7 +98,7 @@ export function RecordViewPage() {
 
   const actions = actionsForSlug(objectSlug);
   const TABS = isAgent
-    ? AGENT_TAB_DEFS.map((t) => ({ key: t.key as string, label: t.label, icon: t.icon }))
+    ? INTERNAL_AGENT_TABS.map((t) => ({ key: t.slug as string, label: t.label, icon: t.icon }))
     : [
         ...(hasContent(objectSlug) ? [{ key: "content", label: object.label, icon: Icon }] : []),
         { key: "timeline", label: "Timeline", icon: Clock },
@@ -102,15 +108,7 @@ export function RecordViewPage() {
 
   return (
     <div className="flex h-full w-full flex-col">
-      {/* Breadcrumb header (e.g. "Opportunities / API Integration Deal") */}
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-sm">
-        <button onClick={() => navigate(`${base}/${object.slug}`)} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-          <Icon className={cn("h-4 w-4 opacity-70", object.color)} /> {object.label_plural ?? object.label}
-        </button>
-        <span className="text-muted-foreground/50">/</span>
-        <span className="min-w-0 truncate font-medium">{title}</span>
-      </div>
-
+      {/* Breadcrumb now lives in the main navbar (see useRegisterTopbarBreadcrumb). */}
       <div className="flex min-h-0 flex-1">
       {/* Left: fields + relations */}
       <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-r border-border bg-card/30">
@@ -173,7 +171,7 @@ export function RecordViewPage() {
 
       {/* Center: tabs */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-1 border-b border-border px-6 lg:px-10">
+        <div className="flex items-center gap-1 border-b border-border px-3 lg:px-5">
           {TABS.map((t) => {
             const TI = t.icon;
             return (
@@ -188,9 +186,9 @@ export function RecordViewPage() {
             <span className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground"><Zap className="h-3 w-3" /> {actions.length} action{actions.length > 1 ? "s" : ""} in the panel</span>
           )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 lg:px-10">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 lg:px-5">
           {isAgent && record.source_id ? (
-            <AgentTabContent agentId={record.source_id} tab={tab as InternalAgentTab} />
+            <AgentTabContent agentId={record.source_id} tab={tab as InternalAgentTab} embedded />
           ) : (
           <>
           {tab === "content" && <RecordContent object={object} record={record} />}

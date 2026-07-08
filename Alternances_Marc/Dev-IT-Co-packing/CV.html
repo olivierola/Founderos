@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CV · Kamga Marc Olivier · Développeur Full-Stack</title>
+<style>
+  :root{
+    --accent:#334155;
+    --accent-tint:#EDF0F4;
+    --accent-tint-2:#D3DAE3;
+    --ink:#1f2730;
+    --muted:#5f6b7a;
+    --line:#e2e8f0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Arial,sans-serif;
+    color:var(--ink);background:#eef1f5;line-height:1.5;font-size:13px;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .page{max-width:880px;margin:18px auto;background:#fff;padding:16px 16px 16px}
+
+  /* ---- Print button ---- */
+  .toolbar{position:fixed;top:18px;right:18px;z-index:50}
+  .btn-pdf{
+    background:var(--accent);color:#fff;border:none;padding:11px 20px;border-radius:9px;
+    font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(51,65,85,.32);
+    font-family:inherit;letter-spacing:.2px}
+  .btn-pdf:hover{background:#232f3e}
+
+  /* ---- Header (full width) ---- */
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;
+    border-bottom:2.5px solid var(--accent);padding-bottom:11px;margin-bottom:14px}
+  .name{font-size:28px;font-weight:800;letter-spacing:.5px;color:var(--ink);line-height:1.05}
+  .role{font-size:13.2px;color:var(--accent);font-weight:700;margin-top:5px;text-transform:uppercase;letter-spacing:.6px}
+  .seek{font-size:12px;color:#45505f;margin-top:5px;font-weight:500}
+  .avail{flex-shrink:0;text-align:center;background:var(--accent-tint);color:var(--accent);
+    border:1px solid var(--accent-tint-2);border-radius:9px;padding:9px 13px;font-weight:700;font-size:12px;line-height:1.4}
+  .avail small{display:block;font-weight:500;color:var(--muted);font-size:10.5px;margin-top:2px}
+
+  /* ---- Two-column body (float, print-robust) ---- */
+  .cols{display:block;position:relative}
+  .cols::after{content:"";display:block;clear:both}
+  .cols::before{content:"";position:absolute;top:0;bottom:0;left:243px;width:1px;background:var(--accent-tint-2)}
+  aside{float:left;width:230px}
+  main{float:right;width:calc(100% - 256px)}
+  main section{margin-top:15px}
+  main .entry{margin-bottom:15px}
+  main .profile{margin-bottom:6px}
+
+  /* ---- Section headers ---- */
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);
+    border-bottom:1.5px solid var(--line);padding-bottom:2px;margin-bottom:6px;font-weight:800}
+  section{margin-top:8px}
+  section:first-child{margin-top:0}
+
+  /* ---- Profile ---- */
+  .profile{font-size:12.3px;color:#3a4250;text-align:justify;line-height:1.46;
+    border-left:3px solid var(--accent-tint-2);padding-left:13px;margin-bottom:2px}
+
+  /* ---- Entries (experience + projects) ---- */
+  .entry{margin-bottom:9px;page-break-inside:avoid}
+  .entry:last-child{margin-bottom:0}
+  .entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .entry-title{font-size:13px;font-weight:700;color:var(--ink)}
+  .entry-date{font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap}
+  .entry-sub{font-size:11.6px;color:var(--accent);font-weight:600;margin:1px 0 4px}
+  ul{list-style:none;margin:0}
+  li{position:relative;padding-left:15px;font-size:12.1px;color:#37404d;margin-bottom:3px;line-height:1.5}
+  li::before{content:"";position:absolute;left:2px;top:7px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  li b{color:var(--ink)}
+
+  .badges{margin-top:4px;display:flex;flex-wrap:wrap;gap:3px}
+  .badge{background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent-tint-2);
+    border-radius:6px;padding:1.5px 7px;font-size:9.8px;font-weight:600;line-height:1.4;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+
+  /* ---- Formation ---- */
+  .mini{margin-bottom:8px}
+  .mini-title{font-size:12.4px;font-weight:700;color:var(--ink)}
+  .mini-sub{font-size:11.4px;color:var(--muted)}
+  .mini-date{font-size:11px;color:var(--accent);font-weight:600}
+  aside .mini{margin-bottom:4px}
+  aside .mini-title{font-size:11.4px;line-height:1.28}
+  aside .mini-sub{font-size:10.8px}
+
+  /* ---- Sidebar ---- */
+  aside h2{font-size:11px}
+  .contact-list{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:#3a4250}
+  .contact-list b{color:var(--accent);font-weight:700}
+
+  .side-group{margin-bottom:4px}
+  .side-group:last-child{margin-bottom:0}
+  .side-group h3{font-size:10px;color:var(--ink);font-weight:800;margin-bottom:2px;text-transform:uppercase;letter-spacing:.3px}
+
+  .lc-row{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:2px 0;border-bottom:1px dashed var(--line)}
+  .lc-row:last-child{border-bottom:none}
+  .lc-row b{color:var(--ink);font-weight:700}
+  .lc-row span{color:var(--muted);white-space:nowrap}
+
+  .hobbies{display:flex;flex-wrap:wrap;gap:4px}
+  .hobby{background:#fff;border:1px solid var(--accent-tint-2);border-radius:20px;padding:2.5px 9px;font-size:11px;color:var(--ink)}
+
+  @media print{
+    body{background:#fff;font-size:10.8px}
+    .page{margin:0;max-width:none;padding:7mm 7mm 4mm;width:100%}
+    .toolbar{display:none!important}
+    @page{size:A4;margin:0}
+    .badge{border-color:#c4cdd8}
+    aside{width:214px}
+    main{width:calc(100% - 236px)}
+    .cols::before{left:225px}
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn-pdf" onclick="window.print()">Exporter en PDF</button>
+  </div>
+
+  <div class="page">
+    <header>
+      <div>
+        <div class="name">KAMGA MARC OLIVIER</div>
+        <div class="role">Développeur Full-Stack · Alternance</div>
+        <div class="seek">Recherche une alternance en développement informatique</div>
+      </div>
+      <div class="avail">
+        Disponible dès septembre 2026
+        <small>Alternance 1 ou 2 ans · 3 semaines en entreprise / 1 semaine en école</small>
+      </div>
+    </header>
+
+    <div class="cols">
+
+      <!-- ====== MAIN (right) ====== -->
+      <main>
+        <p class="profile">
+          Développeur dans l'âme, j'aime partir d'un besoin métier pour le transformer en une solution qui tourne réellement
+          en production. De mes projets académiques à mon propre SaaS, je code en full-stack (Node.js / TypeScript, Python),
+          je modélise et j'interroge des bases SQL, et je teste ce que je livre. Étudiant ingénieur à l'EFREI Paris (M1
+          Réseaux, Cybersécurité, Cloud &amp; DevOps), curieux et exigeant, je cherche une alternance pour approfondir des
+          technologies comme SQL / PL-SQL, PHP, C# et Node.js sur des projets concrets. Ce que je veux apporter à l'équipe IT
+          Co-packing : de la rigueur, de la réactivité, un bon relationnel et l'envie d'analyser les outils existants pour
+          proposer des améliorations utiles aux utilisateurs.
+        </p>
+
+        <section>
+          <h2>Expériences professionnelles</h2>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Technicien support &amp; systèmes · Stage</span>
+              <span class="entry-date">Juin – Août 2023</span>
+            </div>
+            <div class="entry-sub">CyberCafe · Yaoundé, Cameroun</div>
+            <ul>
+              <li><b>Support utilisateurs :</b> analyse des besoins et résolution d'incidents N1 / N2.</li>
+              <li><b>Outils &amp; postes :</b> configuration et maintenance des outils pour 20+ postes.</li>
+              <li><b>Automatisation :</b> scripts d'exploitation (Bash) pour fiabiliser les tâches répétitives.</li>
+              <li><b>Documentation :</b> rédaction de procédures et de bonnes pratiques.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Support</span><span class="badge">Analyse des besoins</span><span class="badge">Scripts</span>
+              <span class="badge">Documentation</span>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Analyste IT · SOC &amp; GRC · Stage</span>
+              <span class="entry-date">Juin – Août 2024</span>
+            </div>
+            <div class="entry-sub">CAMRAIL (Cameroon Railways) · Douala, Cameroun</div>
+            <ul>
+              <li><b>Analyse :</b> exploitation de données et d'alertes, restitution via des rapports clairs.</li>
+              <li><b>Amélioration continue :</b> participation à l'optimisation des processus et procédures.</li>
+              <li><b>Relationnel :</b> collaboration avec des équipes et des métiers variés.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Analyse de données</span><span class="badge">Reporting</span>
+              <span class="badge">Amélioration des processus</span><span class="badge">Collaboration</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Projets de développement</h2>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">FounderOS · SaaS full-stack (que j'entreprends)</span>
+              <span class="entry-date">2025 → présent</span>
+            </div>
+            <div class="entry-sub">Projet entrepreneurial en production · Fondateur · Solo</div>
+            <ul>
+              <li>Conception et développement full-stack d'un SaaS de bout en bout (React / TypeScript, Node, API REST).</li>
+              <li>Modélisation et requêtes de base de données (PostgreSQL / SQL), gestion et sécurisation des données.</li>
+              <li>Développement et test de nouvelles fonctionnalités, intégration de briques IA (LLM / RAG).</li>
+              <li>Mise en production : CI/CD GitHub Actions, déploiement et supervision.</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">TypeScript / Node.js</span><span class="badge">React</span><span class="badge">PostgreSQL / SQL</span>
+              <span class="badge">API REST</span><span class="badge">CI/CD</span><span class="badge">Tests</span>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-head">
+              <span class="entry-title">Architecture multi-services &amp; pipeline CI/CD</span>
+              <span class="entry-date">2025</span>
+            </div>
+            <div class="entry-sub">Projet académique · AGH University, Cracovie</div>
+            <ul>
+              <li>Conception d'une architecture multi-services : frontend, backend et base de données.</li>
+              <li>Conteneurisation Docker (docker-compose) et pipeline CI/CD : lint → tests → build → déploiement.</li>
+              <li>Réponses à des problématiques d'architecture et de qualité (tests automatisés).</li>
+            </ul>
+            <div class="badges">
+              <span class="badge">Architecture</span><span class="badge">Docker</span><span class="badge">CI/CD</span>
+              <span class="badge">Tests</span><span class="badge">SQL</span><span class="badge">Git</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ====== SIDEBAR (left) ====== -->
+      <aside>
+        <section>
+          <h2>Contact</h2>
+          <div class="contact-list">
+            <b>kamgaolivier104@gmail.com</b>
+            <span>+33 7 44 41 92 95</span>
+            <span>Paris · mobilité Île-de-France</span>
+            <span>linkedin.com/in/marc-olivier-kamga-simo</span>
+          </div>
+        </section>
+
+        <section>
+          <h2>Formation</h2>
+          <div class="mini">
+            <div class="mini-title">Cycle Ingénieur · Réseaux, Cybersécurité, Cloud &amp; DevOps (Bac+5)</div>
+            <div class="mini-sub">EFREI Paris · Villejuif</div>
+            <div class="mini-date">09/2025 – 07/2027</div>
+          </div>
+          <div class="mini">
+            <div class="mini-title">Bachelor Informatique (Bac+3)</div>
+            <div class="mini-sub">EFREI Paris</div>
+            <div class="mini-date">09/2024 – 07/2025</div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Compétences</h2>
+          <div class="side-group">
+            <h3>Langages &amp; développement</h3>
+            <div class="badges">
+              <span class="badge">TypeScript / Node.js</span><span class="badge">JavaScript</span><span class="badge">Python</span>
+              <span class="badge">SQL / PL-SQL</span><span class="badge">PHP</span><span class="badge">C#</span><span class="badge">HTML / CSS</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Bases de données &amp; back-end</h3>
+            <div class="badges">
+              <span class="badge">PostgreSQL</span><span class="badge">MySQL</span><span class="badge">API REST</span>
+              <span class="badge">Modélisation</span><span class="badge">Supabase</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Outils &amp; DevOps</h3>
+            <div class="badges">
+              <span class="badge">Git / GitHub</span><span class="badge">Docker</span><span class="badge">CI/CD</span>
+              <span class="badge">Tests</span><span class="badge">Linux</span><span class="badge">IA / LLM</span>
+            </div>
+          </div>
+          <div class="side-group">
+            <h3>Transverses</h3>
+            <div class="badges">
+              <span class="badge">Rigueur</span><span class="badge">Exigence</span><span class="badge">Bon relationnel</span>
+              <span class="badge">Dynamisme</span><span class="badge">Réactivité</span><span class="badge">Curiosité</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Certifications</h2>
+          <div class="lc-row"><b>CSNA · Stormshield</b><span>2025 · 89%</span></div>
+          <div class="lc-row"><b>Cisco Junior Cyber. Analyst</b><span>2025</span></div>
+          <div class="lc-row"><b>TOEIC · Anglais B2</b><span>2025 · 770</span></div>
+        </section>
+
+        <section>
+          <h2>Langues</h2>
+          <div class="lc-row"><b>Français</b><span>Langue maternelle</span></div>
+          <div class="lc-row"><b>Anglais</b><span>B2 · TOEIC 770</span></div>
+        </section>
+
+        <section>
+          <h2>Centres d'intérêt</h2>
+          <div class="hobbies">
+            <span class="hobby">Basketball</span>
+            <span class="hobby">Football</span>
+            <span class="hobby">Canoë-kayak</span>
+          </div>
+        </section>
+      </aside>
+
+    </div>
+  </div>
+</body>
+</html>

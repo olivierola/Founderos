@@ -1,4 +1,6 @@
-import { NavLink, useLocation, useParams } from "react-router-dom";
+import { useMemo } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import {
   Activity,
   BarChart3,
@@ -43,7 +45,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { findModule, groupOfSlug, itemsInGroup } from "@/lib/navigation";
-import { cn } from "@/lib/utils";
+import { useRegisterTopbarTabs, type TopbarTab } from "./TopbarTabs";
 
 // A small icon per tab slug — keeps the bar visually close to the reference
 // design. Unknown slugs fall back to a neutral dot (no icon).
@@ -117,15 +119,25 @@ const TAB_ICONS: Record<string, LucideIcon> = {
   settings: SettingsIcon,
 };
 
+/** Pre-bind a Phosphor icon to its duotone weight so the Topbar (which only
+ *  passes className) still renders the premium two-tone glyph. */
+function duotone(I: PhosphorIcon) {
+  return function DuotoneTab({ className }: { className?: string }) {
+    return <I weight="duotone" className={className} />;
+  };
+}
+
 /**
- * Compact, in-page horizontal tab bar for `groupsAsTabs` modules (SaaS
- * Analytics). Renders the tabs for whichever group the active route belongs to.
- * Left-aligned, with a thin underline under the active tab. Returns null for
- * modules that don't use the groups-as-tabs layout, so it's safe to always mount.
+ * Tabs for `groupsAsTabs` modules (AI Ops & Governance). The tabs of whichever
+ * group (onglet) the active route belongs to are published INTO THE TOPBAR via
+ * the TopbarTabs context — nothing renders in the page body. Safe to always
+ * mount: it registers null (clearing the navbar) for modules without
+ * groups-as-tabs, single-tab groups, or unknown routes.
  */
 export function SubTabBar() {
   const { workspaceSlug = "default", projectSlug = "default" } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const segments = location.pathname.split("/").filter(Boolean);
   const appIdx = segments.indexOf("app");
@@ -134,42 +146,23 @@ export function SubTabBar() {
   const base = `/app/${workspaceSlug}/${projectSlug}`;
 
   const module = moduleSlug ? findModule(moduleSlug) : undefined;
-  if (!module || !module.groupsAsTabs || !activeSlug) return null;
+  const group = module?.groupsAsTabs && activeSlug ? groupOfSlug(module, activeSlug) : undefined;
 
-  const group = groupOfSlug(module, activeSlug);
-  if (!group) return null;
+  const tabs = useMemo<TopbarTab[] | null>(() => {
+    if (!module || !group) return null;
+    const items = itemsInGroup(module, group);
+    // A single-tab group (e.g. Vue d'ensemble) needs no tab bar.
+    if (items.length <= 1) return null;
+    return items.map((it) => ({
+      key: it.slug,
+      label: it.label,
+      icon: it.icon ? duotone(it.icon) : TAB_ICONS[it.slug],
+    }));
+  }, [module, group]);
 
-  const items = itemsInGroup(module, group);
-  // A single-tab group (e.g. Overview, Session Replay) needs no tab bar.
-  if (items.length <= 1) return null;
+  useRegisterTopbarTabs(tabs, activeSlug ?? "", (slug) => {
+    if (module) navigate(`${base}/${module.slug}/${slug}`);
+  });
 
-  return (
-    <div className="mb-5 flex items-center gap-1 overflow-x-auto border-b border-border">
-      {items.map((it) => {
-        const Icon = TAB_ICONS[it.slug];
-        return (
-          <NavLink
-            key={it.slug}
-            to={`${base}/${module.slug}/${it.slug}`}
-            className={({ isActive }) =>
-              cn(
-                "relative inline-flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors",
-                isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {Icon && <Icon className="h-4 w-4" />}
-                {it.label}
-                {isActive && (
-                  <span className="absolute -bottom-px left-2 right-2 h-0.5 rounded-t bg-[hsl(var(--primary-soft))]" />
-                )}
-              </>
-            )}
-          </NavLink>
-        );
-      })}
-    </div>
-  );
+  return null;
 }

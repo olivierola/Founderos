@@ -880,7 +880,7 @@ function Kpi({ label, value, active }: { label: string; value: string; active?: 
   return (
     <div className={`min-w-0 px-4 py-3 ${active ? "border-b-2 border-primary" : ""}`}>
       <div className="truncate text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
+      <div className="font-stat-number mt-1 text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
@@ -906,7 +906,7 @@ function StatCard({ title, value, hint }: { title: string; value: string; hint?:
     <Card>
       <CardContent className="p-4">
         <div className="text-sm font-medium">{title}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+        <div className="font-stat-number mt-1 text-2xl font-semibold tabular-nums">{value}</div>
         {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
       </CardContent>
     </Card>

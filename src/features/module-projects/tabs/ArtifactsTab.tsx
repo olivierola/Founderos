@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Plus, Trash2, FileText, Code2, Image, FlaskConical, TestTube2, BarChart3,
   Shield, Package, ExternalLink, ChevronDown, Search, Bot, BrainCircuit,
-  Loader2, Check, AlertTriangle, Activity,
+  Loader2, Check, AlertTriangle, Activity, ListTree,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,7 +72,7 @@ export function ArtifactsTab({ moduleProject: mp }: { moduleProject: ModuleProje
         .order("created_at", { ascending: false }).limit(10);
       const { data: events } = runs?.length
         ? await supabase.from("internal_agent_run_events")
-            .select("id, run_id, kind, summary, created_at")
+            .select("id, run_id, kind, payload, created_at")
             .in("run_id", (runs ?? []).map((r: any) => r.id))
             .order("created_at", { ascending: true }).limit(50)
             .then((r) => r)
@@ -85,16 +85,36 @@ export function ArtifactsTab({ moduleProject: mp }: { moduleProject: ModuleProje
   const runSteps = (agentRuns?.runs ?? []).slice(0, 3).map((run: any): { agentName: string; agentEmoji: string; steps: PlanStep[] } => {
     const agent = (agentRuns?.agents ?? []).find((a: any) => a.id === run.agent_id) as any;
     const runEvents = (agentRuns?.events ?? []).filter((e: any) => e.run_id === run.id);
-    const steps: PlanStep[] = runEvents.map((ev: any, i: number): PlanStep => ({
-      id: ev.id,
-      title: ev.summary || ev.kind,
-      status: i === runEvents.length - 1 && run.status === "running" ? "active" : ev.kind === "error" ? "error" : "success",
-      icon: ev.kind === "tool_call" ? <Activity className="w-3.5 h-3.5" /> :
-            ev.kind === "llm_call" ? <BrainCircuit className="w-3.5 h-3.5" /> :
-            ev.kind === "error" ? <AlertTriangle className="w-3.5 h-3.5" /> :
-            <Check className="w-3.5 h-3.5" />,
-      duration: ev.created_at ? new Date(ev.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : undefined,
-    }));
+    const steps: PlanStep[] = runEvents.map((ev: any, i: number): PlanStep => {
+      const isPlan = ev.kind === "plan";
+      const taskCount = Array.isArray(ev.payload?.plan?.tasks) ? ev.payload.plan.tasks.length : 0;
+      const p = ev.payload ?? {};
+      const title = isPlan ? `Reasoned & planned · ${taskCount} task${taskCount === 1 ? "" : "s"}`
+        : ev.kind === "plan_step" ? `${p.step_id ?? "step"} → ${p.status ?? ""}`
+        : ev.kind === "tool_call" ? String(p.tool ?? p.name ?? "tool")
+        : ev.kind === "tool_error" ? "Incomplete tool call"
+        : ev.kind === "question" ? `Asked: ${String(p.question ?? "").slice(0, 60)}`
+        : ev.kind === "llm_call" ? "Reasoning"
+        : ev.kind === "status" || ev.kind === "log" ? String(p.message ?? ev.kind)
+        : ev.kind;
+      return {
+        id: ev.id,
+        title,
+        status: i === runEvents.length - 1 && run.status === "running" ? "active" : ev.kind === "error" ? "error" : "success",
+        icon: isPlan ? <ListTree className="w-3.5 h-3.5" /> :
+              ev.kind === "tool_call" ? <Activity className="w-3.5 h-3.5" /> :
+              ev.kind === "llm_call" ? <BrainCircuit className="w-3.5 h-3.5" /> :
+              ev.kind === "error" ? <AlertTriangle className="w-3.5 h-3.5" /> :
+              <Check className="w-3.5 h-3.5" />,
+        defaultExpanded: isPlan,
+        content: isPlan && ev.payload?.markdown ? (
+          <div className="text-[12px] mt-1 rounded-md bg-secondary/40 border border-border/50 p-2.5 whitespace-pre-wrap text-muted-foreground">
+            {String(ev.payload.markdown)}
+          </div>
+        ) : undefined,
+        duration: ev.created_at ? new Date(ev.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : undefined,
+      };
+    });
     if (run.status === "running" && steps.length === 0) {
       steps.push({ id: "init", title: "Initializing…", status: "active", icon: <Loader2 className="w-3.5 h-3.5" /> });
     }

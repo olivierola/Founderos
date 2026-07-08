@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { Menu, X, ArrowRight, Github } from "lucide-react";
+import { Menu, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/Logo";
+import { MarketingFooter } from "./MarketingFooter";
 
 const NAV_LINKS = [
   { to: "/features", label: "Features" },
@@ -16,6 +17,13 @@ export function MarketingShell({ children, hideHeader = false }: { children: Rea
   const [mobileOpen, setMobileOpen] = useState(false);
   const { pathname } = useLocation();
 
+  // Hide the window scrollbar for the whole marketing/landing site; restore it
+  // when navigating back into the app (dashboard) where the scrollbar is useful.
+  useEffect(() => {
+    document.documentElement.classList.add("mkt-no-scrollbar");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar");
+  }, []);
+
   return (
     <div className="dark marketing min-h-screen bg-background text-foreground">
       {/* Top nav — hidden when the page provides its own (e.g. the video hero). */}
@@ -24,7 +32,7 @@ export function MarketingShell({ children, hideHeader = false }: { children: Rea
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2">
             <Logo size={28} />
-            <span className="text-sm font-semibold tracking-tight">FounderOS</span>
+            <span className="text-sm font-semibold tracking-tight">RedAI</span>
             <span className="hidden text-[10px] uppercase text-muted-foreground sm:inline">for agencies</span>
           </Link>
 
@@ -115,79 +123,7 @@ export function MarketingShell({ children, hideHeader = false }: { children: Rea
       <main key={pathname}>{children}</main>
 
       {/* Footer */}
-      <footer className="border-t border-border/60 bg-background">
-        <div className="mx-auto grid max-w-6xl grid-cols-2 gap-8 px-4 py-12 sm:px-6 md:grid-cols-5">
-          <div className="col-span-2">
-            <div className="flex items-center gap-2">
-              <Logo size={28} />
-              <span className="text-sm font-semibold">FounderOS</span>
-            </div>
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              The cockpit agencies run on. Centralise every client SaaS — billing, infra, ops — in
-              one panel.
-            </p>
-          </div>
-          <FooterCol
-            title="Product"
-            links={[
-              { to: "/features", label: "Features" },
-              { to: "/integrations", label: "Integrations" },
-              { to: "/pricing", label: "Pricing" },
-              { to: "/changelog", label: "Changelog" },
-            ]}
-          />
-          <FooterCol
-            title="Resources"
-            links={[
-              { to: "/docs", label: "Docs" },
-              { to: "/contact", label: "Contact" },
-            ]}
-          />
-          <FooterCol
-            title="Company"
-            links={[
-              { to: "/contact", label: "Contact" },
-              { to: "/login", label: "Sign in" },
-              { to: "/signup", label: "Start free" },
-            ]}
-          />
-        </div>
-        <div className="border-t border-border/60">
-          <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:px-6">
-            <span>© {new Date().getFullYear()} FounderOS. All rights reserved.</span>
-            <div className="flex items-center gap-3">
-              <a
-                href="https://github.com/olivierola/Founderos"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 hover:text-foreground"
-              >
-                <Github className="h-3.5 w-3.5" />
-                Source
-              </a>
-            </div>
-          </div>
-        </div>
-      </footer>
-    </div>
-  );
-}
-
-function FooterCol({ title, links }: { title: string; links: { to: string; label: string }[] }) {
-  return (
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
-      </div>
-      <ul className="mt-3 space-y-2">
-        {links.map((l) => (
-          <li key={l.to}>
-            <Link to={l.to} className="text-sm text-muted-foreground hover:text-foreground">
-              {l.label}
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <MarketingFooter />
     </div>
   );
 }
