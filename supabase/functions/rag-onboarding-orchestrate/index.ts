@@ -46,6 +46,12 @@ interface OrchestrateBody {
     recent_event?: { type: string; data?: unknown };
     question?: string;
     completed_intents?: string[];
+    /** The end user's own stated objective ("help me connect my data"). */
+    user_goal?: string;
+    /** The user opted into voice from the widget this session. */
+    voice?: boolean;
+    /** The user asked the agent to act on their behalf ("do it for me"). */
+    copilot?: boolean;
   };
 }
 
@@ -68,13 +74,37 @@ Deno.serve(async (req) => {
     /* 1) Resolve agent + project. */
     const { data: agent } = await admin
       .from("rag_agents")
-      .select("id, workspace_id, project_id, persona, instructions, welcome_message, onboarding_enabled")
+      .select("id, workspace_id, project_id, persona, instructions, welcome_message, onboarding_enabled, onboarding_voice_enabled, onboarding_voice_model, onboarding_copilot_enabled")
       .eq("public_key", agent_public_key)
       .maybeSingle();
     if (!agent) return jsonResponse({ error: "Unknown agent" }, { status: 404 });
     if (!agent.onboarding_enabled) {
       return jsonResponse({ error: "Onboarding disabled for this agent" }, { status: 403 });
     }
+
+    /* 1b) Load the founder's active activation goals — the live agent drives the
+       user toward these (blended with the user's own stated objective). */
+    const { data: goalRows } = await admin
+      .from("onboarding_goals")
+      .select("objective, activation_event, constraints")
+      .eq("agent_id", agent.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(3);
+    const goals = (goalRows ?? []) as { objective: string; activation_event: string | null; constraints: Record<string, unknown> }[];
+    // Merge constraints across goals (tone/no_block/max_nudges) — most restrictive wins.
+    const mergedConstraints = goals.reduce<Record<string, unknown>>((acc, g) => {
+      const c = g.constraints ?? {};
+      if (c.tone && !acc.tone) acc.tone = c.tone;
+      if (c.no_block) acc.no_block = true;
+      if (typeof c.max_nudges_per_session === "number") {
+        acc.max_nudges_per_session = Math.min((acc.max_nudges_per_session as number) ?? Infinity, c.max_nudges_per_session);
+      }
+      return acc;
+    }, {});
+    const voiceOn = !!agent.onboarding_voice_enabled && !!body.context?.voice;
+    // Co-pilot: the agent may perform UI actions for the user (founder-enabled + user opt-in).
+    const copilotOn = !!agent.onboarding_copilot_enabled && !!body.context?.copilot;
 
     /* 2) Load the enriched app structure (latest scan). */
     const { data: scan } = await admin
@@ -106,6 +136,7 @@ Deno.serve(async (req) => {
     const systemPrompt = `You are an in-product onboarding agent for a SaaS application.
 ${agent.persona ? `Persona: ${agent.persona}` : ""}
 ${agent.instructions ? `Extra instructions: ${agent.instructions}` : ""}
+${goals.length ? `\nYour MISSION — proactively drive the user toward these founder-defined activation goals:\n${goals.map((g, i) => `  ${i + 1}. ${g.objective}${g.activation_event ? ` [activation event: ${g.activation_event}]` : ""}`).join("\n")}\nAt every turn, pick the single next action that most advances the nearest goal.` : ""}
 
 You drive the SaaS UI through a small set of commands. Your reply MUST be valid
 JSON with this exact shape (no prose, no fences):
@@ -119,7 +150,11 @@ JSON with this exact shape (no prose, no fences):
     | { "type": "scroll_to",  "selector": string }
     | { "type": "tooltip",    "selector": string, "text": string }
     | { "type": "celebrate",  "message"?: string }
-    | { "type": "wait_event", "event": string }
+    | { "type": "wait_event", "event": string }${copilotOn ? `
+    | { "type": "click",      "selector": string }
+    | { "type": "fill",       "selector": string, "value": string }
+    | { "type": "select",     "selector": string, "value": string }
+    | { "type": "submit",     "selector": string }` : ""}
   ],
   "next_intent": string                  // what you expect the user to do next (free text)
 }
@@ -131,7 +166,9 @@ Rules:
 - If you don't yet know enough, just respond with a short text and one
   "wait_event" action.
 - Keep "text" short. Never repeat what a popup will already show.
-- Cap actions to 4.`;
+- Cap actions to 4.
+- To point at a button/control the user must click, use "highlight" (or
+  "tooltip") on its selector — this is your primary guidance tool.${mergedConstraints.tone ? `\n- Tone: ${mergedConstraints.tone}.` : ""}${mergedConstraints.no_block ? `\n- Do NOT block the screen: prefer "highlight"/"tooltip" over modal "popup".` : ""}${voiceOn ? `\n- Voice is ON: keep "text" to one short spoken sentence, natural and conversational (it will be read aloud). Put visual detail in actions, not in text.` : ""}${copilotOn ? `\n- CO-PILOT is ON: you MAY use click/fill/select/submit to complete a step FOR the user, then briefly say what you did. NEVER auto-perform destructive or irreversible actions (delete, pay, send, publish, invite-with-charge) — for those, "highlight" the control and let the user confirm.` : ""}`;
 
     const userPrompt = `App structure (semantic map of the SaaS UI):
 ${appStructure ? JSON.stringify(appStructure).slice(0, 6000) : "[not available — enrich it from a code scan]"}
@@ -144,6 +181,7 @@ User context:
 - Last event: ${context.recent_event ? `${context.recent_event.type}` : "(none)"}
 - Completed intents this session: ${(context.completed_intents ?? []).join(", ") || "(none)"}
 - User question: ${context.question ?? "(none — proactively suggest the most useful next step)"}
+- User's own stated goal: ${context.user_goal ?? "(none — follow the founder's activation goals)"}
 
 Respond with the JSON object only.`;
 
@@ -174,6 +212,8 @@ Respond with the JSON object only.`;
       "tooltip",
       "celebrate",
       "wait_event",
+      // Co-pilot actions are only accepted when the mode is on.
+      ...(copilotOn ? ["click", "fill", "select", "submit"] : []),
     ]);
     const actions = (parsed.actions ?? [])
       .filter((a) => a && typeof a.type === "string" && allowed.has(a.type))
@@ -201,7 +241,11 @@ Respond with the JSON object only.`;
       text: safeText,
       actions,
       next_intent: parsed.next_intent,
-      debug: { model: ai.model, provider: ai.provider, retrieved_chunks: chunks.length },
+      // The widget speaks `text` via onboarding-voice (action "speak") when on.
+      voice: voiceOn ? { enabled: true, model: agent.onboarding_voice_model, speak: safeText } : { enabled: false },
+      // Co-pilot on → the widget executes click/fill/select/submit actions.
+      copilot: { enabled: copilotOn },
+      debug: { model: ai.model, provider: ai.provider, retrieved_chunks: chunks.length, goals: goals.length },
     });
   } catch (err) {
     return jsonResponse(

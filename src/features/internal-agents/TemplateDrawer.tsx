@@ -11,12 +11,12 @@ import { cn } from "@/lib/utils";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useProjectConnectors } from "@/hooks/useConnectors";
 import {
-  AGENT_TEMPLATES, type AgentTemplate, type AgentCategory, type AutonomyLevel, type TemplateTool,
+  AGENT_TEMPLATES, templateAvatar, type AgentTemplate, type AgentCategory, type AutonomyLevel, type TemplateTool,
 } from "./agentTemplates";
 import type { TemplateOverrides } from "./instantiateTemplate";
+import { AgentAvatar, AvatarPicker } from "./AvatarPicker";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
 
-const EMOJIS = ["🤖", "🧠", "🛠️", "🎯", "📊", "✍️", "🔍", "📦", "💼", "⚡", "🛡️", "💸", "🎧"];
 const ACCENTS = ["#2F2FE4", "#7c3aed", "#db2777", "#e11d48", "#ea580c", "#16a34a", "#0891b2", "#475569"];
 const AUTONOMY: { key: AutonomyLevel; label: string; desc: string }[] = [
   { key: "advisor", label: "Advisor", desc: "Proposes only — never acts on its own." },
@@ -116,8 +116,7 @@ function BrowseView({ onClose, onSelect }: { onClose: () => void; onSelect: (t: 
             <button key={t.key} onClick={() => onSelect(t)}
               className="group flex flex-col rounded-xl border border-border bg-card/40 p-4 text-left transition-colors hover:border-foreground/30">
               <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-lg"
-                  style={{ backgroundColor: t.accent + "22", color: t.accent }}>{t.emoji}</div>
+                <AgentAvatar url={templateAvatar(t)} className="h-10 w-10 shrink-0 rounded-md" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="truncate font-semibold leading-tight">{t.name}</h3>
@@ -153,7 +152,7 @@ function ConfigStepper({
   const [step, setStep] = useState(0);
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.tagline);
-  const [emoji, setEmoji] = useState(template.emoji);
+  const [avatar, setAvatar] = useState<string>(templateAvatar(template));
   const [accent, setAccent] = useState(template.accent);
   const [instructions, setInstructions] = useState(template.instructions);
   const [autonomy, setAutonomy] = useState<AutonomyLevel>(template.autonomy);
@@ -198,7 +197,7 @@ function ConfigStepper({
   async function activate() {
     setActivating(true);
     try {
-      await onActivate(template, { name, description, emoji, accent, instructions, autonomy, tools: selectedTools });
+      await onActivate(template, { name, description, avatar, accent, instructions, autonomy, tools: selectedTools });
     } finally {
       setActivating(false);
     }
@@ -211,7 +210,7 @@ function ConfigStepper({
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-base" style={{ backgroundColor: accent + "22", color: accent }}>{emoji}</div>
+          <AgentAvatar url={avatar} className="h-8 w-8 shrink-0 rounded-md" />
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">Configure: {template.name}</div>
             <div className="text-[11px] text-muted-foreground">Step {step + 1} of {STEPS.length} · {STEPS[step]}</div>
@@ -240,11 +239,7 @@ function ConfigStepper({
             <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Short description"><Input value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
             <Field label="Avatar">
-              <div className="flex flex-wrap gap-1.5">
-                {EMOJIS.map((e) => (
-                  <button key={e} onClick={() => setEmoji(e)} className={cn("flex h-9 w-9 items-center justify-center rounded-md border text-lg", emoji === e ? "border-primary bg-primary/10" : "border-border")}>{e}</button>
-                ))}
-              </div>
+              <AvatarPicker value={avatar} onChange={setAvatar} />
             </Field>
             <Field label="Accent">
               <div className="flex flex-wrap gap-2">
@@ -309,7 +304,7 @@ function ConfigStepper({
         {step === 4 && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-4">
-              <div className="flex h-11 w-11 items-center justify-center rounded-md text-xl" style={{ backgroundColor: accent + "22", color: accent }}>{emoji}</div>
+              <AgentAvatar url={avatar} className="h-11 w-11 shrink-0 rounded-md" />
               <div className="min-w-0">
                 <div className="font-semibold">{name}</div>
                 <div className="text-xs text-muted-foreground">{description}</div>

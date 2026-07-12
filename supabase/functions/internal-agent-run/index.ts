@@ -45,6 +45,16 @@ interface AgentRow {
   collaboration_enabled: boolean;
   sandbox_mode: "cloud" | "runner" | "sandbox";
   sandbox_url: string | null;
+  /** When set, the agent's LLM calls route to this self-hosted OpenAI-compatible
+   *  endpoint (a RunPod-hosted model) instead of the default provider. */
+  hosted_endpoint_url: string | null;
+  hosted_model: string | null;
+}
+
+/** Build the ai.ts endpoint override for an agent pinned to a hosted model. */
+function hostedEndpoint(agent: AgentRow): { baseUrl: string; apiKey?: string; model?: string } | undefined {
+  if (!agent.hosted_endpoint_url) return undefined;
+  return { baseUrl: agent.hosted_endpoint_url, apiKey: Deno.env.get("RUNPOD_VLLM_API_KEY") ?? "", model: agent.hosted_model || undefined };
 }
 
 // Rough per-1k-token rates (USD). Adjust as providers change pricing.
@@ -331,7 +341,7 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url")
+      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, hosted_endpoint_url, hosted_model")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -1422,6 +1432,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
     const result = await runToolRounds({
       provider: (state.provider as "groq" | "deepseek") || providerFor(agent),
       model: state.model || undefined,
+      endpoint: hostedEndpoint(agent),
       messages, tools: defs, executor: loggingExecutor,
       temperature: agent.temperature, maxTokens: 4000, maxRounds: TICK_ROUNDS,
       onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
@@ -1514,6 +1525,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
           const fin = await runToolRounds({
             provider: (state.provider as "groq" | "deepseek") || providerFor(agent),
             model: state.model || undefined,
+            endpoint: hostedEndpoint(agent),
             messages, tools: defs, executor: loggingExecutor,
             temperature: agent.temperature, maxTokens: 4000, maxRounds: 5,
             onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
@@ -1664,37 +1676,71 @@ async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Mobile companion app. Authenticated by (agent_id + secret), then dispatched on
-// `action`. Uses the SAME agent + conversation store as the web chat, so memory,
-// tools and past sessions are shared. Actions:
+// Mobile companion app. Two ways in — a logged-in FounderOS **account** (user JWT
+// in Authorization) which unlocks every agent the user can access, or the legacy
+// per-agent **secret** which unlocks that one agent. Then dispatched on `action`,
+// using the SAME agent + conversation store as the web chat (shared memory, tools,
+// past sessions). Actions:
+//   list_agents         → (account only) the agents this user can talk to
 //   verify              → credentials check (registration)
 //   list_conversations  → the agent's recent conversations
 //   get_messages        → messages of a conversation (+ whether a run is running)
 //   send                → append the user message and run the real agentic chat
-// Body: { agent_id, secret, action?, conversation_id?, message?, verify? }
-async function handleMobile(body: Record<string, unknown>): Promise<Response> {
+// Body: { agent_id?, secret?, action?, conversation_id?, message?, verify? }
+async function handleMobile(body: Record<string, unknown>, authHeader: string | null): Promise<Response> {
   const admin = createServiceClient();
   const agentId = String(body.agent_id ?? "");
-  const secret = String(body.secret ?? "");
-  if (!agentId || !secret) {
-    return jsonResponse({ error: "agent_id and secret required" }, { status: 400 });
-  }
-
-  // ── Authenticate by (agent_id, secret) ──
-  const { data: sec } = await admin
-    .from("internal_agents")
-    .select("mobile_secret_hash, mobile_enabled, is_archived")
-    .eq("id", agentId)
-    .maybeSingle();
-  if (!sec || sec.is_archived) return jsonResponse({ error: "unknown agent" }, { status: 404 });
-  if (!sec.mobile_enabled || !sec.mobile_secret_hash) {
-    return jsonResponse({ error: "mobile access is disabled for this agent" }, { status: 403 });
-  }
-  if ((await sha256Hex(secret)) !== sec.mobile_secret_hash) {
-    return jsonResponse({ error: "invalid secret" }, { status: 401 });
-  }
-
+  const secret = body.secret ? String(body.secret) : "";
   const action = String(body.action ?? (body.verify ? "verify" : "send"));
+
+  // ── Resolve the caller ──
+  // No secret → account mode: authenticate the FounderOS user from the JWT.
+  let userId: string | null = null;
+  let userClient: ReturnType<typeof createUserClient> | null = null;
+  if (!secret) {
+    userClient = createUserClient(authHeader);
+    const { data: u } = await userClient.auth.getUser();
+    if (!u?.user) return jsonResponse({ error: "authentication required" }, { status: 401 });
+    userId = u.user.id;
+  }
+
+  // ── Account-only: list every agent this user can talk to (RLS-scoped) ──
+  if (action === "list_agents") {
+    if (!userClient) return jsonResponse({ error: "account required" }, { status: 401 });
+    const { data, error } = await userClient
+      .from("internal_agents")
+      .select("id, name, avatar_url, avatar_emoji, accent_color, description, updated_at")
+      .eq("is_archived", false)
+      .order("updated_at", { ascending: false })
+      .limit(100);
+    if (error) return jsonResponse({ error: error.message }, { status: 500 });
+    return jsonResponse({ agents: data ?? [] });
+  }
+
+  // Every other action is agent-scoped.
+  if (!agentId) return jsonResponse({ error: "agent_id required" }, { status: 400 });
+
+  // ── Authorize this agent for the caller (secret hash OR account access) ──
+  if (secret) {
+    const { data: sec } = await admin
+      .from("internal_agents")
+      .select("mobile_secret_hash, mobile_enabled, is_archived")
+      .eq("id", agentId)
+      .maybeSingle();
+    if (!sec || sec.is_archived) return jsonResponse({ error: "unknown agent" }, { status: 404 });
+    if (!sec.mobile_enabled || !sec.mobile_secret_hash) {
+      return jsonResponse({ error: "mobile access is disabled for this agent" }, { status: 403 });
+    }
+    if ((await sha256Hex(secret)) !== sec.mobile_secret_hash) {
+      return jsonResponse({ error: "invalid secret" }, { status: 401 });
+    }
+  } else {
+    const { data: allowed } = await admin.rpc("has_internal_agent_access", {
+      p_agent_id: agentId,
+      p_user_id: userId,
+    });
+    if (!allowed) return jsonResponse({ error: "not authorized for this agent" }, { status: 403 });
+  }
 
   if (action === "verify") return jsonResponse({ ok: true });
 
@@ -1799,11 +1845,11 @@ Deno.serve(async (req) => {
       return await runMissionTick(run_id, typeof msg_id === "number" ? msg_id : null);
     }
 
-    // Mobile companion app: authenticated by the agent's own (id + secret), NOT a
-    // user JWT. Dispatches on body.action (verify / list_conversations /
-    // get_messages / send) using the same agent + conversation store as the web.
+    // Mobile companion app: authenticated by a FounderOS account (user JWT) or the
+    // agent's own (id + secret). Dispatches on body.action (list_agents / verify /
+    // list_conversations / get_messages / send), same store as the web chat.
     if (mode === "mobile" || mode === "mobile_chat") {
-      return await handleMobile(body);
+      return await handleMobile(body, authHeader);
     }
 
     if (!agent_id || !mode) {

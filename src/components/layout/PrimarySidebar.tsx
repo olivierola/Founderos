@@ -5,11 +5,13 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useShellNav } from "./AppShell";
 import { useAssistant } from "@/lib/assistant-context";
+import { useActiveDashboard } from "./useActiveDashboard";
 
 export function PrimarySidebar() {
   const { workspaceSlug = "default", projectSlug = "default" } = useParams();
   const location = useLocation();
   const assistant = useAssistant();
+  const activeDashboard = useActiveDashboard();
   // Expand/collapse is shared shell state, driven from the logo (hover) in the
   // navbar; here we only read the width.
   const { primaryExpanded: expanded } = useShellNav();
@@ -82,7 +84,7 @@ export function PrimarySidebar() {
             The expand control now lives on the logo (hover) in the navbar. */}
         <nav className={cn("scrollbar-slim flex-1 overflow-y-auto", expanded ? "px-3 py-3" : "px-2 py-3")}>
           {ZONES.map((zone, zi) => {
-            const mods = modulesInZone(zone.id);
+            const mods = modulesInZone(zone.id, activeDashboard);
             if (mods.length === 0) return null;
             return (
               <div

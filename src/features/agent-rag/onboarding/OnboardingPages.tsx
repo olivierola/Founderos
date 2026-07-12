@@ -25,6 +25,10 @@ import { formatCompact, cn } from "@/lib/utils";
 import { AgentPicker } from "./AgentPicker";
 import { FlowEditor } from "./FlowEditor";
 
+// The selected agent stays in sync across the module's onglets (and survives a
+// refresh) because AgentPicker mirrors the selection to the URL (`?a=`) and
+// restores it on mount — so each page just needs plain local state.
+
 /* ============================================================ */
 /*  Overview — landing page for /agent/onboarding                */
 /* ============================================================ */

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radius } from "@/lib/theme";
+import { colors, radius, shadow } from "@/lib/theme";
 
 export function Composer({
   onSend, sending, disabled, placeholder = "Message…",
@@ -37,15 +37,15 @@ export function Composer({
         disabled={!canSend}
         style={({ pressed }) => [
           styles.send,
-          !canSend && styles.sendDisabled,
-          pressed && canSend && { opacity: 0.85 },
+          canSend ? shadow.glow : styles.sendDisabled,
+          pressed && canSend && { opacity: 0.85, transform: [{ scale: 0.95 }] },
         ]}
         accessibilityLabel="Envoyer"
       >
         {sending ? (
-          <ActivityIndicator size="small" color="#fff" />
+          <ActivityIndicator size="small" color={colors.onPrimary} />
         ) : (
-          <Ionicons name="arrow-up" size={20} color="#fff" />
+          <Ionicons name="arrow-up" size={20} color={colors.onPrimary} />
         )}
       </Pressable>
     </View>
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
@@ -68,19 +68,19 @@ const styles = StyleSheet.create({
     flex: 1,
     maxHeight: 120,
     minHeight: 24,
-    paddingHorizontal: 8,
-    paddingVertical: Platform.OS === "ios" ? 6 : 2,
+    paddingHorizontal: 10,
+    paddingVertical: Platform.OS === "ios" ? 8 : 3,
     color: colors.text,
     fontSize: 15,
     lineHeight: 20,
   },
   send: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendDisabled: { backgroundColor: colors.border },
+  sendDisabled: { backgroundColor: colors.surfaceHi },
 });

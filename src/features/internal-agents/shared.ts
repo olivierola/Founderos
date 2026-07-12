@@ -28,6 +28,10 @@ export interface InternalAgent {
   collaboration_enabled: boolean;
   sandbox_mode: "cloud" | "runner" | "sandbox";
   sandbox_url: string | null;
+  // Optional self-hosted (RunPod) model routing — null = default provider.
+  hosted_endpoint_url: string | null;
+  hosted_model: string | null;
+  hosted_server_id: string | null;
   created_by: string;
   is_archived: boolean;
   created_at: string;

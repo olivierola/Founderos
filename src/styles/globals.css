@@ -593,6 +593,20 @@ html.mkt-no-scrollbar::-webkit-scrollbar {
 .chat-prose tbody tr:nth-child(even) { background: hsl(var(--muted) / 0.35); }
 .chat-prose td + td, .chat-prose th + th { border-left: 1px solid hsl(var(--border) / 0.6); }
 
+/* ── Document previews (Knowledge collections workspace) ─────────────────── */
+/* docx-preview lays out Word-like pages; center them and give the wrapper room. */
+.docx-host .docx-wrapper { background: transparent; padding: 0; }
+.docx-host .docx-wrapper > section.docx {
+  margin: 0 auto 1rem; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+/* Spreadsheet (SheetJS sheet_to_html) → a real bordered grid. */
+.sheet-preview table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 12px; color: #1f2937; }
+.sheet-preview th, .sheet-preview td {
+  border: 1px solid #d1d5db; padding: 4px 10px; white-space: nowrap; text-align: left; vertical-align: top;
+}
+.sheet-preview tr:first-child td { background: #f3f4f6; font-weight: 600; position: sticky; top: 0; }
+.sheet-preview td[data-t="n"] { text-align: right; font-variant-numeric: tabular-nums; }
+
 /* Print: when a report is on screen, isolate it for clean PDF export. */
 @media print {
   .no-print { display: none !important; }

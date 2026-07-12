@@ -26,7 +26,6 @@ const ACCENT_COLORS = [
   "#2F2FE4", "#7c3aed", "#db2777", "#e11d48",
   "#ea580c", "#16a34a", "#0891b2", "#475569",
 ];
-const EMOJIS = ["🤖", "🧠", "🛠️", "🎯", "📊", "✍️", "🔍", "📦", "💼", "⚡"];
 
 interface InternalAgent {
   id: string;
@@ -52,7 +51,6 @@ export function InternalAgentsListPage() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newEmoji, setNewEmoji] = useState(EMOJIS[0]);
   const [newAvatar, setNewAvatar] = useState<string | null>(AVATAR_OPTIONS[0]);
   const [newColor, setNewColor] = useState(ACCENT_COLORS[0]);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -111,7 +109,7 @@ export function InternalAgentsListPage() {
           project_id: projectId,
           name: newName.trim(),
           description: newDescription.trim() || null,
-          avatar_emoji: newEmoji,
+          avatar_emoji: null,
           avatar_url: newAvatar,
           accent_color: newColor,
           created_by: user.id,
@@ -123,7 +121,6 @@ export function InternalAgentsListPage() {
       setCreateOpen(false);
       setNewName("");
       setNewDescription("");
-      setNewEmoji(EMOJIS[0]);
       setNewAvatar(AVATAR_OPTIONS[0]);
       setNewColor(ACCENT_COLORS[0]);
       if (data) navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${data.id}/chat`);
@@ -180,6 +177,15 @@ export function InternalAgentsListPage() {
               onOpen={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${a.id}/chat`)}
             />
           ))}
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="group flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-dashed border-current transition-transform group-hover:scale-110">
+              <Plus className="h-6 w-6" />
+            </span>
+            <span className="text-sm font-medium">Nouvel agent</span>
+          </button>
         </div>
       )}
 
@@ -212,22 +218,6 @@ export function InternalAgentsListPage() {
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Avatar</label>
               <AvatarPicker value={newAvatar} onChange={setNewAvatar} />
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-[11px] text-muted-foreground">ou un emoji :</span>
-                {EMOJIS.map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    onClick={() => { setNewEmoji(e); setNewAvatar(null); }}
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded text-sm transition-colors",
-                      newAvatar === null && newEmoji === e ? "bg-foreground/10 ring-1 ring-foreground" : "bg-muted hover:bg-foreground/10",
-                    )}
-                  >
-                    {e}
-                  </button>
-                ))}
-              </div>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Accent</label>
@@ -293,7 +283,7 @@ function AgentCard({
             className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl shadow-sm ring-2 ring-card"
             style={{ outline: `1.5px solid ${accent}66` }}
           >
-            <AgentAvatar url={agent.avatar_url} emoji={agent.avatar_emoji} accent={accent} className="h-full w-full" />
+            <AgentAvatar url={agent.avatar_url} seed={agent.name} className="h-full w-full" />
           </div>
           {isMine && <Badge variant="outline" className="shrink-0 text-[10px]">Owner</Badge>}
         </div>

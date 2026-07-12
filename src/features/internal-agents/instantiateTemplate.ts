@@ -1,11 +1,11 @@
 import { supabase } from "@/lib/supabase";
-import { autonomyToFlags, type AgentTemplate, type AutonomyLevel, type TemplateTool } from "./agentTemplates";
+import { autonomyToFlags, templateAvatar, type AgentTemplate, type AutonomyLevel, type TemplateTool } from "./agentTemplates";
 
 // Optional per-instance overrides chosen in the config stepper.
 export interface TemplateOverrides {
   name?: string;
   description?: string;
-  emoji?: string;
+  avatar?: string;
   accent?: string;
   instructions?: string;
   autonomy?: AutonomyLevel;
@@ -33,7 +33,8 @@ export async function instantiateTemplate(
     created_by: ctx.userId,
     name: overrides.name?.trim() || template.name,
     description: overrides.description?.trim() || template.tagline,
-    avatar_emoji: overrides.emoji || template.emoji,
+    avatar_emoji: null,
+    avatar_url: overrides.avatar || templateAvatar(template),
     accent_color: overrides.accent || template.accent,
     persona: template.persona,
     instructions: overrides.instructions?.trim() || template.instructions,

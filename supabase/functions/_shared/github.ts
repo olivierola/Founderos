@@ -221,6 +221,52 @@ export async function getDefaultBranch(token: string, fullName: string): Promise
   return data.default_branch;
 }
 
+// ── CI / checks: read the state of a PR head so the agent can react to failures ─
+export interface CheckRun {
+  id: number;
+  name: string;
+  status: string;                 // queued | in_progress | completed
+  conclusion: string | null;      // success | failure | timed_out | cancelled | action_required | neutral | skipped
+  html_url: string | null;
+  output: { title: string | null; summary: string | null } | null;
+}
+export interface CheckAnnotation {
+  path: string;
+  start_line: number;
+  end_line: number;
+  annotation_level: string;       // failure | warning | notice
+  message: string;
+  title: string | null;
+}
+
+/** GitHub Actions / apps check-runs for a commit ref (PR head sha or branch). */
+export async function listCheckRuns(token: string, fullName: string, ref: string): Promise<CheckRun[]> {
+  const data = await gh<{ check_runs: CheckRun[] }>(
+    token, `/repos/${fullName}/commits/${encodeURIComponent(ref)}/check-runs?per_page=100`,
+  );
+  return data.check_runs ?? [];
+}
+
+/** Per-line annotations (compiler/lint/test errors) attached to a check run. */
+export async function listCheckAnnotations(token: string, fullName: string, checkRunId: number): Promise<CheckAnnotation[]> {
+  try {
+    return await gh<CheckAnnotation[]>(token, `/repos/${fullName}/check-runs/${checkRunId}/annotations?per_page=50`);
+  } catch {
+    return [];
+  }
+}
+
+/** Legacy commit-status API (some CI report here instead of check-runs). */
+export async function getCombinedStatus(
+  token: string, fullName: string, ref: string,
+): Promise<{ state: string; statuses: { context: string; state: string; description: string | null; target_url: string | null }[] }> {
+  try {
+    return await gh(token, `/repos/${fullName}/commits/${encodeURIComponent(ref)}/status`);
+  } catch {
+    return { state: "pending", statuses: [] };
+  }
+}
+
 /**
  * High-level helper: apply `changes` to a repo either as a PR (recommended) or a
  * direct commit to the base branch. Returns a summary with the commit + PR.

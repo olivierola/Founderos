@@ -15,7 +15,7 @@ export type Tone = "red" | "orange" | "amber" | "emerald" | "blue" | "violet" | 
 export interface Meta { label: string; tone: Tone }
 
 // ── Real agents (to attribute the mock telemetry to) ─────────────────────────
-export interface AgentLite { id: string; name: string; avatar_emoji: string | null; accent_color: string | null }
+export interface AgentLite { id: string; name: string; avatar_emoji: string | null; avatar_url: string | null; accent_color: string | null }
 export function useProjectAgents() {
   const { projectId } = useCurrentContext();
   return useQuery({
@@ -23,7 +23,7 @@ export function useProjectAgents() {
     enabled: !!projectId,
     queryFn: async () => {
       const { data } = await supabase.from("internal_agents")
-        .select("id, name, avatar_emoji, accent_color")
+        .select("id, name, avatar_emoji, avatar_url, accent_color")
         .eq("project_id", projectId!).order("created_at", { ascending: true });
       return (data ?? []) as AgentLite[];
     },
@@ -32,10 +32,10 @@ export function useProjectAgents() {
 
 // Fallback roster when the project has no agents yet — keeps the tabs populated.
 const SAMPLE_AGENTS: AgentLite[] = [
-  { id: "s-ops", name: "Ops Copilot", avatar_emoji: "🛠️", accent_color: null },
-  { id: "s-analyst", name: "Data Analyst", avatar_emoji: "📊", accent_color: null },
-  { id: "s-support", name: "Support Agent", avatar_emoji: "💬", accent_color: null },
-  { id: "s-growth", name: "Growth Marketer", avatar_emoji: "🚀", accent_color: null },
+  { id: "s-ops", name: "Ops Copilot", avatar_emoji: null, avatar_url: null, accent_color: null },
+  { id: "s-analyst", name: "Data Analyst", avatar_emoji: null, avatar_url: null, accent_color: null },
+  { id: "s-support", name: "Support Agent", avatar_emoji: null, avatar_url: null, accent_color: null },
+  { id: "s-growth", name: "Growth Marketer", avatar_emoji: null, avatar_url: null, accent_color: null },
 ];
 export const agentsOrSample = (a: AgentLite[] | undefined) => (a && a.length ? a : SAMPLE_AGENTS);
 

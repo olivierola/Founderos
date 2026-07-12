@@ -1,75 +1,94 @@
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
-  ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View,
+  ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAgents } from "@/lib/agents-context";
-import type { RegisteredAgent } from "@/lib/storage";
-import { colors, radius } from "@/lib/theme";
+import { useSession } from "@/lib/session-context";
+import type { Agent } from "@/lib/api";
+import { colors, font, radius, space } from "@/lib/theme";
+import { AgentAvatar, GlowBackdrop } from "@/components/ui";
 
 export default function AgentsListScreen() {
-  const { agents, loading } = useAgents();
+  const { agents, loading, error, refresh } = useAgents();
+  const { user } = useSession();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  }
+  const name = user?.email?.split("@")[0] ?? "";
 
   return (
     <View style={styles.container}>
-      {agents.length === 0 ? (
-        <View style={styles.centered}>
-          <Ionicons name="hardware-chip-outline" size={44} color={colors.faint} />
-          <Text style={styles.emptyTitle}>Aucun agent enregistré</Text>
-          <Text style={styles.emptyBody}>
-            Ajoutez un agent créé dans FounderOS avec son identifiant et son secret.
-          </Text>
-          <Pressable style={styles.emptyCta} onPress={() => router.push("/register")}>
-            <Ionicons name="add" size={18} color="#fff" />
-            <Text style={styles.emptyCtaText}>Enregistrer un agent</Text>
-          </Pressable>
+      <GlowBackdrop variant="top" />
+
+      {/* Custom premium header */}
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.hello}>Bonjour{name ? "," : ""}</Text>
+          <Text style={styles.name} numberOfLines={1}>{name || "bienvenue"}</Text>
         </View>
+        <Pressable
+          style={styles.gear}
+          onPress={() => router.push("/settings")}
+          accessibilityLabel="Réglages"
+        >
+          <Ionicons name="person-circle-outline" size={26} color={colors.text} />
+        </Pressable>
+      </View>
+
+      <Text style={styles.section}>Vos agents</Text>
+
+      {loading && agents.length === 0 ? (
+        <View style={styles.centered}><ActivityIndicator color={colors.primary} /></View>
       ) : (
         <FlatList
           data={agents}
           keyExtractor={(a) => a.id}
-          contentContainerStyle={{ padding: 16, gap: 10 }}
+          contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + 24, gap: 10 }}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.primary} />
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="hardware-chip-outline" size={40} color={colors.faint} />
+              </View>
+              <Text style={styles.emptyTitle}>Aucun agent</Text>
+              <Text style={styles.emptyBody}>
+                {error
+                  ? error
+                  : "Créez des agents dans FounderOS (web). Ils apparaîtront ici automatiquement."}
+              </Text>
+              {error && (
+                <Pressable style={styles.retry} onPress={refresh}>
+                  <Ionicons name="refresh" size={16} color={colors.primary} />
+                  <Text style={styles.retryText}>Réessayer</Text>
+                </Pressable>
+              )}
+            </View>
+          }
           renderItem={({ item }) => (
             <AgentRow agent={item} onPress={() => router.push(`/agent/${item.id}`)} />
           )}
         />
       )}
-
-      <Pressable
-        style={[styles.fab, { bottom: insets.bottom + 24 }]}
-        onPress={() => router.push("/register")}
-        accessibilityLabel="Enregistrer un agent"
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </Pressable>
     </View>
   );
 }
 
-function AgentRow({ agent, onPress }: { agent: RegisteredAgent; onPress: () => void }) {
-  const initial = (agent.name || "A").trim().charAt(0).toUpperCase();
+function AgentRow({ agent, onPress }: { agent: Agent; onPress: () => void }) {
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+      style={({ pressed }) => [styles.row, pressed && { opacity: 0.75, transform: [{ scale: 0.99 }] }]}
       onPress={onPress}
     >
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{initial}</Text>
-      </View>
+      <AgentAvatar agent={agent} size={48} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={styles.rowName} numberOfLines={1}>{agent.name || "Agent"}</Text>
-        <Text style={styles.rowId} numberOfLines={1}>{agent.id}</Text>
+        <Text style={styles.rowSub} numberOfLines={1}>
+          {agent.description?.trim() || "Appuyez pour discuter"}
+        </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.faint} />
     </Pressable>
@@ -78,60 +97,48 @@ function AgentRow({ agent, onPress }: { agent: RegisteredAgent; onPress: () => v
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 32,
-    gap: 10,
-  },
-  emptyTitle: { color: colors.text, fontSize: 16, fontWeight: "600", marginTop: 6 },
-  emptyBody: { color: colors.muted, fontSize: 13, textAlign: "center", lineHeight: 19 },
-  emptyCta: {
-    marginTop: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: colors.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: radius.md,
-  },
-  emptyCtaText: { color: "#fff", fontWeight: "600", fontSize: 14 },
-  row: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: colors.card,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.sm,
+  },
+  hello: { color: colors.muted, fontSize: font.small },
+  name: { color: colors.text, fontSize: font.h2, fontWeight: "800", textTransform: "capitalize" },
+  gear: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  section: {
+    color: colors.faint, fontSize: font.tiny, fontWeight: "700",
+    textTransform: "uppercase", letterSpacing: 0.6,
+    paddingHorizontal: space.xl, paddingTop: space.sm, paddingBottom: space.xs,
+  },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  empty: { alignItems: "center", gap: 10, paddingTop: 90, paddingHorizontal: space.xl },
+  emptyIcon: {
+    width: 78, height: 78, borderRadius: 39,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center", marginBottom: 4,
+  },
+  emptyTitle: { color: colors.text, fontSize: font.h3, fontWeight: "700" },
+  emptyBody: { color: colors.muted, fontSize: font.small, textAlign: "center", lineHeight: 20 },
+  retry: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
+  retryText: { color: colors.primary, fontSize: font.small, fontWeight: "600" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
     padding: 14,
   },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.primarySoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: colors.primary, fontSize: 18, fontWeight: "700" },
-  rowName: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  rowId: { color: colors.faint, fontSize: 12, marginTop: 2 },
-  fab: {
-    position: "absolute",
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: colors.primary,
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
+  rowName: { color: colors.text, fontSize: font.body, fontWeight: "700" },
+  rowSub: { color: colors.muted, fontSize: font.small, marginTop: 3 },
 });

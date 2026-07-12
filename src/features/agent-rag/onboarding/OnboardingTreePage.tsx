@@ -1,5 +1,10 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import ReactFlow, {
+  Background, BackgroundVariant, Controls, Handle, Position,
+  type Node as FlowNode, type Edge as FlowEdge, type NodeProps,
+} from "reactflow";
+import "reactflow/dist/style.css";
 import {
   ChevronRight,
   ChevronDown,
@@ -19,6 +24,11 @@ import {
   MousePointerClick,
   Link2,
   FormInput,
+  Radar,
+  Maximize2,
+  X,
+  GitBranch,
+  CalendarClock,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,7 +36,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
+import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/utils";
@@ -446,12 +460,129 @@ function renderPrimitive(v: unknown): string {
 
 /* ====== Page ====== */
 
+/* ============================================================ */
+/*  App map — inverted tree on an infinite dotted canvas          */
+/* ============================================================ */
+
+const NODE_KIND_STYLE: Record<TreeNode["kind"], { ring: string; dot: string; Icon: React.ComponentType<{ className?: string }> }> = {
+  root: { ring: "border-primary/60 bg-primary/10", dot: "bg-primary", Icon: Globe },
+  section: { ring: "border-border bg-card", dot: "bg-muted-foreground", Icon: Folder },
+  page: { ring: "border-sky-500/50 bg-sky-500/5", dot: "bg-sky-400", Icon: FileCode },
+  route: { ring: "border-violet-500/50 bg-violet-500/5", dot: "bg-violet-400", Icon: Link2 },
+  element: { ring: "border-emerald-500/50 bg-emerald-500/5", dot: "bg-emerald-400", Icon: MousePointerClick },
+  intent: { ring: "border-amber-500/50 bg-amber-500/5", dot: "bg-amber-400", Icon: Sparkles },
+  summary: { ring: "border-border bg-card", dot: "bg-muted-foreground", Icon: FileText },
+};
+
+interface AppNodeData { label: string; meta?: string; kind: TreeNode["kind"]; hasChildren: boolean; expanded: boolean; count: number }
+
+function AppMapNode({ data }: NodeProps<AppNodeData>) {
+  const s = NODE_KIND_STYLE[data.kind] ?? NODE_KIND_STYLE.element;
+  return (
+    <div className={cn("w-[176px] rounded-lg border px-2.5 py-1.5 shadow-sm", s.ring, data.hasChildren && "cursor-pointer")}>
+      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-border" />
+      <div className="flex items-center gap-1.5">
+        <s.Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate text-[12px] font-medium">{data.label}</span>
+        {data.hasChildren && (
+          <span className="ml-auto flex shrink-0 items-center gap-0.5 rounded bg-secondary/70 px-1 text-[10px] tabular-nums text-muted-foreground">
+            {data.count}
+            {data.expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </span>
+        )}
+      </div>
+      {data.meta && <div className="mt-0.5 truncate pl-5 font-mono text-[10px] text-muted-foreground">{data.meta}</div>}
+      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-border" />
+    </div>
+  );
+}
+
+const APP_MAP_NODE_TYPES = { appNode: AppMapNode };
+
+// Tidy top-down layout over the *expanded* subtree: leaves get sequential x,
+// parents centre over their children. Collapsed nodes hide their descendants.
+function layoutTree(root: TreeNode, expanded: Set<string>): { nodes: FlowNode[]; edges: FlowEdge[] } {
+  const X_GAP = 190, Y_GAP = 96, MAX_NODES = 800;
+  const nodes: FlowNode[] = [];
+  const edges: FlowEdge[] = [];
+  let leaf = 0;
+  let count = 0;
+
+  function walk(node: TreeNode, depth: number, parentId: string | null): number | null {
+    if (count >= MAX_NODES) return null;
+    const id = node.id;
+    count++;
+    const allKids = node.children ?? [];
+    const isOpen = expanded.has(id);
+    const kids = isOpen ? allKids : [];
+    let x: number;
+    if (kids.length === 0) {
+      x = leaf * X_GAP; leaf++;
+    } else {
+      const xs = kids.map((c) => walk(c, depth + 1, id)).filter((v): v is number => v != null);
+      x = xs.length ? (xs[0]! + xs[xs.length - 1]!) / 2 : (leaf++ * X_GAP);
+    }
+    nodes.push({
+      id,
+      type: "appNode",
+      position: { x, y: depth * Y_GAP },
+      data: { label: node.label, meta: node.meta, kind: node.kind, hasChildren: allKids.length > 0, expanded: isOpen, count: allKids.length },
+      draggable: true,
+    });
+    if (parentId) edges.push({ id: `e-${parentId}-${id}`, source: parentId, target: id, type: "smoothstep" });
+    return x;
+  }
+  walk(root, 0, null);
+  return { nodes, edges };
+}
+
+function AppMapCanvas({ data }: { data: unknown }) {
+  const root = useMemo(() => buildTreeFromScan(data), [data]);
+  // Start collapsed: only the root is expanded (the tree is not fully deployed).
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["root"]));
+  const { nodes, edges } = useMemo(() => layoutTree(root, expanded), [root, expanded]);
+
+  const onNodeClick = useCallback((_: unknown, node: FlowNode) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(node.id)) next.delete(node.id);
+      else next.add(node.id);
+      return next;
+    });
+  }, []);
+
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={APP_MAP_NODE_TYPES}
+      onNodeClick={onNodeClick}
+      fitView
+      fitViewOptions={{ padding: 0.3 }}
+      minZoom={0.1}
+      maxZoom={2.5}
+      nodesConnectable={false}
+      proOptions={{ hideAttribution: true }}
+      className="!bg-background"
+    >
+      <Background variant={BackgroundVariant.Dots} gap={22} size={1} className="!bg-background" />
+      <Controls className="!border-border !bg-card" showInteractive={false} />
+    </ReactFlow>
+  );
+}
+
+interface RepoOpt { id: string; full_name: string; private: boolean; default_branch: string | null }
+
 export function OnboardingTreePage() {
-  const { projectId } = useCurrentContext();
+  const { workspaceId, projectId } = useCurrentContext();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<"tree" | "json" | "raw">("tree");
   const [scope, setScope] = useState<"all" | "raw" | "enriched">("all");
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [repoName, setRepoName] = useState<string>("");
   const toast = useToast();
 
   const { data: scan, isLoading } = useQuery({
@@ -468,6 +599,50 @@ export function OnboardingTreePage() {
       return data as unknown as ScanRow | null;
     },
   });
+
+  // Tracked repos the map can be built from.
+  const { data: repos } = useQuery({
+    queryKey: ["onb_tree_repos", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("repositories")
+        .select("id, full_name, private, default_branch")
+        .eq("project_id", projectId!)
+        .order("created_at", { ascending: false });
+      return (data ?? []) as RepoOpt[];
+    },
+  });
+
+  // Scan the chosen repo → build the raw app structure → enrich into the map.
+  async function scan_() {
+    if (!workspaceId || !projectId) return;
+    const list = repos ?? [];
+    const repo = list.find((r) => r.full_name === repoName) ?? list[0];
+    if (!repo) {
+      toast.error("Aucun dépôt connecté — connectez-en un dans le module Dépôts.");
+      return;
+    }
+    setScanning(true);
+    try {
+      await callEdge("repo-scan", {
+        workspace_id: workspaceId, project_id: projectId,
+        github_repo: {
+          full_name: repo.full_name, name: repo.full_name.split("/").pop(),
+          private: repo.private, default_branch: repo.default_branch ?? "main",
+        },
+      });
+      // Enrich into the semantic map the agent uses (best-effort).
+      try { await callEdge("enrich-app-structure", { workspace_id: workspaceId, project_id: projectId }); }
+      catch { /* enrichment is optional; the raw scan is still usable */ }
+      await queryClient.invalidateQueries({ queryKey: ["onb_tree_scan", projectId] });
+      toast.success("Carte de l'app générée");
+    } catch (e) {
+      toast.error("Scan impossible : " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setScanning(false);
+    }
+  }
 
   const tree = useMemo(() => {
     const struct = (scan?.app_structure ?? {}) as {
@@ -514,115 +689,102 @@ export function OnboardingTreePage() {
     }
   }
 
+  const hasStructure = !!scan?.app_structure && Object.keys(scan.app_structure).length > 0;
+
   return (
     <div>
       <PageHeader
-        title="App structure tree"
-        description="Browse the SaaS structure extracted from the latest code scan as an explorable JSON tree."
+        title="Carte de l'app"
+        description="Scannez le dépôt pour construire la carte de votre app — l'agent d'onboarding s'en sert pour guider les utilisateurs."
         actions={
           <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-[10px]">
-              <ScopeBtn active={scope === "all"} onClick={() => setScope("all")}>All</ScopeBtn>
-              <ScopeBtn active={scope === "raw"} onClick={() => setScope("raw")}>Raw</ScopeBtn>
-              <ScopeBtn active={scope === "enriched"} onClick={() => setScope("enriched")} disabled={!stats.hasEnriched}>
-                Enriched
-              </ScopeBtn>
-            </div>
-            <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-[10px]">
-              <ViewBtn active={view === "tree"} onClick={() => setView("tree")}>
-                <FolderTree className="h-3 w-3" /> Tree
-              </ViewBtn>
-              <ViewBtn active={view === "json"} onClick={() => setView("json")}>
-                <FileCode className="h-3 w-3" /> JSON
-              </ViewBtn>
-              <ViewBtn active={view === "raw"} onClick={() => setView("raw")}>
-                <FileJson className="h-3 w-3" /> Raw
-              </ViewBtn>
-            </div>
-            <Button size="sm" variant="outline" onClick={copyJson} disabled={!tree}>
-              {copied ? <Check className="h-3.5 w-3.5 text-[hsl(var(--accent-2))]" /> : <Copy className="h-3.5 w-3.5" />}
-              Copy
+            {(repos ?? []).length > 1 && (
+              <Select value={repoName || (repos?.[0]?.full_name ?? "")} onValueChange={setRepoName}>
+                <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="Dépôt" /></SelectTrigger>
+                <SelectContent>
+                  {(repos ?? []).map((r) => <SelectItem key={r.id} value={r.full_name}>{r.full_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            <Button size="sm" onClick={scan_} disabled={scanning || !(repos ?? []).length}>
+              {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Radar className="h-4 w-4" />}
+              {hasStructure ? "Re-scanner" : "Scanner le repo"}
             </Button>
           </div>
         }
       />
 
-      {/* Stats strip */}
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Pages scanned" value={stats.pages} icon={FileCode} />
-        <StatTile label="Routes" value={stats.routes} icon={Network} />
-        <StatTile label="UI elements" value={stats.elements} icon={Sparkles} />
-        <StatTile
-          label="Enriched pages"
-          value={stats.enrichedPages}
-          icon={Sparkles}
-          hint={stats.hasEnriched ? "AI semantic map" : "Run enrichment first"}
-          dim={!stats.hasEnriched}
-        />
-      </div>
-
       {isLoading ? (
-        <EmptyState icon={Loader2} title="Loading…" />
-      ) : !scan ? (
+        <EmptyState icon={Loader2} title="Chargement…" />
+      ) : !(repos ?? []).length ? (
         <EmptyState
-          icon={AlertCircle}
-          title="No scan available"
-          description="Run a code scan in Code → Repositories to capture the SaaS structure."
+          icon={GitBranch}
+          title="Aucun dépôt connecté"
+          description="Connectez un dépôt dans le module Dépôts, puis revenez ici pour générer la carte."
         />
-      ) : !scan.app_structure || Object.keys(scan.app_structure).length === 0 ? (
+      ) : !hasStructure ? (
         <EmptyState
-          icon={AlertCircle}
-          title="Scan has no app structure"
-          description="The latest scan didn't capture pages or routes. Re-run a scan."
+          icon={Radar}
+          title="Pas encore de carte"
+          description="Cliquez « Scanner le repo » — l'app sera analysée et sa structure (pages, routes, éléments) cartographiée."
         />
       ) : (
-        <>
-          {/* Source hint */}
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline" className="font-mono text-[10px]">
-              {scan.repositories?.full_name ?? "scan"}
-            </Badge>
-            <span>Scanned {new Date(scan.created_at).toLocaleString()}</span>
-          </div>
-
-          {/* Search */}
-          {view !== "raw" && (
-            <div className="relative mb-3">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={view === "tree" ? "Search nodes (name, route, label)…" : "Search the JSON (key, value, path)…"}
-                className="pl-8"
-              />
-            </div>
-          )}
-
-          <Card>
-            <CardContent className="p-3">
-              {view === "tree" ? (
-                <div className="max-h-[70vh] overflow-auto rounded bg-secondary/30 p-4">
-                  <TreeView data={tree} query={search} />
+        /* Map card — click to open the tree full-screen. */
+        <button type="button" onClick={() => setFullscreen(true)} className="group block w-full text-left">
+          <Card className="transition-colors hover:border-primary/40">
+            <CardContent className="space-y-4 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                    <Network className="h-5 w-5 text-primary" />
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      Carte de l'app
+                      {stats.hasEnriched
+                        ? <Badge variant="success" className="text-[10px]">enrichie</Badge>
+                        : <Badge variant="outline" className="text-[10px] text-amber-400">brute</Badge>}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 font-mono"><GitBranch className="h-3 w-3" />{scan?.repositories?.full_name ?? "scan"}</span>
+                      <span className="inline-flex items-center gap-1"><CalendarClock className="h-3 w-3" />{scan ? new Date(scan.created_at).toLocaleString() : ""}</span>
+                    </div>
+                  </div>
                 </div>
-              ) : view === "json" ? (
-                <div className="max-h-[60vh] overflow-y-auto rounded bg-secondary/30 p-3">
-                  <JsonNode
-                    k="app_structure"
-                    value={tree}
-                    depth={0}
-                    path=""
-                    defaultOpen
-                    query={search}
-                  />
-                </div>
-              ) : (
-                <pre className="max-h-[60vh] overflow-auto whitespace-pre rounded bg-secondary/30 p-3 font-mono text-[11px] leading-relaxed">
-                  {JSON.stringify(tree, null, 2)}
-                </pre>
-              )}
+                <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-foreground">
+                  <Maximize2 className="h-3.5 w-3.5" /> Plein écran
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatTile label="Pages" value={stats.pages} icon={FileCode} />
+                <StatTile label="Routes" value={stats.routes} icon={Network} />
+                <StatTile label="Éléments UI" value={stats.elements} icon={MousePointerClick} />
+                <StatTile
+                  label="Pages enrichies"
+                  value={stats.enrichedPages}
+                  icon={Sparkles}
+                  hint={stats.hasEnriched ? "Carte sémantique IA" : "Enrichissement requis"}
+                  dim={!stats.hasEnriched}
+                />
+              </div>
             </CardContent>
           </Card>
-        </>
+        </button>
+      )}
+
+      {/* Fullscreen app map — pure dotted canvas, nothing else. */}
+      {fullscreen && hasStructure && (
+        <div className="fixed inset-0 z-[100] bg-background">
+          <AppMapCanvas data={tree} />
+          <button
+            type="button"
+            onClick={() => setFullscreen(false)}
+            className="absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-md border border-border bg-card/90 px-2.5 py-1.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+          >
+            <X className="h-4 w-4" /> Fermer
+          </button>
+        </div>
       )}
     </div>
   );

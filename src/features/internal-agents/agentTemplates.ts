@@ -5,6 +5,8 @@
 // Tool kinds mirror internal_agent_tools.kind:
 //   web_search | web_fetch | db_read | rag_search | edge_function | vault_connector | custom
 
+import { avatarUrl } from "./AvatarPicker";
+
 export type ToolKind =
   | "web_search" | "web_fetch" | "db_read" | "rag_search"
   | "edge_function" | "vault_connector" | "connector_action" | "security_scan" | "custom";
@@ -47,6 +49,12 @@ export interface AgentTemplate {
 // need approval; autopilot → acts freely within guardrails.
 export function autonomyToFlags(level: AutonomyLevel): { requires_approval: boolean } {
   return { requires_approval: level !== "autopilot" };
+}
+
+// Each template gets a stable, unique portrait derived from its key — agents
+// and templates use avatars (never emojis) for a consistent premium look.
+export function templateAvatar(t: Pick<AgentTemplate, "key">): string {
+  return avatarUrl(t.key);
 }
 
 export const AGENT_TEMPLATES: AgentTemplate[] = [

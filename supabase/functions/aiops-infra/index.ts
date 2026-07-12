@@ -15,6 +15,12 @@ import { encryptSecret, decryptSecret } from "../_shared/crypto.ts";
 const RUNPOD_GQL = "https://api.runpod.io/graphql";
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
 
+// Platform-level RunPod key (uploaded as a Supabase secret). Lets a project use
+// RunPod for training + hosting without pasting its own key — the "Connect
+// RunPod (platform)" one-click flow stores a keyless provider that resolves to
+// this at call time.
+const PLATFORM_RUNPOD_KEY = Deno.env.get("RUNPOD_API_KEY") ?? "";
+
 // ── RunPod GraphQL ───────────────────────────────────────────────────────────
 async function runpod(apiKey: string, query: string, variables?: Record<string, unknown>) {
   const res = await fetch(`${RUNPOD_GQL}?api_key=${encodeURIComponent(apiKey)}`, {
@@ -227,7 +233,9 @@ Deno.serve(async (req) => {
     const loadProvider = async (providerId: string) => {
       const { data: p } = await admin.from("aiops_providers").select("*").eq("id", providerId).eq("project_id", project_id).maybeSingle();
       if (!p) throw new Error("Fournisseur introuvable");
-      const apiKey = p.secret_ciphertext && p.secret_iv ? await decryptSecret(p.secret_ciphertext, p.secret_iv) : "";
+      let apiKey = p.secret_ciphertext && p.secret_iv ? await decryptSecret(p.secret_ciphertext, p.secret_iv) : "";
+      // Keyless RunPod providers fall back to the platform-level key.
+      if (!apiKey && p.kind === "runpod") apiKey = PLATFORM_RUNPOD_KEY;
       const hfToken = p.secret2_ciphertext && p.secret2_iv ? await decryptSecret(p.secret2_ciphertext, p.secret2_iv) : "";
       return { p, apiKey, hfToken };
     };
@@ -235,25 +243,35 @@ Deno.serve(async (req) => {
     switch (action) {
       // ── Connect / test a provider ──────────────────────────────────────────
       case "provider.connect": {
-        const { kind, name, config, api_key, hf_token } = body as { kind: string; name: string; config: Record<string, unknown>; api_key: string; hf_token?: string };
-        if (!kind || !name || !api_key) return jsonResponse({ error: "kind, name, api_key requis" }, { status: 400 });
+        const { kind, name, config, api_key, hf_token } = body as { kind: string; name: string; config: Record<string, unknown>; api_key?: string; hf_token?: string };
+        if (!kind || !name) return jsonResponse({ error: "kind, name requis" }, { status: 400 });
+        // RunPod can use the platform-level key (no per-project key entry needed);
+        // cloud endpoints always need their own key.
+        const usePlatform = kind === "runpod" && !api_key;
+        const effectiveKey = usePlatform ? PLATFORM_RUNPOD_KEY : (api_key ?? "");
+        if (!effectiveKey) {
+          return jsonResponse({ error: kind === "runpod" ? "Aucune clé RunPod : ni fournie, ni configurée au niveau plateforme (RUNPOD_API_KEY)." : "api_key requis" }, { status: 400 });
+        }
         // Test the credential before storing.
         let status = "connected"; let detail: string | null = null; let metadata: Record<string, unknown> = {};
         try {
           if (kind === "cloud_endpoint") {
             const base = String(config.base_url ?? "");
             if (!base) throw new Error("base_url requis");
-            metadata = { models: await cloudListModels(base, api_key) };
+            metadata = { models: await cloudListModels(base, effectiveKey) };
           } else if (kind === "runpod") {
-            metadata = { gpus: await runpodGpuTypes(api_key) };
+            metadata = { gpus: await runpodGpuTypes(effectiveKey) };
           } else throw new Error("kind inconnu");
         } catch (e) { status = "error"; detail = e instanceof Error ? e.message : String(e); }
 
-        const enc = await encryptSecret(api_key);
+        // Keyless (platform) providers store no ciphertext; loadProvider resolves
+        // the key from the env at call time.
+        const enc = usePlatform ? null : await encryptSecret(effectiveKey);
         const enc2 = hf_token ? await encryptSecret(hf_token) : null;
         const { data: row, error } = await admin.from("aiops_providers").insert({
-          workspace_id, project_id, kind, name, config: config ?? {},
-          secret_ciphertext: enc.ciphertext, secret_iv: enc.iv,
+          workspace_id, project_id, kind, name,
+          config: { ...(config ?? {}), ...(usePlatform ? { uses_platform_key: true } : {}) },
+          secret_ciphertext: enc?.ciphertext ?? null, secret_iv: enc?.iv ?? null,
           secret2_ciphertext: enc2?.ciphertext ?? null, secret2_iv: enc2?.iv ?? null,
           status, status_detail: detail, metadata, last_tested_at: new Date().toISOString(), created_by: userId,
         }).select("id, kind, name, status, status_detail, metadata").single();
@@ -290,6 +308,7 @@ Deno.serve(async (req) => {
         const { data: server, error } = await admin.from("aiops_servers").insert({
           workspace_id, project_id, name: name || pod.id, region: region || "RunPod · Secure",
           status: "degraded", gpu: gpu_label || gpu_type_id, source: "runpod", provider_id,
+          served_model: model_arg || null,
           pod_id: pod.id, endpoint_url: endpoint, desired_status: pod.desiredStatus ?? "RUNNING",
           hourly_usd: pod.costPerHr ?? 0, cost_per_day: Math.round((pod.costPerHr ?? 0) * 24 * 100) / 100,
           cpu_pct: 5, ram_pct: 10, gpu_pct: 0, req_per_min: 0, uptime_pct: 100,

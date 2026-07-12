@@ -20,7 +20,17 @@ import { CustomDashboardsPage } from "@/features/overview/dashboards/CustomDashb
 import { DashboardBuilderPage } from "@/features/overview/dashboards/DashboardBuilder";
 
 import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
+import { RagAgentsPage } from "@/features/agent-rag/Agents";
+import {
+  OnboardingFlowsPage,
+  OnboardingToursPage,
+  OnboardingChecklistPage,
+} from "@/features/agent-rag/onboarding/OnboardingPages";
+import { OnboardingTreePage } from "@/features/agent-rag/onboarding/OnboardingTreePage";
+import { GoalsStudioPage } from "@/features/agent-rag/onboarding/GoalsStudio";
+import { ActivationCockpitPage } from "@/features/agent-rag/onboarding/ActivationCockpit";
 import { RagCenterPage, RagCollectionDetailPage } from "@/features/rag-center/RagCenter";
+import { KnowledgeCollectionsPage } from "@/features/rag-center/KnowledgeCollections";
 import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
 import { InternalAgentDetailPage } from "@/features/internal-agents/InternalAgentDetail";
 import { AgentEcosystemPage } from "@/features/internal-agents/AgentEcosystem";
@@ -32,7 +42,10 @@ import { OpsWorkflowsPage } from "@/features/ops/WorkflowsPage";
 import { OpsBundleDetailPage } from "@/features/ops/BundleDetailPage";
 import { OpsInfraProjectDetailPage } from "@/features/ops/InfraProjectDetailPage";
 import { OpsChecksPage } from "@/features/ops/ChecksPage";
-import { OpsTestingPage } from "@/features/ops/TestingWorkspace";
+import { TestRunsPage } from "@/features/ops/TestingWorkspace";
+import { RepositoriesPage } from "@/features/ops/Repositories";
+import { RepoDetailPage } from "@/features/ops/RepoDetail";
+import { VibeCodePage } from "@/features/ops/VibeCode";
 import { OpsTestRunPage } from "@/features/ops/TestRunPage";
 import { OpsJobsPage } from "@/features/ops/JobsPage";
 import { OpsSettingsPage } from "@/features/ops/SettingsPage";
@@ -145,16 +158,18 @@ const PAGES: Record<string, PageEl> = {
   "hq/dashboard": <AiHqDashboard />,
 
   "agent/internal-agents": <InternalAgentsListPage />,
+  "agent/public-agents": <RagAgentsPage />,
   "agent/ecosystem": <AgentEcosystemPage />,
   "agent/tasks": <AgentTasksPage />,
   "agent/knowledge": <RagCenterPage />,
+  "agent/collections": <KnowledgeCollectionsPage />,
 
   // Ops group (infra/servers/workflows — reachable via explicit detail routes)
   "devops/ops-overview": <OpsOverviewPage />,
   "devops/servers": <OpsServersPage />,
   "devops/workflows": <OpsWorkflowsPage />,
   "devops/checks": <OpsChecksPage />,
-  "devops/testing": <OpsTestingPage />,
+  "devops/testing": <TestRunsPage />,
   "devops/jobs": <OpsJobsPage />,
   "devops/settings": <OpsSettingsPage />,
 
@@ -163,8 +178,18 @@ const PAGES: Record<string, PageEl> = {
   "crm/admin-dashboard": <OverviewDashboard />,
   "crm/admin-custom-dashboards": <CustomDashboardsPage />,
   "crm/admin-alerts": <AlertsPage />,
-  "crm/testing": <OpsTestingPage />,
-  "crm/simulations": <PmSimulationsPage />,
+
+  // "Outils IA" dashboard modules.
+  "repos/list": <RepositoriesPage />,
+  "simulations/workspace": <PmSimulationsPage />,
+
+  // Agentic Onboarding module — generative (palier 1) + the underlying artefacts.
+  "onboarding/goals": <GoalsStudioPage />,
+  "onboarding/activation": <ActivationCockpitPage />,
+  "onboarding/flows": <OnboardingFlowsPage />,
+  "onboarding/tours": <OnboardingToursPage />,
+  "onboarding/checklist": <OnboardingChecklistPage />,
+  "onboarding/tree": <OnboardingTreePage />,
 
   // Support
   "support/overview": <SupportOverviewPage />,
@@ -250,6 +275,19 @@ function AdminMergeRedirect({ to }: { to: string }) {
   return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/crm/${to}`} replace />;
 }
 
+/** Absolute redirect to /app/:ws/:proj/<to> (slug-based, robust). */
+function AbsRedirect({ to }: { to: string }) {
+  const { workspaceSlug, projectSlug } = useParams();
+  return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/${to}`} replace />;
+}
+
+/** Absolute redirect whose suffix is built from the route params. */
+function ParamRedirect({ build }: { build: (p: Record<string, string | undefined>) => string }) {
+  const params = useParams();
+  const { workspaceSlug, projectSlug } = params;
+  return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/${build(params)}`} replace />;
+}
+
 /** Ops deep links map to /devops/:sub, except the Ops overview which was renamed. */
 function LegacyOpsRedirect() {
   const { sub } = useParams();
@@ -278,7 +316,9 @@ function LegacyBuilderRedirect() {
 }
 
 function buildModuleRoutes() {
-  return MODULES.flatMap((mod) => {
+  // test-runs & vibe-code render via explicit :sub routes (single page instance
+  // that keeps its state across onglets), so they're excluded here.
+  return MODULES.filter((m) => m.slug !== "test-runs" && m.slug !== "vibe-code").flatMap((mod) => {
     const hasProjectConfig = MODULE_PROJECT_CONFIGS[mod.slug] != null;
 
     const subRoutes = mod.subItems.map((sub) => {
@@ -349,14 +389,28 @@ export const router = createBrowserRouter([
       { path: "actions/dashboard", element: <AdminMergeRedirect to="admin-dashboard" /> },
       { path: "actions/custom-dashboards", element: <AdminMergeRedirect to="admin-custom-dashboards" /> },
       { path: "actions/alerts", element: <AdminMergeRedirect to="admin-alerts" /> },
-      // The Projects super-module, App Testing and Simulations were folded into
-      // CRM — redirect their old top-level links to the new crm/* locations.
+      // The Projects super-module was folded into CRM.
       { path: "projects", element: <AdminMergeRedirect to="admin-dashboard" /> },
       { path: "projects/all", element: <AdminMergeRedirect to="admin-dashboard" /> },
-      { path: "testing", element: <AdminMergeRedirect to="testing" /> },
-      { path: "testing/workspace", element: <AdminMergeRedirect to="testing" /> },
-      { path: "simulations", element: <AdminMergeRedirect to="simulations" /> },
-      { path: "simulations/list", element: <AdminMergeRedirect to="simulations" /> },
+      // App Testing split into Test runs / Dépôts / Vibe Code modules (Outils IA).
+      { path: "crm/testing", element: <AbsRedirect to="test-runs/tests" /> },
+      { path: "crm/simulations", element: <AbsRedirect to="simulations/workspace" /> },
+      { path: "simulations/list", element: <AbsRedirect to="simulations/workspace" /> },
+      // Test runs module (tabs as onglets via :sub) + its run detail.
+      { path: "test-runs", element: <AbsRedirect to="test-runs/tests" /> },
+      { path: "test-runs/:sub", element: <ErrorBoundary><TestRunsPage /></ErrorBoundary> },
+      { path: "test-runs/run/:runId", element: <ErrorBoundary><OpsTestRunPage /></ErrorBoundary> },
+      // Dépôts module: list route comes from buildModuleRoutes; add the detail.
+      { path: "repos/repo/:repoId", element: <ErrorBoundary><RepoDetailPage /></ErrorBoundary> },
+      // Vibe Code module (tabs as onglets via :sub).
+      { path: "vibe-code", element: <AbsRedirect to="vibe-code/chat" /> },
+      { path: "vibe-code/:sub", element: <ErrorBoundary><VibeCodePage /></ErrorBoundary> },
+      // Back-compat for the old testing/* links.
+      { path: "testing/workspace", element: <AbsRedirect to="test-runs/tests" /> },
+      { path: "testing/repositories", element: <AbsRedirect to="repos/list" /> },
+      { path: "testing/vibe-code", element: <AbsRedirect to="vibe-code/chat" /> },
+      { path: "testing/repositories/:repoId", element: <ParamRedirect build={(p) => `repos/repo/${p.repoId}`} /> },
+      { path: "testing/run/:runId", element: <ParamRedirect build={(p) => `test-runs/run/${p.runId}`} /> },
       {
         path: "actions/dashboard-builder/:dashboardId",
         element: (

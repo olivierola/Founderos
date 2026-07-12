@@ -8,6 +8,7 @@ import {
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Logo } from "@/components/Logo";
+import { DashboardSwitcher } from "./DashboardSwitcher";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useTheme } from "@/lib/theme-context";
@@ -46,7 +47,7 @@ export function Topbar() {
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
 
   return (
-    <header className="flex flex-col bg-[#101013]">
+    <header className="flex flex-col bg-[#060608]">
       <div className="flex items-stretch">
         {/* Left segment — matches the primary sidebar width so the sidebar's
             column visually continues up into the navbar, and widens with it. */}
@@ -58,7 +59,7 @@ export function Topbar() {
         >
           {primaryExpanded ? (
             <>
-              <Logo size={28} />
+              <DashboardSwitcher />
               {/* Collapse — revealed on hover over the logo area. */}
               <Button
                 variant="ghost"
@@ -88,7 +89,7 @@ export function Topbar() {
         </div>
 
         {/* Right — breadcrumb + search + actions */}
-        <div className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2.5 pl-3 pr-3 sm:pr-4">
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-3 py-3.5 pl-3 pr-3 sm:pr-4">
           <div className="flex min-w-0 items-center gap-1.5">
             {/* Mobile drawer opener */}
             <Button

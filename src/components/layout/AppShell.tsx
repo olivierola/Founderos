@@ -56,12 +56,12 @@ export function AppShell() {
       <PermissionsProvider>
       <AssistantProvider>
       {/* Soft-black chrome: the topbar and the gutter behind the rounded block. */}
-      <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#101013]">
+      <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#060608]">
         <TopbarTabsProvider>
         <TopbarBreadcrumbProvider>
           <Topbar />
 
-          <div className="flex flex-1 overflow-hidden bg-[#101013]">
+          <div className="flex flex-1 overflow-hidden bg-[#060608]">
             {/* Mobile drawer (fixed, above the rounded block) */}
             {mobileOpen && (
               <>
@@ -170,12 +170,19 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/agent\/ecosystem$/.test(pathname)) return true;
   // Internal agent detail — full-width chat (scrollbar at the screen edge).
   if (/\/app\/[^/]+\/[^/]+\/agent\/internal\/[^/]+/.test(pathname)) return true;
+  // Knowledge collections — full-width folder grid + Document-AI extraction workspace.
+  if (/\/app\/[^/]+\/[^/]+\/agent\/collections(\/.*)?$/.test(pathname)) return true;
   // Project Inbox: Slack-style full-width chatroom.
   if (/\/app\/[^/]+\/[^/]+\/pm\/inbox(\/.*)?$/.test(pathname)) return true;
   // Project Whiteboard canvas (open board) — full-screen collaborative canvas.
   if (/\/app\/[^/]+\/[^/]+\/pm\/whiteboard(\/.*)?$/.test(pathname)) return true;
-  // Simulations — MiroFish-style two-pane full-screen workspace (now under crm/).
-  if (/\/app\/[^/]+\/[^/]+\/(pm|crm)\/simulations(\/.*)?$/.test(pathname)) return true;
+  // Simulations — MiroFish-style two-pane full-screen workspace (now its own module).
+  if (/\/app\/[^/]+\/[^/]+\/(pm|crm\/)?simulations(\/.*)?$/.test(pathname)) return true;
+  // Outils IA: Test runs + Vibe Code are full-bleed workspaces; a repo DETAIL is
+  // a full-bleed dotted canvas (the Dépôts LIST stays a normal padded page).
+  if (/\/app\/[^/]+\/[^/]+\/test-runs(\/.*)?$/.test(pathname)) return true;
+  if (/\/app\/[^/]+\/[^/]+\/vibe-code(\/.*)?$/.test(pathname)) return true;
+  if (/\/app\/[^/]+\/[^/]+\/repos\/repo\/[^/]+/.test(pathname)) return true;
   // CRM full record view (crm/workspace/<obj>/<recordId>) — Attio-style.
   if (/\/app\/[^/]+\/[^/]+\/crm\/workspace\/[^/]+\/[^/]+/.test(pathname)) return true;
   // Module project detail view — sidebar + tabs, same pattern as CRM record view.

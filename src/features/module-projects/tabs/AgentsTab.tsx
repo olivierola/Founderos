@@ -8,8 +8,9 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import type { ModuleProject } from "../moduleProjectModel";
 import { updateModuleProject } from "../moduleProjectModel";
+import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 
-interface Agent { id: string; name: string; description: string | null; avatar_emoji: string | null; accent_color: string | null }
+interface Agent { id: string; name: string; description: string | null; avatar_emoji: string | null; avatar_url: string | null; accent_color: string | null }
 interface A2AMessage { id: string; from_agent_id: string; content: string; timestamp: string }
 
 export function AgentsTab({ moduleProject: mp }: { moduleProject: ModuleProject }) {
@@ -27,7 +28,7 @@ export function AgentsTab({ moduleProject: mp }: { moduleProject: ModuleProject 
     enabled: !!projectId,
     queryFn: async () => {
       const { data } = await supabase.from("internal_agents")
-        .select("id, name, description, avatar_emoji, accent_color")
+        .select("id, name, description, avatar_emoji, avatar_url, accent_color")
         .eq("project_id", projectId!).order("name");
       return (data ?? []) as Agent[];
     },
@@ -78,10 +79,7 @@ export function AgentsTab({ moduleProject: mp }: { moduleProject: ModuleProject 
           ) : available.map((a) => (
             <button key={a.id} onClick={() => addAgent(a.id)}
               className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm hover:bg-secondary/60">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm"
-                style={{ backgroundColor: (a.accent_color ?? "#6366f1") + "20" }}>
-                {a.avatar_emoji ?? "🤖"}
-              </span>
+              <AgentAvatar url={a.avatar_url} seed={a.name} className="h-7 w-7 shrink-0 overflow-hidden rounded-md" />
               <div className="min-w-0 flex-1">
                 <div className="font-medium text-xs">{a.name}</div>
                 {a.description && <div className="truncate text-[10px] text-muted-foreground">{a.description}</div>}
@@ -103,10 +101,7 @@ export function AgentsTab({ moduleProject: mp }: { moduleProject: ModuleProject 
         {assigned.map((a) => (
           <div key={a.id} className="rounded-xl border border-border bg-card">
             <div className="flex items-center gap-3 p-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
-                style={{ backgroundColor: (a.accent_color ?? "#6366f1") + "20" }}>
-                {a.avatar_emoji ?? "🤖"}
-              </span>
+              <AgentAvatar url={a.avatar_url} seed={a.name} className="h-9 w-9 shrink-0 overflow-hidden rounded-lg" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold">{a.name}</div>
                 {a.description && <div className="text-[11px] text-muted-foreground truncate">{a.description}</div>}
@@ -132,10 +127,7 @@ export function AgentsTab({ moduleProject: mp }: { moduleProject: ModuleProject 
                     const sender = agentById[m.from_agent_id];
                     return (
                       <div key={m.id} className="flex items-start gap-2">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px]"
-                          style={{ backgroundColor: (sender?.accent_color ?? "#6366f1") + "20" }}>
-                          {sender?.avatar_emoji ?? "🤖"}
-                        </span>
+                        <AgentAvatar url={sender?.avatar_url} seed={sender?.name ?? "Agent"} className="h-5 w-5 shrink-0 overflow-hidden rounded" />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <span className="font-medium">{sender?.name ?? "Agent"}</span>

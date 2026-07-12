@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
-  ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform,
-  Pressable, StyleSheet, Text, View,
+  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform,
+  StyleSheet, Text, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageBubble } from "@/components/MessageBubble";
 import { Composer } from "@/components/Composer";
+import { AgentAvatar } from "@/components/ui";
 import { useAgents } from "@/lib/agents-context";
+import { useSession } from "@/lib/session-context";
 import { getMessages, sendMessage, type Message } from "@/lib/api";
-import { colors } from "@/lib/theme";
+import { colors, font, space } from "@/lib/theme";
 
 export default function ChatScreen() {
   const { id, conversation } = useLocalSearchParams<{ id: string; conversation?: string }>();
-  const { get, remove } = useAgents();
-  const router = useRouter();
+  const { get } = useAgents();
+  const { getToken } = useSession();
   const insets = useSafeAreaInsets();
   const agent = id ? get(id) : undefined;
 
@@ -32,13 +34,14 @@ export default function ChatScreen() {
 
   // Poll the conversation until its in-flight run finishes (server is source of truth).
   const pollUntilDone = useCallback(async (cid: string, baseAssistantCount: number) => {
-    if (!agent || polling.current) return;
+    if (!id || polling.current) return;
     polling.current = true;
     const deadline = Date.now() + 120_000;
     try {
       while (Date.now() < deadline) {
         await delay(2000);
-        const res = await getMessages(agent, cid);
+        const token = await getToken();
+        const res = await getMessages(token, id, cid);
         setMessages(res.messages);
         scrollToEnd();
         const assistantCount = res.messages.filter((m) => m.role === "assistant").length;
@@ -48,15 +51,16 @@ export default function ChatScreen() {
       polling.current = false;
       setSending(false);
     }
-  }, [agent, scrollToEnd]);
+  }, [id, getToken, scrollToEnd]);
 
   // Load existing history (and resume polling if a run is still active).
   useEffect(() => {
-    if (!agent || !convId) { setLoading(false); return; }
+    if (!id || !convId) { setLoading(false); return; }
     let cancelled = false;
     (async () => {
       try {
-        const res = await getMessages(agent, convId);
+        const token = await getToken();
+        const res = await getMessages(token, id, convId);
         if (cancelled) return;
         setMessages(res.messages);
         scrollToEnd();
@@ -70,20 +74,11 @@ export default function ChatScreen() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent?.id, convId]);
-
-  const confirmRemove = useCallback(() => {
-    if (!agent) return;
-    Alert.alert("Retirer l'agent", `Retirer « ${agent.name} » de cet appareil ?`, [
-      { text: "Annuler", style: "cancel" },
-      { text: "Retirer", style: "destructive", onPress: async () => { await remove(agent.id); router.replace("/"); } },
-    ]);
-  }, [agent, remove, router]);
+  }, [id, convId]);
 
   async function onSend(text: string) {
-    if (!agent || sending) return;
+    if (!id || sending) return;
     const baseAssistantCount = messages.filter((m) => m.role === "assistant").length;
-    // Optimistic user bubble.
     setMessages((prev) => [
       ...prev,
       { id: `local-${Date.now()}`, role: "user", content: text, created_at: new Date().toISOString() },
@@ -91,7 +86,8 @@ export default function ChatScreen() {
     setSending(true);
     scrollToEnd();
     try {
-      const { conversationId } = await sendMessage(agent, text, convId);
+      const token = await getToken();
+      const { conversationId } = await sendMessage(token, id, text, convId);
       if (conversationId !== convId) setConvId(conversationId);
       await pollUntilDone(conversationId, baseAssistantCount);
     } catch (e) {
@@ -111,14 +107,13 @@ export default function ChatScreen() {
   if (!agent) {
     return (
       <View style={styles.missing}>
-        <Stack.Screen options={{ title: "Agent introuvable" }} />
-        <Text style={styles.missingText}>Cet agent n'est plus enregistré sur l'appareil.</Text>
+        <Stack.Screen options={{ title: "Agent" }} />
+        <Text style={styles.missingText}>Cet agent n'est plus disponible sur votre compte.</Text>
       </View>
     );
   }
 
   const visible = messages.filter((m) => m.role === "user" || m.role === "assistant");
-  const initial = (agent.name || "A").charAt(0);
 
   return (
     <KeyboardAvoidingView
@@ -128,11 +123,11 @@ export default function ChatScreen() {
     >
       <Stack.Screen
         options={{
-          title: agent.name,
-          headerRight: () => (
-            <Pressable onPress={confirmRemove} hitSlop={8}>
-              <Ionicons name="trash-outline" size={20} color={colors.faint} />
-            </Pressable>
+          headerTitle: () => (
+            <View style={styles.headerTitle}>
+              <AgentAvatar agent={agent} size={30} />
+              <Text style={styles.headerName} numberOfLines={1}>{agent.name}</Text>
+            </View>
           ),
         }}
       />
@@ -149,14 +144,15 @@ export default function ChatScreen() {
               role={item.role}
               text={item.content}
               time={formatTime(item.created_at)}
-              agentInitial={initial}
+              agent={agent}
             />
           )}
           contentContainerStyle={styles.listContent}
           onContentSizeChange={scrollToEnd}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="chatbubbles-outline" size={40} color={colors.faint} />
+              <AgentAvatar agent={agent} size={64} />
+              <Text style={styles.emptyName}>{agent.name}</Text>
               <Text style={styles.emptyText}>Écrivez un message pour démarrer la conversation.</Text>
             </View>
           }
@@ -178,8 +174,7 @@ export default function ChatScreen() {
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -187,13 +182,16 @@ function delay(ms: number) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  headerTitle: { flexDirection: "row", alignItems: "center", gap: 9, maxWidth: 220 },
+  headerName: { color: colors.text, fontSize: font.h3, fontWeight: "700" },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   listContent: { paddingVertical: 12, flexGrow: 1 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 32 },
-  emptyText: { color: colors.muted, fontSize: 13, textAlign: "center" },
+  emptyName: { color: colors.text, fontSize: font.h3, fontWeight: "700", marginTop: 4 },
+  emptyText: { color: colors.muted, fontSize: font.small, textAlign: "center" },
   typing: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 22, paddingBottom: 6 },
   typingText: { color: colors.muted, fontSize: 12 },
   composerWrap: { paddingHorizontal: 10, paddingTop: 6, backgroundColor: colors.bg },
   missing: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, padding: 32, backgroundColor: colors.bg },
-  missingText: { color: colors.muted, fontSize: 14, textAlign: "center" },
+  missingText: { color: colors.muted, fontSize: font.body, textAlign: "center" },
 });

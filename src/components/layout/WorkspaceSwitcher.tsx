@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Search, Plus, Settings, Check, ChevronsUpDown } from "lucide-react";
+import { Search, Plus, Settings, ChevronsUpDown } from "lucide-react";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useWorkspaces, useProjects } from "@/hooks/useWorkspace";
@@ -12,8 +12,8 @@ function Tile({ name, size = "md", selected }: { name: string; size?: "sm" | "md
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-lg font-semibold",
-        size === "sm" ? "h-5 w-5 rounded-[6px] text-[10px]" : "h-9 w-9 text-sm",
+        "flex shrink-0 items-center justify-center rounded-xl font-semibold",
+        size === "sm" ? "h-5 w-5 rounded-[7px] text-[10px]" : "h-10 w-10 text-sm",
         selected ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary",
       )}
     >
@@ -98,23 +98,23 @@ export function WorkspaceSwitcher() {
         </div>
       </PopoverAnchor>
 
-      <PopoverContent align="start" sideOffset={10} className="w-[620px] overflow-hidden p-0">
-        {/* Search */}
-        <div className="flex items-center gap-2 border-b border-border px-3.5 py-2.5">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <PopoverContent align="start" sideOffset={10} className="w-[620px] overflow-hidden rounded-[20px] p-0 shadow-xl">
+        {/* Search — floating header casts a soft shadow over the two columns */}
+        <div className="relative z-10 flex items-center gap-3 border-b border-border/70 bg-popover px-4 py-4 shadow-[0_6px_14px_-10px_rgba(0,0,0,0.25)]">
+          <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Rechercher"
             autoFocus
-            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="w-full bg-transparent text-[15px] outline-none placeholder:text-muted-foreground"
           />
         </div>
 
         <div className="grid grid-cols-2">
           {/* Organisations = workspaces */}
           <div className="min-w-0 border-r border-border p-2">
-            <div className="flex items-center justify-between px-2 py-1.5">
+            <div className="flex items-center justify-between px-2.5 pb-2 pt-1">
               <span className="text-sm font-semibold">Vos organisations</span>
               <button
                 onClick={() => { navigate("/orgs"); setOpen(false); }}
@@ -134,14 +134,18 @@ export function WorkspaceSwitcher() {
                       key={m.workspace_id}
                       onClick={() => setSelectedWsId(m.workspace_id)}
                       className={cn(
-                        "group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors",
-                        isActive ? "bg-primary/10" : "hover:bg-accent",
+                        "group relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors",
+                        isActive ? "bg-accent" : "hover:bg-accent/60",
                       )}
                     >
+                      {/* Active organisation accent bar */}
+                      {isActive && (
+                        <span className="pointer-events-none absolute inset-y-1.5 -left-2 w-1 rounded-full bg-primary" />
+                      )}
                       <Tile name={m.workspaces.name} />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{m.workspaces.name}</div>
-                        <span className="mt-0.5 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <div className="truncate text-sm font-semibold">{m.workspaces.name}</div>
+                        <span className="mt-1 inline-block rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                           {roleLabel(m.role)}
                         </span>
                       </div>
@@ -149,7 +153,7 @@ export function WorkspaceSwitcher() {
                         role="button"
                         tabIndex={0}
                         onClick={(e) => { e.stopPropagation(); navigate("/orgs"); setOpen(false); }}
-                        className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                         aria-label="Paramètres de l'organisation"
                       >
                         <Settings className="h-4 w-4" />
@@ -163,7 +167,7 @@ export function WorkspaceSwitcher() {
 
           {/* Espaces de travail = projects of the selected org */}
           <div className="min-w-0 p-2">
-            <div className="flex items-center justify-between px-2 py-1.5">
+            <div className="flex items-center justify-between px-2.5 pb-2 pt-1">
               <span className="text-sm font-semibold">Espaces de travail</span>
               <button
                 onClick={() => { if (activeWsSlug) { navigate(`/orgs/${activeWsSlug}/projects`); setOpen(false); } }}
@@ -183,18 +187,17 @@ export function WorkspaceSwitcher() {
                       key={p.id}
                       onClick={() => switchToProject(activeWsSlug, p.slug)}
                       className={cn(
-                        "group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors",
+                        "group flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors",
                         isCurrent ? "bg-primary/10" : "hover:bg-accent",
                       )}
                     >
-                      <Tile name={p.name} selected={isCurrent} />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{p.name}</span>
-                      {isCurrent && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                      <Tile name={p.name} />
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p.name}</span>
                       <span
                         role="button"
                         tabIndex={0}
                         onClick={(e) => { e.stopPropagation(); navigate(`/app/${activeWsSlug}/${p.slug}/settings`); setOpen(false); }}
-                        className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                         aria-label="Paramètres de l'espace de travail"
                       >
                         <Settings className="h-4 w-4" />

@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { Pill } from "../ui";
+import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
 import {
   agentsOrSample, genDeployments, modelById, usd,
@@ -36,7 +37,7 @@ function AgentNode({ data }: NodeProps) {
     <div className="w-[170px] rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
       <Handle type="target" position={Position.Left} className="!h-1.5 !w-1.5 !bg-muted-foreground" />
       <div className="flex items-center gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-sm">{data.emoji ?? "🤖"}</span>
+        <AgentAvatar url={data.avatarUrl} seed={data.label} className="h-7 w-7 shrink-0 overflow-hidden rounded-md" />
         <div className="min-w-0">
           <div className="truncate text-xs font-medium">{data.label}</div>
           <div className="truncate text-[10px] text-muted-foreground">{data.sub}</div>
@@ -136,7 +137,7 @@ function LiveCanvas({ onSelect }: { onSelect: (s: LiveSel) => void }) {
       const d = deployments.find((x) => x.agentId === a.id);
       ns.push({
         id: `ag_${a.id}`, type: "agent", position: { x: 260, y: 10 + i * 92 },
-        data: { label: a.name, emoji: a.avatar_emoji, sub: modelById(d?.model ?? "")?.label ?? "—" },
+        data: { label: a.name, avatarUrl: a.avatar_url, sub: modelById(d?.model ?? "")?.label ?? "—" },
       });
       const src = sources[i % sources.length];
       es.push({

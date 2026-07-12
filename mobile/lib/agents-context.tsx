@@ -2,58 +2,49 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState,
   type ReactNode,
 } from "react";
-import { loadAgents, persistAgents, type RegisteredAgent } from "./storage";
+import { listAgents, type Agent } from "./api";
+import { useSession } from "./session-context";
 
 interface AgentsContextValue {
-  agents: RegisteredAgent[];
+  agents: Agent[];
   loading: boolean;
-  add: (agent: Omit<RegisteredAgent, "addedAt">) => Promise<void>;
-  remove: (id: string) => Promise<void>;
-  get: (id: string) => RegisteredAgent | undefined;
+  error: string | null;
+  refresh: () => Promise<void>;
+  get: (id: string) => Agent | undefined;
 }
 
 const AgentsContext = createContext<AgentsContextValue | null>(null);
 
 export function AgentsProvider({ children }: { children: ReactNode }) {
-  const [agents, setAgents] = useState<RegisteredAgent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { session, getToken } = useSession();
+  const userId = session?.user.id ?? null;
 
-  useEffect(() => {
-    loadAgents()
-      .then(setAgents)
-      .finally(() => setLoading(false));
-  }, []);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const persist = useCallback(async (next: RegisteredAgent[]) => {
-    setAgents(next);
-    await persistAgents(next);
-  }, []);
+  const refresh = useCallback(async () => {
+    if (!userId) { setAgents([]); return; }
+    setError(null);
+    setLoading(true);
+    try {
+      const token = await getToken();
+      setAgents(await listAgents(token));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec du chargement des agents");
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, getToken]);
 
-  const add = useCallback<AgentsContextValue["add"]>(
-    async (agent) => {
-      const entry: RegisteredAgent = { ...agent, addedAt: new Date().toISOString() };
-      // Replace on duplicate id (re-registering updates the secret/name).
-      const next = [entry, ...agents.filter((a) => a.id !== agent.id)];
-      await persist(next);
-    },
-    [agents, persist],
-  );
+  // Load (or clear) whenever the signed-in user changes.
+  useEffect(() => { refresh(); }, [userId, refresh]);
 
-  const remove = useCallback<AgentsContextValue["remove"]>(
-    async (id) => {
-      await persist(agents.filter((a) => a.id !== id));
-    },
-    [agents, persist],
-  );
+  const get = useCallback((id: string) => agents.find((a) => a.id === id), [agents]);
 
-  const get = useCallback(
-    (id: string) => agents.find((a) => a.id === id),
-    [agents],
-  );
-
-  const value = useMemo(
-    () => ({ agents, loading, add, remove, get }),
-    [agents, loading, add, remove, get],
+  const value = useMemo<AgentsContextValue>(
+    () => ({ agents, loading, error, refresh, get }),
+    [agents, loading, error, refresh, get],
   );
 
   return <AgentsContext.Provider value={value}>{children}</AgentsContext.Provider>;

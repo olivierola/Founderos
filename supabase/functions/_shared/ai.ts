@@ -45,7 +45,15 @@ interface CallOpts {
   model?: string;
   /** Force a specific provider, bypassing task-based routing. */
   provider?: "groq" | "deepseek";
+  /** Route to a custom OpenAI-compatible endpoint (e.g. a self-hosted RunPod
+   *  model) instead of the provider's default URL/key. `provider` is still used
+   *  only for cost labelling. */
+  endpoint?: EndpointOverride;
 }
+
+/** A custom OpenAI-compatible chat endpoint (base URL ending at /v1). */
+export interface EndpointOverride { baseUrl: string; apiKey?: string; model?: string }
+const chatCompletionsUrl = (baseUrl: string) => `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
 interface ChatResponse {
   choices: { message: { content: string } }[];
@@ -62,15 +70,16 @@ export async function callAi(opts: CallOpts): Promise<{ content: string; provide
     throw new Error("LLM calls are disabled by environment (LLM_GLOBAL_BLOCK=1)");
   }
   const provider = opts.provider ?? routeAiRequest(opts.task);
-  const apiKey =
-    provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
-  if (!apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
+  const ep = opts.endpoint;
+  const apiKey = ep ? (ep.apiKey ?? "") : (provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY"));
+  if (!ep && !apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
 
-  const url =
-    provider === "groq"
+  const url = ep
+    ? chatCompletionsUrl(ep.baseUrl)
+    : provider === "groq"
       ? "https://api.groq.com/openai/v1/chat/completions"
       : "https://api.deepseek.com/chat/completions";
-  const model = opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
+  const model = ep?.model ?? opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
 
   const body: Record<string, unknown> = {
     model,
@@ -141,6 +150,8 @@ export type ToolExecutor = (
 interface ToolLoopOpts {
   provider?: "groq" | "deepseek";
   model?: string;            // override the provider's default model
+  /** Route to a custom OpenAI-compatible endpoint (self-hosted RunPod model). */
+  endpoint?: EndpointOverride;
   messages: ChatMessage[];
   tools: ToolDef[];
   executor: ToolExecutor;
@@ -188,11 +199,11 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
     throw new Error("LLM calls are disabled by environment (LLM_GLOBAL_BLOCK=1)");
   }
   const provider = opts.provider ?? "groq";
-  const apiKey =
-    provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
-  if (!apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
-  const url = TOOL_ENDPOINTS[provider];
-  const model = opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
+  const ep = opts.endpoint;
+  const apiKey = ep ? (ep.apiKey ?? "") : (provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY"));
+  if (!ep && !apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
+  const url = ep ? chatCompletionsUrl(ep.baseUrl) : TOOL_ENDPOINTS[provider];
+  const model = ep?.model ?? opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
 
   const messages = [...opts.messages];
   const usageTotal = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
@@ -405,6 +416,8 @@ interface ToolChatResponse {
 export interface ToolRoundsOpts {
   provider?: "groq" | "deepseek";
   model?: string;
+  /** Route to a custom OpenAI-compatible endpoint (self-hosted RunPod model). */
+  endpoint?: EndpointOverride;
   messages: ChatMessage[];
   tools: ToolDef[];
   executor: ToolExecutor;
@@ -429,10 +442,11 @@ export interface ToolRoundsResult {
 export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsResult> {
   if (Deno.env.get("LLM_GLOBAL_BLOCK") === "1") throw new Error("LLM calls are disabled (LLM_GLOBAL_BLOCK=1)");
   const provider = opts.provider ?? "deepseek";
-  const apiKey = provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
-  if (!apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
-  const url = TOOL_ENDPOINTS[provider];
-  const model = opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
+  const ep = opts.endpoint;
+  const apiKey = ep ? (ep.apiKey ?? "") : (provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY"));
+  if (!ep && !apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
+  const url = ep ? chatCompletionsUrl(ep.baseUrl) : TOOL_ENDPOINTS[provider];
+  const model = ep?.model ?? opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
   const messages = opts.messages;
   const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];

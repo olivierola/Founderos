@@ -7,7 +7,7 @@ import { ChatConversationsItem } from "./ChatConversationsItem";
 import { InboxChannelsItem } from "./InboxChannelsItem";
 import { CrmObjectsItem } from "./CrmObjectsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { INTERNAL_AGENT_TABS } from "@/features/internal-agents/InternalAgentDetail";
 import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
@@ -69,10 +69,10 @@ export function SecondarySidebar() {
   if (moduleSlug === "agent" && segments[appIdx + 4] === "builder") {
     const agentId = segments[appIdx + 5];
     return (
-      <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
+      <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
         <div className="flex h-14 items-center border-b border-border px-4">
-          <NavLink to={`${base}/agent/agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" /> All agents
+          <NavLink to={`${base}/agent/public-agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> Agents publics
           </NavLink>
         </div>
         <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
@@ -92,7 +92,7 @@ export function SecondarySidebar() {
   if (moduleSlug === "agent" && segments[appIdx + 4] === "internal") {
     const agentId = segments[appIdx + 5];
     return (
-      <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
+      <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
         <div className="flex h-14 items-center border-b border-border px-4">
           <NavLink to={`${base}/agent/internal-agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" /> Internal agents
@@ -108,6 +108,11 @@ export function SecondarySidebar() {
         </nav>
       </aside>
     );
+  }
+
+  // Vibe Code → onglets + persisted chat sessions.
+  if (moduleSlug === "vibe-code") {
+    return <VibeCodeSidebar base={base} pathname={location.pathname} search={location.search} />;
   }
 
   const module = findModule(moduleSlug ?? "crm");
@@ -141,7 +146,7 @@ export function SecondarySidebar() {
       itemsInGroup(module, g).some((it) => it.slug === activeSlug),
     );
     return (
-      <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
+      <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
         <div className="flex h-14 items-center border-b border-border px-4">
           <div className="text-base font-semibold text-foreground">{module.label}</div>
         </div>
@@ -179,7 +184,7 @@ export function SecondarySidebar() {
   const topLevel = module.subItems.filter((s) => !s.parent);
 
   return (
-    <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center border-b border-border px-4">
         <div className="text-base font-semibold text-foreground">{module.label}</div>
       </div>
@@ -260,7 +265,7 @@ function ProjectsSidebar({ config, base, moduleSlug }: { config: ModuleProjectCo
   })();
 
   return (
-    <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
         <div className="text-base font-semibold text-foreground">{config.label}</div>
       </div>
@@ -310,52 +315,80 @@ function ProjectsSidebar({ config, base, moduleSlug }: { config: ModuleProjectCo
 }
 
 // ── Agent workforce sidebar ─────────────────────────────────────────────────
+// The AI Workforce module splits into two parts: internal agents (private team
+// workers) and public agents (customer-facing — SAV, e-commerce, onboarding).
+// Both parts live in this one sidebar as labelled sections.
 
 interface HiredAgent { id: string; name: string; description: string | null; avatar_emoji: string | null; avatar_url: string | null; accent_color: string | null }
+interface PublicAgent { id: string; name: string; accent_color: string | null; enabled: boolean }
 
 function AgentWorkforceSidebar({ base }: { base: string }) {
   const { projectId } = useCurrentContext();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { data: agents, isLoading } = useQuery({
+  const { data: internalAgents, isLoading: loadingInternal } = useQuery({
     queryKey: ["sidebar_agents", projectId],
     enabled: !!projectId,
     queryFn: async () => {
       const { data } = await (await import("@/lib/supabase")).supabase
         .from("internal_agents").select("id, name, description, avatar_emoji, avatar_url, accent_color")
-        .eq("project_id", projectId!).order("created_at", { ascending: false });
+        .eq("project_id", projectId!).eq("is_archived", false).order("created_at", { ascending: false });
       return (data ?? []) as HiredAgent[];
     },
     refetchInterval: 10000,
   });
 
-  const currentAgentId = (() => {
-    const segs = location.pathname.split("/").filter(Boolean);
+  const { data: publicAgents, isLoading: loadingPublic } = useQuery({
+    queryKey: ["sidebar_public_agents", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await (await import("@/lib/supabase")).supabase
+        .from("rag_agents").select("id, name, accent_color, enabled")
+        .eq("project_id", projectId!).order("created_at", { ascending: false });
+      return (data ?? []) as PublicAgent[];
+    },
+    refetchInterval: 10000,
+  });
+
+  const segs = location.pathname.split("/").filter(Boolean);
+  const currentInternalId = (() => {
     const idx = segs.indexOf("internal");
     return idx >= 0 ? segs[idx + 1] : undefined;
   })();
+  const currentPublicId = (() => {
+    const idx = segs.indexOf("builder");
+    return idx >= 0 ? segs[idx + 1] : undefined;
+  })();
+  const agentSeg = (() => {
+    const idx = segs.indexOf("agent");
+    return idx >= 0 ? segs[idx + 1] : undefined;
+  })();
+  const onInternalList = agentSeg === "internal-agents";
+  const onPublicList = agentSeg === "public-agents";
+  const onCollections = agentSeg === "collections";
 
   return (
-    <aside className="flex h-full w-48 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
         <div className="text-base font-semibold text-foreground">AI Workforce</div>
       </div>
 
       <div className="scrollbar-slim flex-1 overflow-y-auto p-2">
+        {/* ── Internal agents ── */}
+        <SectionLabel>Agents internes</SectionLabel>
         <button
           onClick={() => navigate(`${base}/agent/internal-agents`)}
-          className="mb-2 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-primary hover:bg-sidebar-accent/60"
+          className={cn(
+            "mb-1 flex w-full items-center gap-2 rounded-2xl bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800",
+            onInternalList && "ring-1 ring-white/20",
+          )}
         >
-          <Plus className="h-3.5 w-3.5" /> Hire agent
+          <Plus className="h-3.5 w-3.5" /> Recruter un agent
         </button>
-
-        {isLoading && (
-          <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-        )}
-
-        {(agents ?? []).map((a) => {
-          const isActive = a.id === currentAgentId;
+        {loadingInternal && <SidebarSpinner />}
+        {(internalAgents ?? []).map((a) => {
+          const isActive = a.id === currentInternalId;
           return (
             <button
               key={a.id}
@@ -367,17 +400,143 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
                   : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
               )}
             >
-              <AgentAvatar url={a.avatar_url} emoji={a.avatar_emoji} accent={a.accent_color}
-                className="h-6 w-6 shrink-0 overflow-hidden rounded-md text-sm" />
+              <AgentAvatar url={a.avatar_url} seed={a.name}
+                className="h-6 w-6 shrink-0 overflow-hidden rounded-md" />
               <span className="min-w-0 flex-1 truncate">{a.name}</span>
             </button>
           );
         })}
-
-        {!isLoading && (agents ?? []).length === 0 && (
-          <p className="px-3 py-4 text-xs text-muted-foreground">No agents hired yet.</p>
+        {!loadingInternal && (internalAgents ?? []).length === 0 && (
+          <p className="px-3 py-2 text-xs text-muted-foreground">Aucun agent interne.</p>
         )}
+
+        {/* ── Public agents ── */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <SectionLabel>Agents publics</SectionLabel>
+        </div>
+        <button
+          onClick={() => navigate(`${base}/agent/public-agents`)}
+          className={cn(
+            "mb-1 flex w-full items-center gap-2 rounded-2xl bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200",
+            onPublicList && "ring-1 ring-black/10",
+          )}
+        >
+          <Plus className="h-3.5 w-3.5" /> Nouvel agent
+        </button>
+        {loadingPublic && <SidebarSpinner />}
+        {(publicAgents ?? []).map((a) => {
+          const isActive = a.id === currentPublicId;
+          const accent = a.accent_color || "#001BB7";
+          return (
+            <button
+              key={a.id}
+              onClick={() => navigate(`${base}/agent/builder/${a.id}/playground`)}
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
+                isActive
+                  ? "bg-sidebar-accent font-medium text-foreground"
+                  : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+              )}
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md" style={{ background: `${accent}26` }}>
+                <span className="h-2 w-2 rounded-full" style={{ background: accent }} />
+              </span>
+              <span className="min-w-0 flex-1 truncate">{a.name}</span>
+            </button>
+          );
+        })}
+        {!loadingPublic && (publicAgents ?? []).length === 0 && (
+          <p className="px-3 py-2 text-xs text-muted-foreground">Aucun agent public.</p>
+        )}
+
+        {/* ── Knowledge base ── */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <SectionLabel>Base de connaissances</SectionLabel>
+        </div>
+        <button
+          onClick={() => navigate(`${base}/agent/collections`)}
+          className={cn(
+            "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
+            onCollections
+              ? "bg-sidebar-accent font-medium text-foreground"
+              : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+          )}
+        >
+          <BookOpenIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Collections</span>
+        </button>
       </div>
     </aside>
   );
+}
+
+// ── Vibe Code sidebar — module onglets + persisted chat sessions ─────────────
+interface VibeSession { id: string; title: string; updated_at: string }
+function VibeCodeSidebar({ base, pathname, search }: { base: string; pathname: string; search: string }) {
+  const { projectId } = useCurrentContext();
+  const navigate = useNavigate();
+  const mod = findModule("vibe-code");
+  const segs = pathname.split("/").filter(Boolean);
+  const activeSub = segs[segs.indexOf("vibe-code") + 1];
+  const activeSession = new URLSearchParams(search).get("session");
+
+  const { data: sessions } = useQuery({
+    queryKey: ["vibe_sessions", projectId],
+    enabled: !!projectId,
+    refetchInterval: 8000,
+    queryFn: async () => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data } = await supabase.from("vibe_sessions").select("id, title, updated_at").eq("project_id", projectId!).order("updated_at", { ascending: false }).limit(50);
+      return (data ?? []) as VibeSession[];
+    },
+  });
+
+  return (
+    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
+      <div className="flex h-14 items-center border-b border-border px-4"><div className="text-base font-semibold text-foreground">Vibe Code</div></div>
+      <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
+        {(mod?.subItems ?? []).map((s) => (
+          <NavLink key={s.slug} to={`${base}/vibe-code/${s.slug}`} className={linkClass}>
+            {s.icon && <s.icon weight="duotone" className="h-[18px] w-[18px] shrink-0" />}
+            <span className="truncate">{s.label}</span>
+          </NavLink>
+        ))}
+
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sessions</div>
+          <button
+            onClick={() => navigate(`${base}/vibe-code/chat`)}
+            className={cn("mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent/60",
+              activeSub === "chat" && !activeSession ? "bg-sidebar-accent font-medium text-foreground" : "font-medium text-primary")}
+          >
+            <Plus className="h-3.5 w-3.5" /> Nouvelle session
+          </button>
+          {(sessions ?? []).length === 0 ? (
+            <p className="px-3 py-2 text-xs text-muted-foreground">Aucune session.</p>
+          ) : (sessions ?? []).map((s) => (
+            <button
+              key={s.id}
+              onClick={() => navigate(`${base}/vibe-code/chat?session=${s.id}`)}
+              className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
+                activeSession === s.id && activeSub === "chat" ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}
+            >
+              <span className="min-w-0 flex-1 truncate">{s.title}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+    </aside>
+  );
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="px-3 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function SidebarSpinner() {
+  return <div className="flex justify-center py-3"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
 }

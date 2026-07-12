@@ -13,6 +13,18 @@ export function ProvidersPanel() {
   const { providers, loading, connect, test, remove, runpodProviders } = useProvidersDb();
   const [connecting, setConnecting] = useState(false);
   const [renting, setRenting] = useState(false);
+  const [platformBusy, setPlatformBusy] = useState(false);
+  const [platformErr, setPlatformErr] = useState<string | null>(null);
+
+  // One-click: register a keyless RunPod provider that resolves to the platform
+  // RUNPOD_API_KEY secret at call time — no key entry.
+  const hasPlatformRunpod = providers.some((p) => p.kind === "runpod" && (p.config as { uses_platform_key?: boolean }).uses_platform_key);
+  async function connectPlatform() {
+    setPlatformBusy(true); setPlatformErr(null);
+    try { await connect("runpod", "RunPod (plateforme)", "", { uses_platform_key: true }); }
+    catch (e) { setPlatformErr(e instanceof Error ? e.message : "Échec"); }
+    finally { setPlatformBusy(false); }
+  }
 
   return (
     <Card className="overflow-hidden">
@@ -21,12 +33,19 @@ export function ProvidersPanel() {
         <span className="text-sm font-medium">Fournisseurs de calcul</span>
         <span className="text-xs text-muted-foreground">— vos modèles sur un endpoint cloud, ou des GPU loués sur RunPod</span>
         <div className="ml-auto flex gap-2">
+          {!hasPlatformRunpod && (
+            <Button size="sm" variant="outline" disabled={platformBusy} onClick={connectPlatform} title="Utilise la clé RunPod configurée au niveau de la plateforme">
+              {platformBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Server className="mr-1.5 h-3.5 w-3.5 text-violet-500" />}
+              Connecter RunPod (plateforme)
+            </Button>
+          )}
           <Button size="sm" variant="outline" disabled={runpodProviders.length === 0} onClick={() => setRenting(true)}>
             <Zap className="mr-1.5 h-3.5 w-3.5" />Louer un GPU
           </Button>
           <Button size="sm" onClick={() => setConnecting(true)}><Plus className="mr-1.5 h-4 w-4" />Connecter</Button>
         </div>
       </div>
+      {platformErr && <p className="border-b border-border/60 bg-red-500/5 px-5 py-2 text-xs text-red-500">{platformErr}</p>}
 
       {loading ? (
         <p className="px-5 py-4 text-sm text-muted-foreground">Chargement…</p>
@@ -121,8 +140,11 @@ function ConnectDialog({ onClose, onConnect }: { onClose: () => void; onConnect:
               <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" />
             </Field>
           )}
-          <Field label={kind === "runpod" ? "Clé API RunPod" : "Clé API"} hint="chiffrée au repos (AES-256) — jamais renvoyée au navigateur">
-            <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-… / rp_…" />
+          <Field
+            label={kind === "runpod" ? "Clé API RunPod (optionnel)" : "Clé API"}
+            hint={kind === "runpod" ? "laissez vide pour utiliser la clé RunPod de la plateforme — sinon chiffrée au repos (AES-256)" : "chiffrée au repos (AES-256) — jamais renvoyée au navigateur"}
+          >
+            <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={kind === "runpod" ? "rp_… (ou vide = clé plateforme)" : "sk-…"} />
           </Field>
           {kind === "runpod" && (
             <Field label="Token Hugging Face (optionnel)" hint="requis pour entraîner sur des modèles gated (Llama, Gemma) — chiffré aussi">
@@ -133,7 +155,7 @@ function ConnectDialog({ onClose, onConnect }: { onClose: () => void; onConnect:
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Annuler</Button>
-          <Button onClick={submit} disabled={busy || !apiKey || (kind === "cloud_endpoint" && !baseUrl)}>
+          <Button onClick={submit} disabled={busy || (kind === "cloud_endpoint" && (!apiKey || !baseUrl))}>
             {busy ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />Test & connexion…</> : "Connecter & tester"}
           </Button>
         </DialogFooter>

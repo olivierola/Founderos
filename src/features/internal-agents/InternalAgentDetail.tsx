@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils";
 import { InstructionsEditor } from "./InstructionsEditor";
 import { AgentAvatar } from "./AvatarPicker";
 import { AgentChannelsTab } from "./AgentChannelsTab";
+import { AgentHostedModelCard } from "./AgentHostedModel";
 import { AgentAutomationsTab } from "./AgentAutomationsTab";
 import { RunTimeline } from "./RunTimeline";
 import { toolSummary } from "./runEventMeta";
@@ -832,9 +833,8 @@ function ChatTab({
         <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10">
           <AgentAvatar
             url={agent.avatar_url}
-            emoji={agent.avatar_emoji}
-            accent={agent.accent_color}
-            className="mb-4 h-14 w-14 overflow-hidden rounded-2xl text-2xl"
+            seed={agent.name}
+            className="mb-4 h-14 w-14 overflow-hidden rounded-2xl"
           />
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">{agent.name}</h1>
           {agent.description && (
@@ -3132,6 +3132,7 @@ function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedded?: boo
             checked={missionEnabled} onChange={setMissionEnabled} disabled={!isOwner}
           />
         </div>
+        <AgentHostedModelCard agent={agent} disabled={!isOwner} />
       </SettingsSection>
       )}
 
@@ -3689,8 +3690,8 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
                     >
                       <AgentAvatar
                         url={from.avatar_url}
-                        emoji={from.avatar_emoji}
-                        className={cn("h-8 w-8 shrink-0 overflow-hidden rounded-full text-sm", !from.avatar_url && c.bg)}
+                        seed={from.name}
+                        className="h-8 w-8 shrink-0 overflow-hidden rounded-full"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -3720,9 +3721,8 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
           <div className="flex items-center gap-2">
             <AgentAvatar
               url={agent.avatar_url}
-              emoji={agent.avatar_emoji}
-              accent={agent.accent_color}
-              className="h-9 w-9 shrink-0 overflow-hidden rounded-lg text-base"
+              seed={agent.name}
+              className="h-9 w-9 shrink-0 overflow-hidden rounded-lg"
             />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">#{channelName}-collab</div>
@@ -3770,7 +3770,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
                 const isSelf = p.id === agent.id;
                 return (
                   <div key={p.id} className="flex items-center gap-2">
-                    <AgentAvatar url={p.avatar_url} emoji={p.avatar_emoji} className={cn("h-7 w-7 shrink-0 overflow-hidden rounded-md text-sm", !p.avatar_url && c.bg)} />
+                    <AgentAvatar url={p.avatar_url} seed={p.name} className="h-7 w-7 shrink-0 overflow-hidden rounded-md" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className={cn("truncate text-sm font-medium", c.text)}>{p.name}</span>
@@ -3796,7 +3796,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
               {peers.map((p) => (
                 <div key={p.id} className="rounded-lg border border-border/70 p-2.5">
                   <div className="flex items-center gap-2">
-                    <AgentAvatar url={p.avatar_url} emoji={p.avatar_emoji} className={cn("h-7 w-7 shrink-0 overflow-hidden rounded-md text-sm", !p.avatar_url && a2aColor(p.id).bg)} />
+                    <AgentAvatar url={p.avatar_url} seed={p.name} className="h-7 w-7 shrink-0 overflow-hidden rounded-md" />
                     <div className="min-w-0">
                       <div className={cn("truncate text-sm font-medium", a2aColor(p.id).text)}>{p.name}</div>
                       {p.role && <div className="truncate text-[10px] text-muted-foreground">{p.role}</div>}

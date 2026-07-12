@@ -82,7 +82,7 @@ export function ArtifactsTab({ moduleProject: mp }: { moduleProject: ModuleProje
     refetchInterval: 5000,
   });
 
-  const runSteps = (agentRuns?.runs ?? []).slice(0, 3).map((run: any): { agentName: string; agentEmoji: string; steps: PlanStep[] } => {
+  const runSteps = (agentRuns?.runs ?? []).slice(0, 3).map((run: any): { agentName: string; steps: PlanStep[] } => {
     const agent = (agentRuns?.agents ?? []).find((a: any) => a.id === run.agent_id) as any;
     const runEvents = (agentRuns?.events ?? []).filter((e: any) => e.run_id === run.id);
     const steps: PlanStep[] = runEvents.map((ev: any, i: number): PlanStep => {
@@ -118,7 +118,7 @@ export function ArtifactsTab({ moduleProject: mp }: { moduleProject: ModuleProje
     if (run.status === "running" && steps.length === 0) {
       steps.push({ id: "init", title: "Initializing…", status: "active", icon: <Loader2 className="w-3.5 h-3.5" /> });
     }
-    return { agentName: agent?.name ?? "Agent", agentEmoji: agent?.avatar_emoji ?? "🤖", steps };
+    return { agentName: agent?.name ?? "Agent", steps };
   });
 
   async function save(next: Artifact[]) {
@@ -169,7 +169,7 @@ export function ArtifactsTab({ moduleProject: mp }: { moduleProject: ModuleProje
           {runSteps.map((rs, i) => (
             <AgentPlanning
               key={i}
-              title={`${rs.agentEmoji} ${rs.agentName} is working`}
+              title={`${rs.agentName} is working`}
               steps={rs.steps}
             />
           ))}

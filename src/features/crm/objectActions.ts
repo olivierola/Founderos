@@ -39,7 +39,7 @@ export const OBJECT_ACTIONS: Record<string, ObjectAction[]> = {
   ],
   simulations: [
     { id: "open", label: "Open simulation", icon: "FlaskConical", kind: "navigate",
-      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/crm/simulations` },
+      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/simulations/workspace` },
   ],
   discussions: [
     { id: "open", label: "Open channel", icon: "MessageSquare", kind: "navigate",

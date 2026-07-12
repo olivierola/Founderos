@@ -1,7 +1,8 @@
 # FounderOS Agents — mobile app
 
-Expo + React Native (TypeScript, expo-router) companion app. Register an agent
-created in FounderOS with its **id + secret**, then chat with it.
+Expo + React Native (TypeScript, expo-router) companion app. Sign in with your
+**FounderOS account** and chat with every agent you can access — synced with the
+web app. Protected by an optional **PIN + biometric** app-lock.
 
 ## Run
 
@@ -11,63 +12,64 @@ npm install          # or: npx expo install   (aligns native deps to the SDK)
 npx expo start       # press i / a, or scan the QR with Expo Go
 ```
 
-> The real backend is wired (`lib/config.ts` → `mock: false`). Set `mock: true`
-> to demo the register → chat flow with canned replies and no network.
-
 ## Flow
 
-1. **Mes agents** (`app/index.tsx`) — the agents registered on this device.
-2. **Enregistrer un agent** (`app/register.tsx`) — paste the agent **id** and
-   **secret** (+ optional display name). Credentials are stored encrypted via
-   `expo-secure-store`.
-3. **Chat** (`app/chat/[id].tsx`) — talk to the agent.
+1. **Auth** (`components/AuthScreen.tsx`) — sign in / sign up with your FounderOS
+   account (email + password). The session is stored encrypted (`expo-secure-store`)
+   and refreshed silently.
+2. **App-lock** (`components/LockScreen.tsx`, optional) — set a 4-digit code in
+   **Réglages**; unlock with the code or Face ID / fingerprint. Re-locks when the
+   app returns to the foreground.
+3. **Mes agents** (`app/index.tsx`) — every agent the account can access, fetched
+   from the backend (no manual registration).
+4. **Conversations** (`app/agent/[id].tsx`) → **Chat** (`app/chat/[id].tsx`) — the
+   real agentic chat loop (tools/memory), shared with the web.
 
 ## Structure
 
 ```
 mobile/
   app/
-    _layout.tsx        Stack navigator + providers + dark theme
-    index.tsx          Registered agents list
-    register.tsx       Register by id + secret
+    _layout.tsx        Stack + providers + <Gate> (auth → lock → app)
+    index.tsx          Account agents list (custom premium header)
+    agent/[id].tsx     Conversations of an agent
     chat/[id].tsx      Chat screen
+    settings.tsx       Account + security (PIN/biometric) + sign out
+    set-pin.tsx        Create / change the lock code
   components/
-    MessageBubble.tsx
+    AuthScreen.tsx  LockScreen.tsx  PinKeypad.tsx
+    MessageBubble.tsx  Composer.tsx  ui.tsx   (GlowBackdrop/PrimaryButton/AgentAvatar…)
   lib/
-    config.ts          Supabase URL / anon key / function name / mock flag
-    theme.ts           Palette
-    storage.ts         SecureStore CRUD for registered agents
-    agents-context.tsx App-wide agents state
-    api.ts             Chat API client (+ mock)
+    config.ts          Supabase URL / anon key / function name
+    theme.ts           Premium dark design tokens
+    session.ts         Supabase auth REST + session persistence
+    session-context.tsx / lock-context.tsx / agents-context.tsx
+    security.ts        PIN (hashed) + biometric helpers
+    api.ts             Mobile chat API client (token-based)
 ```
 
-## Backend (implemented)
+## Backend
 
-The client calls `internal-agent-run` with `mode: "mobile_chat"` — a synchronous
-path that authenticates the agent by `(agent_id, secret)` and returns a reply.
-Folded into the existing function to stay under the Supabase 100-function cap.
+The client calls `internal-agent-run` with `mode: "mobile"`, authenticated by the
+**user account JWT** (legacy per-agent `secret` still accepted). Folded into the
+existing function to stay under the Supabase 100-function cap.
 
 ```
 POST {SUPABASE_URL}/functions/v1/internal-agent-run
-headers: apikey: <anon>, Authorization: Bearer <anon>, Content-Type: application/json
-body:    { "agent_id": "...", "mode": "mobile_chat", "secret": "...", "message": "...", "conversation_id": "..."? }
-200:     { "reply": "...", "conversation_id": "..." }
-4xx:     { "error": "invalid secret" | "unknown agent" | "mobile access is disabled ..." }
-
-# registration verify ping:
-body:    { "agent_id": "...", "mode": "mobile_chat", "secret": "...", "verify": true }  → 200 / 4xx
+headers: apikey: <anon>, Authorization: Bearer <access_token>, Content-Type: application/json
+body:    { "mode": "mobile", "action": "list_agents" }
+                                     | "list_conversations", agent_id
+                                     | "get_messages", agent_id, conversation_id
+                                     | "send", agent_id, message, conversation_id?
 ```
 
-Notes:
-- `mobile_chat` is single-turn (agent persona/instructions + recent history, one
-  LLM call, no tools/missions). Messages are stored in the same conversation
-  tables as the web chat, so they show up there too.
+`send` inserts the user message and runs the real agentic loop in the background;
+the client polls `get_messages` (which reports `running`) until the reply lands.
 
 ### To go live
 
-1. **Apply migration** `supabase/migrations/0105_agent_mobile_secret.sql`
-   (`mobile_secret_hash`, `mobile_enabled` on `internal_agents`).
-2. **Deploy** the `internal-agent-run` function (now contains `mobile_chat`).
-3. In the FounderOS web app, open an agent → **Settings → Mobile**, enable mobile
-   access and **Generate secret**. Copy the agent **ID** and **secret**.
-4. In this app, **Enregistrer un agent** with that ID + secret, then chat.
+1. **Deploy** the `internal-agent-run` function (account mode + `list_agents`).
+   No new migration — it reuses the existing RLS + `has_internal_agent_access`.
+   (Migration `0105_agent_mobile_secret.sql` is only needed for the legacy
+   secret path.)
+2. Open the app, **sign in** with a FounderOS account, and your agents appear.

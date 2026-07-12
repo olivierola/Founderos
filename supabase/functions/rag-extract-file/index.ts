@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     const { data: userData } = await userClient.auth.getUser();
     if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
-    const { workspace_id, project_id, agent_id, collection_id, title, storage_path, mime } = await req.json();
+    const { workspace_id, project_id, agent_id, collection_id, title, storage_path, mime, config } = await req.json();
     if (!workspace_id || !project_id || (!agent_id && !collection_id) || !storage_path) {
       return jsonResponse({ error: "workspace_id, project_id, storage_path and one of agent_id|collection_id required" }, { status: 400 });
     }
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
     const { data: source } = await admin
       .from("rag_sources")
-      .insert({ workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, type: "document", title: title || storage_path.split("/").pop(), source_ref: storage_path, status: "processing" })
+      .insert({ workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, type: "document", title: title || storage_path.split("/").pop(), source_ref: storage_path, status: "processing", metadata: config ? { extract_config: config } : {} })
       .select("id")
       .single();
     if (!source) return jsonResponse({ error: "Could not create source" }, { status: 500 });

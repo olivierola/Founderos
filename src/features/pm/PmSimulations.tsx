@@ -151,7 +151,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
           description="Describe an idea or scenario, generate a crowd of AI personas, and rehearse the outcome before you commit."
           action={<Button onClick={() => setOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> New simulation</Button>} />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {(sims ?? []).map((s) => {
             const st = STATUS_META[s.status];
             return (

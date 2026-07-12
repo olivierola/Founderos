@@ -4,7 +4,6 @@ import {
   AtomIcon,
   HandshakeIcon,
   RobotIcon,
-  BugIcon,
   ScalesIcon,
   PuzzlePieceIcon,
   GearSixIcon,
@@ -41,6 +40,7 @@ import {
   ClockCounterClockwiseIcon,
   PlugsConnectedIcon,
   StorefrontIcon,
+  GlobeIcon,
   VaultIcon,
   KeyIcon,
   BroadcastIcon,
@@ -52,6 +52,12 @@ import {
   CreditCardIcon,
   LockKeyIcon,
   FingerprintIcon,
+  GithubLogoIcon,
+  MagicWandIcon,
+  MonitorIcon,
+  GitPullRequestIcon,
+  GitForkIcon,
+  TargetIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -88,6 +94,29 @@ export const ZONES: Zone[] = [
   { id: "connect", label: "Connect" },
 ];
 
+/**
+ * Dashboards — the top-level context switch (like Mistral's Studio/Vibe/Docs).
+ * Both dashboards share the exact same shell (navbar + two sidebars); only the
+ * set of modules shown in the PrimarySidebar changes. "workforce" is the AI
+ * team cockpit; "tools" groups the AI tooling you pilot jointly with the AI
+ * (simulations, app testing, …). Modules tagged "both" appear in either.
+ */
+export type DashboardId = "workforce" | "tools";
+export const DEFAULT_DASHBOARD: DashboardId = "workforce";
+
+export interface DashboardDef {
+  id: DashboardId;
+  label: string;
+  description: string;
+  icon: Icon;
+  /** Tailwind bg class for the icon tile in the switcher. */
+  color: string;
+}
+export const DASHBOARDS: DashboardDef[] = [
+  { id: "workforce", label: "AI Workforce", description: "Vos agents IA au travail", icon: RobotIcon, color: "bg-primary" },
+  { id: "tools", label: "Outils IA", description: "Simulations, tests & outillage IA", icon: FlaskIcon, color: "bg-violet-600" },
+];
+
 export interface ModuleNavItem {
   slug: string;
   label: string;
@@ -97,6 +126,9 @@ export interface ModuleNavItem {
   subItems: SubNavItem[];
   /** Which product zone this module belongs to in the PrimarySidebar (defaults to "run"). */
   zone?: ZoneId;
+  /** Which dashboard this module belongs to (defaults to "workforce"). "both"
+   *  shows it in every dashboard (e.g. Integrations, Settings). */
+  dashboard?: DashboardId | "both";
   /**
    * When true, the SecondarySidebar renders one entry per `group` (a top-level
    * "section" tab pointing at the group's first item), and a horizontal SubTabBar
@@ -106,9 +138,23 @@ export interface ModuleNavItem {
   groupsAsTabs?: boolean;
 }
 
-/** Modules belonging to a zone, in declaration order (defaults to "run"). */
-export function modulesInZone(id: ZoneId): ModuleNavItem[] {
-  return MODULES.filter((m) => (m.zone ?? "run") === id);
+/** Modules belonging to a zone, optionally filtered to a dashboard. */
+export function modulesInZone(id: ZoneId, dashboard?: DashboardId): ModuleNavItem[] {
+  return MODULES.filter((m) =>
+    (m.zone ?? "run") === id &&
+    (!dashboard || (m.dashboard ?? "workforce") === dashboard || m.dashboard === "both"));
+}
+
+/** The dashboard a module belongs to ("workforce" by default). */
+export function dashboardOfModule(slug: string | undefined): DashboardId | "both" {
+  if (!slug) return DEFAULT_DASHBOARD;
+  return MODULES.find((m) => m.slug === slug)?.dashboard ?? DEFAULT_DASHBOARD;
+}
+
+/** The landing route slug of a dashboard = its first non-shared module. */
+export function dashboardLandingSlug(id: DashboardId): string {
+  const first = MODULES.find((m) => (m.dashboard ?? "workforce") === id);
+  return first?.slug ?? "hq";
 }
 
 /** Ordered, de-duplicated list of group labels for a module (skips ungrouped items). */
@@ -172,8 +218,12 @@ export const MODULES: ModuleNavItem[] = [
     icon: RobotIcon,
     color: "text-white",
     zone: "run",
+    // Two parts of the same workforce: internal agents (private team workers)
+    // and public agents (customer-facing — SAV, e-commerce, onboarding, guides).
     subItems: [
-      { label: "Agents", slug: "internal-agents", icon: RobotIcon },
+      { label: "Agents internes", slug: "internal-agents", group: "Internes", icon: RobotIcon },
+      { label: "Agents publics", slug: "public-agents", group: "Publics", icon: GlobeIcon },
+      { label: "Base de connaissances", slug: "collections", group: "Connaissances", icon: BooksIcon },
     ],
   },
   {
@@ -183,7 +233,8 @@ export const MODULES: ModuleNavItem[] = [
     color: "text-emerald-400/60",
     zone: "run",
     // Projects live inside the CRM as records now (the standalone Projects
-    // super-module was retired); App Testing & Simulations were folded in too.
+    // super-module was retired). Simulations & App Testing moved to the "Outils
+    // IA" dashboard as their own modules.
     subItems: [
       // ── Dashboard (on top) ──
       { label: "Dashboard", slug: "admin-dashboard", group: "Dashboard", icon: GaugeIcon },
@@ -191,9 +242,75 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Alerts", slug: "admin-alerts", icon: BellIcon },
       // ── CRM (below the dashboard) ──
       { label: "Records", slug: "workspace", group: "CRM", icon: TableIcon },
-      // ── Simulations & tests (folded in from the retired modules) ──
-      { label: "App Testing", slug: "testing", group: "Simulations & tests", icon: BugIcon },
-      { label: "Simulations", slug: "simulations", icon: AtomIcon },
+    ],
+  },
+  // ── Dashboard "Outils IA" — AI tooling piloted jointly with the AI ───────
+  {
+    slug: "simulations",
+    label: "Data & Simulations",
+    icon: AtomIcon,
+    color: "text-violet-400/60",
+    zone: "run",
+    dashboard: "tools",
+    subItems: [
+      { label: "Simulations", slug: "workspace", icon: AtomIcon },
+    ],
+  },
+  {
+    slug: "test-runs",
+    label: "Test runs",
+    icon: TestTubeIcon,
+    color: "text-rose-400/60",
+    zone: "run",
+    dashboard: "tools",
+    subItems: [
+      { label: "Tests", slug: "tests", icon: FlaskIcon },
+      { label: "Live", slug: "live", icon: MonitorIcon },
+      { label: "Analytics", slug: "analytics", icon: ChartLineUpIcon },
+      { label: "Reports", slug: "reports", icon: ScrollIcon },
+      { label: "Observability", slug: "observability", icon: PulseIcon },
+    ],
+  },
+  {
+    slug: "repos",
+    label: "Dépôts",
+    icon: GithubLogoIcon,
+    color: "text-cyan-400/60",
+    zone: "run",
+    dashboard: "tools",
+    subItems: [
+      { label: "Dépôts", slug: "list", icon: GithubLogoIcon },
+    ],
+  },
+  {
+    slug: "vibe-code",
+    label: "Vibe Code",
+    icon: MagicWandIcon,
+    color: "text-primary",
+    zone: "run",
+    dashboard: "tools",
+    subItems: [
+      { label: "Vibe Code", slug: "chat", icon: MagicWandIcon },
+      { label: "Artifacts", slug: "artifacts", icon: StackIcon },
+      { label: "Pull requests", slug: "pr", icon: GitPullRequestIcon },
+      { label: "Fork", slug: "fork", icon: GitForkIcon },
+      { label: "Preview", slug: "preview", icon: MonitorIcon },
+    ],
+  },
+  {
+    slug: "onboarding",
+    label: "Agentic Onboarding",
+    icon: GraduationCapIcon,
+    color: "text-emerald-400/60",
+    zone: "run",
+    dashboard: "tools",
+    subItems: [
+      { label: "Objectifs", slug: "goals", icon: TargetIcon },
+      { label: "Activation", slug: "activation", icon: ChartLineUpIcon },
+      { label: "Flows", slug: "flows", icon: FlowArrowIcon, group: "Sous le capot" },
+      { label: "Tours", slug: "tours", icon: RocketIcon, group: "Sous le capot" },
+      { label: "Checklist", slug: "checklist", icon: SealCheckIcon, group: "Sous le capot" },
+      { label: "Arbre", slug: "tree", icon: CircuitryIcon, group: "Sous le capot" },
     ],
   },
   // ── Zone CONTROL — the AI control plane, split into 3 full modules ───────
@@ -255,6 +372,7 @@ export const MODULES: ModuleNavItem[] = [
     icon: PuzzlePieceIcon,
     color: "text-cyan-500/55",
     zone: "connect",
+    dashboard: "both",
     subItems: [
       { label: "Connected", slug: "connected", icon: PlugsConnectedIcon },
       { label: "Catalog", slug: "catalog", icon: StorefrontIcon },
@@ -270,6 +388,7 @@ export const MODULES: ModuleNavItem[] = [
     icon: GearSixIcon,
     color: "text-slate-400",
     zone: "connect",
+    dashboard: "both",
     subItems: [
       { label: "Profile", slug: "profile", icon: UserCircleIcon },
       { label: "Workspace", slug: "workspace", icon: BuildingsIcon },

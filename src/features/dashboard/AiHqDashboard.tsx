@@ -14,8 +14,9 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { fetchModuleProjects } from "@/features/module-projects/moduleProjectModel";
 import { MODULE_PROJECT_CONFIGS } from "@/lib/module-project-config";
+import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 
-interface Agent { id: string; name: string; description: string | null; avatar_emoji: string | null; accent_color: string | null; chat_enabled: boolean; mission_enabled: boolean; created_at: string }
+interface Agent { id: string; name: string; description: string | null; avatar_emoji: string | null; avatar_url: string | null; accent_color: string | null; chat_enabled: boolean; mission_enabled: boolean; created_at: string }
 interface Mission { id: string; agent_id: string; title: string; status: string; created_at: string }
 interface Run { id: string; mission_id: string; status: string; created_at: string; finished_at: string | null }
 interface Deliverable { id: string; run_id: string; kind: string; title: string; created_at: string }
@@ -32,7 +33,7 @@ export function AiHqDashboard() {
     queryKey: ["hq_agents", projectId],
     enabled: !!projectId,
     queryFn: async () => {
-      const { data } = await supabase.from("internal_agents").select("id, name, description, avatar_emoji, accent_color, chat_enabled, mission_enabled, created_at")
+      const { data } = await supabase.from("internal_agents").select("id, name, description, avatar_emoji, avatar_url, accent_color, chat_enabled, mission_enabled, created_at")
         .eq("project_id", projectId!).order("created_at", { ascending: false });
       return (data ?? []) as Agent[];
     },
@@ -154,9 +155,7 @@ export function AiHqDashboard() {
                   <button key={a.id}
                     onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${a.id}/chat`)}
                     className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-lg" style={{ backgroundColor: (a.accent_color ?? "#6366f1") + "20" }}>
-                      {a.avatar_emoji ?? "🤖"}
-                    </div>
+                    <AgentAvatar url={a.avatar_url} seed={a.name} className="h-10 w-10 shrink-0 overflow-hidden rounded-lg" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm font-semibold">{a.name}</span>
@@ -211,10 +210,7 @@ export function AiHqDashboard() {
                   return (
                     <div key={ap.id} className="rounded-xl border border-border bg-card p-3">
                       <div className="flex items-center gap-2">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm"
-                          style={{ backgroundColor: (agent?.accent_color ?? "#6366f1") + "20" }}>
-                          {agent?.avatar_emoji ?? "🤖"}
-                        </span>
+                        <AgentAvatar url={agent?.avatar_url} seed={agent?.name ?? "Agent"} className="h-7 w-7 shrink-0 overflow-hidden rounded-md" />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 text-xs">
                             <span className="font-semibold">{agent?.name ?? "Agent"}</span>

@@ -13,6 +13,7 @@ import { callEdge } from "@/lib/edge";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
+import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 
 interface Channel {
   id: string; name: string; description: string | null;
@@ -24,7 +25,7 @@ interface Message {
   user_id: string | null; agent_id: string | null; body: string;
   mentions: string[]; created_at: string;
 }
-interface AgentLite { id: string; name: string; avatar_emoji: string | null; accent_color: string | null }
+interface AgentLite { id: string; name: string; avatar_emoji: string | null; avatar_url: string | null; accent_color: string | null }
 
 const URL_RE = /(https?:\/\/[^\s]+)/g;
 const IMG_RE = /\.(png|jpe?g|gif|webp|svg|avif)(\?|$)/i;
@@ -151,7 +152,7 @@ function ChannelView({ channel }: { channel: Channel }) {
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agents")
-        .select("id, name, avatar_emoji, accent_color")
+        .select("id, name, avatar_emoji, avatar_url, accent_color")
         .eq("project_id", projectId!)
         .eq("is_archived", false)
         .eq("chat_enabled", true);
@@ -271,7 +272,7 @@ function ChannelView({ channel }: { channel: Channel }) {
               <div className="max-h-48 overflow-y-auto">
                 {(agents ?? []).map((a) => (
                   <button key={a.id} onClick={() => insertMention(a)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary">
-                    <span className="flex h-6 w-6 items-center justify-center rounded text-sm" style={{ backgroundColor: (a.accent_color ?? "#2F2FE4") + "22" }}>{a.avatar_emoji ?? "🤖"}</span>
+                    <AgentAvatar url={a.avatar_url} seed={a.name} className="h-6 w-6 shrink-0 overflow-hidden rounded" />
                     {a.name}
                   </button>
                 ))}
@@ -539,7 +540,7 @@ function MembersTab({
               const a = agentById[r.agent_id!];
               return (
                 <div key={r.id} className="group flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded text-xs" style={{ backgroundColor: (a?.accent_color ?? "#2F2FE4") + "22" }}>{a?.avatar_emoji ?? "🤖"}</span>
+                  <AgentAvatar url={a?.avatar_url} seed={a?.name ?? "Agent"} className="h-6 w-6 shrink-0 overflow-hidden rounded" />
                   <span className="truncate text-xs">{a?.name ?? "Agent"}</span>
                   <Bot className="h-3 w-3 text-primary" />
                   {canManage && (
@@ -559,7 +560,7 @@ function MembersTab({
             <div className="max-h-40 overflow-y-auto px-1 pb-1">
               {candidateAgents.map((a) => (
                 <button key={a.id} onClick={() => addAgent(a.id)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-secondary">
-                  <span className="flex h-5 w-5 items-center justify-center rounded text-[10px]" style={{ backgroundColor: (a.accent_color ?? "#2F2FE4") + "22" }}>{a.avatar_emoji ?? "🤖"}</span>
+                  <AgentAvatar url={a.avatar_url} seed={a.name} className="h-5 w-5 shrink-0 overflow-hidden rounded" />
                   {a.name}
                 </button>
               ))}
@@ -576,15 +577,12 @@ function MembersTab({
 function MessageRow({ m, agent, mine }: { m: Message; agent?: AgentLite; mine: boolean }) {
   const isAgent = m.author_kind === "agent";
   const name = isAgent ? (agent?.name ?? "Agent") : mine ? "You" : "Teammate";
-  const emoji = isAgent ? (agent?.avatar_emoji ?? "🤖") : null;
-  const accent = agent?.accent_color ?? "#2F2FE4";
 
-  const avatar = (
-    <div
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sm"
-      style={{ backgroundColor: isAgent ? accent + "22" : "hsl(var(--secondary))", color: isAgent ? accent : undefined }}
-    >
-      {emoji ?? <span className="text-xs font-semibold">{name.slice(0, 1).toUpperCase()}</span>}
+  const avatar = isAgent ? (
+    <AgentAvatar url={agent?.avatar_url} seed={agent?.name ?? "Agent"} className="h-8 w-8 shrink-0 overflow-hidden rounded-md" />
+  ) : (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-sm">
+      <span className="text-xs font-semibold">{name.slice(0, 1).toUpperCase()}</span>
     </div>
   );
 
