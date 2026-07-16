@@ -33,20 +33,22 @@ export function useAiopsCtx() {
   return { workspaceId, projectId, userId: user?.id ?? null, email: (user?.email as string | undefined) ?? "utilisateur" };
 }
 
-const seededOnce = new Set<string>(); // "table:projectId" guards against double-seed per session
-
-/** Project-scoped query over an aiops table, seeding it on first use. */
+/**
+ * Project-scoped query over an aiops table. Real data only — tables are NOT
+ * pre-seeded with sample/mock rows; they populate solely from real user actions
+ * (create a job, upload a dataset, deploy, provision a server…). The `seeds`
+ * argument is kept for signature compatibility but intentionally ignored.
+ */
 export function useSeededTable<T>(opts: {
   table: string;
   map: (row: Record<string, unknown>) => T;
-  /** Rows to insert (without ws/proj — injected) when the table is empty. Return null to skip seeding (deps not ready). */
-  seeds: (() => Record<string, unknown>[] | null) | null;
+  seeds?: (() => Record<string, unknown>[] | null) | null;
   orderBy?: string;
   ascending?: boolean;
 }) {
-  const { workspaceId, projectId } = useAiopsCtx();
+  const { projectId } = useAiopsCtx();
   const qc = useQueryClient();
-  const { table, map, seeds, orderBy = "created_at", ascending = false } = opts;
+  const { table, map, orderBy = "created_at", ascending = false } = opts;
 
   const q = useQuery({
     queryKey: ["aiops", table, projectId],
@@ -58,19 +60,6 @@ export function useSeededTable<T>(opts: {
       return (data ?? []) as Record<string, unknown>[];
     },
   });
-
-  // Seed once when confirmed empty.
-  useEffect(() => {
-    const key = `${table}:${projectId}`;
-    if (!projectId || !workspaceId || !seeds) return;
-    if (!q.isSuccess || (q.data?.length ?? 0) > 0 || seededOnce.has(key)) return;
-    const rows = seeds();
-    if (!rows || rows.length === 0) return;
-    seededOnce.add(key);
-    void supabase.from(table)
-      .insert(rows.map((r) => ({ workspace_id: workspaceId, project_id: projectId, ...r })))
-      .then(() => qc.invalidateQueries({ queryKey: ["aiops", table, projectId] }));
-  }, [q.isSuccess, q.data, projectId, workspaceId, table, seeds, qc]);
 
   const rows = useMemo(() => (q.data ?? []).map(map), [q.data, map]);
   const invalidate = useCallback(() => qc.invalidateQueries({ queryKey: ["aiops", table, projectId] }), [qc, table, projectId]);
@@ -717,9 +706,7 @@ export function useRealAccessLogs(agents: AgentLite[]) {
       status: e.kind === "error" ? "error" : "ok", runId: `run_${e.run_id.slice(0, 6)}`,
     };
   }), [q.data, agents]);
-  const isSample = !q.isLoading && real.length === 0;
-  const sample = useMemo(() => (projectId && isSample ? genAccessLogs(agentsOrSample(agents), projectId) : []), [projectId, isSample, agents]);
-  return { logs: isSample ? sample : real, isSample, loading: q.isLoading };
+  return { logs: real, isSample: false, loading: q.isLoading };
 }
 
 /** Prompt monitoring from real runs (+ mission titles). */
@@ -757,9 +744,7 @@ export function useRealPrompts(agents: AgentLite[]) {
       tokensIn: r.tokens_in, tokensOut: r.tokens_out, costUsd: Number(r.cost_usd), runId: `run_${r.id.slice(0, 6)}`,
     };
   }), [runsQ.data, missionsQ.data, agents]);
-  const isSample = !runsQ.isLoading && real.length === 0;
-  const sample = useMemo(() => (projectId && isSample ? genPrompts(agentsOrSample(agents), projectId) : []), [projectId, isSample, agents]);
-  return { prompts: isSample ? sample : real, isSample, loading: runsQ.isLoading };
+  return { prompts: real, isSample: false, loading: runsQ.isLoading };
 }
 
 /** Lazy drill-down: the tools/data a specific run actually used. */
@@ -795,16 +780,14 @@ export function useRealRunIncidents(agents: AgentLite[]) {
         status: "open" as const, cause: msg.slice(0, 220), runId: `run_${r.id.slice(0, 6)}`, durationMs: Math.max(0, dur),
       };
     }), [runsQ.data, agents]);
-  const isSample = !runsQ.isLoading && real.length === 0;
-  const sample = useMemo(() => (projectId && isSample ? genIncidents(agentsOrSample(agents), projectId) : []), [projectId, isSample, agents]);
-  return { incidents: isSample ? sample : real, isSample, loading: runsQ.isLoading };
+  return { incidents: real, isSample: false, loading: runsQ.isLoading };
 }
 
 /** Governance spend computed from real runs + real servers. */
 export function useRealGovCosts(agents: AgentLite[], servers: PrivateServer[]) {
   const { projectId } = useAiopsCtx();
   const runsQ = useRuns(400);
-  const { prompts, isSample } = useRealPrompts(agents);
+  const { prompts } = useRealPrompts(agents);
   const costs: CostBreakdown | null = useMemo(() => {
     if (!projectId) return null;
     const runs = runsQ.data ?? [];
@@ -842,5 +825,5 @@ export function useRealGovCosts(agents: AgentLite[], servers: PrivateServer[]) {
       daily,
     };
   }, [projectId, runsQ.data, agents, servers, prompts.length]);
-  return { costs, isSample: isSample || !costs, loading: runsQ.isLoading };
+  return { costs, isSample: false, hasData: !!costs, loading: runsQ.isLoading };
 }

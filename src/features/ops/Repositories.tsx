@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Github, Loader2, RefreshCw, ScanLine, KeyRound, ExternalLink,
-  CheckSquare, Square, MoreVertical, Trash2, FileSearch,
+  CheckSquare, Square, MoreVertical, Trash2, FileSearch, CheckCircle2,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +36,7 @@ export function RepositoriesPage() {
   const [token, setToken] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [connectSuccess, setConnectSuccess] = useState<{ login: string; at: number; scopes?: string; tokenType?: string; canWrite?: boolean } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null);
@@ -71,15 +72,20 @@ export function RepositoriesPage() {
     },
   });
 
-  async function handleConnect() {
-    if (!workspaceId || !projectId) return;
-    setConnecting(true); setConnectError(null);
+  async function handleConnect(): Promise<boolean> {
+    if (!workspaceId || !projectId) return false;
+    setConnecting(true); setConnectError(null); setConnectSuccess(null);
     try {
-      await callEdge("connect-github", { workspace_id: workspaceId, project_id: projectId, token: token.trim() });
+      const res = await callEdge<{ github_login?: string; scopes?: string; token_type?: string; can_write?: boolean }>("connect-github", { workspace_id: workspaceId, project_id: projectId, token: token.trim() });
       setToken("");
       await queryClient.invalidateQueries({ queryKey: ["connector", "github", projectId] });
       await queryClient.invalidateQueries({ queryKey: ["github-repos", projectId] });
-    } catch (e) { setConnectError(e instanceof Error ? e.message : String(e)); } finally { setConnecting(false); }
+      const at = Date.now();
+      setConnectSuccess({ login: res.github_login ?? "", at, scopes: res.scopes, tokenType: res.token_type, canWrite: res.can_write });
+      // A write-capable token stays confirmed longer; a warning stays until dismissed.
+      if (res.can_write) setTimeout(() => setConnectSuccess((s) => (s && s.at === at ? null : s)), 6000);
+      return true;
+    } catch (e) { setConnectError(e instanceof Error ? e.message : String(e)); return false; } finally { setConnecting(false); }
   }
 
   function toggle(fullName: string) {
@@ -143,11 +149,12 @@ export function RepositoriesPage() {
           <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-primary" /> Connecter GitHub</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Créez un Personal Access Token (fine-grained) avec accès lecture à vos dépôts sur{" "}
-              <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noreferrer" className="text-foreground underline-offset-4 hover:underline">github.com/settings/tokens</a>.
-              Le token est chiffré avant stockage et jamais renvoyé au navigateur.
+              Créez un Personal Access Token <span className="font-medium text-foreground">classique</span> avec le scope{" "}
+              <code className="rounded bg-muted px-1 text-xs">repo</code> sur{" "}
+              <a href="https://github.com/settings/tokens/new?scopes=repo&description=FounderOS" target="_blank" rel="noreferrer" className="text-foreground underline-offset-4 hover:underline">github.com/settings/tokens</a>.
+              Le scope <code className="rounded bg-muted px-1 text-xs">repo</code> permet la lecture (import + scan) <span className="font-medium text-foreground">et l'écriture</span> (Vibe Code : PR + fork). Un token <span className="font-medium text-foreground">fine-grained</span> ne peut pas forker. Le token est chiffré avant stockage, jamais renvoyé au navigateur.
             </p>
-            <Input type="password" placeholder="github_pat_…" value={token} onChange={(e) => setToken(e.target.value)} />
+            <Input type="password" placeholder="ghp_… (classique) ou github_pat_…" value={token} onChange={(e) => setToken(e.target.value)} />
             <Button onClick={handleConnect} disabled={connecting || token.length < 20}>
               {connecting && <Loader2 className="h-4 w-4 animate-spin" />}<Github className="h-4 w-4" /> Connecter GitHub
             </Button>
@@ -169,6 +176,23 @@ export function RepositoriesPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {connectSuccess && (
+                connectSuccess.canWrite ? (
+                  <div className="mb-3 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    Token mis à jour — <span className="font-semibold">@{connectSuccess.login}</span> · classique, scope <code className="rounded bg-emerald-500/15 px-1">repo</code> (écriture + fork OK).
+                  </div>
+                ) : (
+                  <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                    <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      Token mis à jour — <span className="font-semibold">@{connectSuccess.login}</span>, mais c'est un token{" "}
+                      <span className="font-semibold">{connectSuccess.tokenType === "fine-grained" ? "fine-grained" : `classique (scopes : ${connectSuccess.scopes || "aucun"})`}</span>
+                      {" "}: il <span className="font-semibold">ne peut pas écrire ni forker</span>. Reconnectez un token <span className="font-semibold">classique avec le scope <code className="rounded bg-amber-500/15 px-1">repo</code></span> pour que Vibe Code crée des PR.
+                    </span>
+                  </div>
+                )
+              )}
               {reposQuery.error && (
                 <div className="mb-3 flex items-center justify-between gap-2 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
                   <span>Identifiants GitHub invalides ou expirés (« Bad credentials »). Reconnectez GitHub avec un token valide.</span>
@@ -177,10 +201,10 @@ export function RepositoriesPage() {
               )}
               {showReconnect && (
                 <div className="mb-3 space-y-2 rounded-md border border-border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">Collez un nouveau Personal Access Token (le token actuel est remplacé et rechiffré).</p>
+                  <p className="text-xs text-muted-foreground">Collez un nouveau Personal Access Token <span className="font-medium text-foreground">classique</span> (scope <code className="rounded bg-muted px-1">repo</code> pour écrire/forker). Le token actuel est remplacé et rechiffré.</p>
                   <div className="flex items-center gap-2">
-                    <Input type="password" placeholder="github_pat_…" value={token} onChange={(e) => setToken(e.target.value)} className="h-9" />
-                    <Button size="sm" onClick={async () => { await handleConnect(); if (!connectError) setShowReconnect(false); }} disabled={connecting || token.length < 20}>
+                    <Input type="password" placeholder="ghp_… (classique)" value={token} onChange={(e) => setToken(e.target.value)} className="h-9" />
+                    <Button size="sm" onClick={async () => { if (await handleConnect()) setShowReconnect(false); }} disabled={connecting || token.length < 20}>
                       {connecting && <Loader2 className="h-4 w-4 animate-spin" />} Reconnecter
                     </Button>
                   </div>

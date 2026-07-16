@@ -1,28 +1,28 @@
-import { useMemo } from "react";
 import { Wallet, Cloud, Server, Cpu } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Card } from "@/components/ui/card";
-import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { EmptyState } from "@/components/EmptyState";
+import { PageSkeleton } from "@/components/ui/skeleton";
 import { Pill } from "../ui";
-import { useProjectAgents, agentsOrSample, genPrompts, genCosts, usd, HOSTING_META } from "./data";
+import { useProjectAgents, usd, HOSTING_META } from "./data";
 import { useServersDb, useRealGovCosts } from "./db";
 
 export function GovCostsPage() {
-  const { projectId } = useCurrentContext();
   const { data: agents } = useProjectAgents();
-  const roster = agentsOrSample(agents);
   const { servers } = useServersDb();
-  // Real spend computed from internal_agent_runs + real server costs; sample
-  // breakdown only while the project has no runs yet.
-  const { costs: realCosts, isSample } = useRealGovCosts(agents ?? [], servers);
-  const costs = useMemo(() => {
-    if (realCosts) return realCosts;
-    if (!projectId) return null;
-    return genCosts(roster, genPrompts(roster, projectId), projectId);
-  }, [realCosts, roster, projectId]);
+  // Real spend computed from internal_agent_runs + real server costs only.
+  const { costs, loading } = useRealGovCosts(agents ?? [], servers);
 
-  if (!costs) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+  if (loading) return <PageSkeleton cards={3} rows={5} />;
+  if (!costs) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Dépenses IA" description="Suivi des coûts par run, prompt et mission — dépense API réelle de vos runs + coût d'infrastructure des serveurs." />
+        <EmptyState icon={Wallet} title="Aucune dépense pour l'instant" description="Les coûts apparaîtront ici dès que vos agents auront effectué des runs (dépense API réelle) ou que des serveurs seront provisionnés." />
+      </div>
+    );
+  }
 
   const maxDaily = Math.max(...costs.daily.map((d) => d.usd));
   const maxAgent = Math.max(1, ...costs.byAgent.map((a) => a.usd));
@@ -32,7 +32,6 @@ export function GovCostsPage() {
       <PageHeader
         title="Dépenses IA"
         description="Suivi des coûts par run, prompt et mission — dépense API réelle de vos runs + coût d'infrastructure des serveurs."
-        actions={isSample ? <Pill meta={{ label: "Données d'exemple — lancez un run d'agent", tone: "amber" }} /> : undefined}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">

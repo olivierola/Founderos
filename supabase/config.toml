@@ -161,6 +161,11 @@ verify_jwt = false
 [functions.slack-gateway]
 verify_jwt = false
 
+# Teams Bot Framework webhook: the caller sends a Bot Framework JWT (not a
+# Supabase one); teams-gateway verifies it itself against the Bot Framework JWKS.
+[functions.teams-gateway]
+verify_jwt = false
+
 # Simulations (MiroFish-inspired): single endpoint dispatching by `action`
 # (prepare / claim / round / complete / chat).
 [functions.simulation-prepare]

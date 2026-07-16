@@ -9,17 +9,17 @@ import { cn } from "@/lib/utils";
 import { Pill, Select } from "../ui";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
 import {
-  genPrompts, useProjectAgents, agentsOrSample, usd,
+  useProjectAgents, usd,
   CLOUD_MODELS, SELF_HOSTED_MODELS, HOSTING_META, type ModelInfo,
 } from "./data";
-import { useServersDb, useModelStateDb } from "./db";
+import { useServersDb, useModelStateDb, useRealPrompts } from "./db";
 
 export function GovOpsModelsPage() {
-  const { projectId } = useCurrentContext();
   const { servers } = useServersDb();
   const { enabledCloud: enabled, installs, enableCloud, disableCloud, install: installDb } = useModelStateDb(servers);
   const { data: agents } = useProjectAgents();
-  const prompts = useMemo(() => (projectId ? genPrompts(agentsOrSample(agents), projectId) : []), [agents, projectId]);
+  // Real per-model usage from actual agent runs.
+  const { prompts } = useRealPrompts(agents ?? []);
   const [sel, setSel] = useState<ModelInfo | null>(null);
   const [installTarget, setInstallTarget] = useState<Record<string, string>>({});
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { GraduationCap, Plus, Timer, Coins, Zap, XCircle, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { PageSkeleton } from "@/components/ui/skeleton";
 import { MetricCard } from "@/components/MetricCard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -105,7 +106,7 @@ export function GovOpsFinetuningPage() {
     }
   };
 
-  if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+  if (loading) return <PageSkeleton cards={4} rows={6} />;
 
   const running = jobs.filter((j) => j.status === "running").length;
   const gpuHours = jobs.reduce((s, j) => s + j.gpuHours, 0);

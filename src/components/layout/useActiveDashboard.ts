@@ -14,18 +14,18 @@ export function useActiveDashboard(): DashboardId {
   const segs = location.pathname.split("/").filter(Boolean);
   const appIdx = segs.indexOf("app");
   const moduleSlug = appIdx >= 0 ? segs[appIdx + 3] : undefined;
-  const owner = dashboardOfModule(moduleSlug); // "workforce" | "tools" | "both"
+  const owner = dashboardOfModule(moduleSlug); // "workforce" | "tools" | "data" | "both"
 
   useEffect(() => {
-    if (owner === "workforce" || owner === "tools") {
+    if (owner !== "both") {
       try { localStorage.setItem(KEY, owner); } catch { /* ignore */ }
     }
   }, [owner]);
 
-  if (owner === "workforce" || owner === "tools") return owner;
+  if (owner !== "both") return owner;
   try {
     const stored = localStorage.getItem(KEY) as DashboardId | null;
-    if (stored === "workforce" || stored === "tools") return stored;
+    if (stored === "workforce" || stored === "tools" || stored === "data") return stored;
   } catch { /* ignore */ }
   return DEFAULT_DASHBOARD;
 }

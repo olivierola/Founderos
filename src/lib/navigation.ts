@@ -96,12 +96,14 @@ export const ZONES: Zone[] = [
 
 /**
  * Dashboards — the top-level context switch (like Mistral's Studio/Vibe/Docs).
- * Both dashboards share the exact same shell (navbar + two sidebars); only the
+ * Every dashboard shares the exact same shell (navbar + two sidebars); only the
  * set of modules shown in the PrimarySidebar changes. "workforce" is the AI
  * team cockpit; "tools" groups the AI tooling you pilot jointly with the AI
- * (simulations, app testing, …). Modules tagged "both" appear in either.
+ * (app testing, repos, vibe-code, …); "data" is the standalone Data &
+ * Simulations workbench (its own sidebar, a whole tool being built on top).
+ * Modules tagged "both" appear in every dashboard.
  */
-export type DashboardId = "workforce" | "tools";
+export type DashboardId = "workforce" | "tools" | "data";
 export const DEFAULT_DASHBOARD: DashboardId = "workforce";
 
 export interface DashboardDef {
@@ -114,7 +116,8 @@ export interface DashboardDef {
 }
 export const DASHBOARDS: DashboardDef[] = [
   { id: "workforce", label: "AI Workforce", description: "Vos agents IA au travail", icon: RobotIcon, color: "bg-primary" },
-  { id: "tools", label: "Outils IA", description: "Simulations, tests & outillage IA", icon: FlaskIcon, color: "bg-violet-600" },
+  { id: "tools", label: "Outils IA", description: "Tests, dépôts & outillage IA", icon: FlaskIcon, color: "bg-violet-600" },
+  { id: "data", label: "Data & Simulations", description: "Données, simulations & analytics", icon: AtomIcon, color: "bg-sky-600" },
 ];
 
 export interface ModuleNavItem {
@@ -224,6 +227,8 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Agents internes", slug: "internal-agents", group: "Internes", icon: RobotIcon },
       { label: "Agents publics", slug: "public-agents", group: "Publics", icon: GlobeIcon },
       { label: "Base de connaissances", slug: "collections", group: "Connaissances", icon: BooksIcon },
+      { label: "Custom Skills", slug: "skills", group: "Compétences", icon: PuzzlePieceIcon },
+      { label: "MCP Servers", slug: "mcp", group: "MCP", icon: PlugsConnectedIcon },
     ],
   },
   {
@@ -237,25 +242,28 @@ export const MODULES: ModuleNavItem[] = [
     // IA" dashboard as their own modules.
     subItems: [
       // ── Dashboard (on top) ──
-      { label: "Dashboard", slug: "admin-dashboard", group: "Dashboard", icon: GaugeIcon },
+      { label: "Overview", slug: "overview", group: "Dashboard", icon: ChartLineUpIcon },
+      { label: "Dashboard", slug: "admin-dashboard", icon: GaugeIcon },
       { label: "Custom Dashboards", slug: "admin-custom-dashboards", icon: ChartPieIcon },
       { label: "Alerts", slug: "admin-alerts", icon: BellIcon },
       // ── CRM (below the dashboard) ──
       { label: "Records", slug: "workspace", group: "CRM", icon: TableIcon },
     ],
   },
-  // ── Dashboard "Outils IA" — AI tooling piloted jointly with the AI ───────
+  // ── Dashboard "Data & Simulations" — standalone workbench, own sidebar ───
+  // Lives in its own dashboard so a whole tool can be built on top of it.
   {
     slug: "simulations",
     label: "Data & Simulations",
     icon: AtomIcon,
-    color: "text-violet-400/60",
+    color: "text-sky-400/70",
     zone: "run",
-    dashboard: "tools",
+    dashboard: "data",
     subItems: [
       { label: "Simulations", slug: "workspace", icon: AtomIcon },
     ],
   },
+  // ── Dashboard "Outils IA" — AI tooling piloted jointly with the AI ───────
   {
     slug: "test-runs",
     label: "Test runs",
@@ -295,6 +303,7 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Pull requests", slug: "pr", icon: GitPullRequestIcon },
       { label: "Fork", slug: "fork", icon: GitForkIcon },
       { label: "Preview", slug: "preview", icon: MonitorIcon },
+      { label: "Personnaliser", slug: "customize", icon: FadersIcon },
     ],
   },
   {
@@ -382,25 +391,9 @@ export const MODULES: ModuleNavItem[] = [
       { label: "n8n / Make / Zapier", slug: "automation", icon: FlowArrowIcon },
     ],
   },
-  {
-    slug: "settings",
-    label: "Settings",
-    icon: GearSixIcon,
-    color: "text-slate-400",
-    zone: "connect",
-    dashboard: "both",
-    subItems: [
-      { label: "Profile", slug: "profile", icon: UserCircleIcon },
-      { label: "Workspace", slug: "workspace", icon: BuildingsIcon },
-      { label: "Projects", slug: "projects", icon: KanbanIcon },
-      { label: "Team", slug: "team", icon: UsersThreeIcon },
-      { label: "Roles & permissions", slug: "roles", icon: ShieldCheckIcon },
-      { label: "Billing", slug: "billing", icon: CreditCardIcon },
-      { label: "Notifications", slug: "notifications", icon: BellIcon },
-      { label: "Security", slug: "security", icon: LockKeyIcon },
-      { label: "Data & Privacy", slug: "data-privacy", icon: FingerprintIcon },
-    ],
-  },
+  // NOTE: the former "Settings" module was folded into the Admin dashboard
+  // (single-sidebar area at /admin, reached from the top-left dashboard
+  // switcher). Its pages are reused there; old settings/* links redirect.
 ];
 
 export function findModule(slug: string) {

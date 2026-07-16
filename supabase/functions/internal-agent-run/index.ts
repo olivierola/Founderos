@@ -29,6 +29,8 @@ import {
   buildInternalToolset, RunCancelledError, AwaitingInputError, embedMemoryVector,
   type AgentToolRow, type InternalToolContext,
 } from "../_shared/internal-agent-tools.ts";
+import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
+import { teamsSendMessage } from "../_shared/teams.ts";
 
 interface AgentRow {
   id: string;
@@ -43,7 +45,7 @@ interface AgentRow {
   project_id: string;
   is_archived: boolean;
   collaboration_enabled: boolean;
-  sandbox_mode: "cloud" | "runner" | "sandbox";
+  sandbox_mode: "cloud" | "runner" | "sandbox" | "hybrid";
   sandbox_url: string | null;
   /** When set, the agent's LLM calls route to this self-hosted OpenAI-compatible
    *  endpoint (a RunPod-hosted model) instead of the default provider. */
@@ -253,8 +255,10 @@ async function produceExecutionPlan(opts: {
   toolDefs: Array<{ name: string; description: string }>;
   taskText: string;
   contextText?: string;
+  /** Hybrid agent → the planner must choose a world (runner/sandbox) per step. */
+  hybrid?: boolean;
 }): Promise<{ plan: ExecutionPlan; markdown: string } | null> {
-  const { provider, agent, toolDefs, taskText, contextText } = opts;
+  const { provider, agent, toolDefs, taskText, contextText, hybrid } = opts;
   // Rich tool catalog: name + what it does & when it's useful. The planner reads
   // this to choose the right tool per step and to explain each tool to the user.
   const descByName = new Map(toolDefs.map((d) => [d.name, d.description]));
@@ -265,6 +269,13 @@ async function produceExecutionPlan(opts: {
     ``,
     `You may ONLY use these tools — refer to them by their EXACT name. Each line is "name: what it does":`,
     toolCatalog || "(no external tools available — plan using your own reasoning and knowledge)",
+    ...(hybrid ? [
+      ``,
+      `EXECUTION ENVIRONMENT — HYBRID: you are the ORCHESTRATOR of TWO execution worlds and must assign ONE world to each step that runs code/shell/files/browser:`,
+      `  • RUNNER (runner_* tools, e.g. runner_shell_exec, runner_python_exec, runner_file_write, runner_run_background, runner_browse_web) — the operator's REAL machine with a PERSISTENT workspace, a real Playwright browser and long-running processes. Choose it for: work on the real project/repo, dev servers & watchers, anything that must persist, and real-browser automation.`,
+      `  • SANDBOX (sandbox_* tools, e.g. sandbox_shell_exec, sandbox_python_exec, sandbox_jupyter_exec, sandbox_browser) — a DISPOSABLE, isolated Linux container with a stateful Jupyter kernel and Chromium. Choose it for: risky/untrusted code, throwaway data crunching, and isolation from the real machine.`,
+      `  RULES: name the EXACT namespaced tools per step (runner_* OR sandbox_*), and PREFIX each such task's title with [runner] or [sandbox] so the chosen world is explicit. Keep a whole pipeline (write→run→read→save) in ONE world — files do NOT transfer between worlds. If only one world's tools appear in the list above, that world is the only one available right now: plan every execution step on it.`,
+    ] : []),
     ``,
     `Respond with STRICT JSON only (no prose, no code fence), matching exactly:`,
     `{`,
@@ -479,22 +490,52 @@ async function loadTeamMemorySection(
 async function loadActivatedSkills(
   admin: ReturnType<typeof createServiceClient>,
   agentId: string,
-): Promise<Array<{ slug: string; name: string; description: string | null; category: string | null; instructions: string | null; tools: string[] | null }>> {
+): Promise<Array<{ id: string; slug: string; name: string; description: string | null; category: string | null; instructions: string | null; tools: string[] | null; files: Array<{ path: string }> }>> {
+  // Embed the bundled files' PATHS only (an index) — their content is pulled on
+  // demand via read_skill_file (progressive disclosure), never up-front.
   const { data } = await admin
     .from("agent_skill_activations")
-    .select("skill:agent_skills(slug, name, description, category, system_prompt_extension, required_tools)")
+    .select("skill:agent_skills(id, slug, name, description, category, system_prompt_extension, required_tools, files:agent_skill_files(path, sort))")
     .eq("agent_id", agentId);
   return ((data ?? []) as any[])
     .map((a) => a.skill)
     .filter(Boolean)
     .map((s: any) => ({
+      id: s.id,
       slug: s.slug,
       name: s.name,
       description: s.description ?? null,
       category: s.category ?? null,
       instructions: s.system_prompt_extension ?? null,
       tools: s.required_tools ?? null,
+      files: Array.isArray(s.files)
+        ? [...s.files].sort((a: any, b: any) => (a.sort ?? 0) - (b.sort ?? 0)).map((f: any) => ({ path: f.path }))
+        : [],
     }));
+}
+
+// Load the MCP servers attached to this agent (enabled only) with their cached
+// tool list, so the run loop exposes them without re-handshaking every tick.
+async function loadActivatedMcpServers(
+  admin: ReturnType<typeof createServiceClient>,
+  agentId: string,
+): Promise<Array<{ id: string; name: string; url: string; headers: Record<string, string>; tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> }>> {
+  const { data } = await admin
+    .from("agent_mcp_servers")
+    .select("server:mcp_servers(id, name, url, headers, enabled, cached_tools, auth_mode, oauth)")
+    .eq("agent_id", agentId);
+  const rows = ((data ?? []) as any[]).map((r) => r.server).filter((s: any) => s && s.enabled);
+  const out: Array<{ id: string; name: string; url: string; headers: Record<string, string>; tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> }> = [];
+  for (const s of rows) {
+    let headers: Record<string, string> = s.headers && typeof s.headers === "object" ? { ...s.headers } : {};
+    // OAuth servers: inject a fresh Bearer token (refreshed if near expiry).
+    if (s.auth_mode === "oauth") {
+      const token = await ensureAccessToken(admin, { id: s.id, oauth: s.oauth || {} });
+      if (token) headers = { ...headers, Authorization: `Bearer ${token}` };
+    }
+    out.push({ id: s.id, name: s.name, url: s.url, headers, tools: Array.isArray(s.cached_tools) ? s.cached_tools : [] });
+  }
+  return out;
 }
 
 // One-line-per-skill index for the system prompt (the agent's global view of
@@ -588,6 +629,34 @@ const RUNNER_DOWN_MSG =
   "⚠️ Runner injoignable — la machine self-hosted (runner + tunnel) est arrêtée ou son URL a changé. " +
   "Relance-la : powershell -ExecutionPolicy Bypass -File scripts\\start-agents-infra.ps1 — puis relance la mission.";
 
+// HYBRID health gate: probe both execution worlds configured on the context and
+// DISABLE (in place) whichever is unreachable, so buildInternalToolset only
+// exposes healthy worlds this turn. Never throws — a hybrid run degrades to the
+// healthy world; the caller decides what to do if BOTH are down. Returns the
+// health map and a short human note.
+async function gateHybridHealth(
+  ctx: InternalToolContext,
+): Promise<{ runnerUp: boolean; sandboxUp: boolean; note: string }> {
+  const notes: string[] = [];
+  const runnerConfigured = !!(ctx.runnerEnabled && ctx.runnerUrl);
+  const sandboxConfigured = !!ctx.sandboxUrl;
+  const [runnerProbe, sandboxProbe] = await Promise.all([
+    runnerConfigured ? probeRunner(ctx.runnerUrl as string) : Promise.resolve<string | null>(null),
+    sandboxConfigured ? probeSandbox(ctx.sandboxUrl as string) : Promise.resolve<string | null>(null),
+  ]);
+  let runnerUp = runnerConfigured;
+  let sandboxUp = sandboxConfigured;
+  if (runnerConfigured && runnerProbe) {
+    ctx.runnerEnabled = false; ctx.runnerUrl = null; runnerUp = false;
+    notes.push(`runner hors-ligne (${runnerProbe})`);
+  }
+  if (sandboxConfigured && sandboxProbe) {
+    ctx.sandboxUrl = null; sandboxUp = false;
+    notes.push(`sandbox hors-ligne (${sandboxProbe})`);
+  }
+  return { runnerUp, sandboxUp, note: notes.join(" · ") };
+}
+
 function makeToolContext(opts: {
   admin: ReturnType<typeof createServiceClient>;
   agent: AgentRow;
@@ -616,11 +685,14 @@ function makeToolContext(opts: {
     runId,
     conversationId: opts.conversationId ?? null,
     // Precedence: per-agent override → live DB config → env fallback.
-    sandboxUrl: agent.sandbox_mode === "sandbox"
+    // HYBRID exposes BOTH worlds at once (namespaced runner_* / sandbox_*); the
+    // per-tick health gate strips whichever world is currently unreachable.
+    sandboxUrl: (agent.sandbox_mode === "sandbox" || agent.sandbox_mode === "hybrid")
       ? (agent.sandbox_url || opts.runtimeConfig?.sandboxUrl || Deno.env.get("SANDBOX_URL") || null)
       : null,
-    runnerEnabled: agent.sandbox_mode === "runner",
+    runnerEnabled: agent.sandbox_mode === "runner" || agent.sandbox_mode === "hybrid",
     runnerUrl: opts.runtimeConfig?.runnerUrl || null,
+    hybrid: agent.sandbox_mode === "hybrid",
     missionMode: opts.missionId != null,
     delegationDepth: opts.delegationDepth ?? 0,
     createDeliverable: async (d) => {
@@ -743,7 +815,9 @@ async function initChatRun(
     const probe = await probeSandbox(ctx.sandboxUrl);
     if (probe) {
       ctx.sandboxUrl = null;
-      sandboxDownNote = `\n\nNOTE INFRA: the execution sandbox is currently OFFLINE (${probe}) — execution tools are unavailable for this turn. If the user asks for execution work, answer that the local infra must be relaunched first (scripts/start-agents-infra.ps1) and do NOT attempt workarounds via meta-tools.`;
+      sandboxDownNote = ctx.hybrid
+        ? `\n\nNOTE INFRA: the SANDBOX world is currently OFFLINE (${probe}) — its sandbox_* tools are unavailable this turn. If the RUNNER world is up, use its runner_* tools for any execution work instead. Do not attempt sandbox_* calls.`
+        : `\n\nNOTE INFRA: the execution sandbox is currently OFFLINE (${probe}) — execution tools are unavailable for this turn. If the user asks for execution work, answer that the local infra must be relaunched first (scripts/start-agents-infra.ps1) and do NOT attempt workarounds via meta-tools.`;
       await ctx.logEvent("status", { message: `Sandbox hors-ligne (${probe}) — outils d'exécution désactivés pour ce tour.` }).catch(() => {});
     }
   }
@@ -754,7 +828,9 @@ async function initChatRun(
     if (probe) {
       ctx.runnerEnabled = false;
       ctx.runnerUrl = null;
-      sandboxDownNote += `\n\nNOTE INFRA: the self-hosted runner is currently OFFLINE (${probe}) — browser/shell/code/file tools are unavailable for this turn. If the user asks for execution work, answer that the runner must be relaunched first (scripts/start-agents-infra.ps1) and do NOT attempt workarounds via meta-tools.`;
+      sandboxDownNote += ctx.hybrid
+        ? `\n\nNOTE INFRA: the RUNNER world is currently OFFLINE (${probe}) — its runner_* tools are unavailable this turn. If the SANDBOX world is up, use its sandbox_* tools for any execution work instead. Do not attempt runner_* calls.`
+        : `\n\nNOTE INFRA: the self-hosted runner is currently OFFLINE (${probe}) — browser/shell/code/file tools are unavailable for this turn. If the user asks for execution work, answer that the runner must be relaunched first (scripts/start-agents-infra.ps1) and do NOT attempt workarounds via meta-tools.`;
       await ctx.logEvent("status", { message: `Runner hors-ligne (${probe}) — outils d'exécution désactivés pour ce tour.` }).catch(() => {});
     }
   }
@@ -767,6 +843,7 @@ async function initChatRun(
     loadRecentWorkSection(admin, agent.id),
   ]);
   ctx.skills = chatSkills;
+  ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
   const chatSkillIndex = skillsIndex(chatSkills);
 
@@ -807,7 +884,7 @@ async function initChatRun(
       ? `${lastUserMsg}\n\n(The user is asking you to CONTINUE the task already underway in this conversation. Plan ONLY the remaining steps — first verify what already exists on disk, then resume from the first unfinished step.)`
       : lastUserMsg;
     const toolDefs = defs.map((d) => ({ name: d.function.name, description: d.function.description }));
-    const planned = await produceExecutionPlan({ provider, agent, toolDefs, taskText: planTask, contextText: planContext });
+    const planned = await produceExecutionPlan({ provider, agent, toolDefs, taskText: planTask, contextText: planContext, hybrid: agent.sandbox_mode === "hybrid" });
     if (planned) {
       if (chatRunId) await ctx.logEvent("plan", { plan: planned.plan, markdown: planned.markdown });
       messages.push(...planMessages(planned.markdown, "chat"));
@@ -890,11 +967,34 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
   const runtimeConfig = await loadRuntimeConfig(admin);
   const ctx = makeToolContext({ admin, agent, runId, missionId: mission.id, delegationDepth: (mission as { delegation_depth?: number }).delegation_depth ?? 0, runtimeConfig });
 
+  // Circuit breaker (HYBRID missions): probe both worlds; degrade to whichever
+  // is up. Only HARD-FAIL when BOTH are unreachable — a hybrid agent should not
+  // die because one world is down.
+  if (ctx.hybrid) {
+    const h = await gateHybridHealth(ctx);
+    if (!h.runnerUp && !h.sandboxUp) {
+      const msg = `⚠️ Mission hybride impossible — les DEUX mondes d'exécution sont injoignables (${h.note}). Relance l'infra locale (scripts/start-agents-infra.ps1) puis relance la mission.`;
+      await ctx.logEvent("error", { error: msg });
+      await admin.from("internal_agent_runs").update({
+        status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500),
+      }).eq("id", runId);
+      await admin.from("internal_agent_missions").update({ board_column: "todo" })
+        .eq("id", mission.id).eq("board_column", "in_progress");
+      await autoSaveMemory(admin, agent, runId, {
+        kind: "learning", importance: 3, dedupePrefix: "Exec down:",
+        content: `Exec down: mission "${mission.title}" — runner ET sandbox injoignables le ${new Date().toISOString().slice(0, 10)} (${h.note}). Relancer l'infra locale (start-agents-infra.ps1) avant toute mission d'exécution.`,
+      });
+      await postMissionReportToChannel(admin, mission.id, msg).catch(() => {});
+      return jsonResponse({ ok: false, error: "both execution worlds unreachable", detail: h.note });
+    }
+    if (h.note) await ctx.logEvent("status", { message: `Mode hybride — ${h.note}. La mission continue avec le monde disponible.` });
+  }
+
   // Circuit breaker (missions = HARD FAIL): a mission whose agent runs in
   // sandbox mode exists to EXECUTE. If the sandbox is unreachable, fail in
   // seconds with an actionable ops message instead of grinding for hours
   // (the 03/07 incident: 100% tool failure → 269 self-spawned missions).
-  if (ctx.sandboxUrl) {
+  if (!ctx.hybrid && ctx.sandboxUrl) {
     const probe = await probeSandbox(ctx.sandboxUrl);
     if (probe) {
       const msg = `${SANDBOX_DOWN_MSG} (diagnostic: ${probe})`;
@@ -913,7 +1013,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
     }
   }
   // Same HARD-FAIL for RUNNER-mode missions: no runner → no execution, fail fast.
-  if (ctx.runnerEnabled && ctx.runnerUrl) {
+  if (!ctx.hybrid && ctx.runnerEnabled && ctx.runnerUrl) {
     const probe = await probeRunner(ctx.runnerUrl);
     if (probe) {
       const msg = `${RUNNER_DOWN_MSG} (diagnostic: ${probe})`;
@@ -940,6 +1040,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
     loadActivatedSkills(admin, agent.id),
   ]);
   ctx.skills = missionSkills;
+  ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
   await ctx.logEvent("log", { message: `Run started (ticked) — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
 
@@ -988,7 +1089,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
   await ctx.logEvent("status", { message: "Reasoning & planning the mission…" });
   const planContext = [memorySection, teamMemorySection, previousRunSection].filter(Boolean).join("\n\n");
   const toolDefs = defs.map((d) => ({ name: d.function.name, description: d.function.description }));
-  const planned = await produceExecutionPlan({ provider, agent, toolDefs, taskText: userPrompt, contextText: planContext });
+  const planned = await produceExecutionPlan({ provider, agent, toolDefs, taskText: userPrompt, contextText: planContext, hybrid: agent.sandbox_mode === "hybrid" });
   if (planned) {
     await ctx.logEvent("plan", { plan: planned.plan, markdown: planned.markdown });
     // Seed the STRUCTURED todo checklist from the plan (the UI renders this
@@ -1158,10 +1259,19 @@ async function postMissionReportToChannel(
       .select("title, channel_id, external_channel_ref, external_thread_ref")
       .eq("id", missionId).maybeSingle();
     if (!m?.channel_id || !m.external_channel_ref) return;
+    const { data: ch } = await admin
+      .from("internal_agent_channels").select("provider, service_url").eq("id", m.channel_id).maybeSingle();
+    const body = report.replace(/[#*`>_]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 2500);
+
+    if (ch?.provider === "teams") {
+      await teamsSendMessage(ch.service_url, m.external_channel_ref,
+        `✅ Mission **${m.title}** terminée.\n\n${body}\n\n_(Livrables complets dans l'onglet Deliverables.)_`);
+      return;
+    }
+    // Slack
     const { data: tok } = await admin
       .from("internal_agent_channel_tokens").select("access_token").eq("channel_id", m.channel_id).maybeSingle();
     if (!tok?.access_token) return;
-    const body = report.replace(/[#*`>_]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 2500);
     await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: { Authorization: `Bearer ${tok.access_token}`, "Content-Type": "application/json; charset=utf-8" },
@@ -1199,22 +1309,26 @@ async function postReplyToBoundChannel(
       }).then(() => {}, () => {});
     }
 
-    // External channel (Slack thread).
+    // External channel (Slack thread / Teams conversation).
     if (convo.channel_id && convo.external_channel_ref) {
-      const [{ data: ch }, { data: tok }] = await Promise.all([
-        admin.from("internal_agent_channels").select("provider").eq("id", convo.channel_id).maybeSingle(),
-        admin.from("internal_agent_channel_tokens").select("access_token").eq("channel_id", convo.channel_id).maybeSingle(),
-      ]);
-      if (ch?.provider === "slack" && tok?.access_token) {
-        await fetch("https://slack.com/api/chat.postMessage", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${tok.access_token}`, "Content-Type": "application/json; charset=utf-8" },
-          body: JSON.stringify({
-            channel: convo.external_channel_ref,
-            thread_ts: convo.external_thread_ref || undefined,
-            text: text.slice(0, 3500),
-          }),
-        }).catch(() => {});
+      const { data: ch } = await admin
+        .from("internal_agent_channels").select("provider, service_url").eq("id", convo.channel_id).maybeSingle();
+      if (ch?.provider === "teams") {
+        await teamsSendMessage(ch.service_url, convo.external_channel_ref, text.slice(0, 12000));
+      } else if (ch?.provider === "slack") {
+        const { data: tok } = await admin
+          .from("internal_agent_channel_tokens").select("access_token").eq("channel_id", convo.channel_id).maybeSingle();
+        if (tok?.access_token) {
+          await fetch("https://slack.com/api/chat.postMessage", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${tok.access_token}`, "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify({
+              channel: convo.external_channel_ref,
+              thread_ts: convo.external_thread_ref || undefined,
+              text: text.slice(0, 3500),
+            }),
+          }).catch(() => {});
+        }
       }
     }
   } catch { /* best-effort */ }
@@ -1380,6 +1494,15 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const runtimeConfig = await loadRuntimeConfig(admin);
   const ctx = makeToolContext({ admin, agent, runId, missionId: state.mission_id, conversationId: state.conversation_id, delegationDepth: (mission as { delegation_depth?: number } | null)?.delegation_depth ?? 0, runtimeConfig });
   ctx.skills = await loadActivatedSkills(admin, agent.id);
+  ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  // HYBRID: re-probe both worlds each tick and strip whichever is unreachable, so
+  // the toolset rebuilt below exposes only healthy worlds (and recovers a world
+  // that comes back). Cheap (two parallel health pings) and keeps the agent from
+  // grinding against a dead tunnel when the other world is fine.
+  if (ctx.hybrid) {
+    const h = await gateHybridHealth(ctx);
+    if (h.note) await ctx.logEvent("status", { message: `Mode hybride — ${h.note}. Le tick continue avec le monde disponible.` }).catch(() => {});
+  }
   const { defs, executor } = buildInternalToolset(tools, ctx);
   // Compact long string args (file content, code, html…) so the live timeline
   // shows WHAT a call does without storing megabytes per event.
@@ -1454,7 +1577,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
       if (String(m.content ?? "").startsWith("ERROR: Sandbox unreachable")) consecUnreachable++;
       else consecUnreachable = 0;
     }
-    if (consecUnreachable >= 3) {
+    if (!ctx.hybrid && consecUnreachable >= 3) {
       const msg = SANDBOX_DOWN_MSG;
       await ctx.logEvent("error", { error: msg }).catch(() => {});
       await admin.from("internal_agent_runs").update({

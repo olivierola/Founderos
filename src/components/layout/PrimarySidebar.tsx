@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useShellNav } from "./AppShell";
 import { useAssistant } from "@/lib/assistant-context";
 import { useActiveDashboard } from "./useActiveDashboard";
+import { UsageMeter } from "./UsageMeter";
 
 export function PrimarySidebar() {
   const { workspaceSlug = "default", projectSlug = "default" } = useParams();
@@ -106,8 +107,11 @@ export function PrimarySidebar() {
           })}
         </nav>
 
-        {/* Bottom — help & resources (account lives in the navbar now). */}
+        {/* Bottom — usage meter + help & resources (account lives in the navbar now). */}
         <div className={cn("mt-auto shrink-0", expanded ? "px-3 pb-3 pt-1" : "px-2 pb-3 pt-1")}>
+          <div className={cn(expanded ? "mb-2" : "mb-2 flex justify-center")}>
+            <UsageMeter percent={1} resetDays={20} expanded={expanded} />
+          </div>
           {expanded ? (
             <button
               onClick={() => assistant.toggle()}

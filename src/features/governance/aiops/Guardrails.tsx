@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { PageSkeleton } from "@/components/ui/skeleton";
 import remarkGfm from "remark-gfm";
 import { Plus, Pencil, Trash2, ShieldCheck } from "lucide-react";
 import { ShieldCheckIcon } from "@phosphor-icons/react";
@@ -37,7 +38,7 @@ export function GovGuardrailsPage() {
     return { total: all.length, active: all.filter((g) => g.enabled).length, blocking: all.filter((g) => g.enforcement === "block" && g.enabled).length };
   }, [items]);
 
-  if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+  if (loading) return <PageSkeleton cards={0} rows={6} />;
 
   return (
     <div className="space-y-6">

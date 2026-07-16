@@ -15,7 +15,7 @@ import { Pill } from "../ui";
 import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
 import {
-  agentsOrSample, genDeployments, modelById, usd,
+  modelById, usd,
   SERVER_STATUS_META, HOSTING_META, type PrivateServer, type Deployment,
 } from "./data";
 import { useServersDb, useAgentDeploymentsDb } from "./db";
@@ -104,12 +104,9 @@ function LiveCanvas({ onSelect }: { onSelect: (s: LiveSel) => void }) {
   const { projectId } = useCurrentContext();
   const { servers } = useServersDb();
   const { deployments: dbDeployments, agents, hasAgents } = useAgentDeploymentsDb(servers);
-  const roster = useMemo(() => (hasAgents ? agents : agentsOrSample(undefined)).slice(0, 5), [hasAgents, agents]);
-  // Real agents → real deployments; otherwise a sample topology over the real servers.
-  const deployments = useMemo(
-    () => (hasAgents ? dbDeployments : projectId && servers.length ? genDeployments(roster, servers, projectId) : []),
-    [hasAgents, dbDeployments, roster, servers, projectId],
-  );
+  const roster = useMemo(() => (agents ?? []).slice(0, 5), [agents]);
+  // Real agents → real deployments only.
+  const deployments = useMemo(() => (hasAgents ? dbDeployments : []), [hasAgents, dbDeployments]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);

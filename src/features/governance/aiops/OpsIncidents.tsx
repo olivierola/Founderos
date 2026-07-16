@@ -26,7 +26,7 @@ const REMEDIATION: Record<IncidentKind, string> = {
 
 export function GovOpsIncidentsPage() {
   const { data: agents } = useProjectAgents();
-  const { incidents, isSample } = useRealRunIncidents(agents ?? []);
+  const { incidents } = useRealRunIncidents(agents ?? []);
 
   const [kindFilter, setKindFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -48,7 +48,6 @@ export function GovOpsIncidentsPage() {
       <PageHeader
         title="Incidents & runs échoués"
         description="Surveillance des échecs d'exécution : runs échoués, timeouts, erreurs d'outils, blocages guardrail — depuis vos runs réels."
-        actions={isSample ? <Pill meta={{ label: "Données d'exemple — aucun run échoué", tone: "amber" }} /> : undefined}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">

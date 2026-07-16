@@ -30,6 +30,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4
 import type { ToolDef, ToolExecutor } from "./ai.ts";
 import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
 import { embedTexts, toVectorLiteral } from "./jina.ts";
+import { mcpCallTool, type McpTool } from "./mcp-client.ts";
 
 export interface AgentToolRow {
   id: string;
@@ -91,15 +92,26 @@ export interface InternalToolContext {
   missionCreates?: number;
   /** Re-check whether the run was cancelled by a human. */
   isCancelled: () => Promise<boolean>;
-  /** AIO Sandbox URL when agent runs in sandbox mode. */
+  /** AIO Sandbox URL when agent runs in sandbox (or hybrid) mode. */
   sandboxUrl?: string | null;
   /** Whether the agent may drive the Playwright runner (browse_web). */
   runnerEnabled?: boolean;
   /** Runner browser URL from the live DB config (fallback: env). */
   runnerUrl?: string | null;
+  /** HYBRID mode: BOTH the runner and the sandbox are exposed at once. Their
+   *  overlapping tools are namespaced (runner_* / sandbox_*) so the model — guided
+   *  by the plan-time env tagging — chooses a world explicitly per call. When one
+   *  world is unhealthy its tools are simply not registered (graceful degrade). */
+  hybrid?: boolean;
   /** Skills activated for this agent — their full playbooks are loaded on
    *  demand via use_skill (progressive disclosure), not injected up-front. */
   skills?: AgentSkill[];
+  /** MCP servers attached to this agent. Their (cached) tools are exposed as
+   *  namespaced mcp_<server>_<tool> tools, executed via JSON-RPC tools/call to
+   *  the remote server (edge-side). */
+  mcpServers?: Array<{ id: string; name: string; url: string; headers: Record<string, string>; tools: McpTool[] }>;
+  /** Per-run MCP session cache (server id → session), reused across tool calls. */
+  mcpSessions?: Map<string, { id?: string }>;
   /** Depth of this run in a delegation chain (0 = user-initiated). create_mission
    *  refuses to delegate beyond MAX_DELEGATION_DEPTH to stop infinite loops. */
   delegationDepth?: number;
@@ -127,14 +139,19 @@ async function missionCreationGuard(ctx: InternalToolContext): Promise<string | 
 }
 
 export interface AgentSkill {
+  /** agent_skills.id — needed to resolve bundled files at read time. */
+  id?: string;
   slug: string;
   name: string;
   description?: string | null;
   category?: string | null;
-  /** Full playbook / methodology — returned by use_skill when loaded. */
+  /** Full playbook / methodology (SKILL.md body) — returned by use_skill. */
   instructions?: string | null;
   /** Tool kinds this skill expects to use. */
   tools?: string[] | null;
+  /** Bundled resource files (paths only — an INDEX). Their content is pulled on
+   *  demand with read_skill_file (progressive disclosure), not injected up-front. */
+  files?: Array<{ path: string }> | null;
 }
 
 export class RunCancelledError extends Error {
@@ -616,6 +633,25 @@ export function buildInternalToolset(
   // Execution-family guidance rendered under the EXECUTION section of the tree.
   const sandboxGuidance: string[] = [];
 
+  // HYBRID namespacing: the runner and the sandbox register OVERLAPPING tool
+  // names (shell_exec, python_exec, file_write, …). In single-world modes only
+  // one branch runs, so names stay clean. In hybrid mode BOTH run, so right
+  // after a world registers its tools we prefix the keys it just added
+  // (runner_* / sandbox_*) — that lets both worlds coexist and lets the model
+  // (guided by the plan's per-step env tag) pick a world explicitly. Tools that
+  // already carry the prefix (sandbox_browser, sandbox_env) are left as-is.
+  const prefixNewTools = (before: Set<string>, prefix: string): void => {
+    if (!ctx.hybrid) return;
+    for (const k of [...tools.keys()]) {
+      if (before.has(k) || k.startsWith(prefix)) continue;
+      const t = tools.get(k)!;
+      const nk = `${prefix}${k}`;
+      t.def.name = nk;
+      tools.delete(k);
+      tools.set(nk, t);
+    }
+  };
+
   // Always-on: deliverable materialisation.
   tools.set("create_deliverable", {
     def: {
@@ -766,13 +802,63 @@ export function buildInternalToolset(
         const parts: string[] = [`# Skill loaded: ${sk.name} (${sk.slug})`];
         if (sk.description) parts.push(sk.description);
         if (sk.tools && sk.tools.length) parts.push(`Tools this skill uses: ${sk.tools.join(", ")}.`);
-        parts.push("", "## Playbook", sk.instructions || "(no detailed instructions provided — apply the skill's intent.)");
+        parts.push("", "## SKILL.md — playbook", sk.instructions || "(no detailed instructions provided — apply the skill's intent.)");
+        // Bundled files are NOT dumped here (progressive disclosure): list them so
+        // the agent pulls only the one(s) a step actually needs via read_skill_file.
+        if (sk.files && sk.files.length) {
+          parts.push(
+            "",
+            "## Bundled files (load on demand — do NOT assume their content)",
+            ...sk.files.map((f) => `- ${f.path}`),
+            "",
+            `Read a bundled file with read_skill_file(slug="${sk.slug}", path="<one of the paths above>") right before the step that needs it.`,
+          );
+        }
         parts.push("", "Now apply this skill to the current step.");
         return cap(parts.join("\n"), 6000);
       },
     });
     const skillIndex = ctx.skills.map((s) => `${s.name} (${s.slug})`).join(", ");
     summaryLines.push(`- use_skill: load the full playbook of an activated skill on demand. Activated: ${skillIndex}.`);
+
+    // read_skill_file — progressive disclosure for a skill's bundled resource
+    // files. Registered only when at least one activated skill has files.
+    if (ctx.skills.some((s) => s.files && s.files.length)) {
+      const idBySlug = new Map(ctx.skills.filter((s) => s.id).map((s) => [s.slug, s.id as string]));
+      tools.set("read_skill_file", {
+        def: {
+          name: "read_skill_file",
+          description:
+            "Read the FULL content of one bundled file of an activated skill (progressive disclosure). Use it right before a step that needs that reference/script, after use_skill listed the skill's files. Returns the file's text content.",
+          parameters: {
+            type: "object",
+            properties: {
+              slug: { type: "string", description: "The activated skill's slug." },
+              path: { type: "string", description: "The bundled file path exactly as listed by use_skill (e.g. references/tone.md)." },
+            },
+            required: ["slug", "path"],
+            additionalProperties: false,
+          },
+        },
+        run: async (args) => {
+          const slug = str(args.slug);
+          const path = str(args.path).trim();
+          const skillId = idBySlug.get(slug);
+          if (!skillId) return `ERROR: "${slug}" is not one of your activated skills (or it has no bundled files).`;
+          if (!path) return "ERROR: path is required.";
+          const { data, error } = await ctx.admin
+            .from("agent_skill_files").select("content").eq("skill_id", skillId).eq("path", path).maybeSingle();
+          if (error) return `ERROR: ${error.message}`;
+          if (!data) {
+            const sk = bySlug.get(slug);
+            const avail = (sk?.files ?? []).map((f) => f.path).join(", ") || "(none)";
+            return `ERROR: no file "${path}" in skill "${slug}". Available files: ${avail}.`;
+          }
+          return cap(`# ${slug}/${path}\n\n${String((data as { content: string }).content ?? "")}`, 10000);
+        },
+      });
+      summaryLines.push("- read_skill_file: load one bundled file of an activated skill on demand (after use_skill lists them).");
+    }
   }
 
   // Chat only: filing tasks is coordination noise during a mission run (it fed
@@ -1149,6 +1235,7 @@ export function buildInternalToolset(
   // when the agent's execution environment is "runner" (per-agent choice) and
   // a runner URL is configured.
   const runnerUrl = ctx.runnerUrl || Deno.env.get("RUNNER_BROWSER_URL") || Deno.env.get("RUNNER_URL");
+  const beforeRunner = new Set(tools.keys());
   if (ctx.runnerEnabled && runnerUrl) {
     tools.set("browse_web", {
       def: {
@@ -1479,9 +1566,12 @@ export function buildInternalToolset(
     sandboxGuidance.push("  EFFICIENCY: python_exec/nodejs_exec start a FRESH process each call — in-memory state is lost between calls. For any multi-step pipeline (load → analyse → save), write ONE self-contained script with file_write and run it with shell_exec, saving intermediate results (CSV/JSON) to files. The default shell may be PowerShell (Windows) — call machine_info first when unsure, and prefer cross-platform commands or explicit shell selection.");
     sandboxGuidance.push("  LONG-RUNNING PROCESSES: shell_exec is timeout-bounded and kills its process tree, so NEVER start a server/watcher with it — use run_background, which survives between calls. After run_background, ALWAYS call process_logs to confirm it started (a printed URL, 'listening on…') and didn't crash; if it crashed, fix and relaunch. Stop every process you started with process_stop before finishing the task.");
   }
+  // Hybrid: namespace the runner's tools (runner_*) so they coexist with the sandbox's.
+  prefixNewTools(beforeRunner, "runner_");
 
-  // ── Sandbox tools: only available when the agent runs in sandbox mode. ──
+  // ── Sandbox tools: only available when the agent runs in sandbox (or hybrid) mode. ──
   // All AIO Sandbox responses are wrapped as { success, message, data, hint }.
+  const beforeSandbox = new Set(tools.keys());
   if (ctx.sandboxUrl) {
     const sbUrl = ctx.sandboxUrl.replace(/\/$/, "");
     const sbHeaders = {
@@ -1765,6 +1855,62 @@ export function buildInternalToolset(
     sandboxGuidance.push("  SANDBOX DISCIPLINE — use the sandbox ONLY when the task actually needs it: running code, reading/writing files, installing packages, fetching or processing data, or building/testing something. For greetings, simple questions, explanations, advice, opinions or planning, ANSWER DIRECTLY from your own knowledge and do NOT call any sandbox / shell / python / file tool. Don't 'check the sandbox' by reflex. When the work genuinely requires it: save files with file_write, run code with python_exec or shell_exec — and never claim you 'can't access the filesystem' (you can).");
     sandboxGuidance.push("  EFFICIENCY: the python_exec kernel can RESET between calls (state is lost), so do NOT split one analysis into many tiny python_exec calls that each re-import and re-read the data — that wastes huge amounts of tokens. For any multi-step pipeline (load → analyse → model → save), write ONE self-contained script with file_write and run it with shell_exec \"python3 script.py\", saving intermediate results (CSV/JSON/pickle) to disk. Re-use those files instead of recomputing.");
     sandboxGuidance.push("  VERIFY BACKGROUND PROCESSES: after launching anything with `nohup … &` (a server, a Gradio app), you MUST read its log (e.g. `cat gradio.log`) to confirm it actually started — never assume success. If the log shows a traceback/error, FIX the script and relaunch before continuing. For a web app: a 'public URL' only counts if the log printed it AND a test request to it succeeds. Gradio `demo.launch(share=True)` prints a *.gradio.live URL; avoid version-specific kwargs (e.g. show_copy_button) that crash on launch.");
+  }
+  // Hybrid: namespace the sandbox's tools (sandbox_*) so they coexist with the runner's.
+  prefixNewTools(beforeSandbox, "sandbox_");
+
+  // Hybrid orchestration note — surfaced FIRST under the EXECUTION family so the
+  // agent understands it owns two worlds and how to pick between them.
+  if (ctx.hybrid) {
+    const runnerUp = ctx.runnerEnabled && !!runnerUrl;
+    const sandboxUp = !!ctx.sandboxUrl;
+    const bothUp = runnerUp && sandboxUp;
+    sandboxGuidance.unshift(
+      "  TWO EXECUTION WORLDS (HYBRID) — you have BOTH worlds at once, and you choose one PER TASK:\n" +
+      "   • RUNNER (runner_* tools: runner_shell_exec, runner_python_exec, runner_nodejs_exec, runner_file_*, runner_run_background, runner_browse_web, runner_machine_info…) — the operator's REAL machine with a PERSISTENT per-agent workspace, a real Playwright browser and long-running processes. Use it for: work on the real project/repo, dev servers & watchers, anything that must persist across runs, and real-browser automation.\n" +
+      "   • SANDBOX (sandbox_* tools: sandbox_shell_exec, sandbox_python_exec, sandbox_jupyter_exec, sandbox_file_*, sandbox_browser…) — a DISPOSABLE, isolated Linux container with a stateful Jupyter kernel and Chromium. Use it for: risky or untrusted code, throwaway data crunching, and anything you want isolated from the real machine.\n" +
+      "   HOW TO CHOOSE: your execution plan tags each step with a recommended world — follow it unless a result forces a change. When unsure, prefer the RUNNER for real/persistent work and the SANDBOX for isolated/experimental work.\n" +
+      "   CRITICAL — NO CROSS-WORLD FILES: the runner and the sandbox have SEPARATE filesystems. Files written in one are NOT visible in the other. Keep an entire pipeline (write → run → read → save) inside ONE world; only switch worlds at a clean boundary and re-materialise anything you need." +
+      (bothUp ? "" : `\n   AVAILABILITY THIS RUN: ${runnerUp ? "runner UP" : "runner DOWN (runner_* tools unavailable)"}, ${sandboxUp ? "sandbox UP" : "sandbox DOWN (sandbox_* tools unavailable)"} — use only the world whose tools are listed above.`),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // MCP servers: expose each attached server's discovered (cached) tools as
+  // namespaced mcp_<server>_<tool> tools. Execution is a JSON-RPC tools/call to
+  // the remote server, done here (the edge is server-side). Sessions are cached
+  // per run so several calls share one handshake.
+  // -------------------------------------------------------------------------
+  if (ctx.mcpServers && ctx.mcpServers.length) {
+    const mcpNames: string[] = [];
+    for (const server of ctx.mcpServers) {
+      const serverSlug = (server.name || server.id).replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase() || server.id.slice(0, 8);
+      for (const t of server.tools ?? []) {
+        if (!t?.name) continue;
+        const toolName = `mcp_${serverSlug}_${t.name}`.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 60);
+        if (tools.has(toolName)) continue;
+        const schema = t.inputSchema && typeof t.inputSchema === "object" && (t.inputSchema as { type?: unknown }).type === "object"
+          ? t.inputSchema as ToolDef["function"]["parameters"]
+          : { type: "object", properties: {}, additionalProperties: true } as ToolDef["function"]["parameters"];
+        tools.set(toolName, {
+          def: {
+            name: toolName,
+            description: `[MCP · ${server.name}] ${t.description || t.name}`.slice(0, 1000),
+            parameters: schema,
+          },
+          run: async (args) => {
+            if (!ctx.mcpSessions) ctx.mcpSessions = new Map();
+            let sess = ctx.mcpSessions.get(server.id);
+            if (!sess) { sess = {}; ctx.mcpSessions.set(server.id, sess); }
+            return await mcpCallTool(server.url, server.headers ?? {}, t.name, args, sess);
+          },
+        });
+        mcpNames.push(toolName);
+      }
+    }
+    if (mcpNames.length) {
+      summaryLines.push(`- MCP tools (${mcpNames.length}) from connected servers: ${ctx.mcpServers.map((s) => s.name).join(", ")} — external capabilities exposed as mcp_* tools; call them like any other tool.`);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -2345,7 +2491,7 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
   run_background: "EXECUTION", list_processes: "EXECUTION", process_logs: "EXECUTION", process_stop: "EXECUTION",
   web_search: "WEB", read_url: "WEB", deep_research: "WEB", http_get: "WEB",
   search_knowledge: "DATA", query_table: "DATA", list_connectors: "DATA",
-  update_todos: "PLAN", use_skill: "PLAN", ask_user: "PLAN",
+  update_todos: "PLAN", use_skill: "PLAN", read_skill_file: "PLAN", ask_user: "PLAN",
   create_deliverable: "DELIVER",
   save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY",
   create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
@@ -2360,7 +2506,11 @@ function buildCapabilityTree(
 ): string {
   const byFamily = new Map<ToolFamily, string[]>();
   for (const [name, t] of tools) {
-    const fam = TOOL_FAMILY[name] ?? "INTEGRATIONS";
+    // Hybrid namespaces execution tools (runner_* / sandbox_*). Classify by the
+    // exact name first, then fall back to the un-prefixed base (sandbox_browser /
+    // sandbox_env keep their own entries via the exact-name hit).
+    const base = name.replace(/^(?:runner|sandbox)_/, "");
+    const fam = TOOL_FAMILY[name] ?? TOOL_FAMILY[base] ?? "INTEGRATIONS";
     // First sentence of the description keeps the inventory scannable.
     const firstSentence = (t.def.description ?? "").split(/(?<=\.)\s+/)[0] ?? "";
     const arr = byFamily.get(fam) ?? [];

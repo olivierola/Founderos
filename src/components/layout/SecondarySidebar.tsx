@@ -1,14 +1,19 @@
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, FolderKanban, Loader2 } from "lucide-react";
-import { ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, ChartBarIcon, GearSixIcon } from "@phosphor-icons/react";
+import { ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, ChartBarIcon, GearSixIcon } from "@phosphor-icons/react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
 import { InboxChannelsItem } from "./InboxChannelsItem";
 import { CrmObjectsItem } from "./CrmObjectsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
-import { useMemo, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
 import { INTERNAL_AGENT_TABS } from "@/features/internal-agents/InternalAgentDetail";
 import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 import { MODULE_PROJECT_CONFIGS, type ModuleProjectConfig } from "@/lib/module-project-config";
@@ -367,6 +372,8 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
   const onInternalList = agentSeg === "internal-agents";
   const onPublicList = agentSeg === "public-agents";
   const onCollections = agentSeg === "collections";
+  const onSkills = agentSeg === "skills";
+  const onMcp = agentSeg === "mcp";
 
   return (
     <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
@@ -465,6 +472,35 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
           <BookOpenIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
           <span className="min-w-0 flex-1 truncate">Collections</span>
         </button>
+
+        {/* ── Custom Skills ── */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <SectionLabel>Compétences</SectionLabel>
+        </div>
+        <button
+          onClick={() => navigate(`${base}/agent/skills`)}
+          className={cn(
+            "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
+            onSkills
+              ? "bg-sidebar-accent font-medium text-foreground"
+              : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+          )}
+        >
+          <PuzzlePieceIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Custom Skills</span>
+        </button>
+        <button
+          onClick={() => navigate(`${base}/agent/mcp`)}
+          className={cn(
+            "mt-1 flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
+            onMcp
+              ? "bg-sidebar-accent font-medium text-foreground"
+              : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+          )}
+        >
+          <PlugsConnectedIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
+          <span className="min-w-0 flex-1 truncate">MCP Servers</span>
+        </button>
       </div>
     </aside>
   );
@@ -472,24 +508,52 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
 
 // ── Vibe Code sidebar — module onglets + persisted chat sessions ─────────────
 interface VibeSession { id: string; title: string; updated_at: string }
+interface VibeProject { id: string; name: string; repository_id: string }
+
 function VibeCodeSidebar({ base, pathname, search }: { base: string; pathname: string; search: string }) {
-  const { projectId } = useCurrentContext();
+  const { workspaceId, projectId } = useCurrentContext();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const mod = findModule("vibe-code");
   const segs = pathname.split("/").filter(Boolean);
   const activeSub = segs[segs.indexOf("vibe-code") + 1];
-  const activeSession = new URLSearchParams(search).get("session");
+  const params = new URLSearchParams(search);
+  const activeSession = params.get("session");
+  const activeProject = params.get("project");
+  const [creating, setCreating] = useState(false);
 
+  const { data: vibeProjects } = useQuery({
+    queryKey: ["vibe_projects", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data } = await supabase.from("vibe_projects").select("id, name, repository_id")
+        .eq("project_id", projectId!).order("updated_at", { ascending: false });
+      return (data ?? []) as VibeProject[];
+    },
+  });
+
+  // Inside a project → only its sessions; otherwise the project-less ones.
   const { data: sessions } = useQuery({
-    queryKey: ["vibe_sessions", projectId],
+    queryKey: ["vibe_sessions", projectId, activeProject],
     enabled: !!projectId,
     refetchInterval: 8000,
     queryFn: async () => {
       const { supabase } = await import("@/lib/supabase");
-      const { data } = await supabase.from("vibe_sessions").select("id, title, updated_at").eq("project_id", projectId!).order("updated_at", { ascending: false }).limit(50);
+      let q = supabase.from("vibe_sessions").select("id, title, updated_at").eq("project_id", projectId!);
+      q = activeProject ? q.eq("vibe_project_id", activeProject) : q.is("vibe_project_id", null);
+      const { data } = await q.order("updated_at", { ascending: false }).limit(50);
       return (data ?? []) as VibeSession[];
     },
   });
+
+  const chatHref = (extra: Record<string, string>) => {
+    const p = new URLSearchParams();
+    if (activeProject) p.set("project", activeProject);
+    for (const [k, v] of Object.entries(extra)) p.set(k, v);
+    const qs = p.toString();
+    return `${base}/vibe-code/chat${qs ? `?${qs}` : ""}`;
+  };
 
   return (
     <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
@@ -502,10 +566,38 @@ function VibeCodeSidebar({ base, pathname, search }: { base: string; pathname: s
           </NavLink>
         ))}
 
+        {/* Projects — each is bound to one repo; its sessions inherit that repo. */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <div className="flex items-center justify-between px-3 pb-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Projets</span>
+            <button onClick={() => setCreating(true)} title="Nouveau projet" className="text-muted-foreground hover:text-foreground">
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <button
+            onClick={() => navigate(`${base}/vibe-code/chat`)}
+            className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
+              !activeProject ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}
+          >
+            <span className="min-w-0 flex-1 truncate">Sans projet</span>
+          </button>
+          {(vibeProjects ?? []).map((p) => (
+            <button
+              key={p.id}
+              onClick={() => navigate(`${base}/vibe-code/chat?project=${p.id}`)}
+              className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
+                activeProject === p.id ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}
+            >
+              <FolderKanban className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{p.name}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="mt-4 border-t border-border/60 pt-3">
           <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sessions</div>
           <button
-            onClick={() => navigate(`${base}/vibe-code/chat`)}
+            onClick={() => navigate(chatHref({}))}
             className={cn("mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent/60",
               activeSub === "chat" && !activeSession ? "bg-sidebar-accent font-medium text-foreground" : "font-medium text-primary")}
           >
@@ -516,7 +608,7 @@ function VibeCodeSidebar({ base, pathname, search }: { base: string; pathname: s
           ) : (sessions ?? []).map((s) => (
             <button
               key={s.id}
-              onClick={() => navigate(`${base}/vibe-code/chat?session=${s.id}`)}
+              onClick={() => navigate(chatHref({ session: s.id }))}
               className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
                 activeSession === s.id && activeSub === "chat" ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}
             >
@@ -525,7 +617,96 @@ function VibeCodeSidebar({ base, pathname, search }: { base: string; pathname: s
           ))}
         </div>
       </nav>
+
+      {creating && (
+        <NewVibeProjectDialog
+          workspaceId={workspaceId}
+          projectId={projectId}
+          onClose={() => setCreating(false)}
+          onCreated={(id) => {
+            setCreating(false);
+            qc.invalidateQueries({ queryKey: ["vibe_projects", projectId] });
+            navigate(`${base}/vibe-code/chat?project=${id}`);
+          }}
+        />
+      )}
     </aside>
+  );
+}
+
+/** Create a Vibe project: a name + the single repo it works on. */
+function NewVibeProjectDialog({
+  workspaceId, projectId, onClose, onCreated,
+}: {
+  workspaceId?: string | null; projectId?: string | null;
+  onClose: () => void; onCreated: (id: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [repoId, setRepoId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: repos } = useQuery({
+    queryKey: ["repositories", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data } = await supabase.from("repositories").select("id, full_name")
+        .eq("project_id", projectId!).order("created_at", { ascending: false });
+      return (data ?? []) as { id: string; full_name: string }[];
+    },
+  });
+  const list = repos ?? [];
+  const chosen = repoId || list[0]?.id || "";
+
+  async function create() {
+    if (!workspaceId || !projectId || !name.trim() || !chosen) return;
+    setSaving(true); setError(null);
+    try {
+      const { supabase } = await import("@/lib/supabase");
+      const { data, error } = await supabase.from("vibe_projects")
+        .insert({ workspace_id: workspaceId, project_id: projectId, name: name.trim(), repository_id: chosen })
+        .select("id").single();
+      if (error) throw error;
+      onCreated(data.id as string);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Nouveau projet Vibe Code</DialogTitle>
+          <DialogDescription>Un projet est lié à un seul dépôt — toutes ses discussions auront ce dépôt pour contexte.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-foreground">Nom</span>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Refonte du checkout" />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-foreground">Dépôt</span>
+            {list.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Aucun dépôt connecté — connectez-en un dans le module Dépôts.</p>
+            ) : (
+              <select value={chosen} onChange={(e) => setRepoId(e.target.value)}
+                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm">
+                {list.map((r) => <option key={r.id} value={r.id}>{r.full_name}</option>)}
+              </select>
+            )}
+          </label>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Annuler</Button>
+          <Button onClick={create} disabled={saving || !name.trim() || !chosen}>
+            {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} Créer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -9,15 +9,15 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { Pill, Select } from "../ui";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
 import {
-  useProjectAgents, agentsOrSample, timeAgo, usd, modelById,
+  useProjectAgents, timeAgo, usd, modelById,
   PROMPT_CATEGORY_META, OUTCOME_META, HOSTING_META, type PromptRecord,
 } from "./data";
 import { useRealPrompts, useRunTools } from "./db";
 
 export function GovPromptMonitoringPage() {
   const { data: agents } = useProjectAgents();
-  const roster = agentsOrSample(agents);
-  const { prompts, isSample } = useRealPrompts(agents ?? []);
+  const roster = agents ?? [];
+  const { prompts } = useRealPrompts(agents ?? []);
 
   const [agentFilter, setAgentFilter] = useState("all");
   const [catFilter, setCatFilter] = useState("all");
@@ -25,9 +25,9 @@ export function GovPromptMonitoringPage() {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<PromptRecord | null>(null);
   // Real drill-down: which tools this specific run actually invoked.
-  const toolsQ = useRunTools(sel && !isSample ? sel.id : null);
-  const selTools = sel ? (isSample ? sel.toolsUsed : toolsQ.data?.tools ?? []) : [];
-  const selData = sel ? (isSample ? sel.dataAccessed : toolsQ.data?.data ?? []) : [];
+  const toolsQ = useRunTools(sel ? sel.id : null);
+  const selTools = sel ? toolsQ.data?.tools ?? [] : [];
+  const selData = sel ? toolsQ.data?.data ?? [] : [];
 
   const filtered = prompts.filter((p) =>
     (agentFilter === "all" || p.agentId === agentFilter) &&
@@ -47,7 +47,6 @@ export function GovPromptMonitoringPage() {
       <PageHeader
         title="Surveillance des prompts"
         description="Chaque demande faite à un agent : qui l'a émise, sa catégorie, son résultat et les accès mobilisés — lue depuis vos runs réels."
-        actions={isSample ? <Pill meta={{ label: "Données d'exemple — lancez un run d'agent", tone: "amber" }} /> : undefined}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">

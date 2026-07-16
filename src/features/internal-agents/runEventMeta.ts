@@ -8,10 +8,30 @@ import {
   MessagesSquare, ListTree, Mail, Cpu, Download, FolderCog,
 } from "lucide-react";
 
+// Hybrid namespaces execution tools (runner_* / sandbox_*). The world a call ran
+// in, or null for un-namespaced tools (single-world agents / non-execution tools).
+export function toolEnv(tool: string): "runner" | "sandbox" | null {
+  if (tool.startsWith("runner_")) return "runner";
+  if (tool.startsWith("sandbox_")) return "sandbox";
+  return null;
+}
+
+// Strip the world prefix so the summary/icon logic matches on the base tool —
+// except the sandbox's own descriptive tools (sandbox_browser / sandbox_env),
+// which are their own switch cases and must keep their full name.
+function baseTool(tool: string): string {
+  if (tool.startsWith("runner_")) return tool.slice("runner_".length);
+  if (tool.startsWith("sandbox_")) {
+    const rest = tool.slice("sandbox_".length);
+    return rest === "browser" || rest === "env" ? tool : rest;
+  }
+  return tool;
+}
+
 // Human-readable one-liner for a tool call.
 export function toolSummary(tool: string, args: any): string {
   const a = args ?? {};
-  switch (tool) {
+  switch (baseTool(tool)) {
     case "shell_exec": return `$ ${String(a.command ?? "").slice(0, 80)}`;
     case "python_exec": return `python: ${String(a.code ?? "").replace(/\n/g, " ").slice(0, 60)}…`;
     case "nodejs_exec": return `node: ${String(a.code ?? "").replace(/\n/g, " ").slice(0, 60)}…`;
@@ -55,8 +75,9 @@ export function toolSummary(tool: string, args: any): string {
 }
 
 // Icon component (not JSX — this is a .ts module) per tool family.
-export function toolIcon(tool: string): React.ReactNode {
+export function toolIcon(toolName: string): React.ReactNode {
   const cls = { className: "h-3.5 w-3.5" };
+  const tool = baseTool(toolName);
   if (tool.includes("browser") || tool === "browse_web" || tool === "http_get" || tool === "read_url") return createElement(Globe, cls);
   if (tool === "download_file") return createElement(Download, cls);
   if (tool === "manage_files") return createElement(FolderCog, cls);

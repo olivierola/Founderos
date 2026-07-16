@@ -55,6 +55,11 @@ Deno.serve(async (req) => {
     if (!ghRes.ok) {
       return jsonResponse({ error: "Invalid GitHub token" }, { status: 400 });
     }
+    // Classic PATs expose their scopes here (e.g. "repo, workflow"); fine-grained
+    // tokens return an empty header → we can tell the user which kind is connected.
+    const scopes = (ghRes.headers.get("x-oauth-scopes") ?? "").trim();
+    const tokenType = scopes ? "classic" : "fine-grained";
+    const canWrite = tokenType === "classic" && /\brepo\b/.test(scopes);
     const ghUser = (await ghRes.json()) as { login: string; id: number };
 
     // Upsert connector
@@ -101,7 +106,7 @@ Deno.serve(async (req) => {
       payload: { provider: "github", github_login: ghUser.login },
     });
 
-    return jsonResponse({ ok: true, connector_id: connector.id, github_login: ghUser.login });
+    return jsonResponse({ ok: true, connector_id: connector.id, github_login: ghUser.login, scopes, token_type: tokenType, can_write: canWrite });
   } catch (err) {
     return jsonResponse(
       { error: "Unexpected error", detail: err instanceof Error ? err.message : String(err) },

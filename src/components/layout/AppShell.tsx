@@ -2,8 +2,10 @@ import { createContext, useContext, useState, useEffect } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { PrimarySidebar } from "./PrimarySidebar";
 import { SecondarySidebar } from "./SecondarySidebar";
+import { AdminSidebar } from "./AdminSidebar";
 import { SubTabBar } from "./SubTabBar";
 import { Topbar } from "./Topbar";
+import { isAdminRoute } from "@/lib/admin-navigation";
 import { TopbarTabsProvider, useTopbarTabs } from "./TopbarTabs";
 import { TopbarBreadcrumbProvider } from "./TopbarBreadcrumb";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -33,6 +35,7 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [primaryExpanded, setPrimaryExpanded] = useState(false);
   const { pathname } = useLocation();
+  const admin = isAdminRoute(pathname);
 
   // Close the drawer whenever the route changes.
   useEffect(() => {
@@ -55,8 +58,11 @@ export function AppShell() {
     <ShellNavContext.Provider value={{ mobileOpen, setMobileOpen, primaryExpanded, setPrimaryExpanded }}>
       <PermissionsProvider>
       <AssistantProvider>
-      {/* Soft-black chrome: the topbar and the gutter behind the rounded block. */}
-      <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#060608]">
+      {/* Soft-black chrome. Outer is a ROW: the left column holds the topbar +
+          content; the assistant is a full-height right rail so it reaches up to
+          the navbar level (not just the content area). */}
+      <div className="flex h-screen w-screen overflow-hidden bg-[#060608]">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopbarTabsProvider>
         <TopbarBreadcrumbProvider>
           <Topbar />
@@ -71,8 +77,14 @@ export function AppShell() {
                   className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
                 />
                 <div className="fixed inset-y-0 left-0 z-50 flex md:hidden">
-                  <PrimarySidebar />
-                  <SecondarySidebar />
+                  {admin ? (
+                    <AdminSidebar />
+                  ) : (
+                    <>
+                      <PrimarySidebar />
+                      <SecondarySidebar />
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -80,10 +92,16 @@ export function AppShell() {
             {/* Everything under the navbar is ONE rounded panel (sidebars +
                 content) floating on the soft-black chrome — the "arrondi". */}
             <div className="flex flex-1 overflow-hidden rounded-t-2xl border-t border-white/10 bg-background">
-              {/* Desktop sidebars */}
+              {/* Desktop sidebars — the Admin dashboard uses a single sidebar. */}
               <div className="hidden md:flex">
-                <PrimarySidebar />
-                <SecondarySidebar />
+                {admin ? (
+                  <AdminSidebar />
+                ) : (
+                  <>
+                    <PrimarySidebar />
+                    <SecondarySidebar />
+                  </>
+                )}
               </div>
 
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -114,8 +132,10 @@ export function AppShell() {
           </div>
         </TopbarBreadcrumbProvider>
         </TopbarTabsProvider>
+        </div>
 
-        {/* Global assistant — pushes content (split) when open, full height. */}
+        {/* Global assistant — full-height right rail, aligned to the navbar top,
+            splitting the whole shell (topbar + content) when open. */}
         <AssistantPanel />
       </div>
       </AssistantProvider>
@@ -172,6 +192,10 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/agent\/internal\/[^/]+/.test(pathname)) return true;
   // Knowledge collections — full-width folder grid + Document-AI extraction workspace.
   if (/\/app\/[^/]+\/[^/]+\/agent\/collections(\/.*)?$/.test(pathname)) return true;
+  // Skill editor (agent/skills/new · agent/skills/<id>/edit) — full-width
+  // multi-file authoring surface. The bare agent/skills library stays a normal
+  // padded page like the other lists.
+  if (/\/app\/[^/]+\/[^/]+\/agent\/skills\/[^/]+/.test(pathname)) return true;
   // Project Inbox: Slack-style full-width chatroom.
   if (/\/app\/[^/]+\/[^/]+\/pm\/inbox(\/.*)?$/.test(pathname)) return true;
   // Project Whiteboard canvas (open board) — full-screen collaborative canvas.

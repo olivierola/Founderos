@@ -26,7 +26,7 @@ export interface InternalAgent {
   role: string | null;
   skills: string[];
   collaboration_enabled: boolean;
-  sandbox_mode: "cloud" | "runner" | "sandbox";
+  sandbox_mode: "cloud" | "runner" | "sandbox" | "hybrid";
   sandbox_url: string | null;
   // Optional self-hosted (RunPod) model routing — null = default provider.
   hosted_endpoint_url: string | null;

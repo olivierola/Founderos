@@ -17,6 +17,7 @@ import { useShellNav } from "./AppShell";
 import { useAssistant } from "@/lib/assistant-context";
 import { useTopbarBreadcrumb } from "./TopbarBreadcrumb";
 import { findModule } from "@/lib/navigation";
+import { isAdminRoute } from "@/lib/admin-navigation";
 import { cn } from "@/lib/utils";
 
 export function Topbar() {
@@ -29,6 +30,11 @@ export function Topbar() {
   // Extra breadcrumb segments a page can publish (e.g. the CRM record view
   // surfaces "Autonomous agents / Support Concierge" here).
   const crumbs = useTopbarBreadcrumb();
+
+  // The Admin dashboard uses a single sidebar (w-64); force the navbar's left
+  // segment to that same width so its right border lines up with the sidebar.
+  const admin = isAdminRoute(location.pathname);
+  const leftExpanded = admin || primaryExpanded;
 
   const segments = location.pathname.split("/").filter(Boolean);
   const appIdx = segments.indexOf("app");
@@ -54,23 +60,26 @@ export function Topbar() {
         <div
           className={cn(
             "group flex shrink-0 items-center border-r border-white/10 transition-[width] duration-200",
-            primaryExpanded ? "w-64 justify-between px-3" : "w-16 justify-center px-2",
+            leftExpanded ? "w-64 justify-between px-3" : "w-16 justify-center px-2",
           )}
         >
-          {primaryExpanded ? (
+          {leftExpanded ? (
             <>
               <DashboardSwitcher />
-              {/* Collapse — revealed on hover over the logo area. */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="hidden h-8 w-8 text-white/60 opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100 md:inline-flex"
-                onClick={() => setPrimaryExpanded(false)}
-                aria-label="Réduire la barre latérale"
-                title="Réduire la barre latérale"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
+              {/* Collapse — revealed on hover over the logo area. Hidden in the
+                  Admin dashboard, whose single sidebar has no collapsed state. */}
+              {!admin && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="hidden h-8 w-8 text-white/60 opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100 md:inline-flex"
+                  onClick={() => setPrimaryExpanded(false)}
+                  aria-label="Réduire la barre latérale"
+                  title="Réduire la barre latérale"
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+              )}
             </>
           ) : (
             // Collapsed: the logo morphs into the expand toggle on hover.

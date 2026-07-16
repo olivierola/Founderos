@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Settings2, Save, Check, Plug } from "lucide-react";
+import { PageSkeleton } from "@/components/ui/skeleton";
 import { PlugsConnectedIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ export function GovFtSettingsPage() {
   // Local draft over the persisted config; "Enregistrer" writes the row.
   useEffect(() => { if (!loading) setDraft(settings); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [loading]);
   const s = draft;
-  if (!s) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+  if (!s) return <PageSkeleton cards={0} rows={8} />;
 
   const set = <K extends keyof FtSettings>(k: K, v: FtSettings[K]) => { setDraft((p) => (p ? { ...p, [k]: v } : p)); setSaved(false); };
   const save = () => { if (s) { void saveDb(s).then(() => setSaved(true)); } };

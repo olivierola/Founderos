@@ -10,7 +10,7 @@ import {
   ListTree, Gauge, Brain, Pin, PinOff, ArrowLeft, ChevronDown, ChevronUp, History,
   Network, MessagesSquare, Send, ArrowRight, Plug, AlertTriangle, Search, Slack, Workflow,
   X, FileCode, TerminalSquare, BrainCircuit, Copy, ThumbsUp, ThumbsDown, RotateCcw,
-  SlidersHorizontal, MoreVertical, LayoutGrid, Columns3, Smartphone,
+  SlidersHorizontal, MoreVertical, LayoutGrid, Columns3, Smartphone, Server,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -218,13 +218,14 @@ function InlineSubTabs<T extends string>({
 // secondary sidebar short instead of one entry per surface.
 // ============================================================================
 
-type CustomizeSection = "instructions" | "skills" | "memory" | "connectors" | "automation";
+type CustomizeSection = "instructions" | "skills" | "memory" | "connectors" | "mcp" | "automation";
 
 const CUSTOMIZE_SECTIONS: { key: CustomizeSection; label: string; icon: any }[] = [
   { key: "instructions", label: "Instructions", icon: FileText },
   { key: "skills", label: "Skills", icon: Zap },
   { key: "memory", label: "Memory", icon: Brain },
   { key: "connectors", label: "Connectors", icon: Plug },
+  { key: "mcp", label: "MCP", icon: Server },
   { key: "automation", label: "Automation", icon: Workflow },
 ];
 
@@ -256,7 +257,106 @@ function CustomizeTab({ agent, initialSection, embedded }: { agent: InternalAgen
       {section === "skills" && <SkillsTab agentId={agent.id} />}
       {section === "memory" && <MemoryTab agent={agent} />}
       {section === "connectors" && <AgentConnectorsTab agent={agent} />}
+      {section === "mcp" && <AgentMcpTab agent={agent} />}
       {section === "automation" && <AgentAutomationsTab agent={agent} />}
+    </div>
+  );
+}
+
+// ── Personnaliser → MCP: attach workspace MCP servers to this agent. Their tools
+// (discovered in the MCP Servers page) become callable by the agent at run time.
+function AgentMcpTab({ agent }: { agent: InternalAgent }) {
+  const { workspaceId } = useCurrentContext();
+  const { workspaceSlug, projectSlug } = useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const { data: servers } = useQuery({
+    queryKey: ["mcp_servers_for_agent", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: async () => {
+      const { data } = await supabase.from("mcp_servers")
+        .select("id, name, description, transport, url, enabled, cached_tools, status")
+        .eq("workspace_id", workspaceId).order("name");
+      return (data ?? []) as Array<{ id: string; name: string; description: string | null; transport: string; url: string; enabled: boolean; cached_tools: Array<{ name: string }>; status: string | null }>;
+    },
+  });
+  const { data: attached } = useQuery({
+    queryKey: ["agent_mcp_servers", agent.id],
+    queryFn: async () => {
+      const { data } = await supabase.from("agent_mcp_servers").select("server_id").eq("agent_id", agent.id);
+      return new Set((data ?? []).map((r: any) => r.server_id as string));
+    },
+  });
+  const attachedSet = attached ?? new Set<string>();
+
+  async function toggle(serverId: string) {
+    if (attachedSet.has(serverId)) {
+      await supabase.from("agent_mcp_servers").delete().eq("agent_id", agent.id).eq("server_id", serverId);
+    } else {
+      await supabase.from("agent_mcp_servers").insert({ agent_id: agent.id, server_id: serverId });
+    }
+    queryClient.invalidateQueries({ queryKey: ["agent_mcp_servers", agent.id] });
+  }
+
+  const list = servers ?? [];
+  const mcpHome = `/app/${workspaceSlug}/${projectSlug}/agent/mcp`;
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <div className="flex items-start justify-between gap-3 pb-4">
+        <div>
+          <h2 className="text-lg font-semibold">Serveurs MCP</h2>
+          <p className="mt-1 max-w-lg text-sm text-muted-foreground">
+            Activez des serveurs MCP pour cet agent : leurs outils deviennent utilisables pendant ses runs.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="rounded-full shrink-0" onClick={() => navigate(mcpHome)}>
+          <Server className="mr-1 h-3.5 w-3.5" /> Gérer les serveurs
+        </Button>
+      </div>
+
+      {list.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border py-12 text-center">
+          <Server className="h-7 w-7 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">Aucun serveur MCP dans ce workspace.</p>
+          <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(mcpHome)}>
+            <Plus className="mr-1 h-4 w-4" /> Ajouter un serveur
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {list.map((s) => {
+            const on = attachedSet.has(s.id);
+            const toolCount = Array.isArray(s.cached_tools) ? s.cached_tools.length : 0;
+            return (
+              <div key={s.id} className={cn("flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3", !s.enabled && "opacity-60")}>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary">
+                  <Server className="h-4 w-4 text-muted-foreground" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium">{s.name}</span>
+                    <Badge variant="outline" className="text-[9px] uppercase">{s.transport}</Badge>
+                    {s.status === "error" && <span className="text-[10px] text-destructive">hors-ligne</span>}
+                  </div>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {toolCount > 0 ? `${toolCount} outil${toolCount > 1 ? "s" : ""}` : "Aucun outil découvert — testez le serveur"} · <span className="font-mono">{s.url}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => toggle(s.id)}
+                  disabled={!s.enabled}
+                  className={cn("flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors disabled:cursor-not-allowed", on ? "bg-primary" : "bg-secondary")}
+                  aria-label={on ? "Détacher" : "Attacher"}
+                >
+                  <span className={cn("block h-5 w-5 rounded-full bg-white transition-transform", on && "translate-x-5")} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -657,6 +757,24 @@ function ChatTab({
   });
   const isBusy = sending || !!activeRun;
 
+  // When a run transitions active → finished, the message poll (gated on isBusy)
+  // stops on the SAME render — so the final assistant reply, inserted server-side
+  // just before the run flips to succeeded, could be missed until a manual
+  // refresh. Detect that falling edge and force one last refetch of messages
+  // (+ deliverables + the conversation list) so the reply appears on its own.
+  const prevRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    const cur = activeRun?.id ?? null;
+    if (prevRunRef.current && !cur) {
+      if (convoId) {
+        queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", convoId] });
+        queryClient.invalidateQueries({ queryKey: ["internal_agent_convo_deliverables", convoId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["internal_agent_conversations", agent.id] });
+    }
+    prevRunRef.current = cur;
+  }, [activeRun?.id, convoId, agent.id, queryClient]);
+
   // Resume the most recent session by default.
   useEffect(() => {
     if (!convoId && !startedFresh && conversations && conversations.length > 0) {
@@ -741,13 +859,17 @@ function ChatTab({
       // Call the worker edge in "chat" mode. It now runs the agent loop in the
       // BACKGROUND and returns immediately (avoids the 504 on long runs), so we
       // poll the run until it finishes while the live timeline streams progress.
-      const resp = await callEdge<{ run_id?: string; async?: boolean }>("internal-agent-run", {
+      const resp = await callEdge<{ run_id?: string; queued?: boolean; injected?: boolean }>("internal-agent-run", {
         agent_id: agent.id,
         mode: "chat",
         conversation_id: cid,
       });
+      // Chat always runs on the durable tick runtime now — the edge returns
+      // immediately with { run_id, queued|injected } (never `async`). Poll the run
+      // to completion whenever we got a run_id, refetching messages each tick so
+      // the reply streams in and the final answer shows without a manual refresh.
       const runId = resp?.run_id ?? null;
-      if (runId && resp?.async) {
+      if (runId) {
         const deadline = Date.now() + 8 * 60 * 1000; // safety cap
         // eslint-disable-next-line no-constant-condition
         while (Date.now() < deadline) {
@@ -3020,7 +3142,7 @@ function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedded?: boo
   const [skills, setSkills] = useState<string[]>(agent.skills ?? []);
   const [skillInput, setSkillInput] = useState("");
   const [collabEnabled, setCollabEnabled] = useState(agent.collaboration_enabled ?? true);
-  const [sandboxMode, setSandboxMode] = useState<"cloud" | "runner" | "sandbox">(agent.sandbox_mode ?? "cloud");
+  const [sandboxMode, setSandboxMode] = useState<"cloud" | "runner" | "sandbox" | "hybrid">(agent.sandbox_mode ?? "cloud");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [section, setSection] = useState<SettingsSectionKey>("general");
@@ -3173,10 +3295,10 @@ function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedded?: boo
       {section === "infrastructure" && (
       <SettingsSection
         title="Execution Environment" icon={Database}
-        description="Choose how this agent runs. Cloud = serverless edge (web/db/connectors). Runner = + a real browser, shell, Python/Node and files on your self-hosted runner machine. Sandbox = + a full Linux container with terminal, files and code execution."
+        description="Choose how this agent runs. Cloud = serverless edge (web/db/connectors). Runner = + a real browser, shell, Python/Node and files on your self-hosted runner machine. Sandbox = + a full Linux container with terminal, files and code execution. Hybrid = BOTH runner and sandbox at once, with an orchestrator that picks the right world per task."
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <button onClick={() => setSandboxMode("cloud")}
               className={cn("rounded-xl border p-4 text-left transition-all",
                 sandboxMode === "cloud" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
@@ -3228,6 +3350,23 @@ function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedded?: boo
                 <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">jupyter</span>
               </div>
             </button>
+
+            <button onClick={() => setSandboxMode("hybrid")}
+              className={cn("rounded-xl border p-4 text-left transition-all",
+                sandboxMode === "hybrid" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
+              <div className="flex items-center gap-2 mb-2">
+                <Workflow className="h-4 w-4 text-violet-500" />
+                <span className="text-sm font-semibold">Hybrid</span>
+                {sandboxMode === "hybrid" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Both Runner and Sandbox at once. An orchestrator picks the right world per task and falls back to the other if one is down.</p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">runner_*</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">sandbox_*</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">orchestrated</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">auto-failover</span>
+              </div>
+            </button>
           </div>
 
           {sandboxMode === "runner" && (
@@ -3257,6 +3396,31 @@ function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedded?: boo
                   <span className="font-mono text-[10px] text-muted-foreground">{agent.sandbox_url}</span>
                 </div>
               )}
+            </div>
+          )}
+
+          {sandboxMode === "hybrid" && (
+            <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs">
+                <Workflow className="h-3.5 w-3.5 text-violet-500" />
+                <span className="font-medium">Orchestrated across two worlds — needs BOTH the runner (runner_browser_url) and the sandbox reachable.</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                The agent gets both toolsets at once, namespaced so they never collide:
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-md border border-border/60 bg-background/40 p-2">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium"><Globe className="h-3 w-3 text-sky-500" /> runner_* — real machine</div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">Persistent workspace, real Playwright browser, dev servers &amp; long-running processes. For real-repo work and anything that must persist.</p>
+                </div>
+                <div className="rounded-md border border-border/60 bg-background/40 p-2">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium"><TerminalSquare className="h-3 w-3 text-emerald-500" /> sandbox_* — disposable container</div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">Isolated Linux, stateful Jupyter, Chromium. For risky/untrusted code and throwaway analysis.</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                At plan time the orchestrator tags each step with a world; a health-aware router degrades to the available world if one is down (it hard-fails only when both are unreachable). Files do not transfer between worlds — each pipeline stays in one.
+              </p>
             </div>
           )}
         </div>
@@ -3832,7 +3996,7 @@ type SkillRow = { id: string; name: string; slug: string; description: string | 
 
 const SKILL_FILTERS: { key: "all" | "mine" | "examples"; label: string }[] = [
   { key: "all", label: "Tous" },
-  { key: "mine", label: "Mes Skills" },
+  { key: "mine", label: "Custom Skills" },
   { key: "examples", label: "Exemples de Skills" },
 ];
 
@@ -3892,14 +4056,16 @@ function scoreSkill(s: SkillRow, terms: string[]): number {
   return score;
 }
 
-function SkillsTab({ agentId }: { agentId: string }) {
+export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnly?: boolean }) {
   const { workspaceId } = useCurrentContext();
+  const { workspaceSlug, projectSlug } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"all" | "mine" | "examples">("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SkillRow | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
   const [focused, setFocused] = useState(false);
+  const skillsBase = `/app/${workspaceSlug}/${projectSlug}/agent/skills`;
 
   const { data: allSkills } = useQuery({
     queryKey: ["agent_skills_all"],
@@ -3912,6 +4078,7 @@ function SkillsTab({ agentId }: { agentId: string }) {
 
   const { data: activations } = useQuery({
     queryKey: ["agent_skill_activations", agentId],
+    enabled: !!agentId,
     queryFn: async () => {
       const { data } = await supabase.from("agent_skill_activations").select("skill_id").eq("agent_id", agentId);
       return new Set((data ?? []).map((a: any) => a.skill_id));
@@ -3921,6 +4088,7 @@ function SkillsTab({ agentId }: { agentId: string }) {
   const activeSet = activations ?? new Set<string>();
 
   async function toggle(skillId: string) {
+    if (!agentId) return;
     if (activeSet.has(skillId)) {
       await supabase.from("agent_skill_activations").delete().eq("agent_id", agentId).eq("skill_id", skillId);
     } else {
@@ -3936,8 +4104,11 @@ function SkillsTab({ agentId }: { agentId: string }) {
     queryClient.invalidateQueries({ queryKey: ["agent_skills_all"] });
   }
 
-  const skillsList = allSkills ?? [];
-  const base = filter === "mine" ? skillsList.filter((s) => !s.is_system)
+  // customOnly (the "Custom Skills" library page) hard-restricts to skills the
+  // user created (non-system) and drops the Tous/Custom/Exemples filter chips.
+  const skillsList = (allSkills ?? []).filter((s) => (customOnly ? !s.is_system : true));
+  const base = customOnly ? skillsList
+    : filter === "mine" ? skillsList.filter((s) => !s.is_system)
     : filter === "examples" ? skillsList.filter((s) => s.is_system)
     : skillsList;
 
@@ -3988,9 +4159,11 @@ function SkillsTab({ agentId }: { agentId: string }) {
       {/* Header — title + description on the left, search on the right. */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Skills</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">{customOnly ? "Custom Skills" : "Skills"}</h2>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            Étendez les capacités de vos agents grâce à des compétences réutilisables.{" "}
+            {customOnly
+              ? "Vos compétences sur-mesure, réutilisables et activables sur n'importe quel agent."
+              : "Étendez les capacités de vos agents grâce à des compétences réutilisables."}{" "}
             <span className="cursor-pointer text-primary hover:underline">En savoir plus</span>
           </p>
         </div>
@@ -4051,7 +4224,7 @@ function SkillsTab({ agentId }: { agentId: string }) {
       {/* Filter pills + create. */}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          {SKILL_FILTERS.map((f) => (
+          {!customOnly && SKILL_FILTERS.map((f) => (
             <button
               key={f.key}
               onClick={() => { setFilter(f.key); setSelected(null); }}
@@ -4066,16 +4239,25 @@ function SkillsTab({ agentId }: { agentId: string }) {
             </button>
           ))}
         </div>
-        <Button variant="outline" size="sm" className="rounded-full" onClick={() => setCreateOpen(true)}>
+        <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
           <Plus className="mr-1 h-4 w-4" /> Créer un Skill
         </Button>
       </div>
 
       {/* Card grid — 2 columns, title + description + ⋮ menu. */}
       {filtered.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">
-          Aucun skill trouvé{search ? ` pour « ${search} »` : ""}.
-        </p>
+        customOnly && !search ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <p className="text-sm text-muted-foreground">Vous n'avez pas encore créé de skill.</p>
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
+              <Plus className="mr-1 h-4 w-4" /> Créer votre premier Skill
+            </Button>
+          </div>
+        ) : (
+          <p className="py-16 text-center text-sm text-muted-foreground">
+            Aucun skill trouvé{search ? ` pour « ${search} »` : ""}.
+          </p>
+        )
       ) : (
         <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {filtered.map((s) => {
@@ -4100,9 +4282,14 @@ function SkillsTab({ agentId }: { agentId: string }) {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => setSelected(s)}>Voir les détails</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toggle(s.id)}>
-                        {isActive ? "Désactiver" : "Activer"}
-                      </DropdownMenuItem>
+                      {!s.is_system && (
+                        <DropdownMenuItem onClick={() => navigate(`${skillsBase}/${s.id}/edit`)}>Modifier</DropdownMenuItem>
+                      )}
+                      {agentId && (
+                        <DropdownMenuItem onClick={() => toggle(s.id)}>
+                          {isActive ? "Désactiver" : "Activer"}
+                        </DropdownMenuItem>
+                      )}
                       {!s.is_system && (
                         <>
                           <DropdownMenuSeparator />
@@ -4117,7 +4304,7 @@ function SkillsTab({ agentId }: { agentId: string }) {
                 {s.description && (
                   <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{s.description}</p>
                 )}
-                {isActive && (
+                {agentId && isActive && (
                   <span className="mt-2.5 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                     <Check className="h-3 w-3" /> Activé
                   </span>
@@ -4135,20 +4322,33 @@ function SkillsTab({ agentId }: { agentId: string }) {
         <aside className="fixed inset-y-0 right-0 z-50 flex w-96 flex-col border-l border-border bg-card shadow-2xl">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <h3 className="text-sm font-semibold truncate">{selected.name}</h3>
-            <button onClick={() => setSelected(null)} className="rounded p-1 text-muted-foreground hover:text-foreground">
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              {!selected.is_system && (
+                <button
+                  onClick={() => navigate(`${skillsBase}/${selected.id}/edit`)}
+                  className="rounded p-1 text-muted-foreground hover:text-foreground"
+                  title="Modifier ce skill"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
+              <button onClick={() => setSelected(null)} className="rounded p-1 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 px-4 py-4 space-y-4">
-            {/* Toggle */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium">{activeSet.has(selected.id) ? "Active" : "Inactive"}</span>
-              <button onClick={() => toggle(selected.id)}
-                className={cn("flex h-6 w-11 items-center rounded-full p-0.5 transition-colors", activeSet.has(selected.id) ? "bg-primary" : "bg-secondary")}>
-                <span className={cn("block h-5 w-5 rounded-full bg-white transition-transform", activeSet.has(selected.id) && "translate-x-5")} />
-              </button>
-            </div>
+            {/* Toggle (per-agent activation — only inside an agent's Skills tab) */}
+            {agentId && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium">{activeSet.has(selected.id) ? "Active" : "Inactive"}</span>
+                <button onClick={() => toggle(selected.id)}
+                  className={cn("flex h-6 w-11 items-center rounded-full p-0.5 transition-colors", activeSet.has(selected.id) ? "bg-primary" : "bg-secondary")}>
+                  <span className={cn("block h-5 w-5 rounded-full bg-white transition-transform", activeSet.has(selected.id) && "translate-x-5")} />
+                </button>
+              </div>
+            )}
 
             {/* Description */}
             {selected.description && (
@@ -4230,6 +4430,9 @@ function SkillsTab({ agentId }: { agentId: string }) {
               </details>
             )}
 
+            {/* Bundled files (agent_skill_files) — pulled on demand at runtime. */}
+            <SkillBundledFiles skillId={selected.id} />
+
             {/* Metadata */}
             <div className="border-t border-border pt-3 space-y-1 text-[10px] text-muted-foreground">
               <div>Slug: <span className="font-mono text-foreground/70">{selected.slug}</span></div>
@@ -4241,106 +4444,47 @@ function SkillsTab({ agentId }: { agentId: string }) {
         </>
       )}
 
-      <CreateSkillDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        workspaceId={workspaceId}
-        onCreated={() => queryClient.invalidateQueries({ queryKey: ["agent_skills_all"] })}
-      />
     </div>
   );
 }
 
-// Minimal "create a skill" form — inserts a workspace-owned (non-system) skill.
-function CreateSkillDialog({
-  open, onOpenChange, workspaceId, onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  workspaceId: string | null;
-  onCreated: () => void;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [saving, setSaving] = useState(false);
+// Workspace-level Skills library — the "Custom Skills" entry in the AI Workforce
+// sidebar. Reuses SkillsTab with NO agent, so it drops the per-agent activation
+// UI and becomes a pure browse / search / create / edit / delete library for the
+// whole workspace. Per-agent activation still lives in each agent's Skills tab.
+export function SkillsLibraryPage() {
+  return <SkillsTab customOnly />;
+}
 
-  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-
-  function reset() {
-    setName(""); setDescription(""); setCategory(""); setPrompt("");
-  }
-
-  async function create() {
-    if (!name.trim() || !workspaceId) return;
-    setSaving(true);
-    try {
-      const { error } = await supabase.from("agent_skills").insert({
-        workspace_id: workspaceId,
-        name: name.trim(),
-        slug: slug || `skill-${Date.now()}`,
-        description: description.trim() || null,
-        category: category.trim() || null,
-        system_prompt_extension: prompt.trim() || null,
-        is_system: false,
-      });
-      if (error) { alert(error.message); return; }
-      onCreated();
-      onOpenChange(false);
-      reset();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const textareaClass = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring";
-
+// Read-only list of a skill's bundled files (agent_skill_files), shown in the
+// detail panel. The agent pulls each file's content on demand at run time via
+// the read_skill_file tool (progressive disclosure). Authoring happens in the
+// full-page SkillEditor (agent/skills/:id/edit).
+function SkillBundledFiles({ skillId }: { skillId: string }) {
+  const { data: files } = useQuery({
+    queryKey: ["agent_skill_files", skillId],
+    queryFn: async () => {
+      const { data } = await supabase.from("agent_skill_files")
+        .select("path, content, sort").eq("skill_id", skillId).order("sort");
+      return (data ?? []) as Array<{ path: string; content: string }>;
+    },
+  });
+  if (!files || files.length === 0) return null;
   return (
-    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) reset(); }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Créer un Skill</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Nom</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex. Rédacteur SEO" />
-            {slug && <p className="mt-1 text-[10px] text-muted-foreground">slug : <span className="font-mono">{slug}</span></p>}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              placeholder="Quand charger ce skill…"
-              className={textareaClass}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Catégorie (optionnel)</label>
-            <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="ex. communication" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Instructions / prompt (optionnel)</label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-              placeholder="Le playbook injecté dans le prompt quand ce skill est chargé…"
-              className={textareaClass}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" size="sm" onClick={() => { onOpenChange(false); reset(); }}>Annuler</Button>
-            <Button size="sm" onClick={create} disabled={saving || !name.trim()}>
-              {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />} Créer
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <div>
+      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Fichiers ({files.length})</div>
+      <div className="space-y-1.5">
+        {files.map((f) => (
+          <details key={f.path} className="rounded-md border border-border">
+            <summary className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-secondary/30">
+              <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+              <span className="font-mono">{f.path}</span>
+            </summary>
+            <pre className="bg-zinc-950 px-3 py-2 text-[10px] text-zinc-300 font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">{f.content}</pre>
+          </details>
+        ))}
+      </div>
+    </div>
   );
 }
 

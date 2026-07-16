@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { PageSkeleton } from "@/components/ui/skeleton";
 import { aiopsTabPath } from "@/lib/navigation";
 import { Package, Rocket, Trophy, Coins, Cpu, Database, GraduationCap, ArrowRight, Loader2, ArrowDown } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
@@ -35,7 +36,7 @@ export function GovFtOverviewPage() {
   const { datasets } = useFtDatasetsDb();
   const data = { jobs, versions, datasets };
 
-  if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+  if (loading) return <PageSkeleton cards={4} rows={5} />;
 
   const running = data.jobs.filter((j) => j.status === "running");
   const prod = data.versions.filter((v) => v.status === "deployed");

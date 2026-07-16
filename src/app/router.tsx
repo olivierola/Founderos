@@ -32,7 +32,9 @@ import { ActivationCockpitPage } from "@/features/agent-rag/onboarding/Activatio
 import { RagCenterPage, RagCollectionDetailPage } from "@/features/rag-center/RagCenter";
 import { KnowledgeCollectionsPage } from "@/features/rag-center/KnowledgeCollections";
 import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
-import { InternalAgentDetailPage } from "@/features/internal-agents/InternalAgentDetail";
+import { InternalAgentDetailPage, SkillsLibraryPage } from "@/features/internal-agents/InternalAgentDetail";
+import { SkillEditorPage } from "@/features/internal-agents/SkillEditor";
+import { McpServersPage, McpOAuthCallbackPage } from "@/features/internal-agents/McpServers";
 import { AgentEcosystemPage } from "@/features/internal-agents/AgentEcosystem";
 import { AgentTasksPage } from "@/features/internal-agents/TasksPage";
 import { OpsOverviewPage } from "@/features/ops/OverviewPage";
@@ -52,6 +54,7 @@ import { OpsSettingsPage } from "@/features/ops/SettingsPage";
 
 // CRM
 import { CrmWorkspacePage } from "@/features/crm/CrmWorkspace";
+import { CrmOverviewPage } from "@/features/crm/overview/CrmOverview";
 import { RecordViewPage } from "@/features/crm/RecordView";
 import {
   SupportOverviewPage, SupportTicketsPage, SupportKbPage,
@@ -90,15 +93,18 @@ import { ConnectedPage } from "@/features/integrations/Connected";
 import { CredentialsVaultPage } from "@/features/integrations/CredentialsVault";
 import { ApiKeysPage, WebhooksOutPage, AutomationPage } from "@/features/integrations/Extra";
 
-// Settings
-import { SettingsProfilePage } from "@/features/settings/Profile";
+// Settings pages — reused as tabs of the Admin dashboard.
 import { SettingsWorkspacePage } from "@/features/settings/Workspace";
-import { SettingsProjectsPage, SettingsNotificationsPage } from "@/features/settings/Extra";
+import { SettingsProjectsPage } from "@/features/settings/Extra";
 import { SettingsTeamPage } from "@/features/settings/Team";
 import { SettingsRolesPage } from "@/features/settings/Roles";
 import { SettingsBillingPage } from "@/features/settings/Billing";
 import { SettingsSecurityPage } from "@/features/settings/Security2FA";
-import { SettingsDataPrivacyPage } from "@/features/settings/DataPrivacy";
+
+// Admin dashboard (single-sidebar) — new page(s) + the mapping of its tabs to
+// the existing settings/integrations/governance page components.
+import { AdminSubscriptionPage } from "@/features/admin/AdminExtras";
+import { ADMIN_ITEMS, ADMIN_LANDING } from "@/lib/admin-navigation";
 
 import { GenericSubPage } from "@/features/GenericSubPage";
 import { MODULES } from "@/lib/navigation";
@@ -163,6 +169,8 @@ const PAGES: Record<string, PageEl> = {
   "agent/tasks": <AgentTasksPage />,
   "agent/knowledge": <RagCenterPage />,
   "agent/collections": <KnowledgeCollectionsPage />,
+  "agent/skills": <SkillsLibraryPage />,
+  "agent/mcp": <McpServersPage />,
 
   // Ops group (infra/servers/workflows — reachable via explicit detail routes)
   "devops/ops-overview": <OpsOverviewPage />,
@@ -174,6 +182,7 @@ const PAGES: Record<string, PageEl> = {
   "devops/settings": <OpsSettingsPage />,
 
   // CRM (Projects, App Testing & Simulations were folded in here)
+  "crm/overview": <CrmOverviewPage />,
   "crm/workspace": <CrmWorkspacePage />,
   "crm/admin-dashboard": <OverviewDashboard />,
   "crm/admin-custom-dashboards": <CustomDashboardsPage />,
@@ -256,15 +265,39 @@ const PAGES: Record<string, PageEl> = {
   "finetuning/ft-versions": <GovFtVersionsPage />,
   "finetuning/ft-settings": <GovFtSettingsPage />,
 
-  "settings/profile": <SettingsProfilePage />,
-  "settings/workspace": <SettingsWorkspacePage />,
-  "settings/projects": <SettingsProjectsPage />,
-  "settings/team": <SettingsTeamPage />,
-  "settings/roles": <SettingsRolesPage />,
-  "settings/billing": <SettingsBillingPage />,
-  "settings/notifications": <SettingsNotificationsPage />,
-  "settings/security": <SettingsSecurityPage />,
-  "settings/data-privacy": <SettingsDataPrivacyPage />,
+};
+
+/** Admin dashboard — every tab of the single-sidebar admin area maps to a page
+ *  component (existing settings/integrations/governance pages, reused, plus the
+ *  new subscription/usage/limits pages). Keyed by admin sub-slug. */
+const ADMIN_PAGES: Record<string, PageEl> = {
+  // ── Administration ──
+  organisation: <SettingsWorkspacePage />,
+  access: <SettingsRolesPage />,
+  members: <SettingsTeamPage />,
+  workspaces: <SettingsProjectsPage />,
+  connectors: <ConnectedPage />,
+  security: <SettingsSecurityPage />,
+  // ── Abonnements ──
+  subscription: <AdminSubscriptionPage />,
+  billing: <SettingsBillingPage />,
+  // ── Gouvernance IA ──
+  "gov-guardrails": <GovGuardrailsPage />,
+  "gov-access": <GovAccessLogsPage />,
+  "gov-prompts": <GovPromptMonitoringPage />,
+  "gov-costs": <GovCostsPage />,
+  "gov-incidents": <GovOpsIncidentsPage />,
+};
+
+/** Old settings/* routes → the admin dashboard tab that replaced them. Tabs that
+ *  no longer exist in the admin sidebar fall back to the landing tab. */
+const SETTINGS_TO_ADMIN: Record<string, string> = {
+  workspace: "organisation",
+  projects: "workspaces",
+  team: "members",
+  roles: "access",
+  billing: "billing",
+  security: "security",
 };
 
 /** Admin panel cockpit was merged into CRM. Redirect old /actions/* links to
@@ -279,6 +312,14 @@ function AdminMergeRedirect({ to }: { to: string }) {
 function AbsRedirect({ to }: { to: string }) {
   const { workspaceSlug, projectSlug } = useParams();
   return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/${to}`} replace />;
+}
+
+/** The Settings module moved into the Admin dashboard — remap old settings/:sub
+ *  deep links to their new admin/* tab (falling back to the admin landing tab). */
+function SettingsRedirect() {
+  const { workspaceSlug, projectSlug, sub } = useParams();
+  const target = (sub && SETTINGS_TO_ADMIN[sub]) || ADMIN_LANDING;
+  return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/admin/${target}`} replace />;
 }
 
 /** Absolute redirect whose suffix is built from the route params. */
@@ -375,6 +416,12 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    // MCP OAuth redirect target (popup) — public so it renders without a login
+    // bounce; it uses the shared session token to finish the exchange.
+    path: "/mcp/callback",
+    element: <ErrorBoundary><McpOAuthCallbackPage /></ErrorBoundary>,
+  },
+  {
     path: "/app/:workspaceSlug/:projectSlug",
     element: (
       <ProtectedRoute>
@@ -460,6 +507,22 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "agent/skills/new",
+        element: (
+          <ErrorBoundary>
+            <SkillEditorPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        path: "agent/skills/:skillId/edit",
+        element: (
+          <ErrorBoundary>
+            <SkillEditorPage />
+          </ErrorBoundary>
+        ),
+      },
+      {
         path: "office/document/:docId",
         element: <ErrorBoundary><Suspense fallback={<OfficeEditorFallback />}><DocumentEditorPage /></Suspense></ErrorBoundary>,
       },
@@ -515,6 +578,15 @@ export const router = createBrowserRouter([
       { path: "overview", element: <Navigate to="../actions/dashboard" replace /> },
       { path: "overview/dashboard-builder/:dashboardId", element: <LegacyBuilderRedirect /> },
       { path: "overview/:sub", element: <LegacyOverviewRedirect /> },
+      // ── Admin dashboard (single sidebar) — explicit routes, not module-generated ──
+      { path: "admin", element: <AbsRedirect to={`admin/${ADMIN_LANDING}`} /> },
+      ...ADMIN_ITEMS.map((it) => ({
+        path: `admin/${it.slug}`,
+        element: <ErrorBoundary>{ADMIN_PAGES[it.slug] ?? <Navigate to={ADMIN_LANDING} replace />}</ErrorBoundary>,
+      })),
+      // The Settings module was folded into the Admin dashboard.
+      { path: "settings", element: <AbsRedirect to={`admin/${ADMIN_LANDING}`} /> },
+      { path: "settings/:sub", element: <SettingsRedirect /> },
       ...buildModuleRoutes(),
     ],
   },

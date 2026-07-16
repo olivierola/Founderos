@@ -11,7 +11,7 @@ import { Pill, Select } from "../ui";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
 import { Pill as SamplePill } from "../ui";
 import {
-  useProjectAgents, agentsOrSample, timeAgo,
+  useProjectAgents, timeAgo,
   ACCESS_ACTION_META, ACCESS_STATUS_META, type AccessAction, type AccessLog,
 } from "./data";
 import { useRealAccessLogs } from "./db";
@@ -22,8 +22,8 @@ const ACTION_ICON: Record<AccessAction, typeof Wrench> = {
 
 export function GovAccessLogsPage() {
   const { data: agents } = useProjectAgents();
-  const roster = agentsOrSample(agents);
-  const { logs, isSample } = useRealAccessLogs(agents ?? []);
+  const roster = agents ?? [];
+  const { logs } = useRealAccessLogs(agents ?? []);
 
   const [agentFilter, setAgentFilter] = useState("all");
   const [actionFilter, setActionFilter] = useState("all");
@@ -47,7 +47,6 @@ export function GovAccessLogsPage() {
       <PageHeader
         title="Accès des agents"
         description="Trace complète de ce que chaque agent a utilisé : outils appelés, données lues, données écrites, appels externes — lue depuis les événements réels de vos runs."
-        actions={isSample ? <SamplePill meta={{ label: "Données d'exemple — lancez un run d'agent", tone: "amber" }} /> : undefined}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">

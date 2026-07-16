@@ -12,8 +12,64 @@ import { decryptSecret } from "../_shared/crypto.ts";
 import {
   getDefaultBranch, getBranchSha, listRepoTree, fetchFileContent, applyChanges,
   commitFiles, listCheckRuns, listCheckAnnotations, getCombinedStatus,
+  createBranch, createPullRequest, getRepoInfo, getAuthenticatedLogin, forkRepo, waitForRepoBranch,
+  getPullRequest, mergePullRequest,
 } from "../_shared/github.ts";
 import { runToolRounds, type ToolDef } from "../_shared/ai.ts";
+import { mcpCallTool } from "../_shared/mcp-client.ts";
+import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
+
+type Admin = ReturnType<typeof createServiceClient>;
+interface VibeMcpServer { id: string; name: string; url: string; headers: Record<string, string>; tools: { name: string; description?: string; inputSchema?: Record<string, unknown> }[] }
+
+// MCP servers attached to this project's coding agent (Personnaliser → MCP).
+// Their cached tools are exposed to the run loop as `mcp__<server>__<tool>`.
+async function loadVibeMcpServers(admin: Admin, projectId: string): Promise<VibeMcpServer[]> {
+  const { data } = await admin
+    .from("vibe_mcp_servers")
+    .select("server:mcp_servers(id, name, url, headers, enabled, cached_tools, auth_mode, oauth)")
+    .eq("project_id", projectId);
+  const rows = ((data ?? []) as Record<string, unknown>[])
+    .map((r) => r.server as Record<string, unknown> | null)
+    .filter((s): s is Record<string, unknown> => !!s && !!s.enabled);
+  const out: VibeMcpServer[] = [];
+  for (const s of rows) {
+    let headers: Record<string, string> = s.headers && typeof s.headers === "object" ? { ...(s.headers as Record<string, string>) } : {};
+    if (s.auth_mode === "oauth") {
+      const token = await ensureAccessToken(admin, { id: String(s.id), oauth: (s.oauth as Record<string, unknown>) || {} });
+      if (token) headers = { ...headers, Authorization: `Bearer ${token}` };
+    }
+    out.push({
+      id: String(s.id), name: String(s.name), url: String(s.url), headers,
+      tools: Array.isArray(s.cached_tools) ? (s.cached_tools as VibeMcpServer["tools"]) : [],
+    });
+  }
+  return out;
+}
+
+const mcpSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "srv";
+
+/** Build ToolDefs for every attached MCP tool + a resolver to route calls. */
+function buildMcpTools(servers: VibeMcpServer[]): { defs: ToolDef[]; resolve: (name: string) => { server: VibeMcpServer; tool: string } | null } {
+  const map = new Map<string, { server: VibeMcpServer; tool: string }>();
+  const defs: ToolDef[] = [];
+  for (const s of servers) {
+    for (const t of s.tools) {
+      const fn = `mcp__${mcpSlug(s.name)}__${mcpSlug(t.name)}`;
+      if (map.has(fn)) continue;
+      map.set(fn, { server: s, tool: t.name });
+      defs.push({
+        type: "function",
+        function: {
+          name: fn,
+          description: `[${s.name}] ${t.description ?? t.name}`,
+          parameters: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
+        },
+      });
+    }
+  }
+  return { defs, resolve: (n) => map.get(n) ?? null };
+}
 
 // Aggregate a PR head's CI into a state + human-readable failures the agent can fix.
 interface CiFailure { check: string; path?: string; line?: number; level?: string; message: string }
@@ -79,7 +135,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { workspace_id, project_id, repository_id, action } = body as {
       workspace_id?: string; project_id?: string; repository_id?: string;
-      action?: "run" | "apply" | "pr_status" | "fix_pr";
+      action?: "run" | "apply" | "pr_status" | "fix_pr" | "merge_pr";
     };
     if (!workspace_id || !project_id || !repository_id || !action) {
       return jsonResponse({ error: "workspace_id, project_id, repository_id, action required" }, { status: 400 });
@@ -99,33 +155,87 @@ Deno.serve(async (req) => {
     if (!cred) return jsonResponse({ error: "Identifiant GitHub manquant" }, { status: 400 });
     const token = await decryptSecret(cred.encrypted_payload, cred.iv);
 
+    // Per-project customization (extra instructions + default merge method).
+    const { data: settingsRow } = await admin.from("vibe_settings")
+      .select("instructions, merge_method").eq("project_id", project_id).maybeSingle();
+    const customInstructions = ((settingsRow as { instructions?: string } | null)?.instructions ?? "").trim();
+    const defaultMergeMethod = ((settingsRow as { merge_method?: string } | null)?.merge_method ?? "squash") as "merge" | "squash" | "rebase";
+
     // ── APPLY: open a PR with the approved changes ─────────────────────────────
     if (action === "apply") {
       const { base_branch, title, body: prBody, changes, message_id } = body as {
         base_branch?: string; title?: string; body?: string; changes?: { path: string; content: string }[]; message_id?: string;
       };
       if (!changes?.length) return jsonResponse({ error: "Aucun changement à appliquer" }, { status: 400 });
-      let result;
+      const commitMsg = title || "Vibe Code: changes";
+      const prTitle = title || "Vibe Code changes";
+      const prBodyFull = (prBody || "Changements proposés par l'agent Vibe Code.") + "\n\n— FounderOS · Vibe Code";
+      let result: { mode: string; branch: string; head_repo: string; commit_sha: string; pull_request?: { html_url: string; number: number } };
+      const login = await getAuthenticatedLogin(token).catch(() => null);
+      const [ownerLogin, repoShort] = fullName.split("/");
+      const ownedPersonally = !!login && login.toLowerCase() === ownerLogin.toLowerCase();
+      const isWriteDenied = (m: string) => /\b40[34]\b|Resource not accessible|Not Found/i.test(m);
+
+      // Fork flow: fork the repo under the token owner, commit there, PR upstream.
+      const contributeViaFork = async (baseBranch: string) => {
+        if (!login) throw new Error("Impossible de déterminer le compte GitHub du token.");
+        const forkFullName = `${login}/${repoShort}`;
+        let forkBaseSha: string;
+        try {
+          forkBaseSha = await getBranchSha(token, forkFullName, baseBranch);
+        } catch {
+          await forkRepo(token, fullName);
+          forkBaseSha = await waitForRepoBranch(token, forkFullName, baseBranch, 15);
+        }
+        const head = `founderos/agent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        await createBranch(token, forkFullName, head, forkBaseSha);
+        const commitSha = await commitFiles(token, forkFullName, head, forkBaseSha, changes, commitMsg);
+        const pr = await createPullRequest(token, fullName, `${login}:${head}`, baseBranch, prTitle, prBodyFull);
+        return { mode: "pull_request_fork", branch: head, head_repo: forkFullName, commit_sha: commitSha, pull_request: pr };
+      };
+
       try {
-        result = await applyChanges(token, fullName, {
-          changes, commitMessage: title || "Vibe Code: changes", mode: "pull_request",
-          baseBranch: base_branch || (repo.default_branch as string) || undefined,
-          prTitle: title || "Vibe Code changes",
-          prBody: (prBody || "Changements proposés par l'agent Vibe Code.") + "\n\n— FounderOS · Vibe Code",
-        });
+        const info = await getRepoInfo(token, fullName).catch(() => null);
+        const baseBranch = base_branch || info?.default_branch || (repo.default_branch as string);
+        // If we clearly can't push AND it isn't our own repo → fork straight away.
+        if (login && !ownedPersonally && info?.permissions?.push === false) {
+          result = await contributeViaFork(baseBranch);
+        } else {
+          // Try a direct branch+commit+PR; permissions.push can lie (it reflects the
+          // repo ROLE, not the token's granted scopes), so we fall back on failure.
+          try {
+            const r = await applyChanges(token, fullName, { changes, commitMessage: commitMsg, mode: "pull_request", baseBranch, prTitle, prBody: prBodyFull });
+            result = { ...r, head_repo: fullName };
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (isWriteDenied(msg) && login && !ownedPersonally) {
+              // Read/fork-only on someone else's (or an org) repo → contribute via a fork.
+              result = await contributeViaFork(baseBranch);
+            } else if (isWriteDenied(msg)) {
+              // Our own repo but the token can't write → probe the repo to say why.
+              const probe = await getRepoInfo(token, fullName).catch(() => null);
+              const diag = probe
+                ? `login=@${login} · repo=${probe.full_name} owner=${probe.owner?.login}(${probe.owner?.type}) private=${probe.private} archived=${probe.archived} fork=${probe.fork} push=${probe.permissions?.push} default=${probe.default_branch}`
+                : `login=@${login} · repo introuvable avec ce token (peut-être renommé/supprimé, ou nom stocké incorrect: ${fullName})`;
+              const isOrg = probe?.owner?.type === "Organization";
+              const archived = probe?.archived;
+              const errorMsg = archived
+                ? "Ce dépôt est archivé (lecture seule sur GitHub) — impossible d'y créer une PR."
+                : isOrg
+                  ? "Le dépôt appartient à une organisation. Autorisez votre token classique pour cette organisation : page du token GitHub → bouton « Configure SSO » → Authorize."
+                  : "Le token ne peut pas écrire sur ce dépôt alors qu'il a le scope « repo ». Vérifiez le nom du dépôt (ci-dessous) et qu'il vous appartient bien.";
+              return jsonResponse({ error: errorMsg, detail: diag }, { status: 403 });
+            } else if (/No commits between/i.test(msg)) {
+              return jsonResponse({ error: "Aucune différence à proposer : les modifications de l'agent sont identiques au code existant.", detail: msg }, { status: 409 });
+            } else throw e;
+          }
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        // The PAT can read but not write → make the fix obvious.
-        if (/\b403\b|Resource not accessible/i.test(msg)) {
-          return jsonResponse({
-            error: "Le token GitHub n'a pas les droits d'écriture sur ce dépôt. Reconnectez un token avec les permissions « Contents: Read and write » + « Pull requests: Read and write » (token fine-grained) ou le scope « repo » (token classique), via le module Dépôts → Reconnecter.",
-            detail: msg,
-          }, { status: 403 });
-        }
         if (/No commits between/i.test(msg)) {
           return jsonResponse({ error: "Aucune différence à proposer : les modifications de l'agent sont identiques au code existant.", detail: msg }, { status: 409 });
         }
-        throw e;
+        return jsonResponse({ error: "Échec de la création de la PR. " + msg, detail: msg }, { status: 500 });
       }
       // Persist the PR (with its head branch) onto the assistant message so the
       // CI panel + fix loop survive a page reload. Non-fatal: never fail the PR.
@@ -134,7 +244,7 @@ Deno.serve(async (req) => {
           const { data: row } = await admin.from("vibe_messages").select("meta").eq("id", message_id).maybeSingle();
           const meta = ((row as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
           await admin.from("vibe_messages").update({
-            meta: { ...meta, pr: { html_url: result.pull_request.html_url, number: result.pull_request.number, branch: result.branch } },
+            meta: { ...meta, pr: { html_url: result.pull_request.html_url, number: result.pull_request.number, branch: result.branch, head_repo: result.head_repo } },
           }).eq("id", message_id);
         } catch (_) { /* persistence is best-effort */ }
       }
@@ -143,11 +253,33 @@ Deno.serve(async (req) => {
 
     // ── PR_STATUS: read the CI state of a PR head so the UI can show errors ─────
     if (action === "pr_status") {
-      const { branch, head_sha } = body as { branch?: string; head_sha?: string };
-      const ref = head_sha || (branch ? await getBranchSha(token, fullName, branch) : null);
-      if (!ref) return jsonResponse({ error: "branch or head_sha required" }, { status: 400 });
-      const ci = await collectCi(token, fullName, ref);
-      return jsonResponse({ ...ci, head_sha: ref });
+      const { branch, head_sha, head_repo, pr_number } = body as { branch?: string; head_sha?: string; head_repo?: string; pr_number?: number };
+      // The PR head branch lives on head_repo (the fork for fork-based PRs); the
+      // PR object itself lives on the base repo (the connected repo).
+      const repoForRef = head_repo || fullName;
+      const ref = head_sha || (branch ? await getBranchSha(token, repoForRef, branch).catch(() => null) : null);
+      const ci = ref ? await collectCi(token, repoForRef, ref) : { state: "none" as const, checks: [], failures: [] };
+      const pr = pr_number ? await getPullRequest(token, fullName, pr_number).catch(() => null) : null;
+      return jsonResponse({ ...ci, head_sha: ref, pr });
+    }
+
+    // ── MERGE_PR: merge the PR from the chat ───────────────────────────────────
+    if (action === "merge_pr") {
+      const { pr_number, method } = body as { pr_number?: number; method?: "merge" | "squash" | "rebase" };
+      if (!pr_number) return jsonResponse({ error: "pr_number required" }, { status: 400 });
+      try {
+        const res = await mergePullRequest(token, fullName, pr_number, method || defaultMergeMethod);
+        return jsonResponse({ ok: true, ...res });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/\b405\b|not mergeable|Method Not Allowed/i.test(msg)) {
+          return jsonResponse({ error: "PR non fusionnable pour l'instant (conflits, CI en échec, ou revue requise).", detail: msg }, { status: 409 });
+        }
+        if (/\b403\b|\b404\b|not accessible/i.test(msg)) {
+          return jsonResponse({ error: "Vous n'avez pas le droit de fusionner cette PR (dépôt upstream non possédé).", detail: msg }, { status: 403 });
+        }
+        return jsonResponse({ error: "Échec de la fusion. " + msg, detail: msg }, { status: 500 });
+      }
     }
 
     // ── RUN / FIX_PR: async agent. The read/LLM/write loop is long, so we return fast and
@@ -156,14 +288,17 @@ Deno.serve(async (req) => {
     const isFix = action === "fix_pr";
     const { branch: reqBranch, session_id } = body as { branch?: string; session_id?: string };
     const prNumber = (body as { pr_number?: number }).pr_number;
+    const headRepo = (body as { head_repo?: string }).head_repo;
     let { prompt } = body as { prompt?: string };
+    // For a fix, the PR head branch lives on the fork (head_repo) → read/commit there.
+    const targetRepo = isFix && headRepo ? headRepo : fullName;
 
     // FIX_PR: seed the task from the PR's live CI failures; the fix is committed
     // to the PR branch (updates the same PR) instead of being staged.
     if (isFix) {
       if (!reqBranch) return jsonResponse({ error: "branch (PR head) requis" }, { status: 400 });
-      const headSha0 = await getBranchSha(token, fullName, reqBranch);
-      const ci = await collectCi(token, fullName, headSha0);
+      const headSha0 = await getBranchSha(token, targetRepo, reqBranch);
+      const ci = await collectCi(token, targetRepo, headSha0);
       if (ci.state !== "failure" || ci.failures.length === 0) {
         return jsonResponse({ error: "no_failures", state: ci.state }, { status: 400 });
       }
@@ -187,8 +322,11 @@ Deno.serve(async (req) => {
     // no client RLS/timing issues) then persist the user turn + assistant slot.
     let sid: string | null = session_id ?? null;
     if (!sid) {
+      // Sessions started inside a Vibe project inherit it (and thus its repo).
+      const vibeProjectId = (body as { vibe_project_id?: string }).vibe_project_id ?? null;
       const { data: s } = await admin.from("vibe_sessions").insert({
-        workspace_id, project_id, repository_id, branch: reqBranch ?? null, title: prompt.slice(0, 60), created_by: userId,
+        workspace_id, project_id, repository_id, branch: reqBranch ?? null, title: prompt.slice(0, 60),
+        created_by: userId, vibe_project_id: vibeProjectId,
       }).select("id").single();
       sid = (s as { id: string } | null)?.id ?? null;
     }
@@ -201,10 +339,15 @@ Deno.serve(async (req) => {
     }
 
     const work = async () => {
-      const branch = reqBranch || (repo.default_branch as string) || await getDefaultBranch(token, fullName);
-      const sha = await getBranchSha(token, fullName, branch);
-      const allPaths = await listRepoTree(token, fullName, sha);
+      const branch = reqBranch || (repo.default_branch as string) || await getDefaultBranch(token, targetRepo);
+      const sha = await getBranchSha(token, targetRepo, branch);
+      const allPaths = await listRepoTree(token, targetRepo, sha);
       const treeForPrompt = allPaths.slice(0, 1200).join("\n");
+
+      // MCP tools attached to this project's coding agent (Personnaliser → MCP).
+      const mcpServers = await loadVibeMcpServers(admin, project_id);
+      const { defs: mcpDefs, resolve: resolveMcp } = buildMcpTools(mcpServers);
+      const mcpSessions: Record<string, { id?: string }> = {};
 
       const changes: Record<string, string> = {};
       const reads: string[] = [];
@@ -220,7 +363,7 @@ Deno.serve(async (req) => {
           const p = String(args.path ?? "").replace(/^\.?\//, "");
           if (!p) return "ERROR: path requis";
           await pushStep("read", p);
-          const content = await fetchFileContent(token, fullName, branch, p);
+          const content = await fetchFileContent(token, targetRepo, branch, p);
           if (content == null) return `ERROR: fichier introuvable: ${p}`;
           if (!reads.includes(p)) reads.push(p);
           return content.length > 16000 ? content.slice(0, 16000) + "\n… (tronqué)" : content;
@@ -242,13 +385,25 @@ Deno.serve(async (req) => {
           }
           return "ok — mémorisé";
         }
+        // Attached MCP tools → proxy the call to the remote server.
+        const hit = resolveMcp(name);
+        if (hit) {
+          await pushStep("mcp", `${hit.server.name} · ${hit.tool}`);
+          mcpSessions[hit.server.id] ??= {};
+          try {
+            return await mcpCallTool(hit.server.url, hit.server.headers, hit.tool, args, mcpSessions[hit.server.id]);
+          } catch (e) {
+            return `ERROR: MCP ${hit.server.name}/${hit.tool} — ${e instanceof Error ? e.message : String(e)}`;
+          }
+        }
         return `ERROR: outil inconnu ${name}`;
       };
       const memBlock = (globalMem.length || sessionMem.length)
         ? ["MÉMOIRE (respecte ces éléments) :", ...globalMem.map((m) => `- [global] ${m}`), ...sessionMem.map((m) => `- [session] ${m}`), ""].join("\n")
         : "";
       const system = [
-        `Tu es un ingénieur logiciel senior. Tu travailles sur le dépôt GitHub "${fullName}" (branche "${branch}").`,
+        `Tu es un ingénieur logiciel senior. Tu travailles sur le dépôt GitHub "${targetRepo}" (branche "${branch}").`,
+        customInstructions ? `INSTRUCTIONS DU PROJET (à respecter impérativement) :\n${customInstructions}\n` : "",
         memBlock,
         "Arborescence des fichiers (extrait) :", treeForPrompt, "",
         "RÈGLES :",
@@ -256,19 +411,20 @@ Deno.serve(async (req) => {
         "- Écris chaque fichier modifié/créé avec write_file en fournissant TOUJOURS le contenu COMPLET (jamais un diff).",
         "- Utilise remember(content, scope) pour retenir une préférence/décision durable (scope 'global') ou propre à cette session ('session').",
         "- Changements minimaux, corrects, ciblés. Respecte le style existant.",
+        mcpDefs.length ? `- Outils externes (MCP) disponibles : ${mcpDefs.map((d) => d.function.name).join(", ")}. Utilise-les si la tâche l'exige.` : "",
         "- Quand tu as terminé, réponds par un résumé court (markdown) de ce que tu as changé.",
       ].filter(Boolean).join("\n");
       const r = await runToolRounds({
         provider: "deepseek",
         messages: [{ role: "system", content: system }, ...priorTurns, { role: "user", content: `Tâche : ${prompt}` }],
-        tools: TOOLS, executor, temperature: 0.2, maxTokens: 3500, maxRounds: 12,
+        tools: [...TOOLS, ...mcpDefs], executor, temperature: 0.2, maxTokens: 3500, maxRounds: 12,
       });
       const changesArr = Object.entries(changes).map(([path, content]) => ({ path, content }));
       // FIX_PR: push the fix straight to the PR branch so the same PR re-runs CI.
       let committed: { commit_sha: string; pr_number?: number } | null = null;
       if (isFix && changesArr.length > 0) {
-        const headSha = await getBranchSha(token, fullName, branch);
-        const commitSha = await commitFiles(token, fullName, branch, headSha, changesArr, `fix: erreurs CI${prNumber ? ` (PR #${prNumber})` : ""}`);
+        const headSha = await getBranchSha(token, targetRepo, branch);
+        const commitSha = await commitFiles(token, targetRepo, branch, headSha, changesArr, `fix: erreurs CI${prNumber ? ` (PR #${prNumber})` : ""}`);
         committed = { commit_sha: commitSha, pr_number: prNumber };
       }
       return {

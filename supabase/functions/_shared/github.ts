@@ -221,6 +221,47 @@ export async function getDefaultBranch(token: string, fullName: string): Promise
   return data.default_branch;
 }
 
+// ── Fork-based contribution flow (for repos the token can read but not push) ──
+export interface RepoInfo {
+  full_name: string;
+  default_branch: string;
+  fork: boolean;
+  archived?: boolean;
+  disabled?: boolean;
+  private?: boolean;
+  owner?: { login: string; type: string };
+  permissions?: { push?: boolean; admin?: boolean; maintain?: boolean };
+  parent?: { full_name: string; default_branch: string } | null;
+}
+export async function getRepoInfo(token: string, fullName: string): Promise<RepoInfo> {
+  return await gh<RepoInfo>(token, `/repos/${fullName}`);
+}
+
+/** The login of the token's owner (used to build the fork's full name). */
+export async function getAuthenticatedLogin(token: string): Promise<string> {
+  const u = await gh<{ login: string }>(token, "/user");
+  return u.login;
+}
+
+/** Fork a repo under the token owner's account (idempotent — returns existing fork). */
+export async function forkRepo(token: string, fullName: string): Promise<{ full_name: string; owner: { login: string }; default_branch: string }> {
+  return await ghWrite(token, "POST", `/repos/${fullName}/forks`, {});
+}
+
+/** Poll until a branch is queryable (a freshly-created fork takes a moment). */
+export async function waitForRepoBranch(token: string, fullName: string, branch: string, tries = 12): Promise<string> {
+  let lastErr: unknown = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await getBranchSha(token, fullName, branch);
+    } catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("fork not ready");
+}
+
 // ── CI / checks: read the state of a PR head so the agent can react to failures ─
 export interface CheckRun {
   id: number;
@@ -254,6 +295,33 @@ export async function listCheckAnnotations(token: string, fullName: string, chec
   } catch {
     return [];
   }
+}
+
+export interface PullDetail {
+  number: number;
+  title: string;
+  state: string;               // open | closed
+  draft: boolean;
+  merged: boolean;
+  mergeable: boolean | null;
+  mergeable_state: string;     // clean | blocked | dirty | unstable | behind | unknown
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  commits: number;
+  html_url: string;
+  head: { ref: string; sha: string; repo?: { full_name: string } | null };
+  base: { ref: string };
+}
+export async function getPullRequest(token: string, fullName: string, number: number): Promise<PullDetail> {
+  return await gh<PullDetail>(token, `/repos/${fullName}/pulls/${number}`);
+}
+
+/** Merge a PR. method: merge | squash | rebase. Throws on non-mergeable / no access. */
+export async function mergePullRequest(
+  token: string, fullName: string, number: number, method: "merge" | "squash" | "rebase" = "squash",
+): Promise<{ merged: boolean; message: string; sha?: string }> {
+  return await ghWrite(token, "PUT", `/repos/${fullName}/pulls/${number}/merge`, { merge_method: method });
 }
 
 /** Legacy commit-status API (some CI report here instead of check-runs). */

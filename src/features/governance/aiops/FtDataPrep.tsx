@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Eraser, Sparkles, VenetianMask, ScanSearch, ChevronRight, Play } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { PageSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -20,7 +22,7 @@ const GROUPS: { icon: typeof Eraser; title: string; color: string; items: string
 ];
 
 export function GovFtDataPrepPage() {
-  const { datasets, updateCleaning } = useFtDatasetsDb();
+  const { datasets, updateCleaning, loading } = useFtDatasetsDb();
   useCleaningTicker(datasets, updateCleaning);
   const [dsId, setDsId] = useState("");
   const ds = datasets.find((d) => d.id === dsId) ?? datasets[0];
@@ -29,7 +31,8 @@ export function GovFtDataPrepPage() {
   const [enabled, setEnabled] = useState<Set<string>>(() => new Set(GROUPS.flatMap((g) => g.items)));
   const flip = (item: string) => setEnabled((prev) => { const n = new Set(prev); if (n.has(item)) n.delete(item); else n.add(item); return n; });
 
-  if (!ds) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+  if (loading) return <PageSkeleton cards={0} rows={7} />;
+  if (!ds) return <EmptyState icon={ScanSearch} title="Aucun dataset" description="Importez un dataset dans l'onglet Datasets pour lancer le nettoyage." />;
 
   // Detection summary (Zendesk-style) derived from the dataset's cleaning stats.
   const dupPct = Math.round((ds.removed.dups / ds.before.rows) * 100);

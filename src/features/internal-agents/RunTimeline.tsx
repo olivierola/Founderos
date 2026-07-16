@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { toolSummary, type RunTodo, type RunEventRow } from "./runEventMeta";
+import { toolSummary, toolEnv, type RunTodo, type RunEventRow } from "./runEventMeta";
 
 interface RunRow {
   id: string;
@@ -277,6 +277,25 @@ function ActionLine({ action }: { action: ActionItem }) {
         className={cn("flex w-full items-start gap-1.5 text-left", hasResult && "cursor-pointer")}
       >
         <span className={cn("mt-[3px] text-[10px] leading-none", failed ? "text-destructive" : action.ok ? "text-emerald-500" : "text-blue-400")}>⏺</span>
+        {(() => {
+          // Hybrid agents namespace tools (runner_* / sandbox_*) — show which world
+          // each call ran in. Single-world agents have plain names → no badge.
+          const env = toolEnv(action.tool);
+          if (!env) return null;
+          return (
+            <span
+              className={cn(
+                "mt-[2px] shrink-0 rounded px-1 text-[9px] font-semibold uppercase leading-tight",
+                env === "runner"
+                  ? "bg-sky-500/15 text-sky-600 dark:text-sky-400"
+                  : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+              )}
+              title={env === "runner" ? "Ran on the runner (real machine)" : "Ran in the sandbox (container)"}
+            >
+              {env === "runner" ? "RUN" : "SBX"}
+            </span>
+          );
+        })()}
         <span className={cn("min-w-0 flex-1 truncate font-mono text-[12px]", failed ? "text-destructive" : "text-foreground/90")} title={action.summary}>
           {action.summary}
         </span>

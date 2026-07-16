@@ -4,12 +4,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Sparkles, Loader2, GitBranch, GitPullRequest, GitFork, FileCode, Send, ExternalLink,
+  Sparkles, Loader2, GitBranch, GitPullRequest, GitMerge, GitFork, FileCode, Send, ExternalLink,
   FilePenLine, Wand2, ArrowRight, Eye, Github, Package, Download, RefreshCw, Monitor,
   Mic, Compass, FlaskConical, Plug, ArrowUp, ChevronDown, Check,
   Copy, Pencil, RotateCcw, ThumbsUp, ThumbsDown, Brain, TerminalSquare,
-  AlertTriangle, CheckCircle2,
+  AlertTriangle, CheckCircle2, Trash2, SlidersHorizontal,
+  FileText, Zap, Server, Workflow, Plus, Play, Power, FolderKanban,
 } from "lucide-react";
+import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -29,7 +31,7 @@ interface Change { path: string; content: string }
 interface VibeStep { t: string; label: string }
 interface RunResult { message: string; base_branch: string; changes: Change[]; reads: string[]; steps?: VibeStep[]; finished?: boolean }
 
-const SUBS = ["chat", "artifacts", "pr", "fork", "preview"] as const;
+const SUBS = ["chat", "artifacts", "pr", "fork", "preview", "customize"] as const;
 type SubId = (typeof SUBS)[number];
 
 export function VibeCodePage() {
@@ -80,20 +82,541 @@ export function VibeCodePage() {
         <div className={cn("absolute inset-0", active !== "pr" && "hidden")}><PrTab repoId={repoId} workspaceId={workspaceId} projectId={projectId} /></div>
         <div className={cn("absolute inset-0", active !== "fork" && "hidden")}><ForkTab repoId={repoId} repo={repo} workspaceId={workspaceId} projectId={projectId} /></div>
         <div className={cn("absolute inset-0", active !== "preview" && "hidden")}><PreviewTab repoId={repoId} workspaceId={workspaceId} projectId={projectId} /></div>
+        <div className={cn("absolute inset-0", active !== "customize" && "hidden")}><CustomizeTab workspaceId={workspaceId} projectId={projectId} repos={repos ?? []} /></div>
       </div>
     </div>
   );
 }
 
-// ── Vibe tab — a chat space with the coding agent ────────────────────────────
-interface ChatMsg { id: string; role: "user" | "assistant"; content: string; prompt?: string; result?: RunResult; pr?: { html_url: string; number: number; branch?: string }; error?: string; applyError?: string; loading?: boolean; applying?: boolean; createdAt?: string; repo?: string; branch?: string; dbId?: string; steps?: VibeStep[] }
+// ── Customize tab — mirrors the internal-agent "Personnaliser": a horizontal
+// sub-tab bar over the coding agent's config surfaces (Instructions · Mémoire ·
+// Connecteur). Same UX/logic as CUSTOMIZE_SECTIONS, adapted to the code agent.
+interface VibeMemoryRow { id: string; content: string; session_id: string | null; created_at: string }
 
-// PR head CI state (from the vibe-code "pr_status" action).
+type VibeSection = "instructions" | "skills" | "memory" | "connectors" | "mcp" | "automation";
+const VIBE_SECTIONS: { key: VibeSection; label: string; icon: typeof Wand2 }[] = [
+  { key: "instructions", label: "Instructions", icon: FileText },
+  { key: "skills", label: "Skills", icon: Zap },
+  { key: "memory", label: "Memory", icon: Brain },
+  { key: "connectors", label: "Connectors", icon: Plug },
+  { key: "mcp", label: "MCP", icon: Server },
+  { key: "automation", label: "Automation", icon: Workflow },
+];
+
+function CustomizeTab({ workspaceId, projectId, repos }: { workspaceId?: string | null; projectId?: string | null; repos: Repo[] }) {
+  const [section, setSection] = useState<VibeSection>("instructions");
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Sub-tab bar — mirrors the internal-agent Personnaliser sections. */}
+      <div className="scrollbar-hide flex h-14 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-4">
+        {VIBE_SECTIONS.map((s) => {
+          const on = s.key === section;
+          return (
+            <button
+              key={s.key}
+              onClick={() => setSection(s.key)}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                on ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <s.icon className="h-4 w-4" /> {s.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        {section === "instructions" && <VibeInstructions workspaceId={workspaceId} projectId={projectId} />}
+        {section === "skills" && <VibeSkills workspaceId={workspaceId} projectId={projectId} />}
+        {section === "memory" && <VibeMemory projectId={projectId} />}
+        {section === "connectors" && <VibeConnector projectId={projectId} />}
+        {section === "mcp" && <VibeMcp workspaceId={workspaceId} projectId={projectId} />}
+        {section === "automation" && <VibeAutomations workspaceId={workspaceId} projectId={projectId} repos={repos} />}
+      </div>
+    </div>
+  );
+}
+
+// Personnaliser → Instructions : rich markdown system prompt + default merge method.
+function VibeInstructions({ workspaceId, projectId }: { workspaceId?: string | null; projectId?: string | null }) {
+  const qc = useQueryClient();
+  const [instructions, setInstructions] = useState("");
+  const [mergeMethod, setMergeMethod] = useState<"squash" | "merge" | "rebase">("squash");
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [preview, setPreview] = useState(false);
+
+  const settingsQ = useQuery({
+    queryKey: ["vibe_settings", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase.from("vibe_settings").select("instructions, merge_method").eq("project_id", projectId!).maybeSingle();
+      return (data ?? null) as { instructions: string; merge_method: "squash" | "merge" | "rebase" } | null;
+    },
+  });
+  useEffect(() => {
+    if (settingsQ.data) { setInstructions(settingsQ.data.instructions ?? ""); setMergeMethod(settingsQ.data.merge_method ?? "squash"); }
+  }, [settingsQ.data]);
+
+  async function save() {
+    if (!workspaceId || !projectId) return;
+    setSaving(true);
+    try {
+      await supabase.from("vibe_settings").upsert(
+        { workspace_id: workspaceId, project_id: projectId, instructions, merge_method: mergeMethod, updated_at: new Date().toISOString() },
+        { onConflict: "project_id" },
+      );
+      setSavedAt(Date.now());
+      qc.invalidateQueries({ queryKey: ["vibe_settings", projectId] });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <MarkdownEditor
+        value={instructions}
+        onChange={setInstructions}
+        onSave={save}
+        saving={saving}
+        savedAt={savedAt}
+        preview={preview}
+        onTogglePreview={() => setPreview((p) => !p)}
+        title="Instructions"
+        description="Markdown décrivant comment l'agent de codage doit se comporter. Injecté comme prompt système à chaque run."
+        placeholder={VIBE_INSTRUCTIONS_PLACEHOLDER}
+        heightClass="h-[calc(100vh-19rem)]"
+      />
+      <div className="mt-3 flex shrink-0 flex-wrap items-center gap-3 border-t border-border/60 pt-3">
+        <span className="text-xs font-medium text-foreground">Méthode de merge par défaut</span>
+        <select
+          value={mergeMethod}
+          onChange={(e) => setMergeMethod(e.target.value as "squash" | "merge" | "rebase")}
+          className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+        >
+          <option value="squash">Squash</option>
+          <option value="merge">Merge commit</option>
+          <option value="rebase">Rebase</option>
+        </select>
+        <span className="text-[11px] text-muted-foreground">Utilisée par « Merger la PR ». Enregistrée avec les instructions.</span>
+      </div>
+    </div>
+  );
+}
+
+const VIBE_INSTRUCTIONS_PLACEHOLDER = `# Rôle
+Tu es un ingénieur senior sur ce dépôt.
+
+## Conventions
+- TypeScript strict, pas de \`any\`.
+- Respecte le style et les patterns existants.
+- Commits conventionnels (feat/fix/chore).
+
+## Contraintes
+- Ne touche jamais au dossier /legacy.
+- Écris un test pour toute nouvelle fonction.`;
+
+// Personnaliser → Mémoire : the facts the agent remembered (vibe_memory).
+function VibeMemory({ projectId }: { projectId?: string | null }) {
+  const qc = useQueryClient();
+  const memQ = useQuery({
+    queryKey: ["vibe_memory", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase.from("vibe_memory").select("id, content, session_id, created_at").eq("project_id", projectId!).order("created_at", { ascending: false });
+      return (data ?? []) as VibeMemoryRow[];
+    },
+  });
+  async function deleteMemory(id: string) {
+    await supabase.from("vibe_memory").delete().eq("id", id);
+    qc.invalidateQueries({ queryKey: ["vibe_memory", projectId] });
+  }
+  const globalMem = (memQ.data ?? []).filter((m) => !m.session_id);
+  const sessionMem = (memQ.data ?? []).filter((m) => m.session_id);
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-medium"><Brain className="h-4 w-4 text-primary" /> Mémoire de l'agent</div>
+      <p className="text-xs text-muted-foreground">Ce que l'agent a retenu (préférences, décisions). Supprimez ce qui n'est plus pertinent.</p>
+      <MemGroup title="Globale · tout le projet" items={globalMem} onDelete={deleteMemory} />
+      <MemGroup title="Par session" items={sessionMem} onDelete={deleteMemory} />
+      {!memQ.isLoading && (memQ.data ?? []).length === 0 && (
+        <p className="text-xs text-muted-foreground">Aucun souvenir pour l'instant — l'agent en crée avec l'outil « remember » au fil des sessions.</p>
+      )}
+    </div>
+  );
+}
+
+// Personnaliser → Connecteur : the coding agent's GitHub connection.
+function VibeConnector({ projectId }: { projectId?: string | null }) {
+  const navigate = useNavigate();
+  const { workspaceSlug = "", projectSlug = "" } = useParams();
+  const q = useQuery({
+    queryKey: ["vibe_connector", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const [conn, repos] = await Promise.all([
+        supabase.from("connectors").select("metadata").eq("project_id", projectId!).eq("provider", "github").maybeSingle(),
+        supabase.from("repositories").select("id", { count: "exact", head: true }).eq("project_id", projectId!),
+      ]);
+      return {
+        connected: !!conn.data,
+        login: (conn.data?.metadata as { github_login?: string } | null)?.github_login ?? null,
+        repoCount: repos.count ?? 0,
+      };
+    },
+  });
+  const d = q.data;
+  const toRepos = () => navigate(`/app/${workspaceSlug}/${projectSlug}/repos/list`);
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-medium"><Github className="h-4 w-4 text-primary" /> Connecteur GitHub</div>
+      <p className="text-xs text-muted-foreground">L'agent de codage lit et écrit sur vos dépôts GitHub connectés.</p>
+      <div className="rounded-xl border border-border bg-card/40 p-4 text-sm">
+        {!d ? (
+          <span className="text-xs text-muted-foreground">Chargement…</span>
+        ) : d.connected ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Connecté{d.login ? <> en tant que <span className="font-medium">@{d.login}</span></> : ""}</span>
+            <span className="text-xs text-muted-foreground">· {d.repoCount} dépôt{d.repoCount > 1 ? "s" : ""} suivi{d.repoCount > 1 ? "s" : ""}</span>
+            <Button size="sm" variant="outline" className="ml-auto" onClick={toRepos}>Gérer dans Dépôts <ArrowRight className="ml-1 h-3.5 w-3.5" /></Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 text-amber-500"><AlertTriangle className="h-4 w-4" /> Aucun dépôt GitHub connecté.</span>
+            <Button size="sm" className="ml-auto" onClick={toRepos}>Connecter <ArrowRight className="ml-1 h-3.5 w-3.5" /></Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Personnaliser → Skills : reusable markdown task templates for the coding agent.
+interface VibeSkill { id: string; name: string; description: string; body: string; created_at: string }
+
+function VibeSkills({ workspaceId, projectId }: { workspaceId?: string | null; projectId?: string | null }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState<VibeSkill | null>(null);
+  const [preview, setPreview] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const q = useQuery({
+    queryKey: ["vibe_skills", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase.from("vibe_skills").select("id, name, description, body, created_at").eq("project_id", projectId!).order("created_at", { ascending: false });
+      return (data ?? []) as VibeSkill[];
+    },
+  });
+
+  async function createSkill() {
+    if (!workspaceId || !projectId) return;
+    const { data } = await supabase.from("vibe_skills")
+      .insert({ workspace_id: workspaceId, project_id: projectId, name: "Nouvelle skill", description: "", body: "" })
+      .select("id, name, description, body, created_at").single();
+    qc.invalidateQueries({ queryKey: ["vibe_skills", projectId] });
+    if (data) setEditing(data as VibeSkill);
+  }
+  async function saveSkill() {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      await supabase.from("vibe_skills")
+        .update({ name: editing.name, description: editing.description, body: editing.body, updated_at: new Date().toISOString() })
+        .eq("id", editing.id);
+      qc.invalidateQueries({ queryKey: ["vibe_skills", projectId] });
+    } finally { setSaving(false); }
+  }
+  async function removeSkill(id: string) {
+    await supabase.from("vibe_skills").delete().eq("id", id);
+    if (editing?.id === id) setEditing(null);
+    qc.invalidateQueries({ queryKey: ["vibe_skills", projectId] });
+  }
+
+  if (editing) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><ArrowRight className="mr-1 h-3.5 w-3.5 rotate-180" /> Skills</Button>
+          <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className="h-8 w-56" placeholder="Nom de la skill" />
+          <Input value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} className="h-8 min-w-0 flex-1" placeholder="Quand l'utiliser (description courte)" />
+        </div>
+        <MarkdownEditor
+          value={editing.body}
+          onChange={(v) => setEditing({ ...editing, body: v })}
+          onSave={saveSkill}
+          saving={saving}
+          preview={preview}
+          onTogglePreview={() => setPreview((p) => !p)}
+          placeholder={"# Objectif\nDécris la tâche réutilisable.\n\n## Étapes\n1. …\n2. …"}
+          heightClass="h-[calc(100vh-22rem)]"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold">Skills</h2>
+          <p className="text-xs text-muted-foreground">Modèles de tâches réutilisables (markdown) — ex. « Ajouter des tests », « Corriger le lint ».</p>
+        </div>
+        <Button size="sm" onClick={createSkill}><Plus className="mr-1.5 h-3.5 w-3.5" /> Nouvelle skill</Button>
+      </div>
+      {(q.data ?? []).length === 0 ? (
+        <p className="text-xs text-muted-foreground">Aucune skill pour l'instant.</p>
+      ) : (
+        <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border">
+          {(q.data ?? []).map((s) => (
+            <li key={s.id} className="group flex items-center gap-3 px-3 py-2.5">
+              <Zap className="h-4 w-4 shrink-0 text-primary" />
+              <button onClick={() => setEditing(s)} className="min-w-0 flex-1 text-left">
+                <div className="truncate text-sm font-medium">{s.name}</div>
+                {s.description && <div className="truncate text-[11px] text-muted-foreground">{s.description}</div>}
+              </button>
+              <button onClick={() => removeSkill(s.id)} title="Supprimer" className="shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-red-500">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Personnaliser → MCP : workspace MCP servers activated for the coding agent.
+function VibeMcp({ workspaceId, projectId }: { workspaceId?: string | null; projectId?: string | null }) {
+  const qc = useQueryClient();
+  const serversQ = useQuery({
+    queryKey: ["mcp_servers_for_vibe", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: async () => {
+      const { data } = await supabase.from("mcp_servers")
+        .select("id, name, description, transport, enabled, cached_tools").eq("workspace_id", workspaceId!).order("name");
+      return (data ?? []) as Array<{ id: string; name: string; description: string | null; transport: string; enabled: boolean; cached_tools: { name: string }[] | null }>;
+    },
+  });
+  const attachedQ = useQuery({
+    queryKey: ["vibe_mcp_servers", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase.from("vibe_mcp_servers").select("server_id").eq("project_id", projectId!);
+      return new Set((data ?? []).map((r) => (r as { server_id: string }).server_id));
+    },
+  });
+  const attached = attachedQ.data ?? new Set<string>();
+
+  async function toggle(serverId: string) {
+    if (!workspaceId || !projectId) return;
+    if (attached.has(serverId)) await supabase.from("vibe_mcp_servers").delete().eq("project_id", projectId).eq("server_id", serverId);
+    else await supabase.from("vibe_mcp_servers").insert({ workspace_id: workspaceId, project_id: projectId, server_id: serverId });
+    qc.invalidateQueries({ queryKey: ["vibe_mcp_servers", projectId] });
+  }
+
+  const servers = serversQ.data ?? [];
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-base font-semibold">MCP</h2>
+        <p className="text-xs text-muted-foreground">Serveurs MCP du workspace activés pour l'agent de codage — leurs outils deviennent appelables pendant un run.</p>
+      </div>
+      {servers.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Aucun serveur MCP dans ce workspace. Ajoutez-en un depuis la page MCP Servers.</p>
+      ) : (
+        <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border">
+          {servers.map((s) => {
+            const on = attached.has(s.id);
+            return (
+              <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+                <Server className="h-4 w-4 shrink-0 text-primary" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{s.name}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {(s.cached_tools ?? []).length} outil{(s.cached_tools ?? []).length > 1 ? "s" : ""} · {s.transport}{s.description ? ` · ${s.description}` : ""}
+                  </div>
+                </div>
+                {!s.enabled && <Badge variant="outline" className="shrink-0 text-[10px] text-amber-500">désactivé</Badge>}
+                <Button size="sm" variant={on ? "default" : "outline"} onClick={() => toggle(s.id)} disabled={!s.enabled}>
+                  {on ? <><Check className="mr-1 h-3.5 w-3.5" /> Activé</> : "Activer"}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Personnaliser → Automation : recurring coding tasks (prompt + repo + schedule).
+interface VibeAutomation {
+  id: string; name: string; prompt: string; repository_id: string | null; branch: string | null;
+  schedule: "manual" | "hourly" | "daily" | "weekly"; enabled: boolean; last_run_at: string | null;
+}
+const SCHEDULE_LABEL: Record<VibeAutomation["schedule"], string> = {
+  manual: "Manuel", hourly: "Toutes les heures", daily: "Quotidien", weekly: "Hebdomadaire",
+};
+
+function VibeAutomations({ workspaceId, projectId, repos }: { workspaceId?: string | null; projectId?: string | null; repos: Repo[] }) {
+  const qc = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [repoId, setRepoId] = useState("");
+  const [schedule, setSchedule] = useState<VibeAutomation["schedule"]>("daily");
+  const [runningId, setRunningId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const q = useQuery({
+    queryKey: ["vibe_automations", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase.from("vibe_automations")
+        .select("id, name, prompt, repository_id, branch, schedule, enabled, last_run_at")
+        .eq("project_id", projectId!).order("created_at", { ascending: false });
+      return (data ?? []) as VibeAutomation[];
+    },
+  });
+
+  async function create() {
+    if (!workspaceId || !projectId || !name.trim() || !prompt.trim()) return;
+    await supabase.from("vibe_automations").insert({
+      workspace_id: workspaceId, project_id: projectId, name: name.trim(), prompt: prompt.trim(),
+      repository_id: repoId || repos[0]?.id || null, schedule, enabled: true,
+    });
+    setCreating(false); setName(""); setPrompt(""); setRepoId(""); setSchedule("daily");
+    qc.invalidateQueries({ queryKey: ["vibe_automations", projectId] });
+  }
+  async function toggleEnabled(a: VibeAutomation) {
+    await supabase.from("vibe_automations").update({ enabled: !a.enabled }).eq("id", a.id);
+    qc.invalidateQueries({ queryKey: ["vibe_automations", projectId] });
+  }
+  async function remove(id: string) {
+    await supabase.from("vibe_automations").delete().eq("id", id);
+    qc.invalidateQueries({ queryKey: ["vibe_automations", projectId] });
+  }
+  async function runNow(a: VibeAutomation) {
+    if (!workspaceId || !projectId) return;
+    const rid = a.repository_id ?? repos[0]?.id;
+    if (!rid) { setNotice("Aucun dépôt connecté pour lancer cette automatisation."); return; }
+    setRunningId(a.id); setNotice(null);
+    try {
+      await callEdge("vibe-code", {
+        workspace_id: workspaceId, project_id: projectId, repository_id: rid,
+        action: "run", prompt: a.prompt, branch: a.branch || undefined,
+      });
+      await supabase.from("vibe_automations").update({ last_run_at: new Date().toISOString() }).eq("id", a.id);
+      qc.invalidateQueries({ queryKey: ["vibe_automations", projectId] });
+      setNotice(`« ${a.name} » lancée — suivez-la dans l'onglet Vibe Code.`);
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    } finally { setRunningId(null); }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold">Automation</h2>
+          <p className="text-xs text-muted-foreground">Tâches de code récurrentes — un prompt, un dépôt, une fréquence.</p>
+        </div>
+        <Button size="sm" onClick={() => setCreating((c) => !c)}><Plus className="mr-1.5 h-3.5 w-3.5" /> Nouvelle automatisation</Button>
+      </div>
+
+      {notice && <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">{notice}</div>}
+
+      {creating && (
+        <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3">
+          <div className="flex flex-wrap gap-2">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom (ex. Corriger le lint)" className="h-8 w-56" />
+            <select value={repoId || repos[0]?.id || ""} onChange={(e) => setRepoId(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
+              {repos.map((r) => <option key={r.id} value={r.id}>{r.full_name}</option>)}
+            </select>
+            <select value={schedule} onChange={(e) => setSchedule(e.target.value as VibeAutomation["schedule"])} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
+              {(Object.keys(SCHEDULE_LABEL) as VibeAutomation["schedule"][]).map((s) => <option key={s} value={s}>{SCHEDULE_LABEL[s]}</option>)}
+            </select>
+          </div>
+          <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} placeholder="Tâche à exécuter (ex. : corrige toutes les erreurs ESLint et ouvre une PR)" />
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>Annuler</Button>
+            <Button size="sm" onClick={create} disabled={!name.trim() || !prompt.trim()}>Créer</Button>
+          </div>
+        </div>
+      )}
+
+      {(q.data ?? []).length === 0 && !creating ? (
+        <p className="text-xs text-muted-foreground">Aucune automatisation.</p>
+      ) : (
+        <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border">
+          {(q.data ?? []).map((a) => (
+            <li key={a.id} className="group flex items-center gap-3 px-3 py-2.5">
+              <Workflow className={cn("h-4 w-4 shrink-0", a.enabled ? "text-primary" : "text-muted-foreground")} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{a.name}</div>
+                <div className="truncate text-[11px] text-muted-foreground">
+                  {SCHEDULE_LABEL[a.schedule]} · {repos.find((r) => r.id === a.repository_id)?.full_name ?? "dépôt par défaut"}
+                  {a.last_run_at ? ` · dernier run ${new Date(a.last_run_at).toLocaleDateString("fr-FR")}` : ""}
+                </div>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => runNow(a)} disabled={runningId !== null}>
+                {runningId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              </Button>
+              <button onClick={() => toggleEnabled(a)} title={a.enabled ? "Désactiver" : "Activer"}
+                className={cn("shrink-0 transition-colors", a.enabled ? "text-emerald-500" : "text-muted-foreground hover:text-foreground")}>
+                <Power className="h-3.5 w-3.5" />
+              </button>
+              <button onClick={() => remove(a.id)} title="Supprimer" className="shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-red-500">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[11px] text-muted-foreground">
+        « ▶ » lance l'automatisation immédiatement. L'exécution planifiée (horaire/quotidienne/hebdo) nécessite le cron du scheduler — non branché pour l'instant.
+      </p>
+    </div>
+  );
+}
+
+function MemGroup({ title, items, onDelete }: { title: string; items: VibeMemoryRow[]; onDelete: (id: string) => void }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title} · {items.length}</div>
+      <ul className="space-y-1">
+        {items.map((m) => (
+          <li key={m.id} className="group flex items-start gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-xs">
+            <Brain className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 break-words">{m.content}</span>
+            <button onClick={() => onDelete(m.id)} title="Oublier" className="shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-red-500">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// ── Vibe tab — a chat space with the coding agent ────────────────────────────
+interface ChatMsg { id: string; role: "user" | "assistant"; content: string; prompt?: string; result?: RunResult; pr?: { html_url: string; number: number; branch?: string; head_repo?: string }; error?: string; applyError?: string; loading?: boolean; applying?: boolean; createdAt?: string; repo?: string; branch?: string; dbId?: string; steps?: VibeStep[] }
+
+interface PrDetail {
+  number: number; title: string; state: string; draft: boolean; merged: boolean;
+  mergeable: boolean | null; mergeable_state: string;
+  additions: number; deletions: number; changed_files: number; commits: number;
+  html_url: string; head: { ref: string }; base: { ref: string };
+}
+// PR head CI state + PR detail (from the vibe-code "pr_status" action).
 interface CiState {
   state: "pending" | "success" | "failure" | "none";
   head_sha?: string;
   checks: { name: string; status: string; conclusion: string | null; url: string | null }[];
   failures: { check: string; path?: string; line?: number; level?: string; message: string }[];
+  pr?: PrDetail | null;
 }
 
 const fmtTime = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "");
@@ -112,6 +635,8 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
   const name = ((user?.user_metadata?.name as string | undefined) ?? user?.email?.split("@")[0] ?? "").split(" ")[0];
   const [params, setParams] = useSearchParams();
   const sessionId = params.get("session");
+  // A Vibe project binds every session to ONE repo — that repo is the context.
+  const vibeProjectId = params.get("project");
   const qc = useQueryClient();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -119,6 +644,28 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
   const [viewChange, setViewChange] = useState<Change | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const loadedRef = useRef<string | null>(null);
+
+  const { data: vibeProject } = useQuery({
+    queryKey: ["vibe_project", vibeProjectId],
+    enabled: !!vibeProjectId,
+    queryFn: async () => {
+      const { data } = await supabase.from("vibe_projects").select("id, name, repository_id, branch").eq("id", vibeProjectId!).maybeSingle();
+      return data as { id: string; name: string; repository_id: string; branch: string | null } | null;
+    },
+  });
+  // Lock the working repo (and default branch) to the project's.
+  useEffect(() => {
+    if (!vibeProject) return;
+    if (vibeProject.repository_id && vibeProject.repository_id !== repoId) setRepoId(vibeProject.repository_id);
+    if (vibeProject.branch) setBranch(vibeProject.branch);
+  }, [vibeProject?.id, vibeProject?.repository_id]);
+
+  /** Keep ?project when we rewrite the query string (adopting a session id). */
+  const setSessionParam = (sid: string) => {
+    const next: Record<string, string> = { session: sid };
+    if (vibeProjectId) next.project = vibeProjectId;
+    setParams(next, { replace: true });
+  };
 
   useEffect(() => { if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }, [messages]);
 
@@ -157,12 +704,12 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
       // The function persists the turns and runs the agent in the background;
       // poll the assistant row until it's done (avoids the request 504).
       const res = await callEdge<{ assistant_message_id: string | null; session_id: string | null; async: boolean; message?: string; base_branch?: string; changes?: Change[]; reads?: string[] }>(
-        "vibe-code", { workspace_id: workspaceId, project_id: projectId, repository_id: repoId, action: "run", prompt: t, branch: branch || undefined, session_id: sessionId ?? undefined },
+        "vibe-code", { workspace_id: workspaceId, project_id: projectId, repository_id: repoId, action: "run", prompt: t, branch: branch || undefined, session_id: sessionId ?? undefined, vibe_project_id: vibeProjectId ?? undefined },
       );
       // Adopt the server-created session → a refresh restores this conversation.
       if (res.session_id && res.session_id !== sessionId) {
         loadedRef.current = res.session_id;
-        setParams({ session: res.session_id }, { replace: true });
+        setSessionParam(res.session_id);
       }
       qc.invalidateQueries({ queryKey: ["vibe_sessions", projectId] });
 
@@ -198,13 +745,13 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
   async function createPr(msgId: string, res: RunResult, prompt: string, dbId?: string) {
     setMessages((m) => m.map((x) => (x.id === msgId ? { ...x, applying: true } : x)));
     try {
-      const out = await callEdge<{ pull_request?: { html_url: string; number: number }; branch?: string }>("vibe-code", {
+      const out = await callEdge<{ pull_request?: { html_url: string; number: number }; branch?: string; head_repo?: string }>("vibe-code", {
         workspace_id: workspaceId, project_id: projectId, repository_id: repoId, action: "apply",
         base_branch: res.base_branch, title: prompt.slice(0, 72), body: res.message, changes: res.changes,
         message_id: dbId,
       });
-      // Keep the PR head branch so we can poll its CI + push a fix to the same PR.
-      const pr = out.pull_request ? { ...out.pull_request, branch: out.branch } : undefined;
+      // Keep the PR head branch + repo (fork for fork-based PRs) to poll CI + push fixes.
+      const pr = out.pull_request ? { ...out.pull_request, branch: out.branch, head_repo: out.head_repo } : undefined;
       setMessages((m) => m.map((x) => (x.id === msgId ? { ...x, applying: false, pr, applyError: undefined } : x)));
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
@@ -234,25 +781,25 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
   }
 
   // Send the PR's CI errors back to the agent; the fix is committed to the PR branch.
-  async function fixPr(pr: { number: number; branch?: string }) {
+  async function fixPr(pr: { number: number; branch?: string; head_repo?: string }) {
     if (!pr.branch || running) return;
     const aId = crypto.randomUUID();
     setMessages((m) => [...m, { id: aId, role: "assistant", content: "", loading: true, prompt: `Corriger les erreurs de CI (PR #${pr.number})` }]);
     setRunning(true);
     try {
       const res = await callEdge<{ assistant_message_id: string | null; session_id: string | null; async: boolean; error?: string; state?: string }>(
-        "vibe-code", { workspace_id: workspaceId, project_id: projectId, repository_id: repoId, action: "fix_pr", branch: pr.branch, pr_number: pr.number, session_id: sessionId ?? undefined },
+        "vibe-code", { workspace_id: workspaceId, project_id: projectId, repository_id: repoId, action: "fix_pr", branch: pr.branch, head_repo: pr.head_repo, pr_number: pr.number, session_id: sessionId ?? undefined },
       );
       if (res.error === "no_failures") {
         setMessages((m) => m.map((x) => (x.id === aId ? { ...x, content: "Aucune erreur de CI à corriger.", loading: false, createdAt: new Date().toISOString() } : x)));
         return;
       }
-      if (res.session_id && res.session_id !== sessionId) { loadedRef.current = res.session_id; setParams({ session: res.session_id }, { replace: true }); }
+      if (res.session_id && res.session_id !== sessionId) { loadedRef.current = res.session_id; setSessionParam(res.session_id); }
       qc.invalidateQueries({ queryKey: ["vibe_sessions", projectId] });
       const amid = res.assistant_message_id;
       if (amid) await pollAssistant(aId, amid);
       // The fix was pushed to the PR branch → its CI panel re-polls automatically.
-      qc.invalidateQueries({ queryKey: ["vibe_ci", repoId, pr.branch, pr.number] });
+      qc.invalidateQueries({ queryKey: ["vibe_ci", repoId, pr.head_repo, pr.branch, pr.number] });
     } catch (e) {
       setMessages((m) => m.map((x) => (x.id === aId ? { ...x, error: e instanceof Error ? e.message : String(e), loading: false, createdAt: new Date().toISOString() } : x)));
     } finally { setRunning(false); }
@@ -260,26 +807,40 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
 
   const composer = (
     <div className="rounded-2xl border border-border bg-card/60 p-2 shadow-sm backdrop-blur">
-      {/* Context row — choose the repo + branch to work on */}
+      {/* Context row — the repo to work on. Inside a Vibe project the repo is
+          fixed by the project, so it's shown locked instead of pickable. */}
       <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs transition-colors hover:bg-muted/60">
-              <Github className="h-3.5 w-3.5 shrink-0" />
-              <span className="max-w-[220px] truncate">{repo?.full_name ?? "Choisir un dépôt"}</span>
-              <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
-            {repos.map((r) => (
-              <DropdownMenuItem key={r.id} onClick={() => setRepoId(r.id)} className="gap-2">
-                <Github className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">{r.full_name}</span>
-                {r.id === repoId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {vibeProject ? (
+          <span
+            title={`Projet « ${vibeProject.name} » — dépôt fixé par le projet`}
+            className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 px-2 py-1 text-xs"
+          >
+            <FolderKanban className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span className="max-w-[110px] truncate font-medium">{vibeProject.name}</span>
+            <span className="text-muted-foreground">·</span>
+            <Github className="h-3.5 w-3.5 shrink-0" />
+            <span className="max-w-[180px] truncate">{repo?.full_name ?? "…"}</span>
+          </span>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs transition-colors hover:bg-muted/60">
+                <Github className="h-3.5 w-3.5 shrink-0" />
+                <span className="max-w-[220px] truncate">{repo?.full_name ?? "Choisir un dépôt"}</span>
+                <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
+              {repos.map((r) => (
+                <DropdownMenuItem key={r.id} onClick={() => setRepoId(r.id)} className="gap-2">
+                  <Github className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{r.full_name}</span>
+                  {r.id === repoId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <span className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground">
           <GitBranch className="h-3.5 w-3.5" />
           <input value={branch} onChange={(e) => setBranch(e.target.value)} className="w-16 bg-transparent outline-none" />
@@ -430,7 +991,7 @@ function StepsTimeline({ steps, live }: { steps: VibeStep[]; live: boolean }) {
 function AssistantMsg({ msg, onView, onCreatePr, ctx, onFixPr, busy }: {
   msg: ChatMsg; onView: (c: Change) => void; onCreatePr: (res: RunResult) => void;
   ctx: { workspaceId?: string | null; projectId?: string | null; repoId?: string | null };
-  onFixPr: (pr: { number: number; branch?: string }) => void; busy: boolean;
+  onFixPr: (pr: { number: number; branch?: string; head_repo?: string }) => void; busy: boolean;
 }) {
   if (msg.error) return <div className="w-full rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">{msg.error}</div>;
   const res = msg.result;
@@ -461,12 +1022,7 @@ function AssistantMsg({ msg, onView, onCreatePr, ctx, onFixPr, busy }: {
           </ul>
           <div className="mt-2 border-t border-border/60 pt-2">
             {msg.pr ? (
-              <div className="space-y-2">
-                <a href={msg.pr.html_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400">
-                  <GitPullRequest className="h-4 w-4" /> PR #{msg.pr.number} ouverte <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-                <PrCiPanel pr={msg.pr} ctx={ctx} onFix={() => onFixPr(msg.pr!)} busy={busy} />
-              </div>
+              <PrCiPanel pr={msg.pr} ctx={ctx} onFix={() => onFixPr(msg.pr!)} busy={busy} />
             ) : (
               <div className="space-y-1.5">
                 <Button size="sm" onClick={() => onCreatePr(res)} disabled={msg.applying}>
@@ -488,47 +1044,94 @@ function AssistantMsg({ msg, onView, onCreatePr, ctx, onFixPr, busy }: {
   );
 }
 
-// CI panel under an opened PR: polls the head's checks and, on failure, lets the
-// agent read the errors and push a fix to the same PR.
+// Rich PR card under a message: PR meta + live CI + Fix (on failure) + Merge.
 function PrCiPanel({ pr, ctx, onFix, busy }: {
-  pr: { number: number; branch?: string; html_url: string };
+  pr: { number: number; branch?: string; html_url: string; head_repo?: string };
   ctx: { workspaceId?: string | null; projectId?: string | null; repoId?: string | null };
   onFix: () => void; busy: boolean;
 }) {
+  const qc = useQueryClient();
+  const [merging, setMerging] = useState(false);
+  const [mergedLocal, setMergedLocal] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  const key = ["vibe_ci", ctx.repoId, pr.head_repo, pr.branch, pr.number];
   const { data, isLoading } = useQuery<CiState>({
-    queryKey: ["vibe_ci", ctx.repoId, pr.branch, pr.number],
-    enabled: !!pr.branch && !!ctx.repoId,
+    queryKey: key,
+    enabled: !!ctx.repoId,
     refetchInterval: (q) => (q.state.data?.state === "pending" ? 12000 : q.state.data?.state === "failure" ? 30000 : false),
     queryFn: () => callEdge<CiState>("vibe-code", {
       workspace_id: ctx.workspaceId, project_id: ctx.projectId, repository_id: ctx.repoId,
-      action: "pr_status", branch: pr.branch,
+      action: "pr_status", branch: pr.branch, head_repo: pr.head_repo, pr_number: pr.number,
     }),
   });
 
-  if (!pr.branch) return null;
+  const d = data?.pr;
   const state = data?.state;
+  const merged = mergedLocal || !!d?.merged;
+  const closed = d?.state === "closed";
 
-  const chip = (() => {
-    if (isLoading || (!data && !state)) return <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Vérification de la CI…</span>;
-    if (state === "pending") return <span className="inline-flex items-center gap-1.5 text-xs text-amber-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> CI en cours…</span>;
-    if (state === "success") return <span className="inline-flex items-center gap-1.5 text-xs text-emerald-500"><CheckCircle2 className="h-3.5 w-3.5" /> CI réussie</span>;
-    if (state === "failure") return <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-500"><AlertTriangle className="h-3.5 w-3.5" /> CI échouée</span>;
-    return <span className="text-xs text-muted-foreground">Aucune CI détectée</span>;
+  async function merge() {
+    setMerging(true); setMergeError(null);
+    try {
+      const res = await callEdge<{ ok?: boolean; merged?: boolean; error?: string; detail?: string }>("vibe-code", {
+        workspace_id: ctx.workspaceId, project_id: ctx.projectId, repository_id: ctx.repoId,
+        action: "merge_pr", pr_number: pr.number,
+      });
+      if (res.error) setMergeError(res.error);
+      else if (res.merged) { setMergedLocal(true); qc.invalidateQueries({ queryKey: key }); }
+    } catch (e) {
+      setMergeError(e instanceof Error ? e.message : String(e));
+    } finally { setMerging(false); }
+  }
+
+  const stateBadge = merged
+    ? <Badge className="border-transparent bg-violet-500/15 text-[10px] text-violet-500">merged</Badge>
+    : closed ? <Badge variant="outline" className="text-[10px] text-muted-foreground">closed</Badge>
+    : d?.draft ? <Badge variant="outline" className="text-[10px]">draft</Badge>
+    : <Badge className="border-transparent bg-emerald-500/15 text-[10px] text-emerald-500">open</Badge>;
+
+  const ciChip = (() => {
+    if (!pr.branch) return null;
+    if (isLoading && !data) return <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> CI…</span>;
+    if (state === "pending") return <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-500"><Loader2 className="h-3 w-3 animate-spin" /> CI en cours</span>;
+    if (state === "success") return <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-500"><CheckCircle2 className="h-3 w-3" /> CI réussie</span>;
+    if (state === "failure") return <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-500"><AlertTriangle className="h-3 w-3" /> CI échouée</span>;
+    return <span className="text-[11px] text-muted-foreground">Sans CI</span>;
   })();
 
   return (
-    <div className="rounded-lg border border-border bg-background/60 p-2.5">
-      <div className="flex items-center justify-between gap-2">
-        {chip}
-        {state === "failure" && (
-          <Button size="sm" variant="outline" onClick={onFix} disabled={busy}>
-            {busy ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Correction…</> : <><Wand2 className="mr-1.5 h-3.5 w-3.5" /> Corriger les erreurs</>}
-          </Button>
-        )}
+    <div className="rounded-lg border border-border bg-background/60 p-3">
+      {/* Header: PR link + title + state */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <a href={pr.html_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400">
+            <GitPullRequest className="h-4 w-4 shrink-0" /> PR #{pr.number} <ExternalLink className="h-3 w-3" />
+          </a>
+          {d?.title && <div className="mt-0.5 truncate text-xs text-foreground">{d.title}</div>}
+        </div>
+        {stateBadge}
       </div>
+
+      {/* Meta row: branches · diffstat · files/commits · CI */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        {d ? (
+          <>
+            <span className="inline-flex items-center gap-1 font-mono"><GitBranch className="h-3 w-3" />{d.head.ref} → {d.base.ref}</span>
+            <span className="tabular-nums"><span className="text-emerald-500">+{d.additions}</span> <span className="text-red-500">−{d.deletions}</span></span>
+            <span className="tabular-nums">{d.changed_files} fichier{d.changed_files > 1 ? "s" : ""}</span>
+            <span className="tabular-nums">{d.commits} commit{d.commits > 1 ? "s" : ""}</span>
+          </>
+        ) : pr.branch ? (
+          <span className="inline-flex items-center gap-1 font-mono"><GitBranch className="h-3 w-3" />{pr.branch}</span>
+        ) : null}
+        {ciChip}
+      </div>
+
+      {/* CI failures */}
       {state === "failure" && (data?.failures?.length ?? 0) > 0 && (
         <ul className="mt-2 space-y-1 border-t border-border/60 pt-2">
-          {data!.failures.slice(0, 8).map((f, i) => (
+          {data!.failures.slice(0, 6).map((f, i) => (
             <li key={i} className="flex gap-2 text-[11px]">
               <span className="shrink-0 rounded bg-red-500/10 px-1 font-mono text-red-500">{f.check}</span>
               <span className="min-w-0 text-muted-foreground">
@@ -537,8 +1140,33 @@ function PrCiPanel({ pr, ctx, onFix, busy }: {
               </span>
             </li>
           ))}
-          {data!.failures.length > 8 && <li className="text-[11px] text-muted-foreground">+{data!.failures.length - 8} autres…</li>}
+          {data!.failures.length > 6 && <li className="text-[11px] text-muted-foreground">+{data!.failures.length - 6} autres…</li>}
         </ul>
+      )}
+
+      {/* Actions */}
+      {!merged && !closed && (
+        <div className="mt-2.5 flex items-center gap-2 border-t border-border/60 pt-2.5">
+          {state === "failure" && (
+            <Button size="sm" variant="outline" onClick={onFix} disabled={busy}>
+              {busy ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Correction…</> : <><Wand2 className="mr-1.5 h-3.5 w-3.5" /> Corriger les erreurs</>}
+            </Button>
+          )}
+          <Button size="sm" onClick={merge} disabled={merging || busy} className="bg-violet-600 hover:bg-violet-600/90">
+            {merging ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Fusion…</> : <><GitMerge className="mr-1.5 h-3.5 w-3.5" /> Merger la PR</>}
+          </Button>
+          {state === "failure" && <span className="text-[11px] text-muted-foreground">CI en échec — corrige d'abord ou merge quand même.</span>}
+        </div>
+      )}
+      {merged && (
+        <div className="mt-2.5 flex items-center gap-1.5 border-t border-border/60 pt-2.5 text-xs font-medium text-violet-500">
+          <GitMerge className="h-3.5 w-3.5" /> Pull request fusionnée.
+        </div>
+      )}
+      {mergeError && (
+        <div className="mt-2 flex items-start gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 p-2 text-[11px] text-red-500">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="min-w-0 break-words">{mergeError}</span>
+        </div>
       )}
     </div>
   );
