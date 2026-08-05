@@ -6,7 +6,7 @@ import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { callAi, safeParseJson } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 
-const SYSTEM = `Tu es l'agent admin de FounderOS.
+const SYSTEM = `Tu es l'agent admin de AchiCorp.
 Synthétise l'état du SaaS en un briefing court et factuel pour un fondateur pressé.
 Tu ne dois jamais inventer de chiffres absents.
 

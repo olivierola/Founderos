@@ -17,8 +17,9 @@ import { type PresentationContent, type Slide, sanitizeFilename, slateToMarkdown
 
 const LAYOUTS: Slide["layout"][] = ["title", "title-content", "section", "blank"];
 
-export function PresentationEditorPage() {
-  const { docId } = useParams();
+export function PresentationEditorPage({ docId: docIdProp, onBack, embedded }: { docId?: string; onBack?: () => void; embedded?: boolean } = {}) {
+  const params = useParams();
+  const docId = docIdProp ?? params.docId;
   const navigate = useNavigate();
   const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
@@ -53,7 +54,7 @@ export function PresentationEditorPage() {
     setSlides((prev) => {
       const j = i + dir;
       if (j < 0 || j >= prev.length) return prev;
-      const next = [...prev]; [next[i], next[j]] = [next[j], next[i]]; persist(next); setActive(j); return next;
+      const next = [...prev];[next[i], next[j]] = [next[j], next[i]]; persist(next); setActive(j); return next;
     });
   }
   function onTitleChange(v: string) { setTitle(v); scheduleSave({ title: v || "Untitled presentation" }); }
@@ -103,23 +104,44 @@ export function PresentationEditorPage() {
   const slide = slides[active];
   const contextText = slides.map((s, i) => `Slide ${i + 1} [${s.layout}]: ${s.title}\n${s.body}`).join("\n\n");
 
+  const { workspaceSlug, projectSlug } = useParams();
+  function handleBack() {
+    if (onBack) onBack();
+    else if (window.history.length > 1) navigate(-1);
+    else if (workspaceSlug && projectSlug) navigate(`/app/${workspaceSlug}/${projectSlug}/artifacts`);
+    else navigate(-1);
+  }
+
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 pt-4 pb-3 sm:px-6">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4" /></Button>
-        <span className="text-lg">{doc.emoji ?? "🖼️"}</span>
+    <div className={cn("flex flex-col", embedded ? "h-full" : "h-[calc(100vh-3.5rem)]")}>
+      <div className="relative z-20 flex flex-wrap items-center gap-2 border-b border-border bg-background/95 backdrop-blur px-3 py-2.5 sm:px-4">
+        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 relative z-10" onClick={handleBack}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <span className="shrink-0 text-base">{doc.emoji ?? "🖼️"}</span>
         <input
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-lg font-semibold focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-sm font-semibold focus:outline-none"
           placeholder="Untitled presentation"
         />
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
           {saving ? <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</> : savedAt ? <><Check className="h-3 w-3" /> Saved</> : null}
         </span>
-        <Button variant="outline" size="sm" onClick={() => setPresent(true)} disabled={slides.length === 0}><Play className="h-3.5 w-3.5" /> Present</Button>
-        <Button variant="outline" size="sm" onClick={exportPdf} disabled={slides.length === 0}><Download className="h-3.5 w-3.5" /> PDF</Button>
-        <Button size="sm" variant={aiOpen ? "default" : "outline"} onClick={() => setAiOpen((v) => !v)}><Sparkles className="h-3.5 w-3.5" /> AI</Button>
+        <div className="flex items-center gap-1 shrink-0 relative z-10">
+          <Button type="button" variant="outline" size="sm" className="h-8 gap-1" onClick={addSlide}>
+            <Plus className="h-3.5 w-3.5" /> Diapo
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="h-8 gap-1" onClick={() => setPresent(true)} disabled={slides.length === 0}>
+            <Play className="h-3.5 w-3.5" /> Presenter
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="h-8 gap-1" onClick={exportPdf} disabled={slides.length === 0}>
+            <Download className="h-3.5 w-3.5" /> PDF
+          </Button>
+          <Button type="button" size="sm" variant={aiOpen ? "default" : "outline"} className="h-8 gap-1" onClick={() => setAiOpen((v) => !v)}>
+            <Sparkles className="h-3.5 w-3.5" /> IA
+          </Button>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1">

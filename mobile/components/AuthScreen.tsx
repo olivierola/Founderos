@@ -62,7 +62,7 @@ export function AuthScreen() {
               <View style={styles.mark}>
                 <Ionicons name="flash" size={30} color={colors.onPrimary} />
               </View>
-              <Text style={styles.brand}>FounderOS</Text>
+              <Text style={styles.brand}>AchiCorp</Text>
               <Text style={styles.tagline}>Votre workforce IA, dans votre poche.</Text>
             </View>
 
@@ -137,7 +137,7 @@ export function AuthScreen() {
             </View>
 
             <Text style={styles.foot}>
-              Connectez-vous avec votre compte FounderOS pour retrouver vos agents et leurs
+              Connectez-vous avec votre compte AchiCorp pour retrouver vos agents et leurs
               conversations, synchronisés avec le web.
             </Text>
           </ScrollView>

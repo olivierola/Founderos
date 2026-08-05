@@ -409,9 +409,24 @@ Deno.serve(async (req) => {
         return jsonResponse({ ok: true });
       }
 
-      // ── Real inference through a connected cloud endpoint ───────────────────
+      // ── Real inference through a connected cloud endpoint or a rented pod ───
       case "inference.chat": {
-        const { provider_id, model, messages, temperature, top_p, max_tokens } = body as Record<string, unknown>;
+        const { provider_id, server_id, model, messages, temperature, top_p, max_tokens } = body as Record<string, unknown>;
+        // server_id → a rented vLLM pod (aiops_servers.endpoint_url already
+        // points at its OpenAI-compatible /v1). Same auth pattern as the
+        // agents' hosted-model routing (RUNPOD_VLLM_API_KEY, may be empty).
+        if (server_id) {
+          const { data: srv } = await admin.from("aiops_servers")
+            .select("endpoint_url, served_model, status")
+            .eq("id", String(server_id)).eq("project_id", project_id).maybeSingle();
+          if (!srv) return jsonResponse({ error: "Serveur introuvable" }, { status: 404 });
+          if (!srv.endpoint_url) return jsonResponse({ error: "Ce serveur n'expose pas d'endpoint d'inférence" }, { status: 400 });
+          const out = await cloudChat(String(srv.endpoint_url), Deno.env.get("RUNPOD_VLLM_API_KEY") ?? "", {
+            model: String(model || srv.served_model || "default"), messages: messages as unknown[],
+            temperature: temperature as number, top_p: top_p as number, max_tokens: max_tokens as number,
+          });
+          return jsonResponse(out);
+        }
         const { p, apiKey } = await loadProvider(String(provider_id));
         if (p.kind !== "cloud_endpoint") return jsonResponse({ error: "L'inférence directe requiert un fournisseur cloud (endpoint)" }, { status: 400 });
         const out = await cloudChat(String(p.config.base_url ?? ""), apiKey, {

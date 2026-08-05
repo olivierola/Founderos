@@ -4,6 +4,7 @@ import {
   UsersThreeIcon,
   KanbanIcon,
   PlugsConnectedIcon,
+  GithubLogoIcon,
   LockKeyIcon,
   SparkleIcon,
   CreditCardIcon,
@@ -11,6 +12,8 @@ import {
   EyeIcon,
   WalletIcon,
   SirenIcon,
+  SealCheckIcon,
+  CrosshairIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -44,6 +47,10 @@ export const ADMIN_SECTIONS: AdminNavSection[] = [
       { label: "Membres", slug: "members", icon: UsersThreeIcon },
       { label: "Espaces de travail", slug: "workspaces", icon: KanbanIcon },
       { label: "Connecteurs", slug: "connectors", icon: PlugsConnectedIcon },
+      // The Dépôts module left the nav with the "Outils IA" dashboard, but
+      // connecting a repository is a prerequisite of the Vibe Code studio
+      // agent — so it lives here, next to the other connection surfaces.
+      { label: "Dépôts", slug: "repositories", icon: GithubLogoIcon },
       { label: "Sécurité", slug: "security", icon: LockKeyIcon },
     ],
   },
@@ -62,6 +69,8 @@ export const ADMIN_SECTIONS: AdminNavSection[] = [
       { label: "Prompts", slug: "gov-prompts", icon: EyeIcon },
       { label: "Dépenses", slug: "gov-costs", icon: WalletIcon },
       { label: "Incidents", slug: "gov-incidents", icon: SirenIcon },
+      { label: "Actions admin", slug: "gov-actions", icon: SealCheckIcon },
+      { label: "Périmètre pentest", slug: "gov-pentest-scope", icon: CrosshairIcon },
     ],
   },
 ];

@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
     const admin = createServiceClient();
     const { data: agent } = await admin
       .from("rag_agents")
-      .select("name, welcome_message, widget_config, accent_color, enabled, onboarding_enabled")
+      .select("name, welcome_message, widget_config, accent_color, enabled, onboarding_enabled, onboarding_copilot_enabled")
       .eq("public_key", public_key)
       .maybeSingle();
     if (!agent || agent.enabled === false) {
@@ -32,6 +32,7 @@ Deno.serve(async (req) => {
       accent_color: agent.accent_color ?? "#001BB7",
       widget_config: agent.widget_config ?? {},
       onboarding_enabled: !!agent.onboarding_enabled,
+      onboarding_copilot_enabled: !!agent.onboarding_copilot_enabled,
     });
   } catch (err) {
     return jsonResponse(

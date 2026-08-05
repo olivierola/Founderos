@@ -114,11 +114,11 @@ export function AppShell() {
                     themselves still scroll/lay out their inner content, so we just
                     relax the wrapper here. */}
                 {isFullbleedRoute(pathname) ? (
-                  <main className="flex flex-1 flex-col overflow-hidden">
+                  <main className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-background">
                     <Outlet />
                   </main>
                 ) : (
-                  <main className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
+                  <main className="flex-1 overflow-y-auto bg-white px-3 py-4 dark:bg-background sm:px-4 sm:py-6 lg:px-6">
                     <div className="mx-auto w-full max-w-6xl">
                       {/* SaaS Analytics renders its in-group pages as compact tabs,
                           aligned with the page content; null for other modules. */}

@@ -378,7 +378,7 @@ async function runAction(
     const mode = payload.mode === "direct" ? "direct" : "pull_request";
     const result = await applyChanges(token, fullName, {
       changes,
-      commitMessage: String(payload.commit_message ?? "chore: automated changes by FounderOS agent"),
+      commitMessage: String(payload.commit_message ?? "chore: automated changes by AchiCorp agent"),
       mode,
       baseBranch: payload.base_branch ? String(payload.base_branch) : undefined,
       headBranch: payload.head_branch ? String(payload.head_branch) : undefined,

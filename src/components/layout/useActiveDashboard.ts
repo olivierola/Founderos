@@ -14,7 +14,7 @@ export function useActiveDashboard(): DashboardId {
   const segs = location.pathname.split("/").filter(Boolean);
   const appIdx = segs.indexOf("app");
   const moduleSlug = appIdx >= 0 ? segs[appIdx + 3] : undefined;
-  const owner = dashboardOfModule(moduleSlug); // "workforce" | "tools" | "data" | "both"
+  const owner = dashboardOfModule(moduleSlug); // "workforce" | "both"
 
   useEffect(() => {
     if (owner !== "both") {
@@ -24,8 +24,10 @@ export function useActiveDashboard(): DashboardId {
 
   if (owner !== "both") return owner;
   try {
-    const stored = localStorage.getItem(KEY) as DashboardId | null;
-    if (stored === "workforce" || stored === "tools" || stored === "data") return stored;
+    // A stored id from the retired "tools"/"data" dashboards falls back to the
+    // default rather than resolving to a dashboard that no longer exists.
+    const stored = localStorage.getItem(KEY);
+    if (stored === "workforce") return stored;
   } catch { /* ignore */ }
   return DEFAULT_DASHBOARD;
 }

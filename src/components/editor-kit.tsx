@@ -22,7 +22,6 @@ import { DndKit } from '@/components/dnd-kit';
 import { DocxKit } from '@/components/docx-kit';
 import { EmojiKit } from '@/components/emoji-kit';
 import { ExitBreakKit } from '@/components/exit-break-kit';
-import { FixedToolbarKit } from '@/components/fixed-toolbar-kit';
 import { FloatingToolbarKit } from '@/components/floating-toolbar-kit';
 import { FontKit } from '@/components/font-kit';
 import { LineHeightKit } from '@/components/line-height-kit';
@@ -84,9 +83,9 @@ export const EditorKit = [
   ...DocxKit,
   ...MarkdownKit,
 
-  // UI
+  // UI — no always-on FixedToolbar; formatting is a contextual floating toolbar
+  // (appears on text selection) with the essentials inline + a "more" dropdown.
   ...BlockPlaceholderKit,
-  ...FixedToolbarKit,
   ...FloatingToolbarKit,
 ];
 

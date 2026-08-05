@@ -98,6 +98,8 @@ export interface RunTodo {
   id: string;
   title: string;
   status: "pending" | "active" | "done" | "blocked";
+  /** Id of the parent task when this item is a subtask (recursive decomposition). */
+  parent_id?: string;
   note?: string;
 }
 

@@ -145,13 +145,13 @@ export function RagCollectionDetailPage() {
   async function remove() {
     if (!confirm("Delete this collection and all its sources? Agents using it will lose this knowledge.")) return;
     await supabase.from("rag_collections").delete().eq("id", collection!.id);
-    navigate(`/app/${workspaceSlug}/${projectSlug}/agent/knowledge`);
+    navigate(`/app/${workspaceSlug}/${projectSlug}/agent/collections`);
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="ghost" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/knowledge`)}><ArrowLeft className="mr-1 h-3.5 w-3.5" /> RAG Center</Button>
+        <Button size="sm" variant="ghost" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/collections`)}><ArrowLeft className="mr-1 h-3.5 w-3.5" /> Collections</Button>
         <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{collection.name}</h1>
         <Button size="sm" variant="outline" onClick={toggleEnabled}><Power className="mr-1 h-3.5 w-3.5" /> {collection.enabled ? "Disable" : "Enable"}</Button>
         <Button size="sm" variant="ghost" className="text-destructive" onClick={remove}><Trash2 className="h-4 w-4" /></Button>

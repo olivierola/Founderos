@@ -53,7 +53,7 @@ export async function setBiometricEnabled(on: boolean): Promise<void> {
 export async function promptBiometric(): Promise<boolean> {
   try {
     const res = await LocalAuthentication.authenticateAsync({
-      promptMessage: "Déverrouiller FounderOS",
+      promptMessage: "Déverrouiller AchiCorp",
       fallbackLabel: "Utiliser le code",
       cancelLabel: "Annuler",
     });

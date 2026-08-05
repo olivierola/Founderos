@@ -76,20 +76,26 @@ function slugify(name: string) {
   );
 }
 
-export async function createWorkspace(userId: string, name: string) {
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  owner_id: string;
+  plan: string;
+  created_at?: string;
+}
+
+export async function createWorkspace(name: string): Promise<Workspace> {
   const base = slugify(name);
   const slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
-  const { data: ws, error } = await supabase
-    .from("workspaces")
-    .insert({ name, slug, owner_id: userId })
-    .select()
+  // workspace_members has no client-side INSERT policy (only the signup
+  // trigger writes to it directly, as security definer) — this RPC creates
+  // the workspace + owner membership atomically, as auth.uid(), server-side.
+  const { data, error } = await supabase
+    .rpc("create_workspace_with_owner", { p_name: name, p_slug: slug })
     .single();
   if (error) throw error;
-  // The new_user trigger only fires on signup; create membership explicitly here.
-  await supabase
-    .from("workspace_members")
-    .insert({ workspace_id: ws.id, user_id: userId, role: "owner" });
-  return ws;
+  return data as Workspace;
 }
 
 export async function createProject(workspaceId: string, name: string) {

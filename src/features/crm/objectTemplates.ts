@@ -54,6 +54,7 @@ export const OBJECT_TEMPLATES: ObjectTemplate[] = [
   { slug: "kb_articles", label: "KB article", label_plural: "KB articles", icon: "FileText", color: "text-sky-500", description: "Help-center articles." },
   { slug: "voice_calls", label: "Voice call", label_plural: "Voice calls", icon: "Phone", color: "text-emerald-500", description: "Call-center calls — linked to tickets." },
   { slug: "agent_runs", label: "Agent run", label_plural: "Agent runs", icon: "Bot", color: "text-fuchsia-500", description: "Agent executions — linked to missions." },
+  { slug: "deliverables", label: "Deliverable", label_plural: "Deliverables", icon: "FileText", color: "text-violet-500", description: "Agent outputs (reports, analyses, files) — linked to agent & mission." },
   { slug: "code_scans", label: "Code scan", label_plural: "Code scans", icon: "GitBranch", color: "text-zinc-400", description: "Repo scans — linked to repositories." },
   { slug: "ops_jobs", label: "Ops job", label_plural: "Ops jobs", icon: "AppWindow", color: "text-sky-500", description: "Infra jobs — linked to servers." },
 ];

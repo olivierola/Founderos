@@ -83,7 +83,7 @@ export function AiWorkflowsPage() {
     <div>
       <PageHeader
         title="Workflows"
-        description="Trigger → steps automations. Triggered by FounderOS events or manually."
+        description="Trigger → steps automations. Triggered by AchiCorp events or manually."
         actions={
           <Button size="sm" onClick={() => setOpenCreate(true)}>
             <Plus className="h-4 w-4" /> New workflow

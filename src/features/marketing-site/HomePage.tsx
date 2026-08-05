@@ -1,459 +1,376 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
+import { Blocks, Compass, EyeOff, Layers, Minus, Plus, ShieldCheck, Sparkles } from "lucide-react";
+import { LandingNav } from "./LandingNav";
+import { LandingComparison } from "./LandingComparison";
+import { LandingFooter } from "./LandingFooter";
+import { LandingHero } from "./LandingHero";
+import { LandingProof } from "./LandingProof";
+import { LandingStats } from "./LandingStats";
+import { LandingTestimonials } from "./LandingTestimonials";
+import { CountUp, CtaGhost, CtaPrimary, Eyebrow, Reveal, SectionHead } from "./LandingKit";
 import {
-  ArrowRight,
-  Layers,
-  Wallet,
-  ShieldCheck,
-  Plug2,
-  Sparkles,
-  Activity,
-  Lock,
-  Quote,
-  Star,
-  Eye,
-  Database,
-  GitBranch,
-  Zap,
-  Building2,
-  Brain,
-  BarChart3,
-  CreditCard,
-  Server,
-  Users,
-  MessageSquare,
-  TerminalSquare,
-  Bell,
-} from "lucide-react";
-import { MarketingShell, DotGrid } from "./MarketingShell";
-import { ArchitectureDiagram } from "./Illustrations";
-import { MarketingHero } from "./MarketingHero";
-import { AgentShowcase } from "./AgentShowcase";
-import { PartnersIntro } from "./PartnersIntro";
+  AdoptionGrid,
+  FoundationFlow,
+  GovernanceCloud,
+  ManagedRun,
+  NoFoundationArt,
+  NoGovernanceArt,
+  ReadinessScan,
+  SecuredAgents,
+  SecurityShield,
+  ShadowAiArt,
+} from "./LandingVisuals";
+
+/* The wash is reused verbatim as the mask for its vertical-band layer, so
+   the bands fade out exactly where the colour does — never over bare black. */
+const CTA_WASH = `radial-gradient(ellipse 50% 120% at 8% 50%, rgba(255,77,0,0.26), transparent 62%),
+                  radial-gradient(ellipse 55% 120% at 92% 50%, rgba(161,161,170,0.30), transparent 62%)`;
+
+/* Orange is the brand default; graphite and a warm ember break up the grid so
+   six identical-looking diagrams stop reading as one block. */
+const VIZ_HUES = ["", "amp-viz-grey", "amp-viz-ember"];
+/* The light challenge band needs the deepened set — see globals.css. */
+const VIZ_HUES_LIGHT = ["amp-viz-deep", "amp-viz-grey-deep", "amp-viz-ink"];
 
 const STATS = [
-  { value: "57", label: "Integrations" },
-  { value: "12", label: "Modules" },
-  { value: "80+", label: "Widgets" },
-  { value: "100ms", label: "Edge p50" },
+  { prefix: "4–", to: 8, suffix: "", label: "Weeks to First-Value" },
+  { prefix: "", to: 100, suffix: "%", label: "Organisation ownership of IP" },
 ];
 
-const LOGOS = [
-  "Stripe", "Vercel", "GitHub", "Supabase", "Linear", "Resend",
-  "Slack", "PostHog", "Sentry", "Cloudflare", "Fly.io", "Netlify",
-  "Railway", "Heroku", "Firebase", "Datadog", "Mixpanel", "Segment",
+const DIFFERENTIATORS = [
+  {
+    icon: Layers,
+    title: "Foundation First",
+    body: "AI amplifies what is underneath it. We make sure that is a clean process and a structured system, not chaos with an assistant on top.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Security By Design",
+    body: "Encrypted credential vault, tenant-level isolation, scoped tool grants and approval gates applied from day one.",
+  },
+  {
+    icon: Blocks,
+    title: "Built On What You Have",
+    body: "We layer agents onto your existing environment across 57 integrations. No platform migration, no rip-and-replace risk.",
+  },
+  {
+    icon: Sparkles,
+    title: "Proven In Production",
+    body: "Agents running real support, finance, ops and engineering work — with humans kept on the decisions that matter.",
+  },
 ];
-const FIRST_ROW = LOGOS.filter((_, i) => i % 2 === 0);
-const SECOND_ROW = LOGOS.filter((_, i) => i % 2 === 1);
 
-const FEATURE_CARDS = [
-  { icon: Layers, color: "hsl(var(--primary-soft))", title: "One cockpit per client", body: "Switch between every client's SaaS in two clicks. Each project gets isolated metrics, secrets and actions." },
-  { icon: Wallet, color: "hsl(var(--accent-2))", title: "Money, infra, ops — together", body: "Stripe MRR, Vercel deploys, Supabase secrets, GitHub scans. One pane of glass, zero context switching." },
-  { icon: ShieldCheck, color: "#a78bfa", title: "Admin with audit trail", body: "Refund a customer, rotate a key, kick a deploy. Every action is logged and approval-gated." },
-  { icon: Sparkles, color: "#fbbf24", title: "AI agents for your clients", body: "RAG-powered widgets and dynamic onboarding the agent drives — highlights, popups, navigation, live." },
-  { icon: Activity, color: "#34d399", title: "Real deployments, real logs", body: "Synced from Vercel, GitHub Actions, Netlify, Fly, Heroku, Supabase, Firebase, Render and bare-metal VPS." },
-  { icon: Plug2, color: "#f472b6", title: "57 providers — and your own DB", body: "Query the client's Supabase project directly. Build custom dashboards from any table." },
+const CHALLENGES = [
+  {
+    art: ShadowAiArt,
+    icon: EyeOff,
+    title: "Shadow AI Inside the Walls",
+    body: "Your team members are pasting client data into public chatbots because the official path is too slow or does not exist. The risk is already inside.",
+  },
+  {
+    art: NoFoundationArt,
+    icon: Layers,
+    title: "AI Without a Foundation",
+    body: "An assistant on top of fragmented processes produces confident, low quality or even wrong outcomes. Without structured data and clear workflows, AI scales the problem.",
+  },
+  {
+    art: NoGovernanceArt,
+    icon: Compass,
+    title: "No Clear Governance",
+    body: "Who can build an agent? What data can it access? Where does it run? Which systems can it integrate with? Most organisations cannot answer these questions and that is where the audit findings start.",
+  },
 ];
 
-const TRUST_PILLARS = [
-  { icon: Lock, title: "AES-GCM 256-bit", body: "Every credential is encrypted at rest. Plaintext is never returned to the browser." },
-  { icon: ShieldCheck, title: "Row-level security", body: "Supabase RLS enforces project isolation. Workspace members only see what they own." },
-  { icon: Eye, title: "Full audit log", body: "Every refund, key rotation, deployment is timestamped, attributed, and exportable." },
-  { icon: Database, title: "Your data, your stack", body: "We connect to your databases, never copy them. Pause sync at any time." },
-];
-
-const TESTIMONIALS = [
-  { quote: "We replaced 6 dashboards with RedAI. Refunds that used to take 3 days now take 30 seconds.", author: "Léa Vermont", role: "CTO, Frictionless Studio" },
-  { quote: "The audit log alone is worth the price. We finally pass SOC2 reviews without spreadsheets.", author: "Marcus Tan", role: "Founder, Tan & Co" },
-  { quote: "Our junior devs ship admin tools through approval flows instead of running scripts in prod.", author: "Aïcha Diallo", role: "Head of Eng, Loom Agency" },
+const SOLUTIONS = [
+  {
+    visual: ReadinessScan,
+    title: "AI Readiness & Maturity Assessment",
+    body: "Before we build anything, we look at where you are. Our module-level maturity framework (L1 to L5) shows you which processes are ready for AI today, which need a foundation first, and which should wait. You get a clear, prioritised roadmap, not a generic AI strategy slide.",
+  },
+  {
+    visual: SecuredAgents,
+    title: "Secured AI Agents",
+    body: "Your teams want agents that answer questions, draft documents, and handle requests. Your CISO wants to know where the data goes. Both are right. We build agents that run inside your tenant, behind your identity controls, on your data residency, so the answer to the security question is documented, not hoped for.",
+  },
+  {
+    visual: FoundationFlow,
+    title: "Foundation & Process Automation",
+    body: "An assistant on top of a broken process gives you faster chaos. Before intelligence can amplify anything, the work underneath has to be structured: approvals that follow rules, documents that live in one place, data that means the same thing in every system. We build that foundation so AI has something solid to stand on.",
+  },
+  {
+    visual: AdoptionGrid,
+    title: "Adoption & Change Enablement",
+    body: "The median assistant usage rate we see is eight percent. That is a licence paid for twelve months and used for one. The technology was never the hard part. The hard part is changing how a few hundred people work, and that does not happen in a training session. We design adoption as a journey with measurement that tells you whether the investment is landing.",
+  },
+  {
+    visual: GovernanceCloud,
+    title: "AI Governance",
+    body: "Somewhere in your organisation right now, someone is building an AI flow you do not know about. Governance is not about stopping them. It is about knowing who builds, what data they touch, and where it runs, so innovation happens inside guardrails instead of arriving as a surprise. We set up the policies, environments and review workflows that make agents safe at scale.",
+  },
+  {
+    visual: ManagedRun,
+    title: "Managed Support & Continuous Evolution",
+    body: "The go-live is not the finish line. It is the starting gun. Models update, agents drift, regulations tighten, and new capabilities ship every month. Our retainer gives you an architect, a functional consultant, and a developer who already know your environment, keeping the platform healthy, the governance current, and the roadmap moving.",
+  },
 ];
 
 const FAQ = [
-  { q: "Do I host my customers' data?", a: "No. RedAI connects to your customers' existing Stripe, Supabase, GitHub. We store metadata and encrypted credentials, never their raw user data." },
-  { q: "Can I white-label the cockpit for my clients?", a: "Pro and Enterprise plans support custom branding. Full white-label with custom email senders is on Enterprise." },
-  { q: "What about SSO and SCIM?", a: "SSO via SAML and SCIM provisioning are included on Enterprise. Free and Pro use email + 2FA." },
-  { q: "How fast are updates?", a: "We ship multiple times a week. Every release is documented in /changelog." },
-  { q: "Can I self-host?", a: "Not yet. We're working on a self-hosted edition for Enterprise. Contact us for the roadmap." },
+  {
+    q: "What does AchiCorp actually do?",
+    a: "We help companies adopt AI safely. In practice, that means three things: we assess where your processes and data stand today, we build the secured foundation so AI has something solid to work on, and we guide adoption across your organisation with governance and change enablement.",
+  },
+  {
+    q: "We are not sure we are ready for AI. Where do we start?",
+    a: "With the readiness assessment. It rates every process from L1 to L5 and tells you which work is ready for an agent today, which needs a foundation first, and which should wait. Most teams find two or three quick wins and one structural gap they did not know about.",
+  },
+  {
+    q: "How do you handle data security when deploying AI?",
+    a: "Credentials are encrypted at rest with AES-GCM and never returned in plaintext to the browser. Every agent runs against scoped tool grants, write actions are approval-gated, and every call is recorded in an exportable audit log. We connect to your systems — we do not copy your data.",
+  },
+  {
+    q: "Do agents run on our own infrastructure?",
+    a: "They can. Agents run inside your tenant with your identity controls and data residency, and you can route inference to a model you host yourself. Your prompts, your data and the resulting IP stay yours.",
+  },
+  {
+    q: "What industries and company sizes do you work with?",
+    a: "From twenty-person teams to enterprises with several thousand seats, with the deepest experience in services, logistics, finance and software. The framework is the same; the depth of governance scales with your regulatory surface.",
+  },
 ];
 
 export function HomePage() {
+  useEffect(() => {
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
+  }, []);
+
   return (
-    <MarketingShell hideHeader>
-      {/* ====== Hero — full-screen video hero ====== */}
-      <MarketingHero />
+    <div className="amplify min-h-screen overflow-x-hidden">
+      <LandingNav />
 
-      {/* ====== Partenaires + texte de présentation qui se colore au scroll ====== */}
-      <PartnersIntro />
+      {/* ══ 1. Hero — light canvas, inline photo chips, floating video ════ */}
+      <LandingHero />
 
-      {/* ====== How it works — agent + SaaS bento ====== */}
-      <AgentShowcase />
+      {/* ══ 2. Proof — logo strip, one claim, four figures ════════════════ */}
+      <LandingProof />
 
-      {/* ====== Logo marquee — deux rangées de pastilles qui défilent ====== */}
-      <div className="overflow-hidden border-y border-border/40 bg-card/30 py-10">
-        <p className="mb-7 text-center text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          Plugs into the tools your clients already use · 57 integrations
-        </p>
-        <div className="relative space-y-3">
-          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-40 bg-gradient-to-r from-background to-transparent" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-40 bg-gradient-to-l from-background to-transparent" />
-          {/* Row 1 → */}
-          <div className="flex w-max mkt-marquee">
-            {[...FIRST_ROW, ...FIRST_ROW].map((l, i) => <LogoPill key={`a${i}`} name={l} />)}
-          </div>
-          {/* Row 2 ← (reverse) */}
-          <div className="flex w-max mkt-marquee-reverse">
-            {[...SECOND_ROW, ...SECOND_ROW].map((l, i) => <LogoPill key={`b${i}`} name={l} />)}
-          </div>
-        </div>
-      </div>
+      {/* ══ 3. Why us — white ══════════════════════════════════════════════ */}
+      <section className="amp-light relative">
+        <div className="mx-auto max-w-[1280px] px-4 sm:px-8">
+          <div className="amp-rails relative py-24 sm:py-28">
+            <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16">
+              <Reveal>
+                <Eyebrow>Why Us</Eyebrow>
+                <h2 className="mt-6 max-w-md text-balance text-[36px] font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[46px]">
+                  What Makes us Different
+                </h2>
+                <p className="mt-6 max-w-lg text-[17px] leading-[1.6] text-[var(--amp-muted)]">
+                  Most consultancies are racing to put AI in front of clients. We start by asking whether your
+                  organisation is ready for it and then we get you ready, properly. Our work sits at the
+                  intersection of agent platforms, cloud security, and operational maturity, so AI lands on a
+                  foundation that holds.
+                </p>
 
-      {/* ====== Architecture — split asymétrique, pas de fond séparé ====== */}
-      <section className="relative mx-auto max-w-7xl px-4 py-24 sm:px-6">
-        <div className="grid items-start gap-12 lg:grid-cols-12">
-          <div className="lg:col-span-5">
-            <h2 className="font-metamorphous text-balance text-3xl tracking-tight sm:text-4xl">
-              Plugs in. Doesn't replace.
-            </h2>
-            <p className="mt-4 max-w-md text-muted-foreground">
-              We connect to your existing Stripe, Supabase, GitHub. No data is copied. Pause sync at any time.
-            </p>
-            <ul className="mt-8 space-y-4 text-sm">
-              {[
-                { icon: GitBranch, t: "Per-project isolation", b: "Each client gets its own Stripe, GitHub, Vercel keys." },
-                { icon: Zap, t: "Bi-directional sync", b: "Push secrets back to Vercel / Supabase Secrets on demand." },
-                { icon: ShieldCheck, t: "Read-only by default", b: "Admin actions require approval and are audit-logged." },
-                { icon: Layers, t: "Cross-project rollups", b: "Aggregate MRR, churn, deploys across all clients." },
-              ].map((it) => {
-                const I = it.icon;
-                return (
-                  <li key={it.t} className="flex gap-3">
-                    <I className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--accent-2))]" />
-                    <div>
-                      <div className="font-medium">{it.t}</div>
-                      <div className="text-muted-foreground">{it.b}</div>
+                <div className="amp-plate mt-10 flex gap-14 rounded-lg px-9 py-8">
+                  {STATS.map((s) => (
+                    <div key={s.label}>
+                      <CountUp
+                        to={s.to}
+                        prefix={s.prefix}
+                        suffix={s.suffix}
+                        className="block text-[42px] font-medium leading-none tracking-[-0.02em] tabular-nums"
+                      />
+                      <div className="mt-3 text-[15px] text-[var(--amp-muted)]">{s.label}</div>
                     </div>
-                  </li>
+                  ))}
+                </div>
+              </Reveal>
+
+              <Reveal delay={140}>
+                <div className="amp-viz overflow-hidden rounded-lg bg-black p-6">
+                  <SecurityShield dense />
+                </div>
+              </Reveal>
+            </div>
+
+            <div className="mt-20 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+              {DIFFERENTIATORS.map((d, i) => {
+                const Icon = d.icon;
+                return (
+                  <Reveal key={d.title} delay={i * 120}>
+                    <div
+                      className="flex h-14 w-14 items-center justify-center rounded-xl bg-white"
+                      style={{ boxShadow: "0 2px 10px rgba(0,0,7,0.10)" }}
+                    >
+                      <Icon className="h-5 w-5" style={{ color: "var(--amp-orange)" }} />
+                    </div>
+                    <h3 className="mt-6 text-[19px] font-semibold tracking-[-0.01em]">{d.title}</h3>
+                    <p className="mt-3 text-[15.5px] leading-[1.6] text-[var(--amp-muted)]">{d.body}</p>
+                  </Reveal>
                 );
               })}
-            </ul>
-          </div>
-          <div className="lg:col-span-7">
-            <div className="rounded-xl border border-border bg-card p-4 shadow-lg sm:p-6">
-              <ArchitectureDiagram className="w-full" />
             </div>
           </div>
         </div>
       </section>
 
-      {/* ====== Multi-tenant + Workflow imbriqué (sans rupture) ====== */}
-      <section className="relative mx-auto max-w-7xl px-4 pb-24 sm:px-6">
-        <div className="grid gap-10 lg:grid-cols-12">
-          {/* Workflow */}
-          <div className="lg:col-span-7">
-            <h2 className="font-metamorphous text-balance text-3xl tracking-tight sm:text-4xl">
-              From zero to operating in 90 seconds.
-            </h2>
-            <p className="mt-3 max-w-xl text-muted-foreground">
-              No SDKs to install, no webhooks to wire. Connect, scan, operate.
-            </p>
-            <div className="mt-8 grid gap-3 sm:grid-cols-2">
-              {[
-                { num: "01", title: "Connect your stack", body: "57 providers. Encrypted vault. No plaintext leaves the browser." },
-                { num: "02", title: "Scan & understand", body: "Detect services, dependencies, env vars. Build a semantic map." },
-                { num: "03", title: "Operate from one cockpit", body: "MRR, deploys, alerts — actionable in two clicks." },
-                { num: "04", title: "Automate & onboard", body: "AI agents drive support and user onboarding live." },
-              ].map((w) => (
-                <div key={w.num} className="rounded-xl border border-border bg-card/60 p-5">
-                  <span className="font-bitcount text-sm text-muted-foreground">{w.num}</span>
-                  <h3 className="mt-2 text-sm font-semibold">{w.title}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{w.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* ══ 3. Challenges — light grey ═════════════════════════════════════ */}
+      <section className="amp-light relative" style={{ background: "#f7f7f7" }}>
+        <div className="mx-auto max-w-[1280px] px-4 sm:px-8">
+          <div className="amp-rails relative py-24 sm:py-28">
+            <SectionHead
+              eyebrow="Your Challenges"
+              title="The AI Question Every Company Is Asking"
+              lead="Boards want AI adoption in the roadmap. Teams are already using it in one way or another. Security teams are highly concerned. Most companies are caught between moving too slow and moving without control."
+              center
+            />
 
-          {/* Project list card collée à droite */}
-          <div className="lg:col-span-5">
-            <div className="sticky top-24 rounded-xl border border-border bg-card p-2 shadow-xl">
-              <div className="rounded-lg border border-border/60 bg-background p-5">
-                <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Your clients</span>
-                  <span className="rounded-full bg-[hsl(var(--accent-2)/0.15)] px-2 py-0.5 text-[hsl(var(--accent-2))]"><span className="font-bitcount">4</span> active</span>
-                </div>
-                <div className="space-y-2.5">
-                  <ProjectRow name="acme-inc.com" mrr="€12,440" status="healthy" growth="+8%" />
-                  <ProjectRow name="byte-studio" mrr="€7,180" status="warning" growth="+2%" />
-                  <ProjectRow name="pixel-labs" mrr="€21,090" status="healthy" growth="+14%" />
-                  <ProjectRow name="nordic-ops" mrr="€4,520" status="error" growth="-3%" />
-                </div>
-                <div className="mt-4 border-t border-border/60 pt-4 text-xs">
-                  <div className="flex items-center justify-between text-muted-foreground">
-                    <span>Total MRR</span>
-                    <span className="font-bitcount text-foreground">€45,230</span>
-                  </div>
-                  <div className="mt-1 flex items-center justify-between text-muted-foreground">
-                    <span>Avg growth</span>
-                    <span className="font-bitcount text-[hsl(var(--accent-2))]">+5.3%</span>
-                  </div>
-                </div>
-              </div>
+            <div className="mt-16 grid gap-6 md:grid-cols-3">
+              {CHALLENGES.map((c, i) => {
+                const Art = c.art;
+                return (
+                  <Reveal key={c.title} delay={i * 110}>
+                    <div className={`amp-card-light amp-lift amp-viz ${VIZ_HUES_LIGHT[i % VIZ_HUES_LIGHT.length]} h-full rounded-2xl p-4 hover:shadow-lg`}>
+                      <div className="amp-zoom flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-[#f2f2f2] p-6">
+                        <Art />
+                      </div>
+                      <div className="px-3 pb-4 pt-7">
+                        <h3 className="text-[21px] font-semibold tracking-[-0.01em]">{c.title}</h3>
+                        <p className="mt-4 text-[15.5px] leading-[1.6] text-[var(--amp-muted)]">{c.body}</p>
+                      </div>
+                    </div>
+                  </Reveal>
+                );
+              })}
             </div>
           </div>
         </div>
       </section>
 
-      {/* ====== Features — grille non-bordée, fond uniforme ====== */}
-      <section className="relative mx-auto max-w-7xl px-4 pb-24 sm:px-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <h2 className="font-metamorphous text-balance text-3xl tracking-tight sm:text-4xl">
-            Everything you'd build yourself, already running.
-          </h2>
-          <Link to="/features" className="text-sm text-muted-foreground hover:text-foreground">
-            All 12 modules →
-          </Link>
-        </div>
-        <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {FEATURE_CARDS.map((f) => {
-            const Icon = f.icon;
-            return (
-              <div
-                key={f.title}
-                className="group relative overflow-hidden rounded-xl border border-border bg-card/50 p-5 transition-all hover:bg-card hover:shadow-lg"
-              >
-                <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-0 blur-3xl transition-opacity group-hover:opacity-25" style={{ background: f.color }} />
-                <div className="relative flex h-9 w-9 items-center justify-center rounded-md bg-secondary" style={{ color: f.color }}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <h3 className="relative mt-4 text-sm font-semibold">{f.title}</h3>
-                <p className="relative mt-1.5 text-sm leading-relaxed text-muted-foreground">{f.body}</p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      {/* ══ 4. Solutions — dark ════════════════════════════════════════════ */}
+      <section className="relative">
+        <div className="mx-auto max-w-[1280px] px-4 sm:px-8">
+          <div className="amp-rails relative py-24 sm:py-28">
+            <SectionHead
+              eyebrow="Our Solutions"
+              title="How We Help You Adopt AI, Safely"
+              lead="We organise our work around the question every leader is asking: how do we get from where we are to AI-powered operations, without the wheels coming off? These are the building blocks."
+              center
+            />
 
-      {/* ====== Bande citation + sécurité imbriquée ====== */}
-      <section className="relative mx-auto max-w-7xl px-4 pb-24 sm:px-6">
-        <div className="grid gap-6 lg:grid-cols-12">
-          {/* Citation principale */}
-          <figure className="lg:col-span-7 rounded-2xl border border-border bg-card p-8">
-            <Quote className="h-6 w-6 text-[hsl(var(--primary-soft))]" />
-            <blockquote className="mt-4 text-xl font-medium leading-relaxed">
-              "We replaced 6 dashboards with RedAI. Refunds that used to take 3 days now take 30 seconds. The audit log alone is worth it."
-            </blockquote>
-            <figcaption className="mt-6 flex items-center gap-3 text-sm">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[hsl(var(--primary-soft))] to-[hsl(var(--accent-2))]" />
-              <div>
-                <div className="font-semibold">Léa Vermont</div>
-                <div className="text-muted-foreground">CTO, Frictionless Studio</div>
-              </div>
-              <div className="ml-auto flex items-center gap-0.5">
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <Star key={i} className="h-3.5 w-3.5 fill-[hsl(var(--accent-2))] text-[hsl(var(--accent-2))]" />
-                ))}
-              </div>
-            </figcaption>
-          </figure>
-
-          {/* Citations courtes */}
-          <div className="lg:col-span-5 space-y-3">
-            {TESTIMONIALS.slice(1).map((t) => (
-              <figure key={t.author} className="rounded-xl border border-border bg-card/60 p-5">
-                <blockquote className="text-sm leading-relaxed">"{t.quote}"</blockquote>
-                <figcaption className="mt-3 text-xs">
-                  <span className="font-semibold">{t.author}</span>
-                  <span className="text-muted-foreground"> · {t.role}</span>
-                </figcaption>
-              </figure>
-            ))}
+            <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {SOLUTIONS.map((s, i) => {
+                const Visual = s.visual;
+                return (
+                  <Reveal key={s.title} delay={i * 80}>
+                    <div
+                      className={`amp-panel amp-panel-hover amp-lift amp-zoom amp-viz ${VIZ_HUES[i % VIZ_HUES.length]} flex h-full flex-col rounded-2xl p-4`}
+                    >
+                      <Visual />
+                      <div className="flex flex-1 flex-col px-2 pb-3 pt-7">
+                        <h3 className="text-balance text-[21px] font-semibold leading-tight tracking-[-0.01em]">
+                          {s.title}
+                        </h3>
+                        <p className="mt-4 text-[15px] leading-[1.6] text-[var(--amp-muted)]">{s.body}</p>
+                        <Link
+                          to="/features"
+                          className="mt-6 inline-block text-[15px] font-medium text-white underline-offset-4 hover:underline"
+                        >
+                          Learn More
+                        </Link>
+                      </div>
+                    </div>
+                  </Reveal>
+                );
+              })}
+            </div>
           </div>
         </div>
-
-        {/* Trust pillars — directement collés en dessous, pas de séparation */}
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {TRUST_PILLARS.map((p) => {
-            const I = p.icon;
-            return (
-              <div key={p.title} className="rounded-xl border border-border bg-card/40 p-4">
-                <I className="h-4 w-4 text-[hsl(var(--accent-2))]" />
-                <div className="mt-3 text-xs font-semibold">{p.title}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{p.body}</div>
-              </div>
-            );
-          })}
-        </div>
       </section>
 
-      {/* ====== FAQ + CTA fusionnés ====== */}
-      <section className="relative mx-auto max-w-7xl px-4 pb-24 sm:px-6">
-        <div className="grid gap-10 lg:grid-cols-12">
-          <div className="lg:col-span-7">
-            <h2 className="font-metamorphous text-balance text-3xl tracking-tight sm:text-4xl">
-              Questions, answered.
-            </h2>
-            <div className="mt-8 space-y-2">
-              {FAQ.map((f) => (
-                <details key={f.q} className="group rounded-xl border border-border bg-card/40 p-5 open:bg-card">
-                  <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium">
+      {/* ══ 5. Testimonials — dark ═════════════════════════════════════════ */}
+      <LandingTestimonials />
+
+      {/* ══ 6. Comparison — criteria selector, light grey ═════════════════ */}
+      <LandingComparison />
+
+      {/* ══ 6. Results — dark, animated proof bars ═════════════════════════ */}
+      <LandingStats />
+
+      {/* ══ 7. FAQ — light grey ════════════════════════════════════════════ */}
+      <section id="faq" className="amp-light relative" style={{ background: "#f7f7f7" }}>
+        <div className="mx-auto max-w-[1280px] px-4 sm:px-8">
+          <div className="amp-rails relative grid gap-12 py-24 sm:py-28 lg:grid-cols-2 lg:gap-16">
+            <Reveal>
+              <Eyebrow>FAQ</Eyebrow>
+              <h2 className="mt-6 max-w-sm text-balance text-[36px] font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[46px]">
+                Frequently Asked Questions
+              </h2>
+              <p className="mt-5 text-[17px] text-[var(--amp-muted)]">
+                Everything you need to know about working with us.
+              </p>
+              <p className="mt-10 text-[17px] font-semibold">Still have questions? We're here to help.</p>
+              <Link to="/contact" className="mt-5 inline-block">
+                <CtaPrimary>Contact Us</CtaPrimary>
+              </Link>
+            </Reveal>
+
+            <Reveal delay={100} className="space-y-4">
+              {FAQ.map((f, i) => (
+                <details key={f.q} open={i === 0} className="amp-card-light group rounded-xl px-7 py-6">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-[18px] font-semibold tracking-[-0.01em]">
                     {f.q}
-                    <span className="ml-4 text-muted-foreground transition-transform group-open:rotate-45">+</span>
+                    <Plus className="h-5 w-5 shrink-0 text-[var(--amp-faint)] group-open:hidden" />
+                    <Minus className="hidden h-5 w-5 shrink-0 text-[var(--amp-faint)] group-open:block" />
                   </summary>
-                  <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
+                  <p className="mt-5 text-[15.5px] leading-[1.65] text-[var(--amp-muted)]">{f.a}</p>
                 </details>
               ))}
-            </div>
-          </div>
-
-          {/* CTA latéral */}
-          <div className="lg:col-span-5">
-            <div className="sticky top-24 overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-[hsl(var(--primary-soft)/0.08)] p-8">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[hsl(var(--primary-soft))] to-[hsl(var(--accent-2))]">
-                <Brain className="h-5 w-5 text-white" />
-              </div>
-              <h3 className="mt-5 text-2xl font-semibold leading-tight">
-                Try it on a real project today.
-              </h3>
-              <p className="mt-3 text-sm text-muted-foreground">
-                Free plan covers up to 3 client projects with all integrations. No credit card.
-              </p>
-              <div className="mt-6 flex flex-col gap-2">
-                <Link
-                  to="/signup"
-                  className="group inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
-                >
-                  Get started
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </Link>
-                <Link
-                  to="/pricing"
-                  className="inline-flex items-center justify-center rounded-md border border-border bg-card px-5 py-2.5 text-sm hover:bg-secondary"
-                >
-                  See pricing
-                </Link>
-              </div>
-            </div>
+            </Reveal>
           </div>
         </div>
       </section>
-    </MarketingShell>
-  );
-}
 
-// A bordered logo pill used in the integrations marquee.
-function LogoPill({ name }: { name: string }) {
-  return (
-    <span className="mx-2 inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-border/60 bg-card/60 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground">
-      <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary-soft))]" />
-      {name}
-    </span>
-  );
-}
-
-// A self-contained, image-free mock of the cockpit UI used in the hero.
-function CockpitMockup() {
-  const modules = [
-    { icon: BarChart3, on: true },
-    { icon: CreditCard, on: false },
-    { icon: Server, on: false },
-    { icon: Users, on: false },
-    { icon: MessageSquare, on: false },
-    { icon: Brain, on: false },
-  ];
-  const spark = [28, 34, 30, 42, 38, 52, 48, 60, 64, 72, 68, 84];
-  return (
-    <div className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-2xl mkt-rise">
-      {/* Title bar */}
-      <div className="flex items-center gap-2 border-b border-border bg-secondary/40 px-3 py-2.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-destructive/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--accent-2))]/70" />
-        <span className="ml-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <TerminalSquare className="h-3 w-3" /> acme-agency · cockpit
-        </span>
-        <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-          <Bell className="h-3 w-3" /> 3
-        </span>
-      </div>
-
-      <div className="flex">
-        {/* Module rail */}
-        <div className="flex flex-col items-center gap-2 border-r border-border bg-secondary/20 p-2.5">
-          {modules.map((m, i) => {
-            const I = m.icon;
-            return (
-              <span
-                key={i}
-                className={`flex h-7 w-7 items-center justify-center rounded-md ${
-                  m.on ? "bg-primary/20 text-primary" : "text-muted-foreground/60"
-                }`}
-              >
-                <I className="h-3.5 w-3.5" />
-              </span>
-            );
-          })}
-        </div>
-
-        {/* Content */}
-        <div className="min-w-0 flex-1 space-y-3 p-3.5">
-          {/* KPI row */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { l: "MRR", v: "$48.2k", d: "+12%" },
-              { l: "Active", v: "1,284", d: "+5%" },
-              { l: "Churn", v: "1.9%", d: "-0.3%" },
-            ].map((k) => (
-              <div key={k.l} className="rounded-lg border border-border/60 bg-secondary/30 p-2.5">
-                <div className="text-[9px] uppercase tracking-wide text-muted-foreground">{k.l}</div>
-                <div className="font-bitcount mt-0.5 text-sm font-semibold tabular-nums">{k.v}</div>
-                <div className="font-bitcount text-[9px] text-[hsl(var(--accent-2))]">{k.d}</div>
+      {/* ══ 7. Closing CTA — floating dark card, wash + bands ══════════════
+          It shares the footer's grey canvas and gutter, so the page ends on one
+          light field carrying two floating slabs. */}
+      <div className="relative px-3 py-3 sm:px-5 sm:py-5" style={{ background: "#e4e4e4" }}>
+        <section className="relative overflow-hidden rounded-[28px] bg-[#08080a] sm:rounded-[36px]">
+          <div
+            aria-hidden
+            className="amp-grain amp-wash-drift pointer-events-none absolute inset-0"
+            style={{ background: CTA_WASH }}
+          />
+          {/* Vertical bands, masked by the wash so they only read inside it. */}
+          <div
+            aria-hidden
+            className="amp-bands pointer-events-none absolute inset-0"
+            style={{ WebkitMaskImage: CTA_WASH, maskImage: CTA_WASH }}
+          />
+          <div className="relative mx-auto max-w-[1280px] px-4 sm:px-8">
+            <div className="amp-rails relative flex flex-col items-center py-28 text-center">
+              <Eyebrow>Get Started</Eyebrow>
+              <h2 className="mt-7 max-w-3xl text-balance text-[34px] font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[48px]">
+                Ready to make AI work for your company?
+              </h2>
+              <p className="mt-6 max-w-2xl text-[16.5px] leading-[1.6] text-[var(--amp-muted)]">
+                A 30-minute conversation is usually enough to know whether we are a fit. Or start with the
+                maturity assessment, it tells you where you stand before starting.
+              </p>
+              <div className="mt-10 flex flex-col items-center gap-3.5 sm:flex-row">
+                <Link to="/contact">
+                  <CtaPrimary>Book a Consultation</CtaPrimary>
+                </Link>
+                <Link to="/signup">
+                  <CtaGhost>Start free</CtaGhost>
+                </Link>
               </div>
-            ))}
-          </div>
-
-          {/* Sparkline chart */}
-          <div className="rounded-lg border border-border/60 bg-secondary/20 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[10px] font-medium text-muted-foreground">Revenue · 12 mo</span>
-              <span className="inline-flex items-center gap-1 text-[9px] text-[hsl(var(--accent-2))]"><Activity className="h-2.5 w-2.5" /> live</span>
-            </div>
-            <div className="flex h-14 items-end gap-1">
-              {spark.map((h, i) => (
-                <span
-                  key={i}
-                  className="flex-1 rounded-sm bg-gradient-to-t from-[hsl(var(--primary-soft)/0.35)] to-[hsl(var(--primary-soft))]"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
             </div>
           </div>
-
-          {/* Client rows */}
-          <div className="space-y-1.5">
-            <ProjectRow name="northwind" mrr="$21.4k" status="healthy" growth="+8%" />
-            <ProjectRow name="stark-labs" mrr="$14.0k" status="warning" growth="+2%" />
-            <ProjectRow name="initech" mrr="$12.8k" status="error" growth="-3%" />
-          </div>
-        </div>
+        </section>
       </div>
 
-      {/* Edge highlights */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
-    </div>
-  );
-}
-
-function ProjectRow({ name, mrr, status, growth }: { name: string; mrr: string; status: "healthy" | "warning" | "error"; growth: string }) {
-  const dot = status === "healthy" ? "bg-[hsl(var(--accent-2))]" : status === "warning" ? "bg-amber-400" : "bg-destructive";
-  const trend = growth.startsWith("+") ? "text-[hsl(var(--accent-2))]" : "text-destructive";
-  return (
-    <div className="flex items-center justify-between rounded-md border border-border/60 bg-secondary/30 px-3 py-2.5 transition-colors hover:bg-secondary/50">
-      <div className="flex items-center gap-2">
-        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-        <span className="font-mono text-xs">{name}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className={`font-bitcount text-xs tabular-nums ${trend}`}>{growth}</span>
-        <span className="font-bitcount text-xs tabular-nums text-foreground">{mrr}</span>
-      </div>
+      <LandingFooter />
     </div>
   );
 }

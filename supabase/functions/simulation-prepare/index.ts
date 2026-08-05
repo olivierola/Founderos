@@ -708,13 +708,21 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true });
     }
 
-    // User actions (need a session + workspace membership).
+    // User actions (need a session + workspace membership). The Simulations
+    // studio agent runs inside internal-agent-run and calls with the SERVICE
+    // ROLE key, which has no `sub` for getUser() — it names the user it acts
+    // for instead, and the membership checks below still apply to that user.
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return jsonResponse({ error: "Missing Authorization header" }, { status: 401 });
-    const userClient = createUserClient(authHeader);
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
-    const userId = userData.user.id;
+    let userId: string;
+    if (runnerAuthorized(req) && body.acting_user_id) {
+      userId = String(body.acting_user_id);
+    } else {
+      const userClient = createUserClient(authHeader);
+      const { data: userData, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+      userId = userData.user.id;
+    }
 
     if (action === "enrich") {
       const { data: sim } = await admin.from("sim_simulations").select("workspace_id").eq("id", body.simulation_id).maybeSingle();

@@ -12,6 +12,8 @@ export interface InternalAgent {
   description: string | null;
   avatar_emoji: string | null;
   avatar_url: string | null;
+  /** Visual identity in chat/lists: the uploaded avatar, or a living orb. */
+  avatar_style: "avatar" | "orb";
   accent_color: string | null;
   persona: string | null;
   instructions: string | null;
@@ -28,10 +30,18 @@ export interface InternalAgent {
   collaboration_enabled: boolean;
   sandbox_mode: "cloud" | "runner" | "sandbox" | "hybrid";
   sandbox_url: string | null;
+  /** "Essaim" — may the agent fan out to parallel sub-agents, and how many at
+   *  once. Enabled by default; the agent still decides per task. */
+  swarm_enabled: boolean;
+  swarm_max_concurrency: number;
+  /** Specialized "studio" agent (owns an engine + session artifacts), or null. */
+  studio: "vibe_code" | "testing" | "simulation" | null;
   // Optional self-hosted (RunPod) model routing — null = default provider.
   hosted_endpoint_url: string | null;
   hosted_model: string | null;
   hosted_server_id: string | null;
+  /** Registered cloud/custom model (aiops_providers) the agent runs on; null = default. */
+  hosted_provider_id: string | null;
   created_by: string;
   is_archived: boolean;
   created_at: string;

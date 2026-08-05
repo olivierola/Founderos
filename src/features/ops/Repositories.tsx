@@ -137,6 +137,7 @@ export function RepositoriesPage() {
   if (loading) return <div><PageHeader title="Dépôts" /><div className="flex h-48 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div></div>;
 
   const repos = reposQuery.data ?? [];
+  const isComposio = (connectorQuery.data as { source?: string } | null | undefined)?.source === "composio";
   const filtered = search ? repos.filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase())) : repos;
   const allSelected = filtered.length > 0 && filtered.every((r) => selected.has(r.full_name));
 
@@ -151,7 +152,7 @@ export function RepositoriesPage() {
             <p className="text-sm text-muted-foreground">
               Créez un Personal Access Token <span className="font-medium text-foreground">classique</span> avec le scope{" "}
               <code className="rounded bg-muted px-1 text-xs">repo</code> sur{" "}
-              <a href="https://github.com/settings/tokens/new?scopes=repo&description=FounderOS" target="_blank" rel="noreferrer" className="text-foreground underline-offset-4 hover:underline">github.com/settings/tokens</a>.
+              <a href="https://github.com/settings/tokens/new?scopes=repo&description=AchiCorp" target="_blank" rel="noreferrer" className="text-foreground underline-offset-4 hover:underline">github.com/settings/tokens</a>.
               Le scope <code className="rounded bg-muted px-1 text-xs">repo</code> permet la lecture (import + scan) <span className="font-medium text-foreground">et l'écriture</span> (Vibe Code : PR + fork). Un token <span className="font-medium text-foreground">fine-grained</span> ne peut pas forker. Le token est chiffré avant stockage, jamais renvoyé au navigateur.
             </p>
             <Input type="password" placeholder="ghp_… (classique) ou github_pat_…" value={token} onChange={(e) => setToken(e.target.value)} />
@@ -195,8 +196,14 @@ export function RepositoriesPage() {
               )}
               {reposQuery.error && (
                 <div className="mb-3 flex items-center justify-between gap-2 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
-                  <span>Identifiants GitHub invalides ou expirés (« Bad credentials »). Reconnectez GitHub avec un token valide.</span>
-                  <Button size="sm" variant="outline" onClick={() => setShowReconnect(true)}>Reconnecter</Button>
+                  {isComposio ? (
+                    <span>Connexion GitHub (Composio) expirée ou indisponible. Reconnectez GitHub depuis l'onglet <span className="font-medium">Connecteurs</span>, puis Actualisez.</span>
+                  ) : (
+                    <>
+                      <span>Identifiants GitHub invalides ou expirés (« Bad credentials »). Reconnectez GitHub avec un token valide.</span>
+                      <Button size="sm" variant="outline" onClick={() => setShowReconnect(true)}>Reconnecter</Button>
+                    </>
+                  )}
                 </div>
               )}
               {showReconnect && (

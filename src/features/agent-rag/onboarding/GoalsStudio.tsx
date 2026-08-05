@@ -67,11 +67,14 @@ const STATUS_TINT: Record<Goal["status"], string> = {
 /*  Objectives studio — the generative onboarding landing        */
 /* ============================================================ */
 
-export function GoalsStudioPage() {
+export function GoalsStudioPage({ agentId: fixedAgentId }: { agentId?: string } = {}) {
   const { projectId } = useCurrentContext();
   const [params, setParams] = useSearchParams();
   const goalId = params.get("goal");
-  const [agentId, setAgentId] = useState<string | null>(null);
+  // When embedded in an agent's builder the agent is fixed (no picker); the
+  // stand-alone page lets the user pick via `AgentPicker`.
+  const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
+  const agentId = fixedAgentId ?? pickedAgentId;
   const [wizardOpen, setWizardOpen] = useState(false);
 
   const { data: goals } = useQuery({
@@ -98,7 +101,7 @@ export function GoalsStudioPage() {
         description="Déclarez un objectif — l'agent compose et optimise le parcours d'onboarding qui y mène."
         actions={
           <div className="flex items-center gap-2">
-            {projectId && <AgentPicker projectId={projectId} selectedAgentId={agentId} onSelect={setAgentId} />}
+            {!fixedAgentId && projectId && <AgentPicker projectId={projectId} selectedAgentId={agentId} onSelect={setPickedAgentId} />}
             <Button size="sm" onClick={() => setWizardOpen(true)}><Plus className="h-4 w-4" /> Nouvel objectif</Button>
           </div>
         }

@@ -169,7 +169,7 @@ interface SendResult {
 /* Sends the invitation email via Resend.
  * - Uses the project's connected Resend connector if the client configured a
  *   `from_email` in its metadata.
- * - Otherwise falls back to the FounderOS system address.
+ * - Otherwise falls back to the AchiCorp system address.
  * - The Resend API key always comes from the RESEND_API_KEY edge secret. */
 async function sendInvitationEmail(input: SendInvitationInput): Promise<SendResult> {
   const apiKey = Deno.env.get("RESEND_API_KEY");
@@ -178,7 +178,7 @@ async function sendInvitationEmail(input: SendInvitationInput): Promise<SendResu
   }
 
   // Resolve the From address.
-  const defaultFrom = "FounderOS <noreply@founderos.dev>";
+  const defaultFrom = "AchiCorp <noreply@founderos.dev>";
   let from = defaultFrom;
   try {
     const { connector } = await getConnectorCredential(
@@ -227,7 +227,7 @@ async function sendInvitationEmail(input: SendInvitationInput): Promise<SendResu
           </p>
         </td></tr>
       </table>
-      <p style="font-size:11px;color:#52525b;margin-top:16px">Sent by FounderOS · founderos.dev</p>
+      <p style="font-size:11px;color:#52525b;margin-top:16px">Sent by AchiCorp · founderos.dev</p>
     </td></tr>
   </table>
 </body></html>`;

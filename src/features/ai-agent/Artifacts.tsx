@@ -195,7 +195,7 @@ function ArtifactBody({ artifact }: { artifact: AiArtifact }) {
     case "document":
       return (
         <div className="prose prose-invert prose-sm max-w-none">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.content ?? ""}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{(artifact.content ?? "").replace(/\[\[ui:\d+\]\]/g, "")}</ReactMarkdown>
         </div>
       );
     case "json":

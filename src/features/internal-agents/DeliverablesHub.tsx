@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Star, Download, ExternalLink, FileText, FileJson, FileCode,
-  Link2, Paperclip, Package, Filter, X, Target, ArrowLeft, BarChart3,
+  Link2, Paperclip, Package, Filter, X, Target, ArrowLeft, BarChart3, GitPullRequest,
+  FlaskConical, Atom,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -18,6 +19,10 @@ import {
   downloadDeliverable, relativeDate,
 } from "./shared";
 import { DeliverableReport, RichMarkdown, tryParseReport } from "./DeliverableReport";
+import { CodingSession, tryParseCodingSession } from "./CodingSession";
+import {
+  TestSession, SimulationSession, tryParseTestSession, tryParseSimulationSession,
+} from "./StudioSessions";
 import { PerspectiveBook } from "@/components/ui/perspective-book";
 
 // Sober but defined book-cover palette (works on the dark odin theme). Each cover
@@ -48,6 +53,9 @@ function darken(hex: string, amt = 0.5): string {
 
 const KIND_ICON: Record<string, any> = {
   report: BarChart3,
+  coding_session: GitPullRequest,
+  test_session: FlaskConical,
+  simulation_session: Atom,
   markdown: FileText,
   json: FileJson,
   code: FileCode,
@@ -58,6 +66,15 @@ const KIND_ICON: Record<string, any> = {
 // Renders a deliverable's body by kind: structured report, markdown (with
 // embedded charts), code/json, or url.
 function DeliverableBody({ d }: { d: Deliverable }) {
+  // Studio artifacts first: each has its own session view (diffs & PR, cases &
+  // defects, cohorts & quotes) and would otherwise fall through to raw JSON.
+  const coding = tryParseCodingSession(d.content);
+  if (coding) return <CodingSession session={coding} />;
+  const test = tryParseTestSession(d.content);
+  if (test) return <TestSession session={test} />;
+  const sim = tryParseSimulationSession(d.content);
+  if (sim) return <SimulationSession session={sim} />;
+
   // Render a structured report whenever the content IS one — regardless of the
   // stored kind (agents sometimes save report JSON under kind "markdown"/"json").
   const report = tryParseReport(d.content);

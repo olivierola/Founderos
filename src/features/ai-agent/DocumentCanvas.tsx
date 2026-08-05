@@ -287,7 +287,7 @@ a{color:#1d4ed8}hr{border:0;border-top:1px solid #e2e8f0;margin:24px 0}
     const md = getMarkdown();
     const paragraphs = markdownToDocxParagraphs(md);
     const doc = new DocxDocument({
-      creator: "FounderOS",
+      creator: "AchiCorp",
       title: computedTitle,
       sections: [{ properties: {}, children: paragraphs }],
     });

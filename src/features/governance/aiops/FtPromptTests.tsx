@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Pill, Select } from "../ui";
 import { modelById } from "./data";
-import { useServersDb, useFtVersionsDb, useFtEvalsDb } from "./db";
+import { useServersDb, useFtVersionsDb, useFtEvalsDb, useFtEndpointsDb } from "./db";
 import { useProvidersDb, useInfraActions } from "./infra";
 
 const PRESETS = [
@@ -65,7 +65,7 @@ function simulate(prompt: string, style: "tuned" | "base" | "gpt" | "claude" | "
   return style === "tuned" ? m.tuned : style === "base" ? m.base : style === "gpt" ? m.gpt : style === "claude" ? m.claude : m.llama;
 }
 
-interface RunResult { id: string; label: string; text: string; ms: number; tokens: number; cost: number; tuned?: boolean }
+interface RunResult { id: string; label: string; text: string; ms: number; tokens: number; cost: number; tuned?: boolean; real?: boolean }
 
 export function GovFtPromptTestsPage() {
   const { servers } = useServersDb();
@@ -74,6 +74,7 @@ export function GovFtPromptTestsPage() {
   const { cloudProviders } = useProvidersDb();
   const infra = useInfraActions();
   const versions = useMemo(() => allVersions.filter((v) => v.status !== "archived"), [allVersions]);
+  const { endpoints } = useFtEndpointsDb(servers, allVersions);
 
   const [versionId, setVersionId] = useState<string>("");
   const [contenders, setContenders] = useState<Set<string>>(() => new Set(["base"]));
@@ -85,6 +86,15 @@ export function GovFtPromptTestsPage() {
   const [vote, setVote] = useState<string | null>(null);
 
   const current = versions.find((v) => v.id === versionId) ?? versions[0];
+
+  // A live deployment of the selected version on a rented pod (endpoint_url)
+  // lets the "tuned" column run REAL inference instead of the simulation.
+  const tunedServer = useMemo(() => {
+    if (!current) return null;
+    const ep = endpoints.find((e) => e.status === "active" && e.versionName === current.name && e.version === current.version);
+    const srv = ep ? servers.find((s) => s.id === ep.serverId) : undefined;
+    return srv?.endpointUrl ? srv : null;
+  }, [endpoints, servers, current]);
 
   const toggleContender = (id: string) =>
     setContenders((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -99,7 +109,16 @@ export function GovFtPromptTestsPage() {
       const ms = Math.round(msLo + Math.random() * (msHi - msLo));
       out.push({ id, label, text, ms, tokens, cost: Math.round(tokens * costMult) / 100000, tuned });
     };
-    mk("tuned", `${current.name} ${current.version} (affiné)`, "tuned", 220, 520, 4, true);
+    if (tunedServer) {
+      try {
+        const res = await infra.chat({ serverId: tunedServer.id, messages: [{ role: "user", content: p }], temperature, topP, maxTokens: 400 });
+        out.push({ id: "tuned", label: `${current.name} ${current.version} (affiné)`, text: res.content || "(réponse vide)", ms: res.ms, tokens: res.tokensOut || Math.round((res.content?.length ?? 0) / 3.4), cost: 0, tuned: true, real: true });
+      } catch (e) {
+        out.push({ id: "tuned", label: `${current.name} ${current.version} (affiné)`, text: `⚠️ ${e instanceof Error ? e.message : "erreur d'inférence"}`, ms: 0, tokens: 0, cost: 0, tuned: true, real: true });
+      }
+    } else {
+      mk("tuned", `${current.name} ${current.version} (affiné)`, "tuned", 220, 520, 4, true);
+    }
     if (contenders.has("base")) mk("base", `${modelById(current.baseModel)?.label ?? current.baseModel} (base)`, "base", 350, 800, 6);
     if (contenders.has("gpt-5.2")) mk("gpt-5.2", "GPT-5.2", "gpt", 700, 1600, 160);
     if (contenders.has("claude-sonnet-5")) mk("claude-sonnet-5", "Claude Sonnet 5", "claude", 600, 1400, 150);
@@ -111,9 +130,9 @@ export function GovFtPromptTestsPage() {
       const model = cp.metadata.models?.[0] ?? "default";
       try {
         const res = await infra.chat({ providerId: cp.id, model, messages: [{ role: "user", content: p }], temperature, topP, maxTokens: 400 });
-        out.push({ id: `prov:${cp.id}`, label: `${cp.name} · ${model} (réel)`, text: res.content || "(réponse vide)", ms: res.ms, tokens: res.tokensOut || Math.round((res.content?.length ?? 0) / 3.4), cost: 0 });
+        out.push({ id: `prov:${cp.id}`, label: `${cp.name} · ${model}`, text: res.content || "(réponse vide)", ms: res.ms, tokens: res.tokensOut || Math.round((res.content?.length ?? 0) / 3.4), cost: 0, real: true });
       } catch (e) {
-        out.push({ id: `prov:${cp.id}`, label: `${cp.name} (réel)`, text: `⚠️ ${e instanceof Error ? e.message : "erreur d'inférence"}`, ms: 0, tokens: 0, cost: 0 });
+        out.push({ id: `prov:${cp.id}`, label: cp.name, text: `⚠️ ${e instanceof Error ? e.message : "erreur d'inférence"}`, ms: 0, tokens: 0, cost: 0, real: true });
       }
     }));
     setResults([...out]); setRunning(false);
@@ -123,7 +142,7 @@ export function GovFtPromptTestsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Prompt Tests"
-        description="Testez le modèle affiné sur vos prompts et comparez-le au modèle de base, GPT, Claude ou Llama — réponse, temps, tokens et coût."
+        description="Testez le modèle affiné sur vos prompts et comparez-le au modèle de base, GPT, Claude ou Llama. Le modèle affiné répond en réel dès qu'il est déployé sur un pod (onglet Déploiement) ; les concurrents statiques sont simulés — branchez un fournisseur cloud (AI Ops → Modèles) pour des comparaisons réelles."
       />
 
       <Card className="p-4">
@@ -132,6 +151,7 @@ export function GovFtPromptTestsPage() {
           <Select value={current?.id ?? ""} onChange={(e) => setVersionId(e.target.value)} className="h-9 w-64">
             {versions.map((v) => <option key={v.id} value={v.id}>{v.name} {v.version}</option>)}
           </Select>
+          <Pill meta={tunedServer ? { label: "endpoint live", tone: "emerald" } : { label: "non déployé — simulation", tone: "slate" }} className="px-1.5 py-0 text-[10px]" />
           <span className="ml-2 text-xs text-muted-foreground">Comparer à :</span>
           {CONTENDERS.map((c) => (
             <button
@@ -199,7 +219,10 @@ export function GovFtPromptTestsPage() {
           {results.map((res) => (
             <Card key={res.id} className={cn("flex flex-col p-4", res.tuned && "border-[hsl(var(--accent-teal)/0.45)]")}>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className={cn("truncate text-xs font-medium", res.tuned ? "text-[hsl(var(--accent-teal))]" : "text-muted-foreground")}>{res.label}</span>
+                <span className={cn("flex min-w-0 items-center gap-1.5 text-xs font-medium", res.tuned ? "text-[hsl(var(--accent-teal))]" : "text-muted-foreground")}>
+                  <span className="truncate">{res.label}</span>
+                  <Pill meta={res.real ? { label: "réel", tone: "emerald" } : { label: "simulé", tone: "slate" }} className="shrink-0 px-1.5 py-0 text-[9px]" />
+                </span>
                 <button onClick={() => { setVote(res.id); if (current) recordVote(current.jobName, res.id === "tuned"); }} className={cn("rounded-md p-1.5 transition-colors", vote === res.id ? "bg-emerald-500/15 text-emerald-500" : "text-muted-foreground hover:bg-secondary")} aria-label={`Préférer ${res.label}`}>
                   <ThumbsUp className="h-3.5 w-3.5" />
                 </button>

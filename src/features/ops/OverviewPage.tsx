@@ -46,7 +46,7 @@ export function OpsOverviewPage() {
     refetchInterval: 5000,
   });
 
-  // Unified deployments — external sync + FounderOS-driven. This makes the
+  // Unified deployments — external sync + AchiCorp-driven. This makes the
   // Ops Overview the single source of truth for "what shipped recently".
   const { data: recentDeployments } = useQuery({
     queryKey: ["ops_overview_deployments", projectId],
@@ -171,7 +171,7 @@ export function OpsOverviewPage() {
         <CardContent className="p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Recent deployments</h3>
-            <span className="text-[10px] text-muted-foreground">Unified · external syncs + FounderOS-driven</span>
+            <span className="text-[10px] text-muted-foreground">Unified · external syncs + AchiCorp-driven</span>
           </div>
           {!recentDeployments || recentDeployments.length === 0 ? (
             <p className="py-8 text-center text-xs text-muted-foreground">No deployments tracked yet.</p>

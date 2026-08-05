@@ -13,6 +13,7 @@ import {
   CLOUD_MODELS, SELF_HOSTED_MODELS, HOSTING_META, type ModelInfo,
 } from "./data";
 import { useServersDb, useModelStateDb, useRealPrompts } from "./db";
+import { RegisteredModels } from "./RegisteredModels";
 
 export function GovOpsModelsPage() {
   const { servers } = useServersDb();
@@ -40,8 +41,11 @@ export function GovOpsModelsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Modèles"
-        description="Choisissez les modèles de votre workforce : APIs cloud prêtes à l'emploi, ou modèles open-source installés sur vos serveurs privés."
+        description="Choisissez les modèles de votre workforce : ajoutez vos propres APIs cloud ou endpoints, utilisez les APIs prêtes à l'emploi, ou des modèles open-source sur vos serveurs privés."
       />
+
+      {/* ── Your own registered models (cloud key / custom endpoint) ── */}
+      <RegisteredModels />
 
       {/* ── Cloud APIs ── */}
       <div>

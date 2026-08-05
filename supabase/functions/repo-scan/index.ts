@@ -6,8 +6,8 @@
 // Body: { workspace_id, project_id, github_repo: { full_name, name?, private?, default_branch?, external_id? } }
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { decryptSecret } from "../_shared/crypto.ts";
 import { getDefaultBranch, getBranchSha, listRepoTree, fetchFileContent } from "../_shared/github.ts";
+import { resolveGithubToken } from "../_shared/github-token.ts";
 
 const EXT_LANG: Record<string, string> = {
   ts: "TypeScript", tsx: "TypeScript", js: "JavaScript", jsx: "JavaScript", mjs: "JavaScript",
@@ -180,16 +180,20 @@ Deno.serve(async (req) => {
     const { data: membership } = await admin.from("workspace_members").select("role").eq("workspace_id", workspace_id).eq("user_id", userId).maybeSingle();
     if (!membership) return jsonResponse({ error: "Not authorized" }, { status: 403 });
 
-    // Decrypt the project's GitHub token.
+    // A GitHub connection must exist (legacy PAT or Composio), but REGISTERING
+    // the repo doesn't need a token — the caller (the Composio repo picker)
+    // already provides the metadata. Only the content SCAN needs a raw token,
+    // and Composio masks it, so we resolve best-effort and degrade gracefully:
+    // register the repo now (so the Vibe Coder can use it), scan only if we got
+    // a usable raw token.
     const { data: connector } = await admin.from("connectors").select("id").eq("project_id", project_id).eq("provider", "github").maybeSingle();
     if (!connector) return jsonResponse({ error: "GitHub non connecté" }, { status: 400 });
-    const { data: cred } = await admin.from("encrypted_credentials").select("encrypted_payload, iv").eq("connector_id", connector.id).maybeSingle();
-    if (!cred) return jsonResponse({ error: "Identifiant GitHub manquant" }, { status: 400 });
-    const token = await decryptSecret(cred.encrypted_payload, cred.iv);
+    const resolved = await resolveGithubToken(admin, workspace_id, project_id);
+    const token = resolved?.token ?? null;
 
     const fullName = github_repo.full_name;
 
-    // Upsert the repository row.
+    // Upsert the repository row (no token required).
     let repositoryId: string;
     const { data: existing } = await admin.from("repositories").select("id").eq("project_id", project_id).eq("full_name", fullName).maybeSingle();
     if (existing) {
@@ -202,6 +206,13 @@ Deno.serve(async (req) => {
       }).select("id").single();
       if (insErr) return jsonResponse({ error: insErr.message }, { status: 500 });
       repositoryId = inserted.id;
+    }
+
+    // No usable raw token (e.g. GitHub connected only through Composio, which
+    // masks the OAuth token) → the repo is registered and usable, but we can't
+    // read its contents to index it. Return success without scanning.
+    if (!token) {
+      return jsonResponse({ ok: true, repository_id: repositoryId, scanned: false, reason: "no_raw_token" });
     }
 
     // Create a running scan_job.

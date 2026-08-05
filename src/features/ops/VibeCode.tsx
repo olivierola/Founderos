@@ -6,9 +6,9 @@ import remarkGfm from "remark-gfm";
 import {
   Sparkles, Loader2, GitBranch, GitPullRequest, GitMerge, GitFork, FileCode, Send, ExternalLink,
   FilePenLine, Wand2, ArrowRight, Eye, Github, Package, Download, RefreshCw, Monitor,
-  Mic, Compass, FlaskConical, Plug, ArrowUp, ChevronDown, Check,
+  Mic, Square, Compass, FlaskConical, Plug, ArrowUp, ChevronDown, Check,
   Copy, Pencil, RotateCcw, ThumbsUp, ThumbsDown, Brain, TerminalSquare,
-  AlertTriangle, CheckCircle2, Trash2, SlidersHorizontal,
+  AlertTriangle, CheckCircle2, Trash2, SlidersHorizontal, Circle, ListChecks,
   FileText, Zap, Server, Workflow, Plus, Play, Power, FolderKanban,
 } from "lucide-react";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
@@ -25,11 +25,15 @@ import { callEdge } from "@/lib/edge";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
+import { useDictation } from "@/lib/useDictation";
+import { chatUserBubble, chatCard, chatAccentText } from "@/lib/chatStyles";
+import { AgentIdentity } from "@/components/AgentIdentity";
 
 interface Repo { id: string; full_name: string; default_branch: string | null; private: boolean }
 interface Change { path: string; content: string }
 interface VibeStep { t: string; label: string }
-interface RunResult { message: string; base_branch: string; changes: Change[]; reads: string[]; steps?: VibeStep[]; finished?: boolean }
+interface VibeTodo { id: string; title: string; status: "pending" | "active" | "done" | "blocked"; parent_id?: string; note?: string }
+interface RunResult { message: string; base_branch: string; changes: Change[]; reads: string[]; steps?: VibeStep[]; todos?: VibeTodo[]; finished?: boolean }
 
 const SUBS = ["chat", "artifacts", "pr", "fork", "preview", "customize"] as const;
 type SubId = (typeof SUBS)[number];
@@ -602,7 +606,7 @@ function MemGroup({ title, items, onDelete }: { title: string; items: VibeMemory
 }
 
 // ── Vibe tab — a chat space with the coding agent ────────────────────────────
-interface ChatMsg { id: string; role: "user" | "assistant"; content: string; prompt?: string; result?: RunResult; pr?: { html_url: string; number: number; branch?: string; head_repo?: string }; error?: string; applyError?: string; loading?: boolean; applying?: boolean; createdAt?: string; repo?: string; branch?: string; dbId?: string; steps?: VibeStep[] }
+interface ChatMsg { id: string; role: "user" | "assistant"; content: string; prompt?: string; result?: RunResult; pr?: { html_url: string; number: number; branch?: string; head_repo?: string }; error?: string; applyError?: string; loading?: boolean; applying?: boolean; createdAt?: string; repo?: string; branch?: string; dbId?: string; steps?: VibeStep[]; todos?: VibeTodo[] }
 
 interface PrDetail {
   number: number; title: string; state: string; draft: boolean; merged: boolean;
@@ -640,6 +644,17 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
   const qc = useQueryClient();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
+  // Streaming dictation: the live transcript overwrites `baseline + text`.
+  const dictBaselineRef = useRef("");
+  const dictation = useDictation((dictated) => {
+    const base = dictBaselineRef.current;
+    setInput(base + (base && dictated ? " " : "") + dictated);
+  });
+  const toggleDictation = () => {
+    if (dictation.recording || dictation.connecting) { dictation.stop(); return; }
+    dictBaselineRef.current = input.trimEnd();
+    void dictation.start();
+  };
   const [running, setRunning] = useState(false);
   const [viewChange, setViewChange] = useState<Change | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -679,10 +694,11 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
       const { data } = await supabase.from("vibe_messages").select("id, role, content, meta, created_at").eq("session_id", sessionId).order("created_at", { ascending: true });
       if (cancelled) return;
       setMessages((data ?? []).map((m) => {
-        const row = m as { id: string; role: "user" | "assistant"; content: string; created_at: string; meta: { status?: string; result?: RunResult; pr?: { html_url: string; number: number }; repo?: string; branch?: string; error?: string; steps?: VibeStep[] } };
+        const row = m as { id: string; role: "user" | "assistant"; content: string; created_at: string; meta: { status?: string; result?: RunResult; pr?: { html_url: string; number: number }; repo?: string; branch?: string; error?: string; steps?: VibeStep[]; todos?: VibeTodo[] } };
         return {
           id: crypto.randomUUID(), dbId: row.id, role: row.role, content: row.content, createdAt: row.created_at,
           result: row.meta?.result, pr: row.meta?.pr, repo: row.meta?.repo, branch: row.meta?.branch, steps: row.meta?.steps ?? row.meta?.result?.steps,
+          todos: row.meta?.todos ?? row.meta?.result?.todos,
           loading: row.role === "assistant" && row.meta?.status === "running",
           error: row.meta?.status === "failed" ? (row.meta?.error || "Échec") : undefined,
           prompt: row.role === "user" ? row.content : undefined,
@@ -720,8 +736,8 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
         while (Date.now() < deadline && !settled) {
           await new Promise((r) => setTimeout(r, 2000));
           const { data } = await supabase.from("vibe_messages").select("content, meta").eq("id", amid).maybeSingle();
-          const meta = (data as { content: string; meta: { status?: string; result?: RunResult; error?: string; steps?: VibeStep[] } } | null)?.meta;
-          if (meta?.steps) setMessages((m) => m.map((x) => (x.id === aId ? { ...x, steps: meta.steps } : x)));
+          const meta = (data as { content: string; meta: { status?: string; result?: RunResult; error?: string; steps?: VibeStep[]; todos?: VibeTodo[] } } | null)?.meta;
+          if (meta?.steps || meta?.todos) setMessages((m) => m.map((x) => (x.id === aId ? { ...x, steps: meta.steps ?? x.steps, todos: meta.todos ?? x.todos } : x)));
           if (meta?.status === "done" && meta.result) {
             onResult(meta.result);
             setMessages((m) => m.map((x) => (x.id === aId ? { ...x, content: meta.result!.message, result: meta.result, loading: false, createdAt: new Date().toISOString(), dbId: amid } : x)));
@@ -766,8 +782,8 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
     while (Date.now() < deadline && !settled) {
       await new Promise((r) => setTimeout(r, 2000));
       const { data } = await supabase.from("vibe_messages").select("content, meta").eq("id", amid).maybeSingle();
-      const meta = (data as { content: string; meta: { status?: string; result?: RunResult; error?: string; steps?: VibeStep[] } } | null)?.meta;
-      if (meta?.steps) setMessages((m) => m.map((x) => (x.id === aId ? { ...x, steps: meta.steps } : x)));
+      const meta = (data as { content: string; meta: { status?: string; result?: RunResult; error?: string; steps?: VibeStep[]; todos?: VibeTodo[] } } | null)?.meta;
+      if (meta?.steps || meta?.todos) setMessages((m) => m.map((x) => (x.id === aId ? { ...x, steps: meta.steps ?? x.steps, todos: meta.todos ?? x.todos } : x)));
       if (meta?.status === "done" && meta.result) {
         onResult(meta.result);
         setMessages((m) => m.map((x) => (x.id === aId ? { ...x, content: meta.result!.message, result: meta.result, loading: false, createdAt: new Date().toISOString(), dbId: amid } : x)));
@@ -855,7 +871,17 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
           rows={1}
           className="max-h-40 min-h-[36px] resize-none border-0 bg-transparent px-1 py-2 text-sm shadow-none focus-visible:ring-0"
         />
-        <button title="Dictée (bientôt)" className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-muted/60"><Mic className="h-4 w-4" /></button>
+        <button
+          type="button"
+          onClick={toggleDictation}
+          title={dictation.recording ? "Arrêter la dictée" : dictation.connecting ? "Connexion…" : "Dictée vocale (streaming)"}
+          className={cn(
+            "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors",
+            dictation.recording ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-border text-muted-foreground hover:bg-muted/60",
+          )}
+        >
+          {dictation.connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : dictation.recording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-4 w-4" />}
+        </button>
         <button onClick={() => send(input)} disabled={!input.trim() || running} className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground disabled:opacity-40">
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
         </button>
@@ -896,7 +922,7 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
                 <div key={m.id} className="group">
                   {m.role === "user" ? (
                     <div className="flex flex-col items-end">
-                      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-foreground/10 px-4 py-2.5 text-sm">{m.content}</div>
+                      <div className={chatUserBubble}>{m.content}</div>
                       <UserActions msg={m} onEdit={setInput} onResend={send} />
                     </div>
                   ) : (
@@ -969,10 +995,10 @@ const STEP_META: Record<string, { icon: typeof Eye; label: string }> = {
 };
 function StepsTimeline({ steps, live }: { steps: VibeStep[]; live: boolean }) {
   return (
-    <div className="space-y-1 rounded-xl border border-border/60 bg-muted/20 p-2.5">
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-        <TerminalSquare className="h-3.5 w-3.5" /> {live ? "L'agent travaille" : "Actions"}
-        {live && <Loader2 className="h-3 w-3 animate-spin" />}
+    <div className={cn(chatCard, "space-y-1 p-3")}>
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+        <TerminalSquare className={cn("h-3.5 w-3.5", live && chatAccentText)} /> {live ? "L'agent travaille" : "Actions"}
+        {live && <Loader2 className={cn("h-3 w-3 animate-spin", chatAccentText)} />}
       </div>
       {steps.map((s, i) => {
         const m = STEP_META[s.t] ?? { icon: FileCode, label: s.t };
@@ -988,6 +1014,62 @@ function StepsTimeline({ steps, live }: { steps: VibeStep[]; live: boolean }) {
   );
 }
 
+// Nested todo checklist (mirrors the internal agents' RunTimeline tree):
+// depth-first ordering on parent_id, dangling/cyclic parents fall back to root.
+function TodosChecklist({ todos, live }: { todos: VibeTodo[]; live: boolean }) {
+  const ordered = useMemo(() => {
+    const ids = new Set(todos.map((t) => t.id));
+    const byParent = new Map<string | undefined, VibeTodo[]>();
+    for (const t of todos) {
+      const p = t.parent_id && ids.has(t.parent_id) && t.parent_id !== t.id ? t.parent_id : undefined;
+      const arr = byParent.get(p) ?? [];
+      arr.push(t);
+      byParent.set(p, arr);
+    }
+    const out: Array<{ t: VibeTodo; depth: number }> = [];
+    const seen = new Set<string>();
+    const walk = (p: string | undefined, depth: number) => {
+      for (const t of byParent.get(p) ?? []) {
+        if (seen.has(t.id)) continue;
+        seen.add(t.id);
+        out.push({ t, depth });
+        if (depth < 3) walk(t.id, depth + 1);
+      }
+    };
+    walk(undefined, 0);
+    for (const t of todos) if (!seen.has(t.id)) out.push({ t, depth: 0 });
+    return out;
+  }, [todos]);
+  const parentIds = new Set(todos.filter((t) => t.parent_id).map((t) => t.parent_id));
+  const leaves = todos.filter((t) => !parentIds.has(t.id));
+  const done = leaves.filter((t) => t.status === "done").length;
+  return (
+    <div className={cn(chatCard, "space-y-1 p-3")}>
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+        <ListChecks className={cn("h-3.5 w-3.5", chatAccentText)} /> Plan · {done}/{leaves.length} étapes
+      </div>
+      {ordered.map(({ t, depth }) => (
+        <div key={t.id} className="flex items-start gap-2 text-xs" style={depth > 0 ? { marginLeft: depth * 16 } : undefined}>
+          {t.status === "done" ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+            : t.status === "active" ? <Play className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", chatAccentText, live && "animate-pulse")} />
+            : t.status === "blocked" ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+            : <Circle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />}
+          <span className={cn(
+            "min-w-0 flex-1 leading-snug",
+            t.status === "done" && "text-muted-foreground line-through decoration-muted-foreground/40",
+            t.status === "active" && "font-medium text-foreground",
+            t.status === "blocked" && "text-amber-600 dark:text-amber-400",
+            t.status === "pending" && "text-muted-foreground",
+          )}>
+            {t.title}
+            {t.note && <span className="ml-1.5 text-[11px] font-normal text-muted-foreground/70">— {t.note}</span>}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AssistantMsg({ msg, onView, onCreatePr, ctx, onFixPr, busy }: {
   msg: ChatMsg; onView: (c: Change) => void; onCreatePr: (res: RunResult) => void;
   ctx: { workspaceId?: string | null; projectId?: string | null; repoId?: string | null };
@@ -996,8 +1078,14 @@ function AssistantMsg({ msg, onView, onCreatePr, ctx, onFixPr, busy }: {
   if (msg.error) return <div className="w-full rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">{msg.error}</div>;
   const res = msg.result;
   const steps = msg.steps ?? res?.steps ?? [];
+  const todos = msg.todos ?? res?.todos ?? [];
   return (
     <div className="w-full space-y-3">
+      <div className="flex items-center gap-2">
+        <AgentIdentity style="orb" size={20} />
+        <span className="text-sm font-semibold text-foreground">Vibe Code</span>
+      </div>
+      {todos.length > 0 && <TodosChecklist todos={todos} live={!!msg.loading} />}
       {steps.length > 0 && <StepsTimeline steps={steps} live={!!msg.loading} />}
       {msg.loading && steps.length === 0 && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> L'agent démarre…</div>
@@ -1007,12 +1095,12 @@ function AssistantMsg({ msg, onView, onCreatePr, ctx, onFixPr, busy }: {
       )}
       {res && res.reads.length > 0 && <div className="text-[11px] text-muted-foreground"><span className="font-medium">Fichiers lus :</span> {res.reads.slice(0, 10).join(", ")}{res.reads.length > 10 ? "…" : ""}</div>}
       {res && res.changes.length > 0 && (
-        <div className="rounded-xl border border-border bg-card/50 p-3">
+        <div className={cn(chatCard, "p-3.5")}>
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Modifications proposées ({res.changes.length})</div>
           <ul className="space-y-1">
             {res.changes.map((c) => (
               <li key={c.path}>
-                <button onClick={() => onView(c)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/50">
+                <button onClick={() => onView(c)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/50">
                   <FilePenLine className="h-3.5 w-3.5 shrink-0 text-amber-500" />
                   <span className="min-w-0 flex-1 truncate font-mono text-xs">{c.path}</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">{c.content.split("\n").length} l.</span>

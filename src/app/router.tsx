@@ -14,21 +14,15 @@ import { OrganisationsPage } from "@/features/orgs/Organisations";
 import { ProjectsPage } from "@/features/orgs/Projects";
 
 // Overview (merged into Admin panel — kept tabs only)
-import { OverviewDashboard } from "@/features/overview/Dashboard";
 import { AlertsPage } from "@/features/overview/Alerts";
 import { CustomDashboardsPage } from "@/features/overview/dashboards/CustomDashboards";
 import { DashboardBuilderPage } from "@/features/overview/dashboards/DashboardBuilder";
 
 import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
 import { RagAgentsPage } from "@/features/agent-rag/Agents";
-import {
-  OnboardingFlowsPage,
-  OnboardingToursPage,
-  OnboardingChecklistPage,
-} from "@/features/agent-rag/onboarding/OnboardingPages";
-import { OnboardingTreePage } from "@/features/agent-rag/onboarding/OnboardingTreePage";
-import { GoalsStudioPage } from "@/features/agent-rag/onboarding/GoalsStudio";
-import { ActivationCockpitPage } from "@/features/agent-rag/onboarding/ActivationCockpit";
+// The "Agentic Onboarding" module was removed — onboarding is now a public
+// agent with a conditional Onboarding tab in the RAG builder. Old /onboarding/*
+// deep links redirect to the public agents list (see the app children below).
 import { RagCenterPage, RagCollectionDetailPage } from "@/features/rag-center/RagCenter";
 import { KnowledgeCollectionsPage } from "@/features/rag-center/KnowledgeCollections";
 import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
@@ -56,24 +50,17 @@ import { OpsSettingsPage } from "@/features/ops/SettingsPage";
 import { CrmWorkspacePage } from "@/features/crm/CrmWorkspace";
 import { CrmOverviewPage } from "@/features/crm/overview/CrmOverview";
 import { RecordViewPage } from "@/features/crm/RecordView";
-import {
-  SupportOverviewPage, SupportTicketsPage, SupportKbPage,
-  SupportAnalyticsPage, SupportMacrosPage,
-} from "@/features/support/SupportPages";
-import {
-  SupportChannelsPage, SupportSlaRoutingPage, SupportCallCenterPage, SupportPortalPage,
-} from "@/features/support/SupportAdvanced";
+// Support module deleted (2026-07-17) — only the public help-center portal
+// survives; tickets live on as CRM records.
 import { HelpCenterPage } from "@/features/support/HelpCenter";
-import { PmBoardsPage, PmMyTasksPage } from "@/features/pm/PmPages";
-import { PmInboxPage } from "@/features/pm/PmInbox";
-import { PmWhiteboardPage } from "@/features/pm/PmWhiteboard";
 import { PmSimulationsPage } from "@/features/pm/PmSimulations";
-import { PmTimesheetsPage, PmResourcingPage, PmProfitabilityPage, PmGanttPage } from "@/features/pm/PmPsa";
 
 // Office (Bureautique)
 import { Suspense, lazy } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { OfficeLibraryPage } from "@/features/office/OfficeLibrary";
 import { OfficeCopywriterPage, OfficeImageStudioPage, OfficeVideoStudioPage } from "@/features/office/OfficeGenAi";
+import { OfficeWhiteboardPage } from "@/features/office/Whiteboard";
 // Office editors are lazy-loaded — the Plate document editor pulls a large
 // dependency graph (media, tables, AI…), so we keep it out of the initial bundle.
 const DocumentEditorPage = lazy(() =>
@@ -84,19 +71,33 @@ const PresentationEditorPage = lazy(() =>
   import("@/features/office/PresentationEditor").then((m) => ({ default: m.PresentationEditorPage })));
 
 function OfficeEditorFallback() {
-  return <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">Loading editor…</div>;
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+        <Skeleton className="h-8 w-8 rounded-lg" />
+        <Skeleton className="h-6 w-40" />
+        <div className="ml-auto flex gap-2"><Skeleton className="h-8 w-16 rounded-full" /><Skeleton className="h-8 w-16 rounded-full" /></div>
+      </div>
+      <div className="mx-auto w-full max-w-3xl space-y-4 p-8">
+        <Skeleton className="h-9 w-2/3" />
+        <div className="space-y-2.5 pt-2">
+          <Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-11/12" /><Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-3/4" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
-// Integrations
-import { CatalogPage } from "@/features/integrations/Catalog";
-import { ConnectedPage } from "@/features/integrations/Connected";
-import { CredentialsVaultPage } from "@/features/integrations/CredentialsVault";
-import { ApiKeysPage, WebhooksOutPage, AutomationPage } from "@/features/integrations/Extra";
+// Integrations — folded into the Admin dashboard's single "Connecteurs" tab,
+// now backed by Composio (composio.dev). The in-house Catalog/ConnectorDialog/
+// providers.ts path stays in the repo, untouched, simply unlinked from here.
+import { ComposioCatalog } from "@/features/integrations/ComposioCatalog";
 
 // Settings pages — reused as tabs of the Admin dashboard.
 import { SettingsWorkspacePage } from "@/features/settings/Workspace";
 import { SettingsProjectsPage } from "@/features/settings/Extra";
-import { SettingsTeamPage } from "@/features/settings/Team";
+import { MembersPage } from "@/features/settings/MembersPage";
 import { SettingsRolesPage } from "@/features/settings/Roles";
 import { SettingsBillingPage } from "@/features/settings/Billing";
 import { SettingsSecurityPage } from "@/features/settings/Security2FA";
@@ -107,7 +108,7 @@ import { AdminSubscriptionPage } from "@/features/admin/AdminExtras";
 import { ADMIN_ITEMS, ADMIN_LANDING } from "@/lib/admin-navigation";
 
 import { GenericSubPage } from "@/features/GenericSubPage";
-import { MODULES } from "@/lib/navigation";
+import { MODULES, HIDDEN_MODULES } from "@/lib/navigation";
 
 // Governance
 import { GovernanceDashboard } from "@/features/governance/Dashboard";
@@ -116,6 +117,9 @@ import { GovRisksPage } from "@/features/governance/RiskRegister";
 import { GovPoliciesPage } from "@/features/governance/Policies";
 import { GovControlsPage } from "@/features/governance/Controls";
 import { GovApprovalsPage } from "@/features/governance/Approvals";
+import { AdminActionsQueuePage } from "@/features/governance/AdminActionsQueue";
+import { PentestScopePage } from "@/features/governance/PentestScope";
+import { ServiceDashboardPage } from "@/features/service-dashboards/ServiceDashboardShell";
 import { GovIncidentsPage } from "@/features/governance/Incidents";
 import { GovDataAssetsPage } from "@/features/governance/DataAssets";
 import { GovAuditPage } from "@/features/governance/AuditTrail";
@@ -184,7 +188,6 @@ const PAGES: Record<string, PageEl> = {
   // CRM (Projects, App Testing & Simulations were folded in here)
   "crm/overview": <CrmOverviewPage />,
   "crm/workspace": <CrmWorkspacePage />,
-  "crm/admin-dashboard": <OverviewDashboard />,
   "crm/admin-custom-dashboards": <CustomDashboardsPage />,
   "crm/admin-alerts": <AlertsPage />,
 
@@ -192,51 +195,15 @@ const PAGES: Record<string, PageEl> = {
   "repos/list": <RepositoriesPage />,
   "simulations/workspace": <PmSimulationsPage />,
 
-  // Agentic Onboarding module — generative (palier 1) + the underlying artefacts.
-  "onboarding/goals": <GoalsStudioPage />,
-  "onboarding/activation": <ActivationCockpitPage />,
-  "onboarding/flows": <OnboardingFlowsPage />,
-  "onboarding/tours": <OnboardingToursPage />,
-  "onboarding/checklist": <OnboardingChecklistPage />,
-  "onboarding/tree": <OnboardingTreePage />,
-
-  // Support
-  "support/overview": <SupportOverviewPage />,
-  "support/tickets": <SupportTicketsPage />,
-  "support/analytics": <SupportAnalyticsPage />,
-  "support/macros": <SupportMacrosPage />,
-  "support/knowledge-base": <SupportKbPage />,
-  "support/calls": <SupportCallCenterPage />,
-  "support/portal": <SupportPortalPage />,
-  "support/channels": <SupportChannelsPage />,
-  "support/sla-routing": <SupportSlaRoutingPage />,
-
-  // Projects (PM)
-  "pm/boards": <PmBoardsPage />,
-  "pm/my-tasks": <PmMyTasksPage />,
-  "pm/inbox": <PmInboxPage />,
-  "pm/whiteboard": <PmWhiteboardPage />,
-  "pm/simulations": <PmSimulationsPage />,
-  "pm/gantt": <PmGanttPage />,
-  "pm/timesheets": <PmTimesheetsPage />,
-  "pm/resourcing": <PmResourcingPage />,
-  "pm/profitability": <PmProfitabilityPage />,
-
   // Office (Bureautique) — library + per-kind filtered lists.
   "office/library": <OfficeLibraryPage />,
   "office/documents": <OfficeLibraryPage initialKind="document" />,
   "office/spreadsheets": <OfficeLibraryPage initialKind="spreadsheet" />,
   "office/presentations": <OfficeLibraryPage initialKind="presentation" />,
+  "office/whiteboard": <OfficeWhiteboardPage />,
   "office/gen-image": <OfficeImageStudioPage />,
   "office/gen-video": <OfficeVideoStudioPage />,
   "office/gen-copy": <OfficeCopywriterPage />,
-
-  "integrations/connected": <ConnectedPage />,
-  "integrations/catalog": <CatalogPage />,
-  "integrations/credentials-vault": <CredentialsVaultPage />,
-  "integrations/api-keys": <ApiKeysPage />,
-  "integrations/webhooks": <WebhooksOutPage />,
-  "integrations/automation": <AutomationPage />,
 
   // ── AI Governance module ──
   "governance/guardrails": <GovGuardrailsPage />,
@@ -274,9 +241,10 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   // ── Administration ──
   organisation: <SettingsWorkspacePage />,
   access: <SettingsRolesPage />,
-  members: <SettingsTeamPage />,
+  members: <MembersPage />,
   workspaces: <SettingsProjectsPage />,
-  connectors: <ConnectedPage />,
+  connectors: <ComposioCatalog />,
+  repositories: <RepositoriesPage />,
   security: <SettingsSecurityPage />,
   // ── Abonnements ──
   subscription: <AdminSubscriptionPage />,
@@ -287,6 +255,8 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   "gov-prompts": <GovPromptMonitoringPage />,
   "gov-costs": <GovCostsPage />,
   "gov-incidents": <GovOpsIncidentsPage />,
+  "gov-actions": <AdminActionsQueuePage />,
+  "gov-pentest-scope": <PentestScopePage />,
 };
 
 /** Old settings/* routes → the admin dashboard tab that replaced them. Tabs that
@@ -359,7 +329,9 @@ function LegacyBuilderRedirect() {
 function buildModuleRoutes() {
   // test-runs & vibe-code render via explicit :sub routes (single page instance
   // that keeps its state across onglets), so they're excluded here.
-  return MODULES.filter((m) => m.slug !== "test-runs" && m.slug !== "vibe-code").flatMap((mod) => {
+  // HIDDEN_MODULES (support/pm/office/devops) stay routed without appearing in
+  // the nav — deep links, CRM record actions and breadcrumbs keep working.
+  return [...MODULES, ...HIDDEN_MODULES].filter((m) => m.slug !== "test-runs" && m.slug !== "vibe-code").flatMap((mod) => {
     const hasProjectConfig = MODULE_PROJECT_CONFIGS[mod.slug] != null;
 
     const subRoutes = mod.subItems.map((sub) => {
@@ -421,6 +393,16 @@ export const router = createBrowserRouter([
     path: "/mcp/callback",
     element: <ErrorBoundary><McpOAuthCallbackPage /></ErrorBoundary>,
   },
+  // Service dashboards render OUTSIDE the AppShell chrome (no top navbar) — a
+  // clean single-sidebar workspace. Top-level sibling so it bypasses AppShell.
+  {
+    path: "/app/:workspaceSlug/:projectSlug/service/:dashboardId/:tab?/:sub?",
+    element: (
+      <ProtectedRoute>
+        <ServiceDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
   {
     path: "/app/:workspaceSlug/:projectSlug",
     element: (
@@ -429,16 +411,21 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <ErrorBoundary><AiHqDashboard /></ErrorBoundary> },
+      // Landing = AI HQ. Redirect to the canonical hq route (not render inline)
+      // so the module resolves to "hq" — primary sidebar highlights it and the
+      // secondary sidebar hides.
+      { index: true, element: <Navigate to="hq" replace /> },
       // The Admin panel was merged into CRM — old /actions/* cockpit links
-      // redirect (absolute, slug-based) to the new crm/admin-* locations.
-      { path: "actions", element: <AdminMergeRedirect to="admin-dashboard" /> },
-      { path: "actions/dashboard", element: <AdminMergeRedirect to="admin-dashboard" /> },
+      // redirect (absolute, slug-based) to the new crm/* locations. The
+      // crm/admin-dashboard tab was retired, so its former targets land on the
+      // CRM Overview instead.
+      { path: "actions", element: <AdminMergeRedirect to="overview" /> },
+      { path: "actions/dashboard", element: <AdminMergeRedirect to="overview" /> },
       { path: "actions/custom-dashboards", element: <AdminMergeRedirect to="admin-custom-dashboards" /> },
       { path: "actions/alerts", element: <AdminMergeRedirect to="admin-alerts" /> },
       // The Projects super-module was folded into CRM.
-      { path: "projects", element: <AdminMergeRedirect to="admin-dashboard" /> },
-      { path: "projects/all", element: <AdminMergeRedirect to="admin-dashboard" /> },
+      { path: "projects", element: <AdminMergeRedirect to="overview" /> },
+      { path: "projects/all", element: <AdminMergeRedirect to="overview" /> },
       // App Testing split into Test runs / Dépôts / Vibe Code modules (Outils IA).
       { path: "crm/testing", element: <AbsRedirect to="test-runs/tests" /> },
       { path: "crm/simulations", element: <AbsRedirect to="simulations/workspace" /> },
@@ -566,8 +553,14 @@ export const router = createBrowserRouter([
           </ErrorBoundary>
         ),
       },
-      // Any other old /actions/* cockpit link → CRM admin dashboard.
-      { path: "actions/:sub", element: <AdminMergeRedirect to="admin-dashboard" /> },
+      // Any other old /actions/* cockpit link → CRM Overview.
+      { path: "actions/:sub", element: <AdminMergeRedirect to="overview" /> },
+      // PM & Support modules deleted (2026-07-17): whiteboard moved to Office,
+      // simulations have their own module, everything else lives as CRM records.
+      { path: "pm/whiteboard", element: <AbsRedirect to="office/whiteboard" /> },
+      { path: "pm/simulations", element: <AbsRedirect to="simulations/workspace" /> },
+      { path: "pm/:sub", element: <AbsRedirect to="crm/workspace" /> },
+      { path: "support/:sub", element: <AbsRedirect to="crm/workspace" /> },
       // Legacy redirects: Ops deep links map to DevOps detail routes.
       { path: "ops", element: <Navigate to="../devops/ops-overview" replace /> },
       { path: "ops/servers/:id", element: <LegacyOpsDetailRedirect kind="servers" /> },
@@ -587,6 +580,14 @@ export const router = createBrowserRouter([
       // The Settings module was folded into the Admin dashboard.
       { path: "settings", element: <AbsRedirect to={`admin/${ADMIN_LANDING}`} /> },
       { path: "settings/:sub", element: <SettingsRedirect /> },
+      // The Integrations module was folded into the Admin dashboard's single
+      // "Connecteurs" tab — every old sub-tab redirects there.
+      { path: "integrations", element: <AbsRedirect to="admin/connectors" /> },
+      { path: "integrations/:sub", element: <AbsRedirect to="admin/connectors" /> },
+      // The "Agentic Onboarding" module became a conditional tab on public
+      // agents — its old deep links land on the public agents list.
+      { path: "onboarding", element: <AbsRedirect to="agent/public-agents" /> },
+      { path: "onboarding/:sub", element: <AbsRedirect to="agent/public-agents" /> },
       ...buildModuleRoutes(),
     ],
   },

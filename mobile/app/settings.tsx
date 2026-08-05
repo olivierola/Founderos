@@ -69,7 +69,7 @@ export default function SettingsScreen() {
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.accountEmail} numberOfLines={1}>{user?.email ?? "—"}</Text>
-              <Text style={styles.accountMeta}>Compte FounderOS</Text>
+              <Text style={styles.accountMeta}>Compte AchiCorp</Text>
             </View>
           </View>
         </View>
@@ -124,7 +124,7 @@ export default function SettingsScreen() {
         <Text style={styles.signOutText}>Se déconnecter</Text>
       </Pressable>
 
-      <Text style={styles.version}>FounderOS Agents · v0.1.0</Text>
+      <Text style={styles.version}>AchiCorp Agents · v0.1.0</Text>
     </ScrollView>
   );
 }

@@ -1,4 +1,4 @@
-/* FounderOS Agent Widget — single embeddable file.
+/* AchiCorp Agent Widget — single embeddable file.
  *
  * Usage (one line, in any HTML):
  *   <script src="https://founderos-peach.vercel.app/widget.js" data-agent="PUBLIC_KEY"></script>
@@ -44,6 +44,12 @@
   var FN_BASE = SUPABASE_URL
     || (window.FOUNDEROS_ENDPOINT)
     || "https://scugmxahflsjabglodyv.supabase.co/functions/v1";
+
+  /* Public anon key — the Supabase gateway requires an apikey header even on
+     public (verify_jwt=false) functions. This key is anon/public by design. */
+  var ANON_KEY = (window.FOUNDEROS_ANON_KEY)
+    || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjdWdteGFoZmxzamFiZ2xvZHl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4OTAxMjYsImV4cCI6MjA5NTQ2NjEyNn0.HmmO5unnIPPMqhOzdQAR_HElZaVon_oWkIrDp0GsmGI";
+  function fnHeaders() { return { "Content-Type": "application/json", "apikey": ANON_KEY, "Authorization": "Bearer " + ANON_KEY }; }
 
   /* ---------------- State ---------------- */
   var state = {
@@ -201,7 +207,7 @@
   async function fetchConfig() {
     var res = await fetch(FN_BASE + "/rag-agent-public-config", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: fnHeaders(),
       body: JSON.stringify({ public_key: state.publicKey }),
     });
     if (!res.ok) throw new Error("config " + res.status);
@@ -213,7 +219,7 @@
     if (state.conversationId) body.conversation_id = state.conversationId;
     var res = await fetch(FN_BASE + "/rag-chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: fnHeaders(),
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error("rag-chat " + res.status);
@@ -236,7 +242,7 @@
       else body.visitor_id = getVisitorId();
       var res = await fetch(FN_BASE + "/rag-onboarding-orchestrate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: fnHeaders(),
         body: JSON.stringify(body),
       });
       if (!res.ok) return null;
@@ -345,6 +351,14 @@
     dom.body = el("div", "fosw-body");
     p.appendChild(dom.body);
 
+    // Live co-pilot affordance — only when the agent enables it.
+    if (state.config && state.config.onboarding_copilot_enabled) {
+      var cp = el("button", "fosw-copilot", "✨ Faire pour moi");
+      cp.style.cssText = "margin:8px 12px;padding:8px 12px;border:none;border-radius:10px;background:var(--fosw-accent,#001BB7);color:#fff;font-weight:600;cursor:pointer;font-size:13px";
+      cp.onclick = function () { startCopilot(); };
+      p.appendChild(cp);
+    }
+
     var inputWrap = el("div", "fosw-input");
     dom.input = el("input"); dom.input.placeholder = "Type a message…";
     dom.input.onkeydown = function (e) { if (e.key === "Enter") send(); };
@@ -353,15 +367,63 @@
     inputWrap.appendChild(dom.input); inputWrap.appendChild(dom.sendBtn);
     p.appendChild(inputWrap);
 
-    p.appendChild(el("div", "fosw-credit", "Powered by FounderOS"));
+    p.appendChild(el("div", "fosw-credit", "Powered by AchiCorp"));
     return p;
   }
 
   function appendMessage(role, text) {
+    if (!dom.body) return; // panel not mounted (e.g. programmatic copilot() call)
     var msg = el("div", "fosw-msg fosw-msg-" + role);
     msg.textContent = text;
     dom.body.appendChild(msg);
     dom.body.scrollTop = dom.body.scrollHeight;
+  }
+
+  /* ---------------- Live co-pilot (page-agent) ---------------- */
+  // When the agent has copilot onboarding enabled, we can hand control to the
+  // live GUI agent (page-agent) which reads the real DOM and drives the UI
+  // toward the onboarding goal. It loads as a separate self-contained bundle,
+  // same origin as this widget, and proxies its LLM calls server-side.
+  var copilotLoading = false;
+  function loadCopilotBundle() {
+    return new Promise(function (resolve, reject) {
+      if (window.FounderOSOnboardingAgent) return resolve();
+      if (copilotLoading) {
+        var iv = setInterval(function () {
+          if (window.FounderOSOnboardingAgent) { clearInterval(iv); resolve(); }
+        }, 100);
+        return;
+      }
+      copilotLoading = true;
+      var s = document.createElement("script");
+      s.src = (SCRIPT_BASE || "") + "/onboarding-agent.js";
+      s.async = true;
+      s.onload = function () { resolve(); };
+      s.onerror = function () { copilotLoading = false; reject(new Error("failed to load onboarding-agent bundle")); };
+      document.head.appendChild(s);
+    });
+  }
+
+  async function startCopilot(task) {
+    if (!state.config || !state.config.onboarding_copilot_enabled) {
+      appendMessage("bot", "Le mode co-pilote n'est pas activé pour cet agent.");
+      return;
+    }
+    try {
+      appendMessage("bot", "Ok, je m'en occupe — je pilote l'écran pour vous. 👀");
+      closePanel();
+      await loadCopilotBundle();
+      await window.FounderOSOnboardingAgent.start({
+        publicKey: state.publicKey,
+        endpoint: FN_BASE + "/onboarding-agent",
+        anonKey: ANON_KEY,
+        userId: state.userId || undefined,
+        visitorId: state.userId ? undefined : getVisitorId(),
+        task: task || undefined,
+      });
+    } catch (e) {
+      appendMessage("bot", "Impossible de démarrer le co-pilote : " + (e && e.message ? e.message : "erreur"));
+    }
   }
 
   function openPanel() {
@@ -466,5 +528,8 @@
       if (state.waitingEvent && state.waitingEvent === type) state.waitingEvent = null;
       orchestrate({ recent_event: { type: type, data: data } }).then(applyOnboarding);
     },
+    // Hand control to the live GUI co-pilot (page-agent). Optional explicit
+    // task; otherwise it pursues the agent's active onboarding goal.
+    copilot: function (task) { return startCopilot(task); },
   };
 })();

@@ -206,18 +206,6 @@ export const PROVIDERS: ProviderDef[] = [
     ],
   },
   {
-    slug: "posthog",
-    name: "PostHog",
-    category: "analytics",
-    icon: BarChart3,
-    description: "Pull engagement metrics and feature usage.",
-    mvp: true,
-    fields: [
-      { key: "api_key", label: "Personal API key", placeholder: "phx_…", secret: true, helpUrl: "https://posthog.com/" },
-      { key: "host", label: "Host", placeholder: "https://eu.posthog.com", secret: false },
-    ],
-  },
-  {
     slug: "resend",
     name: "Resend",
     category: "email",
@@ -266,9 +254,18 @@ export const PROVIDERS: ProviderDef[] = [
     name: "OpenAI",
     category: "ai",
     icon: Sparkles,
-    description: "GPT models for chat, embeddings and analysis.",
+    description: "GPT models for chat, embeddings and analysis — plus image (gpt-image-1) and video (Sora) generation in the Office studios.",
     mvp: true,
     fields: [apiKeyField("OpenAI API key", "sk-…", "https://platform.openai.com/api-keys")],
+  },
+  {
+    slug: "fal",
+    name: "fal.ai",
+    category: "ai",
+    icon: Image,
+    description: "Image (FLUX) and video (Kling) generation — powers the Office Image & Video studios.",
+    mvp: true,
+    fields: [apiKeyField("fal.ai API key", "key_id:key_secret", "https://fal.ai/dashboard/keys")],
   },
   {
     slug: "anthropic",
@@ -334,7 +331,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "PostHog",
     category: "analytics",
     icon: BarChart3,
-    description: "Use PostHog as your external analytics: import events into FounderOS and mirror tracked events back to PostHog.",
+    description: "Use PostHog as your external analytics: import events into AchiCorp and mirror tracked events back to PostHog.",
     mvp: true,
     fields: [
       {
@@ -659,7 +656,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "n8n",
     category: "automation",
     icon: Workflow,
-    description: "Trigger n8n workflows from FounderOS events.",
+    description: "Trigger n8n workflows from AchiCorp events.",
     mvp: true,
     fields: [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://…/webhook/…", secret: true }],
   },

@@ -14,65 +14,20 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { executeApprovalAction, approvalScopePrefix } from "../_shared/approval-exec.ts";
 
 interface ApprovalRow {
   id: string;
   agent_id: string;
   run_id: string | null;
+  mission_id: string | null;
+  conversation_id: string | null;
   workspace_id: string | null;
   project_id: string | null;
   tool_name: string;
-  action_kind: "edge_function" | "webhook" | "connector_action";
+  action_kind: "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write";
   payload: Record<string, unknown>;
   status: string;
-}
-
-async function executeAction(a: ApprovalRow): Promise<{ ok: boolean; detail: string }> {
-  if (a.action_kind === "connector_action") {
-    const base = Deno.env.get("SUPABASE_URL");
-    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!base || !key) return { ok: false, detail: "Connector actions not configured" };
-    const res = await fetch(`${base}/functions/v1/connector-action`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        workspace_id: a.workspace_id, project_id: a.project_id,
-        provider: String(a.payload.provider ?? ""),
-        action: String(a.payload.action ?? ""),
-        params: (a.payload.params && typeof a.payload.params === "object") ? a.payload.params : {},
-      }),
-    });
-    const text = (await res.text()).slice(0, 4000);
-    return { ok: res.ok, detail: `HTTP ${res.status}\n${text}` };
-  }
-  if (a.action_kind === "edge_function") {
-    const slug = String(a.payload.slug ?? "");
-    if (!/^[a-z0-9-]+$/.test(slug)) return { ok: false, detail: "Invalid function slug" };
-    const base = Deno.env.get("SUPABASE_URL");
-    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!base || !key) return { ok: false, detail: "Function invocation not configured" };
-    const res = await fetch(`${base}/functions/v1/${slug}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify(a.payload.args ?? {}),
-    });
-    const text = (await res.text()).slice(0, 4000);
-    return { ok: res.ok, detail: `HTTP ${res.status}\n${text}` };
-  }
-  // webhook
-  const url = String(a.payload.url ?? "");
-  if (!/^https?:\/\//i.test(url)) return { ok: false, detail: "Invalid webhook URL" };
-  const method = String(a.payload.method ?? "POST").toUpperCase();
-  const headers = (a.payload.headers && typeof a.payload.headers === "object"
-    ? a.payload.headers
-    : {}) as Record<string, string>;
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json", ...headers },
-    body: method === "GET" ? undefined : JSON.stringify(a.payload.args ?? {}),
-  });
-  const text = (await res.text()).slice(0, 4000);
-  return { ok: res.ok, detail: `HTTP ${res.status}\n${text}` };
 }
 
 Deno.serve(async (req) => {
@@ -91,14 +46,14 @@ Deno.serve(async (req) => {
       approval_id?: string;
       decision?: string;
     };
-    if (!approval_id || (decision !== "approve" && decision !== "reject")) {
-      return jsonResponse({ error: "approval_id and decision (approve|reject) required" }, { status: 400 });
+    if (!approval_id || (decision !== "approve" && decision !== "approve_all" && decision !== "reject")) {
+      return jsonResponse({ error: "approval_id and decision (approve|approve_all|reject) required" }, { status: 400 });
     }
 
     const admin = createServiceClient();
     const { data: approval } = await admin
       .from("internal_agent_approvals")
-      .select("id, agent_id, run_id, workspace_id, project_id, tool_name, action_kind, payload, status")
+      .select("id, agent_id, run_id, mission_id, conversation_id, workspace_id, project_id, tool_name, action_kind, payload, status")
       .eq("id", approval_id)
       .maybeSingle();
     if (!approval) return jsonResponse({ error: "Approval not found" }, { status: 404 });
@@ -143,17 +98,22 @@ Deno.serve(async (req) => {
 
     let outcome: { ok: boolean; detail: string };
     try {
-      outcome = await executeAction(approval as ApprovalRow);
+      outcome = await executeApprovalAction(approval as ApprovalRow);
     } catch (e) {
       outcome = { ok: false, detail: e instanceof Error ? e.message : String(e) };
     }
 
+    // "approve_all" grants the whole toolkit for the conversation (stored on the
+    // row's result; the runtime reads grant_scope to auto-run future actions).
+    const grantScope = decision === "approve_all"
+      ? approvalScopePrefix(approval.action_kind, (approval.payload ?? {}) as Record<string, unknown>, approval.tool_name)
+      : undefined;
     await admin
       .from("internal_agent_approvals")
       .update({
         status: outcome.ok ? "executed" : "failed",
         executed_at: new Date().toISOString(),
-        result: { detail: outcome.detail },
+        result: grantScope ? { detail: outcome.detail, grant_scope: grantScope } : { detail: outcome.detail },
         error_message: outcome.ok ? null : outcome.detail.slice(0, 500),
       })
       .eq("id", approval_id);

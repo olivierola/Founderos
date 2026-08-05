@@ -13,7 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-const ORANGE = "#ef4a25";
+const ORANGE = "#68bbfb";
 
 const INTEGRATIONS = [
   { icon: CreditCard, label: "Stripe" },
@@ -38,7 +38,7 @@ const AUDIT = [
   { time: "09:42", actor: "agent", action: "email.sent", detail: "customer" },
 ];
 
-// Bento grid that shows how a RedAI agent is defined and how it operates the
+// Bento grid that shows how a AchiCorp agent is defined and how it operates the
 // client's SaaS — inspired by Grok's voice-agent bento, rebuilt for the AI workforce.
 export function AgentShowcase() {
   return (

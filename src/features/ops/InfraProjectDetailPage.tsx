@@ -16,7 +16,8 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { ArchitectureView, type Topology, type NodeLiveData } from "./ArchitectureView";
 import { useOpsUrl } from "./hooks";
-import type { OpsGeneratedFile, OpsServer } from "./types";
+import { RUNNER_IMPLEMENTED_JOB_TYPES, JOB_TYPE_LABEL } from "./types";
+import type { OpsGeneratedFile, OpsServer, OpsJobType } from "./types";
 import type { Plan } from "./NewInfraDialog";
 
 interface InfraProject {
@@ -292,7 +293,13 @@ export function OpsInfraProjectDetailPage() {
         helm: "k8s_apply",
         script: "ssh_exec",
         other: "ssh_exec",
-      } as Record<string, string>)[activeLayer.tool] ?? "ssh_exec";
+      } as Record<string, OpsJobType>)[activeLayer.tool] ?? "ssh_exec";
+
+      // Don't enqueue a job the runner can't execute — it would fail on pickup.
+      if (!RUNNER_IMPLEMENTED_JOB_TYPES.has(jobType)) {
+        alert(`Le runner v1 ne sait pas encore exécuter « ${JOB_TYPE_LABEL[jobType] ?? jobType} » (couche ${activeLayer.tool}). Appliquez cette couche manuellement, ou utilisez une couche script/SSH.`);
+        return;
+      }
 
       await callEdge("ops-create-job", {
         server_id: serverId,

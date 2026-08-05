@@ -74,9 +74,11 @@ export function useInfraActions() {
     stop: async (serverId: string) => { await callEdge("aiops-infra", { action: "server.stop", ...base, server_id: serverId }); refreshServers(); },
     start: async (serverId: string) => { await callEdge("aiops-infra", { action: "server.start", ...base, server_id: serverId }); refreshServers(); },
     terminate: async (serverId: string) => { await callEdge("aiops-infra", { action: "server.terminate", ...base, server_id: serverId }); refreshServers(); },
-    chat: (opts: { providerId: string; model: string; messages: { role: string; content: string }[]; temperature?: number; topP?: number; maxTokens?: number }) =>
+    // providerId → connected cloud endpoint; serverId → rented vLLM pod (the
+    // pod serves one model, so `model` is optional and defaults server-side).
+    chat: (opts: { providerId?: string; serverId?: string; model?: string; messages: { role: string; content: string }[]; temperature?: number; topP?: number; maxTokens?: number }) =>
       callEdge<{ content: string; ms: number; tokensIn: number; tokensOut: number }>("aiops-infra", {
-        action: "inference.chat", ...base, provider_id: opts.providerId, model: opts.model,
+        action: "inference.chat", ...base, provider_id: opts.providerId, server_id: opts.serverId, model: opts.model,
         messages: opts.messages, temperature: opts.temperature, top_p: opts.topP, max_tokens: opts.maxTokens,
       }),
   };

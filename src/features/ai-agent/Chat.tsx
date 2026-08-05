@@ -315,7 +315,7 @@ function MessageBubble({
             td: ({ children }) => <td className="border-b border-border/50 px-2 py-1.5">{children}</td>,
           }}
         >
-          {message.content}
+          {(message.content ?? "").replace(/\[\[ui:\d+\]\]/g, "")}
         </ReactMarkdown>
         {artifacts.length > 0 && onOpenAsDocument && (
           <MessageArtifacts artifacts={artifacts} onOpenDocument={onOpenAsDocument} />

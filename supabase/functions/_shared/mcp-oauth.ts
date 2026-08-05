@@ -94,7 +94,7 @@ export async function discoverOAuth(
 // clientName is configurable because some servers (e.g. Figma) allowlist it and
 // reject unknown names with 403.
 export async function registerClient(
-  registrationEndpoint: string, redirectUri: string, scope?: string, clientName = "FounderOS AI Workforce",
+  registrationEndpoint: string, redirectUri: string, scope?: string, clientName = "AchiCorp AI Workforce",
 ): Promise<{ client_id?: string; client_secret?: string; error?: string }> {
   try {
     const res = await fetch(registrationEndpoint, {

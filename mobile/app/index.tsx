@@ -58,7 +58,7 @@ export default function AgentsListScreen() {
               <Text style={styles.emptyBody}>
                 {error
                   ? error
-                  : "Créez des agents dans FounderOS (web). Ils apparaîtront ici automatiquement."}
+                  : "Créez des agents dans AchiCorp (web). Ils apparaîtront ici automatiquement."}
               </Text>
               {error && (
                 <Pressable style={styles.retry} onPress={refresh}>

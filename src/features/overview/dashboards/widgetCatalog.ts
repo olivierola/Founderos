@@ -85,7 +85,7 @@ export const WIDGET_CATALOG: CatalogWidget[] = [
     id: "fin-customers",
     category: "Finance",
     title: "Total customers",
-    description: "Total customers synced into FounderOS.",
+    description: "Total customers synced into AchiCorp.",
     type: "kpi",
     config: { source: { kind: "metrics", metric: "customers" } },
   },

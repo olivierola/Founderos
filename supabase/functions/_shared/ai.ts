@@ -56,7 +56,7 @@ export interface EndpointOverride { baseUrl: string; apiKey?: string; model?: st
 const chatCompletionsUrl = (baseUrl: string) => `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
 interface ChatResponse {
-  choices: { message: { content: string } }[];
+  choices: { message: { content: string }; finish_reason?: string }[];
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
   model: string;
 }
@@ -90,31 +90,17 @@ export async function callAi(opts: CallOpts): Promise<{ content: string; provide
     temperature: opts.temperature ?? 0.2,
     max_tokens: opts.maxTokens ?? 1500,
   };
-  if (opts.jsonMode) {
-    body.response_format = { type: "json_object" };
-  }
+  if (opts.jsonMode) body.response_format = { type: "json_object" };
 
-  // Simple retry with backoff for transient 5xx / 429
-  let lastErr = "";
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) {
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? "";
-      return { content, provider, model: json.model ?? model, usage: json.usage };
-    }
-    lastErr = `${res.status} ${await res.text()}`;
-    if (res.status < 500 && res.status !== 429) break;
-    await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-  }
-  throw new Error(`${provider} call failed: ${lastErr.slice(0, 300)}`);
+  // Plain text goes through completeChat so a max_tokens cut-off
+  // (finish_reason==="length") is transparently continued and stitched. jsonMode
+  // can't be safely stitched across continuations, so it stays single-shot.
+  // Both reuse postChat's retry/backoff + malformed-call recovery.
+  const json = opts.jsonMode
+    ? await postChat(url, apiKey, body)
+    : await completeChat(url, apiKey, body);
+  const content = json.choices?.[0]?.message?.content ?? "";
+  return { content, provider, model: json.model ?? model, usage: json.usage };
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +115,21 @@ export interface ToolDef {
     description: string;
     parameters: Record<string, unknown>; // JSON schema
   };
+  /** The description carries a REQUIRED output contract (a JSON schema, an enum,
+   *  a format the model must reproduce exactly). compactToolDefs must never
+   *  truncate it — a half-sent schema is worse than no schema, because the model
+   *  is still told to follow one. Stripped before the request leaves. */
+  incompressible?: boolean;
+}
+
+/** Truncate the MIDDLE, keeping both ends. A tool result carries its verdict at
+ *  the end as often as at the start (exit codes, stack traces, totals), so
+ *  head-only truncation silently drops the answer. */
+export function truncateMiddle(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const head = Math.floor(max * 0.65);
+  const tail = max - head;
+  return `${s.slice(0, head)}\n…[${s.length - max} caractères coupés au milieu]…\n${s.slice(-tail)}`;
 }
 
 export interface ChatMessage {
@@ -181,14 +182,88 @@ const TOOL_ENDPOINTS = {
 // order and the assistant↔tool pairing required by the function-calling API are
 // preserved. Applied to the payload sent each round (the stored history keeps
 // full results).
-function shrinkOldToolResults(msgs: ChatMessage[], keepRecentTools = 8, stub = 600): ChatMessage[] {
+// Trim tool SCHEMAS before sending them — they're re-sent on EVERY round, so a
+// long description × ~40 tools is a large recurring input cost. The system
+// prompt's capability tree already teaches usage, so the schema only needs a
+// terse description + params. Enums/required are preserved (the API needs them).
+const _compactCache = new WeakMap<ToolDef[], ToolDef[]>();
+function compactToolDefs(tools: ToolDef[]): ToolDef[] {
+  if (!Array.isArray(tools) || !tools.length) return tools;
+  const cached = _compactCache.get(tools);
+  if (cached) return cached;
+  const trim = (s: string | undefined, n: number) => {
+    const c = (s ?? "").replace(/\s+/g, " ").trim();
+    return c.length > n ? c.slice(0, n - 1).trimEnd() + "…" : c;
+  };
+  const out = tools.map((t) => {
+    // `incompressible` is OUR marker, not part of the wire format — strip it here
+    // (this is the last hop before the request body) and skip trimming entirely
+    // for those tools, schema and parameter descriptions alike.
+    const { incompressible, ...rest } = t as ToolDef;
+    const fn = (rest as any).function ?? {};
+    const params = fn.parameters as { properties?: Record<string, any> } | undefined;
+    let properties = params?.properties;
+    if (properties && typeof properties === "object" && !incompressible) {
+      const np: Record<string, any> = {};
+      for (const [k, v] of Object.entries(properties)) {
+        const vv = { ...(v as any) };
+        if (typeof vv.description === "string") vv.description = trim(vv.description, 80);
+        np[k] = vv;
+      }
+      properties = np;
+    }
+    if (incompressible) return { ...rest } as ToolDef;
+    return {
+      ...rest,
+      function: { ...fn, description: trim(fn.description, 140), parameters: properties ? { ...params, properties } : params },
+    } as ToolDef;
+  });
+  _compactCache.set(tools, out);
+  return out;
+}
+
+// Guarantee OpenAI-compatible tool-call pairing right before sending: every
+// assistant message with tool_calls must be immediately followed by one tool
+// message per tool_call_id, and no orphan tool messages may exist. Upstream
+// context trimming/compaction can otherwise strand a pair → the provider rejects
+// the whole request with 400 "tool_calls must be followed by tool messages".
+// Runs on EVERY send so no caller can produce an invalid sequence.
+function ensureToolPairing(msgs: ChatMessage[]): ChatMessage[] {
+  let dirty = false;
+  const out: ChatMessage[] = [];
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i];
+    const tc = (m as { tool_calls?: Array<{ id: string }> }).tool_calls;
+    if (m.role === "assistant" && tc?.length) {
+      const toolMsgs: ChatMessage[] = [];
+      let j = i + 1;
+      while (j < msgs.length && msgs[j].role === "tool") { toolMsgs.push(msgs[j]); j++; }
+      const answered = new Set(toolMsgs.map((t) => (t as { tool_call_id?: string }).tool_call_id));
+      if (tc.every((c) => answered.has(c.id))) {
+        out.push(m, ...toolMsgs);
+      } else {
+        // Some responses are missing → drop the (unanswerable) tool_calls, keep text.
+        out.push({ role: "assistant", content: m.content ?? "[appel d'outil omis]" } as ChatMessage);
+        dirty = true;
+      }
+      i = j - 1; // consumed (or dropped) the tool messages
+    } else if (m.role === "tool") {
+      dirty = true; // orphan tool result (its calling assistant is gone) → drop
+    } else {
+      out.push(m);
+    }
+  }
+  return dirty ? out : msgs;
+}
+
+function shrinkOldToolResults(msgs: ChatMessage[], keepRecentTools = 5, stub = 350): ChatMessage[] {
   const toolPositions: number[] = [];
   for (let i = 0; i < msgs.length; i++) if (msgs[i].role === "tool") toolPositions.push(i);
   if (toolPositions.length <= keepRecentTools) return msgs;
   const cutoff = toolPositions[toolPositions.length - keepRecentTools];
   return msgs.map((m, i) =>
     (m.role === "tool" && i < cutoff && (m.content?.length ?? 0) > stub)
-      ? { ...m, content: (m.content as string).slice(0, stub) + "\n…[older result truncated to save context]" }
+      ? { ...m, content: truncateMiddle(m.content as string, stub) }
       : m,
   );
 }
@@ -224,7 +299,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
       content: "You've finished using tools. Write your FINAL reply to the user now in markdown: a concise summary of what you did, the key results/findings, and any deliverables produced. Do NOT call any tools and do NOT output any tool-call markup.",
     });
     try {
-      const sj = await postChat(url, apiKey, { model, messages, temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 1500 });
+      const sj = await completeChat(url, apiKey, { model, messages: ensureToolPairing(messages), temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000 });
       if (sj.usage) {
         usageTotal.prompt_tokens += sj.usage.prompt_tokens ?? 0;
         usageTotal.completion_tokens += sj.usage.completion_tokens ?? 0;
@@ -235,14 +310,15 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
     return c || "Travail terminé — voir le détail des étapes et des livrables ci-dessus.";
   }
 
+  const slimTools = compactToolDefs(opts.tools);
   for (let round = 0; round < maxRounds; round++) {
-    const json = await postChat(url, apiKey, {
+    const json = await completeChat(url, apiKey, {
       model,
-      messages: shrinkOldToolResults(messages),
-      tools: opts.tools,
+      messages: ensureToolPairing(shrinkOldToolResults(messages)),
+      tools: slimTools,
       tool_choice: "auto",
       temperature: opts.temperature ?? 0.3,
-      max_tokens: opts.maxTokens ?? 1500,
+      max_tokens: opts.maxTokens ?? 4000,
     });
     modelName = json.model ?? model;
     if (json.usage) {
@@ -326,14 +402,14 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
         // Control-flow signals (run cancelled, awaiting human input) must
         // unwind the whole loop, not be turned into a tool error string.
         const nm = (e as { name?: string } | null)?.name;
-        if (nm === "RunCancelledError" || nm === "AwaitingInputError") throw e;
+        if (nm === "RunCancelledError" || nm === "AwaitingInputError" || nm === "AwaitingApprovalError") throw e;
         result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
       }
       // Cap tool output so a huge payload doesn't blow the context window.
       messages.push({
         role: "tool",
         tool_call_id: call.id,
-        content: result.length > 12000 ? result.slice(0, 12000) + "\n…(truncated)" : result,
+        content: truncateMiddle(result, 12000),
       });
     }
   }
@@ -342,9 +418,9 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
   // leaked as DSML text. Drain up to 2 more recovered calls so the agent doesn't
   // abandon work mid-flight, then force a clean (sanitized) final answer.
   for (let drain = 0; drain < 2; drain++) {
-    const dj = await postChat(url, apiKey, {
-      model, messages, tools: opts.tools, tool_choice: "auto",
-      temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 1500,
+    const dj = await completeChat(url, apiKey, {
+      model, messages: ensureToolPairing(messages), tools: opts.tools, tool_choice: "auto",
+      temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000,
     });
     if (dj.usage) {
       usageTotal.prompt_tokens += dj.usage.prompt_tokens ?? 0;
@@ -372,19 +448,19 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
         result = await opts.executor(call.function.name, args);
       } catch (e) {
         const nm = (e as { name?: string } | null)?.name;
-        if (nm === "RunCancelledError" || nm === "AwaitingInputError") throw e;
+        if (nm === "RunCancelledError" || nm === "AwaitingInputError" || nm === "AwaitingApprovalError") throw e;
         result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
       }
-      messages.push({ role: "tool", tool_call_id: call.id, content: result.length > 12000 ? result.slice(0, 12000) + "\n…(truncated)" : result });
+      messages.push({ role: "tool", tool_call_id: call.id, content: truncateMiddle(result, 12000) });
     }
   }
 
   // Final answer, no tools.
-  const json = await postChat(url, apiKey, {
+  const json = await completeChat(url, apiKey, {
     model,
-    messages,
+    messages: ensureToolPairing(messages),
     temperature: opts.temperature ?? 0.3,
-    max_tokens: opts.maxTokens ?? 1500,
+    max_tokens: opts.maxTokens ?? 4000,
   });
   if (json.usage) {
     usageTotal.prompt_tokens += json.usage.prompt_tokens ?? 0;
@@ -401,7 +477,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
 }
 
 interface ToolChatResponse {
-  choices: { message: ChatMessage }[];
+  choices: { message: ChatMessage; finish_reason?: string }[];
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
   model: string;
 }
@@ -419,11 +495,21 @@ export interface ToolRoundsOpts {
   /** Route to a custom OpenAI-compatible endpoint (self-hosted RunPod model). */
   endpoint?: EndpointOverride;
   messages: ChatMessage[];
-  tools: ToolDef[];
+  /** A THUNK re-evaluated every round, so a tool can widen the exposed toolset
+   *  mid-loop (need_tools / load_toolset) and the next round sees it. A plain
+   *  array still works and is simply constant. */
+  tools: ToolDef[] | (() => ToolDef[]);
   executor: ToolExecutor;
   temperature?: number;
   maxTokens?: number;
   maxRounds: number; // budget for THIS tick
+  /** Messages appended AT SEND TIME, after the transcript, and never stored.
+   *  This is how situational context (the FOCUS recap) reaches the model without
+   *  being written into `messages` — writing it in and pulling it back out on the
+   *  next tick mutates the middle of the transcript, which invalidates the
+   *  provider's prefix cache for everything after it. Appended last, it costs its
+   *  own tokens each round but invalidates nothing. */
+  ephemeral?: () => ChatMessage[];
   onNotice?: ToolLoopOpts["onNotice"];
 }
 export interface ToolRoundsResult {
@@ -455,10 +541,15 @@ export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsRes
   let roundsRun = 0;
   let errorCount = 0;
 
+  const resolveTools = () => compactToolDefs(typeof opts.tools === "function" ? opts.tools() : opts.tools);
   for (let round = 0; round < opts.maxRounds; round++) {
     roundsRun++;
-    const json = await postChat(url, apiKey, {
-      model, messages: shrinkOldToolResults(messages), tools: opts.tools, tool_choice: "auto",
+    // Order matters: the cached prefix is the transcript; ephemeral goes AFTER it.
+    const ephemeral = opts.ephemeral?.() ?? [];
+    const json = await completeChat(url, apiKey, {
+      model,
+      messages: [...ensureToolPairing(shrinkOldToolResults(messages)), ...ephemeral],
+      tools: resolveTools(), tool_choice: "auto",
       temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000,
     });
     modelName = json.model ?? model;
@@ -501,11 +592,11 @@ export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsRes
         result = await opts.executor(call.function.name, args);
       } catch (e) {
         const nm = (e as { name?: string } | null)?.name;
-        if (nm === "RunCancelledError" || nm === "AwaitingInputError") throw e;
+        if (nm === "RunCancelledError" || nm === "AwaitingInputError" || nm === "AwaitingApprovalError") throw e;
         result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
       }
       if (result.startsWith("ERROR")) errorCount++;
-      messages.push({ role: "tool", tool_call_id: call.id, content: result.length > 12000 ? result.slice(0, 12000) + "\n…(truncated)" : result });
+      messages.push({ role: "tool", tool_call_id: call.id, content: truncateMiddle(result, 12000) });
     }
   }
   // Tick budget exhausted without a final answer — resume on the next tick.
@@ -712,6 +803,67 @@ async function postChat(
     await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
   }
   throw new Error(`tool chat failed: ${lastErr.slice(0, 300)}`);
+}
+
+// Continue a completion that was cut off at max_tokens. Models signal this with
+// finish_reason==="length"; without continuation the agent silently hands back a
+// half-written answer (the "ne génère pas complètement / ne continue pas" bug).
+// We only stitch a truncated PLAIN-TEXT answer — a truncated tool call is left to
+// the caller's malformed-tool-call recovery, since a half JSON arguments blob
+// can't be concatenated. The caller's `messages` array is never mutated: the
+// "continue" nudges live only in a local copy, and the returned response carries
+// the fully stitched content in choices[0].message.content.
+const CONTINUE_NUDGE =
+  "Continue exactly where you left off. Do NOT repeat any text already written, do NOT restart, and do NOT add a preface — just carry on writing until the answer is complete.";
+
+async function completeChat(
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown>,
+  maxContinuations = 4,
+): Promise<ToolChatResponse> {
+  const json = await postChat(url, apiKey, body);
+  const choice = json.choices?.[0];
+  const hasToolCalls = (m?: ChatMessage) => Array.isArray(m?.tool_calls) && (m!.tool_calls!.length > 0);
+  if (!choice || choice.finish_reason !== "length" || hasToolCalls(choice.message)) return json;
+
+  const usage = {
+    prompt_tokens: json.usage?.prompt_tokens ?? 0,
+    completion_tokens: json.usage?.completion_tokens ?? 0,
+    total_tokens: json.usage?.total_tokens ?? 0,
+  };
+  const baseMessages = (body.messages as ChatMessage[]) ?? [];
+  let full = choice.message?.content ?? "";
+  let lastFinish: string | undefined = choice.finish_reason;
+
+  for (let i = 0; i < maxContinuations; i++) {
+    // Drop tools during a text continuation so the model just finishes writing
+    // instead of restarting into a tool call.
+    const contBody = {
+      ...body,
+      tools: undefined,
+      tool_choice: undefined,
+      messages: [
+        ...baseMessages,
+        { role: "assistant", content: full },
+        { role: "user", content: CONTINUE_NUDGE },
+      ],
+    };
+    const cont = await postChat(url, apiKey, contBody);
+    const cc = cont.choices?.[0];
+    usage.prompt_tokens += cont.usage?.prompt_tokens ?? 0;
+    usage.completion_tokens += cont.usage?.completion_tokens ?? 0;
+    usage.total_tokens += cont.usage?.total_tokens ?? 0;
+    full += cc?.message?.content ?? "";
+    lastFinish = cc?.finish_reason;
+    if (lastFinish !== "length") break;
+  }
+
+  return {
+    choices: [{ message: { ...(choice.message as ChatMessage), content: full }, finish_reason: lastFinish }],
+    usage,
+    model: json.model,
+  };
 }
 
 export function safeParseJson<T>(raw: string): T | null {

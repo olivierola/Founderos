@@ -16,6 +16,7 @@ import {
   getPullRequest, mergePullRequest,
 } from "../_shared/github.ts";
 import { runToolRounds, type ToolDef } from "../_shared/ai.ts";
+import { classifyTier, modelForTier } from "../_shared/model-router.ts";
 import { mcpCallTool } from "../_shared/mcp-client.ts";
 import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
 
@@ -120,7 +121,37 @@ const TOOLS: ToolDef[] = [
   { type: "function", function: { name: "read_file", description: "Read a file's full content from the repository before editing it.", parameters: { type: "object", properties: { path: { type: "string", description: "Repo-relative path, e.g. src/App.tsx" } }, required: ["path"] } } },
   { type: "function", function: { name: "write_file", description: "Stage the COMPLETE new content of a file to create or modify. Always provide the entire file, not a diff.", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string", description: "The full new file content." } }, required: ["path", "content"] } } },
   { type: "function", function: { name: "remember", description: "Save a durable fact, preference or decision so future turns respect it. scope 'global' = across all sessions of the project; 'session' = only this conversation.", parameters: { type: "object", properties: { content: { type: "string" }, scope: { type: "string", enum: ["global", "session"] } }, required: ["content"] } } },
+  { type: "function", function: {
+    name: "update_todos",
+    description: "Maintain your live todo checklist — the user watches it. Send the COMPLETE list every time. Split a complex step into subtasks via parent_id (up to 3 levels); a parent is done only when ALL its subtasks are done. Exactly ONE leaf 'active' at a time; mark items 'done' only once verified (write staged, file read, check passed).",
+    parameters: { type: "object", properties: { todos: { type: "array", items: { type: "object", properties: {
+      id: { type: "string" }, title: { type: "string" },
+      status: { type: "string", enum: ["pending", "active", "done", "blocked"] },
+      parent_id: { type: "string", description: "Parent task id when this is a subtask." },
+      note: { type: "string" },
+    }, required: ["id", "title", "status"] } } }, required: ["todos"] },
+  } },
+  { type: "function", function: {
+    name: "search_past_sessions",
+    description: "Search what was ALREADY done on this project in previous Vibe Code sessions (past results and the files they changed) by keyword. Use it before redoing work that may already exist, or to stay consistent with past decisions.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Keywords (matched against past results and prompts)." } }, required: ["query"] },
+  } },
 ];
+
+interface VibeTodo { id: string; title: string; status: string; parent_id?: string; note?: string }
+function normalizeTodos(raw: unknown): VibeTodo[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const todos: VibeTodo[] = raw.slice(0, 40).map((t: Record<string, unknown>, i: number) => ({
+    id: String(t?.id ?? "") || `step-${i + 1}`,
+    title: String(t?.title ?? "").slice(0, 140) || `Step ${i + 1}`,
+    status: ["pending", "active", "done", "blocked"].includes(String(t?.status)) ? String(t?.status) : "pending",
+    ...(t?.parent_id ? { parent_id: String(t.parent_id) } : {}),
+    ...(t?.note ? { note: String(t.note).slice(0, 300) } : {}),
+  }));
+  const ids = new Set(todos.map((t) => t.id));
+  for (const t of todos) if (t.parent_id && (!ids.has(t.parent_id) || t.parent_id === t.id)) delete t.parent_id;
+  return todos;
+}
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -128,11 +159,27 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return jsonResponse({ error: "Missing Authorization header" }, { status: 401 });
-    const { data: userData, error: userErr } = await createUserClient(authHeader).auth.getUser();
-    if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
-    const userId = userData.user.id;
 
-    const body = await req.json().catch(() => ({}));
+    const bodyRaw = await req.json().catch(() => ({}));
+    // Internal caller: the Vibe Code studio agent runs inside internal-agent-run,
+    // which invokes edge functions with the SERVICE ROLE key — that bearer has
+    // no `sub`, so auth.getUser() would reject it. Such a call is trusted, but
+    // it must still name the user it acts for (repo ownership, session
+    // authorship) and it never bypasses the workspace membership check below.
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const isInternal = !!serviceKey && authHeader === `Bearer ${serviceKey}`;
+    let userId: string;
+    if (isInternal) {
+      const actingUser = (bodyRaw as { acting_user_id?: string }).acting_user_id;
+      if (!actingUser) return jsonResponse({ error: "acting_user_id required for internal calls" }, { status: 400 });
+      userId = actingUser;
+    } else {
+      const { data: userData, error: userErr } = await createUserClient(authHeader).auth.getUser();
+      if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+      userId = userData.user.id;
+    }
+
+    const body = bodyRaw;
     const { workspace_id, project_id, repository_id, action } = body as {
       workspace_id?: string; project_id?: string; repository_id?: string;
       action?: "run" | "apply" | "pr_status" | "fix_pr" | "merge_pr";
@@ -169,7 +216,7 @@ Deno.serve(async (req) => {
       if (!changes?.length) return jsonResponse({ error: "Aucun changement à appliquer" }, { status: 400 });
       const commitMsg = title || "Vibe Code: changes";
       const prTitle = title || "Vibe Code changes";
-      const prBodyFull = (prBody || "Changements proposés par l'agent Vibe Code.") + "\n\n— FounderOS · Vibe Code";
+      const prBodyFull = (prBody || "Changements proposés par l'agent Vibe Code.") + "\n\n— AchiCorp · Vibe Code";
       let result: { mode: string; branch: string; head_repo: string; commit_sha: string; pull_request?: { html_url: string; number: number } };
       const login = await getAuthenticatedLogin(token).catch(() => null);
       const [ownerLogin, repoShort] = fullName.split("/");
@@ -342,7 +389,10 @@ Deno.serve(async (req) => {
       const branch = reqBranch || (repo.default_branch as string) || await getDefaultBranch(token, targetRepo);
       const sha = await getBranchSha(token, targetRepo, branch);
       const allPaths = await listRepoTree(token, targetRepo, sha);
-      const treeForPrompt = allPaths.slice(0, 1200).join("\n");
+      // Sent on EVERY round → cap it hard to control input cost. The agent lists
+      // more precisely with read_file / MCP when it needs a specific path.
+      const treeForPrompt = allPaths.slice(0, 500).join("\n")
+        + (allPaths.length > 500 ? `\n… (+${allPaths.length - 500} fichiers — utilise read_file pour cibler)` : "");
 
       // MCP tools attached to this project's coding agent (Personnaliser → MCP).
       const mcpServers = await loadVibeMcpServers(admin, project_id);
@@ -352,11 +402,16 @@ Deno.serve(async (req) => {
       const changes: Record<string, string> = {};
       const reads: string[] = [];
       const steps: { t: string; label: string }[] = [];
+      let todos: VibeTodo[] = [];
       // Persisting a step on each tool call is what powers the LIVE view — the
-      // frontend polls the message row and renders steps as they land.
+      // frontend polls the message row and renders steps (and the todo
+      // checklist) as they land.
+      const syncMeta = async () => {
+        if (assistantId) await admin.from("vibe_messages").update({ meta: { status: "running", steps, todos } }).eq("id", assistantId);
+      };
       const pushStep = async (t: string, label: string) => {
         steps.push({ t, label });
-        if (assistantId) await admin.from("vibe_messages").update({ meta: { status: "running", steps } }).eq("id", assistantId);
+        await syncMeta();
       };
       const executor = async (name: string, args: Record<string, unknown>): Promise<string> => {
         if (name === "read_file") {
@@ -385,6 +440,37 @@ Deno.serve(async (req) => {
           }
           return "ok — mémorisé";
         }
+        if (name === "update_todos") {
+          const next = normalizeTodos(args.todos);
+          if (!next) return "ERROR: todos (non-empty array) is required.";
+          todos = next;
+          await syncMeta();
+          const parentIds = new Set(todos.filter((t) => t.parent_id).map((t) => t.parent_id));
+          const leaves = todos.filter((t) => !parentIds.has(t.id));
+          const done = leaves.filter((t) => t.status === "done").length;
+          const active = leaves.filter((t) => t.status === "active").length;
+          return `Todos updated (${done}/${leaves.length} leaf steps done).${active > 1 ? " WARNING: keep exactly ONE leaf active." : ""}`;
+        }
+        if (name === "search_past_sessions") {
+          const query = String(args.query ?? "").trim().slice(0, 120);
+          if (!query) return "ERROR: query is required.";
+          await pushStep("memory", `sessions passées · ${query}`);
+          const like = `%${query.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+          const { data: hits } = await admin
+            .from("vibe_messages")
+            .select("content, created_at, meta, session:vibe_sessions!inner(project_id, title)")
+            .eq("session.project_id", project_id)
+            .eq("role", "assistant")
+            .ilike("content", like)
+            .order("created_at", { ascending: false })
+            .limit(5);
+          const rows = (hits ?? []) as Array<{ content: string; created_at: string; meta?: { result?: { changes?: { path: string }[] } }; session?: { title?: string } }>;
+          if (!rows.length) return `Aucune session passée ne mentionne "${query}" — ce travail n'a probablement pas encore été fait sur ce dépôt.`;
+          return rows.map((h) => {
+            const files = (h.meta?.result?.changes ?? []).map((c) => c.path).slice(0, 8).join(", ");
+            return `[${String(h.created_at).slice(0, 10)} · ${h.session?.title ?? "session"}] ${h.content.replace(/\s+/g, " ").slice(0, 400)}${files ? `\n  fichiers modifiés: ${files}` : ""}`;
+          }).join("\n\n").slice(0, 6000);
+        }
         // Attached MCP tools → proxy the call to the remote server.
         const hit = resolveMcp(name);
         if (hit) {
@@ -401,24 +487,68 @@ Deno.serve(async (req) => {
       const memBlock = (globalMem.length || sessionMem.length)
         ? ["MÉMOIRE (respecte ces éléments) :", ...globalMem.map((m) => `- [global] ${m}`), ...sessionMem.map((m) => `- [session] ${m}`), ""].join("\n")
         : "";
+      // Travail récent sur ce projet (autres sessions) — pour construire dessus
+      // au lieu de le refaire. Complété à la demande par search_past_sessions.
+      let recentWorkBlock = "";
+      try {
+        const { data: recent } = await admin
+          .from("vibe_messages")
+          .select("content, created_at, session:vibe_sessions!inner(id, project_id, title)")
+          .eq("session.project_id", project_id)
+          .eq("role", "assistant")
+          .neq("session.id", sid ?? "00000000-0000-0000-0000-000000000000")
+          .neq("content", "")
+          .order("created_at", { ascending: false })
+          .limit(3);
+        const rows = (recent ?? []) as Array<{ content: string; created_at: string; session?: { title?: string } }>;
+        if (rows.length) {
+          recentWorkBlock = ["TRAVAIL RÉCENT sur ce projet (autres sessions — construis dessus, ne refais pas) :",
+            ...rows.map((r) => `- [${String(r.created_at).slice(0, 10)} · ${r.session?.title ?? "session"}] ${r.content.replace(/\s+/g, " ").slice(0, 220)}`),
+            ""].join("\n");
+        }
+      } catch { /* best-effort */ }
       const system = [
         `Tu es un ingénieur logiciel senior. Tu travailles sur le dépôt GitHub "${targetRepo}" (branche "${branch}").`,
         customInstructions ? `INSTRUCTIONS DU PROJET (à respecter impérativement) :\n${customInstructions}\n` : "",
         memBlock,
+        recentWorkBlock,
         "Arborescence des fichiers (extrait) :", treeForPrompt, "",
         "RÈGLES :",
+        "- PLANIFIE D'ABORD : avant de toucher au code, pose ta checklist avec update_todos (étapes courtes et vérifiables), puis maintiens-la EN CONTINU — l'étape courante 'active' avant de commencer, 'done' (avec note) une fois vérifiée. Si une étape s'avère complexe, DÉCOUPE-LA en sous-tâches (parent_id) plutôt que de la traiter d'un bloc — le parent n'est done que quand toutes ses sous-tâches le sont. Une seule feuille active à la fois : la checklist doit toujours montrer ce qui est fait, en cours, et à venir.",
+        "- RÉUTILISE LE PASSÉ : si la tâche peut recouper un travail antérieur (même écran, même feature, même bug), vérifie avec search_past_sessions avant de refaire — et reste cohérent avec les décisions passées.",
         "- Lis les fichiers pertinents avec read_file AVANT de les modifier.",
         "- Écris chaque fichier modifié/créé avec write_file en fournissant TOUJOURS le contenu COMPLET (jamais un diff).",
         "- Utilise remember(content, scope) pour retenir une préférence/décision durable (scope 'global') ou propre à cette session ('session').",
         "- Changements minimaux, corrects, ciblés. Respecte le style existant.",
         mcpDefs.length ? `- Outils externes (MCP) disponibles : ${mcpDefs.map((d) => d.function.name).join(", ")}. Utilise-les si la tâche l'exige.` : "",
-        "- Quand tu as terminé, réponds par un résumé court (markdown) de ce que tu as changé.",
+        "- Quand tu as terminé, réponds par un résumé court (markdown) de ce que tu as changé. Si tu as remarqué en travaillant des améliorations valables HORS du périmètre demandé (bug, test manquant, dette, faille), termine par une courte section « Initiatives » (1-3 puces, sans les implémenter) — jamais de modifications hors périmètre de ta propre initiative.",
       ].filter(Boolean).join("\n");
+      // Cost-tiered model: cheap for simple edits, the stronger reasoning model
+      // only for heavy coding tasks (refactor, debug, migration, architecture).
+      const codeModel = modelForTier(classifyTier(prompt, { mode: "chat" }));
       const r = await runToolRounds({
-        provider: "deepseek",
+        provider: "deepseek", model: codeModel,
         messages: [{ role: "system", content: system }, ...priorTurns, { role: "user", content: `Tâche : ${prompt}` }],
         tools: [...TOOLS, ...mcpDefs], executor, temperature: 0.2, maxTokens: 3500, maxRounds: 12,
       });
+      // Budget épuisé en plein travail → courte passe de finalisation pour que
+      // le message final reflète l'état réel (fait / restant) au lieu de se
+      // couper net (même filet que les missions des agents internes).
+      let finalContent = r.content;
+      if (!r.finished) {
+        try {
+          const fin = await runToolRounds({
+            provider: "deepseek", model: codeModel,
+            messages: [
+              { role: "system", content: system }, ...priorTurns,
+              { role: "user", content: `Tâche : ${prompt}` },
+              { role: "user", content: "STOP — budget d'étapes atteint. N'explore plus rien : mets à jour ta checklist (update_todos) une dernière fois, puis réponds par un résumé court de ce qui est FAIT (fichiers modifiés) et de ce qui RESTE à faire pour finir." },
+            ],
+            tools: [...TOOLS, ...mcpDefs], executor, temperature: 0.2, maxTokens: 2000, maxRounds: 3,
+          });
+          finalContent = fin.content || finalContent;
+        } catch { /* finalize with what we have */ }
+      }
       const changesArr = Object.entries(changes).map(([path, content]) => ({ path, content }));
       // FIX_PR: push the fix straight to the PR branch so the same PR re-runs CI.
       let committed: { commit_sha: string; pr_number?: number } | null = null;
@@ -428,15 +558,15 @@ Deno.serve(async (req) => {
         committed = { commit_sha: commitSha, pr_number: prNumber };
       }
       return {
-        message: r.content || "Terminé.", base_branch: branch,
+        message: finalContent || "Terminé.", base_branch: branch,
         changes: changesArr,
-        reads, steps, tool_calls: r.toolCalls, finished: r.finished,
+        reads, steps, todos, tool_calls: r.toolCalls, finished: r.finished,
         committed,
       };
     };
 
     const persistDone = async (result: Awaited<ReturnType<typeof work>>) => {
-      if (assistantId) await admin.from("vibe_messages").update({ content: result.message, meta: { status: "done", result, steps: result.steps } }).eq("id", assistantId);
+      if (assistantId) await admin.from("vibe_messages").update({ content: result.message, meta: { status: "done", result, steps: result.steps, todos: result.todos } }).eq("id", assistantId);
     };
     const persistFailed = async (msg: string) => {
       if (assistantId) await admin.from("vibe_messages").update({ content: "", meta: { status: "failed", error: msg } }).eq("id", assistantId);

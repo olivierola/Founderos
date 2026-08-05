@@ -45,7 +45,7 @@ export function SignupPage() {
         <div className="mb-8 flex items-center gap-3">
           <Logo size={40} />
           <div>
-            <div className="text-lg font-semibold">FounderOS</div>
+            <div className="text-lg font-semibold">AchiCorp</div>
             <div className="text-xs text-muted-foreground">SaaS cockpit for builders</div>
           </div>
         </div>

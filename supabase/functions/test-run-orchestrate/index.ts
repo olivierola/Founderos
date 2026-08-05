@@ -20,12 +20,26 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return jsonResponse({ error: "Missing Authorization header" }, { status: 401 });
-    const userClient = createUserClient(authHeader);
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
-    const userId = userData.user.id;
 
     const body = await req.json();
+    // The Testing studio agent calls from internal-agent-run with the SERVICE
+    // ROLE key — that bearer carries no `sub`, so getUser() would reject it. It
+    // must still name the user it acts for: the workspace membership check
+    // below runs against that user exactly as for a browser session.
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const isInternal = !!serviceKey && authHeader === `Bearer ${serviceKey}`;
+    let userId: string;
+    if (isInternal) {
+      const actingUser = body.acting_user_id as string | undefined;
+      if (!actingUser) return jsonResponse({ error: "acting_user_id required for internal calls" }, { status: 400 });
+      userId = actingUser;
+    } else {
+      const userClient = createUserClient(authHeader);
+      const { data: userData, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+      userId = userData.user.id;
+    }
+
     const { action, workspace_id, project_id } = body as {
       action?: string; workspace_id?: string; project_id?: string;
     };

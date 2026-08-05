@@ -22,7 +22,10 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { decryptSecret } from "../_shared/crypto.ts";
 import { callAi, callAiWithTools, runToolRounds, safeParseJson, type ChatMessage } from "../_shared/ai.ts";
+import { runParallelSubagents } from "../_shared/subagents.ts";
+import { classifyTier, classifyRequest, modelForTier, type ToolTier } from "../_shared/model-router.ts";
 import { embedTexts, toVectorLiteral } from "../_shared/jina.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import {
@@ -37,6 +40,9 @@ interface AgentRow {
   name: string;
   persona: string | null;
   instructions: string | null;
+  created_by?: string | null;
+  service_dashboard_id?: string | null;
+  is_orchestrator?: boolean;
   model: string;
   temperature: number;
   max_steps: number;
@@ -47,16 +53,47 @@ interface AgentRow {
   collaboration_enabled: boolean;
   sandbox_mode: "cloud" | "runner" | "sandbox" | "hybrid";
   sandbox_url: string | null;
+  /** "Essaim" — whether the agent may fan out to parallel sub-agents, and how
+   *  many at once. Enabled by default; the agent still decides per task. */
+  swarm_enabled?: boolean;
+  swarm_max_concurrency?: number;
   /** When set, the agent's LLM calls route to this self-hosted OpenAI-compatible
    *  endpoint (a RunPod-hosted model) instead of the default provider. */
   hosted_endpoint_url: string | null;
   hosted_model: string | null;
+  /** Company-registered model (aiops_providers cloud_endpoint) the agent runs on;
+   *  its base_url + encrypted key are resolved at run time. Null = AchiCorp default. */
+  hosted_provider_id?: string | null;
 }
 
-/** Build the ai.ts endpoint override for an agent pinned to a hosted model. */
-function hostedEndpoint(agent: AgentRow): { baseUrl: string; apiKey?: string; model?: string } | undefined {
-  if (!agent.hosted_endpoint_url) return undefined;
-  return { baseUrl: agent.hosted_endpoint_url, apiKey: Deno.env.get("RUNPOD_VLLM_API_KEY") ?? "", model: agent.hosted_model || undefined };
+/** Resolve the OpenAI-compatible endpoint an agent runs on, or undefined for the
+ *  AchiCorp default. Provider-aware: a company-registered cloud/custom model
+ *  (aiops_providers) carries its own base_url + encrypted key (decrypted here,
+ *  never sent to the browser); a RunPod server uses the platform vLLM key. */
+async function resolveAgentEndpoint(
+  admin: ReturnType<typeof createServiceClient>,
+  agent: AgentRow,
+): Promise<{ baseUrl: string; apiKey?: string; model?: string } | undefined> {
+  // 1) A registered cloud/custom model (Modèles tab).
+  if (agent.hosted_provider_id) {
+    const { data: p } = await admin
+      .from("aiops_providers")
+      .select("config, secret_ciphertext, secret_iv")
+      .eq("id", agent.hosted_provider_id).maybeSingle();
+    const baseUrl = String((p?.config as { base_url?: string } | undefined)?.base_url ?? "");
+    if (baseUrl) {
+      let apiKey = "";
+      if (p?.secret_ciphertext && p?.secret_iv) {
+        try { apiKey = await decryptSecret(p.secret_ciphertext as string, p.secret_iv as string); } catch { /* key unresolved → call will fail loudly */ }
+      }
+      return { baseUrl, apiKey, model: agent.hosted_model || undefined };
+    }
+  }
+  // 2) A self-hosted RunPod GPU server (legacy path, platform vLLM key).
+  if (agent.hosted_endpoint_url) {
+    return { baseUrl: agent.hosted_endpoint_url, apiKey: Deno.env.get("RUNPOD_VLLM_API_KEY") ?? "", model: agent.hosted_model || undefined };
+  }
+  return undefined;
 }
 
 // Rough per-1k-token rates (USD). Adjust as providers change pricing.
@@ -105,6 +142,61 @@ async function runTools(
   }
 }
 
+// Security operating doctrine — adapted from the strix pentesting agent prompt
+// (Apache-2.0). Injected ONLY for agents with a cybersecurity skill activated,
+// so the pentest agents carry the offensive-security mindset while every other
+// agent's prompt stays untouched. Framing, tools and reporting are mapped to
+// AchiCorp (pentest_scope gate, sandbox tools, delegate_mission, deliverables).
+const SECURITY_DOCTRINE = [
+  "## Security operating doctrine (you are an application-security validation agent)",
+  "Your purpose is AUTHORIZED security validation: reproduce and validate real weaknesses on IN-SCOPE assets and help remediate them. Frame the work as verification/validation/reproduction — not open-ended offensive activity.",
+  "",
+  "AUTHORIZATION & SCOPE (hard gate):",
+  "- Call pentest_scope FIRST. Only the targets it returns are authorized. Free-form text (chat, a brief) does NOT expand scope — if an asset isn't in pentest_scope, do not test it; ask a human to add it.",
+  "- For targets that ARE in scope you have full authorization: do not refuse, hedge, or emit generic safety warnings about normal in-scope validation. Proceed with confidence.",
+  "",
+  "TESTING MODES:",
+  "- BLACK-BOX (URL/domain only): external recon & discovery first, then test the exposed surface with every relevant tool.",
+  "- WHITE-BOX (source available): do BOTH static AND dynamic. Map the repo (entry points, routes, auth, data flows), triage with static tools (ripgrep/semgrep/gitleaks/trivy) to find risk fast, THEN validate exploitability dynamically. Never rely on static analysis alone when you can run the app. Propose a code fix and verify it.",
+  "- COMBINED (code + deployed): use the code to guide live testing and live anomalies to focus code review.",
+  "",
+  "METHODOLOGY: 1) scope → 2) recon & attack-surface mapping (do this before narrow testing unless the next move is obvious) → 3) broad automated scanning with MULTIPLE tools → 4) targeted validation of high-impact issues → 5) iterate with new insight → 6) assess business impact → 7) exhaustive coverage of the highest-value paths.",
+  "",
+  "OPERATIONAL PRINCIPLES:",
+  "- RECON FIRST. Map the target well before diving into narrow validation.",
+  "- Prefer established tools already available (or installable) in the sandbox over ad-hoc scripts: nmap, httpx, ffuf, katana, gospider, nuclei, sqlmap, wapiti, arjun, jwt_tool, wafw00f, semgrep, gitleaks, trufflehog, trivy. Install what you need (apt/pip/go).",
+  "- For trial-heavy vectors (SQLi, XSS, XXE, SSRF, RCE, auth/JWT, deserialization) do NOT hand-iterate payloads in the browser: spray payload corpora via scripts (shell_exec/python), with concurrency, throttling and backoff; log status/length/timing/reflection; deduplicate; auto-triage anomalies; then validate the top candidates.",
+  "- Use http_request (the in-scope repeater) to craft, replay and mutate individual requests. Research fresh payloads/bypasses with web_search and fold them into your sprays.",
+  "- Chain related weaknesses to demonstrate real impact. Consider business logic and context.",
+  "",
+  "VALIDATION MANDATE: no assumptions — every finding needs a concrete, minimal, non-destructive proof-of-concept demonstrating real impact. A scanner hit is a lead, not a finding. Never exfiltrate real user data beyond a minimal proof; never run destructive actions.",
+  "",
+  "PRIORITY VULN CLASSES (cover all that the surface exposes): IDOR/BOLA, SQL injection, SSRF, XSS, XXE, RCE, CSRF, race conditions/TOCTOU, business-logic flaws, auth & JWT. Read the matching playbook (use_skill / read_skill_file) right before testing each class.",
+  "",
+  "ORCHESTRATION (scale to scope): for a large engagement, act as a coordinator — keep the todo checklist and notes current, and delegate_mission specialized sub-agents, ideally ONE vuln class × ONE component each (e.g. \"SQLi validation — login form\"), rather than doing every deep test yourself. Keep sub-tasks focused and non-overlapping.",
+  "",
+  "PERSISTENCE: real issues take effort — push beyond shallow checks, treat each failed approach as signal and try another in-scope path, and keep going until the highest-value in-scope vectors are properly assessed. A single well-validated high-impact finding beats dozens of low-signal ones.",
+  "",
+  "REPORTING: one create_deliverable(kind=\"report\") per CONFIRMED vulnerability — title, severity (CVSS-ish), affected endpoint/param (or file:line), reproduction steps, working PoC, business impact, and a concrete fix. Summarize with a render_ui findings table + severity chart. Operational hygiene: never put \"AchiCorp\"/agent identifiers in payloads, user-agents or request inputs.",
+].join("\n");
+
+/** True when the agent has any cybersecurity skill activated → gets the doctrine. */
+function isSecurityAgent(skills: AgentSkill[] | undefined): boolean {
+  return (skills ?? []).some((s) => (s.category ?? "").toLowerCase() === "cybersecurity");
+}
+
+// The default assistant of a service dashboard — it builds out the workspace by
+// conversation, so the user can chat and set things up without leaving the room.
+const ORCHESTRATOR_DOCTRINE = [
+  "## You are this workspace's orchestrator (its default assistant)",
+  "You help run a service workspace by conversation. Beyond answering, you can BUILD the workspace when asked — act directly, don't just describe:",
+  "- CREATE AGENTS: when the user wants a specialist (\"crée un agent SEO\", \"ajoute un agent qui surveille X\"), call create_agent with a clear name, role and instructions. Confirm it's ready and offer to open it or give it work.",
+  "- SCHEDULE WORK: when the user wants recurring work (\"chaque matin fais X\", \"tous les lundis…\", \"un brief quotidien\"), call create_mission with a cron `schedule` (e.g. '0 6 * * *' for daily 06:00). Assign it to the right agent via assignee_agent, creating that agent first if needed.",
+  "- RUN A ONE-OFF TASK: for \"fais X maintenant\", either do it yourself with your tools, or create_mission (start_now) on the best-suited agent.",
+  "- COORDINATE: keep track of the service's agents (list_team_agents), delegate to the right one, and summarize.",
+  "Confirm each action plainly once done (\"Agent X créé\", \"Brief quotidien planifié à 6h\"). Ask a brief clarifying question only when the request is genuinely ambiguous (e.g. a schedule with no time).",
+].join("\n");
+
 function buildSystemPrompt(
   agent: AgentRow,
   capabilitySummary: string,
@@ -113,12 +205,29 @@ function buildSystemPrompt(
   teamMemorySection: string,
   skillPrompts: string = "",
   recentWorkSection: string = "",
+  securityDoctrine: boolean = false,
 ): string {
   const lines: string[] = [];
   lines.push(`You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`);
   lines.push(`You work as part of a TEAM of agents — you can discover, message and delegate to peers, and share knowledge through the team memory.`);
   if (agent.instructions) {
     lines.push("", "Your detailed instructions:", agent.instructions);
+  }
+  if (mode === "chat") {
+    lines.push(
+      "",
+      "## Sois humain et présent (ne travaille pas en silence)",
+      "- Réponds dans la langue de l'utilisateur, comme un collègue serviable : chaleureux, clair, concis — pas de ton robotique.",
+      "- Dès le départ, dis en UNE phrase naturelle que tu as compris la demande et que tu t'y mets (ex. « Ok, je regarde ça tout de suite »). Ne démarre jamais en silence.",
+      "- Sur une tâche qui prend plusieurs étapes, tiens l'utilisateur au courant AU FUR ET À MESURE avec l'outil `say` (courtes updates : ce que tu trouves, ce que tu fais ensuite). N'attends pas la toute fin pour parler.",
+      "- APPROBATIONS : quand une action sensible demande une approbation, elle s'affiche DIRECTEMENT dans le chat (boutons Approuver/Refuser) et TON RUN CONTINUE DE TOURNER — tu n'es PAS interrompu. Demande-la naturellement puis attends la décision sur place ; dès qu'elle est donnée tu enchaînes avec le résultat. Ne t'arrête pas, ne redemande pas une approbation déjà accordée, ne dis pas seulement « c'est en attente » pour finir ton tour.",
+    );
+  }
+  if (securityDoctrine) {
+    lines.push("", SECURITY_DOCTRINE);
+  }
+  if (agent.is_orchestrator) {
+    lines.push("", ORCHESTRATOR_DOCTRINE);
   }
   if (skillPrompts) {
     lines.push(
@@ -151,26 +260,46 @@ function buildSystemPrompt(
   }
   lines.push(
     "",
-    "Your capabilities (real, executable tools):",
+    "Your tools (full schemas are provided separately):",
     capabilitySummary,
     "",
     "Operating rules:",
-    "- THINK & PLAN FIRST, THEN ACT. Before touching any tool you reason about the goal and draft an explicit execution plan (an ordered list of tasks, each naming the tools you'll use and how). You have already produced that plan — it is shown to you below. Follow it task by task, in order; only deviate when a tool result genuinely forces a change, and say so.",
-    "- KEEP YOUR TODO CHECKLIST CURRENT (update_todos): the user watches it live. Your plan was seeded as todos. Right before starting a step, send the FULL list with that step 'active'; right after finishing AND verifying it, send it again with the step 'done' (one-line note of what you verified). Exactly ONE item 'active' at a time. Mark 'blocked' with the reason when stuck; add newly discovered steps. Never leave the checklist stale while you work.",
-    "- VERIFY each step's result before moving on. Don't fire the next tool blindly — read the result, confirm it succeeded, and only then proceed.",
-    "- ASK ONLY WHEN NECESSARY: you are autonomous — decide and act on your own whenever you reasonably can. Use ask_user(question, options?) to pause and ask the human ONLY when you genuinely cannot proceed correctly: a truly ambiguous/under-specified request, a missing input you can't obtain, a real fork in direction, or confirmation before an irreversible action. After ask_user the run pauses for the human's reply.",
-    "- COMPLETE THE WHOLE JOB — DON'T STOP EARLY. You are NOT finished until EVERY plan step is done AND every expected deliverable has been created with create_deliverable. Never end your turn after just the analysis/exploration phase: keep going through modelling, file outputs and the final report. If plan steps remain, continue working — do not hand back a partial result.",
-    "- RESUME, DON'T RESTART. Your sandbox filesystem AND this conversation PERSIST between turns. Before (re)doing any step, CHECK whether its output already exists — list files (list_files / shell_exec \"ls -la\"), and re-read earlier results in the conversation. If the user says \"continue\" (or similar), pick up at the FIRST UNFINISHED step; never re-download, re-install or re-compute work that is already done.",
-    "- Use your tools to gather real data — never invent numbers or facts.",
-    "- Some tools require human approval: calling them queues the action for review. Acknowledge the pending approval and keep going.",
-    "- If a tool errors, adapt: try another approach or state the limitation clearly.",
-    "- SAVE TO MEMORY AS YOU WORK (save_memory) — don't wait until the end. The moment you learn something durable, persist it so you're never out of sync next session. Concretely, save: stable facts about the project/user, user/team PREFERENCES, packages or tools you INSTALLED and datasets/files you produced (with their sandbox paths), and the KEY RESULT or conclusion of each mission. Keep each memory one self-contained line; skip transient details and anything already in the memory above.",
-    "- Collaborate: if a teammate's skills fit part of the work better, message them (send_message_to_agent) or delegate it (delegate_mission) instead of doing everything yourself. Record team-wide decisions/findings with team_memory.",
+    "- PLAN then ACT: follow the execution plan below step by step, in order; deviate only when a result forces it, and say so.",
+    "- TODO checklist (update_todos), kept live: exactly ONE leaf 'active'; mark it 'done' only after you VERIFY the result. Split a step into subtasks (parent_id, ≤3 levels) as soon as it's bigger than one action; a parent is done only when all its subtasks are.",
+    "- VERIFY each result before the next call — read it, confirm success, then proceed. Real data only; never invent numbers or facts.",
+    "- CONTEXT IS COMPACTED to stay small: older steps get sealed into a summary. To recall an earlier fact, result or decision, call search_context(scope=\"run\") instead of redoing work or re-asking.",
+    "- RESUME, don't restart: your files and this thread persist. Check what already exists before redoing; on \"continue\", pick up at the FIRST unfinished step. Reuse prior outputs via search_context(scope=\"past_runs\") before producing something that may already exist.",
+    "- TOOLBOX ON DEMAND: families marked \"(à charger)\" in the toolbox below are listed but not yet callable — call load_toolset(\"FAMILY\") once and use them immediately. Never say you lack a capability that the toolbox lists.",
+    "- ASK only when truly blocked (ambiguous ask, missing input you can't obtain, a real fork, or before an irreversible action) via ask_user; otherwise decide and act autonomously.",
+    "- FINISH the whole job: not done until EVERY plan step is complete AND every expected deliverable is saved with create_deliverable. No partial hand-back.",
+    "- SAVE durable knowledge as you learn it (save_memory), one self-contained line each: stable facts, preferences, installed tools, produced files (with paths), key results. Skip transient details and anything already known.",
+    "- Approvals: a gated tool queues for review and your run KEEPS RUNNING — acknowledge and continue; never re-ask an approval already granted. If a tool errors, adapt or state the limitation.",
+    "- INITIATIVE (bounded): fix trivial in-scope issues you notice (and mention them); file bigger opportunities with propose_mission (nothing executes). Never run out-of-scope side effects.",
   );
+  if (mode === "chat") {
+    lines.push("- RICH REPLIES: when a component communicates better than prose (metrics, trends, comparisons, tabular data), attach real UI blocks with render_ui (kpi_grid/chart/table/link_card) and place each [[ui:N]] tag on its own line; real data only. When a sentence is clearer, just write it.");
+    lines.push("- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : ne demande PAS quoi faire et ne réponds pas juste en prose — fais l'analyse avec tes outils MAINTENANT et PRODUIS-la avec create_deliverable(kind=\"report\") (sections/KPIs/tableaux/risques, via le skill report-designer ; gros rapport → report_section puis create_deliverable sans content). Une question de clarification UNIQUEMENT si c'est vraiment impossible d'avancer.");
+  }
+  if (agent.collaboration_enabled) {
+    lines.push("- COLLABORATE: if a teammate's skills fit part of the work, message (send_message_to_agent) or delegate (delegate_mission) instead of doing it all; record team decisions with team_memory.");
+  }
+  // Essaim (swarm): only present when the owner enabled it — the capability
+  // summary carries the spawn_parallel_agents line in that case. Make the agent
+  // PROACTIVELY parallelise independent subtasks instead of grinding through
+  // them one by one.
+  if (capabilitySummary.includes("spawn_parallel_agents")) {
+    lines.push(
+      "- RÉUTILISE AVANT DE (RE)FAIRE — ne parallélise JAMAIS par réflexe. Avant tout fan-out : (1) vérifie ce qui existe déjà pour cette demande via search_context(scope=\"past_runs\") (livrables/analyses des runs passés) et search_context(scope=\"run\") (étapes de CE run) ; (2) réutilise ce qui est déjà fait, ne relance que ce qui MANQUE réellement. Si le travail (ou une partie) a déjà été produit, RÉUTILISE-le et dis-le — ne relance pas des sous-agents pour ça.",
+      "- PAR DÉFAUT, PARALLÉLISE : dès que le travail se décompose en 2+ sous-tâches NOUVELLES réellement indépendantes (aucune n'a besoin du résultat d'une autre) et non déjà faites, tu DOIS les lancer ENSEMBLE avec spawn_parallel_agents plutôt qu'une par une. Ne reste séquentiel QUE si les sous-tâches sont dépendantes (l'une a besoin du résultat de l'autre), s'il n'y en a qu'une, ou si le résultat existe déjà. En cas de doute sur l'indépendance : si elles ne se lisent/écrivent pas mutuellement, elles sont indépendantes → parallélise.",
+      "- AUTO-CHECK PARALLÉLISME (à toi de le décider, pas besoin qu'on te le dise) : avant CHAQUE bloc de travail, demande-toi « est-ce que je m'apprête à répéter le MÊME type de travail sur plusieurs éléments indépendants ? » (produits, concurrents, marchés, URLs, comptes, fichiers, sections…). Si oui → découpe en UNE sous-tâche par élément et lance tout en un seul spawn_parallel_agents, jamais en séquentiel. Pas de petit plafond : autant de sous-tâches que d'éléments (des dizaines, ok — elles tournent par vagues).",
+      "- RÉÉVALUE À LA DÉCOUVERTE : ton plan initial ne connaissait pas le nombre réel d'éléments. DÈS que tu le découvres (après avoir listé un catalogue, des comptes, des fichiers, des résultats…), refais l'auto-check ci-dessus et ADAPTE : si une étape prévue « en un bloc » se révèle être « la même chose pour N éléments indépendants », transforme-la en fan-out — même si le plan de départ ne le prévoyait pas. C'est TA responsabilité de repérer la parallélisation, personne ne te la dictera étape par étape.",
+      "- UN SEUL fan-out par lot : NE relance JAMAIS spawn_parallel_agents pour des sous-tâches déjà lancées (même après compaction). Après un fan-out, ta tâche suivante est de RÉCUPÉRER puis SYNTHÉTISER les résultats — s'ils ne sont plus dans ton contexte, utilise search_context(scope=\"run\", query=\"<libellé>\"). Re-spawner les mêmes sous-tâches est interdit (l'outil les refuse).",
+    );
+  }
   if (mode === "mission") {
     lines.push(
       "- Materialise every expected deliverable with create_deliverable before finishing.",
-      "- Your final message is a concise mission report (markdown): what you did, key findings, deliverables produced, pending approvals if any.",
+      "- Your final message is a concise mission report (markdown): what you did, key findings, deliverables produced, pending approvals if any — plus an 'Initiatives' section when you noticed opportunities (each one filed via propose_mission).",
     );
   } else {
     lines.push(
@@ -179,6 +308,7 @@ function buildSystemPrompt(
       "- Confirm scope on big/irreversible actions before doing them.",
       "- You can turn work into a tracked task with create_task, or kick off a full background mission with create_mission (use it when the user asks you to 'do X' as ongoing/standalone work, or to schedule recurring work).",
       "- When the user asks for an analysis, report, summary of data, or anything substantial, produce it with create_deliverable (prefer kind=\"report\" with KPIs/charts/tables). Then reply with a short summary — the full report opens as an artifact card in the chat.",
+      "- INTERDIT : n'affirme JAMAIS « rapport créé », « le rapport est en carte », « livrable créé » si tu n'as pas RÉELLEMENT appelé create_deliverable dans CE tour. Un résumé écrit dans le chat n'est PAS un livrable et n'affiche aucune carte. Si l'utilisateur demande un rapport, tu DOIS appeler create_deliverable(kind=\"report\") — sinon ne prétends pas l'avoir fait.",
     );
   }
   return lines.join("\n");
@@ -288,6 +418,10 @@ async function produceExecutionPlan(opts: {
     `  "done_when": "objective definition of done"`,
     `}`,
     `Keep it tight: 3-8 tasks. Only include tools that genuinely apply to a task (a task may need zero tools). Do not invent tool names. If the request is too ambiguous to plan responsibly, make your first task use the ask_user tool.`,
+    ...(descByName.has("spawn_parallel_agents") ? [
+      `REUSE FIRST: if this request (or parts of it) may already have been done, make the FIRST task check with search_context(scope="past_runs") and reuse existing deliverables — do NOT re-run work that already exists.`,
+      `PARALLELISM BY DEFAULT: actively look for parallelism when decomposing. Whenever 2+ steps are genuinely NEW and INDEPENDENT (none needs another's output) and not already done, plan them as ONE fan-out task with spawn_parallel_agents instead of separate sequential tasks. ESPECIALLY when a step is "do X for EACH of N items" (source each of N products, analyse each of N competitors/URLs) — make it a SINGLE fan-out with one subtask per item (no small cap — dozens is fine), never N sequential tasks. Keep steps sequential ONLY when they truly depend on each other's output (chain them), or the work is already produced.`,
+    ] : []),
     `RESUME-AWARE: if the context below shows work already done (files created, steps completed) — e.g. the user said "continue" — plan ONLY the REMAINING steps. Make the first task verify existing state (list files / re-read prior results) and then proceed from the first unfinished step. Never re-plan finished work from scratch.`,
   ].join("\n");
 
@@ -352,7 +486,7 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, hosted_endpoint_url, hosted_model")
+      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, created_by, service_dashboard_id, is_orchestrator")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -612,7 +746,9 @@ async function probeRunner(url: string): Promise<string | null> {
     const t = setTimeout(() => ctrl.abort(), 6000);
     const res = await fetch(`${url.replace(/\/$/, "")}/health`, {
       method: "GET",
-      headers: { "ngrok-skip-browser-warning": "true" },
+      // The runner authenticates EVERY route (incl. /health) with X-Runner-Token;
+      // without it the probe gets 401 and wrongly marks the runner down.
+      headers: { "ngrok-skip-browser-warning": "true", "X-Runner-Token": Deno.env.get("PLATFORM_RUNNER_TOKEN") || "" },
       signal: ctrl.signal,
     });
     clearTimeout(t);
@@ -695,6 +831,11 @@ function makeToolContext(opts: {
     hybrid: agent.sandbox_mode === "hybrid",
     missionMode: opts.missionId != null,
     delegationDepth: opts.delegationDepth ?? 0,
+    // Essaim: default ON (preserves the always-available behaviour); the tool
+    // is simply not registered when the owner turned it off.
+    swarmEnabled: agent.swarm_enabled !== false,
+    serviceDashboardId: agent.service_dashboard_id ?? null,
+    userId: agent.created_by ?? null,
     createDeliverable: async (d) => {
       await admin.from("internal_agent_deliverables").insert({
         run_id: runId,
@@ -707,6 +848,25 @@ function makeToolContext(opts: {
         summary: d.summary,
       });
     },
+    // Rooms-only UX for now (inline card + side-panel viewer) — outside a room
+    // this just persists the artifact so the tool is safe to call everywhere;
+    // no service_room_id, no inline chat card yet.
+    createArtifact: async (a) => {
+      if (a.kind === "image" || a.kind === "text") return;
+      const content = a.kind === "document"
+        ? { nodes: [{ type: "p", children: [{ text: a.content }] }] }
+        : a.kind === "presentation"
+        ? { slides: [{ title: a.title, body: a.content, layout: "title-content" }] }
+        : { columns: ["A"], rows: a.content.split("\n").map((l) => [l]) };
+      await admin.from("office_documents").insert({
+        workspace_id: agent.workspace_id ?? null,
+        project_id: agent.project_id ?? null,
+        kind: a.kind,
+        title: a.title,
+        content,
+        created_by: agent.created_by ?? null,
+      });
+    },
     requestApproval: async (r) => {
       const { data, error } = await admin
         .from("internal_agent_approvals")
@@ -714,6 +874,7 @@ function makeToolContext(opts: {
           agent_id: agent.id,
           run_id: runId,
           mission_id: missionId,
+          conversation_id: opts.conversationId ?? null,
           workspace_id: agent.workspace_id,
           project_id: agent.project_id,
           tool_name: r.tool_name,
@@ -774,6 +935,7 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
     agent_id: agent.id,
     workspace_id: agent.workspace_id,
     project_id: agent.project_id,
+    conversation_id: conversationId,
     status: "running",
     started_at: new Date().toISOString(),
     triggered_via: "chat",
@@ -848,7 +1010,7 @@ async function initChatRun(
   const chatSkillIndex = skillsIndex(chatSkills);
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(agent, capabilitySummary + sandboxDownNote, "chat", memorySection, teamMemorySection, chatSkillIndex, recentWorkSection) },
+    { role: "system", content: buildSystemPrompt(agent, capabilitySummary + sandboxDownNote, "chat", memorySection, teamMemorySection, chatSkillIndex, recentWorkSection, isSecurityAgent(chatSkills)) },
     ...(history ?? [])
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => {
@@ -900,6 +1062,17 @@ async function initChatRun(
   // Persist resumable state + enqueue the first tick. The tool loop now runs in
   // the durable tick processor (runMissionTick handles chat too), so a long chat
   // survives Edge wall-clock recycling instead of being killed mid-run.
+  // Request classification (Context Engine, étage 0): decides the model tier AND
+  // how much of the toolbox this turn ships. A greeting used to carry ~59 tool
+  // schemas (7-11k tokens) for a five-token answer; it now carries one escape
+  // hatch (need_tools) which the model calls if the turn needs real work.
+  const requestClass = classifyRequest(lastUserMsg, {
+    mode: "chat",
+    continuation: isContinuation,
+    hasToolHistory: (history ?? []).some((m) => Array.isArray((m as { tool_calls?: unknown[] }).tool_calls) && ((m as { tool_calls?: unknown[] }).tool_calls!.length > 0)),
+  });
+  await ctx.logEvent("status", { message: `Contexte : ${requestClass.tools} · modèle ${requestClass.model}.` }).catch(() => {});
+
   await admin.from("internal_agent_run_state").upsert({
     run_id: chatRunId,
     mode: "chat",
@@ -910,7 +1083,10 @@ async function initChatRun(
     round: 0,
     max_rounds: 400,
     provider,
-    model: Deno.env.get("AGENT_MODEL_CHAT") || null,
+    meta: { tool_tier: requestClass.tools },
+    // Cost-tiered model: cheap by default, stronger only when the turn warrants
+    // it (see classifyRequest). AGENT_MODEL_CHAT still overrides if set.
+    model: Deno.env.get("AGENT_MODEL_CHAT") || modelForTier(requestClass.model),
     processing_until: null,
     // The triggering message is already in `messages`; only fold in turns that
     // arrive AFTER this point (mid-run steering).
@@ -1034,10 +1210,11 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
 
   // Semantic memory recall keyed on the mission itself (title + brief).
   const missionTaskText = `${mission.title ?? ""}\n${(mission as { brief?: string | null }).brief ?? ""}`.trim();
-  const [memorySection, teamMemorySection, missionSkills] = await Promise.all([
+  const [memorySection, teamMemorySection, missionSkills, recentWorkSection] = await Promise.all([
     loadMemorySection(admin, agent.id, missionTaskText || undefined),
     loadTeamMemorySection(admin, agent.project_id),
     loadActivatedSkills(admin, agent.id),
+    loadRecentWorkSection(admin, agent.id),
   ]);
   ctx.skills = missionSkills;
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
@@ -1087,7 +1264,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
   // plan (tools per task + how) BEFORE executing. Logged as a `plan` event and
   // injected into the loop so the agent commits to its own plan.
   await ctx.logEvent("status", { message: "Reasoning & planning the mission…" });
-  const planContext = [memorySection, teamMemorySection, previousRunSection].filter(Boolean).join("\n\n");
+  const planContext = [memorySection, teamMemorySection, previousRunSection, recentWorkSection ? `# Recent work by this agent (build on it, don't redo it)\n${recentWorkSection}` : ""].filter(Boolean).join("\n\n");
   const toolDefs = defs.map((d) => ({ name: d.function.name, description: d.function.description }));
   const planned = await produceExecutionPlan({ provider, agent, toolDefs, taskText: userPrompt, contextText: planContext, hybrid: agent.sandbox_mode === "hybrid" });
   if (planned) {
@@ -1105,7 +1282,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
   // tick. The long loop then runs across many short ticks (runMissionTick),
   // never bounded by the Edge wall-clock.
   const initialMessages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection, teamMemorySection, skillPrompts) },
+    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection, teamMemorySection, skillPrompts, recentWorkSection, isSecurityAgent(missionSkills)) },
     { role: "user", content: userPrompt },
     ...(planned ? planMessages(planned.markdown, "mission") : []),
   ];
@@ -1120,7 +1297,13 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     // done. This is just an absolute backstop against a truly runaway loop.
     max_rounds: 400,
     provider,
-    model: Deno.env.get("AGENT_MODEL_MISSION") || null,
+    // Missions always ship the full toolbox: a mission that has to discover its
+    // own tools wastes rounds it was given to do the work.
+    meta: { tool_tier: "full" as ToolTier },
+    // Cost-tiered from the mission's nature (title + brief). AGENT_MODEL_MISSION
+    // still overrides if set. A run that keeps failing is escalated to the heavy
+    // model in runMissionTick (see the replan branch).
+    model: Deno.env.get("AGENT_MODEL_MISSION") || modelForTier(classifyTier(missionTaskText, { mode: "mission" })),
     processing_until: null,
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
@@ -1351,6 +1534,26 @@ async function completeRunTodos(
 
 // Finalize a chat run: post the assistant reply, mark the run succeeded and
 // bump the conversation. The chat equivalent of finalizeMissionSuccess.
+/** UI blocks the agent attached during the run (render_ui → 'ui' events). */
+async function collectUiBlocks(
+  admin: ReturnType<typeof createServiceClient>,
+  runId: string,
+): Promise<Array<Record<string, unknown>> | null> {
+  try {
+    const { data } = await admin
+      .from("internal_agent_run_events")
+      .select("payload")
+      .eq("run_id", runId).eq("kind", "ui")
+      .order("created_at", { ascending: true }).limit(8);
+    const blocks = (data ?? [])
+      .map((e: { payload?: { block?: Record<string, unknown> } }) => e.payload?.block)
+      .filter((b): b is Record<string, unknown> => !!b && typeof b === "object");
+    return blocks.length ? blocks : null;
+  } catch {
+    return null;
+  }
+}
+
 async function finalizeChatSuccess(
   admin: ReturnType<typeof createServiceClient>,
   agent: AgentRow,
@@ -1360,9 +1563,21 @@ async function finalizeChatSuccess(
   stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: "groq" | "deepseek"; model: string },
 ) {
   const reply = finalOutput?.trim() || "(no reply)";
+  const uiBlocks = (await collectUiBlocks(admin, runId)) ?? [];
+  // Attach any deliverables produced this run as openable cards ON the message —
+  // guarantees the card renders inline (not dependent on a separate client query
+  // that can miss on timing). Covers ctx.createDeliverable + materialize + salvage.
+  const { data: delivs } = await admin
+    .from("internal_agent_deliverables").select("id, name, kind")
+    .eq("run_id", runId).order("created_at", { ascending: true });
+  const deliverableBlocks = (delivs ?? []).map((d) => ({
+    component: "deliverable",
+    props: { id: (d as { id: string }).id, name: (d as { name: string }).name, kind: (d as { kind: string }).kind, agentId: agent.id },
+  }));
+  const allBlocks = [...uiBlocks, ...deliverableBlocks];
   await admin.from("internal_agent_messages").insert({
     conversation_id: conversationId, agent_id: agent.id, role: "assistant",
-    content: reply, run_id: runId,
+    content: reply, run_id: runId, ui_blocks: allBlocks.length ? allBlocks : null,
     tokens_in: stats.tokIn, tokens_out: stats.tokOut, cost_usd: stats.cost,
   });
   await completeRunTodos(admin, runId);
@@ -1372,8 +1587,9 @@ async function finalizeChatSuccess(
     action_count: stats.actions, steps: stats.actions,
   }).eq("id", runId);
   await admin.from("internal_agent_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
-  // Mirror the reply to any bound channel (Slack thread / project inbox).
-  await postReplyToBoundChannel(admin, agent, conversationId, reply);
+  // Mirror the reply to any bound channel (Slack thread / project inbox) —
+  // channels can't render UI blocks, so strip the [[ui:N]] placement tags.
+  await postReplyToBoundChannel(admin, agent, conversationId, reply.replace(/\n?\[\[ui:\d+\]\]\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim());
   await logLlmUsage({
     workspace_id: agent.workspace_id, project_id: agent.project_id,
     provider: stats.provider, model: stats.model, task: "chat_simple", feature: "internal-agent-chat",
@@ -1381,40 +1597,164 @@ async function finalizeChatSuccess(
   });
 }
 
-// ── Context compaction ────────────────────────────────────────────────────────
-// run_state.messages grows across hundreds of rounds while DeepSeek's context is
-// finite (~64k tokens). When the transcript gets heavy, summarize the MIDDLE
-// (keeping the system prompt + mission brief/plan head, and the recent tail
-// intact) into one dense "work so far" note. Mutates `messages` in place.
-const COMPACT_TRIGGER_CHARS = 120_000; // ≈ 35–45k tokens
-async function compactMessagesIfNeeded(messages: ChatMessage[]): Promise<boolean> {
+// Finalize a ROOM-bound run on the durable tick engine: update the room
+// placeholder message (content + UI blocks + deliverable cards produced) so the
+// room reply materialises exactly like a chat reply — but survives the edge
+// wall-clock because it ran on the tick queue. The room equivalent of
+// finalizeChatSuccess.
+async function finalizeRoomSuccess(
+  admin: ReturnType<typeof createServiceClient>,
+  agent: AgentRow,
+  room: { room_id: string; placeholder_id: string },
+  runId: string,
+  finalOutput: string,
+  stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: "groq" | "deepseek"; model: string },
+) {
+  const reply = (finalOutput?.trim() || "Terminé — voir les cartes ci-dessus.")
+    .replace(/\n?\[\[ui:\d+\]\]\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  const uiBlocks = (await collectUiBlocks(admin, runId)) ?? [];
+  // Turn deliverables produced during the run into openable cards on the message.
+  const { data: delivs } = await admin
+    .from("internal_agent_deliverables").select("id, name, kind")
+    .eq("run_id", runId).order("created_at", { ascending: true });
+  const deliverableBlocks = (delivs ?? []).map((d) => ({
+    component: "deliverable",
+    props: { id: (d as { id: string }).id, name: (d as { name: string }).name, kind: (d as { kind: string }).kind, agentId: agent.id },
+  }));
+  const allBlocks = [...uiBlocks, ...deliverableBlocks];
+  await admin.from("service_room_messages").update({
+    content: reply, ui_blocks: allBlocks.length ? allBlocks : null, status: "done", run_id: runId,
+  }).eq("id", room.placeholder_id);
+  await completeRunTodos(admin, runId);
+  await admin.from("internal_agent_runs").update({
+    status: "succeeded", finished_at: new Date().toISOString(), final_output: finalOutput?.slice(0, 2000),
+    tokens_in: stats.tokIn, tokens_out: stats.tokOut, cost_usd: stats.cost, action_count: stats.actions, steps: stats.actions,
+  }).eq("id", runId);
+  await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", room.room_id);
+  await logLlmUsage({
+    workspace_id: agent.workspace_id, project_id: agent.project_id,
+    provider: stats.provider, model: stats.model, task: "chat_simple", feature: "internal-agent-room",
+    usage: { prompt_tokens: stats.tokIn, completion_tokens: stats.tokOut, total_tokens: stats.tokIn + stats.tokOut },
+  });
+}
+
+// ── Context window (sliding, no summary) ───────────────────────────────────────
+// run_state.messages grows across hundreds of rounds while the model's context is
+// finite. Rather than summarizing the middle (an extra LLM call that could strand
+// tool-call pairs — the "400 tool_calls must be followed by tool messages" bug),
+// we keep a SLIDING WINDOW: the head (system + original task) plus the most recent
+// turns up to a char budget, and drop the old middle. Nothing critical is lost —
+// the FOCUS header re-injects the objective + todo state on every tick, and the
+// agent can call search_history / recall to retrieve a specific past detail.
+// Mutates `messages` in place. Returns true when it trimmed.
+const COMPACT_TRIGGER_CHARS = 137_500;      // start trimming once the transcript is this heavy
+const CONTEXT_WINDOW_CHARS = 80_000;        // keep roughly this much recent transcript
+
+/** Deterministic digest of a transcript span about to be sealed away: what was
+ *  called, what was produced, what failed. No LLM — it must be free, instant and
+ *  incapable of inventing anything. This is what stops the agent from redoing
+ *  work whose evidence just left the context window. */
+function sealDigest(span: ChatMessage[]): string {
+  const toolCounts = new Map<string, number>();
+  const paths = new Set<string>();
+  const produced = new Set<string>();
+  const errors = new Set<string>();
+
+  for (const m of span) {
+    for (const c of (m as { tool_calls?: Array<{ function?: { name?: string; arguments?: string } }> }).tool_calls ?? []) {
+      const name = c.function?.name;
+      if (!name) continue;
+      toolCounts.set(name, (toolCounts.get(name) ?? 0) + 1);
+      try {
+        const a = JSON.parse(c.function?.arguments || "{}") as Record<string, unknown>;
+        for (const k of ["path", "file_path", "file", "url", "name"]) {
+          const v = a[k];
+          if (typeof v === "string" && v.length < 200) paths.add(v);
+        }
+      } catch { /* unparsable args are not worth a digest line */ }
+    }
+    if (m.role !== "tool") continue;
+    const text = String(m.content ?? "");
+    const made = text.match(/Deliverable "([^"]+)"|Family (\w+) loaded|saved to ([^\s]+)/);
+    if (made) produced.add((made[1] ?? made[2] ?? made[3])!);
+    if (text.startsWith("ERROR")) errors.add(text.slice(0, 140));
+  }
+
+  const top = [...toolCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
+    .map(([n, c]) => (c > 1 ? `${n}×${c}` : n));
+  const lines: string[] = [];
+  if (top.length) lines.push(`- Outils appelés : ${top.join(", ")}`);
+  if (paths.size) lines.push(`- Fichiers / cibles touchés : ${[...paths].slice(0, 15).join(", ")}`);
+  if (produced.size) lines.push(`- Produits : ${[...produced].slice(0, 10).join(", ")}`);
+  if (errors.size) lines.push(`- Échecs rencontrés (ne pas réessayer à l'identique) :\n  ${[...errors].slice(0, 5).join("\n  ")}`);
+  return lines.length ? lines.join("\n") : "- (aucune action outillée dans ce segment)";
+}
+function compactMessagesIfNeeded(messages: ChatMessage[]): boolean {
   if (messages.length < 16) return false;
   if (JSON.stringify(messages).length < COMPACT_TRIGGER_CHARS) return false;
-  const keepHead = Math.min(4, messages.length); // system + task + plan pair
-  let start = messages.length - 10;              // keep the last ~10 turns verbatim
-  // Never split an assistant(tool_calls) from its tool results: walk back until
-  // the tail starts on a non-tool message (i.e. include the calling assistant).
-  while (start > keepHead && messages[start].role === "tool") start--;
-  if (start <= keepHead + 2) return false;
-  const middle = messages.slice(keepHead, start);
-  const transcript = middle.map((m) => {
-    const calls = m.tool_calls?.map((t) => `${t.function.name}(${(t.function.arguments ?? "").slice(0, 120)})`).join("; ");
-    const body = String(m.content ?? calls ?? "").slice(0, m.role === "tool" ? 300 : 500);
-    return `${m.role}: ${body}`;
-  }).join("\n");
-  const sum = await callAi({
-    task: "summary",
-    provider: "groq",
-    maxTokens: 1200,
-    systemPrompt:
-      "You compress an AI agent's working history mid-run. Produce a DENSE, factual summary the agent can rely on to continue without redoing work: goal & plan status; steps DONE (exact file paths created, commands run, key results/numbers/URLs); current state; errors hit and how they were fixed; what remains. Bullet points, no fluff.",
-    userPrompt: transcript.slice(0, 60_000),
-  });
-  messages.splice(keepHead, start - keepHead, {
+  const keepHead = Math.min(2, messages.length); // system + original task (grounding)
+  // Grow the recent-window backwards from the end until the char budget is hit.
+  let start = messages.length;
+  let size = 0;
+  while (start > keepHead) {
+    size += JSON.stringify(messages[start - 1]).length;
+    if (size > CONTEXT_WINDOW_CHARS) break;
+    start--;
+  }
+  // Never start the window on a tool message (would orphan it) — pull back to
+  // include its calling assistant.
+  while (start > keepHead && messages[start]?.role === "tool") start--;
+  if (start <= keepHead + 1) return false; // window already covers (almost) everything
+  const dropped = start - keepHead;
+  // SEAL, don't just drop: replace the removed span with a DETERMINISTIC digest
+  // of what happened in it (no LLM call — cheap, and it can't hallucinate). A
+  // bare "N messages removed" marker was the reason agents redid work they had
+  // already done: nothing in context said what the dropped span accomplished.
+  const digest = sealDigest(messages.slice(keepHead, start));
+  messages.splice(keepHead, dropped, {
     role: "user",
-    content: `[CONTEXT COMPACTED — reliable summary of YOUR OWN earlier work in this run. Trust it; do NOT redo completed steps.]\n${sum.content}`,
+    content:
+      `[Segment scellé : ${dropped} messages retirés pour rester dans la fenêtre de contexte. ` +
+      `Résumé factuel de ce segment ci-dessous — ce travail EST FAIT, ne le refais pas. ` +
+      `Pour un détail précis, utilise search_context(scope="run").]\n${digest}`,
   });
+  // Belt-and-suspenders: the drop can leave the last head message as an
+  // assistant(tool_calls) whose responses were in the removed middle.
+  sanitizeToolPairs(messages);
   return true;
+}
+
+// Guarantee valid tool-call pairing for the OpenAI-compatible API: every
+// assistant message with tool_calls must be immediately followed by one tool
+// message per tool_call_id, and no orphan tool messages may exist. Mutates in
+// place. Runs after compaction (which can break pairs) and defensively before
+// each model call.
+function sanitizeToolPairs(messages: ChatMessage[]): void {
+  const out: ChatMessage[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const tc = (m as { tool_calls?: Array<{ id: string }> }).tool_calls;
+    if (m.role === "assistant" && tc?.length) {
+      const toolMsgs: ChatMessage[] = [];
+      let j = i + 1;
+      while (j < messages.length && messages[j].role === "tool") { toolMsgs.push(messages[j]); j++; }
+      const answered = new Set(toolMsgs.map((t) => (t as { tool_call_id?: string }).tool_call_id));
+      if (tc.every((c) => answered.has(c.id))) {
+        out.push(m, ...toolMsgs);
+      } else {
+        // Strip the (now unanswerable) tool_calls; keep any text so context stays.
+        out.push({ role: "assistant", content: m.content ?? "[appel d'outil tronqué]" } as ChatMessage);
+      }
+      i = j - 1; // skip the tool messages we just consumed (or dropped)
+    } else if (m.role === "tool") {
+      // Orphan tool message (its calling assistant is gone) → drop it.
+      continue;
+    } else {
+      out.push(m);
+    }
+  }
+  messages.length = 0;
+  messages.push(...out);
 }
 
 // ── Mission self-verification ─────────────────────────────────────────────────
@@ -1476,6 +1816,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
     error_count: number; replans: number; verify_fails: number; meta: Record<string, unknown> | null;
   };
   const isChat = state.mode === "chat" || !state.mission_id;
+  // Room-bound run: same durable tick engine as chat, but the reply/deliverables
+  // are posted back to a room placeholder message instead of a conversation.
+  const roomBinding = ((state.meta as { room?: { room_id: string; placeholder_id: string } } | undefined)?.room) ?? null;
 
   // Run no longer active? clean up.
   const { data: runRow } = await admin.from("internal_agent_runs").select("status").eq("id", runId).maybeSingle();
@@ -1486,6 +1829,8 @@ async function runMissionTick(runId: string, msgId: number | null) {
   }
 
   const { agent, tools } = await loadAgentAndTools(state.agent_id);
+  // Resolve the model endpoint once per tick (provider-aware; decrypts the key).
+  const agentEndpoint = await resolveAgentEndpoint(admin, agent);
   const { data: mission } = state.mission_id
     ? await admin.from("internal_agent_missions")
         .select("id, title, brief, acceptance_criteria, schedule, report_back_to_agent, delegation_depth")
@@ -1495,6 +1840,21 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const ctx = makeToolContext({ admin, agent, runId, missionId: state.mission_id, conversationId: state.conversation_id, delegationDepth: (mission as { delegation_depth?: number } | null)?.delegation_depth ?? 0, runtimeConfig });
   ctx.skills = await loadActivatedSkills(admin, agent.id);
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  // This is a PRIMARY run — let it fan independent subtasks out to ephemeral
+  // parallel sub-agents (children run in-process and stream to their own runId).
+  ctx.spawnParallel = (subtasks) => runParallelSubagents({
+    admin, parentRunId: runId,
+    agentId: agent.id, workspaceId: agent.workspace_id, projectId: agent.project_id, createdBy: agent.created_by ?? null,
+    tools, provider: (state.provider as "groq" | "deepseek") || providerFor(agent), endpoint: agentEndpoint, temperature: agent.temperature ?? 0.3,
+    parentLogEvent: (p) => ctx.logEvent("status", p),
+    makeChildContext: (childRunId) => {
+      const c = makeToolContext({ admin, agent, runId: childRunId, missionId: null, conversationId: null, delegationDepth: (ctx.delegationDepth ?? 0) + 1, runtimeConfig });
+      c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.isSubagent = true;
+      return c;
+    },
+    buildChildSystem: (cap, c) => buildSystemPrompt(agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills)),
+    maxConcurrency: agent.swarm_max_concurrency ?? undefined,
+  }, subtasks);
   // HYBRID: re-probe both worlds each tick and strip whichever is unreachable, so
   // the toolset rebuilt below exposes only healthy worlds (and recovers a world
   // that comes back). Cheap (two parallel health pings) and keeps the agent from
@@ -1503,7 +1863,25 @@ async function runMissionTick(runId: string, msgId: number | null) {
     const h = await gateHybridHealth(ctx);
     if (h.note) await ctx.logEvent("status", { message: `Mode hybride — ${h.note}. Le tick continue avec le monde disponible.` }).catch(() => {});
   }
-  const { defs, executor } = buildInternalToolset(tools, ctx);
+  // ── Progressive disclosure of tool schemas ────────────────────────────────
+  // The tier is decided once per turn by the request classifier and carried in
+  // meta. Families the agent pulled in with load_toolset survive across ticks,
+  // so it never has to re-discover its own toolbox.
+  const metaNow = (state.meta ?? {}) as Record<string, unknown>;
+  let toolTier: ToolTier = (metaNow.tool_tier as ToolTier) ?? "full";
+  const loadedFamilies = new Set<string>(
+    Array.isArray(metaNow.loaded_families) ? (metaNow.loaded_families as string[]) : [],
+  );
+  ctx.loadedFamilies = [...loadedFamilies];
+  ctx.onToolsetLoaded = async (family) => {
+    if (family === "*") toolTier = "full";
+    else loadedFamilies.add(family);
+  };
+
+  const { defs, defsFor, executor } = buildInternalToolset(tools, ctx);
+  /** Schemas for the current round — re-evaluated every round so a mid-loop
+   *  need_tools / load_toolset is honoured immediately, not next tick. */
+  const liveTools = () => defsFor(toolTier);
   // Compact long string args (file content, code, html…) so the live timeline
   // shows WHAT a call does without storing megabytes per event.
   const compactArgs = (a: any): any => {
@@ -1514,11 +1892,20 @@ async function runMissionTick(runId: string, msgId: number | null) {
     }
     return out;
   };
+  // Per-tool consecutive-failure tally (circuit breaker). Survives ticks via
+  // run_state.meta.tool_fails. A tool that keeps erroring — even with DIFFERENT
+  // args each time (so the identical-signature loop guard misses it, e.g. trying
+  // slug after slug of a broken integration) — trips a breaker below.
+  const toolFails: Record<string, number> = {
+    ...((state.meta as { tool_fails?: Record<string, number> } | undefined)?.tool_fails ?? {}),
+  };
   const loggingExecutor: typeof executor = async (name, args) => {
     await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args) });
     const r = await executor(name, args);
     const text = String(r);
-    await ctx.logEvent("tool_result", { tool: name, preview: text.slice(0, 1000), ok: !text.startsWith("ERROR") });
+    const ok = !text.startsWith("ERROR");
+    toolFails[name] = ok ? 0 : (toolFails[name] ?? 0) + 1;
+    await ctx.logEvent("tool_result", { tool: name, preview: text.slice(0, 1000), ok });
     return r;
   };
 
@@ -1546,18 +1933,82 @@ async function runMissionTick(runId: string, msgId: number | null) {
   // Compact the transcript when it gets heavy (protects the model's context
   // window on long runs). Best-effort — a compaction failure never blocks work.
   try {
-    if (await compactMessagesIfNeeded(messages)) {
-      await ctx.logEvent("status", { message: "Contexte compacté — l'historique ancien a été résumé pour garder le fil." }).catch(() => {});
+    if (compactMessagesIfNeeded(messages)) {
+      await ctx.logEvent("status", { message: "Fenêtre de contexte : l'historique ancien a été tronqué (objectif conservé, détails via search_context)." }).catch(() => {});
     }
-  } catch { /* keep going uncompacted */ }
+  } catch { /* keep going untrimmed */ }
+  // Defensive: guarantee valid tool-call pairing before the model call, whatever
+  // upstream mutation (compaction, mid-run message folding) touched the tail.
+  sanitizeToolPairs(messages);
 
+  // ── FOCUS header: refresh situational awareness on EVERY tick ──────────────
+  // Rebuilt from durable state (mission + structured todo tree) so the objective,
+  // what's already done and what comes next survive long transcripts.
+  //
+  // EPHEMERAL: it is NOT written into `messages`. It used to be pushed in and
+  // pulled back out on the next tick — mutating the MIDDLE of the transcript,
+  // which invalidates the provider's prefix cache for everything after it, every
+  // single tick. It is now handed to runToolRounds as an `ephemeral` thunk and
+  // concatenated at send time, after the transcript: same visibility to the
+  // model, zero cache invalidation, and nothing to clean up next tick.
+  const FOCUS_PREFIX = "[FOCUS — auto-generated recap";
+  let focusMessage: ChatMessage | null = null;
+  // One-shot migration: purge FOCUS headers that the previous implementation
+  // persisted into runs already in flight. Harmless once none remain.
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user" && String(messages[i].content ?? "").startsWith(FOCUS_PREFIX)) messages.splice(i, 1);
+  }
+  try {
+    const { data: runTodoRow } = await admin.from("internal_agent_runs").select("todos").eq("id", runId).maybeSingle();
+    type Todo = { id: string; title: string; status: string; parent_id?: string; note?: string };
+    const todos = Array.isArray(runTodoRow?.todos) ? (runTodoRow!.todos as Todo[]) : [];
+    if (todos.length > 0 || mission) {
+      const parentIds = new Set(todos.filter((t) => t.parent_id).map((t) => t.parent_id));
+      const leaves = todos.filter((t) => !parentIds.has(t.id));
+      const done = leaves.filter((t) => t.status === "done");
+      const activeLeaf = leaves.find((t) => t.status === "active");
+      const nextPending = leaves.filter((t) => t.status === "pending").slice(0, 3);
+      const blocked = leaves.filter((t) => t.status === "blocked");
+      const mark = (s: string) => (s === "done" ? "x" : s === "active" ? "▶" : s === "blocked" ? "!" : " ");
+      const renderTree = (parentId: string | undefined, depth: number): string[] =>
+        todos.filter((t) => (t.parent_id ?? undefined) === parentId).flatMap((t) => [
+          `${"  ".repeat(depth)}- [${mark(t.status)}] ${t.title}${t.note ? ` — ${t.note.slice(0, 120)}` : ""}`,
+          ...(depth < 3 ? renderTree(t.id, depth + 1) : []),
+        ]);
+      const tree = renderTree(undefined, 0).slice(0, 40).join("\n");
+      const m = mission as { title?: string; brief?: string | null } | null;
+      const goal = m?.title
+        ? `${m.title}${m.brief ? ` — ${String(m.brief).replace(/\s+/g, " ").slice(0, 300)}` : ""}`
+        : "Complete the user's current request in this conversation.";
+      focusMessage = {
+        role: "user",
+        content: [
+          `${FOCUS_PREFIX} — not a new instruction; use it to stay on track]`,
+          `OBJECTIVE: ${goal}`,
+          leaves.length ? `PROGRESS: ${done.length}/${leaves.length} steps done` : "",
+          activeLeaf ? `NOW: ${activeLeaf.title}` : nextPending[0] ? `NEXT UP: ${nextPending[0].title} (mark it active first)` : "",
+          nextPending.length > (activeLeaf ? 0 : 1) ? `THEN: ${(activeLeaf ? nextPending : nextPending.slice(1)).map((t) => t.title).join(" · ")}` : "",
+          blocked.length ? `BLOCKED: ${blocked.map((t) => `${t.title}${t.note ? ` (${t.note.slice(0, 80)})` : ""}`).join(" · ")}` : "",
+          tree ? `CHECKLIST:\n${tree}` : "",
+          "Stay the course: finish the current step, VERIFY it, update_todos, then move to the next. Never redo work already marked done.",
+        ].filter(Boolean).join("\n"),
+      };
+    }
+  } catch { /* focus header is best-effort */ }
+  /** Appended at SEND time, after the transcript, never persisted. */
+  const ephemeral = (): ChatMessage[] => (focusMessage ? [focusMessage] : []);
+
+  // Model for THIS tick — may get escalated below if the run keeps struggling.
+  let tickModel = state.model || undefined;
   try {
     const result = await runToolRounds({
       provider: (state.provider as "groq" | "deepseek") || providerFor(agent),
-      model: state.model || undefined,
-      endpoint: hostedEndpoint(agent),
-      messages, tools: defs, executor: loggingExecutor,
-      temperature: agent.temperature, maxTokens: 4000, maxRounds: TICK_ROUNDS,
+      model: tickModel,
+      endpoint: agentEndpoint,
+      messages, tools: liveTools, executor: loggingExecutor, ephemeral,
+      // 6000 (was 4000): a full report deliverable emitted in one tool call needs
+      // headroom, otherwise its `content` argument is truncated → invalid/empty.
+      temperature: agent.temperature, maxTokens: 6000, maxRounds: TICK_ROUNDS,
       onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
     });
 
@@ -1614,10 +2065,29 @@ async function runMissionTick(runId: string, msgId: number | null) {
       else { lastSig = sig; sigCount = 1; }
       if (sigCount >= 4) loopDetected = true;
     }
+    // Circuit breaker: a specific tool that failed ≥3 times in a row (even with
+    // varying args) is broken/unavailable — stop hammering it, adapt or skip.
+    const brokenTools = Object.entries(toolFails).filter(([, n]) => (n as number) >= 3).map(([t]) => t);
+    if (!result.finished && brokenTools.length > 0) {
+      const list = brokenTools.join(", ");
+      messages.push({
+        role: "user",
+        content: `OUTIL(S) EN ÉCHEC RÉPÉTÉ : ${list} — a/ont échoué ≥3 fois d'affilée. N'insiste PAS de la même manière. Choisis : (a) une approche VRAIMENT différente (autre outil, autre source/paramètres — ex. read_url sur un site connu au lieu d'une recherche qui échoue), OU (b) marque l'étape concernée comme bloquée (update_todos status="blocked" + note expliquant pourquoi) et CONTINUE le reste du plan avec ce que tu as. Ne bloque jamais tout le run sur un seul outil cassé — livre un résultat partiel utile plutôt que rien.`,
+      });
+      for (const t of brokenTools) toolFails[t] = 0; // reset after nudging so we don't re-fire every tick
+      await ctx.logEvent("status", { message: `Disjoncteur : ${list} en échec répété — changement d'approche demandé.` }).catch(() => {});
+    }
     let errorCount = (state.error_count ?? 0) + result.errorCount;
     let replans = state.replans ?? 0;
     if (!result.finished && (errorCount >= 10 || loopDetected) && replans < 3) {
       replans++;
+      // Escalate to the heavy reasoning model when a run keeps struggling —
+      // start cheap, pay for more capability only where it's actually needed.
+      const heavy = Deno.env.get("AGENT_MODEL_MISSION") || modelForTier("heavy");
+      if (tickModel !== heavy) {
+        tickModel = heavy;
+        await ctx.logEvent("status", { message: `Escalade vers un modèle plus puissant (${heavy}) pour débloquer.` }).catch(() => {});
+      }
       await ctx.logEvent("status", {
         message: loopDetected
           ? `Boucle détectée (même appel répété) — replanification ${replans}/3.`
@@ -1633,6 +2103,25 @@ async function runMissionTick(runId: string, msgId: number | null) {
       lastSig = ""; sigCount = 0;
     }
 
+    // Build the meta to persist at tick-end. CRITICAL: re-read the CURRENT meta
+    // from the DB and treat it as the source of truth for mid-tick accumulators
+    // (spawned_subtasks written by spawn_parallel_agents, report_draft written by
+    // report_section / consumed by create_deliverable). The local `meta` snapshot
+    // was loaded BEFORE the tick ran, so writing `{ ...meta }` would clobber those
+    // mid-tick writes — that's what let a fan-out re-spawn duplicates and a report
+    // draft vanish across ticks. We overlay only the keys we own locally.
+    const buildNextMeta = async (): Promise<Record<string, unknown>> => {
+      const { data: fs } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
+      const freshMeta = ((fs as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+      return {
+        ...freshMeta, // DB truth: spawned_subtasks, report_draft (incl. deletions)
+        deliverable_forced: (meta.deliverable_forced as boolean | undefined) ?? freshMeta.deliverable_forced,
+        last_sig: lastSig, sig_count: sigCount, tool_fails: toolFails,
+        // Progressive disclosure carried to the next tick.
+        tool_tier: toolTier, loaded_families: [...loadedFamilies],
+      };
+    };
+
     const reachedBudget = newRound >= state.max_rounds;
     if (result.finished || reachedBudget) {
       let finalOutput = result.content?.trim() || "";
@@ -1647,9 +2136,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
         try {
           const fin = await runToolRounds({
             provider: (state.provider as "groq" | "deepseek") || providerFor(agent),
-            model: state.model || undefined,
-            endpoint: hostedEndpoint(agent),
-            messages, tools: defs, executor: loggingExecutor,
+            model: tickModel,
+            endpoint: agentEndpoint,
+            messages, tools: liveTools, executor: loggingExecutor, ephemeral,
             temperature: agent.temperature, maxTokens: 4000, maxRounds: 5,
             onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
           });
@@ -1661,7 +2150,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
           finalProvider = fin.provider; finalModel = fin.model;
         } catch (e) {
           const nm = (e as { name?: string } | null)?.name;
-          if (nm === "AwaitingInputError" || nm === "RunCancelledError") throw e;
+          if (nm === "AwaitingInputError" || nm === "AwaitingApprovalError" || nm === "RunCancelledError") throw e;
           // Other errors during finalization: finalize with what we have.
         }
       }
@@ -1680,7 +2169,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
           await admin.from("internal_agent_run_state").update({
             messages, round: newRound, tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost,
             error_count: errorCount, replans, verify_fails: (state.verify_fails ?? 0) + 1,
-            meta: { ...meta, last_sig: lastSig, sig_count: sigCount },
+            meta: await buildNextMeta(),
             processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
           }).eq("run_id", runId);
           if (msgId != null) await admin.rpc("agent_tick_next", { p_msg_id: msgId, p_run_id: runId });
@@ -1690,10 +2179,118 @@ async function runMissionTick(runId: string, msgId: number | null) {
         if (verdict?.pass) await ctx.logEvent("status", { message: "Auto-vérification: OK — critères remplis." }).catch(() => {});
       }
 
+      // ── Salvage a pending report draft ─────────────────────────────────────
+      // The agent may build a report section-by-section (report_section →
+      // run_state.meta.report_draft) but end the run WITHOUT calling
+      // create_deliverable to finalize it — so the draft would be lost and the
+      // card empty. Auto-finalize any pending draft into a real report here.
+      if (result.finished) {
+        try {
+          const { data: fs } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
+          const draft = ((fs as { meta?: { report_draft?: { title?: string; subtitle?: string; author?: string; summary?: string; sections?: unknown[] } } } | null)?.meta?.report_draft) ?? null;
+          if (draft && Array.isArray(draft.sections) && draft.sections.length > 0) {
+            const { count } = await admin.from("internal_agent_deliverables")
+              .select("id", { count: "exact", head: true }).eq("run_id", runId).eq("kind", "report");
+            if ((count ?? 0) === 0) {
+              const content = JSON.stringify({
+                title: draft.title || "Rapport", subtitle: draft.subtitle, author: draft.author,
+                summary: draft.summary, sections: draft.sections,
+              });
+              await admin.from("internal_agent_deliverables").insert({
+                run_id: runId, mission_id: state.mission_id ?? null, conversation_id: state.conversation_id,
+                agent_id: agent.id, kind: "report", name: draft.title || "Rapport",
+                content, summary: (draft.summary || draft.title || "Rapport").slice(0, 200),
+              }).then(() => {}, () => {});
+              await ctx.logEvent("status", { message: "Rapport finalisé automatiquement depuis les sections construites." }).catch(() => {});
+            }
+          }
+        } catch { /* best-effort salvage */ }
+      }
+
+      // ── Chat guard: agent CLAIMED a deliverable but never saved one ─────────
+      // The #1 confusing failure: the model writes "le rapport est en carte"
+      // without calling create_deliverable, so the user sees no card. If the
+      // final answer claims one and none exists for this run, force it — ONCE.
+      if (isChat && result.finished && !(meta.deliverable_forced as boolean)) {
+        const countRun = async () => (await admin
+          .from("internal_agent_deliverables").select("id", { count: "exact", head: true }).eq("run_id", runId)).count ?? 0;
+        const claimsDeliverable = /\b(rapport|report|livrable|deliverable|carte|artifact)\b/i.test(finalOutput);
+        // Did the USER actually ask for a report/deliverable? (Scan real user
+        // messages, skipping auto-injected FOCUS / trim / compaction markers.)
+        const userText = messages
+          .filter((m) => m.role === "user" && !/^\[(FOCUS|Historique|CONTEXT)/.test(String(m.content ?? "")))
+          .map((m) => String(m.content ?? "")).join(" \n ");
+        const reportRequested = /\b(rapport|report|livrable|deliverable|analyse|analyser|audit|synth[eè]se|bilan|plan de|tableau de bord|dashboard)\b/i.test(userText);
+        // Fire when a deliverable is expected (the final text claims one OR the
+        // user requested one) but none was saved — even if the final answer is
+        // EMPTY (the model often ends silent after a failed create_deliverable).
+        if ((await countRun()) === 0 && (claimsDeliverable || reportRequested)) {
+          meta.deliverable_forced = true; // guard against looping
+          // Try once to make the agent create a PROPER report itself…
+          messages.push({
+            role: "user",
+            content: "L'utilisateur a EXPLICITEMENT demandé un rapport / livrable. NE pose PAS de question et ne demande PAS quoi faire — tu as déjà les informations (ou les outils pour les obtenir). Produis MAINTENANT le rapport COMPLET en appelant create_deliverable(kind=\"report\", name, content) : sections, KPIs, tableaux, risques (conçu avec ton skill report-designer — pas de prose), à partir de l'analyse que tu viens de faire. Si des données manquent, mets des hypothèses étiquetées plutôt que de t'arrêter. Puis termine par un court résumé.",
+          });
+          try {
+            const fin = await runToolRounds({
+              provider: (state.provider as "groq" | "deepseek") || providerFor(agent),
+              model: tickModel, endpoint: agentEndpoint,
+              messages, tools: liveTools, executor: loggingExecutor, ephemeral,
+              temperature: agent.temperature, maxTokens: 4000, maxRounds: 4,
+              onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
+            });
+            finalOutput = fin.content?.trim() || finalOutput;
+            newRound += fin.roundsRun;
+            tokIn += fin.usage.prompt_tokens ?? 0; tokOut += fin.usage.completion_tokens ?? 0;
+            cost += estimateCost(fin.usage, fin.provider);
+            finalProvider = fin.provider; finalModel = fin.model;
+          } catch (e) {
+            const nm = (e as { name?: string } | null)?.name;
+            if (nm === "AwaitingInputError" || nm === "AwaitingApprovalError" || nm === "RunCancelledError") throw e;
+          }
+          // …still nothing? Materialise it server-side so the user ALWAYS gets a
+          // card. Salvage a body from the run's recent substantive output when the
+          // final answer is empty (the model often ends silent after doing the
+          // work) — never persist an empty card.
+          if ((await countRun()) === 0) {
+            let body = finalOutput;
+            if (!body.trim()) {
+              const recent = messages
+                .filter((m) => (m.role === "assistant" || m.role === "tool") && String(m.content ?? "").trim().length > 40)
+                .slice(-14).map((m) => String(m.content).slice(0, 800)).join("\n\n");
+              body = recent
+                ? `# Rapport (récupéré automatiquement)\n\n_L'agent a effectué le travail mais n'a pas rédigé de conclusion ; voici une synthèse des dernières étapes._\n\n${recent}`
+                : "Rapport généré automatiquement — voir le détail des étapes ci-dessus.";
+            }
+            const summary = body.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
+            await admin.from("internal_agent_deliverables").insert({
+              run_id: runId, mission_id: null, conversation_id: state.conversation_id,
+              agent_id: agent.id, kind: "markdown", name: "Rapport", content: body, summary,
+            }).then(() => {}, () => {});
+            await ctx.logEvent("status", { message: "Livrable matérialisé automatiquement (l'agent avait fini sans l'enregistrer)." }).catch(() => {});
+          }
+        }
+      }
+
       if (isChat) {
+        // Never end on an empty/stub reply: if a deliverable exists, point to it
+        // with its real summary so the user gets a meaningful closing message.
+        if (!finalOutput.trim()) {
+          const { data: dv } = await admin
+            .from("internal_agent_deliverables").select("name, summary")
+            .eq("run_id", runId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (dv) {
+            finalOutput = `✅ **${(dv as { name?: string }).name ?? "Livrable"}** créé — voir la carte ci-dessus.${(dv as { summary?: string }).summary ? `\n\n${(dv as { summary?: string }).summary}` : ""}`;
+          }
+        }
         if (!finalOutput) finalOutput = "Terminé — voir le détail des étapes ci-dessus.";
-        await finalizeChatSuccess(admin, agent, state.conversation_id!, runId, finalOutput,
-          { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel });
+        if (roomBinding) {
+          await finalizeRoomSuccess(admin, agent, roomBinding, runId, finalOutput,
+            { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel });
+        } else {
+          await finalizeChatSuccess(admin, agent, state.conversation_id!, runId, finalOutput,
+            { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel });
+        }
       } else {
         if (!finalOutput) finalOutput = "Mission terminée — voir le détail des étapes et des livrables.";
         await finalizeMissionSuccess(admin, agent, runId, (mission ?? { id: state.mission_id }) as any, finalOutput,
@@ -1720,9 +2317,11 @@ async function runMissionTick(runId: string, msgId: number | null) {
     }
 
     // Not done → persist updated messages and chain the next tick atomically.
+    // `model` carries any mid-run escalation forward to the next tick.
     await admin.from("internal_agent_run_state").update({
       messages, round: newRound, tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost,
-      error_count: errorCount, replans, meta: { ...meta, last_sig: lastSig, sig_count: sigCount },
+      error_count: errorCount, replans, model: tickModel ?? state.model,
+      meta: await buildNextMeta(),
       processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
     }).eq("run_id", runId);
     if (msgId != null) await admin.rpc("agent_tick_next", { p_msg_id: msgId, p_run_id: runId });
@@ -1735,10 +2334,22 @@ async function runMissionTick(runId: string, msgId: number | null) {
         status: "awaiting_input", finished_at: new Date().toISOString(),
         final_output: q.slice(0, 2000), pending_question: { question: e.question, options: e.options },
       }).eq("id", runId);
-      if (isChat) {
+      if (roomBinding) {
+        // Rooms don't have inline answer buttons — surface the question as the
+        // room reply; the user answers with a new message (which starts a fresh
+        // room turn carrying the context).
+        await admin.from("service_room_messages").update({
+          content: q, status: "done", run_id: runId,
+        }).eq("id", roomBinding.placeholder_id);
+        await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+      } else if (isChat) {
         // Surface the question as the assistant's reply so the user can just answer.
+        // Options become clickable buttons in the chat (ui_blocks 'options').
         if (state.conversation_id) {
-          await admin.from("internal_agent_messages").insert({ conversation_id: state.conversation_id, agent_id: agent.id, role: "assistant", content: q, run_id: runId });
+          const optionsBlock = e.options.length
+            ? [{ component: "options", props: { question: e.question, options: e.options.slice(0, 6) } }]
+            : null;
+          await admin.from("internal_agent_messages").insert({ conversation_id: state.conversation_id, agent_id: agent.id, role: "assistant", content: e.options.length ? e.question : q, run_id: runId, ui_blocks: optionsBlock });
           await admin.from("internal_agent_conversations").update({ updated_at: new Date().toISOString() }).eq("id", state.conversation_id);
           // If this chat came from a channel, ask the question there too.
           await postReplyToBoundChannel(admin, agent, state.conversation_id, q);
@@ -1749,6 +2360,20 @@ async function runMissionTick(runId: string, msgId: number | null) {
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
       return jsonResponse({ ok: true, awaiting_input: true });
+    }
+    // Write-action approval in a room: rooms have no inline approval, so end the
+    // turn with a clear note (don't loop the tick) — approve in direct chat.
+    if ((e as { name?: string })?.name === "AwaitingApprovalError" && roomBinding) {
+      const summary = (e as { summary?: string }).summary ?? "action sensible";
+      await admin.from("internal_agent_runs").update({ status: "awaiting_input", finished_at: new Date().toISOString() }).eq("id", runId);
+      await admin.from("service_room_messages").update({
+        content: `⏸️ L'action « ${summary} » nécessite une approbation humaine. Ouvre-moi en chat direct (hors room) pour l'approuver et l'exécuter.`,
+        status: "done", run_id: runId,
+      }).eq("id", roomBinding.placeholder_id);
+      await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+      await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
+      if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+      return jsonResponse({ ok: true, awaiting_approval: true });
     }
     if (e instanceof RunCancelledError) {
       await admin.from("internal_agent_runs").update({ status: "cancelled", finished_at: new Date().toISOString() }).eq("id", runId);
@@ -1799,7 +2424,7 @@ async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Mobile companion app. Two ways in — a logged-in FounderOS **account** (user JWT
+// Mobile companion app. Two ways in — a logged-in AchiCorp **account** (user JWT
 // in Authorization) which unlocks every agent the user can access, or the legacy
 // per-agent **secret** which unlocks that one agent. Then dispatched on `action`,
 // using the SAME agent + conversation store as the web chat (shared memory, tools,
@@ -1817,7 +2442,7 @@ async function handleMobile(body: Record<string, unknown>, authHeader: string | 
   const action = String(body.action ?? (body.verify ? "verify" : "send"));
 
   // ── Resolve the caller ──
-  // No secret → account mode: authenticate the FounderOS user from the JWT.
+  // No secret → account mode: authenticate the AchiCorp user from the JWT.
   let userId: string | null = null;
   let userClient: ReturnType<typeof createUserClient> | null = null;
   if (!secret) {
@@ -1933,6 +2558,110 @@ async function handleMobile(body: Record<string, unknown>, authHeader: string | 
   return jsonResponse({ error: "unknown mobile action" }, { status: 400 });
 }
 
+// ── Agent designer ──────────────────────────────────────────────────────────
+// One request in, one runnable agent spec out. The model picks the studio when
+// the request is really about coding / testing / simulating an app, because a
+// studio agent gets a real engine instead of generic web tools.
+const DESIGNABLE_TOOL_KINDS = [
+  "web_search", "web_fetch", "rag_search", "db_read", "vibe_code",
+] as const;
+
+const DESIGNER_SYSTEM = `You design internal AI agents for a company workspace. Given a plain-language request, output ONE agent that would actually do that job.
+
+Return STRICT JSON, no prose, with this shape:
+{
+  "name": "short human name, e.g. 'Release Tester'",
+  "tagline": "one line: what you get",
+  "category": "Support|Revenue|Growth|Ops|Leadership|Product|Cybersecurity|Data|HR|Supply chain|Design|QA|R&D|Finance|Legal|Marketing|Assistant",
+  "studio": "vibe_code|testing|simulation|null",
+  "persona": "2-3 sentences describing who this agent is and how it behaves",
+  "instructions": "the agent's operating procedure: numbered steps it follows for every task, plus explicit rules about what it must never do. Be specific to the request — no generic filler.",
+  "autonomy": "advisor|assisted|autopilot",
+  "max_steps": 8,
+  "tools": [{ "kind": "web_search|web_fetch|rag_search|db_read|vibe_code", "name": "short label", "description": "why this agent needs it" }],
+  "outcomes": ["3 concrete results the owner gets"],
+  "suggestedSchedule": { "label": "string", "cron": "0 9 * * 1", "prompt": "what to do on each run" } or null
+}
+
+Rules:
+- studio="vibe_code" ONLY when the agent writes/modifies real code in a repository. Give it the vibe_code tool.
+- studio="testing" for agents that run test suites against an app; "simulation" for agents that simulate users/scenarios. Otherwise null.
+- autonomy: "advisor" when the job is analysis/recommendation, "assisted" when it acts but a human should approve writes, "autopilot" only for low-risk repetitive work.
+- max_steps: 6-10 for simple jobs, up to 20 for coding/testing agents.
+- Instructions are the product. Write what a competent operator would write, in the language of the request.`;
+
+async function designAgent(request: string, projectId: string | null): Promise<Response> {
+  // Ground the design in what this project actually has, so the model doesn't
+  // invent a repo-driven agent for a project with no repository connected.
+  let context = "";
+  if (projectId) {
+    const admin = createServiceClient();
+    const [{ data: repos }, { data: connectors }] = await Promise.all([
+      admin.from("repositories").select("full_name").eq("project_id", projectId).limit(10),
+      admin.from("connectors").select("provider").eq("project_id", projectId).eq("status", "connected").limit(20),
+    ]);
+    const repoNames = ((repos ?? []) as Array<{ full_name: string }>).map((r) => r.full_name);
+    const providers = ((connectors ?? []) as Array<{ provider: string }>).map((c) => c.provider);
+    context =
+      `\n\nProject context — repositories: ${repoNames.length ? repoNames.join(", ") : "none connected"}.` +
+      ` Connected tools: ${providers.length ? providers.join(", ") : "none"}.`;
+  }
+
+  const { content } = await callAi({
+    task: "json_extraction",
+    systemPrompt: DESIGNER_SYSTEM,
+    userPrompt: `Request: ${request}${context}`,
+    jsonMode: true,
+    temperature: 0.4,
+    maxTokens: 2000,
+  });
+
+  const spec = safeParseJson<Record<string, unknown>>(content);
+  if (!spec || typeof spec.name !== "string") {
+    return jsonResponse({ error: "Could not design an agent from this request", detail: content.slice(0, 300) }, { status: 422 });
+  }
+
+  // Normalise everything the UI will instantiate — a hallucinated tool kind or
+  // autonomy level would fail at insert time (the tool-kind CHECK constraint),
+  // so they're filtered here rather than surfacing as a broken agent.
+  const rawTools = Array.isArray(spec.tools) ? spec.tools as Array<Record<string, unknown>> : [];
+  const tools = rawTools
+    .filter((t) => DESIGNABLE_TOOL_KINDS.includes(String(t.kind) as typeof DESIGNABLE_TOOL_KINDS[number]))
+    .slice(0, 6)
+    .map((t) => ({
+      kind: String(t.kind),
+      name: String(t.name ?? t.kind).slice(0, 60),
+      description: t.description ? String(t.description).slice(0, 200) : undefined,
+      ...(String(t.kind) === "vibe_code" ? { config: { actions: ["run", "apply", "pr_status", "fix_pr"] } } : {}),
+    }));
+
+  const studio = ["vibe_code", "testing", "simulation"].includes(String(spec.studio)) ? String(spec.studio) : null;
+  const autonomy = ["advisor", "assisted", "autopilot"].includes(String(spec.autonomy)) ? String(spec.autonomy) : "assisted";
+  const maxSteps = Number(spec.max_steps);
+
+  return jsonResponse({
+    spec: {
+      name: String(spec.name).slice(0, 60),
+      tagline: String(spec.tagline ?? "").slice(0, 160),
+      category: String(spec.category ?? "Assistant"),
+      studio,
+      persona: String(spec.persona ?? ""),
+      instructions: String(spec.instructions ?? ""),
+      autonomy,
+      max_steps: Number.isFinite(maxSteps) ? Math.min(Math.max(Math.round(maxSteps), 4), 24) : 10,
+      // A studio agent is useless without its engine — add it back if the model
+      // described the studio but forgot the tool.
+      tools: studio === "vibe_code" && !tools.some((t) => t.kind === "vibe_code")
+        ? [{ kind: "vibe_code", name: "Vibe Code", config: { actions: ["run", "apply", "pr_status", "fix_pr"] } }, ...tools]
+        : tools,
+      outcomes: Array.isArray(spec.outcomes) ? (spec.outcomes as unknown[]).slice(0, 4).map(String) : [],
+      suggestedSchedule: spec.suggestedSchedule && typeof spec.suggestedSchedule === "object"
+        ? spec.suggestedSchedule
+        : null,
+    },
+  });
+}
+
 Deno.serve(async (req) => {
   const corsResp = handleCors(req);
   if (corsResp) return corsResp;
@@ -1968,11 +2697,26 @@ Deno.serve(async (req) => {
       return await runMissionTick(run_id, typeof msg_id === "number" ? msg_id : null);
     }
 
-    // Mobile companion app: authenticated by a FounderOS account (user JWT) or the
+    // Mobile companion app: authenticated by a AchiCorp account (user JWT) or the
     // agent's own (id + secret). Dispatches on body.action (list_agents / verify /
     // list_conversations / get_messages / send), same store as the web chat.
     if (mode === "mobile" || mode === "mobile_chat") {
       return await handleMobile(body, authHeader);
+    }
+
+    // DESIGN: turn a plain-language request ("un agent qui teste mon app avant
+    // chaque release") into a complete agent spec the UI can instantiate. Lives
+    // here rather than in its own function because it needs exactly this
+    // module's model routing — and the project is one slot from Supabase's
+    // 100-function cap.
+    if (mode === "design") {
+      const { request, project_id } = body as { request?: string; project_id?: string };
+      if (!request?.trim()) return jsonResponse({ error: "request required" }, { status: 400 });
+      if (!isService) {
+        const { data: userData, error: userErr } = await createUserClient(authHeader).auth.getUser();
+        if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+      }
+      return await designAgent(request.trim(), project_id ?? null);
     }
 
     if (!agent_id || !mode) {

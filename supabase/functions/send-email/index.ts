@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: from ?? "FounderOS <noreply@founderos.app>",
+        from: from ?? "AchiCorp <noreply@founderos.app>",
         to: Array.isArray(to) ? to : [to],
         subject,
         html: html ?? undefined,

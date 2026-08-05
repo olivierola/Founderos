@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot, Plus, Loader2, ChevronRight, MessageSquare, Target, Wrench, Users as UsersIcon,
-  Sparkles, Check, ShieldCheck, CalendarClock,
+  Sparkles, Check, ShieldCheck, CalendarClock, Network,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,12 +15,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { type AgentTemplate } from "./agentTemplates";
+import { STUDIO_LABELS, type AgentTemplate, type StudioKind } from "./agentTemplates";
 import { instantiateTemplate, type TemplateOverrides } from "./instantiateTemplate";
 import { TemplateDrawer } from "./TemplateDrawer";
 import { cn } from "@/lib/utils";
-import { PixelField } from "./PixelField";
-import { AvatarPicker, AgentAvatar, AVATAR_OPTIONS } from "./AvatarPicker";
+import { AgentIdentity } from "@/components/AgentIdentity";
+import { AgentCard as AgentCardShell, CHIP_COLORS, type AgentChip } from "./AgentCard";
+import { AvatarPicker, AVATAR_OPTIONS } from "./AvatarPicker";
 
 const ACCENT_COLORS = [
   "#2F2FE4", "#7c3aed", "#db2777", "#e11d48",
@@ -33,11 +34,16 @@ interface InternalAgent {
   description: string | null;
   avatar_emoji: string | null;
   avatar_url: string | null;
+  avatar_style: "avatar" | "orb" | null;
   accent_color: string | null;
   created_by: string;
   created_at: string;
   chat_enabled: boolean;
   mission_enabled: boolean;
+  service_dashboard_id: string | null;
+  is_orchestrator: boolean;
+  studio: StudioKind | null;
+  swarm_enabled: boolean | null;
 }
 
 export function InternalAgentsListPage() {
@@ -63,19 +69,61 @@ export function InternalAgentsListPage() {
     navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${id}/chat`);
   }
 
-  const { data: agents, isLoading } = useQuery({
+  const { data: allAgents, isLoading } = useQuery({
     queryKey: ["internal_agents", projectId, user?.id],
     enabled: !!projectId,
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agents")
-        .select("id, name, description, avatar_emoji, avatar_url, accent_color, created_by, created_at, chat_enabled, mission_enabled")
+        .select("id, name, description, avatar_emoji, avatar_url, avatar_style, accent_color, created_by, created_at, chat_enabled, mission_enabled, service_dashboard_id, is_orchestrator, studio, swarm_enabled")
         .eq("project_id", projectId!)
         .eq("is_archived", false)
         .order("created_at", { ascending: false });
       return (data ?? []) as InternalAgent[];
     },
   });
+  // Orchestrators are per-dashboard default assistants — hidden from this overview.
+  const agents = useMemo(() => (allAgents ?? []).filter((a) => !a.is_orchestrator), [allAgents]);
+
+  // Service dashboards, so agents can be grouped by the service they belong to.
+  const { data: dashboards } = useQuery({
+    queryKey: ["service_dashboards_overview", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("service_dashboards")
+        .select("id, name, color, position")
+        .eq("project_id", projectId!)
+        .order("position", { ascending: true });
+      return (data ?? []) as Array<{ id: string; name: string; color: string | null; position: number }>;
+    },
+  });
+
+  // Group agents by their service dashboard; unassigned agents go last.
+  const groups = useMemo(() => {
+    const byId = new Map<string, InternalAgent[]>();
+    const unassigned: InternalAgent[] = [];
+    for (const a of agents) {
+      if (a.service_dashboard_id) {
+        const arr = byId.get(a.service_dashboard_id) ?? [];
+        arr.push(a); byId.set(a.service_dashboard_id, arr);
+      } else unassigned.push(a);
+    }
+    const out: Array<{ id: string | null; name: string; color: string | null; agents: InternalAgent[] }> = [];
+    for (const d of dashboards ?? []) {
+      const list = byId.get(d.id);
+      if (list && list.length) out.push({ id: d.id, name: d.name, color: d.color, agents: list });
+    }
+    if (unassigned.length) out.push({ id: null, name: "Sans service", color: null, agents: unassigned });
+    return out;
+  }, [agents, dashboards]);
+
+  function openAgent(a: InternalAgent) {
+    const dashId = a.service_dashboard_id;
+    navigate(dashId
+      ? `/app/${workspaceSlug}/${projectSlug}/service/${dashId}/agent/${a.id}`
+      : `/app/${workspaceSlug}/${projectSlug}/agent/internal/${a.id}/chat`);
+  }
 
   // Per-agent counts (missions, members, tools) for grid badges.
   const ids = (agents ?? []).map((a) => a.id);
@@ -132,8 +180,8 @@ export function InternalAgentsListPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Internal agents"
-        description="Build internal AI collaborators for your team. Give them instructions, tools, and missions."
+        title="Agents par service"
+        description="Vue d'ensemble de tous vos agents, regroupés par dashboard de service. Cliquez un agent pour ouvrir ses pages dans son service."
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setTemplatesOpen(true)} className="gap-1.5">
@@ -150,7 +198,7 @@ export function InternalAgentsListPage() {
         <div className="flex h-48 items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
-      ) : !agents || agents.length === 0 ? (
+      ) : agents.length === 0 ? (
         <EmptyState
           icon={Bot}
           title="No internal agents yet"
@@ -167,25 +215,35 @@ export function InternalAgentsListPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {agents.map((a) => (
-            <AgentCard
-              key={a.id}
-              agent={a}
-              counts={counts?.[a.id]}
-              isMine={a.created_by === user?.id}
-              onOpen={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${a.id}/chat`)}
-            />
+        <div className="space-y-8">
+          {groups.map((g) => (
+            <section key={g.id ?? "none"}>
+              <div className="mb-3 flex items-center gap-2.5">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: g.color || "hsl(var(--muted-foreground))" }} />
+                <h2 className="text-sm font-semibold">{g.name}</h2>
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{g.agents.length}</span>
+                {g.id && (
+                  <button
+                    onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/service/${g.id}/agents`)}
+                    className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    Ouvrir le dashboard <ChevronRight className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-[30px] sm:grid-cols-2 lg:grid-cols-3">
+                {g.agents.map((a) => (
+                  <AgentCard
+                    key={a.id}
+                    agent={a}
+                    counts={counts?.[a.id]}
+                    isMine={a.created_by === user?.id}
+                    onOpen={() => openAgent(a)}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="group flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
-          >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-dashed border-current transition-transform group-hover:scale-110">
-              <Plus className="h-6 w-6" />
-            </span>
-            <span className="text-sm font-medium">Nouvel agent</span>
-          </button>
         </div>
       )}
 
@@ -247,8 +305,8 @@ export function InternalAgentsListPage() {
   );
 }
 
-// Agent card: animated pixel field (accent-coloured, intensifies on hover) +
-// the chosen avatar + basic info.
+// Internal-agent card — the shared shell, fed with this list's own chips and
+// counters. Identity is the agent's avatar OR floating orb, per avatar_style.
 function AgentCard({
   agent,
   counts,
@@ -260,63 +318,38 @@ function AgentCard({
   isMine: boolean;
   onOpen: () => void;
 }) {
-  const [hover, setHover] = useState(false);
-  const accent = agent.accent_color ?? "#2F2FE4";
+  const chips: AgentChip[] = [];
+  if (agent.studio) chips.push({ icon: Sparkles, label: STUDIO_LABELS[agent.studio], color: CHIP_COLORS.studio });
+  if (agent.chat_enabled) chips.push({ icon: MessageSquare, label: "Chat", color: CHIP_COLORS.chat });
+  if (agent.mission_enabled) chips.push({ icon: Target, label: "Missions", color: CHIP_COLORS.missions });
+  if (agent.swarm_enabled !== false)
+    chips.push({
+      icon: Network,
+      label: "Essaim",
+      color: CHIP_COLORS.accent,
+      title: "Peut paralléliser en lançant plusieurs instances de lui-même",
+    });
+
   return (
-    <div
+    <AgentCardShell
+      // Studio agents keep the animated border they had as templates, so the
+      // class of agent stays recognisable once it's live.
+      className={cn(agent.studio && "studio-border")}
       onClick={onOpen}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className="group relative cursor-pointer overflow-hidden rounded-2xl border bg-card transition-all duration-300 hover:-translate-y-0.5"
-      style={{
-        borderColor: hover ? accent : "hsl(var(--border))",
-        boxShadow: hover ? `0 16px 40px -16px ${accent}66` : undefined,
-      }}
-    >
-      <PixelField accent={accent} active={hover} />
-      {/* Legibility veil over the pixel field (lets dots glow through, more on hover). */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-card via-card/80 to-card/40 transition-opacity duration-300 group-hover:opacity-90" />
-
-      <div className="relative z-10 p-4">
-        <div className="mb-3 flex items-start justify-between">
-          <div
-            className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl shadow-sm ring-2 ring-card"
-            style={{ outline: `1.5px solid ${accent}66` }}
-          >
-            <AgentAvatar url={agent.avatar_url} seed={agent.name} className="h-full w-full" />
-          </div>
-          {isMine && <Badge variant="outline" className="shrink-0 text-[10px]">Owner</Badge>}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <h3 className="truncate font-semibold leading-tight">{agent.name}</h3>
-        </div>
-        <p className="mt-1 line-clamp-2 min-h-[2rem] text-xs text-muted-foreground">
-          {agent.description || "No description"}
-        </p>
-
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {agent.chat_enabled && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-              <MessageSquare className="h-3 w-3" /> Chat
-            </span>
-          )}
-          {agent.mission_enabled && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-              <Target className="h-3 w-3" /> Missions
-            </span>
-          )}
-        </div>
-
-        <div className="mt-3 flex items-center gap-4 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+      identity={
+        <AgentIdentity style={agent.avatar_style} url={agent.avatar_url} seed={agent.name} size={56} rounded="rounded-xl" lightOrb />
+      }
+      name={agent.name}
+      description={agent.description}
+      chips={chips.slice(0, 2)}
+      meta={
+        <span className="flex items-center justify-end gap-2.5">
           <span className="inline-flex items-center gap-1" title="Missions"><Target className="h-3 w-3" /> {counts?.missions ?? 0}</span>
           <span className="inline-flex items-center gap-1" title="Tools & integrations"><Wrench className="h-3 w-3" /> {counts?.tools ?? 0}</span>
           <span className="inline-flex items-center gap-1" title="Members"><UsersIcon className="h-3 w-3" /> {counts?.members ?? 0}</span>
-          <span className="ml-auto inline-flex items-center gap-1 font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-            Open <ChevronRight className="h-3 w-3" />
-          </span>
-        </div>
-      </div>
-    </div>
+          {isMine && <span title="You own this agent">· Owner</span>}
+        </span>
+      }
+    />
   );
 }

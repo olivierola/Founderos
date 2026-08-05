@@ -187,7 +187,7 @@ export function FeaturesPage() {
         <div className="mx-auto max-w-4xl px-4 sm:px-6">
           <div className="mx-auto mb-10 max-w-2xl text-center">
             <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-              RedAI vs. spreadsheets + Notion + 5 dashboards
+              AchiCorp vs. spreadsheets + Notion + 5 dashboards
             </h2>
             <p className="mt-3 text-muted-foreground">
               The honest comparison. We don't replace your IDE or your design tool — we replace the operational mess between them.
@@ -198,7 +198,7 @@ export function FeaturesPage() {
               <thead className="border-b border-border bg-secondary/30 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 text-left">Capability</th>
-                  <th className="px-4 py-3 text-center">RedAI</th>
+                  <th className="px-4 py-3 text-center">AchiCorp</th>
                   <th className="px-4 py-3 text-center">Others</th>
                 </tr>
               </thead>

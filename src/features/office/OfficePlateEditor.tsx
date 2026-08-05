@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Plate, usePlateEditor } from "platejs/react";
 import { CopilotPlugin } from "@platejs/ai/react";
 import { aiChatPlugin } from "@/components/ai-kit";
@@ -25,6 +25,7 @@ export function OfficePlateEditor({
   workspaceId,
   projectId,
   useKnowledge = true,
+  renderHeader,
 }: {
   value: unknown;
   onChange?: (value: any[]) => void;
@@ -34,6 +35,8 @@ export function OfficePlateEditor({
   workspaceId?: string | null;
   projectId?: string | null;
   useKnowledge?: boolean;
+  /** Rendered inside the Plate tree (so it can use editor hooks: undo/redo/insert). */
+  renderHeader?: () => ReactNode;
 }) {
   const editor = usePlateEditor({
     plugins: EditorKit,
@@ -77,14 +80,17 @@ export function OfficePlateEditor({
   return (
     <TooltipProvider delayDuration={300}>
       <Plate editor={editor} onChange={({ value }) => onChange?.(value)}>
-        <EditorContainer variant="default" className={cn("h-full", className)}>
-          <Editor
-            variant="default"
-            placeholder={placeholder ?? "Type / for commands…"}
-            // Full-width: drop the variant's large centering side padding.
-            className={cn("px-6 pt-4 pb-24 sm:px-8", editorClassName)}
-          />
-        </EditorContainer>
+        <div className="flex h-full flex-col">
+          {renderHeader?.()}
+          <EditorContainer variant="default" className={cn("min-h-0 flex-1", className)}>
+            <Editor
+              variant="default"
+              placeholder={placeholder ?? "Type / for commands…"}
+              // Full-width: drop the variant's large centering side padding.
+              className={cn("px-6 pt-4 pb-24 sm:px-8", editorClassName)}
+            />
+          </EditorContainer>
+        </div>
       </Plate>
     </TooltipProvider>
   );

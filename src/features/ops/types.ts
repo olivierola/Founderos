@@ -58,6 +58,16 @@ export type OpsJobType =
   | "docker_compose_up" | "docker_compose_down" | "app_deploy" | "app_rollback" | "app_restart"
   | "ssh_exec" | "custom";
 
+/**
+ * Job types the ops-runner v1 actually executes (ops-runner/src/handlers.js).
+ * Every other OpsJobType is a stub that fails with "not yet implemented" —
+ * the UI must not enqueue them. Extend this set as handlers get written.
+ */
+export const RUNNER_IMPLEMENTED_JOB_TYPES: ReadonlySet<OpsJobType> = new Set<OpsJobType>([
+  "server_test", "server_health", "security_audit", "docker_install",
+  "firewall_setup", "nginx_setup", "ssl_setup", "ssh_exec",
+]);
+
 export type OpsAutonomyMode = "advisor" | "assisted" | "controlled" | "autopilot";
 export type OpsRiskLevel = "low" | "medium" | "high" | "critical";
 

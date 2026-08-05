@@ -6,7 +6,7 @@
 #   1. Docker Desktop daemon
 #   2. aio-sandbox container on :8080  (verified via a REAL /v1/bash/exec call --
 #      the image's healthcheck lies; recreated fresh if the API won't serve)
-#   3. FounderOS unified runner on :3847
+#   3. AchiCorp unified runner on :3847
 #   4. ngrok tunnels (sandbox + browser)
 #   5. Supabase secrets SANDBOX_URL / RUNNER_BROWSER_URL re-synced to the new
 #      tunnel URLs (free-tier URLs change on every ngrok restart)
@@ -29,7 +29,7 @@ function Warn($msg) { Write-Host "    !!  $msg" -ForegroundColor Yellow }
 function Test-SandboxApi {
     $tmp = Join-Path $env:TEMP "sbx-probe.json"
     '{"command":"echo infra-ok"}' | Out-File $tmp -Encoding ascii -NoNewline
-    $out = & curl.exe -s -m 10 -X POST http://localhost:8080/v1/bash/exec -H "Content-Type: application/json" --data-binary "@$tmp" 2>$null
+    $out = & curl.exe -s -m 10 -X POST http://localhost:8090/v1/bash/exec -H "Content-Type: application/json" --data-binary "@$tmp" 2>$null
     return ($out -match '"success"\s*:\s*true')
 }
 
@@ -52,12 +52,12 @@ if (-not $?) {
 Ok "daemon actif"
 
 # -- 2. Sandbox container ------------------------------------------------------
-Step "Sandbox aio-sandbox (:8080)"
+Step "Sandbox aio-sandbox (host :8090 -> container :8080)"
 $exists  = (docker ps -a --filter "name=^aio-sandbox$" --format "{{.Names}}") -eq "aio-sandbox"
 $running = (docker ps    --filter "name=^aio-sandbox$" --format "{{.Names}}") -eq "aio-sandbox"
 if (-not $exists) {
     Write-Host "    conteneur absent -> docker run"
-    docker run -d --name aio-sandbox --restart unless-stopped -p 8080:8080 ghcr.io/agent-infra/sandbox:latest | Out-Null
+    docker run -d --name aio-sandbox --restart unless-stopped -p 8090:8080 ghcr.io/agent-infra/sandbox:latest | Out-Null
 } elseif (-not $running) {
     Write-Host "    conteneur arrete -> docker start"
     docker start aio-sandbox | Out-Null
@@ -74,14 +74,14 @@ for ($round = 0; $round -lt 2 -and -not $apiUp; $round++) {
     if (-not $apiUp -and $round -eq 0) {
         Warn "API muette (nginx crash-loop probable) -> recreation du conteneur"
         docker rm -f aio-sandbox | Out-Null
-        docker run -d --name aio-sandbox --restart unless-stopped -p 8080:8080 ghcr.io/agent-infra/sandbox:latest | Out-Null
+        docker run -d --name aio-sandbox --restart unless-stopped -p 8090:8080 ghcr.io/agent-infra/sandbox:latest | Out-Null
     }
 }
 if (-not $apiUp) { Write-Error "Sandbox API KO apres recreation - voir 'docker logs aio-sandbox'"; exit 1 }
 Ok "API bash/exec repond"
 
 # -- 3. Runner (:3847) ---------------------------------------------------------
-Step "Runner FounderOS (:3847)"
+Step "Runner AchiCorp (:3847)"
 $listening = $null -ne (Get-NetTCPConnection -State Listen -LocalPort 3847 -ErrorAction SilentlyContinue)
 if (-not $listening) {
     Start-Process node -ArgumentList "src/index.js" -WorkingDirectory $RunnerDir -WindowStyle Hidden `
@@ -105,7 +105,7 @@ if (-not $tunnels -or $tunnels.Count -lt 2) {
     }
 }
 if (-not $tunnels -or $tunnels.Count -lt 2) { Write-Error "Tunnels ngrok KO (voir $LogDir\ngrok*.log)"; exit 1 }
-$sandboxUrl = ($tunnels | Where-Object { $_.config.addr -match "8080" } | Select-Object -First 1).public_url
+$sandboxUrl = ($tunnels | Where-Object { $_.config.addr -match "8090" } | Select-Object -First 1).public_url
 $browserUrl = ($tunnels | Where-Object { $_.config.addr -match "3847" } | Select-Object -First 1).public_url
 Ok "sandbox  -> $sandboxUrl"
 Ok "browser  -> $browserUrl"

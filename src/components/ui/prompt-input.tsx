@@ -3,6 +3,62 @@
 import * as React from "react";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { useDictation } from "@/lib/useDictation";
+
+// Dictation runs through the shared streaming hook (useDictation): live Deepgram
+// transcription over a WebSocket, with the text appearing in the composer as you
+// speak. Push-to-talk (hold Space) is an opt-in persisted here.
+const PTT_PREF_KEY = "fos-dictation-ptt";
+
+// ----------------------------------------------------------------------
+// Tagging (@ mentions) + / slash actions — opt-in, gated behind props so the
+// default composer (agent chats) is unchanged.
+// ----------------------------------------------------------------------
+export interface MentionAgent { id: string; name: string; accentColor?: string | null; connectors?: string[]; }
+export interface SlashCommand { key: string; label: string; color: string; icon?: React.ComponentType<{ className?: string }>; }
+
+const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Soft colored pill. Negative margins keep the padded background from changing
+// the glyph advance, so the backdrop stays aligned with the transparent textarea.
+function badgePillStyle(color?: string | null): React.CSSProperties {
+  const base: React.CSSProperties = { padding: "1px 4px", margin: "0 -4px", borderRadius: 5, fontWeight: 500 };
+  if (color && /^#([0-9a-f]{6})$/i.test(color)) return { ...base, color, backgroundColor: color + "26" };
+  return { ...base, color: "hsl(var(--primary))", backgroundColor: "hsl(var(--primary) / 0.15)" };
+}
+
+// Mirror of the text with @mentions and /slash tokens rendered as colored badges.
+function highlightComposer(value: string, agents: MentionAgent[], slash: SlashCommand[]): React.ReactNode[] {
+  const names = agents.map((a) => a.name).sort((a, b) => b.length - a.length).map(reEsc);
+  const labels = slash.map((s) => s.label).map(reEsc);
+  const pats: string[] = [];
+  if (names.length) pats.push(`@(?:${names.join("|")})\\b`);
+  if (labels.length) pats.push(`(?<=^|\\s)/(?:${labels.join("|")})\\b`);
+  if (!pats.length) return [value + "​"];
+  const colorByName = new Map(agents.map((a) => [a.name, a.accentColor]));
+  const colorByLabel = new Map(slash.map((s) => [s.label, s.color]));
+  const re = new RegExp(pats.join("|"), "g");
+  const out: React.ReactNode[] = [];
+  let last = 0; let m: RegExpExecArray | null; let i = 0;
+  while ((m = re.exec(value)) !== null) {
+    if (m.index > last) out.push(value.slice(last, m.index));
+    const tok = m[0];
+    const color = tok.startsWith("@") ? colorByName.get(tok.slice(1)) : colorByLabel.get(tok.slice(1));
+    out.push(<span key={i++} style={badgePillStyle(color)}>{tok}</span>);
+    last = m.index + tok.length;
+  }
+  out.push(value.slice(last) + "​"); // zero-width char preserves the last line height
+  return out;
+}
+
+function deriveMentionIds(value: string, agents: MentionAgent[]): string[] {
+  if (!agents.length || !value) return [];
+  const idByName = new Map(agents.map((a) => [a.name, a.id]));
+  const re = new RegExp(`@(${agents.map((a) => reEsc(a.name)).join("|")})\\b`, "g");
+  const out: string[] = []; const seen = new Set<string>(); let m: RegExpExecArray | null;
+  while ((m = re.exec(value)) !== null) { const id = idByName.get(m[1]); if (id && !seen.has(id)) { seen.add(id); out.push(id); } }
+  return out;
+}
 
 // ----------------------------------------------------------------------
 // Transition Physics
@@ -21,6 +77,17 @@ interface Attachment {
   width?: number;
   height?: number;
 }
+
+// A paste larger than either threshold collapses into a block chip instead of
+// flooding the input; it's re-inlined as a fenced ```text block on submit.
+interface PastedBlock {
+  id: string;
+  text: string;
+  lines: number;
+  chars: number;
+}
+const PASTE_BLOCK_MIN_CHARS = 1500;
+const PASTE_BLOCK_MIN_LINES = 20;
 
 // ----------------------------------------------------------------------
 // Sub-components
@@ -96,6 +163,32 @@ function StopIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function KeyboardIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.5" y="4" width="13" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M4 6.6h.01M6 6.6h.01M8 6.6h.01M10 6.6h.01M12 6.6h.01M5 9.4h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AtSignIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SlashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 20L15 4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
     </svg>
   );
 }
@@ -294,7 +387,7 @@ function AttachmentGalleryModal({
 export interface PromptInputProps {
   onSubmit?: (
     value: string,
-    meta: { model: string; effort: string; attachments: File[] }
+    meta: { model: string; effort: string; attachments: File[]; mentionedIds: string[] }
   ) => void;
   placeholder?: string;
   className?: string;
@@ -306,6 +399,18 @@ export interface PromptInputProps {
   maxAttachments?: number;
   /** A run is in progress: keep the input open and spin an accent border around it. */
   busy?: boolean;
+  /** Never collapse to the pill — the card stays open (used in rooms). */
+  alwaysExpanded?: boolean;
+  /** Enable @ tagging: taggable agents (name + accent colour + connector badges). */
+  mentionAgents?: MentionAgent[];
+  /** Enable / actions as colored badges (e.g. create document/spreadsheet…). */
+  slashCommands?: SlashCommand[];
+  /** Hide the model picker (irrelevant in rooms). */
+  showModelSelect?: boolean;
+  /** Hide the effort picker. */
+  showEffort?: boolean;
+  /** Max width when open (default 480). Rooms want the full column width. */
+  maxOpenWidth?: number;
 }
 
 export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
@@ -321,10 +426,20 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       onChange,
       maxAttachments = 6,
       busy = false,
+      alwaysExpanded = false,
+      mentionAgents = [],
+      slashCommands = [],
+      showModelSelect = true,
+      showEffort = true,
+      maxOpenWidth = 480,
     },
     ref
   ) => {
-    const [expanded, setExpanded] = useState(false);
+    const [expanded, setExpanded] = useState(alwaysExpanded);
+    const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+    const [slashOpen, setSlashOpen] = useState(false);
+    const backdropRef = useRef<HTMLDivElement>(null);
+    const hasHighlight = mentionAgents.length > 0 || slashCommands.length > 0;
     const [isSmoothResize, setIsSmoothResize] = useState(false);
     const [localValue, setLocalValue] = useState(defaultValue);
     const [selectedModel, setSelectedModel] = useState(models[0]);
@@ -333,19 +448,27 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [activeAttachment, setActiveAttachment] = useState<{ attachment: Attachment; rect: DOMRect } | null>(null);
+    const [pastedBlocks, setPastedBlocks] = useState<PastedBlock[]>([]);
+    const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
 
-    // Audio/Voice recording states
-    const [isRecording, setIsRecording] = useState(false);
+    // Audio/Voice recording — streaming dictation via the shared useDictation hook.
     const [audioData, setAudioData] = useState<number[]>(new Array(5).fill(0));
     const valueRef = useRef(controlledValue !== undefined ? controlledValue : localValue);
+    // The composer text captured when dictation starts; live transcript is appended to it.
+    const baselineRef = useRef("");
 
-    // Refs for Web Audio & Speech Recognition cleanup
-    const streamRef = useRef<MediaStream | null>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const rafRef = useRef<number | null>(null);
-    const recognitionRef = useRef<any>(null);
-    const demoIntervalRef = useRef<number | null>(null);
-    const demoTextIntervalRef = useRef<number | null>(null);
+    // Push-to-talk: hold Space to dictate. Opt-in, persisted in localStorage.
+    const [pttEnabled, setPttEnabled] = useState(false);
+    useEffect(() => {
+      try { setPttEnabled(localStorage.getItem(PTT_PREF_KEY) === "1"); } catch { /* noop */ }
+    }, []);
+    const togglePtt = useCallback(() => {
+      setPttEnabled((v) => {
+        const next = !v;
+        try { localStorage.setItem(PTT_PREF_KEY, next ? "1" : "0"); } catch { /* noop */ }
+        return next;
+      });
+    }, []);
 
     const [hoverStyle, setHoverStyle] = useState({ opacity: 0, transform: "translateY(0px) scale(0.95)", transition: "none" });
     const [containerHeight, setContainerHeight] = useState(116);
@@ -354,10 +477,13 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
     const isControlled = controlledValue !== undefined;
     const value = isControlled ? controlledValue : localValue;
-    const hasValue = value.trim() !== "" || attachments.length > 0;
+    const hasValue = value.trim() !== "" || attachments.length > 0 || pastedBlocks.length > 0;
     const hasAttachments = attachments.length > 0;
-    // While a run is active we force the card open (no collapsed pill) and spin a border.
-    const isOpen = expanded || busy;
+    const hasPastedBlocks = pastedBlocks.length > 0;
+    // While a run is active (or in rooms) we force the card open (no collapsed pill).
+    const isOpen = expanded || busy || alwaysExpanded;
+    // Tagged agents derived from the text (so deleting an @mention untags it).
+    const mentionedIds = hasHighlight ? deriveMentionIds(value, mentionAgents) : [];
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const internalContainerRef = useRef<HTMLDivElement>(null);
@@ -389,156 +515,136 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       if (!isControlled) setLocalValue(val);
       onChange?.(val);
     }, [isControlled, onChange]);
+    // Stable handle for the push-to-talk listeners (which shouldn't re-subscribe
+    // every render just because onChange is an inline prop).
+    const handleValueChangeRef = useRef(handleValueChange);
+    handleValueChangeRef.current = handleValueChange;
+
+    // Text change that also drives the @-mention menu (when tagging is enabled).
+    const onTextChange = (val: string) => {
+      handleValueChange(val);
+      if (!mentionAgents.length) return;
+      const pos = textareaRef.current?.selectionStart ?? val.length;
+      const mm = val.slice(0, pos).match(/(?:^|\s)@(\w*)$/);
+      setMentionQuery(mm ? mm[1] : null);
+      if (mm) setSlashOpen(false);
+    };
+    const setValueWithCaret = (next: string, caret: number) => {
+      handleValueChange(next);
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (ta) { ta.focus(); ta.setSelectionRange(caret, caret); }
+      });
+    };
+    const insertMention = (agent: MentionAgent) => {
+      const pos = textareaRef.current?.selectionStart ?? value.length;
+      const before = value.slice(0, pos).replace(/@\w*$/, `@${agent.name} `);
+      setMentionQuery(null);
+      setValueWithCaret(before + value.slice(pos), before.length);
+    };
+    const openMentionMenu = () => {
+      const pos = textareaRef.current?.selectionStart ?? value.length;
+      const before = value.slice(0, pos);
+      const insert = before.endsWith("@") ? "" : (before && !before.endsWith(" ") ? " @" : "@");
+      const nb = before + insert;
+      setSlashOpen(false); setMentionQuery("");
+      setValueWithCaret(nb + value.slice(pos), nb.length);
+    };
+    const pickSlash = (cmd: SlashCommand) => {
+      const rest = value.replace(new RegExp(`^/(?:${slashCommands.map((s) => reEsc(s.label)).join("|")})\\s+`), "");
+      const prefix = `/${cmd.label} `;
+      setSlashOpen(false);
+      setValueWithCaret(prefix + rest, prefix.length);
+    };
+    const filteredMentionAgents = mentionQuery == null ? [] : mentionAgents.filter((a) => a.name.toLowerCase().includes(mentionQuery.toLowerCase()));
 
     const expand = () => {
       setIsSmoothResize(false);
       setExpanded(true);
     };
 
-    // --- Voice Recording Logic ---
+    // --- Voice Recording Logic (streaming Deepgram dictation) ---
+    // The transcript overwrites `baseline + live text` as you speak. The hook
+    // object is fresh each render, so route through a ref to keep the start/stop
+    // wrappers stable (the unmount-cleanup effect depends on that).
+    const onDictatedText = useCallback((dictated: string) => {
+      const base = baselineRef.current;
+      handleValueChange(base + (base && dictated ? " " : "") + dictated);
+    }, [handleValueChange]);
+    const dictation = useDictation(onDictatedText);
+    const dictationRef = useRef(dictation);
+    dictationRef.current = dictation;
+    const isRecording = dictation.recording;
+    const isConnecting = dictation.connecting;
+
     const stopRecording = useCallback(() => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        recognitionRef.current = null;
-      }
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
-      if (demoIntervalRef.current) {
-        window.clearInterval(demoIntervalRef.current);
-        demoIntervalRef.current = null;
-      }
-      if (demoTextIntervalRef.current) {
-        window.clearInterval(demoTextIntervalRef.current);
-        demoTextIntervalRef.current = null;
-      }
-      setIsRecording(false);
-      setAudioData(new Array(5).fill(0));
+      dictationRef.current.stop();
     }, []);
 
-    const startRecording = useCallback(async () => {
+    const startRecording = useCallback(() => {
       setIsSmoothResize(false);
       setExpanded(true);
+      baselineRef.current = (valueRef.current || "").trimEnd();
+      void dictationRef.current.start();
+    }, []);
 
-      let stream: MediaStream | null = null;
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Drive the 5-bar visualizer off the live mic level.
+    useEffect(() => {
+      if (!isRecording) { setAudioData(new Array(5).fill(0)); return; }
+      const l = dictation.level;
+      setAudioData([0.55, 0.85, 1, 0.7, 0.5].map((k) => Math.min(1, l * k * (0.85 + Math.random() * 0.4))));
+    }, [dictation.level, isRecording]);
+
+    // Push-to-talk: HOLD Space to dictate (works even when the composer already
+    // has text — dictation appends). A quick TAP still types a literal space, so
+    // typing isn't broken; only a deliberate hold (>180ms) starts the mic.
+    useEffect(() => {
+      if (!pttEnabled) return;
+      const isEditable = (el: Element | null) =>
+        !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
+      const insertSpace = () => {
+        const ta = textareaRef.current;
+        const v = valueRef.current || "";
+        let start = v.length, end = v.length;
+        if (ta && ta === document.activeElement) { start = ta.selectionStart ?? v.length; end = ta.selectionEnd ?? start; }
+        handleValueChangeRef.current(v.slice(0, start) + " " + v.slice(end));
+        if (ta) requestAnimationFrame(() => { try { ta.setSelectionRange(start + 1, start + 1); } catch { /* noop */ } });
+      };
+      let holdTimer: number | null = null;
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.code !== "Space" || e.repeat) return;
+        const el = document.activeElement;
+        const inOurBox = el === textareaRef.current;
+        // Leave OTHER text fields alone; our composer + non-editable focus arm PTT.
+        if (isEditable(el) && !inOurBox) return;
+        e.preventDefault();
+        if (dictationRef.current.recording || dictationRef.current.connecting || holdTimer !== null) return;
+        holdTimer = window.setTimeout(() => { holdTimer = null; startRecording(); }, 180);
+      };
+      const onKeyUp = (e: KeyboardEvent) => {
+        if (e.code !== "Space") return;
+        const el = document.activeElement;
+        const inOurBox = el === textareaRef.current;
+        if (isEditable(el) && !inOurBox) return;
+        if (holdTimer !== null) {
+          // Released before the threshold → it was a tap: type a real space.
+          window.clearTimeout(holdTimer); holdTimer = null;
+          if (inOurBox) insertSpace();
+          return;
         }
-      } catch (err) {
-        console.warn("Microphone access denied or unavailable. Falling back to simulated voice mode for demo.");
-      }
-
-      setIsRecording(true);
-
-      // Simulation function for tight sandbox environments
-      function simulateText() {
-        const fakeText = "Can you build a high fidelity Framer Motion layout animation for a dark mode dashboard?";
-        const words = fakeText.split(" ");
-        let i = 0;
-        let currentBase = valueRef.current;
-        demoTextIntervalRef.current = window.setInterval(() => {
-          if (i < words.length) {
-            currentBase = (currentBase ? currentBase + " " : "") + words[i];
-            handleValueChange(currentBase);
-            i++;
-          } else {
-            stopRecording();
-          }
-        }, 300);
-      }
-
-      if (stream) {
-        streamRef.current = stream;
-
-        // Setup Web Audio API for visualizer
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        const audioCtx = new AudioCtx();
-        audioContextRef.current = audioCtx;
-
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 64;
-        const source = audioCtx.createMediaStreamSource(stream);
-        source.connect(analyser);
-
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        const updateVisualizer = () => {
-          analyser.getByteFrequencyData(dataArray);
-          const bands = new Array(5).fill(0);
-          const step = Math.floor(dataArray.length / 5);
-          for (let i = 0; i < 5; i++) {
-            let sum = 0;
-            for (let j = 0; j < step; j++) {
-              sum += dataArray[i * step + j];
-            }
-            bands[i] = sum / step / 255; // normalize to 0-1
-          }
-          setAudioData(bands);
-          rafRef.current = requestAnimationFrame(updateVisualizer);
-        };
-        updateVisualizer();
-
-        // Setup Speech Recognition
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (SpeechRecognition) {
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-
-          let baseline = valueRef.current;
-
-          recognition.onresult = (event: any) => {
-            let interimTranscript = "";
-            let finalTranscript = "";
-
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-              } else {
-                interimTranscript += event.results[i][0].transcript;
-              }
-            }
-
-            if (finalTranscript) {
-               baseline += (baseline ? " " : "") + finalTranscript;
-            }
-
-            handleValueChange((baseline + (interimTranscript ? " " + interimTranscript : "")).trim());
-          };
-
-          recognition.onerror = (e: any) => {
-            console.error("Speech recognition error", e);
-            stopRecording();
-          };
-
-          recognition.onend = () => {
-             stopRecording();
-          };
-
-          recognitionRef.current = recognition;
-          recognition.start();
-        } else {
-          console.warn("Speech Recognition API not supported in this browser. Using simulated text.");
-          simulateText();
+        if (dictationRef.current.recording || dictationRef.current.connecting) {
+          e.preventDefault();
+          stopRecording();
         }
-      } else {
-        // Fallback simulated visualizer
-        demoIntervalRef.current = window.setInterval(() => {
-          setAudioData(Array.from({ length: 5 }, () => Math.random() * 0.8 + 0.1));
-        }, 100);
-        simulateText();
-      }
-    }, [handleValueChange, stopRecording]);
+      };
+      window.addEventListener("keydown", onKeyDown);
+      window.addEventListener("keyup", onKeyUp);
+      return () => {
+        if (holdTimer !== null) window.clearTimeout(holdTimer);
+        window.removeEventListener("keydown", onKeyDown);
+        window.removeEventListener("keyup", onKeyUp);
+      };
+    }, [pttEnabled, startRecording, stopRecording]);
 
     // Keep textarea auto-scrolled to bottom while recording
     useEffect(() => {
@@ -557,12 +663,12 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
 
     useEffect(() => {
-      if ((value.trim() !== "" || hasAttachments) && !expanded) {
+      if ((value.trim() !== "" || hasAttachments || hasPastedBlocks) && !expanded) {
         setIsSmoothResize(false);
         setExpanded(true);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [value, expanded, hasAttachments]);
+    }, [value, expanded, hasAttachments, hasPastedBlocks]);
 
     useEffect(() => {
       if (expanded && !isRecording) {
@@ -618,7 +724,8 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
     const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
       if (internalContainerRef.current && internalContainerRef.current.contains(e.relatedTarget as Node)) return;
-      if (value.trim() === "" && !hasAttachments && !isRecording && !busy) {
+      setMentionQuery(null); setSlashOpen(false);
+      if (value.trim() === "" && !hasAttachments && !hasPastedBlocks && !isRecording && !busy && !alwaysExpanded) {
         setIsSmoothResize(false);
         setExpanded(false);
         setIsModelSelectOpen(false);
@@ -626,13 +733,21 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     };
 
     const handleSubmit = () => {
-      if (value.trim() === "" && !hasAttachments) return;
+      if (value.trim() === "" && !hasAttachments && !hasPastedBlocks) return;
       setIsSmoothResize(false);
-      onSubmit?.(value, { model: selectedModel, effort: efforts[effortIndex], attachments: attachments.map((a) => a.file) });
+      // Re-inline any collapsed paste blocks as fenced sections so the agent gets
+      // the full content while the input stayed uncluttered.
+      const blocksText = pastedBlocks.map((b) => "```text\n" + b.text + "\n```").join("\n\n");
+      const finalMessage = [value.trim(), blocksText].filter(Boolean).join("\n\n");
+      onSubmit?.(finalMessage, { model: selectedModel, effort: efforts[effortIndex], attachments: attachments.map((a) => a.file), mentionedIds });
       handleValueChange("");
       attachments.forEach((a) => URL.revokeObjectURL(a.url));
       setAttachments([]);
-      setExpanded(false);
+      setPastedBlocks([]);
+      setExpandedBlockId(null);
+      setMentionQuery(null);
+      setSlashOpen(false);
+      if (!alwaysExpanded) setExpanded(false);
       setIsModelSelectOpen(false);
     };
 
@@ -681,13 +796,32 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       thumbRefs.current.delete(id);
     };
 
+    // Large pastes become a collapsed block chip instead of flooding the input.
+    const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const text = e.clipboardData.getData("text");
+      if (!text) return;
+      const lines = text.split("\n").length;
+      if (text.length < PASTE_BLOCK_MIN_CHARS && lines < PASTE_BLOCK_MIN_LINES) return; // normal paste
+      e.preventDefault();
+      const id = `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setPastedBlocks((prev) => [...prev, { id, text, lines, chars: text.length }]);
+      if (!expanded) { setIsSmoothResize(false); setExpanded(true); }
+    };
+
+    const removePastedBlock = (id: string) => {
+      setIsSmoothResize(true);
+      setPastedBlocks((prev) => prev.filter((b) => b.id !== id));
+      setExpandedBlockId((cur) => (cur === id ? null : cur));
+    };
+
     // Calculate action button states
-    const showArrow = hasValue && !isRecording;
+    const showArrow = hasValue && !isRecording && !isConnecting;
     const showStop = isRecording;
-    const showMic = !hasValue && !isRecording;
+    const showMic = !hasValue && !isRecording && !isConnecting;
 
     const onActionButtonClick = (e: React.MouseEvent) => {
       e.preventDefault();
+      if (isConnecting) return;
       if (isRecording) {
         stopRecording();
       } else if (hasValue) {
@@ -710,7 +844,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
           onBlur={handleBlur}
           className={cn("relative flex flex-col w-full", className)}
           style={{
-            maxWidth: isOpen ? 480 : 320,
+            maxWidth: isOpen ? maxOpenWidth : 320,
             transition: isSmoothResize ? "max-width 0.15s ease-out" : "max-width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
           }}
         >
@@ -764,6 +898,41 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             </div>
           </div>
 
+          {/* Pasted-text blocks — large pastes collapsed into tidy chips */}
+          {hasPastedBlocks && (
+            <div className="mb-2 flex flex-col gap-1.5">
+              {pastedBlocks.map((b) => (
+                <div key={b.id} className="overflow-hidden rounded-xl border border-border bg-muted/60 text-xs animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-center gap-2 px-2.5 py-1.5">
+                    <span className="text-sm leading-none">📄</span>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setExpandedBlockId((cur) => (cur === b.id ? null : b.id))}
+                      className="flex-1 truncate text-left font-medium text-foreground/80 transition-colors hover:text-foreground"
+                    >
+                      Texte collé <span className="font-normal text-muted-foreground">· {b.lines} lignes · {b.chars.toLocaleString()} car.</span>
+                    </button>
+                    <span
+                      role="button" tabIndex={-1}
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onClick={() => removePastedBlock(b.id)}
+                      className="flex size-4 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-background hover:text-foreground"
+                      aria-label="Retirer le bloc collé"
+                    >
+                      <CloseIcon />
+                    </span>
+                  </div>
+                  {expandedBlockId === b.id && (
+                    <pre className="prompt-scrollbar max-h-40 overflow-auto whitespace-pre-wrap break-words border-t border-border/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                      {b.text.slice(0, 2000)}{b.text.length > 2000 ? "\n…" : ""}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Main Input Card */}
           <div
             onMouseDown={(e) => {
@@ -792,32 +961,82 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               .prompt-scrollbar:hover::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.3); }
             `}} />
 
+            {/* @ mention menu */}
+            {mentionAgents.length > 0 && mentionQuery !== null && (
+              <div className="absolute bottom-full left-1 z-50 mb-2 w-72 overflow-hidden rounded-2xl border border-border bg-popover shadow-lg">
+                <div className="max-h-64 overflow-y-auto py-1">
+                  {filteredMentionAgents.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">Aucun agent.</div>
+                  ) : filteredMentionAgents.map((a) => (
+                    <button key={a.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(a)} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-muted">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: a.accentColor || "hsl(var(--primary))" }} />
+                      <span className="min-w-0 flex-1 truncate font-medium" style={a.accentColor ? { color: a.accentColor } : undefined}>{a.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* / slash-action menu */}
+            {slashCommands.length > 0 && slashOpen && (
+              <div className="absolute bottom-full left-1 z-50 mb-2 w-64 overflow-hidden rounded-2xl border border-border bg-popover py-1 shadow-lg">
+                {slashCommands.map((c) => (
+                  <button key={c.key} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pickSlash(c)} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-muted">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-md" style={{ backgroundColor: c.color + "26", color: c.color }}>{c.icon ? <c.icon className="h-3.5 w-3.5" /> : <span className="text-xs font-bold">/</span>}</span>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Badge backdrop: mirrors the text with @/​slash badges, behind the
+                transparent-text textarea (which keeps the caret + interaction). */}
+            {hasHighlight && (
+              <div
+                ref={backdropRef}
+                aria-hidden
+                className={cn(
+                  "prompt-scrollbar pointer-events-none absolute top-0 inset-x-0 z-0 w-full overflow-hidden whitespace-pre-wrap break-words pl-4 pr-12 py-3.5 text-sm leading-[22px] text-foreground",
+                  isOpen ? "opacity-100" : "opacity-0"
+                )}
+                style={{ height: `${textareaHeight}px` }}
+              >
+                {highlightComposer(value, mentionAgents, slashCommands)}
+              </div>
+            )}
+
             <textarea
               ref={textareaRef}
               value={value}
-              onChange={(e) => handleValueChange(e.target.value)}
-              onScroll={updateFades}
+              onChange={(e) => onTextChange(e.target.value)}
+              onScroll={(e) => { updateFades(); if (backdropRef.current) backdropRef.current.scrollTop = e.currentTarget.scrollTop; }}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   handleSubmit();
                 }
-                if (e.key === "Escape" && value.trim() === "" && !hasAttachments) {
-                  setIsSmoothResize(false);
-                  setExpanded(false);
-                  setIsModelSelectOpen(false);
+                if (e.key === "Escape") {
+                  if (mentionQuery !== null || slashOpen) { setMentionQuery(null); setSlashOpen(false); return; }
+                  if (value.trim() === "" && !hasAttachments && !hasPastedBlocks && !alwaysExpanded) {
+                    setIsSmoothResize(false);
+                    setExpanded(false);
+                    setIsModelSelectOpen(false);
+                  }
                 }
               }}
               placeholder={placeholder}
               aria-label="Prompt"
               disabled={isRecording}
               style={{
+                caretColor: hasHighlight ? "hsl(var(--foreground))" : undefined,
                 transition: isSmoothResize
                   ? "height 0.15s ease-out"
                   : "opacity 0.3s ease-out, transform 0.3s ease-out, height 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)"
               }}
               className={cn(
-                "prompt-scrollbar absolute top-0 inset-x-0 z-[1] w-full resize-none bg-transparent pl-4 pr-12 py-3.5 text-sm leading-[22px] text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground/80 cursor-text",
+                "prompt-scrollbar absolute top-0 inset-x-0 z-[1] w-full resize-none bg-transparent pl-4 pr-12 py-3.5 text-sm leading-[22px] outline-none placeholder:font-medium placeholder:text-muted-foreground/80 cursor-text",
+                hasHighlight ? "text-transparent" : "text-foreground",
                 isOpen ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 -translate-y-1 pointer-events-none",
                 isScrolling ? "overflow-y-auto" : "overflow-y-hidden",
                 isRecording && "pointer-events-none"
@@ -858,6 +1077,27 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 isOpen && !isRecording ? "opacity-100 blur-0 translate-y-0 pointer-events-auto" : "opacity-0 blur-sm translate-y-2 pointer-events-none"
               )}
             >
+              {mentionAgents.length > 0 && (
+                <button
+                  type="button" onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => { e.stopPropagation(); openMentionMenu(); }}
+                  title="Taguer un agent (@)"
+                  className="flex size-7 items-center justify-center rounded-full text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default"
+                >
+                  <AtSignIcon />
+                </button>
+              )}
+              {slashCommands.length > 0 && (
+                <button
+                  type="button" onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => { e.stopPropagation(); setSlashOpen((v) => !v); setMentionQuery(null); }}
+                  title="Actions (/)"
+                  className={cn("flex size-7 items-center justify-center rounded-full text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default", slashOpen && "bg-accent/60 text-foreground")}
+                >
+                  <SlashIcon />
+                </button>
+              )}
+              {showModelSelect && (
               <div className="relative">
                 <button
                   type="button"
@@ -917,7 +1157,9 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                   </div>
                 </div>
               </div>
+              )}
 
+              {showEffort && (
               <button
                 type="button" onMouseDown={(e) => e.preventDefault()} onClick={cycleEffort}
                 className="group flex items-center gap-1 rounded-full px-2 py-1 text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default"
@@ -925,10 +1167,48 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 <DynamicBarsIcon level={efforts[effortIndex]} />
                 <span className="text-xs font-semibold select-none transition-colors"><MorphingText text={efforts[effortIndex]} /></span>
               </button>
+              )}
+
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => { e.stopPropagation(); togglePtt(); }}
+                title={pttEnabled ? "Push-to-talk activé — maintenez Espace pour dicter" : "Activer le push-to-talk (maintenir Espace pour dicter)"}
+                aria-pressed={pttEnabled}
+                className={cn(
+                  "ml-auto flex size-7 items-center justify-center rounded-full transition-all duration-200 outline-none cursor-default",
+                  pttEnabled ? "bg-primary/15 text-primary" : "text-foreground/50 hover:bg-accent/60 hover:text-foreground"
+                )}
+              >
+                <KeyboardIcon />
+              </button>
+
+              {/* Continue dictating even when the composer already has text (the
+                  bottom-right button is a Send arrow at that point). */}
+              {hasValue && !isRecording && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => { e.stopPropagation(); if (isConnecting) return; startRecording(); }}
+                  title="Continuer en dictant"
+                  aria-label="Continue dictating"
+                  className={cn(
+                    "flex size-7 items-center justify-center rounded-full transition-all duration-200 outline-none cursor-default",
+                    isConnecting ? "text-primary" : "text-foreground/50 hover:bg-accent/60 hover:text-foreground"
+                  )}
+                >
+                  {isConnecting ? (
+                    <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+                      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                  ) : <MicIcon />}
+                </button>
+              )}
 
               <button
                 type="button" onMouseDown={(e) => e.preventDefault()} onClick={openFileChooser} disabled={attachments.length >= maxAttachments}
-                className="ml-auto flex size-7 items-center justify-center rounded-full text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default disabled:opacity-40 disabled:pointer-events-none"
+                className="flex size-7 items-center justify-center rounded-full text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default disabled:opacity-40 disabled:pointer-events-none"
               >
                 <PlusIcon />
               </button>
@@ -967,6 +1247,12 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 </span>
                 <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", showStop ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none")}>
                   <StopIcon />
+                </span>
+                <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300", isConnecting ? "opacity-100 scale-100" : "opacity-0 scale-50 pointer-events-none")}>
+                  <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+                    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
                 </span>
               </span>
             </button>

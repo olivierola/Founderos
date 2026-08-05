@@ -60,7 +60,7 @@ export function OrganisationsPage() {
             <Boxes className="h-5 w-5" />
           </div>
           <div>
-            <div className="text-sm font-semibold">FounderOS</div>
+            <div className="text-sm font-semibold">AchiCorp</div>
             <div className="text-xs text-muted-foreground">Organisations</div>
           </div>
         </div>
@@ -175,7 +175,7 @@ export function OrganisationsPage() {
         confirmText="Create"
         onSubmit={async (name) => {
           if (!user) return;
-          const ws = await createWorkspace(user.id, name);
+          const ws = await createWorkspace(name);
           refresh();
           navigate(`/orgs/${ws.slug}/projects`);
         }}

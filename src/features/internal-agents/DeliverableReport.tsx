@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { AgentMarkdown, CodeBlock } from "@/components/AgentMarkdown";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -130,7 +131,7 @@ function SectionView({ section, index }: { section: Section; index: number }) {
       {section.callout && <CalloutView callout={section.callout} />}
       {section.body && (
         <div className="prose prose-sm max-w-none leading-relaxed dark:prose-invert">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{section.body}</ReactMarkdown>
+          <AgentMarkdown content={section.body} />
         </div>
       )}
       {charts.length > 0 && (
@@ -387,6 +388,8 @@ export function RichMarkdown({ content }: { content: string }) {
                 return <code className={className}>{children}</code>;
               }
             }
+            const text = String(children ?? "").replace(/\n$/, "");
+            if (lang || text.includes("\n")) return <CodeBlock code={text} lang={lang} />;
             return <code className={className}>{children}</code>;
           },
         }}

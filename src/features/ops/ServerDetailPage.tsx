@@ -15,7 +15,8 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { cn } from "@/lib/utils";
 import { useOpsUrl } from "./hooks";
-import type { OpsServer, OpsJob } from "./types";
+import { RUNNER_IMPLEMENTED_JOB_TYPES } from "./types";
+import type { OpsServer, OpsJob, OpsJobType } from "./types";
 
 type ServerTab = "health" | "security" | "backups" | "env" | "actions" | "logs";
 
@@ -319,15 +320,15 @@ function ActionsTab({ server }: { server: OpsServer }) {
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState<string | null>(null);
 
+  // backup_setup / app_restart are hidden until the runner implements them
+  // (RUNNER_IMPLEMENTED_JOB_TYPES) — they used to enqueue jobs doomed to fail.
   const ACTIONS = [
     { type: "docker_install", label: "Install Docker", risk: "medium", description: "Install Docker + Docker Compose plugin." },
     { type: "nginx_setup", label: "Setup Nginx", risk: "medium", description: "Install Nginx and configure as reverse proxy." },
     { type: "ssl_setup", label: "Issue SSL certificate", risk: "low", description: "Run certbot for the configured domain." },
     { type: "firewall_setup", label: "Setup UFW firewall", risk: "high", description: "Enable UFW. Opens 22/80/443 only." },
-    { type: "backup_setup", label: "Setup backups", risk: "low", description: "Install a daily backup cron." },
     { type: "security_audit", label: "Run security audit", risk: "low", description: "Recompute the security score." },
-    { type: "app_restart", label: "Restart app", risk: "medium", description: "Restart all docker compose services." },
-  ];
+  ].filter((a) => RUNNER_IMPLEMENTED_JOB_TYPES.has(a.type as OpsJobType));
 
   async function createJob(jobType: string, risk: string) {
     setCreating(jobType);

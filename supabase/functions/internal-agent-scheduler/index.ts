@@ -23,6 +23,52 @@ const MAX_RESCUES_PER_TICK = 3;
 const QUEUED_RESCUE_AFTER_MS = 5 * 60 * 1000;
 const RUNNING_TIMEOUT_MS = 30 * 60 * 1000;
 
+type Cadence = "hourly" | "daily" | "weekly" | "monthly";
+interface Alignment {
+  schedule_minute: number | null;
+  schedule_hour: number | null;
+  schedule_dow: number | null;   // 0 = Sunday
+  schedule_dom: number | null;   // 1..28
+}
+
+// Next run strictly after `from`, aligned (in UTC) to the mission's chosen
+// minute/hour/day. When an alignment field is null we fall back to "from +
+// interval" so legacy rows (no alignment) keep their old cadence.
+function computeNextRun(from: Date, cadence: Cadence, a: Alignment): Date {
+  const minute = a.schedule_minute ?? from.getUTCMinutes();
+  const hour = a.schedule_hour ?? from.getUTCHours();
+
+  if (cadence === "hourly") {
+    // Next occurrence of `minute` within the hour, strictly after `from`.
+    const n = new Date(from);
+    n.setUTCSeconds(0, 0);
+    n.setUTCMinutes(minute);
+    if (n <= from) n.setUTCHours(n.getUTCHours() + 1);
+    return n;
+  }
+
+  const base = new Date(from);
+  base.setUTCSeconds(0, 0);
+  base.setUTCHours(hour, minute);
+
+  if (cadence === "daily") {
+    if (base <= from) base.setUTCDate(base.getUTCDate() + 1);
+    return base;
+  }
+  if (cadence === "weekly") {
+    const dow = a.schedule_dow ?? from.getUTCDay();
+    let delta = (dow - base.getUTCDay() + 7) % 7;
+    if (delta === 0 && base <= from) delta = 7;
+    base.setUTCDate(base.getUTCDate() + delta);
+    return base;
+  }
+  // monthly
+  const dom = a.schedule_dom ?? Math.min(from.getUTCDate(), 28);
+  base.setUTCDate(dom);
+  if (base <= from) base.setUTCMonth(base.getUTCMonth() + 1, dom);
+  return base;
+}
+
 function authorized(req: Request): boolean {
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (token && token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) return true;
@@ -77,7 +123,7 @@ Deno.serve(async (req) => {
   // 1. Due scheduled missions.
   const { data: due } = await admin
     .from("internal_agent_missions")
-    .select("id, agent_id, workspace_id, project_id, schedule, internal_agents!inner(id, mission_enabled, is_archived)")
+    .select("id, agent_id, workspace_id, project_id, schedule, schedule_minute, schedule_hour, schedule_dow, schedule_dom, internal_agents!inner(id, mission_enabled, is_archived)")
     .eq("status", "active")
     .not("schedule", "is", null)
     .lte("next_run_at", now.toISOString())
@@ -89,13 +135,15 @@ Deno.serve(async (req) => {
       | { mission_enabled: boolean; is_archived: boolean }
       | null;
     // Bump next_run_at first — even a crash below can't re-launch in a loop.
-    const next = new Date(now);
-    if (m.schedule === "daily") next.setDate(next.getDate() + 1);
-    else if (m.schedule === "weekly") next.setDate(next.getDate() + 7);
-    else next.setMonth(next.getMonth() + 1);
+    const next = computeNextRun(now, m.schedule as Cadence, {
+      schedule_minute: m.schedule_minute ?? null,
+      schedule_hour: m.schedule_hour ?? null,
+      schedule_dow: m.schedule_dow ?? null,
+      schedule_dom: m.schedule_dom ?? null,
+    });
     await admin
       .from("internal_agent_missions")
-      .update({ next_run_at: next.toISOString() })
+      .update({ next_run_at: next.toISOString(), last_run_at: now.toISOString() })
       .eq("id", m.id);
 
     if (!agentMeta || !agentMeta.mission_enabled || agentMeta.is_archived) continue;

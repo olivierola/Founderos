@@ -672,11 +672,11 @@ async function proposeApply(
 const listEventDefinitions: AssistantTool = {
   name: "list_event_definitions",
   minRole: "member",
-  scope: "List the analytics events already defined in the FounderOS UI (taxonomy).",
+  scope: "List the analytics events already defined in the AchiCorp UI (taxonomy).",
   def: {
     name: "list_event_definitions",
     description:
-      "List the analytics event definitions configured for THIS project in the FounderOS UI (Events catalog): event_name, display_name, category, whether it is a key action, value_type, declared property_schema, and instrumentation_status. ALWAYS prefer instrumenting THESE existing events over inventing new ones. Use before instrument_event so the code emits the exact event_name + properties the user already defined.",
+      "List the analytics event definitions configured for THIS project in the AchiCorp UI (Events catalog): event_name, display_name, category, whether it is a key action, value_type, declared property_schema, and instrumentation_status. ALWAYS prefer instrumenting THESE existing events over inventing new ones. Use before instrument_event so the code emits the exact event_name + properties the user already defined.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
   run: async (_args, ctx) => {
@@ -696,11 +696,11 @@ const listEventDefinitions: AssistantTool = {
 const listFeatureFlags: AssistantTool = {
   name: "list_feature_flags",
   minRole: "member",
-  scope: "List the feature flags already defined in the FounderOS UI.",
+  scope: "List the feature flags already defined in the AchiCorp UI.",
   def: {
     name: "list_feature_flags",
     description:
-      "List the feature flags configured for THIS project in FounderOS: flag_key, enabled, rollout_percent, description, variants, whether they're already instrumented, and target_email (null = project-wide). ALWAYS prefer gating code behind THESE existing flags (use the exact flag_key) over inventing new ones. The SDK reads flag state at runtime via analytics.isFeatureEnabled(flag_key).",
+      "List the feature flags configured for THIS project in AchiCorp: flag_key, enabled, rollout_percent, description, variants, whether they're already instrumented, and target_email (null = project-wide). ALWAYS prefer gating code behind THESE existing flags (use the exact flag_key) over inventing new ones. The SDK reads flag state at runtime via analytics.isFeatureEnabled(flag_key).",
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
   run: async (_args, ctx) => {
@@ -724,7 +724,7 @@ const analyzeRepoStructure: AssistantTool = {
   def: {
     name: "analyze_repo_structure",
     description:
-      "Return a structured analysis of the connected repo to plan analytics instrumentation: detected framework/stack, third-party services, and the app structure (pages, routes, interactive elements like buttons/forms/links with their labels) from the latest code scan. Also reports whether the FounderOS analytics SDK is already installed. ALWAYS call this (and read_repo_file on the key files it surfaces) BEFORE proposing SDK install or tracking — never instrument blind.",
+      "Return a structured analysis of the connected repo to plan analytics instrumentation: detected framework/stack, third-party services, and the app structure (pages, routes, interactive elements like buttons/forms/links with their labels) from the latest code scan. Also reports whether the AchiCorp analytics SDK is already installed. ALWAYS call this (and read_repo_file on the key files it surfaces) BEFORE proposing SDK install or tracking — never instrument blind.",
     parameters: {
       type: "object",
       properties: {
@@ -745,7 +745,7 @@ const analyzeRepoStructure: AssistantTool = {
       .limit(1)
       .maybeSingle();
 
-    // Events + feature flags defined in the FounderOS UI — the agent must reuse these.
+    // Events + feature flags defined in the AchiCorp UI — the agent must reuse these.
     const [{ data: defs }, { data: flags }] = await Promise.all([
       ctx.admin
         .from("event_definitions")
@@ -822,7 +822,7 @@ const analyzeRepoStructure: AssistantTool = {
       pages: (appStructure.pages ?? [])
         .slice(0, 25)
         .map((p: any) => ({ name: p.name, path: p.path, elements: (p.elements ?? []).slice(0, 12) })),
-      // Reuse these — the user already defined them in the FounderOS UI.
+      // Reuse these — the user already defined them in the AchiCorp UI.
       defined_events: definedEvents,
       defined_feature_flags: definedFlags,
       instrumentation_candidates: candidates.slice(0, 30),
@@ -937,7 +937,7 @@ const proposeCodeChanges: AssistantTool = {
       commit_message: str(args.commit_message, summary),
       mode,
       pr_title: summary,
-      pr_body: `${summary}\n\nProposed by the FounderOS agent.`,
+      pr_body: `${summary}\n\nProposed by the AchiCorp agent.`,
       instrumentation: { kind: "custom", nl_spec: summary, plan: { files: changes.map((c) => c.path) } },
     });
     return `Proposed ${changes.length} file change(s) on ${repo.full_name} as a ${mode} (pending approval, action_id=${action_id}). ${
@@ -1024,7 +1024,7 @@ const instrumentEvent: AssistantTool = {
   def: {
     name: "instrument_event",
     description:
-      `Propose code changes that INSTRUMENT an analytics event using the FounderOS SDK (fos.track('event_name', { ... })) at the right place(s) in the connected repo. Creates a pending change (PR by default) for owner/admin approval, and links it to the event definition. ${PROPOSE_CHANGES_NOTE} Call define_custom_event first if the event isn't defined yet.`,
+      `Propose code changes that INSTRUMENT an analytics event using the AchiCorp SDK (fos.track('event_name', { ... })) at the right place(s) in the connected repo. Creates a pending change (PR by default) for owner/admin approval, and links it to the event definition. ${PROPOSE_CHANGES_NOTE} Call define_custom_event first if the event isn't defined yet.`,
     parameters: {
       type: "object",
       properties: {
@@ -1070,7 +1070,7 @@ const instrumentEvent: AssistantTool = {
       commit_message: str(args.commit_message, summary),
       mode,
       pr_title: summary,
-      pr_body: `${summary}\n\n${str(args.nl_spec)}\n\nProposed by the FounderOS agent.`,
+      pr_body: `${summary}\n\n${str(args.nl_spec)}\n\nProposed by the AchiCorp agent.`,
       instrumentation: {
         kind: "event",
         event_definition_id: def?.id ?? null,
@@ -1148,7 +1148,7 @@ const addFeatureFlag: AssistantTool = {
       commit_message: summary,
       mode: "pull_request",
       pr_title: summary,
-      pr_body: `${summary}\n\nProposed by the FounderOS agent.`,
+      pr_body: `${summary}\n\nProposed by the AchiCorp agent.`,
       instrumentation: { kind: "feature_flag", nl_spec: str(args.description), plan: { flag_key, files: changes.map((c) => c.path) } },
     });
     await ctx.admin.from("feature_flags").update({ instrumented: true }).eq("project_id", ctx.projectId).eq("flag_key", flag_key);
@@ -1159,11 +1159,11 @@ const addFeatureFlag: AssistantTool = {
 const installSdk: AssistantTool = {
   name: "install_sdk",
   minRole: "member",
-  scope: "Propose installing the REAL FounderOS analytics/RAG SDK in the repo (pending approval).",
+  scope: "Propose installing the REAL AchiCorp analytics/RAG SDK in the repo (pending approval).",
   def: {
     name: "install_sdk",
     description:
-      "Propose installing a FounderOS SDK in the connected repo. The SDK file content is INJECTED BY THE SERVER from the canonical source — you must NOT invent SDK code, a git URL, or an API. You only choose: which SDK ('analytics' tracking/session-replay, or 'rag' agent widget), the runtime ('browser' or 'server'), where to put it (lib_dir), and which env expression holds the key. The server returns the real files; a PENDING pull request is created for approval. " +
+      "Propose installing a AchiCorp SDK in the connected repo. The SDK file content is INJECTED BY THE SERVER from the canonical source — you must NOT invent SDK code, a git URL, or an API. You only choose: which SDK ('analytics' tracking/session-replay, or 'rag' agent widget), the runtime ('browser' or 'server'), where to put it (lib_dir), and which env expression holds the key. The server returns the real files; a PENDING pull request is created for approval. " +
       "Optionally pass `extra_changes` for additional call sites you wrote yourself (e.g. importing `analytics` and calling analytics.track(...) — full file content, not a diff). " +
       "Important: there is NO `founderos.configure(api_key, api_secret)` API and NO `git clone founderos/sdk` — auth uses a single `fos_` API key (server) or anon key + workspaceId (browser).",
     parameters: {
@@ -1246,13 +1246,13 @@ const installSdk: AssistantTool = {
       : [];
     const changes = [...files, ...extra];
 
-    const summary = `Install FounderOS ${sdk} SDK (${runtime})`;
+    const summary = `Install AchiCorp ${sdk} SDK (${runtime})`;
     const { action_id } = await proposeApply(ctx, repo, {
       changes,
       commit_message: summary,
       mode: "pull_request",
       pr_title: summary,
-      pr_body: `${summary}\n\n${notes}\n\nProposed by the FounderOS agent. SDK content is the canonical FounderOS source.`,
+      pr_body: `${summary}\n\n${notes}\n\nProposed by the AchiCorp agent. SDK content is the canonical AchiCorp source.`,
       instrumentation: { kind: "sdk_install", nl_spec: notes, plan: { sdk, runtime, files: changes.map((c) => c.path) } },
     });
     return `Proposed ${sdk} SDK install (${runtime}) on ${repo.full_name}: ${changes

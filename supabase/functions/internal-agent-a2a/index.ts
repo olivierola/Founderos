@@ -131,17 +131,28 @@ ${capabilitySummary}`;
     ];
 
     const provider = a.model === "deepseek" ? "deepseek" : "groq";
-    const result = await callAiWithTools({
-      provider,
-      messages,
-      tools: defs,
-      executor,
-      temperature: a.temperature ?? 0.3,
-      maxTokens: 1200,
-      maxRounds: Math.min(a.max_steps ?? 6, 5),
-    });
-
-    const reply = result.content?.trim();
+    let result: Awaited<ReturnType<typeof callAiWithTools>> | null = null;
+    let reply: string | undefined;
+    try {
+      result = await callAiWithTools({
+        provider,
+        messages,
+        tools: defs,
+        executor,
+        temperature: a.temperature ?? 0.3,
+        maxTokens: 1200,
+        maxRounds: Math.min(a.max_steps ?? 6, 5),
+      });
+      reply = result.content?.trim();
+    } catch (e) {
+      // Approval-gated tools throw to pause for a human decision — there's no
+      // human in an agent-to-agent exchange, so answer gracefully.
+      if ((e as { name?: string })?.name === "AwaitingApprovalError") {
+        reply = `Cette action (${(e as { summary?: string }).summary ?? "sensible"}) nécessite une approbation humaine — je ne peux pas l'exécuter dans un échange entre agents.`;
+      } else {
+        throw e;
+      }
+    }
     if (reply) {
       await admin.from("internal_agent_a2a_messages").insert({
         thread_id: (msg as any).thread_id,
@@ -160,11 +171,13 @@ ${capabilitySummary}`;
       .update({ updated_at: new Date().toISOString() })
       .eq("id", (msg as any).thread_id);
 
-    await logLlmUsage({
-      workspace_id: a.workspace_id, project_id: a.project_id,
-      provider: result.provider, model: result.model,
-      task: "chat_simple", feature: "internal-agent-a2a", usage: result.usage,
-    });
+    if (result) {
+      await logLlmUsage({
+        workspace_id: a.workspace_id, project_id: a.project_id,
+        provider: result.provider, model: result.model,
+        task: "chat_simple", feature: "internal-agent-a2a", usage: result.usage,
+      });
+    }
 
     return jsonResponse({ ok: true, replied: !!reply });
   } catch (e) {

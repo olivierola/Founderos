@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Image as ImageIcon, Clapperboard, PenLine, Loader2, Sparkles, Copy, Check, Wand2,
+  Trash2, ExternalLink, AlertCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { callEdge } from "@/lib/edge";
+import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useProjectConnectors } from "@/hooks/useConnectors";
 import { cn } from "@/lib/utils";
@@ -88,16 +91,84 @@ export function OfficeCopywriterPage() {
   );
 }
 
-// ── Media studio shell (Image / Video) — prompt UI + provider-aware ──────────
+// ── Media studios (Image / Video) — real generation via office-ai media.* ────
+// Providers: fal.ai (FLUX images, Kling video) or OpenAI (gpt-image-1, Sora),
+// resolved from the workspace's connected credentials. Results are stored in
+// the `office-media` bucket and listed from the office_media table (RLS).
+
+interface OfficeMedia {
+  id: string; kind: "image" | "video"; prompt: string; ratio: string | null;
+  provider: string; model: string | null; status: "generating" | "ready" | "failed";
+  url: string | null; error_message: string | null; created_at: string;
+}
+
+const GEN_PROVIDERS = ["fal", "openai"] as const;
+const PROVIDER_LABEL: Record<string, string> = { fal: "fal.ai", openai: "OpenAI" };
+
 function MediaStudio({ kind }: { kind: "image" | "video" }) {
-  const { projectId } = useCurrentContext();
+  const { workspaceId, projectId } = useCurrentContext();
   const { data: connectors } = useProjectConnectors(projectId ?? null);
-  const providers = kind === "image" ? ["cloudinary", "canva", "unsplash"] : ["cloudinary"];
-  const connected = (connectors ?? []).some((c) => providers.includes(c.provider) && c.status === "connected");
+  const queryClient = useQueryClient();
+  const available = GEN_PROVIDERS.filter((p) =>
+    (connectors ?? []).some((c) => c.provider === p && c.status === "connected"));
+  const connected = available.length > 0;
 
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("16:9");
+  const [provider, setProvider] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const activeProvider = provider && available.includes(provider as typeof GEN_PROVIDERS[number]) ? provider : available[0];
   const Icon = kind === "image" ? ImageIcon : Clapperboard;
+
+  const { data: items } = useQuery({
+    queryKey: ["office_media", projectId, kind],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("office_media")
+        .select("id, kind, prompt, ratio, provider, model, status, url, error_message, created_at")
+        .eq("project_id", projectId!).eq("kind", kind)
+        .order("created_at", { ascending: false }).limit(60);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as OfficeMedia[];
+    },
+  });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["office_media", projectId, kind] });
+
+  // Poll office-ai media.sync while generations are in flight (fal queue / Sora).
+  const pendingIds = (items ?? []).filter((i) => i.status === "generating").map((i) => i.id);
+  useEffect(() => {
+    if (pendingIds.length === 0 || !workspaceId || !projectId) return;
+    const t = setInterval(async () => {
+      await Promise.all(pendingIds.map((id) =>
+        callEdge("office-ai", { op: "media.sync", workspace_id: workspaceId, project_id: projectId, media_id: id }).catch(() => null)));
+      invalidate();
+    }, 4000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingIds.join(","), workspaceId, projectId]);
+
+  async function generate() {
+    if (!workspaceId || !projectId || !prompt.trim() || busy || !connected) return;
+    setBusy(true); setGenError(null);
+    try {
+      await callEdge<{ media: OfficeMedia }>("office-ai", {
+        op: "media.generate", workspace_id: workspaceId, project_id: projectId,
+        kind, prompt: prompt.trim(), ratio, provider: activeProvider,
+      });
+      invalidate();
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : "La génération a échoué");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    if (!workspaceId || !projectId) return;
+    await callEdge("office-ai", { op: "media.delete", workspace_id: workspaceId, project_id: projectId, media_id: id }).catch(() => null);
+    invalidate();
+  }
 
   return (
     <div className="space-y-5">
@@ -120,21 +191,96 @@ function MediaStudio({ kind }: { kind: "image" | "video" }) {
               ))}
             </div>
           </Field>
-          <Button disabled={!connected || !prompt.trim()} className="w-full">
-            <Wand2 className="mr-1.5 h-4 w-4" /> Generate
+          {available.length > 1 && (
+            <Field label="Provider">
+              <div className="flex flex-wrap gap-1.5">
+                {available.map((p) => (
+                  <button key={p} onClick={() => setProvider(p)}
+                    className={cn("rounded-full border px-2.5 py-1 text-xs transition-colors", activeProvider === p ? "border-primary/50 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
+                    {PROVIDER_LABEL[p]}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+          <Button onClick={generate} disabled={!connected || !prompt.trim() || busy} className="w-full">
+            {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Wand2 className="mr-1.5 h-4 w-4" />} Generate
           </Button>
+          {genError && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">{genError}</p>
+          )}
           {!connected && (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-xs text-muted-foreground">
-              Connect a media provider ({providers.join(", ")}) in <span className="font-medium text-foreground">Integrations</span> to enable generation.
+              Connect <span className="font-medium text-foreground">fal.ai</span> or <span className="font-medium text-foreground">OpenAI</span> in
+              <span className="font-medium text-foreground"> Integrations → Credentials Vault</span> to enable generation.
             </p>
           )}
         </div>
 
-        <div className="grid min-h-[300px] grid-cols-2 gap-3 rounded-xl border border-dashed border-border p-4 sm:grid-cols-3">
-          <div className="col-span-full flex h-full min-h-[260px] flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-            <Icon className="h-7 w-7 opacity-50" /> Generated {kind === "image" ? "images" : "clips"} will appear here.
+        {(items ?? []).length === 0 ? (
+          <div className="grid min-h-[300px] rounded-xl border border-dashed border-border p-4">
+            <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+              <Icon className="h-7 w-7 opacity-50" /> Generated {kind === "image" ? "images" : "clips"} will appear here.
+            </div>
           </div>
+        ) : (
+          <div className="grid grid-cols-2 content-start gap-3 sm:grid-cols-3">
+            {(items ?? []).map((m) => <MediaCard key={m.id} media={m} onDelete={() => remove(m.id)} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MediaCard({ media, onDelete }: { media: OfficeMedia; onDelete: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const copyUrl = () => {
+    if (!media.url) return;
+    navigator.clipboard.writeText(media.url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className="group relative overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex aspect-square items-center justify-center bg-muted/40">
+        {media.status === "generating" ? (
+          <div className="flex flex-col items-center gap-2 p-3 text-center text-xs text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" /> Generating…
+          </div>
+        ) : media.status === "failed" ? (
+          <div className="flex flex-col items-center gap-2 p-3 text-center text-xs text-destructive">
+            <AlertCircle className="h-5 w-5" />
+            <span className="line-clamp-4">{media.error_message ?? "Generation failed"}</span>
+          </div>
+        ) : media.kind === "image" ? (
+          <img src={media.url ?? ""} alt={media.prompt} loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <video src={media.url ?? ""} controls playsInline className="h-full w-full object-cover" />
+        )}
+      </div>
+      <div className="space-y-1 p-2">
+        <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground" title={media.prompt}>{media.prompt}</p>
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+          <span>{PROVIDER_LABEL[media.provider] ?? media.provider}</span>
+          {media.model && <span>· {media.model.split("/").pop()}</span>}
+          {media.ratio && <span>· {media.ratio}</span>}
         </div>
+      </div>
+      <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        {media.url && (
+          <>
+            <button onClick={copyUrl} title="Copy URL" className="rounded-md bg-background/85 p-1.5 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground">
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+            <a href={media.url} target="_blank" rel="noreferrer" title="Open" className="rounded-md bg-background/85 p-1.5 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground">
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </>
+        )}
+        <button onClick={onDelete} title="Delete" className="rounded-md bg-background/85 p-1.5 text-muted-foreground shadow-sm backdrop-blur hover:text-destructive">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import { createServiceClient, createUserClient } from "../_shared/supabase-admin
 import { callAi, safeParseJson } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import { loadGrounding } from "../_shared/office-rag.ts";
+import { handleMedia } from "./media.ts";
 
 type Kind = "document" | "spreadsheet" | "presentation";
 
@@ -56,11 +57,8 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { workspace_id, project_id } = body;
-    const kind = body.kind as Kind;
-    const mode = (body.mode ?? "assist") as "create" | "assist";
-    const instruction = String(body.instruction ?? "").trim();
-    if (!workspace_id || !project_id || !kind || !instruction) {
-      return jsonResponse({ error: "workspace_id, project_id, kind, instruction required" }, { status: 400 });
+    if (!workspace_id || !project_id) {
+      return jsonResponse({ error: "workspace_id, project_id required" }, { status: 400 });
     }
 
     const admin = createServiceClient();
@@ -71,6 +69,18 @@ Deno.serve(async (req) => {
       .eq("user_id", userData.user.id)
       .maybeSingle();
     if (!member) return jsonResponse({ error: "Not authorized" }, { status: 403 });
+
+    // ── Image & Video studios — op-based dispatch (see media.ts) ─────────────
+    if (typeof body.op === "string" && body.op.startsWith("media.")) {
+      return await handleMedia(admin, userData.user.id, body);
+    }
+
+    const kind = body.kind as Kind;
+    const mode = (body.mode ?? "assist") as "create" | "assist";
+    const instruction = String(body.instruction ?? "").trim();
+    if (!kind || !instruction) {
+      return jsonResponse({ error: "kind, instruction required" }, { status: 400 });
+    }
 
     const { understanding, knowledge } = await loadGrounding(admin, project_id, instruction, body.use_knowledge !== false);
 

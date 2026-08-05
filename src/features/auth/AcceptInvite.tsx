@@ -18,7 +18,22 @@ export function AcceptInvitePage() {
     if (!token) return;
     setStatus("working");
     try {
-      await callEdge("accept-invite", { token });
+      // Workspace invites (team_invitations) and project invites
+      // (project_invitations) share the /accept-invite?token= email link but
+      // live in different tables — try the workspace flow first, then the
+      // project one when the token is unknown there.
+      try {
+        await callEdge("accept-invite", { token });
+      } catch (wsErr) {
+        try {
+          await callEdge("project-accept-invitation", { token });
+        } catch (projErr) {
+          // Unknown token on the project side ⇒ it was a workspace invite that
+          // failed for a real reason — surface the original error instead.
+          const msg = projErr instanceof Error ? projErr.message : String(projErr);
+          throw /unknown token/i.test(msg) ? wsErr : projErr;
+        }
+      }
       setStatus("ok");
       setTimeout(() => navigate("/orgs", { replace: true }), 1500);
     } catch (e) {
@@ -61,7 +76,7 @@ export function AcceptInvitePage() {
             <>
               <div className="text-base font-semibold">Sign in to accept the invitation</div>
               <p className="text-sm text-muted-foreground">
-                You need a FounderOS account matching the invited email.
+                You need a AchiCorp account matching the invited email.
               </p>
               <Button onClick={() => navigate(`/login?next=/accept-invite?token=${token}`)}>Sign in</Button>
             </>

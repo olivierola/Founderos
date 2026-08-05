@@ -14,6 +14,20 @@ async function sendResendEmail(apiKey: string, to: string, subject: string, html
   return res.ok;
 }
 
+function inviteEmail(workspaceName: string, role: string, link: string) {
+  return `
+    <div style="font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+      <h1 style="font-size:20px;margin:0 0 8px">Vous êtes invité à rejoindre ${workspaceName}</h1>
+      <p style="color:#555;font-size:14px;line-height:1.5;margin:0 0 24px">
+        En tant que <b>${role}</b>. Le lien expire dans 14 jours et ne fonctionne qu'avec cette adresse e-mail.
+      </p>
+      <a href="${link}" style="display:inline-block;background:#F86134;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
+        Accepter l'invitation
+      </a>
+      <p style="color:#888;font-size:12px;margin:24px 0 0;word-break:break-all">${link}</p>
+    </div>`;
+}
+
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -55,24 +69,27 @@ Deno.serve(async (req) => {
       .single();
     if (error) return jsonResponse({ error: error.message }, { status: 500 });
 
-    // Try Resend if configured
+    // Email delivery is opportunistic: it needs a Resend credential on the
+    // workspace. Without one the invitation is still perfectly valid — the
+    // caller shows the link so it can be shared by hand.
+    const link = `${Deno.env.get("APP_URL") ?? new URL(req.url).origin.replace(/\.supabase\.co$/, "")}/accept-invite?token=${token}`;
     let emailSent = false;
     try {
       const { payload } = await getConnectorCredential(workspace_id, workspace_id, "resend").catch(() => ({ payload: { api_key: "" } } as { payload: { api_key: string } }));
       if (payload.api_key) {
-        const link = `${Deno.env.get("APP_URL") ?? "http://localhost:5173"}/accept-invite?token=${token}`;
+        const { data: ws } = await admin.from("workspaces").select("name").eq("id", workspace_id).maybeSingle();
         emailSent = await sendResendEmail(
           payload.api_key,
           email,
-          "You've been invited to a FounderOS workspace",
-          `<p>You've been invited as <b>${role ?? "member"}</b>.</p><p><a href="${link}">Accept invite</a></p>`,
+          `Invitation à rejoindre ${ws?.name ?? "une organisation"} sur FounderOS`,
+          inviteEmail(ws?.name ?? "l'organisation", role ?? "member", link),
         );
       }
     } catch {
-      /* ignore */
+      /* email is best-effort — the invitation row is what matters */
     }
 
-    return jsonResponse({ ok: true, invitation: inv, email_sent: emailSent });
+    return jsonResponse({ ok: true, invitation: inv, invite_url: link, email_sent: emailSent });
   } catch (err) {
     return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

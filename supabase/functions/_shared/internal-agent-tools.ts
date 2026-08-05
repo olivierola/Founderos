@@ -28,9 +28,11 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import type { ToolDef, ToolExecutor } from "./ai.ts";
+import type { ToolTier } from "./model-router.ts";
 import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
 import { embedTexts, toVectorLiteral } from "./jina.ts";
 import { mcpCallTool, type McpTool } from "./mcp-client.ts";
+import { executeApprovalAction, approvalScope, approvalScopePrefix, approvalScopeLabel } from "./approval-exec.ts";
 
 export interface AgentToolRow {
   id: string;
@@ -42,7 +44,12 @@ export interface AgentToolRow {
     | "edge_function"
     | "vault_connector"
     | "connector_action"
+    | "composio_toolkit"
+    | "crm"
     | "security_scan"
+    | "vibe_code"
+    | "testing"
+    | "simulation"
     | "custom";
   name: string;
   description: string | null;
@@ -58,9 +65,16 @@ export interface DeliverableDraft {
   summary: string | null;
 }
 
+export interface ArtifactDraft {
+  kind: "document" | "presentation" | "spreadsheet" | "image" | "text";
+  title: string;
+  /** Markdown (document/text), "Title | body" lines (presentation), CSV (spreadsheet), or an image prompt (image). */
+  content: string;
+}
+
 export interface ApprovalRequest {
   tool_name: string;
-  action_kind: "edge_function" | "webhook";
+  action_kind: "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write";
   payload: Record<string, unknown>;
   reason: string | null;
 }
@@ -81,6 +95,8 @@ export interface InternalToolContext {
   conversationId?: string | null;
   /** Persist a deliverable produced by the agent. */
   createDeliverable: (d: DeliverableDraft) => Promise<void>;
+  /** Create a rich, openable artifact (document/presentation/spreadsheet/image/text). */
+  createArtifact: (a: ArtifactDraft) => Promise<void>;
   /** Queue a sensitive action for human approval. Returns the approval id. */
   requestApproval: (r: ApprovalRequest) => Promise<string>;
   /** Append a run event (no-op when runId is null). */
@@ -115,6 +131,30 @@ export interface InternalToolContext {
   /** Depth of this run in a delegation chain (0 = user-initiated). create_mission
    *  refuses to delegate beyond MAX_DELEGATION_DEPTH to stop infinite loops. */
   delegationDepth?: number;
+  /** The service dashboard this agent belongs to — new agents created via
+   *  create_agent inherit it so the orchestrator builds its own team. */
+  serviceDashboardId?: string | null;
+  /** The user who owns/created the agent — stamped on resources it creates. */
+  userId?: string | null;
+  /** True when THIS context is an ephemeral parallel sub-agent — disables
+   *  spawn_parallel_agents / create_mission so a sub-agent can't fan out again. */
+  isSubagent?: boolean;
+  /** Owner's "Essaim" switch: when false the spawn_parallel_agents tool is not
+   *  registered at all (the agent can't fan out). Default true — the agent
+   *  still decides per task whether to actually use it. */
+  swarmEnabled?: boolean;
+  /** Fan out INDEPENDENT subtasks to ephemeral parallel sub-agents (clones of
+   *  this agent) and return their collected results. Injected by the run engine
+   *  on primary runs only; absent on sub-agent runs. */
+  spawnParallel?: (
+    subtasks: Array<{ label: string; brief: string; acceptance?: string }>,
+  ) => Promise<string>;
+  /** Tool families already loaded for this run (restored from run_state.meta),
+   *  so progressive disclosure survives across ticks instead of resetting. */
+  loadedFamilies?: string[];
+  /** Called when load_toolset / need_tools widens the toolbox, so the run engine
+   *  can persist it. "*" = the whole toolbox was loaded. */
+  onToolsetLoaded?: (family: string) => Promise<void>;
 }
 
 export const MAX_DELEGATION_DEPTH = 3;
@@ -176,6 +216,120 @@ export class AwaitingInputError extends Error {
   }
 }
 
+// Thrown by an approval-gated tool to PAUSE the run until a human approves the
+// action IN THE CHAT. Like AwaitingInputError, but the decision executes (or
+// cancels) the queued action and then resumes the agent with its result. It is a
+// control-flow signal, not a failure — the tool loop re-throws it by name.
+export class AwaitingApprovalError extends Error {
+  approvalId: string;
+  toolName: string;
+  summary: string;
+  constructor(approvalId: string, toolName: string, summary: string) {
+    super("Agent is awaiting human approval");
+    this.name = "AwaitingApprovalError";
+    this.approvalId = approvalId;
+    this.toolName = toolName;
+    this.summary = summary;
+  }
+}
+
+// Inline approval that keeps the RUN ALIVE. Instead of stopping the run, the
+// gated tool: (1) queues the approval, (2) posts it INLINE in the chat with
+// approve/reject buttons — visible while the run keeps turning, and (3) polls
+// for the decision so the agent continues in the SAME run once approved (the
+// decision endpoint executes the action and stores its result, which we read
+// here). No stop, no re-plan, no re-request. In non-chat contexts (rooms / a2a:
+// no conversationId) it degrades to a queued note instead of blocking.
+const APPROVAL_POLL_MS = 120_000; // wait up to ~2 min inline for a decision
+const APPROVAL_POLL_STEP = 2_000;
+
+async function awaitInlineApproval(
+  ctx: InternalToolContext,
+  req: ApprovalRequest,
+  summary: string,
+): Promise<string> {
+  // Already approved this EXACT call earlier in the conversation? Auto-run it so
+  // we never re-ask for something the user already granted — a different action
+  // (or different arguments) still gets its own approval.
+  if (ctx.conversationId) {
+    const scope = approvalScope(req.action_kind, req.payload, req.tool_name);
+    const prefix = approvalScopePrefix(req.action_kind, req.payload, req.tool_name);
+    const { data: prior } = await ctx.admin.from("internal_agent_approvals")
+      .select("action_kind, payload, tool_name, status, result")
+      .eq("conversation_id", ctx.conversationId).in("status", ["executed", "approved", "pending"]).limit(120);
+    const sameScope = (prior ?? []).filter(
+      (a: { action_kind?: string; payload?: Record<string, unknown>; tool_name?: string }) =>
+        approvalScope(a.action_kind ?? "", a.payload ?? {}, a.tool_name ?? "") === scope,
+    );
+    // Same action already waiting? Don't create a duplicate or start another
+    // long poll — tell the agent to stop and wait (prevents a retry loop).
+    if (sameScope.some((a: { status?: string }) => a.status === "pending")) {
+      return `⏳ L'action « ${summary} » est DÉJÀ en attente de ton approbation au-dessus. Je ne la relance pas — j'attends ta décision là-haut.`;
+    }
+    const exact = sameScope.some((a: { status?: string }) => a.status === "executed" || a.status === "approved");
+    // "Tout autoriser {toolkit}" grant covers every action of this integration
+    // in the conversation → auto-run without asking again.
+    const toolkitGranted = (prior ?? []).some(
+      (a: { result?: { grant_scope?: string } | null }) => (a.result?.grant_scope ?? "") === prefix,
+    );
+    if (exact || toolkitGranted) {
+      const outcome = await executeApprovalAction({
+        action_kind: req.action_kind, payload: req.payload, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+      });
+      const gid = await ctx.requestApproval(req); // audit trail for the auto-run
+      await ctx.admin.from("internal_agent_approvals").update({
+        status: outcome.ok ? "executed" : "failed", decided_at: new Date().toISOString(),
+        executed_at: new Date().toISOString(), result: { detail: outcome.detail },
+        error_message: outcome.ok ? null : outcome.detail.slice(0, 500),
+      }).eq("id", gid).then(() => {}, () => {});
+      const why = toolkitGranted ? `${approvalScopeLabel(req.action_kind, req.payload, req.tool_name)} déjà autorisé` : "déjà autorisé cette session";
+      return outcome.ok
+        ? `✅ (${why} — je n'ai pas redemandé) Action « ${summary} » exécutée. Résultat :\n${outcome.detail.slice(0, 6000)}`
+        : `⚠️ Action « ${summary} » (${why}) — l'exécution a échoué : ${outcome.detail.slice(0, 1500)}`;
+    }
+  }
+
+  const id = await ctx.requestApproval(req);
+  if (!ctx.conversationId) {
+    return `⏳ Action « ${summary} » mise en attente d'approbation (id ${id}). Approuve-la depuis le chat direct de l'agent pour que je l'exécute.`;
+  }
+
+  // Surface the approval inline, live, while the run keeps turning.
+  await ctx.admin.from("internal_agent_messages").insert({
+    conversation_id: ctx.conversationId, agent_id: ctx.agentId, role: "assistant",
+    content: `🔐 J'ai besoin de ton feu vert pour : **${summary}**. Approuve ou refuse juste en dessous — je patiente et je continue dès ta décision.`,
+    run_id: ctx.runId,
+    ui_blocks: [{ component: "approval", props: { approval_id: id, tool: req.tool_name, summary, scope_label: approvalScopeLabel(req.action_kind, req.payload, req.tool_name) } }],
+  }).then(() => {}, () => {});
+  await ctx.admin.from("internal_agent_conversations")
+    .update({ updated_at: new Date().toISOString() }).eq("id", ctx.conversationId).then(() => {}, () => {});
+  // Extend the tick lease so a duplicate delivery can't fire while we wait.
+  if (ctx.runId) {
+    await ctx.admin.from("internal_agent_run_state")
+      .update({ processing_until: new Date(Date.now() + APPROVAL_POLL_MS + 60_000).toISOString() })
+      .eq("run_id", ctx.runId).then(() => {}, () => {});
+  }
+
+  const deadline = Date.now() + APPROVAL_POLL_MS;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, APPROVAL_POLL_STEP));
+    if (await ctx.isCancelled()) throw new RunCancelledError();
+    const { data } = await ctx.admin
+      .from("internal_agent_approvals").select("status, result, error_message").eq("id", id).maybeSingle();
+    const st = (data as { status?: string } | null)?.status;
+    if (!st || st === "pending") continue;
+    if (st === "rejected") {
+      return `❌ L'utilisateur a REFUSÉ l'action « ${summary} ». Ne la refais pas — adapte-toi ou propose une alternative, puis poursuis.`;
+    }
+    const detail = (data as { result?: { detail?: string } } | null)?.result?.detail ?? "";
+    if (st === "failed") {
+      return `⚠️ Action « ${summary} » approuvée, mais l'exécution a échoué : ${((data as { error_message?: string } | null)?.error_message ?? detail).slice(0, 1500)}`;
+    }
+    return `✅ Action « ${summary} » approuvée et exécutée. Résultat :\n${detail.slice(0, 6000) || "(ok)"}`;
+  }
+  return `⏳ Toujours en attente de ton approbation pour « ${summary} » — approuve/refuse au-dessus quand tu veux, puis dis-moi de continuer.`;
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -186,6 +340,38 @@ function str(v: unknown, fallback = ""): string {
 
 function cap(s: string, max = 8000): string {
   return s.length > max ? s.slice(0, max) + "\n…(truncated)" : s;
+}
+
+// Coerce a tool argument that SHOULD be a JSON/text string but which the model
+// often emits as a nested object/array (DeepSeek does this a lot for big report
+// payloads) into a string. Empty/nullish → "".
+function strOrJson(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (v == null) return "";
+  if (typeof v === "object") { try { return JSON.stringify(v); } catch { return ""; } }
+  return String(v);
+}
+
+// Small run_state.meta accessors so a tool can accumulate durable per-run state
+// (e.g. an incremental report draft, spawn dedup) across tool calls / ticks.
+async function readRunMeta(ctx: InternalToolContext): Promise<Record<string, unknown>> {
+  if (!ctx.runId) return {};
+  const { data } = await ctx.admin.from("internal_agent_run_state").select("meta").eq("run_id", ctx.runId).maybeSingle();
+  return ((data as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+}
+async function writeRunMeta(ctx: InternalToolContext, meta: Record<string, unknown>): Promise<void> {
+  if (!ctx.runId) return;
+  await ctx.admin.from("internal_agent_run_state").update({ meta }).eq("run_id", ctx.runId).then(() => {}, () => {});
+}
+
+// Classify an action as a WRITE (create / update / delete / send / modify) vs a
+// READ (fetch / list / get / search …). ONLY writes need human approval — reads
+// run freely, so a simple lookup like "show my last emails" never nags. Heuristic
+// on the action name's verb; an unknown verb is treated as a read (don't gate
+// safe lookups). Destructive verbs are covered explicitly.
+const WRITE_ACTION_RE = /\b(SEND|CREATE|DELETE|REMOVE|UPDATE|MODIFY|ADD|PUT|PATCH|POST|TRASH|ARCHIVE|MOVE|REPLY|FORWARD|DRAFT|SET|EDIT|INSERT|UPLOAD|MARK|WRITE|RENAME|CANCEL|MERGE|ASSIGN|INVITE|CLEAR|REVOKE|GRANT|ENABLE|DISABLE|SCHEDULE|PUBLISH|CLOSE|IMPORT|SNOOZE|LABEL|REACT|PIN|UNPIN|STAR|SUBSCRIBE|UNSUBSCRIBE|BLOCK|MUTE|APPROVE|REJECT|COMPLETE|SUBMIT|EXECUTE|TRIGGER|DUPLICATE|RESTORE|EMPTY|BATCH)\b/;
+export function isWriteAction(name: string): boolean {
+  return WRITE_ACTION_RE.test(String(name ?? "").toUpperCase().replace(/[_.\-]+/g, " "));
 }
 
 // Best-effort embedding for a memory (Jina v3, 1024 dims — same pipeline as the
@@ -248,6 +434,36 @@ function decodeEntities(s: string): string {
     .replace(/&#x?\d+;/g, " ");
 }
 
+// ── Pentest authorization scope ───────────────────────────────────────────────
+// The security tools (http_request) only act on targets the workspace has
+// EXPLICITLY authorized via agent_pentest_scope. Default-deny: no active/attested
+// scope entry ⇒ nothing is in scope.
+interface PentestScopeEntry { label: string; targets: string[] }
+async function loadPentestScope(ctx: InternalToolContext): Promise<PentestScopeEntry[]> {
+  const { data } = await ctx.admin
+    .from("agent_pentest_scope")
+    .select("label, targets")
+    .eq("project_id", ctx.projectId)
+    .eq("authorized", true);
+  return ((data ?? []) as PentestScopeEntry[]).filter((e) => Array.isArray(e.targets) && e.targets.length);
+}
+
+/** Whether a URL's host is covered by an authorized scope target. Supports an
+ *  exact host, a parent domain (sub-domain match) and a "*.example.com" wildcard.
+ *  IPs match exactly. Conservative by design — when unsure, it's NOT in scope. */
+function hostInScope(rawUrl: string, scope: PentestScopeEntry[]): { ok: boolean; host?: string } {
+  let host: string;
+  try { host = new URL(rawUrl).hostname.toLowerCase(); } catch { return { ok: false }; }
+  if (!host) return { ok: false };
+  const targets = scope.flatMap((e) => e.targets).map((t) => String(t).trim().toLowerCase()).filter(Boolean);
+  for (const t of targets) {
+    const bare = t.replace(/^\*\./, "").replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!bare) continue;
+    if (host === bare || host.endsWith(`.${bare}`)) return { ok: true, host };
+  }
+  return { ok: false, host };
+}
+
 function slugToToolName(prefix: string, slug: string): string {
   return `${prefix}_${slug.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "")}`.slice(0, 60);
 }
@@ -255,6 +471,16 @@ function slugToToolName(prefix: string, slug: string): string {
 interface InternalTool {
   def: ToolDef["function"];
   run: (args: Record<string, unknown>) => Promise<string>;
+  /** The description carries a REQUIRED output contract (JSON schema, enum,
+   *  exact format). Never truncated by compactToolDefs — a half-sent schema is
+   *  worse than none, since the model is still told to follow one. */
+  incompressible?: boolean;
+  /** Executable, but NOT advertised in `defs`. Used for deprecated names kept as
+   *  aliases (so a model that learned the old name still works) without paying
+   *  for their schema on every round. */
+  hidden?: boolean;
+  /** Toolbox family — drives progressive disclosure (see toolFamily / defsFor). */
+  family?: ToolFamily;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,18 +505,51 @@ export async function webSearch(query: string, maxResults: number): Promise<stri
       return JSON.stringify({ provider: "tavily", results });
     }
   }
-  // Keyless fallbacks: DuckDuckGo HTML endpoint, then the lite variant (the
-  // full endpoint sometimes serves an anomaly page to datacenter IPs).
-  const html = await fetchDdg(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`);
-  let results = html ? parseDdgHtml(html, maxResults) : [];
+  // Primary engine: Jina Search (s.jina.ai) — same reliable fetch infra as
+  // read_url, works from datacenter IPs (Supabase), uses JINA_API_KEY when set.
+  // Replaces DDG/Bing HTML scraping which gets 202/anti-bot on datacenter IPs.
+  let results = await jinaSearch(query, maxResults);
+  let provider = "jina";
+  // Last-ditch keyless fallbacks (rarely needed now).
   if (results.length === 0) {
-    const lite = await fetchDdg(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`);
-    if (lite) results = parseDdgLite(lite, maxResults);
+    const bing = await fetchBing(`https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en`);
+    if (bing) { results = parseBingHtml(bing, maxResults); provider = "bing"; }
   }
   if (results.length === 0) {
-    return "ERROR: web search returned no results (search providers unreachable). Try read_url on a known site, or ask the team to configure TAVILY_API_KEY.";
+    const html = await fetchDdg(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`);
+    if (html) { results = parseDdgHtml(html, maxResults); provider = "duckduckgo"; }
   }
-  return JSON.stringify({ provider: "duckduckgo", results });
+  if (results.length === 0) {
+    return "ERROR: web search returned no results. Read a source directly with read_url (e.g. a Made-in-China / Alibaba category or search URL) — that fetch path is reliable.";
+  }
+  return JSON.stringify({ provider, results });
+}
+
+// Jina Search: fetch a search-results feed through Jina (like read_url does for a
+// page). Returns real organic results (title/url/snippet) as JSON. Keyless works
+// but is rate-limited; JINA_API_KEY (already used by read_url + embeddings) makes
+// it reliable. `X-Respond-With: no-content` returns SERP metadata only (fast).
+async function jinaSearch(query: string, maxResults: number): Promise<SearchHit[]> {
+  const key = Deno.env.get("JINA_API_KEY");
+  try {
+    const res = await fetch(`https://s.jina.ai/?q=${encodeURIComponent(query)}`, {
+      headers: {
+        "Accept": "application/json",
+        "X-Respond-With": "no-content",
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+      },
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const items = Array.isArray(json?.data) ? json.data : [];
+    return items.slice(0, maxResults).map((r: Record<string, unknown>) => ({
+      title: str(r.title),
+      url: str(r.url),
+      snippet: (str(r.description) || str(r.content)).slice(0, 300),
+    })).filter((h: SearchHit) => !!h.url);
+  } catch {
+    return [];
+  }
 }
 
 async function fetchDdg(url: string): Promise<string | null> {
@@ -303,6 +562,46 @@ async function fetchDdg(url: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// Bing HTML SERP fallback (keyless). Uses a browser UA so Bing serves the real
+// results page rather than a redirect/consent stub.
+async function fetchBing(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+function parseBingHtml(html: string, maxResults: number): SearchHit[] {
+  const results: SearchHit[] = [];
+  // Each organic result is an <li class="b_algo"> … <h2><a href="URL">TITLE</a></h2>
+  // … <p …>SNIPPET</p>. Walk the b_algo blocks and pull the first link + snippet.
+  const blockRe = /<li class="b_algo"[\s\S]*?(?=<li class="b_algo"|<\/ol>|$)/g;
+  let block: RegExpExecArray | null;
+  while ((block = blockRe.exec(html)) && results.length < maxResults) {
+    const chunk = block[0];
+    const link = chunk.match(/<h2>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
+    if (!link) continue;
+    const url = link[1];
+    if (!/^https?:\/\//i.test(url)) continue;
+    const snip = chunk.match(/<p[^>]*>([\s\S]*?)<\/p>/);
+    results.push({
+      title: decodeEntities(link[2].replace(/<[^>]+>/g, "")).trim(),
+      url,
+      snippet: snip ? decodeEntities(snip[1].replace(/<[^>]+>/g, "")).trim().slice(0, 300) : "",
+    });
+  }
+  return results;
 }
 
 interface SearchHit { title: string; url: string; snippet: string }
@@ -598,7 +897,30 @@ async function triggerA2A(messageId: string): Promise<void> {
 // toolset assembly
 // ---------------------------------------------------------------------------
 
-const DELIVERABLE_KINDS = ["report", "markdown", "json", "code", "url"];
+const DELIVERABLE_KINDS = [
+  "report", "coding_session", "test_session", "simulation_session",
+  "markdown", "json", "code", "url",
+];
+/** Structured kinds whose content is JSON validated at save time. */
+const STRUCTURED_KINDS = new Set(["report", "coding_session", "test_session", "simulation_session"]);
+
+// vibe_code tool — actions the engine understands, and the subset that WRITES
+// to GitHub (those are what an "assisted" agent must get approved).
+const VIBE_ACTIONS = ["run", "apply", "pr_status", "fix_pr", "merge_pr", "status"];
+const WRITE_VIBE_ACTIONS = new Set(["apply", "fix_pr", "merge_pr"]);
+
+/** Parse the "HTTP <status>\n<body>" envelope invokeEdgeFunction returns. */
+function parseEdgeJson(raw: string): Record<string, unknown> | null {
+  const nl = raw.indexOf("\n");
+  if (nl < 0) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(nl + 1));
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+const ARTIFACT_KINDS = ["document", "presentation", "spreadsheet", "image", "text"];
 
 // Guidance shown to the model for the structured `report` kind. The content is
 // a JSON string matching this shape; the UI renders it as a designed report.
@@ -624,14 +946,73 @@ const REPORT_SCHEMA_HINT = `For kind="report", content MUST be a JSON string wit
 MAKE REPORTS VISUAL AND PROFESSIONAL. Whenever you have numbers, SHOW them: lead a section with KPI cards, add at least one chart (pick the right type — line for trends over time, bar for comparisons, donut/pie for composition, radar for multi-dimension scores, scatter for correlation), use gauges for scores/completion, tables for detailed rows, a timeline for sequences of events, and callouts to highlight risks/wins. Prefer charts/KPIs over long prose. Every analytical report should contain visuals, not just text.
 You may also embed a chart inside markdown deliverables using a fenced block: \`\`\`chart\\n{ "type":"bar", "x":"month", "series":["mrr"], "data":[...] }\\n\`\`\``;
 
+// The studio artifact: a coding session rendered as a real session view (goal,
+// plan, per-file diffs, commands, PR + preview). This is what the Vibe Code
+// agent hands back instead of a prose recap.
+const CODING_SESSION_SCHEMA_HINT = `For kind="coding_session", content MUST be a JSON string with this shape:
+{
+  "title": "string — what this session shipped",
+  "goal": "string — the request in one sentence",
+  "repository": "owner/repo",
+  "branch": "string, optional (the base branch)",
+  "status": "shipped|staged|failed|partial",
+  "summary": "string (2-4 sentences: what changed and why)",
+  "plan": [{ "step": "string", "status": "done|skipped|failed", "detail": "string, optional" }],
+  "files": [{ "path": "src/x.ts", "change": "added|modified|deleted", "language": "ts", "summary": "one line", "diff": "unified diff or the new content, optional" }],
+  "commands": [{ "cmd": "npm test", "result": "string, optional", "ok": true }],
+  "pull_request": { "url": "https://github.com/…/pull/12", "number": 12, "title": "string", "state": "open|merged|draft" },
+  "preview_url": "https://… , optional",
+  "risks": ["string — what a reviewer must check"],
+  "next_steps": ["string"]
+}
+Be concrete: real paths, real diffs, the real PR url. "files" is the heart of the artifact — never leave it empty when you changed code. Put anything a reviewer could get wrong in "risks".`;
+
+const TEST_SESSION_SCHEMA_HINT = `For kind="test_session", content MUST be a JSON string with this shape:
+{
+  "title": "string", "app_url": "string", "verdict": "passed|failed|flaky|blocked",
+  "summary": "string (2-4 sentences)",
+  "cases": [{ "name": "string", "status": "passed|failed|skipped|blocked", "duration_s": 12, "failure": "what broke, optional", "screenshot_url": "optional", "steps": ["what it did"] }],
+  "defects": [{ "title": "string", "severity": "critical|major|minor", "detail": "reproduction + expected vs actual", "case": "which case found it" }],
+  "coverage": ["what this session actually exercised"],
+  "next_steps": ["string"]
+}
+"cases" and "defects" are the artifact — a verdict with no case list is useless. Quote the real failure message, never paraphrase it.`;
+
+const SIMULATION_SESSION_SCHEMA_HINT = `For kind="simulation_session", content MUST be a JSON string with this shape:
+{
+  "title": "string", "question": "the prediction question", "population": 12, "rounds": 6,
+  "verdict": "string — the answer to the question, in one sentence",
+  "confidence": "high|medium|low",
+  "summary": "string (2-4 sentences)",
+  "sentiment": [{ "round": 1, "positive": 3, "neutral": 6, "negative": 3 }],
+  "cohorts": [{ "name": "string", "size": 4, "stance": "adopt|wait|reject", "why": "one line" }],
+  "signals": [{ "quote": "what a persona actually said", "cohort": "string", "tone": "positive|neutral|negative" }],
+  "risks": ["what would make this prediction wrong"],
+  "next_steps": ["string"]
+}
+Quote real persona reactions in "signals" — invented quotes make the whole artifact worthless. "sentiment" must have one entry per round played.`;
+
 export function buildInternalToolset(
   rows: AgentToolRow[],
   ctx: InternalToolContext,
-): { defs: ToolDef[]; executor: ToolExecutor; capabilitySummary: string } {
+): {
+  defs: ToolDef[];
+  /** Schemas for the CURRENT round. Pass as a thunk to runToolRounds so a
+   *  mid-loop load_toolset / need_tools is visible on the very next round. */
+  defsFor: (tier?: ToolTier) => ToolDef[];
+  executor: ToolExecutor;
+  capabilitySummary: string;
+} {
   const tools = new Map<string, InternalTool>();
   const summaryLines: string[] = [];
   // Execution-family guidance rendered under the EXECUTION section of the tree.
   const sandboxGuidance: string[] = [];
+
+  // Hoisted: which tool kinds this agent actually has. Needed EARLY so built-in
+  // tools can gate the parts of their schema that only apply to a capability the
+  // agent doesn't have (e.g. the coding_session contract on a non-coding agent).
+  const enabled = rows.filter((r) => r.enabled);
+  const hasKind = (k: AgentToolRow["kind"]) => enabled.some((r) => r.kind === k);
 
   // HYBRID namespacing: the runner and the sandbox register OVERLAPPING tool
   // names (shell_exec, python_exec, file_write, …). In single-world modes only
@@ -653,12 +1034,26 @@ export function buildInternalToolset(
   };
 
   // Always-on: deliverable materialisation.
+  //
+  // The output CONTRACT (the JSON shapes below) is the whole point of this tool:
+  // without it the model is told to emit a schema it never sees, produces
+  // free-form JSON, and every downstream salvage path fires. So the tool is
+  // marked `incompressible` — and, to keep that affordable, only the session
+  // schemas the agent can ACTUALLY produce are included (a non-coding agent
+  // never emits a coding_session).
+  const sessionHints = [
+    hasKind("vibe_code") ? CODING_SESSION_SCHEMA_HINT : "",
+    hasKind("testing") ? TEST_SESSION_SCHEMA_HINT : "",
+    hasKind("simulation") ? SIMULATION_SESSION_SCHEMA_HINT : "",
+  ].filter(Boolean).join("\n");
   tools.set("create_deliverable", {
+    incompressible: true,
+    family: "DELIVER",
     def: {
       name: "create_deliverable",
       description:
-        "Save a finished deliverable — your durable output. Prefer kind=\"report\" for analyses/results: a structured, designed document with sections, KPIs, charts and tables. Use markdown/json/code/url for simpler outputs. Call once per expected deliverable; summarise (don't repeat the full content) in your final answer.\n" +
-        REPORT_SCHEMA_HINT,
+        "Save a finished deliverable — your durable output. Prefer kind=\"report\" for analyses/results: a modern, designed document with sections, KPIs, charts and tables. BEFORE writing a report, DESIGN it with your Report Designer skill — read_skill_file(slug=\"report-designer\", path=\"principles.md\" then \"schema.md\", and \"example.md\" for a full model) — so it reads like an executive dashboard, not prose. `content` must be a STRING (a JSON string for structured kinds). For a LARGE report, don't cram it into one call: build it section-by-section with report_section(...), then call create_deliverable(kind=\"report\") with NO content to finalize. Use markdown/json/code/url for simpler outputs. Call once per expected deliverable; summarise (don't repeat the full content) in your final answer.\n" +
+        REPORT_SCHEMA_HINT + (sessionHints ? "\n" + sessionHints : ""),
       parameters: {
         type: "object",
         properties: {
@@ -673,15 +1068,34 @@ export function buildInternalToolset(
     run: async (args) => {
       let kind = DELIVERABLE_KINDS.includes(str(args.kind)) ? str(args.kind) : "markdown";
       const name = str(args.name, "Output").slice(0, 120);
-      const content = str(args.content);
-      if (!content) return "ERROR: content is required.";
+      // The model often passes a report as a nested OBJECT rather than a JSON
+      // string — coerce so we don't dead-end on "content required".
+      let content = strOrJson(args.content);
+      if (!content && kind === "report") {
+        // No inline content — finalize an incremental report draft if one exists
+        // (built section-by-section via report_section, so a big report never has
+        // to fit in one tool-call argument).
+        const meta = await readRunMeta(ctx);
+        const draft = (meta.report_draft ?? null) as { title?: string; subtitle?: string; author?: string; summary?: string; sections?: unknown[] } | null;
+        if (draft && Array.isArray(draft.sections) && draft.sections.length > 0) {
+          content = JSON.stringify({
+            title: draft.title || name, subtitle: draft.subtitle, author: draft.author,
+            summary: draft.summary, sections: draft.sections,
+          });
+          const { report_draft: _clear, ...rest } = meta;
+          await writeRunMeta(ctx, rest); // consume the draft
+        }
+      }
+      if (!content) {
+        return "ERROR: content is required. Pass the FULL deliverable as the `content` argument (for a report: the JSON described above, or rich markdown). For a LARGE report, build it incrementally instead: call report_section(...) once per section, then create_deliverable(kind=\"report\") with NO content to finalize.";
+      }
       // Validate report JSON; downgrade to markdown if it's not parseable so we
       // never persist a broken report.
       let summary: string | null;
-      if (kind === "report") {
+      if (STRUCTURED_KINDS.has(kind)) {
         try {
           const parsed = JSON.parse(content);
-          summary = (str(parsed.summary) || str(parsed.title)).slice(0, 200) || null;
+          summary = (str(parsed.summary) || str(parsed.title) || str(parsed.goal) || str(parsed.verdict)).slice(0, 200) || null;
         } catch {
           kind = "markdown";
           summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
@@ -695,6 +1109,298 @@ export function buildInternalToolset(
   });
   summaryLines.push("- create_deliverable: save your outputs as durable deliverables, ideally as a structured 'report' with charts/KPIs (always available).");
 
+  // Incremental report builder — assemble a kind="report" deliverable one section
+  // at a time so a large report never has to fit in a single (truncation-prone)
+  // create_deliverable argument. Set the header once, add sections, then finalize
+  // with create_deliverable(kind="report") and NO content.
+  tools.set("report_section", {
+    def: {
+      name: "report_section",
+      description:
+        "Build a kind=\"report\" deliverable INCREMENTALLY — one section per call — so you never have to emit a huge JSON in a single create_deliverable argument (which gets truncated). First call may set the header (title/subtitle/summary/author); each call may append one `section`. When done, call create_deliverable(kind=\"report\") with NO content to finalize from the accumulated draft. A `section` = one entry of the report 'sections' array: { heading, body?, kpis?, gauges?, charts?, table?, timeline?, callout? }.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Report title (set once)." },
+          subtitle: { type: "string" },
+          author: { type: "string" },
+          summary: { type: "string", description: "Executive summary (1-3 sentences)." },
+          section: { type: "object", description: "One report section object to append (heading + optional body/kpis/gauges/charts/table/timeline/callout)." },
+        },
+        additionalProperties: true,
+      },
+    },
+    run: async (args) => {
+      const meta = await readRunMeta(ctx);
+      const draft = ((meta.report_draft ?? {}) as { title?: string; subtitle?: string; author?: string; summary?: string; sections?: unknown[] });
+      if (!Array.isArray(draft.sections)) draft.sections = [];
+      if (str(args.title)) draft.title = str(args.title).slice(0, 200);
+      if (str(args.subtitle)) draft.subtitle = str(args.subtitle).slice(0, 200);
+      if (str(args.author)) draft.author = str(args.author).slice(0, 120);
+      if (str(args.summary)) draft.summary = str(args.summary).slice(0, 800);
+      let sec: unknown = args.section;
+      if (typeof sec === "string" && sec.trim()) { try { sec = JSON.parse(sec); } catch { sec = { heading: "Section", body: sec }; } }
+      if (sec && typeof sec === "object") draft.sections.push(sec);
+      await writeRunMeta(ctx, { ...meta, report_draft: draft });
+      return `Report draft updated: ${draft.sections.length} section(s)${draft.title ? ` — "${draft.title}"` : ""}. Add more with report_section, or finalize with create_deliverable(kind="report") (no content needed).`;
+    },
+  });
+  summaryLines.push("- report_section: build a big report section-by-section, then finalize with create_deliverable(kind=\"report\") (no content).");
+
+  // Always-on: search your OWN earlier steps + this conversation. Older context
+  // is compacted/truncated to keep requests small; instead of re-doing work or
+  // asking again, grep the history to recover what you already found or decided.
+  tools.set("search_history", {
+    def: {
+      name: "search_history",
+      description:
+        "Search your earlier steps in this run AND the conversation for a keyword — to recall a fact, result or decision from before it was compacted out of context. Use it instead of re-doing work or re-asking. Returns matching snippets with their source.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Keyword or phrase to find in past messages / tool results." },
+          limit: { type: "number", description: "Max snippets (default 8)." },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const q = str(args.query).trim();
+      if (q.length < 2) return "ERROR: query must be at least 2 characters.";
+      const ql = q.toLowerCase();
+      const limit = Math.min(Math.max(Number(args.limit) || 8, 1), 20);
+      const snip = (c: string) => { const i = c.toLowerCase().indexOf(ql); return (i > 120 ? "…" : "") + c.slice(Math.max(0, i - 120), i + 220).trim() + "…"; };
+      const out: string[] = [];
+
+      // This run's logged steps (tool calls/results/status previews).
+      if (ctx.runId) {
+        const { data } = await ctx.admin
+          .from("internal_agent_run_events")
+          .select("kind, payload, created_at")
+          .eq("run_id", ctx.runId).order("created_at", { ascending: false }).limit(400);
+        for (const e of (data ?? []) as Array<{ kind: string; payload: unknown }>) {
+          const text = (() => { try { return JSON.stringify(e.payload ?? {}); } catch { return ""; } })();
+          if (text.toLowerCase().includes(ql)) { out.push(`[step:${e.kind}] ${snip(text)}`); if (out.length >= limit) break; }
+        }
+      }
+      // The conversation (chat mode) — full user/assistant turns.
+      if (out.length < limit && ctx.conversationId) {
+        const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+        const { data } = await ctx.admin
+          .from("internal_agent_messages")
+          .select("role, content, created_at")
+          .eq("conversation_id", ctx.conversationId).ilike("content", like)
+          .order("created_at", { ascending: false }).limit(limit - out.length);
+        for (const m of (data ?? []) as Array<{ role: string; content: string }>) {
+          out.push(`[${m.role}] ${snip(str(m.content))}`);
+        }
+      }
+      return out.length ? cap(out.join("\n\n"), 6000) : `No earlier message matches "${q}".`;
+    },
+  });
+  summaryLines.push("- search_history: grep your earlier steps / the conversation to recover detail compacted out of context.");
+
+  // Service-dashboard agents: read the assets dropped into their service's
+  // Assets tab — the people, repositories, links, files, key references,
+  // connected tools and notes that describe what this service works with. This
+  // is how an agent (the Vibe Coder included) knows which repositories and
+  // resources it may act on. Read-only; registered only when the agent belongs
+  // to a service dashboard.
+  if (ctx.serviceDashboardId) {
+    tools.set("list_assets", {
+      def: {
+        name: "list_assets",
+        description:
+          "List the assets of YOUR service dashboard — the resources your team dropped in the Assets tab: " +
+          "GitHub repositories you can act on, people, links, files, key/secret references (names only), " +
+          "connected tools and notes. Call this to discover what this service works with before acting " +
+          "(e.g. which repository to code on).",
+        parameters: {
+          type: "object",
+          properties: {
+            kind: { type: "string", description: "Optional filter: repo | human | link | file | key | connector | note." },
+          },
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const wantKind = str(args.kind).trim().toLowerCase();
+        const out: string[] = [];
+
+        // Repositories are project-scoped rows (what the vibe_code tool resolves).
+        if (!wantKind || wantKind === "repo") {
+          const { data: repos } = await ctx.admin
+            .from("repositories")
+            .select("full_name, default_branch, private")
+            .eq("project_id", ctx.projectId)
+            .order("created_at", { ascending: false })
+            .limit(100);
+          const list = (repos ?? []) as Array<{ full_name: string | null; default_branch: string | null; private: boolean | null }>;
+          if (list.length) {
+            out.push("Repositories:");
+            for (const r of list) out.push(`  - ${r.full_name}${r.default_branch ? ` (${r.default_branch})` : ""}${r.private ? " · private" : ""}`);
+          }
+        }
+
+        // Everything else lives in dashboard_assets, scoped to this dashboard.
+        const { data: assets } = await ctx.admin
+          .from("dashboard_assets")
+          .select("kind, label, value")
+          .eq("dashboard_id", ctx.serviceDashboardId!)
+          .order("created_at", { ascending: false })
+          .limit(300);
+        const rows = ((assets ?? []) as Array<{ kind: string; label: string; value: string | null }>)
+          .filter((a) => a.kind !== "agent" && (!wantKind || a.kind === wantKind));
+        const byKind = new Map<string, string[]>();
+        for (const a of rows) {
+          const arr = byKind.get(a.kind) ?? [];
+          // A "key" asset stores a REFERENCE (a secret name), never the value —
+          // surface only the reference so the agent can ask for it by name.
+          arr.push(`  - ${a.label}${a.value && a.kind !== "key" ? ` — ${a.value}` : ""}`);
+          byKind.set(a.kind, arr);
+        }
+        const LABELS: Record<string, string> = {
+          human: "People", link: "Links", file: "Files", key: "Secret references", connector: "Connected tools", note: "Notes",
+        };
+        for (const [k, arr] of byKind) {
+          out.push(`${LABELS[k] ?? k}:`);
+          out.push(...arr);
+        }
+
+        return out.length ? cap(out.join("\n"), 6000) : "This service has no assets yet.";
+      },
+    });
+    summaryLines.push("- list_assets: see your service's assets (repositories, people, links, files, connectors, notes).");
+  }
+
+  // Chat-only: talk to the human DURING the run — post a short progress /
+  // thinking-aloud message right now without ending the turn. Makes the agent
+  // feel present and human on longer tasks instead of going silent until the end.
+  if (ctx.conversationId) {
+    tools.set("say", {
+      def: {
+        name: "say",
+        description:
+          "Send a SHORT message to the user RIGHT NOW, mid-task, WITHOUT ending your turn. Use it to: acknowledge the request in your own words before you start; share progress on longer work ('je regarde X…', 'ok j'ai trouvé Y, je continue'); or say what you're about to do. One or two natural sentences, like a helpful colleague. This does NOT replace your final answer — keep working after calling it.",
+        parameters: {
+          type: "object",
+          properties: { message: { type: "string", description: "The short message to show the user now." } },
+          required: ["message"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const message = str(args.message).trim();
+        if (!message) return "ERROR: message is required.";
+        await ctx.admin.from("internal_agent_messages").insert({
+          conversation_id: ctx.conversationId, agent_id: ctx.agentId, role: "assistant", content: message.slice(0, 2000), run_id: ctx.runId,
+        }).then(() => {}, () => {});
+        await ctx.admin.from("internal_agent_conversations")
+          .update({ updated_at: new Date().toISOString() }).eq("id", ctx.conversationId).then(() => {}, () => {});
+        return "Message affiché à l'utilisateur — continue la tâche.";
+      },
+    });
+    summaryLines.push("- say: send the user a quick progress / acknowledgement message mid-task, without ending your turn (chat only).");
+  }
+
+  // Always-on: rich, openable artifacts (document/presentation/spreadsheet/
+  // image/text) — shown as a card in the chat, opened in the side panel.
+  tools.set("create_artifact", {
+    def: {
+      name: "create_artifact",
+      description:
+        "Create a rich artifact the user can open and keep working on — a document, presentation, spreadsheet, image, or a simple text block. Shows up as a card in the chat.\n" +
+        "- kind=\"document\" or \"text\": content is markdown (headings with #, bullet lists with -, plain paragraphs).\n" +
+        "- kind=\"presentation\": content is one slide per line, formatted \"Title | body text\" (body may be empty).\n" +
+        "- kind=\"spreadsheet\": content is CSV — comma-separated, first line is the header row.\n" +
+        "- kind=\"image\": content is a detailed image-generation prompt, NOT markdown.",
+      parameters: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ARTIFACT_KINDS },
+          title: { type: "string", description: "Short human-readable title." },
+          content: { type: "string", description: "Format depends on kind — see above." },
+        },
+        required: ["kind", "title", "content"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const kind = (ARTIFACT_KINDS.includes(str(args.kind)) ? str(args.kind) : "text") as ArtifactDraft["kind"];
+      const title = str(args.title, "Untitled").slice(0, 120);
+      const content = str(args.content);
+      if (!content) return "ERROR: content is required.";
+      await ctx.createArtifact({ kind, title, content });
+      return `Artifact "${title}" (${kind}) created.`;
+    },
+  });
+  summaryLines.push("- create_artifact: create a document/presentation/spreadsheet/image/text artifact the user can open (always available).");
+
+  // Always-on: attach rich UI blocks to the reply — the chat renders them as
+  // real components (generative UI). Blocks are logged as 'ui' events during
+  // the run and attached to the final assistant message at finalize. Each call
+  // returns a [[ui:N]] tag the agent places INSIDE its final text, so text and
+  // components interleave exactly where they make sense.
+  let uiBlockCount = 0;
+  tools.set("render_ui", {
+    def: {
+      name: "render_ui",
+      description:
+        "Attach a rich UI block to your FINAL chat reply — the interface renders it as a real interactive component instead of markdown. Pick the component that FITS the data; NEVER dump raw objects into a table (they render as [object Object]). Components & props:\n" +
+        "- email_list: {title?, emails:[{from, subject, date?, snippet?, unread?, url?}]} — ALWAYS use this to show emails.\n" +
+        "- products: {products:[{title, price?, image?, description?, url?}]} — product cards.\n" +
+        "- image: {url, alt?, caption?} — a single image.\n" +
+        "- code: {code, language?} — a highlighted, copyable code block.\n" +
+        "- text: {title?, text} — a titled block of rich markdown (headings, lists, bold…).\n" +
+        "- kpi_grid: {items:[{label, value, delta?, tone?('emerald'|'red'|'amber'|'blue')}]} — up to 8 metric tiles.\n" +
+        "- chart: {type:'bar'|'line'|'area'|'pie', title?, data:[{x:string, y:number}]} — up to 50 points, REAL data only.\n" +
+        "- table: {title?, columns:[string], rows:[[cell,…]]} — cells MUST be strings/numbers, never objects.\n" +
+        "- link_card: {title, description?, url} — a clickable card to a URL or in-app path.\n" +
+        "Each call returns a tag like [[ui:1]] — write that tag ON ITS OWN LINE in your final answer at the exact spot where the block belongs, and interleave text and blocks naturally (intro → block → explanation). Prefer a specific block (email_list, products, image, code) over a generic table.",
+      parameters: {
+        type: "object",
+        properties: {
+          component: { type: "string", enum: ["email_list", "products", "image", "code", "text", "kpi_grid", "chart", "table", "link_card"] },
+          props: { type: "object", description: "The component's props (see the description for each component's shape)." },
+        },
+        required: ["component", "props"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const component = str(args.component);
+      if (!["email_list", "emails", "products", "product_card", "product", "image", "code", "text", "kpi_grid", "chart", "table", "link_card"].includes(component)) return "ERROR: unknown component.";
+      const props = args.props && typeof args.props === "object" ? (args.props as Record<string, unknown>) : null;
+      if (!props) return "ERROR: props (object) is required.";
+      if (JSON.stringify(props).length > 20000) return "ERROR: props too large (20k max) — aggregate the data first.";
+      await ctx.logEvent("ui", { block: { component, props } });
+      uiBlockCount++;
+      return `UI block '${component}' attached as [[ui:${uiBlockCount}]]. In your FINAL answer, write [[ui:${uiBlockCount}]] on its own line exactly where this block should appear, with your text around it.`;
+    },
+  });
+  summaryLines.push("- render_ui: attach rich UI blocks (email_list, products, image, code, text, KPIs, charts, tables, links) and place them in your reply with the returned [[ui:N]] tag; use the block that fits the data (always available).");
+
+  // Always-on: read the workspace's AUTHORIZED pentest scope. Security agents
+  // MUST call this before any active testing to confirm a target is in scope.
+  tools.set("pentest_scope", {
+    def: {
+      name: "pentest_scope",
+      description:
+        "List the targets this workspace has EXPLICITLY authorized for security testing (hostnames/domains). Call this BEFORE any active security test — active tools (http_request) only work on in-scope targets. If a target you need isn't listed, stop and ask a human to add it to the authorized scope (they do this in the app); never test out-of-scope systems.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+    run: async () => {
+      const scope = await loadPentestScope(ctx);
+      if (!scope.length) {
+        return "No authorized pentest scope is defined for this project. Active security testing is DISABLED until an owner/admin declares and attests an authorized scope (targets they own or are contractually allowed to test). Ask them to set it up; do NOT test any target meanwhile.";
+      }
+      const lines = scope.map((e) => `- ${e.label}: ${e.targets.join(", ")}`);
+      return `Authorized testing scope (only these targets may be actively tested):\n${lines.join("\n")}`;
+    },
+  });
+  summaryLines.push("- pentest_scope: list the workspace's AUTHORIZED security-testing targets (call before any active test).");
+
   // Always-on: the run's todo list (TodoWrite-style). The FULL list is sent on
   // every call and persisted structurally on the run — it drives the checklist
   // the user watches live. Replaces the old per-step update_plan_step.
@@ -702,19 +1408,20 @@ export function buildInternalToolset(
     def: {
       name: "update_todos",
       description:
-        "Maintain your run's todo checklist — the user watches it live. Send the COMPLETE list every time (all items, not a diff). Rules: exactly ONE item 'active' at a time; update it right BEFORE starting a step (mark it active) and right AFTER finishing it (mark it done — only once VERIFIED); mark 'blocked' with a note when stuck; add new items when you discover extra work. Keep titles short and action-oriented.",
+        "Maintain your run's todo checklist — the user watches it live. Send the COMPLETE list every time (all items, not a diff). RECURSIVE DECOMPOSITION: when a step turns out to be complex, SPLIT it into subtasks (items whose parent_id is that step's id — nesting allowed up to 3 levels). Keep the parent in the list; a parent is 'done' only when ALL its subtasks are done. Rules: exactly ONE LEAF item 'active' at a time (a parent with an active subtask stays 'active' too); update right BEFORE starting a step (mark it active) and right AFTER finishing it (mark it done — only once VERIFIED, with a one-line note); mark 'blocked' with the reason when stuck; add new items when you discover extra work. Keep titles short and action-oriented.",
       parameters: {
         type: "object",
         properties: {
           todos: {
             type: "array",
-            description: "The full, ordered todo list.",
+            description: "The full, ordered todo list (parents listed before their subtasks).",
             items: {
               type: "object",
               properties: {
-                id: { type: "string", description: "Stable id, e.g. 'step-1'." },
+                id: { type: "string", description: "Stable id, e.g. 'step-1' or 'step-1.2'." },
                 title: { type: "string", description: "Short action title." },
                 status: { type: "string", enum: ["pending", "active", "done", "blocked"] },
+                parent_id: { type: "string", description: "Id of the parent task when this item is a subtask (omit for top-level tasks)." },
                 note: { type: "string", description: "Optional one-liner (verification result, blocker reason)." },
               },
               required: ["id", "title", "status"],
@@ -729,23 +1436,43 @@ export function buildInternalToolset(
     run: async (args) => {
       const raw = Array.isArray(args.todos) ? args.todos : null;
       if (!raw || raw.length === 0) return "ERROR: todos (non-empty array) is required.";
-      const todos = raw.slice(0, 20).map((t: any, i: number) => ({
+      const todos = raw.slice(0, 40).map((t: any, i: number) => ({
         id: str(t?.id) || `step-${i + 1}`,
         title: str(t?.title).slice(0, 140) || `Step ${i + 1}`,
         status: ["pending", "active", "done", "blocked"].includes(str(t?.status)) ? str(t?.status) : "pending",
+        ...(str(t?.parent_id) ? { parent_id: str(t?.parent_id) } : {}),
         ...(str(t?.note) ? { note: str(t?.note).slice(0, 300) } : {}),
       }));
+      // Sanity: drop dangling/self/looping parents (item becomes top-level) and
+      // cap nesting at 3 levels so the tree stays readable.
+      const ids = new Set(todos.map((t) => t.id));
+      for (const t of todos) {
+        if (t.parent_id && (!ids.has(t.parent_id) || t.parent_id === t.id)) delete (t as any).parent_id;
+      }
+      const depthOf = (t: (typeof todos)[number], hop = 0): number => {
+        if (!t.parent_id || hop >= 4) return hop;
+        const p = todos.find((x) => x.id === t.parent_id);
+        return p ? depthOf(p, hop + 1) : hop;
+      };
+      for (const t of todos) if (depthOf(t) >= 3) delete (t as any).parent_id;
       if (ctx.runId) {
         await ctx.admin.from("internal_agent_runs").update({ todos }).eq("id", ctx.runId);
       }
       await ctx.logEvent("todos", { todos });
-      const active = todos.filter((t) => t.status === "active").length;
-      const done = todos.filter((t) => t.status === "done").length;
-      const warn = active > 1 ? " WARNING: more than one item is 'active' — keep exactly one." : "";
-      return `Todos updated (${done}/${todos.length} done).${warn}`;
+      // Progress counts on LEAVES (a parent's state is derived from its children).
+      const hasChildren = new Set(todos.filter((t) => t.parent_id).map((t) => t.parent_id));
+      const leaves = todos.filter((t) => !hasChildren.has(t.id));
+      const activeLeaves = leaves.filter((t) => t.status === "active").length;
+      const done = leaves.filter((t) => t.status === "done").length;
+      const parentMismatch = todos.some((t) =>
+        hasChildren.has(t.id) && t.status === "done" &&
+        todos.some((c) => c.parent_id === t.id && c.status !== "done"));
+      const warn = (activeLeaves > 1 ? " WARNING: more than one LEAF is 'active' — keep exactly one." : "") +
+        (parentMismatch ? " WARNING: a parent is 'done' while some of its subtasks are not." : "");
+      return `Todos updated (${done}/${leaves.length} leaf steps done).${warn}`;
     },
   });
-  summaryLines.push("- update_todos: maintain your live todo checklist (send the FULL list; one item active at a time).");
+  summaryLines.push("- update_todos: maintain your live todo checklist (full list every time; split complex steps into subtasks via parent_id; one leaf active at a time).");
 
   // Always-on: pause and ask the human (Claude-Code-style clarification). Use
   // ONLY when genuinely blocked on missing info, an ambiguous choice, or before
@@ -911,7 +1638,8 @@ export function buildInternalToolset(
           brief: { type: "string", description: "Detailed instructions: what to do, context, constraints." },
           acceptance_criteria: { type: "string", description: "Optional: what counts as done." },
           assignee_agent: { type: "string", description: "Optional teammate agent name to run it; defaults to this agent." },
-          start_now: { type: "boolean", description: "If true, activate immediately (default true)." },
+          schedule: { type: "string", description: "Optional cron expression to run it on a RECURRING schedule, e.g. '0 6 * * *' = daily at 06:00, '0 9 * * 1' = Mondays 09:00. When set, the mission recurs (it does NOT fire immediately)." },
+          start_now: { type: "boolean", description: "If true, activate immediately (default true; ignored when a schedule is set)." },
         },
         required: ["title", "brief"],
         additionalProperties: false,
@@ -921,6 +1649,7 @@ export function buildInternalToolset(
       const title = str(args.title).slice(0, 200);
       const brief = str(args.brief);
       if (!title || !brief) return "ERROR: title and brief are required.";
+      const schedule = str(args.schedule).trim() || null;
       // Resolve assignee (default = self).
       let agentId = ctx.agentId ?? null;
       const who = str(args.assignee_agent);
@@ -946,14 +1675,18 @@ export function buildInternalToolset(
       // FORK-BOMB GUARD 3: per-run budget (2) and per-hour flood cap (10).
       const guard = await missionCreationGuard(ctx);
       if (guard) return guard;
-      const startNow = args.start_now !== false;
-      const { data: mission, error } = await ctx.admin.from("internal_agent_missions").insert({
+      // A scheduled mission recurs on its cron; it does NOT fire now (the
+      // scheduler picks it up at next_run_at, then bumps next_run_at each run).
+      const startNow = args.start_now !== false && !schedule;
+      const row: Record<string, unknown> = {
         agent_id: agentId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
         title, brief, acceptance_criteria: str(args.acceptance_criteria) || null,
-        status: startNow ? "active" : "draft",
+        status: schedule || startNow ? "active" : "draft",
         delegation_depth: childDepth,
         delegated_by_agent: ctx.agentId,
-      }).select("id").single();
+      };
+      if (schedule) { row.schedule = schedule; row.next_run_at = new Date(Date.now() + 60_000).toISOString(); }
+      const { data: mission, error } = await ctx.admin.from("internal_agent_missions").insert(row).select("id").single();
       if (error) return `ERROR creating mission: ${error.message}`;
       // Kick it off now via the run function (best-effort, fire-and-forget).
       if (startNow) {
@@ -965,10 +1698,260 @@ export function buildInternalToolset(
           }).catch(() => {});
         }
       }
-      return `Mission "${title}" created${startNow ? " and started" : " as a draft"} (id ${mission.id}).`;
+      return schedule
+        ? `Mission "${title}" scheduled (cron ${schedule}) — it will run automatically (id ${mission.id}).`
+        : `Mission "${title}" created${startNow ? " and started" : " as a draft"} (id ${mission.id}).`;
     },
   });
-  summaryLines.push("- create_mission: assign a full background mission to yourself or a teammate (always available).");
+  summaryLines.push("- create_mission: assign a full background mission to yourself or a teammate, optionally on a recurring cron schedule (always available).");
+
+  // Parallel multitasking: fan INDEPENDENT subtasks out to ephemeral sub-agents
+  // that run at the same time. Offered on any PRIMARY run so it shows up in the
+  // capability summary; the engine injects ctx.spawnParallel at execution time
+  // (guarded below). A sub-agent can't spawn again (no recursion / fork-bomb),
+  // and the owner's "Essaim" switch can turn the capability off entirely — the
+  // agent still decides, per task, whether to actually fan out.
+  if (!ctx.isSubagent && ctx.swarmEnabled !== false) {
+    tools.set("spawn_parallel_agents", {
+      def: {
+        name: "spawn_parallel_agents",
+        description:
+          "Run several INDEPENDENT subtasks in PARALLEL as ephemeral sub-agents (clones of you). Use ONLY when the subtasks do NOT depend on each other's output — they all run at the same time and you receive every result together. For sequential or dependent work, do it yourself instead. STRONG PATTERN — 'for each of N items': when the task is 'do X for each of N items' (source EACH of N products, analyse EACH of N competitors/markets/URLs), split it into ONE subtask PER item and fan them ALL out together — do NOT process them one by one. There is NO small cap: pass one subtask per item (dozens is fine); they run in concurrent waves. Each sub-agent is focused on its one subtask and cannot spawn further sub-agents.",
+        parameters: {
+          type: "object",
+          properties: {
+            subtasks: {
+              type: "array",
+              description: "The independent subtasks to run in parallel — one per item. Pass as many as there are items (e.g. one per product to source).",
+              items: {
+                type: "object",
+                properties: {
+                  label: { type: "string", description: "Short label shown on this sub-agent's instance card (e.g. 'Analyse concurrent A')." },
+                  brief: { type: "string", description: "Full, self-contained instructions for this subtask — the sub-agent does NOT see the others or the parent conversation." },
+                  acceptance: { type: "string", description: "Optional: what counts as done for this subtask." },
+                },
+                required: ["label", "brief"],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ["subtasks"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const raw = Array.isArray(args.subtasks) ? args.subtasks : [];
+        const subtasks = raw
+          .map((s: any) => ({ label: str(s?.label).slice(0, 120), brief: str(s?.brief), acceptance: str(s?.acceptance) || undefined }))
+          .filter((s) => s.label && s.brief);
+        if (subtasks.length < 2) {
+          return "ERROR: spawn_parallel_agents needs at least 2 INDEPENDENT subtasks. For a single task, just execute it yourself.";
+        }
+        if (!ctx.spawnParallel) {
+          return "ERROR: parallel sub-agents aren't available in this context. Execute the subtasks yourself, one after another.";
+        }
+
+        // DEDUP across the whole run — survives context compaction. Without this,
+        // once the earlier spawn call is compacted out of context the agent
+        // re-fans-out the SAME subtasks (observed: 12 → 24 duplicate suppliers).
+        // We remember every subtask label already spawned in run_state.meta and
+        // refuse to spawn it again.
+        const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+        // Significant tokens = words that carry topic meaning (drop generic
+        // sourcing/analysis filler + short words), so near-duplicate labels with
+        // different wording ("Fournisseurs mode (t-shirt)" vs "Sourcing textile")
+        // still collide when they share ≥2 topic words.
+        const STOP = new Set(["fournisseurs", "fournisseur", "sourcing", "source", "analyse", "analyser", "recherche", "import", "chine", "china", "france", "chinois", "pour", "des", "les", "avec", "and", "the", "for", "&", "et", "de", "du", "la", "le"]);
+        const topicTokens = (s: string) => new Set(norm(s).replace(/[()[\],+/&]/g, " ").split(/\s+/).filter((w) => w.length >= 4 && !STOP.has(w)));
+        let meta: Record<string, unknown> = {};
+        let already: string[] = [];
+        let alreadyTokens: string[][] = [];
+        let fanoutCount = 0;
+        if (ctx.runId) {
+          const { data } = await ctx.admin.from("internal_agent_run_state").select("meta").eq("run_id", ctx.runId).maybeSingle();
+          meta = ((data as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+          already = Array.isArray(meta.spawned_subtasks) ? (meta.spawned_subtasks as string[]) : [];
+          alreadyTokens = Array.isArray(meta.spawned_topics) ? (meta.spawned_topics as string[][]) : [];
+          fanoutCount = Number(meta.fanout_count) || 0;
+        }
+
+        // BATCH CAP: after 2 fan-out batches, stop — more is almost always the
+        // agent re-spawning work it already did (labels differ so exact-dedup
+        // misses it). Force it to collect + synthesise instead.
+        if (fanoutCount >= 2) {
+          return `STOP — tu as déjà lancé ${fanoutCount} vagues de sous-agents dans CE run. N'en relance PAS d'autres : les résultats des sous-agents précédents sont disponibles — récupère-les avec search_context(scope="run", query="${subtasks[0]?.label?.split(/[ (]/)[0] ?? "sourcing"}") (ou attends ceux en cours), puis SYNTHÉTISE-les dans ton livrable (create_deliverable). Relancer des vagues en double gaspille le budget et crée des doublons.`;
+        }
+
+        const seen = new Set(already);
+        const overlapsPrior = (s: string) => {
+          const toks = topicTokens(s);
+          if (toks.size === 0) return false;
+          return alreadyTokens.some((prev) => {
+            let shared = 0;
+            for (const t of toks) if (prev.includes(t)) shared++;
+            return shared >= 2; // ≥2 shared topic words = same work under a new label
+          });
+        };
+        const fresh = subtasks.filter((s) => !seen.has(norm(s.label)) && !overlapsPrior(s.label));
+        const skipped = subtasks.length - fresh.length;
+
+        if (fresh.length === 0) {
+          return `DÉJÀ FAIT : ces ${subtasks.length} sous-tâches recouvrent un travail déjà lancé en parallèle plus tôt dans CE run — ne les relance PAS. Leurs résultats sont dans tes étapes précédentes : appelle search_context(scope="run", query="${subtasks[0]?.label ?? ""}") pour les lire (ou attends celles en cours), puis synthétise. Relancer des doublons gaspille le budget.`;
+        }
+
+        // Persist labels + topic tokens + batch count BEFORE spawning, merging
+        // (never overwriting the anti-loop / compaction keys) so a tick retry
+        // can't double-fire.
+        if (ctx.runId) {
+          const next = [...already, ...fresh.map((s) => norm(s.label))].slice(-300);
+          const nextTopics = [...alreadyTokens, ...fresh.map((s) => [...topicTokens(s.label)])].slice(-300);
+          await ctx.admin.from("internal_agent_run_state")
+            .update({ meta: { ...meta, spawned_subtasks: next, spawned_topics: nextTopics, fanout_count: fanoutCount + 1 } })
+            .eq("run_id", ctx.runId)
+            .then(() => {}, () => {});
+        }
+
+        const result = await ctx.spawnParallel(fresh);
+        return skipped > 0
+          ? `(${skipped} subtask(s) skipped — already spawned earlier in this run; not repeated.)\n\n${result}`
+          : result;
+      },
+    });
+    summaryLines.push("- spawn_parallel_agents: fan out INDEPENDENT subtasks to ephemeral parallel sub-agents and collect their results (one per item — no small cap; runs in concurrent waves).");
+  }
+
+  // Always-on: create a NEW teammate agent. Safe — an agent row is passive (it
+  // does not auto-run), so this can't fork-bomb. Scoped to the creator's service
+  // dashboard so the orchestrator can build out its team by request.
+  let agentsCreatedThisRun = 0;
+  tools.set("create_agent", {
+    def: {
+      name: "create_agent",
+      description:
+        "Create a NEW agent (teammate) — use when the user asks to set up an agent for a role/task. The new agent is created ready to use (it does NOT start running on its own); tell the user it's ready and, if relevant, that they can open it or you can assign it a mission. Give it a clear name, role and instructions. Max 5 per run.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Short agent name, e.g. 'SEO Analyst'." },
+          role: { type: "string", description: "One-line role, e.g. 'Analyse le SEO et propose des optimisations'." },
+          instructions: { type: "string", description: "What this agent does and how — its operating instructions." },
+        },
+        required: ["name"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const name = str(args.name).trim().slice(0, 120);
+      if (!name) return "ERROR: name is required.";
+      if (agentsCreatedThisRun >= 5) return "ERROR: agent-creation limit reached for this run (5).";
+      const { data: created, error } = await ctx.admin.from("internal_agents").insert({
+        workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+        service_dashboard_id: ctx.serviceDashboardId ?? null,
+        name,
+        role: str(args.role).slice(0, 200) || null,
+        instructions: str(args.instructions) || null,
+        chat_enabled: true, mission_enabled: true,
+        created_by: ctx.userId ?? null,
+      }).select("id").single();
+      if (error) return `ERROR creating agent: ${error.message}`;
+      agentsCreatedThisRun++;
+      await ctx.logEvent("status", { message: `🤖 Agent « ${name} » créé et prêt.` }).catch(() => {});
+      return `Agent "${name}" created and ready (id ${created.id}). It is idle until the user opens it or you assign it a mission (create_mission with assignee_agent="${name}").`;
+    },
+  });
+  summaryLines.push("- create_agent: spin up a new teammate agent on request (passive until used; always available).");
+
+  // Always-on: PROPOSE work you noticed would add value, WITHOUT executing it.
+  // Files a paused mission in the kanban backlog — the human reviews and starts
+  // it. This is the safe channel for agent initiative (unlike create_mission it
+  // never runs anything), so it bypasses the in-mission self-creation guard.
+  let proposalsThisRun = 0;
+  tools.set("propose_mission", {
+    def: {
+      name: "propose_mission",
+      description:
+        "Propose a NEW piece of valuable work you noticed while working (an improvement, a risk to fix, a follow-up, an automation opportunity). This creates a PAUSED mission in the backlog for the human to review — nothing executes until they start it. Use it for genuine value beyond the current ask (max 3 per run); do NOT use it to split or defer your CURRENT task (use update_todos subtasks for that).",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short, action-oriented mission title." },
+          brief: { type: "string", description: "What to do, with enough context that a future run can execute it without this conversation." },
+          value: { type: "string", description: "One sentence: the concrete value / why it matters." },
+        },
+        required: ["title", "brief", "value"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const title = str(args.title).trim().slice(0, 160);
+      const brief = str(args.brief).trim();
+      const value = str(args.value).trim().slice(0, 300);
+      if (!title || !brief) return "ERROR: title and brief are required.";
+      if (proposalsThisRun >= 3) return "ERROR: proposal limit reached for this run (3). Mention further ideas in your final report instead.";
+      const { data: mission, error } = await ctx.admin.from("internal_agent_missions").insert({
+        agent_id: ctx.agentId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+        title,
+        brief: `${brief}\n\n---\n💡 Proposée par l'agent${value ? ` — Valeur attendue : ${value}` : ""}`,
+        status: "paused",
+        board_column: "backlog",
+        delegated_by_agent: ctx.agentId,
+      }).select("id").single();
+      if (error) return `ERROR proposing mission: ${error.message}`;
+      proposalsThisRun++;
+      await ctx.logEvent("status", { message: `💡 Initiative proposée : « ${title} » (backlog, en attente de validation humaine).` }).catch(() => {});
+      return `Proposal filed in the backlog: "${title}" (id ${mission.id}). It will NOT run until a human starts it — mention it in your final report under "Initiatives".`;
+    },
+  });
+  summaryLines.push("- propose_mission: file a PAUSED backlog mission for valuable work you noticed (human reviews; never auto-executes).");
+
+  // Always-on: search the agent's OWN past output (deliverables + run reports)
+  // so it can reuse prior work instead of redoing it. Complements search_memory
+  // (facts/learnings) with the concrete artifacts themselves.
+  tools.set("search_past_work", {
+    def: {
+      name: "search_past_work",
+      description:
+        "Search your OWN past work — deliverables and final mission reports from previous runs — by keyword. Use it BEFORE redoing anything that may already exist (a report, a dataset, an analysis, a script) and to ground new work in what was already produced. Returns matches with dates and content excerpts.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Keywords to search for (matched against names, summaries and content)." },
+          limit: { type: "number", description: "Max results (default 5, max 10)." },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const query = str(args.query).trim().slice(0, 120);
+      if (!query) return "ERROR: query is required.";
+      const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
+      const like = `%${query.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+      const [{ data: delivs }, { data: runs }] = await Promise.all([
+        ctx.admin.from("internal_agent_deliverables")
+          .select("name, kind, summary, content, file_url, created_at")
+          .eq("agent_id", ctx.agentId)
+          .or(`name.ilike.${like},summary.ilike.${like},content.ilike.${like}`)
+          .order("created_at", { ascending: false }).limit(limit),
+        ctx.admin.from("internal_agent_runs")
+          .select("final_output, finished_at, mission_id")
+          .eq("agent_id", ctx.agentId).eq("status", "succeeded")
+          .ilike("final_output", like)
+          .order("finished_at", { ascending: false }).limit(limit),
+      ]);
+      const parts: string[] = [];
+      for (const d of (delivs ?? []) as Array<Record<string, unknown>>) {
+        const body = String(d.content ?? "").replace(/\s+/g, " ").slice(0, 500);
+        parts.push(`[deliverable · ${String(d.kind)} · ${String(d.created_at).slice(0, 10)}] ${String(d.name)}${d.file_url ? ` (${String(d.file_url)})` : ""}${body ? ` — ${body}` : ""}`);
+      }
+      for (const r of ((runs ?? []) as Array<Record<string, unknown>>).slice(0, Math.max(0, limit - parts.length))) {
+        parts.push(`[run report · ${String(r.finished_at ?? "").slice(0, 10)}] ${String(r.final_output ?? "").replace(/\s+/g, " ").slice(0, 500)}`);
+      }
+      if (parts.length === 0) return `No past work matched "${query}". You likely haven't produced this before — proceed, and save durable results with create_deliverable.`;
+      return cap(parts.slice(0, limit).join("\n\n"));
+    },
+  });
+  summaryLines.push("- search_past_work: search your own past deliverables & reports before redoing anything (always available).");
 
   // Always-on: read-only HTTP GET to any public API/URL returning JSON/text.
   tools.set("http_get", {
@@ -1578,7 +2561,7 @@ export function buildInternalToolset(
       "Content-Type": "application/json",
       // Bypass ngrok free-tier interstitial warning page (returns HTML otherwise).
       "ngrok-skip-browser-warning": "true",
-      "User-Agent": "FounderOS-Agent/1.0",
+      "User-Agent": "AchiCorp-Agent/1.0",
     };
 
     async function sb(path: string, body?: Record<string, unknown>): Promise<any> {
@@ -1847,11 +2830,73 @@ export function buildInternalToolset(
       },
     });
 
+    // ── Security testing repeater (authorized scope only) ──
+    // Crafts an arbitrary HTTP request (any method/headers/body) and runs it
+    // FROM the sandbox — contained network, realistic origin — via a one-shot
+    // python. Gated: the target host must be in the workspace's authorized
+    // pentest scope, else it refuses. This is the "repeater" web pentest relies
+    // on; recon/scanners still go through shell_exec (nmap, ffuf, sqlmap…).
+    tools.set("http_request", {
+      def: {
+        name: "http_request",
+        description: "Security-testing HTTP client (a 'repeater'): send a crafted request with ANY method, headers and body to an AUTHORIZED target, and inspect the full response (status, headers, body). Use it to probe endpoints, test injection/auth/IDOR/SSRF, replay & mutate requests. Only works on targets in the workspace's authorized pentest scope (check pentest_scope first). Runs from the sandbox network.",
+        parameters: { type: "object", properties: {
+          url: { type: "string", description: "Absolute target URL (must be within the authorized scope)." },
+          method: { type: "string", description: "HTTP method (GET, POST, PUT, DELETE, PATCH, …). Default GET." },
+          headers: { type: "object", description: "Request headers as a JSON object." },
+          body: { type: "string", description: "Raw request body (for POST/PUT/PATCH)." },
+          follow_redirects: { type: "boolean", description: "Follow redirects (default false — you usually want to SEE the 30x)." },
+          timeout: { type: "number", description: "Timeout in seconds (default 20, max 60)." },
+        }, required: ["url"], additionalProperties: false },
+      },
+      run: async (args) => {
+        const url = str(args.url).trim();
+        if (!/^https?:\/\//i.test(url)) return "ERROR: url must be an absolute http(s) URL.";
+        const scope = await loadPentestScope(ctx);
+        if (!scope.length) return "ERROR: no authorized pentest scope is defined for this project — active testing is disabled. Ask an owner/admin to declare & attest an authorized scope (targets they own or may test). See pentest_scope.";
+        const chk = hostInScope(url, scope);
+        if (!chk.ok) return `ERROR: target host "${chk.host ?? "?"}" is NOT in the authorized pentest scope. Refusing. Call pentest_scope to see allowed targets; ask a human to authorize this host before testing it.`;
+        const method = (str(args.method) || "GET").toUpperCase().replace(/[^A-Z]/g, "") || "GET";
+        const headers = args.headers && typeof args.headers === "object" ? args.headers as Record<string, unknown> : {};
+        const body = args.body != null ? String(args.body) : null;
+        const follow = args.follow_redirects === true;
+        const timeout = Math.min(Math.max(Number(args.timeout) || 20, 1), 60);
+        // One-shot python (requests) in the sandbox — reliable arbitrary requests.
+        const py = [
+          "import json,sys,requests",
+          `url=${JSON.stringify(url)}`,
+          `method=${JSON.stringify(method)}`,
+          `headers=${JSON.stringify(headers)}`,
+          `data=${JSON.stringify(body)}`,
+          `try:`,
+          `    r=requests.request(method,url,headers=headers,data=(data.encode() if data else None),allow_redirects=${follow ? "True" : "False"},timeout=${timeout},verify=False)`,
+          `    b=r.text[:12000]`,
+          `    out={'status':r.status_code,'reason':r.reason,'headers':dict(r.headers),'history':[h.status_code for h in r.history],'body':b,'len':len(r.content)}`,
+          `    print(json.dumps(out))`,
+          `except Exception as e:`,
+          `    print(json.dumps({'error':str(e)[:500]}))`,
+        ].join("\n");
+        try {
+          const d = await sb("v1/code/execute", { language: "python", code: `import warnings;warnings.filterwarnings('ignore')\n${py}`, stateful: false });
+          const raw = String(d.stdout ?? d.output ?? "").trim();
+          const parsed = (() => { try { return JSON.parse(raw.split("\n").filter(Boolean).pop() || "{}"); } catch { return null; } })();
+          if (!parsed) return `HTTP request ran but output wasn't parseable:\n${raw.slice(0, 2000)}${d.stderr ? `\n[stderr] ${String(d.stderr).slice(0, 500)}` : ""}`;
+          if (parsed.error) return `Request error: ${parsed.error}`;
+          const hdrs = Object.entries(parsed.headers ?? {}).slice(0, 40).map(([k, v]) => `${k}: ${v}`).join("\n");
+          return `${method} ${url}\n→ ${parsed.status} ${parsed.reason ?? ""}${parsed.history?.length ? ` (redirects: ${parsed.history.join("→")})` : ""} · ${parsed.len} bytes\n\n--- response headers ---\n${hdrs}\n\n--- body (truncated) ---\n${String(parsed.body ?? "").slice(0, 10000)}`;
+        } catch (e) {
+          return `ERROR running request in sandbox: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      },
+    });
+
     summaryLines.push("- shell_exec: run shell commands (pip/npm install, git, scripts, curl, any command).");
     summaryLines.push("- python_exec / nodejs_exec / jupyter_exec: execute code (stateful Python, Node.js, Jupyter for data analysis).");
     summaryLines.push("- file_write / file_read / file_edit / list_files / file_search: full filesystem (write, read, edit, list, glob/grep).");
     summaryLines.push("- sandbox_browser: drive a real Chromium browser (navigate, screenshot, get_markdown, click, fill, evaluate JS, 25+ actions).");
     summaryLines.push("- sandbox_env: environment info, installed packages, URL→markdown conversion.");
+    summaryLines.push("- http_request: security-testing HTTP repeater (any method/headers/body) — AUTHORIZED scope only, runs from the sandbox.");
+    sandboxGuidance.push("  SECURITY TESTING: only test targets returned by pentest_scope. Recon/scanners run via shell_exec (nmap, ffuf, sqlmap, nuclei, whatweb…); craft & replay individual requests with http_request. Prefer non-destructive proofs; validate every finding with a concrete PoC before reporting it.");
     sandboxGuidance.push("  SANDBOX DISCIPLINE — use the sandbox ONLY when the task actually needs it: running code, reading/writing files, installing packages, fetching or processing data, or building/testing something. For greetings, simple questions, explanations, advice, opinions or planning, ANSWER DIRECTLY from your own knowledge and do NOT call any sandbox / shell / python / file tool. Don't 'check the sandbox' by reflex. When the work genuinely requires it: save files with file_write, run code with python_exec or shell_exec — and never claim you 'can't access the filesystem' (you can).");
     sandboxGuidance.push("  EFFICIENCY: the python_exec kernel can RESET between calls (state is lost), so do NOT split one analysis into many tiny python_exec calls that each re-import and re-read the data — that wastes huge amounts of tokens. For any multi-step pipeline (load → analyse → model → save), write ONE self-contained script with file_write and run it with shell_exec \"python3 script.py\", saving intermediate results (CSV/JSON/pickle) to disk. Re-use those files instead of recomputing.");
     sandboxGuidance.push("  VERIFY BACKGROUND PROCESSES: after launching anything with `nohup … &` (a server, a Gradio app), you MUST read its log (e.g. `cat gradio.log`) to confirm it actually started — never assume success. If the log shows a traceback/error, FIX the script and relaunch before continuing. For a web app: a 'public URL' only counts if the log printed it AND a test request to it succeeds. Gradio `demo.launch(share=True)` prints a *.gradio.live URL; avoid version-specific kwargs (e.g. show_copy_button) that crash on launch.");
@@ -1893,6 +2938,10 @@ export function buildInternalToolset(
           ? t.inputSchema as ToolDef["function"]["parameters"]
           : { type: "object", properties: {}, additionalProperties: true } as ToolDef["function"]["parameters"];
         tools.set(toolName, {
+          family: "INTEGRATIONS",
+          // A remote server's schema is a contract we don't own and can't
+          // regenerate — never rewrite it.
+          incompressible: true,
           def: {
             name: toolName,
             description: `[MCP · ${server.name}] ${t.description || t.name}`.slice(0, 1000),
@@ -2137,9 +3186,6 @@ export function buildInternalToolset(
     );
   }
 
-  const enabled = rows.filter((r) => r.enabled);
-  const hasKind = (k: AgentToolRow["kind"]) => enabled.some((r) => r.kind === k);
-
   if (hasKind("web_search")) {
     tools.set("web_search", {
       def: {
@@ -2280,6 +3326,12 @@ export function buildInternalToolset(
     const actionList = actions.map((a) => `${a.name}${a.write ? " [write]" : ""} (${a.description})`).join("; ");
     const hasWrite = writeNames.size > 0;
     tools.set(toolName, {
+      // The action catalogue IS this tool's contract: truncate it and the model
+      // invents action names that the connector rejects. The names additionally
+      // go into a real JSON-schema `enum` — never rewritten by compaction, and
+      // enforced by the provider's constrained decoding.
+      incompressible: true,
+      family: "INTEGRATIONS",
       def: {
         name: toolName,
         description:
@@ -2290,7 +3342,11 @@ export function buildInternalToolset(
         parameters: {
           type: "object",
           properties: {
-            action: { type: "string", description: `One of: ${actions.map((a) => a.name).join(", ")}` },
+            action: {
+              type: "string",
+              enum: actions.map((a) => a.name),
+              description: "The action to run (see the tool description for what each one does).",
+            },
             params: { type: "object", description: "Action parameters (see the action's description)." },
             reason: { type: "string", description: "One-sentence justification (used for write actions)." },
           },
@@ -2303,13 +3359,12 @@ export function buildInternalToolset(
         const params = (args.params && typeof args.params === "object") ? args.params : {};
         // Write actions need human approval unless the agent is on autopilot.
         if (writeNames.has(action) && !ctx.autopilot) {
-          const id = await ctx.requestApproval({
+          return await awaitInlineApproval(ctx, {
             tool_name: toolName,
             action_kind: "connector_action",
             payload: { provider, action, params },
             reason: str(args.reason) || null,
-          });
-          return `Action ${provider}.${action} queued for human approval (approval ${id}). It runs once a team member approves it — continue and mention the pending approval in your final answer.`;
+          }, `${provider} · ${action}`);
         }
         const base = Deno.env.get("SUPABASE_URL");
         const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -2326,6 +3381,140 @@ export function buildInternalToolset(
       },
     });
     summaryLines.push(`- ${toolName}: act on ${provider} (${actions.map((a) => a.name).join(", ")}).`);
+  }
+
+  // composio_toolkit rows: same shape as connector_action above, but backed by
+  // a Composio-connected toolkit instead of the in-house action catalogue —
+  // the agent picks a Composio tool slug + arguments; the composio-action
+  // edge function resolves the connected account and calls Composio's API.
+  // buildInternalToolset is synchronous, so — unlike connector_action, whose
+  // fixed action list is known at build time — discovery happens lazily at
+  // call time (action omitted → composio-action lists the toolkit's tools).
+  for (const row of enabled.filter((r) => r.kind === "composio_toolkit")) {
+    const toolkit = str(row.config?.toolkit);
+    if (!toolkit) continue;
+    const toolName = slugToToolName("use", toolkit);
+    tools.set(toolName, {
+      // Short, but every clause is operative: the discover-then-call protocol and
+      // the reads-run-directly rule. Truncated at 140 chars both were lost, which
+      // is why the agent kept announcing approvals for simple lookups.
+      incompressible: true,
+      family: "INTEGRATIONS",
+      def: {
+        name: toolName,
+        description:
+          `Work with ${toolkit} (via Composio). Call with no "action" first to list its available ` +
+          `tool slugs, then call again with the chosen action and its arguments.` +
+          (!ctx.autopilot ? " Read actions (fetch/list/get/search) run DIRECTLY — no approval. Only write/send/delete actions ask for a quick inline approval (the user can also approve the whole toolkit at once), so don't warn about approval for reads." : ""),
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", description: "A Composio tool slug (e.g. GITHUB_CREATE_AN_ISSUE). Omit to discover available slugs." },
+            params: { type: "object", description: "Arguments for the tool (see its description from discovery)." },
+            reason: { type: "string", description: "One-sentence justification (used for approval)." },
+          },
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+        const params = (args.params && typeof args.params === "object") ? args.params : {};
+        const base = Deno.env.get("SUPABASE_URL");
+        const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (!base || !key) return "ERROR: composio actions are not configured.";
+        // Discovery (no action) is read-only — runs directly, never gated.
+        if (!action) {
+          const res = await fetch(`${base}/functions/v1/composio-action`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, toolkit }),
+          });
+          return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
+        }
+        // Only WRITE / delete / send actions need approval — reads (fetch, list,
+        // get, search…) run directly so simple lookups never nag the user.
+        if (!ctx.autopilot && isWriteAction(action)) {
+          return await awaitInlineApproval(ctx, {
+            tool_name: toolName,
+            action_kind: "composio_action",
+            payload: { toolkit, tool_slug: action, params },
+            reason: str(args.reason) || null,
+          }, `${toolkit} · ${action}`);
+        }
+        const res = await fetch(`${base}/functions/v1/composio-action`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+            toolkit, tool_slug: action, arguments: params,
+          }),
+        });
+        return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
+      },
+    });
+    summaryLines.push(`- ${toolName}: act on ${toolkit} via Composio.`);
+  }
+
+  // crm rows: read + write the in-house CRM (contacts, deals, companies, …).
+  // One tool with an action discriminator, same shape as connector_action.
+  // Reads (list_objects/search_records/get_record) run directly; writes
+  // (create/update/delete_record) are queued for human approval unless the
+  // agent is on autopilot — same safe default as the other write tools.
+  if (hasKind("crm")) {
+    const CRM_WRITE = new Set(["create_record", "update_record", "delete_record", "link_records", "unlink_records"]);
+    tools.set("crm", {
+      def: {
+        name: "crm",
+        description:
+          "Read and write the in-house CRM. Start with action=list_objects to discover the record " +
+          "types (contacts, deals, …), their fields, and which fields are RELATIONS (relation_to names the " +
+          "linked object). Then: search_records/get_record to read; create_record/update_record/delete_record " +
+          "to write; link_records/unlink_records/get_related to connect records (e.g. attach a contact to a deal)." +
+          (!ctx.autopilot ? " Write actions are queued for human approval before running." : ""),
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              description: "One of: list_objects, search_records, get_record, get_related, create_record, update_record, delete_record, link_records, unlink_records.",
+            },
+            params: {
+              type: "object",
+              description:
+                "Action params. search_records: {object: slug, query?, limit?}. get_record/delete_record: {record_id}. " +
+                "create_record: {object: slug, fields: {property_key: value}}. update_record: {record_id, fields: {property_key: value}}. " +
+                "get_related: {record_id, property?} (property = a relation field key from list_objects). " +
+                "link_records/unlink_records: {from_record_id, to_record_id, property} (property = the relation field on the FROM record's object).",
+            },
+            reason: { type: "string", description: "One-sentence justification (used for write approvals)." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+        const params = (args.params && typeof args.params === "object") ? args.params : {};
+        if (CRM_WRITE.has(action) && !ctx.autopilot) {
+          return await awaitInlineApproval(ctx, {
+            tool_name: "crm",
+            action_kind: "crm_write",
+            payload: { action, params },
+            reason: str(args.reason) || null,
+          }, `CRM · ${action}`);
+        }
+        const base = Deno.env.get("SUPABASE_URL");
+        const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (!base || !key) return "ERROR: CRM actions are not configured.";
+        const res = await fetch(`${base}/functions/v1/crm-action`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, action, params }),
+        });
+        return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
+      },
+    });
+    summaryLines.push("- crm: read/write the in-house CRM (contacts, deals, …) and link related records.");
   }
 
   // security_scan rows: defensive + consented active scanning.
@@ -2362,6 +3551,388 @@ export function buildInternalToolset(
     summaryLines.push("- security_scan: defensive checks + consented active scans (no exploitation).");
   }
 
+  // vibe_code rows: the engine behind the Vibe Code studio agent. It drives the
+  // existing `vibe-code` function (the very same one the retired module used),
+  // so coding sessions, memory and PR plumbing are shared — the agent replaces
+  // the UI, not the engine. Which actions it may take is per-agent config.
+  for (const row of enabled.filter((r) => r.kind === "vibe_code")) {
+    const cfg = row.config ?? {};
+    const configured = Array.isArray(cfg.actions) ? (cfg.actions as unknown[]).map((a) => str(a)) : [];
+    const allowed = new Set(
+      (configured.length ? configured : ["run", "apply", "pr_status", "fix_pr"])
+        .filter((a) => VIBE_ACTIONS.includes(a)),
+    );
+    allowed.add("status"); // reading a running session is never gated
+    const pinnedRepo = str(cfg.repository_id) || null;
+
+    // Session state carried across calls WITHIN a run: the model asks for a
+    // change, then applies it, without re-sending whole file contents.
+    let sessionId: string | null = null;
+    let staged: Array<{ path: string; content: string }> = [];
+    let stagedBranch: string | null = null;
+    let lastMessageId: string | null = null;
+    let repoId: string | null = pinnedRepo;
+
+    const resolveRepo = async (wanted: string): Promise<{ id: string; full_name: string } | string> => {
+      const { data: repos } = await ctx.admin
+        .from("repositories").select("id, full_name").eq("project_id", ctx.projectId);
+      const list = (repos ?? []) as Array<{ id: string; full_name: string }>;
+      if (!list.length) return "ERROR: no repository is connected to this project. Connect one first.";
+      if (wanted) {
+        const hit = list.find((r) => r.id === wanted || r.full_name.toLowerCase() === wanted.toLowerCase()
+          || r.full_name.split("/")[1]?.toLowerCase() === wanted.toLowerCase());
+        if (!hit) return `ERROR: repository "${wanted}" not found. Available: ${list.map((r) => r.full_name).join(", ")}`;
+        return hit;
+      }
+      if (list.length === 1) return list[0];
+      return `ERROR: several repositories exist — pass "repository". Available: ${list.map((r) => r.full_name).join(", ")}`;
+    };
+
+    // The engine answers immediately and finishes in the background, writing
+    // progress onto the assistant vibe_messages row — so we poll that row
+    // rather than holding an HTTP call open for minutes.
+    const waitForSession = async (messageId: string): Promise<string> => {
+      const deadline = Date.now() + 240_000;
+      while (Date.now() < deadline) {
+        if (await ctx.isCancelled()) return "Run cancelled by a human — the coding session was left running.";
+        await new Promise((r) => setTimeout(r, 5000));
+        const { data } = await ctx.admin
+          .from("vibe_messages").select("content, meta").eq("id", messageId).maybeSingle();
+        const meta = ((data as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+        const status = str(meta.status);
+        if (status === "failed") return `Coding session FAILED: ${str(meta.error) || "unknown error"}`;
+        if (status === "done") {
+          const result = (meta.result ?? {}) as Record<string, unknown>;
+          const changes = (Array.isArray(result.changes) ? result.changes : []) as Array<{ path: string; content: string }>;
+          staged = changes;
+          stagedBranch = str(result.base_branch) || null;
+          const steps = (Array.isArray(result.steps) ? result.steps : []) as Array<{ t: string; label: string }>;
+          const files = changes.map((c) => `  - ${c.path} (${c.content.split("\n").length} lines)`).join("\n");
+          return cap(
+            `Coding session finished on branch ${stagedBranch ?? "?"}.\n` +
+            `${str((data as { content?: string } | null)?.content) || str(result.message)}\n\n` +
+            (changes.length
+              ? `STAGED FILES (not pushed yet — call action="apply" to open the PR):\n${files}`
+              : "No file was modified.") +
+            (steps.length ? `\n\nSteps: ${steps.map((s) => `${s.t}:${s.label}`).join(" · ")}` : ""),
+            7000,
+          );
+        }
+      }
+      return `The coding session is still running (session ${sessionId ?? "?"}). Call vibe_code(action="status") later to collect the result — do NOT start another run.`;
+    };
+
+    const callEngine = (payload: Record<string, unknown>) =>
+      invokeEdgeFunction("vibe-code", {
+        workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+        acting_user_id: ctx.userId ?? null, ...payload,
+      });
+
+    tools.set("vibe_code", {
+      def: {
+        name: "vibe_code",
+        description:
+          "Write real code on a connected GitHub repository and ship it as a pull request. " +
+          `Allowed actions: ${[...allowed].join(", ")}. ` +
+          "run = start a coding session from a precise prompt (returns the staged diff); " +
+          "apply = open the PR with the files staged by the last run; " +
+          "pr_status = read a PR's CI/review state; fix_pr = push a fix for failing CI; " +
+          "merge_pr = merge; status = collect a session that was still running." +
+          (row.requires_approval ? " Write actions REQUIRE HUMAN APPROVAL before they execute." : ""),
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: [...allowed], description: "What to do." },
+            prompt: { type: "string", description: "For run: the change to make — files involved, expected behaviour, acceptance criteria." },
+            repository: { type: "string", description: "Repository full name (owner/repo) or id. Omit when the project has only one." },
+            branch: { type: "string", description: "Base branch for run/apply, or the PR head branch for fix_pr." },
+            title: { type: "string", description: "For apply: the pull request title." },
+            body: { type: "string", description: "For apply: the pull request description." },
+            pr_number: { type: "number", description: "For pr_status / fix_pr / merge_pr." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+        if (!allowed.has(action)) {
+          return `ERROR: action "${action}" is not enabled for this agent. Allowed: ${[...allowed].join(", ")}.`;
+        }
+
+        if (action === "status") {
+          if (!lastMessageId) return "ERROR: no coding session has been started in this run.";
+          return await waitForSession(lastMessageId);
+        }
+
+        if (!repoId) {
+          const resolved = await resolveRepo(str(args.repository));
+          if (typeof resolved === "string") return resolved;
+          repoId = resolved.id;
+        }
+
+        // Write actions go through the same inline-approval path as every other
+        // outgoing action, so "assisted" autonomy actually gates the PR.
+        if (row.requires_approval && WRITE_VIBE_ACTIONS.has(action)) {
+          return await awaitInlineApproval(ctx, {
+            tool_name: "vibe_code",
+            action_kind: "edge_function",
+            payload: { slug: "vibe-code", args: { ...args, repository_id: repoId } },
+            reason: str(args.title) || str(args.prompt) || null,
+          }, row.name || "Vibe Code");
+        }
+
+        if (action === "run" || action === "fix_pr") {
+          const prompt = str(args.prompt);
+          if (action === "run" && !prompt) return "ERROR: prompt is required for a coding session.";
+          const raw = await callEngine({
+            repository_id: repoId, action, prompt: prompt || undefined,
+            branch: str(args.branch) || undefined,
+            pr_number: typeof args.pr_number === "number" ? args.pr_number : undefined,
+            session_id: sessionId ?? undefined,
+          });
+          const parsed = parseEdgeJson(raw);
+          if (!parsed) return raw;
+          if (parsed.error) return `ERROR from the coding engine: ${str(parsed.error)}`;
+          sessionId = str(parsed.session_id) || sessionId;
+          lastMessageId = str(parsed.assistant_message_id) || null;
+          if (!lastMessageId) return raw;
+          return await waitForSession(lastMessageId);
+        }
+
+        if (action === "apply") {
+          if (!staged.length) return "ERROR: nothing is staged — run a coding session first (action=\"run\").";
+          const raw = await callEngine({
+            repository_id: repoId, action: "apply",
+            base_branch: str(args.branch) || stagedBranch || undefined,
+            title: str(args.title) || "Vibe Code changes",
+            body: str(args.body) || undefined,
+            changes: staged,
+          });
+          return raw;
+        }
+
+        // pr_status / merge_pr — thin pass-through.
+        return await callEngine({
+          repository_id: repoId, action,
+          pr_number: typeof args.pr_number === "number" ? args.pr_number : undefined,
+          branch: str(args.branch) || undefined,
+        });
+      },
+    });
+    summaryLines.push(
+      `- vibe_code: code on the project's repositories and open PRs (${[...allowed].join("/")})${row.requires_approval ? " — writes need approval" : ""}.`,
+    );
+  }
+
+  // testing rows: the Testing studio agent's engine — the same
+  // test-run-orchestrate + Playwright runner the retired Test runs module used.
+  // The agent picks the scenario, launches it, follows the live steps and can
+  // answer the runner when it gets stuck.
+  for (const row of enabled.filter((r) => r.kind === "testing")) {
+    const cfg = row.config ?? {};
+    const pinnedSuite = str(cfg.suite_id) || null;
+
+    let lastRunId: string | null = null;
+
+    const waitForRun = async (runId: string): Promise<string> => {
+      const deadline = Date.now() + 300_000;
+      while (Date.now() < deadline) {
+        if (await ctx.isCancelled()) return "Run cancelled by a human — the test run was left running.";
+        await new Promise((r) => setTimeout(r, 5000));
+        const { data: run } = await ctx.admin
+          .from("test_runs")
+          .select("status, result, error_message, pending_question, current_url, last_screenshot_url")
+          .eq("id", runId).maybeSingle();
+        const r = (run ?? {}) as Record<string, unknown>;
+        const status = str(r.status);
+        if (status === "needs_input") {
+          return `The test is PAUSED and needs an answer: "${str(r.pending_question)}". ` +
+            `Reply with testing(action="answer", run_id="${runId}", answer="…").`;
+        }
+        if (["passed", "failed", "error", "cancelled"].includes(status)) {
+          const { data: steps } = await ctx.admin
+            .from("test_run_steps").select("actor, kind, label")
+            .eq("run_id", runId).order("idx", { ascending: true }).limit(60);
+          const timeline = ((steps ?? []) as Array<{ actor: string; kind: string; label: string | null }>)
+            .map((s) => `  ${s.kind}: ${s.label ?? ""}`).join("\n");
+          const result = (r.result ?? {}) as Record<string, unknown>;
+          return cap(
+            `Test run ${status.toUpperCase()} (run ${runId}).\n` +
+            (r.error_message ? `Error: ${str(r.error_message)}\n` : "") +
+            (result.summary ? `Summary: ${str(result.summary)}\n` : "") +
+            (r.last_screenshot_url ? `Last screenshot: ${str(r.last_screenshot_url)}\n` : "") +
+            `\nTimeline:\n${timeline}`,
+            7000,
+          );
+        }
+      }
+      return `The test run is still going (run ${runId}). Call testing(action="status", run_id="${runId}") later — do NOT start another run.`;
+    };
+
+    tools.set("testing", {
+      def: {
+        name: "testing",
+        description:
+          "Run real end-to-end tests against the app with the Playwright runner. " +
+          "list = the available test cases; run = execute one and wait for the verdict; " +
+          "status = collect a run still in progress; answer = unblock a run that is asking a question; " +
+          "directive = send a new instruction to a run (even a finished one).",
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["list", "run", "status", "answer", "directive"] },
+            case_id: { type: "string", description: "For run: the test case to execute (see action=\"list\")." },
+            run_id: { type: "string", description: "For status/answer/directive." },
+            answer: { type: "string", description: "For answer: what the runner should do / the information it asked for." },
+            directive: { type: "string", description: "For directive: the new instruction." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+
+        if (action === "list") {
+          let q = ctx.admin.from("test_cases")
+            .select("id, name, instructions, suite_id").eq("project_id", ctx.projectId).eq("enabled", true);
+          if (pinnedSuite) q = q.eq("suite_id", pinnedSuite);
+          const { data } = await q.limit(50);
+          const cases = (data ?? []) as Array<{ id: string; name: string; instructions: string }>;
+          if (!cases.length) return "No test case exists for this project yet.";
+          return cases.map((c) => `- ${c.name} (id: ${c.id}) — ${c.instructions.slice(0, 140)}`).join("\n");
+        }
+
+        if (action === "run") {
+          const caseId = str(args.case_id);
+          if (!caseId) return "ERROR: case_id is required — call action=\"list\" first.";
+          const raw = await invokeEdgeFunction("test-run-orchestrate", {
+            action: "start", workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+            acting_user_id: ctx.userId ?? null, case_id: caseId,
+          });
+          const parsed = parseEdgeJson(raw);
+          if (!parsed || parsed.error) return `ERROR from the test engine: ${parsed ? str(parsed.error) : raw}`;
+          lastRunId = str(parsed.run_id) || null;
+          if (!lastRunId) return raw;
+          return await waitForRun(lastRunId);
+        }
+
+        if (action === "status") {
+          const runId = str(args.run_id) || lastRunId;
+          if (!runId) return "ERROR: no test run has been started in this run.";
+          return await waitForRun(runId);
+        }
+
+        const runId = str(args.run_id) || lastRunId;
+        if (!runId) return "ERROR: run_id is required.";
+        const raw = await invokeEdgeFunction("test-run-orchestrate", {
+          action, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+          acting_user_id: ctx.userId ?? null, run_id: runId,
+          answer: str(args.answer) || undefined, directive: str(args.directive) || undefined,
+        });
+        const parsed = parseEdgeJson(raw);
+        if (parsed?.error) return `ERROR: ${str(parsed.error)}`;
+        return await waitForRun(runId);
+      },
+    });
+    summaryLines.push("- testing: run real end-to-end tests against the app and read the verdict.");
+  }
+
+  // simulation rows: the Simulations studio agent's engine. It creates the
+  // population, then drives the rounds itself (the round action accepts a
+  // service-role caller) instead of waiting for an external runner.
+  for (const row of enabled.filter((r) => r.kind === "simulation")) {
+    const cfg = row.config ?? {};
+    const maxRounds = Math.min(Math.max(Number(cfg.max_rounds) || 6, 1), 12);
+    let lastSimId: string | null = null;
+
+    tools.set("simulation", {
+      def: {
+        name: "simulation",
+        description:
+          "Simulate how a realistic population reacts to an idea, a launch or a scenario. " +
+          "run = build the population and play every round, then return the prediction report; " +
+          "ask = put a question to one persona; status = read a simulation already created.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["run", "ask", "status"] },
+            name: { type: "string", description: "For run: a short name for the simulation." },
+            seed: { type: "string", description: "For run: the material to react to — the idea, the pitch, the change." },
+            question: { type: "string", description: "For run: what you want predicted (e.g. 'will our SMB users churn?')." },
+            persona_count: { type: "number", description: "Population size (default 12, max 40)." },
+            rounds: { type: "number", description: `Rounds to play (default 6, max ${maxRounds}).` },
+            persona_id: { type: "string", description: "For ask: which persona to question." },
+            message: { type: "string", description: "For ask: the question." },
+            simulation_id: { type: "string", description: "For status." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+        const engine = (payload: Record<string, unknown>) =>
+          invokeEdgeFunction("simulation-prepare", { acting_user_id: ctx.userId ?? null, ...payload });
+
+        if (action === "ask") {
+          if (!str(args.persona_id) || !str(args.message)) return "ERROR: persona_id and message are required.";
+          return await engine({ action: "chat", persona_id: str(args.persona_id), message: str(args.message) });
+        }
+
+        if (action === "status") {
+          const simId = str(args.simulation_id) || lastSimId;
+          if (!simId) return "ERROR: no simulation has been created in this run.";
+          const { data } = await ctx.admin
+            .from("sim_simulations").select("name, status, current_round, total_rounds, report, error")
+            .eq("id", simId).maybeSingle();
+          if (!data) return "ERROR: simulation not found.";
+          return cap(JSON.stringify(data), 7000);
+        }
+
+        const seed = str(args.seed);
+        const question = str(args.question);
+        if (!seed || !question) return "ERROR: seed and question are required to run a simulation.";
+        const personaCount = Math.min(Math.max(Number(args.persona_count) || 12, 4), 40);
+        const rounds = Math.min(Math.max(Number(args.rounds) || 6, 1), maxRounds);
+
+        const { data: created, error: createErr } = await ctx.admin
+          .from("sim_simulations").insert({
+            workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+            name: str(args.name, "Simulation").slice(0, 80),
+            seed_text: seed, question, persona_count: personaCount, total_rounds: rounds,
+            status: "draft", created_by: ctx.userId ?? null,
+          }).select("id").single();
+        if (createErr || !created) return `ERROR: could not create the simulation (${createErr?.message ?? "unknown"}).`;
+        lastSimId = (created as { id: string }).id;
+
+        const prep = parseEdgeJson(await engine({ action: "prepare", simulation_id: lastSimId }));
+        if (prep?.error) return `ERROR while building the population: ${str(prep.error)}`;
+
+        // Play the rounds inline — each one is a single model call, and the
+        // engine reports `done` when the population has run its course.
+        for (let i = 0; i < rounds; i++) {
+          if (await ctx.isCancelled()) return "Run cancelled by a human — the simulation was left unfinished.";
+          const res = parseEdgeJson(await engine({ action: "round", simulation_id: lastSimId, runner_id: "agent" }));
+          if (res?.error) return `ERROR at round ${i + 1}: ${str(res.error)}`;
+          if (res?.done) break;
+        }
+        await engine({ action: "complete", simulation_id: lastSimId, status: "completed" });
+
+        const { data: done } = await ctx.admin
+          .from("sim_simulations").select("report, status, current_round").eq("id", lastSimId).maybeSingle();
+        const report = (done as { report?: unknown } | null)?.report;
+        return cap(
+          `Simulation ${lastSimId} finished (${str((done as { status?: string } | null)?.status)}).\n` +
+          `Prediction report:\n${report ? JSON.stringify(report) : "(no report produced)"}`,
+          8000,
+        );
+      },
+    });
+    summaryLines.push("- simulation: simulate a population's reaction and return a prediction report.");
+  }
+
   // edge_function rows: one tool per configured function.
   for (const row of enabled.filter((r) => r.kind === "edge_function")) {
     const slug = str(row.config?.slug);
@@ -2386,13 +3957,12 @@ export function buildInternalToolset(
       run: async (args) => {
         const fnArgs = (args.args && typeof args.args === "object" ? args.args : {}) as Record<string, unknown>;
         if (row.requires_approval) {
-          const id = await ctx.requestApproval({
+          return await awaitInlineApproval(ctx, {
             tool_name: toolName,
             action_kind: "edge_function",
             payload: { slug, args: fnArgs },
             reason: str(args.reason) || null,
-          });
-          return `Action queued for human approval (approval ${id}). It will run once a team member approves it — continue with the rest of the mission and mention the pending approval in your final answer.`;
+          }, row.name || toolName);
         }
         return invokeEdgeFunction(slug, fnArgs);
       },
@@ -2431,13 +4001,12 @@ export function buildInternalToolset(
       },
       run: async (args) => {
         if (row.requires_approval) {
-          const id = await ctx.requestApproval({
+          return await awaitInlineApproval(ctx, {
             tool_name: toolName,
             action_kind: "webhook",
             payload: { url, method, headers, args },
             reason: str(args.reason) || null,
-          });
-          return `Action queued for human approval (approval ${id}). Continue with the rest of the mission and mention the pending approval in your final answer.`;
+          }, row.name || toolName);
         }
         return invokeWebhook(url, method, args, headers);
       },
@@ -2445,7 +4014,171 @@ export function buildInternalToolset(
     summaryLines.push(`- ${toolName}: ${row.description || row.name}${row.requires_approval ? " (requires human approval)" : ""}.`);
   }
 
-  const defs: ToolDef[] = [...tools.values()].map((t) => ({ type: "function", function: t.def }));
+  // ---------------------------------------------------------------------------
+  // Context Engine wiring: one search tool, and progressive disclosure.
+  // ---------------------------------------------------------------------------
+
+  // ONE retrieval tool instead of four near-synonyms. search_history /
+  // search_memory / search_past_work / search_knowledge stay EXECUTABLE (a model
+  // that learned the old name still works, and nothing in prod breaks) but are
+  // hidden from `defs` — so they stop costing four schemas and, more importantly,
+  // stop making the model hesitate between four tools that all mean "look it up".
+  const SEARCH_SCOPES: Record<string, { target: string; args?: Record<string, unknown> }> = {
+    run: { target: "search_history" },
+    agent: { target: "search_memory" },
+    team: { target: "team_memory", args: { action: "search" } },
+    past_runs: { target: "search_past_work" },
+    kb: { target: "search_knowledge" },
+  };
+  const availableScopes = Object.entries(SEARCH_SCOPES)
+    .filter(([, s]) => tools.has(s.target))
+    .map(([scope]) => scope);
+  if (availableScopes.length) {
+    // Hide the pure-READ aliases only. team_memory also WRITES (action="add"),
+    // so it stays advertised — folding it away would cost the agent its ability
+    // to record shared knowledge.
+    for (const name of ["search_history", "search_memory", "search_past_work", "search_knowledge"]) {
+      const t = tools.get(name);
+      if (t) t.hidden = true;
+    }
+    tools.set("search_context", {
+      family: "MEMORY",
+      incompressible: true,
+      def: {
+        name: "search_context",
+        description:
+          "Look something up instead of redoing work or re-asking. Pick the scope: " +
+          "'run' = your earlier steps in THIS run (recover detail compacted out of context) · " +
+          "'agent' = your persistent memory · 'team' = the shared team memory · " +
+          "'past_runs' = deliverables and outputs of your PREVIOUS runs · " +
+          "'kb' = the project knowledge base. When unsure, start with 'run'.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Keyword, phrase, identifier, path or error string to find." },
+            scope: { type: "string", enum: availableScopes, description: "Where to look." },
+            limit: { type: "number", description: "Max results (default 8)." },
+          },
+          required: ["query", "scope"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const scope = str(args.scope, "run");
+        const spec = SEARCH_SCOPES[scope];
+        const t = spec ? tools.get(spec.target) : undefined;
+        if (!t) return `ERROR: unknown scope "${scope}". Available: ${availableScopes.join(", ")}.`;
+        return await t.run({ ...args, ...(spec.args ?? {}) });
+      },
+    });
+  }
+
+  // Progressive disclosure of tool SCHEMAS. The capability tree in the system
+  // prompt still lists every tool (one short line each — cheap), so the model
+  // always knows what exists; only the full JSON schemas are lazy. Loading a
+  // family takes effect on the NEXT round of the same tick (the run loop passes
+  // `defs` as a thunk), so there is no lost turn.
+  const loadedFamilies = new Set<ToolFamily>(
+    (ctx.loadedFamilies ?? []).filter((f): f is ToolFamily => (FAMILY_ORDER as readonly string[]).includes(f)),
+  );
+  const familyOf = (name: string): ToolFamily => {
+    const t = tools.get(name);
+    if (t?.family) return t.family;
+    const base = name.replace(/^(?:runner|sandbox)_/, "");
+    return TOOL_FAMILY[name] ?? TOOL_FAMILY[base] ?? "INTEGRATIONS";
+  };
+  // Always present, whatever the tier: the agent must be able to plan, ask,
+  // deliver, look things up and widen its own toolset.
+  const CORE_TOOLS = new Set([
+    "ask_user", "update_todos", "create_deliverable", "report_section",
+    "search_context", "load_toolset", "need_tools", "say", "use_skill", "read_skill_file",
+  ]);
+  // Families whose schemas ship by default: the ones that DO work, plus MEMORY
+  // (tiny, and saving knowledge is opportunistic hygiene — it must never cost a
+  // load_toolset round). The heavy families load on demand: DATA (allowlisted
+  // tables), TEAM (missions/delegation) and INTEGRATIONS (connectors + one
+  // schema per remote MCP tool, the real fan-out).
+  const DEFAULT_FAMILIES: ToolFamily[] = ["EXECUTION", "WEB", "DELIVER", "PLAN", "MEMORY"];
+
+  tools.set("load_toolset", {
+    family: "PLAN",
+    incompressible: true,
+    def: {
+      name: "load_toolset",
+      description:
+        "Load the full schemas of a tool family you need but whose tools aren't callable yet. " +
+        "The toolbox in your system prompt lists every family and what's in it; a family marked " +
+        "(à charger) must be loaded here before you can call its tools. Takes effect immediately — " +
+        "call the tool you wanted right after.",
+      parameters: {
+        type: "object",
+        properties: {
+          family: { type: "string", enum: [...FAMILY_ORDER], description: "The family to load." },
+        },
+        required: ["family"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const fam = str(args.family).toUpperCase() as ToolFamily;
+      if (!FAMILY_ORDER.includes(fam)) return `ERROR: unknown family "${fam}". One of: ${FAMILY_ORDER.join(", ")}.`;
+      loadedFamilies.add(fam);
+      await ctx.onToolsetLoaded?.(fam);
+      const names = [...tools.entries()]
+        .filter(([n, t]) => !t.hidden && familyOf(n) === fam)
+        .map(([n]) => n);
+      return names.length
+        ? `Family ${fam} loaded — now callable: ${names.join(", ")}.`
+        : `Family ${fam} is empty for this agent.`;
+    },
+  });
+
+  // The `social` tier's single escape hatch: a greeting ships ~60 tokens of
+  // schema instead of ~10 000, and the model can still escalate in one call
+  // when the turn turns out to need real work.
+  tools.set("need_tools", {
+    family: "PLAN",
+    incompressible: true,
+    def: {
+      name: "need_tools",
+      description:
+        "Call this the moment the request needs an ACTION (files, code, web, data, sending, integrations) " +
+        "rather than a plain conversational reply. Your full toolbox is loaded immediately and you continue " +
+        "in the same turn. Never apologise for lacking tools — call this instead.",
+      parameters: {
+        type: "object",
+        properties: { reason: { type: "string", description: "What you need to do, in one sentence." } },
+        required: ["reason"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      for (const f of FAMILY_ORDER) loadedFamilies.add(f);
+      await ctx.onToolsetLoaded?.("*");
+      return `Full toolbox loaded (${str(args.reason) || "action required"}). Continue now — call the tool you need.`;
+    },
+  });
+
+  const toDef = (t: InternalTool): ToolDef =>
+    t.incompressible ? { type: "function", function: t.def, incompressible: true } : { type: "function", function: t.def };
+
+  /** The tool schemas exposed for the CURRENT round. Re-evaluated every round by
+   *  the run loop, so load_toolset / need_tools widen it without losing a turn. */
+  const defsFor = (tier: ToolTier = "full"): ToolDef[] => {
+    const visible = [...tools.entries()].filter(([, t]) => !t.hidden);
+    if (tier === "social") {
+      return visible.filter(([n]) => n === "need_tools" || n === "say").map(([, t]) => toDef(t));
+    }
+    if (tier === "full") return visible.map(([, t]) => toDef(t));
+    // "core": core tools + the default working families + anything loaded since.
+    return visible
+      .filter(([n]) => CORE_TOOLS.has(n)
+        || DEFAULT_FAMILIES.includes(familyOf(n))
+        || loadedFamilies.has(familyOf(n)))
+      .map(([, t]) => toDef(t));
+  };
+
+  const defs: ToolDef[] = defsFor("full");
 
   // NOTE: the executor does NOT log run events itself — the run loop's logging
   // wrapper (internal-agent-run) is the single source of tool_call/tool_result
@@ -2463,7 +4196,12 @@ export function buildInternalToolset(
     }
   };
 
-  return { defs, executor, capabilitySummary: buildCapabilityTree(tools, sandboxGuidance, summaryLines) };
+  return {
+    defs,
+    defsFor,
+    executor,
+    capabilitySummary: buildCapabilityTree(tools, sandboxGuidance, summaryLines, DEFAULT_FAMILIES, CORE_TOOLS),
+  };
 }
 
 // ── Structured toolbox tree ───────────────────────────────────────────────────
@@ -2489,43 +4227,54 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
   file_search: "EXECUTION", sandbox_browser: "EXECUTION", sandbox_env: "EXECUTION", browse_web: "EXECUTION",
   machine_info: "EXECUTION", manage_files: "EXECUTION", download_file: "EXECUTION",
   run_background: "EXECUTION", list_processes: "EXECUTION", process_logs: "EXECUTION", process_stop: "EXECUTION",
-  web_search: "WEB", read_url: "WEB", deep_research: "WEB", http_get: "WEB",
+  web_search: "WEB", read_url: "WEB", deep_research: "WEB", http_get: "WEB", http_request: "WEB",
+  pentest_scope: "DATA",
   search_knowledge: "DATA", query_table: "DATA", list_connectors: "DATA",
   update_todos: "PLAN", use_skill: "PLAN", read_skill_file: "PLAN", ask_user: "PLAN",
-  create_deliverable: "DELIVER",
-  save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY",
+  create_deliverable: "DELIVER", report_section: "DELIVER", render_ui: "DELIVER",
+  save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY", search_past_work: "MEMORY",
   create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
-  create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM",
+  create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM", propose_mission: "TEAM", create_agent: "TEAM",
   send_email: "INTEGRATIONS", security_scan: "INTEGRATIONS",
 };
 
 function buildCapabilityTree(
-  tools: Map<string, { def: { name: string; description: string } } & Record<string, unknown>>,
+  tools: Map<string, { def: { name: string; description: string }; hidden?: boolean; family?: ToolFamily } & Record<string, unknown>>,
   sandboxGuidance: string[],
   legacyLines: string[],
+  defaultFamilies: ToolFamily[] = [...FAMILY_ORDER],
+  coreTools: Set<string> = new Set(),
 ): string {
   const byFamily = new Map<ToolFamily, string[]>();
   for (const [name, t] of tools) {
+    // Hidden aliases are executable but never advertised.
+    if (t.hidden) continue;
     // Hybrid namespaces execution tools (runner_* / sandbox_*). Classify by the
     // exact name first, then fall back to the un-prefixed base (sandbox_browser /
     // sandbox_env keep their own entries via the exact-name hit).
     const base = name.replace(/^(?:runner|sandbox)_/, "");
     const fam = TOOL_FAMILY[name] ?? TOOL_FAMILY[base] ?? "INTEGRATIONS";
-    // First sentence of the description keeps the inventory scannable.
+    // Short label only — the full schema is sent separately, so this stays a
+    // scannable INDEX, not a duplicate of every tool's description.
     const firstSentence = (t.def.description ?? "").split(/(?<=\.)\s+/)[0] ?? "";
     const arr = byFamily.get(fam) ?? [];
-    arr.push(`  - ${name}: ${firstSentence.slice(0, 200)}`);
+    arr.push(`  - ${name}: ${firstSentence.slice(0, 90)}`);
     byFamily.set(fam, arr);
   }
   const out: string[] = [
     "# TOOLBOX — grouped by family, in order of preference",
-    "RULE #1 — PREFER EXECUTION TOOLS. Real progress = files created, commands run, data processed, things built and verified. Meta-tools (missions, tasks, messages, memory) only RECORD or COORDINATE work — they never DO it. If you notice several consecutive meta-tool calls with no new file/command/result, STOP and switch to EXECUTION tools.",
+    "RULE — PREFER EXECUTION TOOLS: real progress = files/commands/data/results, not meta-tools (missions, tasks, messages, memory) which only record or coordinate. Several meta-calls with no new result → switch to execution tools.",
     "",
   ];
   for (const fam of FAMILY_ORDER) {
     const lines = byFamily.get(fam);
     if (!lines?.length) continue;
-    out.push(`## ${FAMILY_META[fam].label}`);
+    // Progressive disclosure: the INDEX is always complete (so the agent knows
+    // what exists), but a family outside the default set ships without its JSON
+    // schemas until load_toolset pulls them in. Say so explicitly — an agent that
+    // doesn't know a tool is loadable will claim it can't do the job.
+    const lazy = !defaultFamilies.includes(fam) && !lines.every((l) => coreTools.has(l.trim().split(":")[0].replace(/^-\s*/, "")));
+    out.push(`## ${FAMILY_META[fam].label}${lazy ? ` — (à charger : load_toolset("${fam}") avant le premier appel)` : ""}`);
     out.push(`Rule: ${FAMILY_META[fam].rule}`);
     out.push(...lines);
     if (fam === "EXECUTION" && sandboxGuidance.length) out.push(...sandboxGuidance);

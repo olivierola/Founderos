@@ -1,7 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import { CONFIG } from "./config";
 
-// A FounderOS user session, persisted encrypted on-device. Mirrors the fields the
+// A AchiCorp user session, persisted encrypted on-device. Mirrors the fields the
 // Supabase auth REST endpoints return (we talk to them directly — no SDK).
 export interface Session {
   accessToken: string;

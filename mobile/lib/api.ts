@@ -2,7 +2,7 @@ import { CONFIG } from "./config";
 
 export type ChatRole = "user" | "assistant" | "tool";
 
-// An agent the signed-in FounderOS user can talk to (returned by list_agents).
+// An agent the signed-in AchiCorp user can talk to (returned by list_agents).
 export interface Agent {
   id: string;
   name: string;

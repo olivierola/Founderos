@@ -61,7 +61,7 @@ export function OpsServersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Servers"
-        description="Connect VPS or cloud servers to FounderOS. SSH keys are stored encrypted (project-scoped)."
+        description="Connect VPS or cloud servers to AchiCorp. SSH keys are stored encrypted (project-scoped)."
         actions={
           <Button onClick={() => setAddOpen(true)} className="gap-1.5">
             <Plus className="h-4 w-4" /> Add server
@@ -215,12 +215,12 @@ function ServerCard({ server }: { server: OpsServer }) {
 
 // Managed PaaS connector candidates — anything in this list will appear in
 // the "Managed target" picker if a Connector with that provider exists.
+// fly / railway are NOT listed: ops-managed-deploy has no implementation for
+// them (triggerFly/triggerRailway throw) — re-add here once they're written.
 const MANAGED_PROVIDERS: Array<{ value: string; label: string; needs: string }> = [
   { value: "vercel",  label: "Vercel",  needs: "vercel_project_id (or _name) in connector metadata" },
   { value: "netlify", label: "Netlify", needs: "netlify_site_id" },
   { value: "render",  label: "Render",  needs: "render_service_id" },
-  { value: "fly",     label: "Fly.io",  needs: "fly_app (coming soon)" },
-  { value: "railway", label: "Railway", needs: "(coming soon)" },
 ];
 
 function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -397,7 +397,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
               Targets in Ops can be a VPS you manage yourself, or a managed PaaS where
-              FounderOS drives the deploy via API using one of your configured connectors.
+              AchiCorp drives the deploy via API using one of your configured connectors.
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button

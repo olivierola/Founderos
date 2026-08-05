@@ -41,7 +41,10 @@ verify_jwt = false
 [functions.github-list-repos]
 verify_jwt = false
 
-[functions.ai-fast-summary]
+[functions.deepgram-transcribe]
+verify_jwt = false
+
+[functions.deepgram-stream]
 verify_jwt = false
 
 [functions.connect-provider]
@@ -50,16 +53,13 @@ verify_jwt = false
 [functions.aiops-infra]
 verify_jwt = false
 
+[functions.service-room-post]
+verify_jwt = false
+
 [functions.disconnect-provider]
 verify_jwt = false
 
 [functions.sync-stripe-data]
-verify_jwt = false
-
-[functions.calculate-metrics]
-verify_jwt = false
-
-[functions.record-cost]
 verify_jwt = false
 
 [functions.ai-cost-optimization]
@@ -72,9 +72,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.daily-briefing]
-verify_jwt = false
-
-[functions.db-admin]
 verify_jwt = false
 
 [functions.send-notification]
@@ -105,9 +102,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.send-email]
-verify_jwt = false
-
-[functions.run-sql]
 verify_jwt = false
 
 [functions.delete-workspace]
@@ -184,4 +178,29 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.test-connection]
+verify_jwt = false
+
+# Composio-backed connector system (new default; in-house path above is
+# untouched and still deployed, just no longer linked from the default UI).
+[functions.composio-catalog]
+verify_jwt = false
+
+[functions.composio-connect]
+verify_jwt = false
+
+[functions.composio-connection-status]
+verify_jwt = false
+
+[functions.composio-disconnect]
+verify_jwt = false
+
+[functions.composio-action]
+verify_jwt = false
+
+# In-house CRM read/write for agents (service-role worker or member session).
+[functions.crm-action]
+verify_jwt = false
+
+# Live GUI onboarding co-pilot (page-agent): public brief/llm/progress dispatch.
+[functions.onboarding-agent]
 verify_jwt = false

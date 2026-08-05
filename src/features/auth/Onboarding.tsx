@@ -14,7 +14,7 @@ export function OnboardingPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="w-full max-w-2xl">
-        <h1 className="text-2xl font-semibold tracking-tight">Welcome to FounderOS</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Welcome to AchiCorp</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Four quick steps to get your SaaS cockpit ready.
         </p>

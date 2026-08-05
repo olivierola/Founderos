@@ -14,19 +14,26 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
+import { cn } from "@/lib/utils";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { GoalsStudioPage } from "@/features/agent-rag/onboarding/GoalsStudio";
+import { ActivationCockpitPage } from "@/features/agent-rag/onboarding/ActivationCockpit";
 
-type Tab = "knowledge" | "playground" | "widget" | "analytics" | "settings";
+type Tab = "knowledge" | "playground" | "widget" | "analytics" | "onboarding" | "settings";
 
 interface Agent {
   id: string; project_id: string; name: string; description: string | null; persona: string | null;
   instructions: string | null; model: string; temperature: number;
   welcome_message: string | null; widget_config: any; public_key: string;
-  enabled: boolean; onboarding_enabled: boolean; accent_color: string | null;
+  enabled: boolean; onboarding_enabled: boolean; onboarding_copilot_enabled: boolean;
+  onboarding_voice_enabled: boolean; onboarding_voice_model: string | null; accent_color: string | null;
 }
 interface Source { id: string; type: string; title: string; status: string; chunk_count: number; byte_size?: number; error_message: string | null; created_at: string; }
 
-const VALID_TABS: Tab[] = ["knowledge", "playground", "widget", "analytics", "settings"];
+// Onboarding is a conditional tab — only surfaced when the agent has the
+// onboarding feature toggled on (see SettingsTab). The base builder is
+// otherwise identical for every public agent.
+const VALID_TABS: Tab[] = ["knowledge", "playground", "widget", "analytics", "onboarding", "settings"];
 
 export function AgentBuilderPage() {
   const { agentId, tab: tabParam } = useParams();
@@ -45,13 +52,18 @@ export function AgentBuilderPage() {
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   if (!agent) return <EmptyState icon={Bot} title="Agent not found" />;
 
+  // The onboarding tab only exists while the feature is on — a stale/direct
+  // link falls back to the playground.
+  const effectiveTab: Tab = tab === "onboarding" && !agent.onboarding_enabled ? "playground" : tab;
+
   return (
     <div>
-      {tab === "knowledge" && <KnowledgeTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-      {tab === "playground" && <PlaygroundTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-      {tab === "widget" && <WidgetTab agent={agent} />}
-      {tab === "analytics" && <AnalyticsTab agent={agent} />}
-      {tab === "settings" && <SettingsTab agent={agent} />}
+      {effectiveTab === "knowledge" && <KnowledgeTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {effectiveTab === "playground" && <PlaygroundTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {effectiveTab === "widget" && <WidgetTab agent={agent} />}
+      {effectiveTab === "analytics" && <AnalyticsTab agent={agent} />}
+      {effectiveTab === "onboarding" && <OnboardingTab agent={agent} />}
+      {effectiveTab === "settings" && <SettingsTab agent={agent} />}
     </div>
   );
 }
@@ -503,7 +515,7 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
             <div ref={endRef} />
           </div>
           {/* Branding + input */}
-          <div className="px-4 pb-1 text-center text-[10px] text-muted-foreground">Powered by FounderOS</div>
+          <div className="px-4 pb-1 text-center text-[10px] text-muted-foreground">Powered by AchiCorp</div>
           <div className="flex items-center gap-2 border-t border-border p-3">
             <input
               value={input}
@@ -779,7 +791,7 @@ add_action("wp_footer", function () {
       {/* Interface */}
       <Section title="Interface" desc="Configure the parts of the widget interface.">
         <Toggle label="Collapsible" desc="Visitors can collapse the chat back to the bubble." checked={cfg.collapsible} onChange={(v) => set("collapsible", v)} />
-        <Toggle label="Show branding" desc="Display a small 'Powered by FounderOS' line at the bottom." checked={cfg.show_branding} onChange={(v) => set("show_branding", v)} />
+        <Toggle label="Show branding" desc="Display a small 'Powered by AchiCorp' line at the bottom." checked={cfg.show_branding} onChange={(v) => set("show_branding", v)} />
         <div>
           <label className="mb-1.5 block text-sm font-medium">Variant</label>
           <div className="inline-flex rounded-md bg-secondary/60 p-0.5">
@@ -1070,12 +1082,207 @@ function AnalyticsTab({ agent }: { agent: Agent }) {
 }
 
 // --- Settings -----------------------------------------------------------
+// --- Onboarding (conditional tab) ---------------------------------------
+// Only mounted when `agent.onboarding_enabled` is on. Groups the onboarding
+// agent's controls: natural-language objectives, agent-level réglages
+// (co-pilot / voice / voice model + per-goal guardrails) and activation
+// analytics — all scoped to THIS agent.
+const ONB_SUBTABS = [
+  { value: "goals", label: "Objectifs" },
+  { value: "settings", label: "Réglages" },
+  { value: "activation", label: "Activation" },
+] as const;
+type OnbSubtab = (typeof ONB_SUBTABS)[number]["value"];
+
+// Deepgram Aura voices offered for the spoken onboarding guide.
+const AURA_VOICES = [
+  { value: "aura-asteria-en", label: "Asteria (f · en)" },
+  { value: "aura-luna-en", label: "Luna (f · en)" },
+  { value: "aura-stella-en", label: "Stella (f · en)" },
+  { value: "aura-athena-en", label: "Athena (f · en)" },
+  { value: "aura-hera-en", label: "Hera (f · en)" },
+  { value: "aura-orion-en", label: "Orion (m · en)" },
+  { value: "aura-arcas-en", label: "Arcas (m · en)" },
+  { value: "aura-perseus-en", label: "Perseus (m · en)" },
+  { value: "aura-angus-en", label: "Angus (m · en)" },
+  { value: "aura-zeus-en", label: "Zeus (m · en)" },
+];
+
+function OnboardingTab({ agent }: { agent: Agent }) {
+  const [sub, setSub] = useState<OnbSubtab>("goals");
+  return (
+    <div>
+      {/* Sub-tabs */}
+      <div className="mb-4 flex flex-wrap gap-4 border-b border-border/40">
+        {ONB_SUBTABS.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => setSub(t.value)}
+            className={`-mb-px border-b-2 pb-2 text-sm transition-colors ${sub === t.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {sub === "goals" && <GoalsStudioPage agentId={agent.id} />}
+      {sub === "settings" && <OnboardingSettings agent={agent} />}
+      {sub === "activation" && <ActivationCockpitPage agentId={agent.id} />}
+    </div>
+  );
+}
+
+function OnboardingSettings({ agent }: { agent: Agent }) {
+  const queryClient = useQueryClient();
+
+  // Agent-level onboarding switches.
+  const [copilot, setCopilot] = useState(agent.onboarding_copilot_enabled);
+  const [voice, setVoice] = useState(agent.onboarding_voice_enabled);
+  const [voiceModel, setVoiceModel] = useState(agent.onboarding_voice_model ?? "aura-asteria-en");
+  const [savingAgent, setSavingAgent] = useState(false);
+  const [savedAgent, setSavedAgent] = useState(false);
+
+  async function saveAgent() {
+    setSavingAgent(true); setSavedAgent(false);
+    try {
+      await supabase.from("rag_agents").update({
+        onboarding_copilot_enabled: copilot,
+        onboarding_voice_enabled: voice,
+        onboarding_voice_model: voiceModel,
+        updated_at: new Date().toISOString(),
+      }).eq("id", agent.id);
+      queryClient.invalidateQueries({ queryKey: ["rag_agent", agent.id] });
+      // Keep the inline toggles in GoalDetailView in sync.
+      queryClient.invalidateQueries({ queryKey: ["onb_agent_voice", agent.id] });
+      queryClient.invalidateQueries({ queryKey: ["onb_agent_copilot", agent.id] });
+      setSavedAgent(true); setTimeout(() => setSavedAgent(false), 1500);
+    } finally { setSavingAgent(false); }
+  }
+
+  // Guardrails live on a goal's `constraints` (the co-pilot brief reads them).
+  const { data: goals } = useQuery({
+    queryKey: ["onb_settings_goals", agent.id],
+    enabled: !!agent.id,
+    queryFn: async () => {
+      const { data } = await supabase.from("onboarding_goals")
+        .select("id, name, constraints")
+        .eq("agent_id", agent.id).order("created_at", { ascending: false });
+      return (data ?? []) as { id: string; name: string; constraints: Record<string, unknown> }[];
+    },
+  });
+
+  const [goalId, setGoalId] = useState<string>("");
+  const activeGoal = (goals ?? []).find((g) => g.id === goalId) ?? (goals ?? [])[0];
+  useEffect(() => {
+    if (!goalId && goals && goals.length > 0) setGoalId(goals[0]!.id);
+  }, [goals, goalId]);
+
+  const [tone, setTone] = useState("");
+  const [noBlock, setNoBlock] = useState(false);
+  const [locale, setLocale] = useState("");
+  const [maxNudges, setMaxNudges] = useState<number | "">("");
+  const [savingGuard, setSavingGuard] = useState(false);
+  const [savedGuard, setSavedGuard] = useState(false);
+
+  // Load the selected goal's constraints into the form.
+  useEffect(() => {
+    const c = (activeGoal?.constraints ?? {}) as Record<string, any>;
+    setTone(typeof c.tone === "string" ? c.tone : "");
+    setNoBlock(!!c.no_block);
+    setLocale(typeof c.locale === "string" ? c.locale : "");
+    setMaxNudges(typeof c.max_nudges_per_session === "number" ? c.max_nudges_per_session : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGoal?.id]);
+
+  async function saveGuardrails() {
+    if (!activeGoal) return;
+    setSavingGuard(true); setSavedGuard(false);
+    try {
+      const prev = (activeGoal.constraints ?? {}) as Record<string, unknown>;
+      const next: Record<string, unknown> = { ...prev, no_block: noBlock };
+      if (tone.trim()) next.tone = tone.trim(); else delete next.tone;
+      if (locale.trim()) next.locale = locale.trim(); else delete next.locale;
+      if (maxNudges === "") delete next.max_nudges_per_session; else next.max_nudges_per_session = Number(maxNudges);
+      await supabase.from("onboarding_goals").update({ constraints: next }).eq("id", activeGoal.id);
+      queryClient.invalidateQueries({ queryKey: ["onb_settings_goals", agent.id] });
+      setSavedGuard(true); setTimeout(() => setSavedGuard(false), 1500);
+    } finally { setSavingGuard(false); }
+  }
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      {/* Agent onboarding switches */}
+      <Card>
+        <CardContent className="space-y-3 p-5">
+          <h2 className="text-sm font-semibold">Guide d'onboarding</h2>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={copilot} onChange={(e) => setCopilot(e.target.checked)} />
+            <span>Co-pilote agentique <span className="text-muted-foreground">— pilote l'UI en direct (clique/remplit) via page-agent. Actions destructives toujours confirmées.</span></span>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" className="h-4 w-4 accent-primary" checked={voice} onChange={(e) => setVoice(e.target.checked)} />
+            Voix — guide parlé (Deepgram Aura)
+          </label>
+          <div className={cn(!voice && "opacity-50")}>
+            <label className="mb-1 block text-xs text-muted-foreground">Voix de synthèse</label>
+            <select value={voiceModel} disabled={!voice} onChange={(e) => setVoiceModel(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:cursor-not-allowed">
+              {AURA_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            </select>
+          </div>
+          <Button onClick={saveAgent} disabled={savingAgent}>{savingAgent ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savedAgent ? "Enregistré" : "Enregistrer"}</Button>
+        </CardContent>
+      </Card>
+
+      {/* Guardrails on the active goal's constraints */}
+      <Card>
+        <CardContent className="space-y-3 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold">Garde-fous</h2>
+            {(goals ?? []).length > 1 && (
+              <select value={goalId} onChange={(e) => setGoalId(e.target.value)} className="h-8 max-w-[12rem] rounded-md border border-input bg-background px-2 text-xs">
+                {(goals ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            )}
+          </div>
+          {!activeGoal ? (
+            <p className="text-xs text-muted-foreground">Créez un objectif dans l'onglet « Objectifs » pour définir ses garde-fous.</p>
+          ) : (
+            <>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Ton</label>
+                <Input value={tone} onChange={(e) => setTone(e.target.value)} placeholder="chaleureux, concis, tutoiement…" />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="h-4 w-4 accent-primary" checked={noBlock} onChange={(e) => setNoBlock(e.target.checked)} />
+                Ne pas bloquer l'écran (rester discret)
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Locale</label>
+                  <Input value={locale} onChange={(e) => setLocale(e.target.value)} placeholder="fr-FR" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Relances max / session</label>
+                  <Input type="number" min={0} value={maxNudges} onChange={(e) => setMaxNudges(e.target.value === "" ? "" : Number(e.target.value))} placeholder="3" />
+                </div>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Le ton et « ne pas bloquer l'écran » sont appliqués par le guide en direct. Locale et relances max sont conservés pour l'orchestration du parcours.</p>
+              <Button onClick={saveGuardrails} disabled={savingGuard}>{savingGuard ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savedGuard ? "Enregistré" : "Enregistrer les garde-fous"}</Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function SettingsTab({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     name: agent.name, description: agent.description ?? "", persona: agent.persona ?? "",
     instructions: agent.instructions ?? "", model: agent.model, temperature: agent.temperature,
     welcome_message: agent.welcome_message ?? "", enabled: agent.enabled, onboarding_enabled: agent.onboarding_enabled,
+    onboarding_copilot_enabled: agent.onboarding_copilot_enabled,
     accent_color: agent.accent_color ?? "#001BB7",
   });
   const [saving, setSaving] = useState(false);
@@ -1086,6 +1293,9 @@ function SettingsTab({ agent }: { agent: Agent }) {
     try {
       await supabase.from("rag_agents").update({ ...form, updated_at: new Date().toISOString() }).eq("id", agent.id);
       queryClient.invalidateQueries({ queryKey: ["rag_agent", agent.id] });
+      // Toggling onboarding_enabled must refresh the sidebar's conditional
+      // Onboarding tab (it reads a separate flag query).
+      queryClient.invalidateQueries({ queryKey: ["rag_agent_onb_flag", agent.id] });
       setSaved(true); setTimeout(() => setSaved(false), 1500);
     } finally { setSaving(false); }
   }
@@ -1128,7 +1338,14 @@ function SettingsTab({ agent }: { agent: Agent }) {
             <input type="range" min={0} max={1} step={0.1} value={form.temperature} onChange={(e) => upd("temperature", Number(e.target.value))} className="mt-2 w-full accent-primary" />
           </div>
         </div>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-primary" checked={form.onboarding_enabled} onChange={(e) => upd("onboarding_enabled", e.target.checked)} /> Enable onboarding mode (guide users through the SaaS UI)</label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={form.onboarding_enabled} onChange={(e) => upd("onboarding_enabled", e.target.checked)} />
+          <span>Enable onboarding mode (guide users through the SaaS UI) <span className="text-muted-foreground">— fait apparaître l'onglet <b>Onboarding</b> (objectifs, réglages du guide, activation).</span></span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={form.onboarding_copilot_enabled} onChange={(e) => upd("onboarding_copilot_enabled", e.target.checked)} disabled={!form.onboarding_enabled} />
+          <span>Co-pilote agentique <span className="text-muted-foreground">— pilote l'UI en direct (clique/remplit pour l'utilisateur) via page-agent, au lieu de seulement pointer. Actions destructives toujours confirmées.</span></span>
+        </label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-primary" checked={form.enabled} onChange={(e) => upd("enabled", e.target.checked)} /> Agent enabled (widget active)</label>
         <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : <Check className="h-4 w-4" />} {saved ? "Saved" : "Save settings"}</Button>
       </CardContent>

@@ -14,7 +14,7 @@ import { fetchAgentDeliverables, fetchMissionDeliverables, type Deliverable } fr
 // Embeds the real module content for a record, reusing existing data without
 // touching the source modules. Returns null when there's nothing to embed.
 export function hasContent(slug: string): boolean {
-  return ["discussions", "missions", "autonomous_agents", "documents"].includes(slug);
+  return ["discussions", "missions", "autonomous_agents", "documents", "deliverables"].includes(slug);
 }
 
 export function RecordContent({ object, record }: { object: CrmObject; record: CrmRecord }) {
@@ -41,6 +41,7 @@ export function RecordContent({ object, record }: { object: CrmObject; record: C
       </Button>
     </div>
   );
+  if (object.slug === "deliverables") return <DeliverableBody deliverableId={sid} />;
   return <Empty text="No embedded content for this object." />;
 }
 
@@ -172,6 +173,34 @@ function DeliverableList({ load, empty }: { load: () => Promise<Deliverable[]>; 
           {d.content && <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-xs">{d.content}</pre>}
         </div>
       ))}
+    </div>
+  );
+}
+
+// Full content of ONE deliverable record (P3 — agent outputs as CRM objects).
+function DeliverableBody({ deliverableId }: { deliverableId: string }) {
+  const { data: d, isLoading } = useQuery({
+    queryKey: ["crm_deliverable_body", deliverableId],
+    queryFn: async () => {
+      const { data } = await supabase.from("internal_agent_deliverables")
+        .select("id, kind, name, content, file_url, summary, created_at")
+        .eq("id", deliverableId).maybeSingle();
+      return (data ?? null) as Deliverable & { summary?: string | null } | null;
+    },
+  });
+  if (isLoading) return <Centered />;
+  if (!d) return <Empty text="Deliverable not found (deleted at the source?)." />;
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-center gap-2">
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{d.kind}</span>
+        <span className="text-sm font-medium">{d.name}</span>
+        <span className="ml-auto text-[11px] text-muted-foreground">{new Date(d.created_at).toLocaleString()}</span>
+      </div>
+      {d.file_url && <a href={d.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline"><ExternalLink className="h-3 w-3" /> Open file</a>}
+      {d.content
+        ? <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-xs">{d.content}</pre>
+        : <Empty text="No inline content — see the linked file/URL." />}
     </div>
   );
 }

@@ -1,10 +1,9 @@
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, FolderKanban, Loader2 } from "lucide-react";
-import { ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, ChartBarIcon, GearSixIcon } from "@phosphor-icons/react";
+import { ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, ChartBarIcon, GearSixIcon, UsersThreeIcon, GlobeIcon, CompassIcon } from "@phosphor-icons/react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
-import { InboxChannelsItem } from "./InboxChannelsItem";
 import { CrmObjectsItem } from "./CrmObjectsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
 import { useMemo, useState, type ReactNode } from "react";
@@ -15,7 +14,6 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { INTERNAL_AGENT_TABS } from "@/features/internal-agents/InternalAgentDetail";
-import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 import { MODULE_PROJECT_CONFIGS, type ModuleProjectConfig } from "@/lib/module-project-config";
 import { fetchModuleProjects, type ModuleProject } from "@/features/module-projects/moduleProjectModel";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -47,6 +45,9 @@ export function SecondarySidebar() {
   const moduleSlug = appIdx >= 0 ? segments[appIdx + 3] : undefined;
   const base = `/app/${workspaceSlug}/${projectSlug}`;
 
+  // AI HQ is a single full-width dashboard — no second sidebar.
+  if (moduleSlug === "hq") return null;
+
   // CRM full record view (crm/workspace/<obj>/<recordId>) brings its own fields
   // sidebar → eclipse the objects sidebar entirely.
   if (moduleSlug === "crm" && segments[appIdx + 4] === "workspace" && segments[appIdx + 6]) {
@@ -72,24 +73,7 @@ export function SecondarySidebar() {
   // Special case: agent builder → show the agent's own tabs in this sidebar.
   // Path: /app/:ws/:proj/agent/builder/:agentId/:tab?
   if (moduleSlug === "agent" && segments[appIdx + 4] === "builder") {
-    const agentId = segments[appIdx + 5];
-    return (
-      <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
-        <div className="flex h-14 items-center border-b border-border px-4">
-          <NavLink to={`${base}/agent/public-agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" /> Agents publics
-          </NavLink>
-        </div>
-        <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
-          {AGENT_TABS.map((t) => (
-            <NavLink key={t.slug} end to={`${base}/agent/builder/${agentId}/${t.slug}`} className={linkClass}>
-              <t.icon weight="duotone" className="h-4 w-4 shrink-0" />
-              <span className="truncate">{t.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
-    );
+    return <AgentBuilderSidebar base={base} agentId={segments[appIdx + 5] ?? ""} />;
   }
 
   // Internal agent detail → show the agent's own tabs.
@@ -203,9 +187,6 @@ export function SecondarySidebar() {
           const node = (() => {
             if ((module.slug === "ai" || module.slug === "agent") && sub.slug === "chat") {
               return <ChatConversationsItem key={sub.slug} to={to} label={sub.label} />;
-            }
-            if (module.slug === "pm" && sub.slug === "inbox") {
-              return <InboxChannelsItem key={sub.slug} to={to} label={sub.label} />;
             }
             if (module.slug === "crm" && sub.slug === "workspace") {
               return <CrmObjectsItem key={sub.slug} />;
@@ -324,47 +305,53 @@ function ProjectsSidebar({ config, base, moduleSlug }: { config: ModuleProjectCo
 // workers) and public agents (customer-facing — SAV, e-commerce, onboarding).
 // Both parts live in this one sidebar as labelled sections.
 
-interface HiredAgent { id: string; name: string; description: string | null; avatar_emoji: string | null; avatar_url: string | null; accent_color: string | null }
-interface PublicAgent { id: string; name: string; accent_color: string | null; enabled: boolean }
+
+function AgentBuilderSidebar({ base, agentId }: { base: string; agentId: string }) {
+  // The onboarding tab is conditional — only listed when this agent has the
+  // onboarding feature toggled on (AgentBuilder → Settings). The rest of the
+  // builder is identical for every public agent.
+  const { data: onboardingOn } = useQuery({
+    queryKey: ["rag_agent_onb_flag", agentId],
+    enabled: !!agentId,
+    queryFn: async () => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data } = await supabase.from("rag_agents").select("onboarding_enabled").eq("id", agentId).maybeSingle();
+      return !!(data as { onboarding_enabled?: boolean } | null)?.onboarding_enabled;
+    },
+  });
+
+  const tabs = onboardingOn
+    ? [
+        ...AGENT_TABS.slice(0, -1),
+        { slug: "onboarding", label: "Onboarding", icon: CompassIcon },
+        AGENT_TABS[AGENT_TABS.length - 1]!,
+      ]
+    : AGENT_TABS;
+
+  return (
+    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
+      <div className="flex h-14 items-center border-b border-border px-4">
+        <NavLink to={`${base}/agent/public-agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Agents publics
+        </NavLink>
+      </div>
+      <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
+        {tabs.map((t) => (
+          <NavLink key={t.slug} end to={`${base}/agent/builder/${agentId}/${t.slug}`} className={linkClass}>
+            <t.icon weight="duotone" className="h-4 w-4 shrink-0" />
+            <span className="truncate">{t.label}</span>
+          </NavLink>
+        ))}
+      </nav>
+    </aside>
+  );
+}
 
 function AgentWorkforceSidebar({ base }: { base: string }) {
-  const { projectId } = useCurrentContext();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { data: internalAgents, isLoading: loadingInternal } = useQuery({
-    queryKey: ["sidebar_agents", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await (await import("@/lib/supabase")).supabase
-        .from("internal_agents").select("id, name, description, avatar_emoji, avatar_url, accent_color")
-        .eq("project_id", projectId!).eq("is_archived", false).order("created_at", { ascending: false });
-      return (data ?? []) as HiredAgent[];
-    },
-    refetchInterval: 10000,
-  });
-
-  const { data: publicAgents, isLoading: loadingPublic } = useQuery({
-    queryKey: ["sidebar_public_agents", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await (await import("@/lib/supabase")).supabase
-        .from("rag_agents").select("id, name, accent_color, enabled")
-        .eq("project_id", projectId!).order("created_at", { ascending: false });
-      return (data ?? []) as PublicAgent[];
-    },
-    refetchInterval: 10000,
-  });
-
   const segs = location.pathname.split("/").filter(Boolean);
-  const currentInternalId = (() => {
-    const idx = segs.indexOf("internal");
-    return idx >= 0 ? segs[idx + 1] : undefined;
-  })();
-  const currentPublicId = (() => {
-    const idx = segs.indexOf("builder");
-    return idx >= 0 ? segs[idx + 1] : undefined;
-  })();
   const agentSeg = (() => {
     const idx = segs.indexOf("agent");
     return idx >= 0 ? segs[idx + 1] : undefined;
@@ -375,6 +362,8 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
   const onSkills = agentSeg === "skills";
   const onMcp = agentSeg === "mcp";
 
+  // The per-agent lists were removed — agents live in their service dashboards
+  // now, and this module is a by-service overview (agent/internal-agents).
   return (
     <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
@@ -387,35 +376,12 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
         <button
           onClick={() => navigate(`${base}/agent/internal-agents`)}
           className={cn(
-            "mb-1 flex w-full items-center gap-2 rounded-2xl bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800",
-            onInternalList && "ring-1 ring-white/20",
+            "mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
+            onInternalList ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
           )}
         >
-          <Plus className="h-3.5 w-3.5" /> Recruter un agent
+          <UsersThreeIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Tous les agents
         </button>
-        {loadingInternal && <SidebarSpinner />}
-        {(internalAgents ?? []).map((a) => {
-          const isActive = a.id === currentInternalId;
-          return (
-            <button
-              key={a.id}
-              onClick={() => navigate(`${base}/agent/internal/${a.id}/chat`)}
-              className={cn(
-                "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                isActive
-                  ? "bg-sidebar-accent font-medium text-foreground"
-                  : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-              )}
-            >
-              <AgentAvatar url={a.avatar_url} seed={a.name}
-                className="h-6 w-6 shrink-0 overflow-hidden rounded-md" />
-              <span className="min-w-0 flex-1 truncate">{a.name}</span>
-            </button>
-          );
-        })}
-        {!loadingInternal && (internalAgents ?? []).length === 0 && (
-          <p className="px-3 py-2 text-xs text-muted-foreground">Aucun agent interne.</p>
-        )}
 
         {/* ── Public agents ── */}
         <div className="mt-4 border-t border-border/60 pt-3">
@@ -424,37 +390,12 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
         <button
           onClick={() => navigate(`${base}/agent/public-agents`)}
           className={cn(
-            "mb-1 flex w-full items-center gap-2 rounded-2xl bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200",
-            onPublicList && "ring-1 ring-black/10",
+            "mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
+            onPublicList ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
           )}
         >
-          <Plus className="h-3.5 w-3.5" /> Nouvel agent
+          <GlobeIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Agents publics
         </button>
-        {loadingPublic && <SidebarSpinner />}
-        {(publicAgents ?? []).map((a) => {
-          const isActive = a.id === currentPublicId;
-          const accent = a.accent_color || "#001BB7";
-          return (
-            <button
-              key={a.id}
-              onClick={() => navigate(`${base}/agent/builder/${a.id}/playground`)}
-              className={cn(
-                "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                isActive
-                  ? "bg-sidebar-accent font-medium text-foreground"
-                  : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-              )}
-            >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md" style={{ background: `${accent}26` }}>
-                <span className="h-2 w-2 rounded-full" style={{ background: accent }} />
-              </span>
-              <span className="min-w-0 flex-1 truncate">{a.name}</span>
-            </button>
-          );
-        })}
-        {!loadingPublic && (publicAgents ?? []).length === 0 && (
-          <p className="px-3 py-2 text-xs text-muted-foreground">Aucun agent public.</p>
-        )}
 
         {/* ── Knowledge base ── */}
         <div className="mt-4 border-t border-border/60 pt-3">

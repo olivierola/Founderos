@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Plus, Loader2, MoreVertical, Trash2, ChevronRight, MessageSquare, Globe } from "lucide-react";
+import { Bot, Plus, Loader2, MoreVertical, Trash2, ChevronRight, MessageSquare, Globe, Database } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { PUBLIC_AGENT_PRESETS, type PublicAgentPreset } from "./publicAgentPresets";
+import { AgentCard as AgentCardShell, CHIP_COLORS, type AgentChip } from "@/features/internal-agents/AgentCard";
 
 interface Agent {
   id: string;
@@ -137,68 +138,54 @@ export function RagAgentsPage() {
           action={<Button onClick={openCreate}><Plus className="h-4 w-4" /> Nouvel agent</Button>}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-[30px] sm:grid-cols-2 lg:grid-cols-3">
           {agents.map((a) => {
             const color = a.accent_color || "#001BB7";
+            const chips: AgentChip[] = [
+              { icon: Bot, label: a.enabled ? "Live" : "Disabled", color: a.enabled ? color : CHIP_COLORS.alert },
+              { icon: Database, label: `${counts?.[a.id]?.sources ?? 0} sources`, color: CHIP_COLORS.sources },
+            ];
             return (
-              <Card
+              <AgentCardShell
                 key={a.id}
-                className="group relative cursor-pointer overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ borderColor: undefined }}
                 onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/builder/${a.id}/playground`)}
-              >
-                {/* Accent strip */}
-                <div className="absolute inset-x-0 top-0 h-1 transition-all duration-200 group-hover:h-1.5" style={{ background: color }} />
-                <CardContent className="relative p-5">
-                  <div className="flex items-start justify-between">
-                    <div
-                      className="flex h-11 w-11 items-center justify-center rounded-md transition-transform duration-200 group-hover:scale-105"
-                      style={{ background: `${color}26` }}
-                    >
-                      <Bot className="h-5 w-5" style={{ color }} />
-                    </div>
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem destructive onClick={() => remove(a.id)}>
-                            <Trash2 className="h-4 w-4" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-semibold">{a.name}</span>
-                      {!a.enabled && <Badge variant="secondary">disabled</Badge>}
-                    </div>
-                    {a.description && <div className="truncate text-xs text-muted-foreground">{a.description}</div>}
-                  </div>
-                  <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="flex items-center gap-2">
-                      {counts?.[a.id]?.sources ?? 0} sources
-                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {counts?.[a.id]?.convos ?? 0}</span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-                  </div>
-
-                  {/* Hover-reveal extra info */}
-                  <div className="grid grid-rows-[0fr] overflow-hidden transition-all duration-300 group-hover:grid-rows-[1fr] group-hover:pt-3">
-                    <div className="min-h-0">
-                      <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-                        <Badge variant="outline" style={{ borderColor: `${color}66`, color }}>{a.enabled ? "Live" : "Disabled"}</Badge>
-                        <span>Created {new Date(a.created_at).toLocaleDateString()}</span>
-                        <span className="ml-auto font-medium text-foreground">Open →</span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                identity={
+                  <span
+                    className="flex h-14 w-14 items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-105"
+                    style={{ background: `${color}26` }}
+                  >
+                    <Bot className="h-7 w-7" style={{ color }} />
+                  </span>
+                }
+                name={a.name}
+                description={a.description}
+                chips={chips}
+                actions={
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          title="Actions"
+                          className="flex h-6 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                        >
+                          <MoreVertical className="h-3.5 w-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem destructive onClick={() => remove(a.id)}>
+                          <Trash2 className="h-4 w-4" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </span>
+                }
+                meta={
+                  <span className="inline-flex items-center gap-1">
+                    <MessageSquare className="h-3 w-3" /> {counts?.[a.id]?.convos ?? 0}
+                  </span>
+                }
+              />
             );
           })}
         </div>

@@ -328,7 +328,7 @@ function Bubble({
               ul: ({ children }) => <ul className="my-2 list-none space-y-1.5 pl-0">{children}</ul>,
             }}
           >
-            {m.content}
+            {(m.content ?? "").replace(/\[\[ui:\d+\]\]/g, "")}
           </ReactMarkdown>
         </div>
         {artifacts.length > 0 && <MessageArtifacts artifacts={artifacts} onOpenDocument={onOpenDoc} />}

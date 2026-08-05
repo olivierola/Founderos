@@ -20,7 +20,7 @@ async function gh<T>(token: string, path: string): Promise<T> {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "FounderOS-Scanner",
+      "User-Agent": "AchiCorp-Scanner",
     },
   });
   if (!res.ok) {
@@ -43,7 +43,7 @@ async function ghWrite<T>(
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "FounderOS-Agent",
+      "User-Agent": "AchiCorp-Agent",
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -373,7 +373,7 @@ export async function applyChanges(
     head,
     base,
     opts.prTitle || opts.commitMessage,
-    opts.prBody || "Automated changes proposed by the FounderOS agent.",
+    opts.prBody || "Automated changes proposed by the AchiCorp agent.",
   );
   return { mode: "pull_request", branch: head, commit_sha: commitSha, pull_request: pr };
 }

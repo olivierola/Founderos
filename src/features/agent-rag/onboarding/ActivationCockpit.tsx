@@ -41,7 +41,7 @@ function fmtDuration(ms: number): string {
   return `${(h / 24).toFixed(1)} j`;
 }
 
-export function ActivationCockpitPage() {
+export function ActivationCockpitPage({ agentId }: { agentId?: string } = {}) {
   const { projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -58,8 +58,8 @@ export function ActivationCockpitPage() {
       else if (res.decided) toast.success(`Variant ${res.winner_label} gagne (+${((res.uplift ?? 0) * 100).toFixed(0)} pts)`);
       else if (res.reason === "insufficient_sample") toast.info("Pas encore assez de runs pour décider (min 30/variant).");
       else if (res.reason === "not_significant") toast.info("Écart pas encore significatif (z < 1.96).");
-      await queryClient.invalidateQueries({ queryKey: ["onb_cockpit_exp", projectId, goalId] });
-      await queryClient.invalidateQueries({ queryKey: ["onb_cockpit_runs", projectId, goalId] });
+      await queryClient.invalidateQueries({ queryKey: ["onb_cockpit_exp", projectId] });
+      await queryClient.invalidateQueries({ queryKey: ["onb_cockpit_runs", projectId] });
     } catch (e) {
       toast.error("Échec : " + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -68,23 +68,26 @@ export function ActivationCockpitPage() {
   }
 
   const { data: goals } = useQuery({
-    queryKey: ["onb_cockpit_goals", projectId],
+    queryKey: ["onb_cockpit_goals", projectId, agentId],
     enabled: !!projectId,
     queryFn: async () => {
-      const { data } = await supabase.from("onboarding_goals")
+      let q = supabase.from("onboarding_goals")
         .select("id, name, activation_event, holdout_pct")
         .eq("project_id", projectId!).order("created_at", { ascending: false });
+      if (agentId) q = q.eq("agent_id", agentId);
+      const { data } = await q;
       return (data ?? []) as GoalOpt[];
     },
   });
 
   const { data: runs } = useQuery({
-    queryKey: ["onb_cockpit_runs", projectId, goalId],
+    queryKey: ["onb_cockpit_runs", projectId, agentId, goalId],
     enabled: !!projectId,
     queryFn: async () => {
       let q = supabase.from("rag_onboarding_runs")
         .select("id, goal_id, status, current_step_position, is_holdout, started_at, activated_at, experiment_id, variant_label")
         .eq("project_id", projectId!).not("goal_id", "is", null).limit(5000);
+      if (agentId) q = q.eq("agent_id", agentId);
       if (goalId !== "all") q = q.eq("goal_id", goalId);
       const { data } = await q;
       return (data ?? []) as RunRow[];
@@ -92,7 +95,7 @@ export function ActivationCockpitPage() {
   });
 
   const { data: experiments } = useQuery({
-    queryKey: ["onb_cockpit_exp", projectId, goalId],
+    queryKey: ["onb_cockpit_exp", projectId, agentId, goalId],
     enabled: !!projectId,
     queryFn: async () => {
       let q = supabase.from("onboarding_experiments")
@@ -148,6 +151,15 @@ export function ActivationCockpitPage() {
     }
     return byExp;
   }, [runs]);
+
+  // When scoped to a single agent, only show that agent's experiments (the
+  // agent-scoped `goals` list is the source of truth for which goals are ours).
+  const shownExperiments = useMemo(() => {
+    const all = experiments ?? [];
+    if (!agentId) return all;
+    const ours = new Set((goals ?? []).map((g) => g.id));
+    return all.filter((e) => ours.has(e.goal_id));
+  }, [experiments, goals, agentId]);
 
   if (!projectId) return <PageHeader title="Activation" />;
 
@@ -216,12 +228,12 @@ export function ActivationCockpitPage() {
           </Card>
 
           {/* Experiments */}
-          {(experiments ?? []).length > 0 && (
+          {shownExperiments.length > 0 && (
             <Card>
               <CardContent className="p-5">
                 <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><FlaskConical className="h-4 w-4" /> Expériences A/B</h2>
                 <ul className="divide-y divide-border text-sm">
-                  {(experiments ?? []).map((e) => {
+                  {shownExperiments.map((e) => {
                     const cells = variantRates.get(e.id);
                     const variants = cells
                       ? [...cells.entries()]

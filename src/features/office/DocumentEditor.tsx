@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  Loader2, ArrowLeft, Check, Sparkles, Download, FileText, FileDown, FileJson,
+  Loader2, ArrowLeft, Check, Sparkles, FileText, FileDown, FileJson, MoreHorizontal,
 } from "lucide-react";
+import { Toolbar, ToolbarSeparator } from "@/components/ui/toolbar";
+import { UndoToolbarButton, RedoToolbarButton } from "@/components/ui/history-toolbar-button";
+import { InsertToolbarButton } from "@/components/ui/insert-toolbar-button";
+import { TurnIntoToolbarButton } from "@/components/ui/turn-into-toolbar-button";
+import { TableToolbarButton } from "@/components/ui/table-toolbar-button";
 import {
   Document as DocxDocument, Packer, Paragraph, HeadingLevel, TextRun,
 } from "docx";
@@ -12,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { cn } from "@/lib/utils";
 import { useOfficeDoc } from "./useOfficeDoc";
 import { OfficePlateEditor } from "./OfficePlateEditor";
 import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
@@ -20,8 +26,9 @@ import {
   downloadBlob, sanitizeFilename,
 } from "./shared";
 
-export function DocumentEditorPage() {
-  const { docId } = useParams();
+export function DocumentEditorPage({ docId: docIdProp, onBack, embedded }: { docId?: string; onBack?: () => void; embedded?: boolean } = {}) {
+  const params = useParams();
+  const docId = docIdProp ?? params.docId;
   const navigate = useNavigate();
   const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
@@ -81,7 +88,7 @@ export function DocumentEditorPage() {
   }
   async function exportDocx() {
     const d = new DocxDocument({
-      creator: "FounderOS", title,
+      creator: "AchiCorp", title,
       sections: [{ properties: {}, children: docxParagraphs(nodesRef.current) }],
     });
     downloadBlob(sanitizeFilename(title) + ".docx", await Packer.toBlob(d));
@@ -110,42 +117,64 @@ export function DocumentEditorPage() {
     } finally { stage.remove(); }
   }
 
-  return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border px-4 pt-4 pb-3 sm:px-6">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4" />
+  const { workspaceSlug, projectSlug } = useParams();
+  function handleBack() {
+    if (onBack) onBack();
+    else if (window.history.length > 1) navigate(-1);
+    else if (workspaceSlug && projectSlug) navigate(`/app/${workspaceSlug}/${projectSlug}/artifacts`);
+    else navigate(-1);
+  }
+
+  // Clean header rendered INSIDE the Plate tree so its undo/redo + insert
+  // (table/blocks) buttons drive the editor. Formatting stays in the floating
+  // toolbar; this bar is for structure + doc actions.
+  const header = () => (
+    <div className="relative z-30 flex flex-wrap items-center gap-2 border-b border-border bg-background px-3 py-2 sm:px-4">
+      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 relative z-10" onClick={handleBack} title="Retour">
+        <ArrowLeft className="h-4 w-4" />
+      </Button>
+      <span className="shrink-0 text-base">{doc.emoji ?? "📝"}</span>
+      <input
+        value={title}
+        onChange={(e) => onTitleChange(e.target.value)}
+        className="min-w-0 flex-1 bg-transparent text-sm font-semibold focus:outline-none"
+        placeholder="Untitled document"
+      />
+      <Toolbar className="flex items-center gap-0.5 border-l border-border pl-2">
+        <UndoToolbarButton />
+        <RedoToolbarButton />
+        <ToolbarSeparator />
+        <TableToolbarButton />
+        <InsertToolbarButton />
+        <TurnIntoToolbarButton />
+      </Toolbar>
+      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground ml-auto">
+        {saving ? <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>
+          : savedAt ? <><Check className="h-3 w-3" /> Saved</> : null}
+      </span>
+      <div className="flex items-center gap-1 shrink-0 relative z-10">
+        <Button type="button" size="sm" variant={aiOpen ? "default" : "outline"} className="h-8 shrink-0 gap-1" onClick={() => setAiOpen((v) => !v)}>
+          <Sparkles className="h-3.5 w-3.5" /> AI
         </Button>
-        <span className="text-lg">{doc.emoji ?? "📝"}</span>
-        <input
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-lg font-semibold focus:outline-none"
-          placeholder="Untitled document"
-        />
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          {saving ? <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>
-            : savedAt ? <><Check className="h-3 w-3" /> Saved</> : null}
-        </span>
-        <div className="relative">
-          <Button variant="outline" size="sm" onClick={() => setExportOpen((v) => !v)}>
-            <Download className="h-3.5 w-3.5" /> Export
+        <div className="relative shrink-0">
+          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setExportOpen((v) => !v)} title="Plus (export…)">
+            <MoreHorizontal className="h-4 w-4" />
           </Button>
           {exportOpen && (
-            <div className="absolute right-0 top-9 z-20 min-w-[160px] overflow-hidden rounded-md border border-border bg-popover shadow-xl" onMouseLeave={() => setExportOpen(false)}>
+            <div className="absolute right-0 top-9 z-50 min-w-[160px] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-xl" onMouseLeave={() => setExportOpen(false)}>
               <MenuItem icon={FileText} label="Markdown (.md)" onClick={() => { exportMarkdown(); setExportOpen(false); }} />
               <MenuItem icon={FileDown} label="PDF (.pdf)" onClick={() => { exportPdf(); setExportOpen(false); }} />
               <MenuItem icon={FileJson} label="Word (.docx)" onClick={() => { exportDocx(); setExportOpen(false); }} />
             </div>
           )}
         </div>
-        <Button size="sm" variant={aiOpen ? "default" : "outline"} onClick={() => setAiOpen((v) => !v)}>
-          <Sparkles className="h-3.5 w-3.5" /> AI
-        </Button>
       </div>
+    </div>
+  );
 
-      {/* Body: full Plate editor + AI panel */}
+  return (
+    <div className={cn("flex flex-col", embedded ? "h-full" : "h-[calc(100vh-3.5rem)]")}>
+      {/* Body: full Plate editor (with in-tree header) + AI panel */}
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           <OfficePlateEditor
@@ -155,6 +184,7 @@ export function DocumentEditorPage() {
             placeholder="Type / for commands, or start writing…"
             workspaceId={workspaceId}
             projectId={projectId}
+            renderHeader={header}
           />
         </div>
 

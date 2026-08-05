@@ -67,6 +67,10 @@ export function RunTimeline({
   const qc = useQueryClient();
   const [open, setOpen] = useState<boolean | null>(defaultOpen ?? null);
   const [now, setNow] = useState(() => Date.now());
+  // Unique per mount: the same runId may be shown by several messages (a run
+  // posts multiple assistant messages), and Supabase throws if two channels
+  // share a topic — so each instance gets its own channel name.
+  const chanId = useRef(Math.random().toString(36).slice(2)).current;
 
   const { data: run } = useQuery({
     queryKey: ["run_row", runId],
@@ -103,7 +107,7 @@ export function RunTimeline({
   useEffect(() => {
     if (!isActive) return;
     const ch = supabase
-      .channel(`run-${runId}`)
+      .channel(`run-${runId}-${chanId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "internal_agent_run_events", filter: `run_id=eq.${runId}` }, () => {
         qc.invalidateQueries({ queryKey: ["run_events", runId] });
       })
@@ -165,6 +169,35 @@ export function RunTimeline({
   }, [events]);
 
   const todos: RunTodo[] = Array.isArray(run?.todos) ? (run!.todos as RunTodo[]) : [];
+  // Depth-first ordering of the (possibly nested) checklist; items with a
+  // dangling/cyclic parent fall back to top level so nothing disappears.
+  const orderedTodos = useMemo(() => {
+    const ids = new Set(todos.map((t) => t.id));
+    const byParent = new Map<string | undefined, RunTodo[]>();
+    for (const t of todos) {
+      const p = t.parent_id && ids.has(t.parent_id) && t.parent_id !== t.id ? t.parent_id : undefined;
+      const arr = byParent.get(p) ?? [];
+      arr.push(t);
+      byParent.set(p, arr);
+    }
+    const out: Array<{ t: RunTodo; depth: number }> = [];
+    const seen = new Set<string>();
+    const walk = (p: string | undefined, depth: number) => {
+      for (const t of byParent.get(p) ?? []) {
+        if (seen.has(t.id)) continue;
+        seen.add(t.id);
+        out.push({ t, depth });
+        if (depth < 3) walk(t.id, depth + 1);
+      }
+    };
+    walk(undefined, 0);
+    for (const t of todos) if (!seen.has(t.id)) out.push({ t, depth: 0 });
+    return out;
+  }, [todos]);
+  const leafTodos = useMemo(() => {
+    const parentIds = new Set(todos.filter((t) => t.parent_id).map((t) => t.parent_id));
+    return todos.filter((t) => !parentIds.has(t.id));
+  }, [todos]);
   const elapsedMs = run?.started_at
     ? (run.finished_at ? new Date(run.finished_at).getTime() : now) - new Date(run.started_at).getTime()
     : 0;
@@ -179,7 +212,7 @@ export function RunTimeline({
     }
   })();
 
-  const doneCount = todos.filter((t) => t.status === "done").length;
+  const doneCount = leafTodos.filter((t) => t.status === "done").length;
 
   return (
     <div className={cn("overflow-hidden rounded-xl border bg-card text-sm", isActive ? "border-blue-500/30" : "border-border")}>
@@ -188,7 +221,7 @@ export function RunTimeline({
         {header.icon}
         <span className="font-semibold">{header.label}</span>
         {elapsedMs > 0 && <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{fmtElapsed(elapsedMs)}</span>}
-        {todos.length > 0 && <span className="text-[11px] text-muted-foreground">· {doneCount}/{todos.length} étapes</span>}
+        {leafTodos.length > 0 && <span className="text-[11px] text-muted-foreground">· {doneCount}/{leafTodos.length} étapes</span>}
         {(run?.action_count ?? 0) > 0 && <span className="text-[11px] text-muted-foreground">· {run!.action_count} actions</span>}
         {(run?.cost_usd ?? 0) > 0 && <span className="text-[11px] font-mono text-muted-foreground">· ${Number(run!.cost_usd).toFixed(4)}</span>}
         <span className="ml-auto text-muted-foreground">{isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span>
@@ -211,8 +244,8 @@ export function RunTimeline({
           {/* Todo checklist */}
           {todos.length > 0 && (
             <div className="space-y-1 border-b border-border/60 px-3.5 py-2.5">
-              {todos.map((t) => (
-                <div key={t.id} className="flex items-start gap-2">
+              {orderedTodos.map(({ t, depth }) => (
+                <div key={t.id} className="flex items-start gap-2" style={depth > 0 ? { marginLeft: depth * 18 } : undefined}>
                   {t.status === "done" ? <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
                     : t.status === "active" ? <Play className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500", isActive && "animate-pulse")} />
                     : t.status === "blocked" ? <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />

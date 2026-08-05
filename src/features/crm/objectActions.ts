@@ -41,34 +41,17 @@ export const OBJECT_ACTIONS: Record<string, ObjectAction[]> = {
     { id: "open", label: "Open simulation", icon: "FlaskConical", kind: "navigate",
       path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/simulations/workspace` },
   ],
-  discussions: [
-    { id: "open", label: "Open channel", icon: "MessageSquare", kind: "navigate",
-      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/inbox?channel=${r.source_id}` },
-  ],
-  projects: [
-    { id: "open", label: "Open in board", icon: "FolderKanban", kind: "navigate",
-      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/boards` },
-  ],
-  tasks_pm: [
-    { id: "open", label: "Open board", icon: "CheckSquare", kind: "navigate",
-      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/boards` },
-  ],
   whiteboards: [
     { id: "open", label: "Open whiteboard", icon: "PenSquare", kind: "navigate",
-      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/pm/whiteboard?board=${r.source_id}` },
+      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/office/whiteboard?board=${r.source_id}` },
   ],
-  tickets: [
-    { id: "open", label: "Open in Support", icon: "LifeBuoy", kind: "navigate",
-      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/support/tickets` },
+  deliverables: [
+    { id: "open_agent", label: "Open producing agent", icon: "Bot", kind: "navigate",
+      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/agent/internal-agents` },
   ],
-  invoices: [
-    { id: "open", label: "Open in Finance", icon: "Receipt", kind: "navigate",
-      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/finance-mod/invoices` },
-  ],
-  inventory: [
-    { id: "open", label: "Open inventory", icon: "Package", kind: "navigate",
-      path: (_r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/supply/inventory` },
-  ],
+  // discussions / projects / tasks_pm / tickets / invoices / inventory: their
+  // dedicated modules (pm, support, finance-mod, supply) were deleted — these
+  // objects live entirely as CRM records now (RecordContent renders them).
 };
 
 export function actionsForSlug(slug: string): ObjectAction[] {

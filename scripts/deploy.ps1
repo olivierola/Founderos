@@ -1,4 +1,4 @@
-# FounderOS — Supabase deploy script
+# AchiCorp — Supabase deploy script
 # Usage:
 #   $env:SUPABASE_ACCESS_TOKEN = "sbp_xxx"
 #   $env:SUPABASE_DB_PASSWORD  = "your-db-password"

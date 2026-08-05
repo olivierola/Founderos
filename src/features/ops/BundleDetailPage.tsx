@@ -15,7 +15,8 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { ArchitectureView, type Topology } from "./ArchitectureView";
 import { useOpsUrl } from "./hooks";
-import type { OpsGeneratedFile, OpsServer, OpsFileType } from "./types";
+import { RUNNER_IMPLEMENTED_JOB_TYPES, JOB_TYPE_LABEL } from "./types";
+import type { OpsGeneratedFile, OpsServer, OpsFileType, OpsJobType } from "./types";
 
 const FILE_TYPE_LABEL: Record<OpsFileType, string> = {
   dockerfile: "Dockerfile",
@@ -134,11 +135,17 @@ export function OpsBundleDetailPage() {
       const hasAnsible = files!.some((f) => f.file_type === "ansible_playbook");
       const hasTf = files!.some((f) => f.file_type === "terraform");
       const hasK8s = files!.some((f) => f.file_type === "kubernetes_manifest");
-      let jobType = "ssh_exec";
+      let jobType: OpsJobType = "ssh_exec";
       if (hasK8s) jobType = "k8s_apply";
       else if (hasTf) jobType = "terraform_apply";
       else if (hasAnsible) jobType = "ansible_apply";
       else if (hasCompose) jobType = "docker_compose_up";
+
+      // Don't enqueue a job the runner can't execute — it would fail on pickup.
+      if (!RUNNER_IMPLEMENTED_JOB_TYPES.has(jobType)) {
+        alert(`Le runner v1 ne sait pas encore exécuter « ${JOB_TYPE_LABEL[jobType] ?? jobType} ». Appliquez ce bundle manuellement (les fichiers sont téléchargeables), ou utilisez un bundle script/SSH.`);
+        return;
+      }
 
       await callEdge("ops-create-job", {
         server_id: serverId,

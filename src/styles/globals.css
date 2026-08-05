@@ -44,7 +44,9 @@
        Aqua  #AFE9F0 → 187 68% 81%  (soft light — info surfaces / badges)
        Coral #F86134 → 14 93% 59%   (warm pop — primary CTA, focus, active)
        Teal  #378F98 → 186 47% 41%  (cool anchor — secondary accent, links)
-       Two cyans + a complementary coral = one cohesive teal/coral identity. */
+       Two cyans + a complementary coral = one cohesive teal/coral identity.
+       The marketing site keeps its own sky accent — app and landing page do
+       NOT share a hue. */
     --accent-coral: 14 93% 59%;
     --accent-coral-foreground: 20 40% 98%;
     --accent-teal: 186 47% 41%;
@@ -89,6 +91,12 @@
     --sidebar: 30 3% 11%;              /* #1e1d1c — odin-dark-200 */
     --sidebar-foreground: 30 3% 65%;
     --sidebar-accent: 30 2% 16%;       /* #2a2928 — odin-dark-400 (active item) */
+
+    /* Service-dashboard shell: three planes that get LIGHTER left to right —
+       the ground under the icon rail (darkest), the contextual panel, then the
+       content (--background, lightest). Every skin keeps that ordering. */
+    --sd-ground: 30 6% 5%;
+    --sd-panel: 30 4% 7%;
 
     --radius: 0.3rem;                  /* tighter corners, sharper/sober */
   }
@@ -144,6 +152,9 @@
     --sidebar: 40 33% 97%;             /* warm cream, lifts off content */
     --sidebar-foreground: 240 5% 45%;
     --sidebar-accent: 40 18% 92%;      /* warm light-grey active/hover pill */
+
+    --sd-ground: 40 24% 92%;
+    --sd-panel: 40 30% 96%;
   }
 
   * {
@@ -181,6 +192,19 @@
 .text-primary\/50 { color: hsl(var(--primary-soft) / 0.75) !important; }
 .text-primary\/40 { color: hsl(var(--primary-soft) / 0.65) !important; }
 
+/* Capability chip on an agent card — a tint of its own colour, set inline as
+   `--chip`. Light mode darkens the label so 11px text stays legible on the
+   pale tint instead of washing out. */
+.agent-chip {
+  background-color: color-mix(in srgb, var(--chip) 15%, transparent);
+  color: var(--chip);
+}
+:root[data-theme="light"] .agent-chip,
+.light .agent-chip {
+  background-color: color-mix(in srgb, var(--chip) 13%, transparent);
+  color: color-mix(in srgb, var(--chip) 70%, #000);
+}
+
 /* Accent-2 utility classes (soft sage green) — usable as bg/text/border. */
 .bg-accent-2 { background-color: hsl(var(--accent-2)); }
 .bg-accent-2\/20 { background-color: hsl(var(--accent-2) / 0.2); }
@@ -205,6 +229,290 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
   color-scheme: dark;
   /* Roboto is the dashboard face only — keep the marketing site on its own stack. */
   font-family: 'Elms Sans', 'Vend Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ── Service-dashboard skins ──────────────────────────────────────────────────
+   A service dashboard can wear its own theme (Settings → Général, or the
+   account menu in its rail). The element carrying `data-sd-theme` also carries
+   the base `.light`/`.dark` class, so these blocks only need to restate what
+   makes the skin different — everything else inherits from the base block.
+   Scoped to the subtree, so the rest of the app keeps the app theme. */
+[data-sd-theme="purple"] {
+  --background: 260 30% 10%;
+  --foreground: 265 25% 95%;
+  --card: 260 26% 13%;
+  --card-foreground: 265 25% 95%;
+  --popover: 260 28% 12%;
+  --popover-foreground: 265 25% 95%;
+  --sidebar: 262 34% 8%;
+  --sidebar-foreground: 265 15% 78%;
+  --sidebar-accent: 260 26% 21%;
+  --sd-ground: 264 42% 5%;
+  --sd-panel: 261 32% 7.5%;
+  --secondary: 260 24% 17%;
+  --muted: 260 22% 18%;
+  --muted-foreground: 260 14% 66%;
+  --accent: 260 26% 21%;
+  --border: 260 20% 22%;
+  --input: 260 20% 22%;
+  --primary: 263 72% 62%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 263 90% 78%;
+  --accent-coral: 263 72% 62%;
+}
+
+[data-sd-theme="burnt-orange"] {
+  --background: 20 26% 9%;
+  --foreground: 30 20% 95%;
+  --card: 20 22% 12%;
+  --card-foreground: 30 20% 95%;
+  --popover: 20 24% 11%;
+  --popover-foreground: 30 20% 95%;
+  --sidebar: 20 28% 7%;
+  --sidebar-foreground: 28 14% 76%;
+  --sidebar-accent: 20 22% 19%;
+  --sd-ground: 20 36% 4%;
+  --sd-panel: 20 28% 6.5%;
+  --secondary: 20 20% 16%;
+  --muted: 20 20% 17%;
+  --muted-foreground: 25 13% 64%;
+  --accent: 20 22% 19%;
+  --border: 20 18% 21%;
+  --input: 20 18% 21%;
+  --primary: 18 84% 52%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 20 90% 68%;
+  --accent-coral: 18 84% 52%;
+}
+
+[data-sd-theme="sand"] {
+  --background: 42 38% 96%;
+  --foreground: 30 16% 18%;
+  --card: 40 45% 99%;
+  --card-foreground: 30 16% 18%;
+  --popover: 40 45% 99%;
+  --popover-foreground: 30 16% 18%;
+  --sidebar: 40 30% 92%;
+  --sidebar-foreground: 30 12% 34%;
+  --sidebar-accent: 38 26% 86%;
+  --sd-ground: 38 28% 88%;
+  --sd-panel: 41 32% 92.5%;
+  --secondary: 40 26% 90%;
+  --muted: 40 26% 90%;
+  --muted-foreground: 33 10% 44%;
+  --accent: 38 26% 86%;
+  --border: 38 22% 84%;
+  --input: 38 22% 84%;
+  --primary: 24 62% 42%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 24 58% 38%;
+  --accent-coral: 24 62% 42%;
+}
+
+/* Deep navy — cool, high-contrast night skin. */
+[data-sd-theme="midnight"] {
+  --background: 222 40% 10%;
+  --foreground: 213 30% 95%;
+  --card: 222 34% 13%;
+  --card-foreground: 213 30% 95%;
+  --popover: 222 36% 12%;
+  --popover-foreground: 213 30% 95%;
+  --sidebar: 223 44% 8%;
+  --sidebar-foreground: 215 18% 76%;
+  --sidebar-accent: 222 30% 21%;
+  --sd-ground: 224 52% 5%;
+  --sd-panel: 223 38% 7.5%;
+  --secondary: 222 30% 17%;
+  --muted: 222 28% 18%;
+  --muted-foreground: 216 15% 66%;
+  --accent: 222 30% 21%;
+  --border: 222 26% 22%;
+  --input: 222 26% 22%;
+  --primary: 213 88% 56%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 211 95% 74%;
+  --accent-coral: 213 88% 56%;
+}
+
+/* Deep evergreen — calm, low-glare. */
+[data-sd-theme="forest"] {
+  --background: 158 24% 9%;
+  --foreground: 150 18% 94%;
+  --card: 158 20% 12%;
+  --card-foreground: 150 18% 94%;
+  --popover: 158 22% 11%;
+  --popover-foreground: 150 18% 94%;
+  --sidebar: 160 28% 7%;
+  --sidebar-foreground: 152 12% 74%;
+  --sidebar-accent: 158 18% 19%;
+  --sd-ground: 162 36% 4%;
+  --sd-panel: 159 24% 6.5%;
+  --secondary: 158 17% 16%;
+  --muted: 158 17% 17%;
+  --muted-foreground: 152 10% 63%;
+  --accent: 158 18% 19%;
+  --border: 158 15% 21%;
+  --input: 158 15% 21%;
+  --primary: 158 64% 42%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 156 62% 60%;
+  --accent-coral: 158 64% 42%;
+}
+
+/* Warm brown — coffee-toned dark. */
+[data-sd-theme="mocha"] {
+  --background: 25 16% 10%;
+  --foreground: 30 18% 94%;
+  --card: 25 14% 13%;
+  --card-foreground: 30 18% 94%;
+  --popover: 25 15% 12%;
+  --popover-foreground: 30 18% 94%;
+  --sidebar: 25 20% 8%;
+  --sidebar-foreground: 28 10% 74%;
+  --sidebar-accent: 25 13% 20%;
+  --sd-ground: 25 26% 5%;
+  --sd-panel: 25 17% 7.5%;
+  --secondary: 25 12% 17%;
+  --muted: 25 12% 18%;
+  --muted-foreground: 28 9% 64%;
+  --accent: 25 13% 20%;
+  --border: 25 11% 22%;
+  --input: 25 11% 22%;
+  --primary: 32 58% 50%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 34 70% 66%;
+  --accent-coral: 32 58% 50%;
+}
+
+/* Cool light grey — the neutral daylight skin. */
+[data-sd-theme="mist"] {
+  --background: 210 30% 98%;
+  --foreground: 215 22% 20%;
+  --card: 0 0% 100%;
+  --card-foreground: 215 22% 20%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 215 22% 20%;
+  --sidebar: 210 24% 94%;
+  --sidebar-foreground: 215 12% 40%;
+  --sidebar-accent: 211 22% 88%;
+  --sd-ground: 212 22% 90%;
+  --sd-panel: 211 24% 94%;
+  --secondary: 210 22% 93%;
+  --muted: 210 22% 93%;
+  --muted-foreground: 215 12% 45%;
+  --accent: 211 22% 88%;
+  --border: 212 18% 87%;
+  --input: 212 18% 87%;
+  --primary: 205 78% 40%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 205 74% 36%;
+  --accent-coral: 205 78% 40%;
+}
+
+/* Cool neutral graphite — the quietest dark skin. */
+[data-sd-theme="slate"] {
+  --background: 215 20% 11%;
+  --foreground: 214 18% 95%;
+  --card: 215 17% 14%;
+  --card-foreground: 214 18% 95%;
+  --popover: 215 18% 13%;
+  --popover-foreground: 214 18% 95%;
+  --sidebar: 216 22% 9%;
+  --sidebar-foreground: 215 10% 75%;
+  --sidebar-accent: 215 15% 21%;
+  --sd-ground: 217 26% 6%;
+  --sd-panel: 216 19% 8.5%;
+  --secondary: 215 14% 18%;
+  --muted: 215 14% 19%;
+  --muted-foreground: 215 10% 65%;
+  --accent: 215 15% 21%;
+  --border: 215 13% 23%;
+  --input: 215 13% 23%;
+  --primary: 199 74% 46%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 199 80% 66%;
+  --accent-coral: 199 74% 46%;
+}
+
+/* Deep wine — warm, low-light. */
+[data-sd-theme="crimson"] {
+  --background: 348 22% 10%;
+  --foreground: 350 16% 95%;
+  --card: 348 19% 13%;
+  --card-foreground: 350 16% 95%;
+  --popover: 348 20% 12%;
+  --popover-foreground: 350 16% 95%;
+  --sidebar: 350 26% 8%;
+  --sidebar-foreground: 350 10% 75%;
+  --sidebar-accent: 348 17% 20%;
+  --sd-ground: 350 32% 5%;
+  --sd-panel: 349 22% 7.5%;
+  --secondary: 348 15% 17%;
+  --muted: 348 15% 18%;
+  --muted-foreground: 350 9% 64%;
+  --accent: 348 17% 20%;
+  --border: 348 14% 22%;
+  --input: 348 14% 22%;
+  --primary: 346 72% 52%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 346 82% 70%;
+  --accent-coral: 346 72% 52%;
+}
+
+/* Dotted canvas — the agent-in-dashboard page only. */
+.sd-agent-canvas {
+  background-color: #fafafb;
+  background-image: radial-gradient(circle, rgba(20, 22, 31, 0.055) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+@media (prefers-color-scheme: dark) {
+  /* Dark mode: plain background, no dotted texture. */
+  .sd-agent-canvas { background-color: hsl(var(--background)); background-image: none; }
+}
+:root[data-theme="light"] .sd-agent-canvas { background-color: #fafafb; background-image: radial-gradient(circle, rgba(20, 22, 31, 0.055) 1px, transparent 1px); }
+:root[data-theme="dark"] .sd-agent-canvas { background-color: hsl(var(--background)); background-image: none; }
+
+/* ── Agent orb — living blue-plasma "presence" (see components/AgentOrb.tsx) ── */
+.agent-orb {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  border-radius: 9999px;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 34% 28%, #e7f0ff 0%, #9dbcff 22%, #5c86f6 48%, #3a5fe0 72%, #2540b8 100%);
+  box-shadow:
+    inset 0 0 6px rgba(255, 255, 255, 0.55),
+    inset -3px -4px 8px rgba(20, 40, 120, 0.5);
+}
+.agent-orb--glow {
+  box-shadow:
+    inset 0 0 6px rgba(255, 255, 255, 0.55),
+    inset -3px -4px 8px rgba(20, 40, 120, 0.5),
+    0 0 14px 1px rgba(79, 125, 252, 0.5);
+}
+.agent-orb__blob {
+  position: absolute;
+  inset: -30%;
+  border-radius: 9999px;
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+.agent-orb__blob--a {
+  background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.9), transparent 46%);
+  animation: orb-swirl 6.5s ease-in-out infinite;
+}
+.agent-orb__blob--b {
+  background: radial-gradient(circle at 58% 40%, rgba(160, 198, 255, 0.95), transparent 52%);
+  animation: orb-swirl 9.5s ease-in-out infinite reverse;
+}
+@keyframes orb-swirl {
+  0%, 100% { transform: translate(-9%, -7%) scale(1); }
+  50% { transform: translate(11%, 9%) scale(1.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-orb__blob { animation: none; }
 }
 
 @keyframes mkt-fade-up {
@@ -252,6 +560,315 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 }
 .mkt-rise { animation: mkt-rise 800ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .mkt-dash { stroke-dasharray: 4 4; animation: mkt-dash 1.6s linear infinite; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Landing page skin — near-black canvas, cyan/magenta accents, hairline
+   panels. Scoped to `.amplify` so it never leaks into the dashboard or the
+   other marketing pages (which keep the `.marketing` tokens above).
+   ────────────────────────────────────────────────────────────────────────── */
+.amplify {
+  --amp-bg: #000007;
+  --amp-panel: rgba(255, 255, 255, 0.02);
+  --amp-panel-hi: rgba(255, 255, 255, 0.045);
+  --amp-line: rgba(255, 255, 255, 0.1);
+  --amp-line-soft: rgba(255, 255, 255, 0.06);
+  --amp-muted: rgba(255, 255, 255, 0.58);
+  --amp-faint: rgba(255, 255, 255, 0.36);
+  /* Brand accent: the hero orange, with graphite as the only companion — no
+     blue, no cyan, no lime anywhere on this page. */
+  --amp-accent: #ff4d00;
+  --amp-orange: #ff4d00;
+  /* White ink on the accent, per the brand call. Note it sits at 3.3:1 on this
+     orange — fine for the large/bold uses, under AA for anything small. */
+  --amp-on-accent: #ffffff;
+  /* Warm tint for decorative marks on the dark canvas. */
+  --amp-accent-bright: #ff8a4c;
+  --amp-cyan: #ff8a4c;
+  /* Graphite — the second half of the palette. */
+  --amp-graphite: #a1a1aa;
+  background-color: var(--amp-bg);
+  color: #fff;
+  color-scheme: dark;
+  font-family: 'Geist', 'Elms Sans', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Light sections — the landing alternates a near-black canvas with white
+   bands. Re-pointing the same tokens keeps every shared component working. */
+.amp-light {
+  --amp-panel: #f5f5f5;
+  --amp-panel-hi: #efefef;
+  --amp-line: rgba(0, 0, 7, 0.1);
+  --amp-line-soft: rgba(0, 0, 7, 0.07);
+  --amp-muted: rgba(0, 0, 7, 0.62);
+  --amp-faint: rgba(0, 0, 7, 0.45);
+  background-color: #fff;
+  color: #000007;
+}
+
+/* Hairline panel used for every card / table cell on the landing page. */
+.amp-panel {
+  background-color: var(--amp-panel);
+  border: 1px solid var(--amp-line);
+}
+/* Same surface without the hairline — the light stat cards. */
+.amp-plate { background-color: var(--amp-panel); }
+
+/* White card on a light band (challenges, FAQ, comparison table). */
+.amp-card-light {
+  background: #fff;
+  border: 1px solid rgba(0, 0, 7, 0.07);
+  box-shadow: 0 1px 2px rgba(0, 0, 7, 0.04);
+}
+
+/* Candy-stripe track behind the stat bars. The stripes are solid light grey
+   (not a low-alpha white) — that opacity is what makes the track read as a
+   printed band, and the translucent bar fills let it show through. */
+.amp-candy {
+  background-color: hsl(0 0% 96% / 0.02);
+  background-image: linear-gradient(
+    135deg,
+    hsl(0 0% 96%) 25%,
+    transparent 25.5%,
+    transparent 50%,
+    hsl(0 0% 96%) 50.5%,
+    hsl(0 0% 96%) 75%,
+    transparent 75.5%,
+    transparent
+  );
+  background-size: 10px 10px;
+}
+
+/* Vertical light bands running through the hero wash. The reference divides the
+   content column into 14 bands, each ramping up to ~60% of its width then
+   falling off, with a hard seam at the boundary — hence a single-band gradient
+   tiled by background-size rather than a symmetric repeating one. The layer is
+   masked by the wash itself so the bands never show over the bare black. */
+.amp-bands {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.17) 60%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  /* Fixed tile (rather than 100%/14) so the drift can loop on an exact
+     multiple of it — a percentage background-position would not line up. */
+  background-size: 140px 100%;
+  background-repeat: repeat-x;
+  animation: amp-bands-drift 26s linear infinite;
+}
+@keyframes amp-bands-drift {
+  to { background-position-x: 140px; }
+}
+
+/* Slow breathing on a coloured wash, so the band never sits perfectly still. */
+@keyframes amp-wash-drift {
+  0%, 100% { transform: scale(1) translate3d(0, 0, 0); opacity: 0.92; }
+  50% { transform: scale(1.06) translate3d(1.5%, -1%, 0); opacity: 1; }
+}
+.amp-wash-drift { animation: amp-wash-drift 16s ease-in-out infinite; will-change: transform; }
+
+/* Card lift shared by the solution / challenge grids. */
+.amp-lift { transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1), border-color 400ms ease, background-color 400ms ease; }
+.amp-lift:hover { transform: translateY(-6px); }
+.amp-zoom img, .amp-zoom svg { transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1); }
+.amp-zoom:hover img, .amp-zoom:hover svg { transform: scale(1.06); }
+
+/* Film grain over the coloured hero band — two turbulence layers (fine +
+   coarse) so the wash reads as printed rather than as a flat CSS gradient. */
+.amp-grain::before,
+.amp-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.amp-grain::before {
+  opacity: 0.3;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+}
+.amp-grain::after {
+  opacity: 0.14;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.35' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23c)'/%3E%3C/svg%3E");
+}
+
+/* Same noise dialled up, for small saturated areas — on an 11px rail the
+   default grain is too faint to register. Used with .amp-grain. */
+.amp-grain-strong::before { opacity: 0.6; }
+.amp-grain-strong::after { opacity: 0.34; mix-blend-mode: soft-light; }
+
+/* A row/tile that lights up in sequence — the delay is set inline per index,
+   so a list reads as being worked through rather than sitting still. */
+@keyframes amp-seq {
+  0%, 10% { opacity: 0.32; }
+  20%, 44% { opacity: 1; }
+  56%, 100% { opacity: 0.32; }
+}
+.amp-seq { animation: amp-seq 5.2s ease-in-out infinite; }
+
+/* Dashes crawling along a connector. */
+@keyframes amp-crawl { to { stroke-dashoffset: -32; } }
+.amp-crawl { animation: amp-crawl 1.9s linear infinite; }
+
+/* Concentric shield: the glow sweeps inward ring by ring via a stagger. */
+@keyframes amp-ring {
+  0%, 55%, 100% { stroke-opacity: 0.38; }
+  22% { stroke-opacity: 1; }
+}
+.amp-ring { animation: amp-ring 4.8s ease-in-out infinite; }
+
+/* ── Diagram accents ────────────────────────────────────────────────────────
+   Each solution/challenge visual reads its colours from these vars, so a single
+   class on the card re-tints the whole diagram. The palette is orange + grey:
+   brand orange is the default, graphite and a warm ember break the monotony
+   across the grid without introducing a third hue. */
+.amp-viz {
+  --vz-accent: #ff4d00;
+  --vz-neon: #ff8a4c;
+  --vz-line: rgba(255, 77, 0, 0.5);
+  --vz-fill: rgba(255, 77, 0, 0.08);
+  --vz-tile: rgba(255, 77, 0, 0.16);
+  --vz-glow: rgba(255, 77, 0, 0.75);
+  --vz-ink: #2b0d00;
+}
+.amp-viz-grey {
+  --vz-accent: #a1a1aa;
+  --vz-neon: #d4d4d8;
+  --vz-line: rgba(161, 161, 170, 0.45);
+  --vz-fill: rgba(161, 161, 170, 0.07);
+  --vz-tile: rgba(161, 161, 170, 0.13);
+  --vz-glow: rgba(212, 212, 216, 0.55);
+  --vz-ink: #17171a;
+}
+.amp-viz-ember {
+  --vz-accent: #ff8a4c;
+  --vz-neon: #ffb489;
+  --vz-line: rgba(255, 138, 76, 0.45);
+  --vz-fill: rgba(255, 138, 76, 0.08);
+  --vz-tile: rgba(255, 138, 76, 0.14);
+  --vz-glow: rgba(255, 138, 76, 0.65);
+  --vz-ink: #331200;
+}
+/* ── Same three, deepened for LIGHT bands ───────────────────────────────────
+   The bright orange sits at 2.9:1 on the #f2f2f2 panels of the challenge cards
+   — under the 3:1 floor for graphics — so filled shapes and hairlines there
+   read from the deepened set instead. */
+.amp-viz-deep {
+  --vz-accent: #d63f00;
+  --vz-neon: #ff5c14;
+  --vz-line: rgba(214, 63, 0, 0.5);
+  --vz-fill: rgba(214, 63, 0, 0.08);
+  --vz-tile: rgba(214, 63, 0, 0.16);
+  --vz-glow: rgba(214, 63, 0, 0.6);
+  --vz-ink: #fff2ec;
+}
+.amp-viz-grey-deep {
+  --vz-accent: #55555c;
+  --vz-neon: #74747d;
+  --vz-line: rgba(85, 85, 92, 0.45);
+  --vz-fill: rgba(85, 85, 92, 0.07);
+  --vz-tile: rgba(85, 85, 92, 0.14);
+  --vz-glow: rgba(85, 85, 92, 0.5);
+  --vz-ink: #f2f2f3;
+}
+.amp-viz-ink {
+  --vz-accent: #1e1e22;
+  --vz-neon: #3a3a42;
+  --vz-line: rgba(30, 30, 34, 0.4);
+  --vz-fill: rgba(30, 30, 34, 0.06);
+  --vz-tile: rgba(30, 30, 34, 0.1);
+  --vz-glow: rgba(30, 30, 34, 0.35);
+  --vz-ink: #f2f2f3;
+}
+
+/* Neon stroke used by the dark solution diagrams. */
+.amp-neon { filter: drop-shadow(0 0 5px var(--vz-glow, rgba(120, 200, 250, 0.8))); }
+.amp-neon-soft { filter: drop-shadow(0 0 8px var(--vz-glow, rgba(120, 200, 250, 0.4))); }
+
+/* Magenta scan line sweeping across the readiness grid. */
+@keyframes amp-scan { 0% { top: 8%; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { top: 92%; opacity: 0; } }
+.amp-scan { animation: amp-scan 4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+
+/* The thin vertical rules that frame the content column on every section.
+   The inner padding keeps content clear of the rules instead of butting
+   against them (the rules sit on the border box, padding does not move them). */
+.amp-rails {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+@media (min-width: 640px) {
+  .amp-rails { padding-left: 2.75rem; padding-right: 2.75rem; }
+}
+.amp-rails::before,
+.amp-rails::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--amp-line-soft);
+  pointer-events: none;
+}
+.amp-rails::before { left: 0; }
+.amp-rails::after { right: 0; }
+.amp-panel-hover { transition: background-color 300ms ease, border-color 300ms ease; }
+.amp-panel-hover:hover { background-color: var(--amp-panel-hi); border-color: rgba(255, 255, 255, 0.2); }
+
+/* Faint technical grid, masked so it dissolves toward the edges. */
+.amp-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 68px 68px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 10%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 10%, transparent 75%);
+}
+
+/* Per-character headline reveal (blur + rise), staggered from inline delays. */
+@keyframes amp-char-in {
+  from { opacity: 0; filter: blur(9px); transform: translateY(0.4em); }
+  to { opacity: 1; filter: blur(0); transform: none; }
+}
+.amp-char { display: inline-block; white-space: pre; animation: amp-char-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* Same reveal for a whole block (badge, button row) rather than per glyph. */
+.amp-in { animation: amp-char-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Typewriter caret — steps(1) so it snaps on/off like a terminal cursor
+   instead of fading, which would read as a pulse rather than a blink. */
+@keyframes amp-caret { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
+.amp-caret { animation: amp-caret 1.05s steps(1, end) infinite; }
+
+/* Paint the document itself while the landing page is mounted, so overscroll
+   and the mobile URL bar never flash the app's own background. */
+html.amp-root, html.amp-root body { background-color: #000007; }
+
+/* Scroll-triggered section reveal (toggled by the useReveal hook). */
+.amp-reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 900ms cubic-bezier(0.16, 1, 0.3, 1), transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.amp-reveal.is-in { opacity: 1; transform: none; }
+
+/* Vertical ticker used in the "secured agents" visual. */
+@keyframes amp-ticker { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+.amp-ticker { animation: amp-ticker 22s linear infinite; }
+
+@keyframes amp-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+.amp-float { animation: amp-float 6s ease-in-out infinite; }
+
+@keyframes amp-halo { 0%, 100% { opacity: 0.35; transform: scale(1); } 50% { opacity: 0.75; transform: scale(1.07); } }
+.amp-halo { animation: amp-halo 4.5s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .amp-char, .amp-in, .amp-caret, .amp-ticker, .amp-float, .amp-halo, .amp-scan, .amp-ring,
+  .amp-bands, .amp-wash-drift, .amp-seq, .amp-crawl { animation: none !important; }
+  .amp-lift, .amp-zoom img, .amp-zoom svg { transition: none; }
+  .amp-lift:hover { transform: none; }
+  .amp-reveal { opacity: 1; transform: none; transition: none; }
+}
 
 /* Hero background — bold, organic drift + colour breathing for the blobs. */
 @keyframes hero-blob-1 {
@@ -427,6 +1044,60 @@ html.mkt-no-scrollbar::-webkit-scrollbar {
   .e2e-halo-bg { animation: none; }
 }
 
+/* ── SiriOrb — pure-CSS animated agent orb (replaces the 3D Spline orb) ─────── */
+@property --siri-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.siri-orb {
+  display: grid;
+  grid-template-areas: "stack";
+  overflow: hidden;
+  border-radius: 50%;
+  position: relative;
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.08) 0%, rgba(0, 0, 0, 0.03) 30%, transparent 70%);
+}
+.dark .siri-orb {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 30%, transparent 70%);
+}
+.siri-orb::before {
+  content: "";
+  display: block;
+  grid-area: stack;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background:
+    conic-gradient(from calc(var(--siri-angle) * 1.2) at 30% 65%, var(--c3) 0deg, transparent 45deg 315deg, var(--c3) 360deg),
+    conic-gradient(from calc(var(--siri-angle) * 0.8) at 70% 35%, var(--c2) 0deg, transparent 60deg 300deg, var(--c2) 360deg),
+    conic-gradient(from calc(var(--siri-angle) * -1.5) at 65% 75%, var(--c1) 0deg, transparent 90deg 270deg, var(--c1) 360deg),
+    conic-gradient(from calc(var(--siri-angle) * 2.1) at 25% 25%, var(--c2) 0deg, transparent 30deg 330deg, var(--c2) 360deg),
+    conic-gradient(from calc(var(--siri-angle) * -0.7) at 80% 80%, var(--c1) 0deg, transparent 45deg 315deg, var(--c1) 360deg),
+    radial-gradient(ellipse 120% 80% at 40% 60%, var(--c3) 0%, transparent 50%);
+  filter: blur(var(--siri-blur, 8px)) contrast(var(--siri-contrast, 1.8)) saturate(1.2);
+  animation: siri-rotate var(--siri-duration, 20s) linear infinite;
+  transform: translateZ(0);
+  will-change: transform;
+}
+.siri-orb::after {
+  content: "";
+  display: block;
+  grid-area: stack;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 45% 55%, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 30%, transparent 60%);
+  mix-blend-mode: overlay;
+}
+@keyframes siri-rotate {
+  from { --siri-angle: 0deg; }
+  to { --siri-angle: 360deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .siri-orb::before { animation: none; }
+}
+
 /* ── Whiteboard (Excalidraw) — softer, more pro chrome ──────────────────────
    Scoped under .fos-wb so we never touch Excalidraw elsewhere. We override the
    exposed CSS variables + the floating islands for rounder corners, gentler
@@ -544,16 +1215,18 @@ html.mkt-no-scrollbar::-webkit-scrollbar {
 
 /* Agent chat reply formatting — Elms Sans, comfortable rhythm, bordered tables. */
 .chat-prose {
-  font-family: 'Roboto', 'Elms Sans', 'Poppins', 'Inter', sans-serif;
-  font-size: 14px;
-  line-height: 1.7;
-  color: hsl(var(--foreground));
+  font-family: 'Elms Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14.25px;
+  line-height: 1.72;
+  letter-spacing: -0.006em;
+  color: hsl(var(--foreground) / 0.9);
 }
 .chat-prose > :first-child { margin-top: 0; }
 .chat-prose > :last-child { margin-bottom: 0; }
-.chat-prose p { margin: 0.6em 0; }
+.chat-prose p { margin: 0.72em 0; }
 .chat-prose h1, .chat-prose h2, .chat-prose h3, .chat-prose h4 {
-  font-weight: 600; line-height: 1.3; margin: 1.2em 0 0.5em;
+  font-weight: 600; line-height: 1.3; letter-spacing: -0.014em;
+  margin: 1.3em 0 0.5em; color: hsl(var(--foreground));
 }
 .chat-prose h1 { font-size: 1.35em; }
 .chat-prose h2 { font-size: 1.2em; }
@@ -615,4 +1288,76 @@ html.mkt-no-scrollbar::-webkit-scrollbar {
   .report-root { position: absolute; left: 0; top: 0; width: 100%; padding: 0 8mm; }
   /* Avoid breaking charts/cards across pages where possible. */
   figure, table, section { break-inside: avoid; }
+}
+
+/* ── Studio agents — premium animated border ────────────────────────────────
+   Marks the specialized agents (Vibe Code / Testing / Simulations) apart from
+   ordinary templates: a slow conic gradient rotating around the card edge,
+   masked to a thin band, plus a diffuse glow that only wakes up on hover.
+   Same @property technique as the e2e halo above, so it degrades identically
+   on browsers without registered custom properties. */
+@property --studio-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes studio-border-spin {
+  to { --studio-angle: 360deg; }
+}
+.studio-border {
+  position: relative;
+  isolation: isolate;
+}
+/* The band itself — sits ON the card edge, never over the content. */
+.studio-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--studio-angle),
+    #7c3aed, #22d3ee, #a855f7, #f472b6, #7c3aed
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: studio-border-spin 6s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+/* Outer bloom — kept at 0 until hover so a grid of studio cards stays calm. */
+.studio-border::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--studio-angle),
+    #7c3aed, #22d3ee, #a855f7, #f472b6, #7c3aed
+  );
+  filter: blur(14px);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  animation: studio-border-spin 6s linear infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+.studio-border:hover::after { opacity: 0.35; }
+
+@supports not (background: conic-gradient(from var(--studio-angle), red, blue)) {
+  .studio-border::before {
+    background: linear-gradient(120deg, #7c3aed, #22d3ee, #a855f7, #f472b6);
+    animation: none;
+  }
+  .studio-border::after { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-border::before,
+  .studio-border::after { animation: none; }
 }

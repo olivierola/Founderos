@@ -39,11 +39,7 @@ import {
   DatabaseIcon,
   ClockCounterClockwiseIcon,
   PlugsConnectedIcon,
-  StorefrontIcon,
   GlobeIcon,
-  VaultIcon,
-  KeyIcon,
-  BroadcastIcon,
   FlowArrowIcon,
   UserCircleIcon,
   BuildingsIcon,
@@ -58,6 +54,8 @@ import {
   GitPullRequestIcon,
   GitForkIcon,
   TargetIcon,
+  FileTextIcon,
+  PencilLineIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -95,15 +93,19 @@ export const ZONES: Zone[] = [
 ];
 
 /**
- * Dashboards — the top-level context switch (like Mistral's Studio/Vibe/Docs).
- * Every dashboard shares the exact same shell (navbar + two sidebars); only the
- * set of modules shown in the PrimarySidebar changes. "workforce" is the AI
- * team cockpit; "tools" groups the AI tooling you pilot jointly with the AI
- * (app testing, repos, vibe-code, …); "data" is the standalone Data &
- * Simulations workbench (its own sidebar, a whole tool being built on top).
- * Modules tagged "both" appear in every dashboard.
+ * Dashboards — the top-level context switch. Every dashboard shares the exact
+ * same shell (navbar + two sidebars); only the set of modules shown in the
+ * PrimarySidebar changes. Modules tagged "both" appear in every dashboard.
+ *
+ * "Outils IA" and "Data & Simulations" were retired: the tools they exposed as
+ * modules (vibe code, test runs, simulations) are now owned by SPECIALIZED
+ * AGENTS — a studio agent drives the same engine and hands back a structured
+ * session artifact. Their pages stay routed via HIDDEN_MODULES so deep links
+ * and configuration surfaces keep working; they're simply no longer a place you
+ * navigate to. The remaining dashboards are "workforce" and the per-service
+ * dashboards created by users.
  */
-export type DashboardId = "workforce" | "tools" | "data";
+export type DashboardId = "workforce";
 export const DEFAULT_DASHBOARD: DashboardId = "workforce";
 
 export interface DashboardDef {
@@ -116,8 +118,6 @@ export interface DashboardDef {
 }
 export const DASHBOARDS: DashboardDef[] = [
   { id: "workforce", label: "AI Workforce", description: "Vos agents IA au travail", icon: RobotIcon, color: "bg-primary" },
-  { id: "tools", label: "Outils IA", description: "Tests, dépôts & outillage IA", icon: FlaskIcon, color: "bg-violet-600" },
-  { id: "data", label: "Data & Simulations", description: "Données, simulations & analytics", icon: AtomIcon, color: "bg-sky-600" },
 ];
 
 export interface ModuleNavItem {
@@ -243,83 +243,51 @@ export const MODULES: ModuleNavItem[] = [
     subItems: [
       // ── Dashboard (on top) ──
       { label: "Overview", slug: "overview", group: "Dashboard", icon: ChartLineUpIcon },
-      { label: "Dashboard", slug: "admin-dashboard", icon: GaugeIcon },
       { label: "Custom Dashboards", slug: "admin-custom-dashboards", icon: ChartPieIcon },
       { label: "Alerts", slug: "admin-alerts", icon: BellIcon },
       // ── CRM (below the dashboard) ──
       { label: "Records", slug: "workspace", group: "CRM", icon: TableIcon },
     ],
   },
-  // ── Dashboard "Data & Simulations" — standalone workbench, own sidebar ───
-  // Lives in its own dashboard so a whole tool can be built on top of it.
+  // ── Support & PM supprimés (2026-07-17) après évaluation : tickets, projets,
+  // tâches et discussions vivent comme records CRM ; le whiteboard a rejoint
+  // Office ; le portail public d'aide (/help/:publicKey) survit. ──
   {
-    slug: "simulations",
-    label: "Data & Simulations",
-    icon: AtomIcon,
-    color: "text-sky-400/70",
+    slug: "office",
+    label: "Office",
+    icon: FileTextIcon,
+    color: "text-violet-400/60",
     zone: "run",
-    dashboard: "data",
     subItems: [
-      { label: "Simulations", slug: "workspace", icon: AtomIcon },
+      { label: "Library", slug: "library", icon: BooksIcon },
+      { label: "Documents", slug: "documents", icon: FileTextIcon },
+      { label: "Spreadsheets", slug: "spreadsheets", icon: TableIcon },
+      { label: "Presentations", slug: "presentations", icon: MonitorIcon },
+      { label: "Whiteboard", slug: "whiteboard", icon: PencilLineIcon },
+      { label: "Image Studio", slug: "gen-image", icon: MagicWandIcon },
+      { label: "Video Studio", slug: "gen-video", icon: MonitorIcon },
+      { label: "Copywriter", slug: "gen-copy", icon: ScrollIcon },
     ],
   },
-  // ── Dashboard "Outils IA" — AI tooling piloted jointly with the AI ───────
+  // Vibe Code, Test runs, Dépôts et Simulations ne sont plus des modules : ils
+  // sont pilotés par les agents studio (voir HIDDEN_MODULES en bas de fichier).
+  // DevOps reste visible mais rejoint la zone CONTROL du dashboard Workforce —
+  // c'est le plan de contrôle infra (serveurs, runners, jobs) dont dépendent le
+  // runner de test et les sandbox d'agents.
   {
-    slug: "test-runs",
-    label: "Test runs",
-    icon: TestTubeIcon,
-    color: "text-rose-400/60",
-    zone: "run",
-    dashboard: "tools",
+    slug: "devops",
+    label: "DevOps",
+    icon: HardDrivesIcon,
+    color: "text-cyan-500/55",
+    zone: "control",
     subItems: [
-      { label: "Tests", slug: "tests", icon: FlaskIcon },
-      { label: "Live", slug: "live", icon: MonitorIcon },
-      { label: "Analytics", slug: "analytics", icon: ChartLineUpIcon },
-      { label: "Reports", slug: "reports", icon: ScrollIcon },
-      { label: "Observability", slug: "observability", icon: PulseIcon },
-    ],
-  },
-  {
-    slug: "repos",
-    label: "Dépôts",
-    icon: GithubLogoIcon,
-    color: "text-cyan-400/60",
-    zone: "run",
-    dashboard: "tools",
-    subItems: [
-      { label: "Dépôts", slug: "list", icon: GithubLogoIcon },
-    ],
-  },
-  {
-    slug: "vibe-code",
-    label: "Vibe Code",
-    icon: MagicWandIcon,
-    color: "text-primary",
-    zone: "run",
-    dashboard: "tools",
-    subItems: [
-      { label: "Vibe Code", slug: "chat", icon: MagicWandIcon },
-      { label: "Artifacts", slug: "artifacts", icon: StackIcon },
-      { label: "Pull requests", slug: "pr", icon: GitPullRequestIcon },
-      { label: "Fork", slug: "fork", icon: GitForkIcon },
-      { label: "Preview", slug: "preview", icon: MonitorIcon },
-      { label: "Personnaliser", slug: "customize", icon: FadersIcon },
-    ],
-  },
-  {
-    slug: "onboarding",
-    label: "Agentic Onboarding",
-    icon: GraduationCapIcon,
-    color: "text-emerald-400/60",
-    zone: "run",
-    dashboard: "tools",
-    subItems: [
-      { label: "Objectifs", slug: "goals", icon: TargetIcon },
-      { label: "Activation", slug: "activation", icon: ChartLineUpIcon },
-      { label: "Flows", slug: "flows", icon: FlowArrowIcon, group: "Sous le capot" },
-      { label: "Tours", slug: "tours", icon: RocketIcon, group: "Sous le capot" },
-      { label: "Checklist", slug: "checklist", icon: SealCheckIcon, group: "Sous le capot" },
-      { label: "Arbre", slug: "tree", icon: CircuitryIcon, group: "Sous le capot" },
+      { label: "Overview", slug: "ops-overview", icon: GaugeIcon },
+      { label: "Serveurs", slug: "servers", icon: HardDrivesIcon },
+      { label: "Workflows", slug: "workflows", icon: FlowArrowIcon },
+      { label: "Checks", slug: "checks", icon: SealCheckIcon },
+      { label: "Testing", slug: "testing", icon: TestTubeIcon },
+      { label: "Jobs", slug: "jobs", icon: StackIcon },
+      { label: "Settings", slug: "settings", icon: GearSixIcon },
     ],
   },
   // ── Zone CONTROL — the AI control plane, split into 3 full modules ───────
@@ -374,28 +342,75 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Settings", slug: "ft-settings", icon: GearSixIcon },
     ],
   },
-  // ── Zone CONNECT — the hands (integrations) + workspace & security ───────
-  {
-    slug: "integrations",
-    label: "Integrations",
-    icon: PuzzlePieceIcon,
-    color: "text-cyan-500/55",
-    zone: "connect",
-    dashboard: "both",
-    subItems: [
-      { label: "Connected", slug: "connected", icon: PlugsConnectedIcon },
-      { label: "Catalog", slug: "catalog", icon: StorefrontIcon },
-      { label: "Credentials Vault", slug: "credentials-vault", icon: VaultIcon },
-      { label: "API Keys", slug: "api-keys", icon: KeyIcon },
-      { label: "Webhooks", slug: "webhooks", icon: BroadcastIcon },
-      { label: "n8n / Make / Zapier", slug: "automation", icon: FlowArrowIcon },
-    ],
-  },
   // NOTE: the former "Settings" module was folded into the Admin dashboard
   // (single-sidebar area at /admin, reached from the top-left dashboard
   // switcher). Its pages are reused there; old settings/* links redirect.
+  // The former "Integrations" module (Connected/Catalog/Credentials Vault/API
+  // Keys/Webhooks/Automation) was folded the same way, into a single
+  // "Connecteurs" tab — just the app catalog + connect action; the other
+  // sub-tabs were dropped, not moved. Old integrations/* links redirect.
+];
+
+/**
+ * Modules routés mais absents de la nav (PrimarySidebar / dashboards). Un
+ * module déplacé ici reste entièrement fonctionnel — deep links, actions CRM,
+ * breadcrumbs et SecondarySidebar (findModule le résout, buildModuleRoutes
+ * génère ses routes) — il disparaît juste du rail. Vide pour l'instant :
+ * support/pm/office/devops ont été re-surfacés dans MODULES le 2026-07-16 le
+ * temps que le user décide ce qu'il garde.
+ */
+/**
+ * Routed but absent from every dashboard. These are the surfaces the studio
+ * agents replaced: you no longer navigate to "Vibe Code" or "Test runs", you
+ * ask the Vibe Coder / QA Pilot agent. Their pages stay reachable by URL
+ * because they remain the configuration and inspection surface behind the
+ * engines the agents drive — connecting a repository, editing the coding
+ * instructions, opening a past run.
+ */
+export const HIDDEN_MODULES: ModuleNavItem[] = [
+  {
+    slug: "simulations",
+    label: "Simulations",
+    icon: AtomIcon,
+    color: "text-sky-400/70",
+    subItems: [{ label: "Simulations", slug: "workspace", icon: AtomIcon }],
+  },
+  {
+    slug: "test-runs",
+    label: "Test runs",
+    icon: TestTubeIcon,
+    color: "text-rose-400/60",
+    subItems: [
+      { label: "Tests", slug: "tests", icon: FlaskIcon },
+      { label: "Live", slug: "live", icon: MonitorIcon },
+      { label: "Analytics", slug: "analytics", icon: ChartLineUpIcon },
+      { label: "Reports", slug: "reports", icon: ScrollIcon },
+      { label: "Observability", slug: "observability", icon: PulseIcon },
+    ],
+  },
+  {
+    slug: "repos",
+    label: "Dépôts",
+    icon: GithubLogoIcon,
+    color: "text-cyan-400/60",
+    subItems: [{ label: "Dépôts", slug: "list", icon: GithubLogoIcon }],
+  },
+  {
+    slug: "vibe-code",
+    label: "Vibe Code",
+    icon: MagicWandIcon,
+    color: "text-primary",
+    subItems: [
+      { label: "Vibe Code", slug: "chat", icon: MagicWandIcon },
+      { label: "Artifacts", slug: "artifacts", icon: StackIcon },
+      { label: "Pull requests", slug: "pr", icon: GitPullRequestIcon },
+      { label: "Fork", slug: "fork", icon: GitForkIcon },
+      { label: "Preview", slug: "preview", icon: MonitorIcon },
+      { label: "Personnaliser", slug: "customize", icon: FadersIcon },
+    ],
+  },
 ];
 
 export function findModule(slug: string) {
-  return MODULES.find((m) => m.slug === slug);
+  return MODULES.find((m) => m.slug === slug) ?? HIDDEN_MODULES.find((m) => m.slug === slug);
 }
