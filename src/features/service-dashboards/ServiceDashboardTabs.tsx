@@ -430,7 +430,11 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
   const tab = (AGENT_DETAIL_TABS.some((t) => t.key === rawTab) ? rawTab : "settings") as AgentDetailTab;
   // The right zone (agent panel) starts closed — opened on demand.
   const [panelOpen, setPanelOpen] = useState(false);
-  const { width: panelWidth, startResize } = useResizableWidth("agent_panel_width", 380, 300, 1000);
+  // 380px was too tight for what this panel holds (9 tabs, automation recipe
+  // cards with connector chips) — titles truncated to "Résumé q…". Raising the
+  // MINIMUM as well as the default also upgrades anyone whose persisted width
+  // is below it: the hook discards a saved value outside [min, max].
+  const { width: panelWidth, startResize } = useResizableWidth("agent_panel_width", 620, 460, 1100);
 
   const { data: agent, isLoading } = useQuery({
     queryKey: ["sd_agent_full", agentId],
@@ -477,7 +481,9 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
 
       {!isLoading && agent && panelOpen && (
             <aside
-              className="absolute right-3 top-3 bottom-3 z-30 hidden flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl lg:flex"
+              // The width cap keeps the panel from swallowing the chat pane on
+              // a narrow window, whatever width was dragged/persisted.
+              className="absolute right-3 top-3 bottom-3 z-30 hidden max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl lg:flex"
               style={{ width: panelWidth }}
             >
               <div
@@ -1199,7 +1205,7 @@ export function HomeTab({ dashboardId, dashboardName, workspaceId, projectId }: 
               Gmail, Agenda, Notion, Slack, GitHub.
             </p>
             <button
-              onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/admin/connectors`)}
+              onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}/connectors`)}
               className="mt-3 text-sm font-medium text-primary hover:underline"
             >
               Click to setup

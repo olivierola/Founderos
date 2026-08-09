@@ -55,6 +55,20 @@ export type AccessStatus = "ok" | "denied" | "error";
 export interface AccessLog {
   id: string; ts: string; agentId: string; agentName: string;
   action: AccessAction; target: string; detail: string; status: AccessStatus; runId: string;
+  // ── Forensic payload ───────────────────────────────────────────────────────
+  // An access log that only says "read_url was called" cannot answer the
+  // question the page exists for — WHAT did it read, and what came back. The
+  // runtime already records both on the run events; these carry them through.
+  /** Arguments the agent passed, as logged (long strings already truncated). */
+  args?: Record<string, unknown>;
+  /** First ~1k chars of what the tool returned. */
+  resultPreview?: string;
+  /** Whether the tool itself reported success (from the paired tool_result). */
+  resultOk?: boolean;
+  /** Full run id, for deep-linking into the run timeline. */
+  runIdFull?: string;
+  /** Milliseconds between the call and its result, when both were recorded. */
+  durationMs?: number;
 }
 
 export type PromptCategory = "ops" | "analysis" | "content" | "code" | "support" | "data";
@@ -65,6 +79,8 @@ export interface PromptRecord {
   toolsUsed: string[]; dataAccessed: string[];
   /** Model that served the prompt (see MODEL_CATALOG — cloud or self-hosted). */
   model: string;
+  /** Self-hosted endpoint (RunPod / aiops_providers) → priced & flagged custom. */
+  custom?: boolean;
   tokensIn: number; tokensOut: number; costUsd: number; runId: string;
 }
 
@@ -77,9 +93,14 @@ export interface OpsIncident {
 }
 
 export type Enforcement = "block" | "warn" | "log";
+export type GuardrailScope = "prompt" | "tool_call" | "tool_result" | "all";
 export interface Guardrail {
   id: string; title: string; category: string; enforcement: Enforcement;
   enabled: boolean; body: string; updatedAt: string;
+  /** Regex testé en runtime contre le trafic (vide = guardrail documentaire). */
+  matchPattern?: string;
+  /** Surface de test : prompt utilisateur, appels d'outils, résultats, ou tout. */
+  matchScope?: GuardrailScope;
 }
 
 // ── Meta maps (Pill label + tone) ────────────────────────────────────────────
@@ -111,6 +132,12 @@ export const OPS_STATUS_META: Record<OpsStatus, Meta> = {
 export const ENFORCEMENT_META: Record<Enforcement, Meta> = {
   block: { label: "Bloquant", tone: "red" }, warn: { label: "Avertissement", tone: "amber" }, log: { label: "Journalisation", tone: "slate" },
 };
+export const GUARDRAIL_SCOPE_META: Record<GuardrailScope, Meta> = {
+  all: { label: "Tout", tone: "blue" },
+  prompt: { label: "Prompts", tone: "violet" },
+  tool_call: { label: "Appels d'outils", tone: "cyan" },
+  tool_result: { label: "Résultats", tone: "amber" },
+};
 
 // ── Mock catalogues ──────────────────────────────────────────────────────────
 const TOOLS = ["web_search", "sql_query", "send_email", "http_request", "code_exec", "vector_search", "crm_lookup", "file_read", "slack_post", "calendar_create"];
@@ -125,6 +152,12 @@ export interface ModelInfo {
   ctx: string;
   /** cloud: price per M tokens (in/out) — self-hosted: weights size to install. */
   price?: string; sizeGB?: number;
+  /** VRAM FP16 requise pour servir le modèle (self-hosted) — guide le choix de GPU RunPod. */
+  vramGb?: number;
+  /** Repo HuggingFace réellement servi (vLLM) — guide la location RunPod. */
+  hfRepo?: string;
+  /** Fenêtre de contexte en tokens — guide --max-model-len de vLLM. */
+  maxContextLen?: number;
 }
 export const HOSTING_META: Record<Hosting, Meta> = {
   cloud: { label: "Cloud", tone: "blue" },
@@ -140,12 +173,12 @@ export const MODEL_CATALOG: ModelInfo[] = [
   { id: "qwen3-max", label: "Qwen3 Max", family: "Qwen", vendor: "Alibaba", hosting: "cloud", ctx: "128k", price: "$1.2 / $6" },
   { id: "glm-5", label: "GLM-5", family: "GLM", vendor: "Zhipu AI", hosting: "cloud", ctx: "128k", price: "$0.6 / $2.2" },
   // Self-hosted (installables sur serveurs privés)
-  { id: "llama-4-maverick", label: "Llama 4 Maverick", family: "Llama", vendor: "Meta", hosting: "self_hosted", ctx: "128k", sizeGB: 142 },
-  { id: "mistral-small-3.2", label: "Mistral Small 3.2", family: "Mistral", vendor: "Mistral AI", hosting: "self_hosted", ctx: "64k", sizeGB: 47 },
-  { id: "qwen3-32b", label: "Qwen3 32B", family: "Qwen", vendor: "Alibaba", hosting: "self_hosted", ctx: "64k", sizeGB: 65 },
-  { id: "deepseek-r1-distill", label: "DeepSeek R1 Distill 32B", family: "DeepSeek", vendor: "DeepSeek", hosting: "self_hosted", ctx: "64k", sizeGB: 66 },
-  { id: "glm-4.5-air", label: "GLM-4.5 Air", family: "GLM", vendor: "Zhipu AI", hosting: "self_hosted", ctx: "32k", sizeGB: 22 },
-  { id: "gemma-3-27b", label: "Gemma 3 27B", family: "Gemma", vendor: "Google", hosting: "self_hosted", ctx: "32k", sizeGB: 54 },
+  { id: "llama-4-maverick", label: "Llama 4 Maverick", family: "Llama", vendor: "Meta", hosting: "self_hosted", ctx: "128k", sizeGB: 142, vramGb: 142, hfRepo: "meta-llama/Llama-3.3-70B-Instruct", maxContextLen: 131072 },
+  { id: "mistral-small-3.2", label: "Mistral Small 3.2", family: "Mistral", vendor: "Mistral AI", hosting: "self_hosted", ctx: "32k", sizeGB: 47, vramGb: 48, hfRepo: "mistralai/Mistral-Small-Instruct-2409", maxContextLen: 32768 },
+  { id: "qwen3-32b", label: "Qwen3 32B", family: "Qwen", vendor: "Alibaba", hosting: "self_hosted", ctx: "32k", sizeGB: 65, vramGb: 66, hfRepo: "Qwen/Qwen2.5-32B-Instruct", maxContextLen: 32768 },
+  { id: "deepseek-r1-distill", label: "DeepSeek R1 Distill 32B", family: "DeepSeek", vendor: "DeepSeek", hosting: "self_hosted", ctx: "64k", sizeGB: 66, vramGb: 66, hfRepo: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", maxContextLen: 65536 },
+  { id: "glm-4.5-air", label: "GLM-4.5 Air", family: "GLM", vendor: "Zhipu AI", hosting: "self_hosted", ctx: "32k", sizeGB: 22, vramGb: 24, hfRepo: "THUDM/glm-4-9b-chat", maxContextLen: 32768 },
+  { id: "gemma-3-27b", label: "Gemma 3 27B", family: "Gemma", vendor: "Google", hosting: "self_hosted", ctx: "8k", sizeGB: 54, vramGb: 56, hfRepo: "google/gemma-2-27b-it", maxContextLen: 8192 },
 ];
 export const CLOUD_MODELS = MODEL_CATALOG.filter((m) => m.hosting === "cloud");
 export const SELF_HOSTED_MODELS = MODEL_CATALOG.filter((m) => m.hosting === "self_hosted");
@@ -289,13 +322,13 @@ export function saveGuardrails(pid: string, list: Guardrail[]) {
   try { localStorage.setItem(GR_KEY(pid), JSON.stringify(list)); } catch { /* ignore */ }
 }
 export function newGuardrail(): Guardrail {
-  return { id: `gr_${short()}`, title: "Nouveau guardrail", category: "Général", enforcement: "warn", enabled: true, updatedAt: new Date().toISOString(), body: "## Règle\n\nDécrivez ici la règle en **markdown**.\n\n- Condition\n- Action attendue\n" };
+  return { id: `gr_${short()}`, title: "Nouveau guardrail", category: "Général", enforcement: "warn", enabled: true, updatedAt: new Date().toISOString(), body: "## Règle\n\nDécrivez ici la règle en **markdown**.\n\n- Condition\n- Action attendue\n", matchScope: "all" };
 }
 /** Exported so the DB layer can seed aiops_guardrails on first use. */
 export const DEFAULT_GUARDRAILS_EXPORT = (): Guardrail[] => DEFAULT_GUARDRAILS();
 function DEFAULT_GUARDRAILS(): Guardrail[] {
   const now = new Date().toISOString();
-  const g = (id: string, title: string, category: string, enforcement: Enforcement, body: string): Guardrail => ({ id, title, category, enforcement, enabled: true, updatedAt: now, body });
+  const g = (id: string, title: string, category: string, enforcement: Enforcement, body: string): Guardrail => ({ id, title, category, enforcement, enabled: true, updatedAt: now, body, matchScope: "all" });
   return [
     g("gr_pii", "Protection des données personnelles (PII)", "Données", "block",
       "## Interdiction d'exfiltration de PII\n\nL'agent **ne doit jamais** inclure de données personnelles (emails clients, téléphones, adresses) dans une sortie envoyée hors du système.\n\n- ✅ Autorisé : agréger/anonymiser\n- ⛔ Interdit : copier des lignes brutes `crm.contacts` vers un email externe\n\n> Toute tentative est bloquée et journalisée dans les incidents."),
@@ -320,8 +353,15 @@ export interface PrivateServer {
   reqPerMin: number; uptimePct: number; costPerDay: number;
   installedModels: string[]; // self-hosted model ids
   // Real infrastructure (null/'seed' for the demo servers).
-  source: "seed" | "runpod" | "cloud"; providerId: string | null;
+  source: "seed" | "runpod" | "cloud" | "ovh" | "aws"; providerId: string | null;
   podId: string | null; endpointUrl: string | null; hourlyUsd: number; desiredStatus: string | null;
+  // Real cost accounting (ledger-backed — migration 0180).
+  accruedCostUsd: number; accruedHours: number; runningSince: string | null;
+  // Pod deployment depth (migration 0182).
+  gpuCount: number; cloudType: "secure" | "community"; quantization: string | null;
+  maxModelLen: number | null; dockerImage: string | null;
+  /** Repo HuggingFace servi par le pod (renseigné à la location, auto-détecté sinon). */
+  servedModel: string | null;
 }
 export const SERVER_STATUS_META: Record<ServerStatus, Meta> = {
   online: { label: "En ligne", tone: "emerald" },
@@ -348,6 +388,9 @@ export function genServers(projectId: string): PrivateServer[] {
       reqPerMin: Math.round(4 + r() * 90), uptimePct: Math.round((99 + r()) * 100) / 100,
       costPerDay: money(14 + r() * 38), installedModels: installed,
       source: "seed", providerId: null, podId: null, endpointUrl: null, hourlyUsd: 0, desiredStatus: null,
+      accruedCostUsd: 0, accruedHours: 0, runningSince: null,
+      gpuCount: 1, cloudType: "secure", quantization: null, maxModelLen: null, dockerImage: null,
+      servedModel: null,
     };
   });
 }
@@ -482,6 +525,8 @@ export interface FtDataset {
   /** Avant → nettoyage → après. */
   before: { rows: number; tokens: number };
   removed: { dups: number; pii: number; html: number; emails: number };
+  /** Fichier réellement importé (bucket ft-datasets) — prévisualisation + entraînement RunPod. */
+  storagePath?: string | null;
 }
 export const DS_QUALITY_META: Record<DsQuality, Meta> = {
   validated: { label: "Validé", tone: "emerald" }, cleaning: { label: "Nettoyage", tone: "amber" }, issues: { label: "Problèmes", tone: "red" },
@@ -926,16 +971,89 @@ export const COMPLIANCE_ITEMS = [
   { name: "ISO 27001", status: "conforme", note: "chiffrement au repos (AES-256) et en transit (TLS 1.3)" },
 ];
 
+// ── Politique de sécurité persistée (aiops_ft_settings.config.security) ──────
+// Ces réglages ne sont pas décoratifs : `requireProdApproval` conditionne la mise
+// en file d'attente d'un déploiement prod, `piiRedaction` conditionne les étapes
+// d'anonymisation appliquées aux datasets importés.
+export type ComplianceStatus = "conforme" | "en_cours" | "non_conforme" | "non_applicable";
+export const COMPLIANCE_STATUS_META = {
+  conforme: { label: "Conforme", tone: "emerald" },
+  en_cours: { label: "En cours", tone: "amber" },
+  non_conforme: { label: "Non conforme", tone: "red" },
+  non_applicable: { label: "Non applicable", tone: "slate" },
+} as const;
+
+export interface ComplianceFramework {
+  id: string; name: string; status: ComplianceStatus; note: string;
+  owner: string; lastAuditAt: string | null; nextReviewAt: string | null; evidenceUrl: string;
+}
+export interface EncryptionPolicy {
+  atRest: "aes_256" | "aes_128" | "none";
+  keyManagement: "managed" | "kms" | "byok";
+  keyRotationDays: number;
+  lastKeyRotationAt: string | null;
+  tlsMin: "1.3" | "1.2";
+  piiRedaction: boolean;
+  requireProdApproval: boolean;
+}
+export interface SecurityConfig { encryption: EncryptionPolicy; compliance: ComplianceFramework[] }
+
+export const AT_REST_LABELS: Record<EncryptionPolicy["atRest"], string> = {
+  aes_256: "AES-256", aes_128: "AES-128", none: "Désactivé",
+};
+export const KEY_MGMT_LABELS: Record<EncryptionPolicy["keyManagement"], string> = {
+  managed: "Clés gérées par la plateforme", kms: "KMS du cloud provider", byok: "BYOK — vos propres clés",
+};
+
+export const SECURITY_DEFAULTS: SecurityConfig = {
+  encryption: {
+    atRest: "aes_256", keyManagement: "managed", keyRotationDays: 90,
+    lastKeyRotationAt: null, tlsMin: "1.3", piiRedaction: true, requireProdApproval: true,
+  },
+  compliance: COMPLIANCE_ITEMS.map((c, i): ComplianceFramework => ({
+    id: `cf_${i + 1}`, name: c.name,
+    status: c.status === "conforme" ? "conforme" : "en_cours",
+    note: c.note, owner: "", lastAuditAt: null, nextReviewAt: null, evidenceUrl: "",
+  })),
+};
+
+export const newComplianceFramework = (): ComplianceFramework => ({
+  id: `cf_${Math.random().toString(36).slice(2, 9)}`, name: "", status: "en_cours",
+  note: "", owner: "", lastAuditAt: null, nextReviewAt: null, evidenceUrl: "",
+});
+export const newFtRole = (): FtRole => ({
+  role: "", members: 1, canTrain: false, canDeleteModel: false, canDeploy: false, canEditDatasets: false,
+});
+
+/** Date de la prochaine rotation de clés attendue (null si jamais tournées). */
+export function nextKeyRotation(p: EncryptionPolicy): string | null {
+  if (!p.lastKeyRotationAt || p.keyRotationDays <= 0) return null;
+  return new Date(new Date(p.lastKeyRotationAt).getTime() + p.keyRotationDays * 86_400_000).toISOString();
+}
+
 // ── Settings (configuration globale du studio) ───────────────────────────────
+/** Fonctions du pipeline Data Prep (onglet Data Preparation) — persistées dans les settings. */
+export const DATA_PREP_FUNCTIONS = [
+  "Doublons", "Signatures", "Mails", "Publicités", "Scripts", "HTML",
+  "Correction orthographique", "Uniformisation", "Reformulation",
+  "Noms", "Emails", "Téléphones", "IBAN", "Cartes bancaires",
+  "Langues", "Qualité", "Documents incomplets",
+];
 export interface FtSettings {
   gpuProvider: string; llmProvider: string; storage: string;
   retentionDays: number; versioning: boolean; backups: string;
   quotaGpuHours: number; quotaParallelJobs: number;
+  /** Intégrations connectées (id → booléen). */
+  integrations: Record<string, boolean>;
+  /** Fonctions Data Prep actives (noms courts des GROUPS). */
+  dataPrepEnabled: string[];
 }
 export const FT_SETTINGS_DEFAULTS: FtSettings = {
   gpuProvider: "self_hosted", llmProvider: "anthropic", storage: "s3",
   retentionDays: 365, versioning: true, backups: "daily",
   quotaGpuHours: 200, quotaParallelJobs: 2,
+  integrations: Object.fromEntries(FT_INTEGRATIONS.filter((i) => i.connected).map((i) => [i.id, true])),
+  dataPrepEnabled: DATA_PREP_FUNCTIONS,
 };
 const SETTINGS_KEY = (pid: string) => `aiops.ft.settings.${pid}`;
 export function loadFtSettings(pid: string): FtSettings {

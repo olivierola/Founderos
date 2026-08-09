@@ -606,7 +606,7 @@ function IntegrationsStep({
   const toolkitFor = (slug: string) => catalogBySlug.get(slug) ?? synthToolkit(slug, COMPOSIO_META[slug]?.label ?? slug, COMPOSIO_META[slug]?.description ?? null);
   // Open the Connectors tab straight on this toolkit's connect dialog.
   const connectToolkit = (slug: string) =>
-    navigate(`/app/${workspaceSlug}/${projectSlug}/admin/connectors?connect=${slug}`);
+    navigate(`/app/${workspaceSlug}/${projectSlug}/agent/connectors?connect=${slug}`);
 
   return (
     <div className="space-y-5">

@@ -12,6 +12,10 @@ export interface LogLlmUsageInput {
   task?: string;
   feature?: string;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  /** Self-hosted / company-registered model (no public rate) → custom estimate. */
+  custom?: boolean;
+  /** Free-form context — run_id / agent_id are indexed by Prompt Monitoring. */
+  metadata?: Record<string, unknown>;
 }
 
 export async function logLlmUsage(input: LogLlmUsageInput): Promise<void> {
@@ -19,7 +23,7 @@ export async function logLlmUsage(input: LogLlmUsageInput): Promise<void> {
     const prompt = input.usage?.prompt_tokens ?? 0;
     const completion = input.usage?.completion_tokens ?? 0;
     const total = input.usage?.total_tokens ?? prompt + completion;
-    const cost = estimateCostCents(input.model, prompt, completion);
+    const cost = estimateCostCents(input.model, prompt, completion, { custom: input.custom });
     const admin = createServiceClient();
     await admin.from("llm_usage").insert({
       workspace_id: input.workspace_id ?? null,
@@ -33,7 +37,7 @@ export async function logLlmUsage(input: LogLlmUsageInput): Promise<void> {
       total_tokens: total,
       estimated_cost_cents: cost,
       currency: "eur",
-      metadata: {},
+      metadata: input.metadata ?? {},
     });
   } catch (err) {
     // eslint-disable-next-line no-console

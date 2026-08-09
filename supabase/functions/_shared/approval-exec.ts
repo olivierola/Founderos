@@ -41,6 +41,11 @@ export async function executeApprovalAction(a: ApprovalActionInput): Promise<{ o
         workspace_id: a.workspace_id, project_id: a.project_id,
         toolkit: String(p.toolkit ?? ""), tool_slug: String(p.tool_slug ?? ""),
         arguments: (p.params && typeof p.params === "object") ? p.params : {},
+        // Connection scope captured when the approval was requested (0177) —
+        // the action must run through the account the human approved, not
+        // through whatever would resolve at execution time.
+        ...(p.service_dashboard_id ? { service_dashboard_id: String(p.service_dashboard_id) } : {}),
+        ...(p.as_user_id ? { as_user_id: String(p.as_user_id) } : {}),
       }),
     });
     return { ok: res.ok, detail: `HTTP ${res.status}\n${(await res.text()).slice(0, 4000)}` };

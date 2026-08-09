@@ -27,6 +27,7 @@
 //     materialises outputs itself instead of relying on fragile text parsing.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { TOOL_RESULT_CAP } from "./ai.ts";
 import type { ToolDef, ToolExecutor } from "./ai.ts";
 import type { ToolTier } from "./model-router.ts";
 import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
@@ -99,8 +100,20 @@ export interface InternalToolContext {
   createArtifact: (a: ArtifactDraft) => Promise<void>;
   /** Queue a sensitive action for human approval. Returns the approval id. */
   requestApproval: (r: ApprovalRequest) => Promise<string>;
-  /** Append a run event (no-op when runId is null). */
-  logEvent: (kind: "tool_call" | "tool_result" | "status" | "log" | "plan" | "plan_step" | "tool_error" | "question" | "todos", payload: Record<string, unknown>) => Promise<void>;
+  /** Append a run event (no-op when runId is null). The union lists every kind
+   *  the runtime actually emits — it must stay in sync with the
+   *  internal_agent_run_events kind CHECK constraint (migration 0164). */
+  logEvent: (
+    kind:
+      | "tool_call" | "tool_result" | "status" | "log" | "error" | "plan" | "plan_step"
+      | "tool_error" | "question" | "todos" | "ui" | "loop"
+      | "browser_navigate" | "browser_action" | "browser_screenshot",
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
+  /** Loop engine: successful tool results observed since the last update_todos
+   *  call. A checklist step may only be closed against evidence — see
+   *  update_todos. Seeded per tick from the transcript by the run engine. */
+  loopEvidence?: { results: number };
   /** True when this context belongs to a MISSION run (gates meta-tools like
    *  self-mission creation that fueled the fork-bomb incident). */
   missionMode?: boolean;
@@ -342,6 +355,34 @@ function cap(s: string, max = 8000): string {
   return s.length > max ? s.slice(0, max) + "\n…(truncated)" : s;
 }
 
+// ── Per-tool deterministic output compression (the `compress` contract) ───────
+// A tool whose output can legitimately exceed TOOL_RESULT_CAP declares a
+// `compress(result, maxChars)` so the executor can shrink THAT tool's output the
+// way only the tool knows (keep the tail of a log, keep a CSV's header + last
+// rows, keep JSON structure) instead of the generic blind middle-cut in ai.ts.
+// MUST be deterministic: same input → same output, so the sealed transcript hash
+// (prompt-compiler.ts / tick_manifest) stays stable across runs.
+
+/** Keep head + tail of a result, marking the middle as cut. Deterministic. */
+function compressHeadTail(s: string, maxChars: number, headRatio = 0.5): string {
+  if (s.length <= maxChars) return s;
+  const head = Math.floor(maxChars * headRatio);
+  const tail = maxChars - head;
+  return `${s.slice(0, head)}\n…[${s.length - maxChars} caractères coupés au milieu]…\n${s.slice(-tail)}`;
+}
+
+/** Exec-style output: keep the `$ cmd`/`[status]` header verbatim, then head+tail
+ *  the body so the last lines of stdout/stderr (where results and errors land)
+ *  survive. */
+function compressExecResult(result: string, maxChars: number): string {
+  const sep = result.indexOf("\n\n");
+  if (sep < 0 || sep + 2 >= result.length) return compressHeadTail(result, maxChars);
+  const header = result.slice(0, sep);
+  const body = result.slice(sep + 2);
+  const bodyMax = Math.max(64, maxChars - header.length - 2);
+  return `${header}\n\n${compressHeadTail(body, bodyMax)}`;
+}
+
 // Coerce a tool argument that SHOULD be a JSON/text string but which the model
 // often emits as a nested object/array (DeepSeek does this a lot for big report
 // payloads) into a string. Empty/nullish → "".
@@ -475,6 +516,13 @@ interface InternalTool {
    *  exact format). Never truncated by compactToolDefs — a half-sent schema is
    *  worse than none, since the model is still told to follow one. */
   incompressible?: boolean;
+  /** Per-tool output compressor. When a tool can legitimately return MORE than
+   *  TOOL_RESULT_CAP, it declares how to shrink its own output deterministically
+   *  (keep the verdict / tail / key rows, mark what was cut) instead of letting
+   *  the generic truncateMiddle in ai.ts blind-cut the middle. Applied by the
+   *  executor right after `run`; MUST be deterministic for the same input so the
+   *  sealed transcript hash stays stable. */
+  compress?: (result: string, maxChars: number) => string;
   /** Executable, but NOT advertised in `defs`. Used for deprecated names kept as
    *  aliases (so a model that learned the old name still works) without paying
    *  for their schema on every round. */
@@ -654,7 +702,7 @@ export async function readUrl(url: string): Promise<string> {
     headers: { "X-Return-Format": "markdown" },
   });
   if (!res.ok) return `ERROR: could not fetch (${res.status}).`;
-  return cap(await res.text());
+  return (await res.text()).slice(0, 250000);
 }
 
 export async function searchKnowledge(
@@ -814,12 +862,28 @@ async function queryTable(
 }
 
 async function listConnectors(ctx: InternalToolContext): Promise<string> {
+  // Scoped inventory (migration 0177): what THIS agent can actually reach —
+  // its dashboard's connections plus the project-wide fallbacks, and its
+  // owner's personal accounts flagged as such (usable only on explicit
+  // request via use_personal_account).
   const { data } = await ctx.admin
     .from("connectors")
-    .select("provider, status, permissions")
+    .select("provider, status, permissions, scope, service_dashboard_id, owner_user_id")
     .eq("project_id", ctx.projectId);
   if (!data || data.length === 0) return "No connectors configured for this project.";
-  return JSON.stringify(data);
+  const rows = (data as Array<{
+    provider: string; status: string; permissions: string;
+    scope: string; service_dashboard_id: string | null; owner_user_id: string | null;
+  }>).filter((c) =>
+    c.scope === "project" ||
+    (c.scope === "dashboard" && c.service_dashboard_id === ctx.serviceDashboardId) ||
+    (c.scope === "personal" && c.service_dashboard_id === ctx.serviceDashboardId && c.owner_user_id === ctx.userId));
+  if (rows.length === 0) return "No connectors reachable from this dashboard.";
+  return JSON.stringify(rows.map((c) => ({
+    provider: c.provider, status: c.status, permissions: c.permissions,
+    scope: c.scope,
+    ...(c.scope === "personal" ? { note: "personal account — set use_personal_account:true to act through it" } : {}),
+  })));
 }
 
 async function invokeEdgeFunction(slug: string, args: Record<string, unknown>): Promise<string> {
@@ -1455,6 +1519,35 @@ export function buildInternalToolset(
         return p ? depthOf(p, hop + 1) : hop;
       };
       for (const t of todos) if (depthOf(t) >= 3) delete (t as any).parent_id;
+
+      // ── Step-level evidence (loop engineering) ─────────────────────────────
+      // A leaf may only be closed against EVIDENCE: a successful tool result
+      // since the last checklist update, or an explicit verification note.
+      // Otherwise the item keeps its previous status and the agent is told to
+      // verify first — "done because I said so" is exactly how a loop convinces
+      // itself it has finished, and it is the reason a checklist can read 8/8
+      // while nothing was produced.
+      const reverted: string[] = [];
+      if (ctx.runId && ctx.loopEvidence && ctx.loopEvidence.results === 0) {
+        const { data: prevRow } = await ctx.admin
+          .from("internal_agent_runs").select("todos").eq("id", ctx.runId).maybeSingle();
+        const prevStatus = new Map(
+          (Array.isArray((prevRow as { todos?: unknown } | null)?.todos)
+            ? ((prevRow as { todos: Array<{ id: string; status: string }> }).todos)
+            : []).map((t) => [t.id, t.status]),
+        );
+        const parents = new Set(todos.filter((t) => t.parent_id).map((t) => t.parent_id));
+        for (const t of todos) {
+          if (t.status !== "done") continue;
+          if (parents.has(t.id)) continue;                          // a parent inherits from its children
+          if (prevStatus.get(t.id) === "done") continue;            // already closed in an earlier update
+          if ((t.note ?? "").trim().length >= 12) continue;         // an explicit verification note IS evidence
+          t.status = prevStatus.get(t.id) ?? "pending";             // no evidence → no state change
+          reverted.push(t.title);
+        }
+      }
+      if (ctx.loopEvidence) ctx.loopEvidence.results = 0;
+
       if (ctx.runId) {
         await ctx.admin.from("internal_agent_runs").update({ todos }).eq("id", ctx.runId);
       }
@@ -1469,7 +1562,10 @@ export function buildInternalToolset(
         todos.some((c) => c.parent_id === t.id && c.status !== "done"));
       const warn = (activeLeaves > 1 ? " WARNING: more than one LEAF is 'active' — keep exactly one." : "") +
         (parentMismatch ? " WARNING: a parent is 'done' while some of its subtasks are not." : "");
-      return `Todos updated (${done}/${leaves.length} leaf steps done).${warn}`;
+      const evidenceWarn = reverted.length
+        ? ` ⚠️ NOT MARKED DONE — no evidence: ${reverted.slice(0, 4).join(", ")}. You closed ${reverted.length} step(s) without a single successful tool result since your last checklist update and without a verification note. VERIFY for real (re-read the file, re-run the command, open the URL, re-query the data), THEN mark the step done with a one-line note stating the evidence.`
+        : "";
+      return `Todos updated (${done}/${leaves.length} leaf steps done).${warn}${evidenceWarn}`;
     },
   });
   summaryLines.push("- update_todos: maintain your live todo checklist (full list every time; split complex steps into subtasks via parent_id; one leaf active at a time).");
@@ -2296,7 +2392,7 @@ export function buildInternalToolset(
       return json;
     };
     const fmtExec = (d: any) =>
-      `[exit: ${d.exit_code ?? "?"}${d.timed_out ? " | TIMED OUT" : ""} | ${d.duration_ms ?? "?"}ms]\n\n${String(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${String(d.stderr).slice(0, 4000)}` : ""}`;
+      `[exit: ${d.exit_code ?? "?"}${d.timed_out ? " | TIMED OUT" : ""} | ${d.duration_ms ?? "?"}ms]\n\n${String(d.stdout ?? "").slice(0, 250000)}${d.stderr ? `\n--- stderr ---\n${String(d.stderr).slice(0, 250000)}` : ""}`;
 
     tools.set("shell_exec", {
       def: {
@@ -2319,6 +2415,7 @@ export function buildInternalToolset(
         if ((d.exit_code ?? 1) === 0) await rememberSandboxAction(ctx, str(args.command));
         return `$ ${str(args.command)}\n${fmtExec(d)}`;
       },
+      compress: compressExecResult,
     });
 
     tools.set("python_exec", {
@@ -2334,6 +2431,7 @@ export function buildInternalToolset(
         const d = await rn("/api/code", { language: "python", code: str(args.code), timeout: Math.min(Number(args.timeout) || 60, 300) });
         return fmtExec(d);
       },
+      compress: compressExecResult,
     });
 
     tools.set("nodejs_exec", {
@@ -2349,6 +2447,7 @@ export function buildInternalToolset(
         const d = await rn("/api/code", { language: "node", code: str(args.code), timeout: Math.min(Number(args.timeout) || 60, 300) });
         return fmtExec(d);
       },
+      compress: compressExecResult,
     });
 
     tools.set("file_write", {
@@ -2561,7 +2660,7 @@ export function buildInternalToolset(
       "Content-Type": "application/json",
       // Bypass ngrok free-tier interstitial warning page (returns HTML otherwise).
       "ngrok-skip-browser-warning": "true",
-      "User-Agent": "AchiCorp-Agent/1.0",
+      "User-Agent": "Anduran-Agent/1.0",
     };
 
     async function sb(path: string, body?: Record<string, unknown>): Promise<any> {
@@ -2598,8 +2697,9 @@ export function buildInternalToolset(
         const d = await sb("v1/bash/exec", { command: str(args.command), timeout: Math.min(Number(args.timeout) || 60, 300), exec_dir: str(args.exec_dir) || undefined });
         // Auto-remember installs / dataset fetches when the command succeeded.
         if ((d.exit_code ?? 1) === 0) await rememberSandboxAction(ctx, str(args.command));
-        return `$ ${str(args.command)}\n[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 4000)}` : ""}`;
+        return `$ ${str(args.command)}\n[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 250000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 250000)}` : ""}`;
       },
+      compress: compressExecResult,
     });
 
     // ── Code execution (Python / Node) ──
@@ -2633,8 +2733,9 @@ export function buildInternalToolset(
         const hint = restarted
           ? "\n\n[hint: the Python kernel had restarted — in-memory variables were reset. Re-load data from disk (re-read your CSV / re-import) before relying on previous state.]"
           : "";
-        return `[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 3000)}` : ""}${tb ? `\n--- traceback ---\n${tb.slice(0, 3000)}` : ""}${hint}`;
+        return `[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 250000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 250000)}` : ""}${tb ? `\n--- traceback ---\n${tb.slice(0, 250000)}` : ""}${hint}`;
       },
+      compress: compressExecResult,
     });
 
     tools.set("nodejs_exec", {
@@ -2647,8 +2748,9 @@ export function buildInternalToolset(
       },
       run: async (args) => {
         const d = await sb("v1/nodejs/execute", { code: str(args.code) });
-        return `[exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? d.output ?? "").slice(0, 8000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 3000)}` : ""}`;
+        return `[exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? d.output ?? "").slice(0, 250000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 250000)}` : ""}`;
       },
+      compress: compressExecResult,
     });
 
     tools.set("jupyter_exec", {
@@ -2662,8 +2764,9 @@ export function buildInternalToolset(
       run: async (args) => {
         const d = await sb("v1/jupyter/execute", { code: str(args.code) });
         const outputs = Array.isArray(d.outputs) ? d.outputs.map((o: any) => o.text ?? o.data ?? JSON.stringify(o)).join("\n") : "";
-        return `[status: ${d.status ?? "ok"}]\n\n${(d.stdout ?? "").slice(0, 4000)}${outputs ? `\n${outputs.slice(0, 4000)}` : ""}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 2000)}` : ""}`;
+        return `[status: ${d.status ?? "ok"}]\n\n${(d.stdout ?? "").slice(0, 250000)}${outputs ? `\n${outputs.slice(0, 250000)}` : ""}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 250000)}` : ""}`;
       },
+      compress: compressExecResult,
     });
 
     // ── Filesystem ──
@@ -2694,8 +2797,9 @@ export function buildInternalToolset(
       },
       run: async (args) => {
         const d = await sb("v1/file/read", { file: str(args.file) });
-        return String(d.content ?? "").slice(0, 12000);
+        return String(d.content ?? "").slice(0, 250000);
       },
+      compress: (result, maxChars) => compressHeadTail(result, maxChars, 0.5),
     });
 
     tools.set("file_edit", {
@@ -3207,6 +3311,22 @@ export function buildInternalToolset(
         const max = Math.min(Math.max(Number(args.max_results ?? 5) || 5, 1), 8);
         return webSearch(query, max);
       },
+      // web_search returns structured JSON; keep it PARSEABLE under the cap by
+      // dropping whole trailing results (never a mid-JSON cut).
+      compress: (result, maxChars) => {
+        if (result.length <= maxChars) return result;
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed && Array.isArray(parsed.results)) {
+            let kept = parsed.results;
+            while (kept.length > 1 && JSON.stringify({ ...parsed, results: kept }).length > maxChars) {
+              kept = kept.slice(0, kept.length - 1);
+            }
+            return JSON.stringify({ ...parsed, results: kept, truncated: parsed.results.length - kept.length });
+          }
+        } catch { /* not JSON — fall through */ }
+        return compressHeadTail(result, maxChars, 0.5);
+      },
     });
     summaryLines.push("- web_search: search the public web.");
   }
@@ -3224,6 +3344,7 @@ export function buildInternalToolset(
         },
       },
       run: (args) => readUrl(str(args.url)),
+      compress: (result, maxChars) => compressHeadTail(result, maxChars, 0.4),
     });
     summaryLines.push("- read_url: read the content of a specific URL.");
   }
@@ -3412,6 +3533,11 @@ export function buildInternalToolset(
             action: { type: "string", description: "A Composio tool slug (e.g. GITHUB_CREATE_AN_ISSUE). Omit to discover available slugs." },
             params: { type: "object", description: "Arguments for the tool (see its description from discovery)." },
             reason: { type: "string", description: "One-sentence justification (used for approval)." },
+            use_personal_account: {
+              type: "boolean",
+              description:
+                "Act through the OWNER'S OWN connected account instead of this workspace's shared one. Set it ONLY when the point of the call is to reach that person personally (e.g. notify them on their own mailbox). Fails if they haven't connected their own account here.",
+            },
           },
           additionalProperties: false,
         },
@@ -3419,6 +3545,13 @@ export function buildInternalToolset(
       run: async (args) => {
         const action = str(args.action);
         const params = (args.params && typeof args.params === "object") ? args.params : {};
+        // Connection scope (migration 0177): the dashboard's shared account by
+        // default, the user's own only when the model explicitly asks for it.
+        const asUserId = args.use_personal_account === true ? (ctx.userId ?? null) : null;
+        const scopeBody = {
+          service_dashboard_id: ctx.serviceDashboardId ?? null,
+          ...(asUserId ? { as_user_id: asUserId } : {}),
+        };
         const base = Deno.env.get("SUPABASE_URL");
         const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
         if (!base || !key) return "ERROR: composio actions are not configured.";
@@ -3427,7 +3560,7 @@ export function buildInternalToolset(
           const res = await fetch(`${base}/functions/v1/composio-action`, {
             method: "POST",
             headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, toolkit }),
+            body: JSON.stringify({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, toolkit, ...scopeBody }),
           });
           return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
         }
@@ -3437,16 +3570,18 @@ export function buildInternalToolset(
           return await awaitInlineApproval(ctx, {
             tool_name: toolName,
             action_kind: "composio_action",
-            payload: { toolkit, tool_slug: action, params },
+            // The scope travels with the approval so the action executes through
+            // the SAME account the user approved, not whatever resolves later.
+            payload: { toolkit, tool_slug: action, params, ...scopeBody },
             reason: str(args.reason) || null,
-          }, `${toolkit} · ${action}`);
+          }, `${toolkit} · ${action}${asUserId ? " (compte personnel)" : ""}`);
         }
         const res = await fetch(`${base}/functions/v1/composio-action`, {
           method: "POST",
           headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             workspace_id: ctx.workspaceId, project_id: ctx.projectId,
-            toolkit, tool_slug: action, arguments: params,
+            toolkit, tool_slug: action, arguments: params, ...scopeBody,
           }),
         });
         return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
@@ -4188,7 +4323,12 @@ export function buildInternalToolset(
     const tool = tools.get(name);
     if (!tool) return `ERROR: unknown tool "${name}".`;
     try {
-      return await tool.run(args);
+      const raw = await tool.run(args);
+      // Per-tool compression contract: if the tool can overrun the transcript
+      // cap, it shrinks its own output deterministically instead of letting the
+      // generic middle-cut in ai.ts do it. No compress → the raw result flows
+      // through unchanged and ai.ts's truncateMiddle stays as the fallback.
+      return tool.compress ? tool.compress(raw, TOOL_RESULT_CAP) : raw;
     } catch (e) {
       if (e instanceof RunCancelledError || e instanceof AwaitingInputError) throw e;
       const msg = e instanceof Error ? e.message : String(e);

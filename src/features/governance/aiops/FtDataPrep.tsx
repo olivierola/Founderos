@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eraser, Sparkles, VenetianMask, ScanSearch, ChevronRight, Play } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSkeleton } from "@/components/ui/skeleton";
@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Select } from "../ui";
-import { useFtDatasetsDb, useCleaningTicker } from "./db";
+import { DATA_PREP_FUNCTIONS } from "./data";
+import { useFtDatasetsDb, useCleaningTicker, useFtSettingsDb } from "./db";
 
 // Pipeline stages (spec): Raw → Deduplicate → Remove HTML → Fix Encoding →
 // Normalize → Split → Chunk → Tokenize → Ready.
 const STAGES = ["Raw Data", "Deduplicate", "Remove HTML", "Fix Encoding", "Normalize", "Split", "Chunk", "Tokenize", "Ready"];
 
-// Function groups, each toggleable.
+// Function groups, each toggleable. Item names double as the persisted ids.
 const GROUPS: { icon: typeof Eraser; title: string; color: string; items: string[] }[] = [
   { icon: Eraser, title: "Suppression", color: "text-red-500", items: ["Doublons", "Signatures", "Mails", "Publicités", "Scripts", "HTML"] },
   { icon: Sparkles, title: "Nettoyage IA", color: "text-[hsl(var(--accent-teal))]", items: ["Correction orthographique", "Uniformisation", "Reformulation"] },
@@ -24,12 +25,23 @@ const GROUPS: { icon: typeof Eraser; title: string; color: string; items: string
 export function GovFtDataPrepPage() {
   const { datasets, updateCleaning, loading } = useFtDatasetsDb();
   useCleaningTicker(datasets, updateCleaning);
+  const { settings, save } = useFtSettingsDb();
   const [dsId, setDsId] = useState("");
   const ds = datasets.find((d) => d.id === dsId) ?? datasets[0];
 
-  // Every function enabled by default; toggles are local (mock pipeline config).
-  const [enabled, setEnabled] = useState<Set<string>>(() => new Set(GROUPS.flatMap((g) => g.items)));
-  const flip = (item: string) => setEnabled((prev) => { const n = new Set(prev); if (n.has(item)) n.delete(item); else n.add(item); return n; });
+  // Pipeline config persisted in the studio settings — read on load, written on
+  // every toggle so the choice survives a reload (default: tout activé).
+  const [enabled, setEnabled] = useState<Set<string>>(() => new Set(settings.dataPrepEnabled.length ? settings.dataPrepEnabled : DATA_PREP_FUNCTIONS));
+  useEffect(() => {
+    if (settings.dataPrepEnabled.length) setEnabled(new Set(settings.dataPrepEnabled));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.dataPrepEnabled.join(",")]);
+  const flip = (item: string) => setEnabled((prev) => {
+    const n = new Set(prev);
+    if (n.has(item)) n.delete(item); else n.add(item);
+    void save({ ...settings, dataPrepEnabled: [...n] });
+    return n;
+  });
 
   if (loading) return <PageSkeleton cards={0} rows={7} />;
   if (!ds) return <EmptyState icon={ScanSearch} title="Aucun dataset" description="Importez un dataset dans l'onglet Datasets pour lancer le nettoyage." />;

@@ -136,7 +136,7 @@ export function SettingsNotificationsPage() {
 
   return (
     <div>
-      <PageHeader title="Notifications" description="What AchiCorp pings you about. Saved to your account." />
+      <PageHeader title="Notifications" description="What Anduran pings you about. Saved to your account." />
       <Card>
         <CardContent className="space-y-4 p-5">
           {NOTIF_FIELDS.map((f) => (

@@ -16,7 +16,7 @@ const PARTNERS: { name: string; cls: string; icon?: typeof Circle }[] = [
 ];
 
 const INTRO_PARAS = [
-  "AchiCorp is a control layer for agencies and studios. It connects to every " +
+  "Anduran is a control layer for agencies and studios. It connects to every " +
     "client's Stripe, Vercel, Supabase and GitHub, syncs their data in real time, " +
     "and exposes it through one unified cockpit.",
   "This lets your team operate billing, infra, deploys and support — and the AI " +

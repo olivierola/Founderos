@@ -87,12 +87,22 @@ function schemeStyle(scheme: string) {
 // Twitter) — those need a custom registered OAuth app we don't support yet,
 // shown as "Non supporté". The in-house Catalog/ConnectorDialog/providers.ts
 // path is left untouched and simply no longer linked here.
-export function ComposioCatalog() {
+export function ComposioCatalog({ serviceDashboardId, scope: scopeProp }: {
+  serviceDashboardId?: string;
+  /** Driven by the connectors section's own navigation inside a service
+   *  dashboard (migration 0177). Outside one, only the legacy project-wide
+   *  rows exist, so the scope is fixed. */
+  scope?: "dashboard" | "personal";
+} = {}) {
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
+  const scope: "project" | "dashboard" | "personal" = serviceDashboardId ? (scopeProp ?? "dashboard") : "project";
   const [filter, setFilter] = useState<"all" | "connected" | "available">("all");
+  // Two steps: `details` presents the toolkit, `connecting` runs the Composio
+  // flow. A tile opens the first — never the second directly.
+  const [details, setDetails] = useState<ComposioToolkit | null>(null);
   const [connecting, setConnecting] = useState<ComposioToolkit | null>(null);
 
   const { data: toolkits, isLoading } = useQuery({
@@ -103,15 +113,22 @@ export function ComposioCatalog() {
     },
   });
 
+  // Only the connections of the scope on screen. RLS already hides other
+  // people's personal rows, so "personal" here is always *yours*.
   const { data: connectors } = useQuery({
-    queryKey: ["composio_connectors", projectId],
+    queryKey: ["composio_connectors", projectId, serviceDashboardId ?? null, scope],
     enabled: !!projectId,
     queryFn: async () => {
-      const { data } = await supabase
+      let q = supabase
         .from("connectors")
         .select("provider, status")
         .eq("project_id", projectId!)
-        .eq("source", "composio");
+        .eq("source", "composio")
+        .eq("scope", scope);
+      q = serviceDashboardId
+        ? q.eq("service_dashboard_id", serviceDashboardId)
+        : q.is("service_dashboard_id", null);
+      const { data } = await q;
       return (data ?? []) as Array<{ provider: string; status: string }>;
     },
   });
@@ -120,12 +137,13 @@ export function ComposioCatalog() {
     [connectors],
   );
 
-  // Deep link from ServiceBadge etc: /admin/connectors?connect=<slug>
+  // Deep link from ServiceBadge etc: /agent/connectors?connect=<slug>. It lands
+  // on the presentation panel too — one deliberate click still starts the flow.
   useEffect(() => {
     const slug = searchParams.get("connect");
     if (!slug || !toolkits) return;
     const t = toolkits.find((x) => x.slug === slug);
-    if (t && t.authMode !== "unsupported") setConnecting(t);
+    if (t && t.authMode !== "unsupported") setDetails(t);
     searchParams.delete("connect");
     setSearchParams(searchParams, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,13 +168,22 @@ export function ComposioCatalog() {
   }, [toolkits, statusByToolkit, filter, search]);
 
   return (
-    <div>
+    // Inside a service dashboard the <main> is flush (each tab brings its own
+    // padding, like the other tabs' px-10 py-8); in the AppShell the layout
+    // already pads, so don't double it.
+    <div className={cn(serviceDashboardId && "px-14 py-8 xl:px-20")}>
+      {/* The scope is already named by the section's own navigation — one line
+          of context here, not a paragraph repeating it. */}
       <PageHeader
-        title="Connecteurs"
-        description="Connectez les applications qui alimentent vos agents — via Composio."
+        title={scope === "personal" ? "Mes connexions" : "Connecteurs"}
+        description={
+          scope === "personal"
+            ? "Vos comptes. Un agent ne s'en sert que sur demande explicite."
+            : "Comptes partagés par les agents de cet espace."
+        }
       />
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <div className="relative w-full max-w-sm">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un connecteur" className="pl-9" />
@@ -179,23 +206,23 @@ export function ComposioCatalog() {
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-8">
         {isLoading ? (
           <EmptyState icon={Loader2} title="Chargement du catalogue…" />
         ) : groups.length === 0 ? (
           <EmptyState icon={Plug} title="Aucun connecteur trouvé" description="Essayez une autre recherche ou un autre filtre." />
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-10">
             {groups.map(([category, items]) => (
               <section key={category}>
-                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h2>
+                <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {items.map((t) => (
                     <ToolkitCard
                       key={t.slug}
                       toolkit={t}
                       status={statusByToolkit.get(t.slug)}
-                      onConnect={() => setConnecting(t)}
+                      onConnect={() => setDetails(t)}
                     />
                   ))}
                 </div>
@@ -205,10 +232,19 @@ export function ComposioCatalog() {
         )}
       </div>
 
+      <ToolkitDetailsDialog
+        toolkit={details}
+        status={details ? statusByToolkit.get(details.slug) : undefined}
+        onOpenChange={(o) => !o && setDetails(null)}
+        onConnect={() => { setConnecting(details); setDetails(null); }}
+      />
+
       <ComposioConnectDialog
         toolkit={connecting}
         workspaceId={workspaceId}
         projectId={projectId}
+        serviceDashboardId={serviceDashboardId}
+        scope={scope}
         onOpenChange={(o) => !o && setConnecting(null)}
         onConnected={() => queryClient.invalidateQueries({ queryKey: ["composio_connectors", projectId] })}
       />
@@ -350,12 +386,131 @@ export function ToolkitCard({
   );
 }
 
+// Step 1 of connecting: what this toolkit IS. Clicking a catalogue tile used to
+// fire the Composio connect call immediately (and pop a browser window) before
+// the user had read a single line about the app. This panel shows the identity
+// card — description, what it exposes, how it authenticates, current status —
+// and only the explicit "Connecter" button starts the flow.
+function ToolkitDetailsDialog({
+  toolkit: t, status, onOpenChange, onConnect,
+}: {
+  toolkit: ComposioToolkit | null;
+  status: string | undefined;
+  onOpenChange: (open: boolean) => void;
+  onConnect: () => void;
+}) {
+  if (!t) return null;
+  const unsupported = t.authMode === "unsupported";
+  const customOAuth = t.authMode === "oauth_custom";
+  const connected = status === "connected";
+  const schemes = t.authSchemes?.length ? t.authSchemes : t.authScheme ? [t.authScheme] : [];
+  const managed = (t.managedSchemes?.length ?? 0) > 0;
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40">
+              {t.logo
+                ? <img src={t.logo} alt="" className="h-7 w-7 rounded object-contain" />
+                : <Plug className="h-5 w-5 text-muted-foreground" />}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate">{t.name}</span>
+              {t.categories[0] && (
+                <span className="block text-xs font-normal text-muted-foreground">{t.categories[0]}</span>
+              )}
+            </span>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {t.description && (
+            <p className="text-sm leading-relaxed text-muted-foreground">{t.description}</p>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border/70 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Wrench className="h-3.5 w-3.5" /> Outils
+              </div>
+              <div className="mt-0.5 font-mono text-lg tabular-nums">{t.toolsCount ?? 0}</div>
+            </div>
+            <div className="rounded-lg border border-border/70 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Zap className="h-3.5 w-3.5" /> Déclencheurs
+              </div>
+              <div className="mt-0.5 font-mono text-lg tabular-nums">{t.triggersCount || "—"}</div>
+            </div>
+          </div>
+
+          {schemes.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Authentification
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {schemes.map((s) => {
+                  const { label, className } = schemeStyle(s);
+                  return (
+                    <span key={s} className={cn("rounded border px-1.5 py-0.5 font-mono text-[10px]", className)}>
+                      {label}
+                    </span>
+                  );
+                })}
+                {managed && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <ShieldCheck className="h-3.5 w-3.5" /> gérée par Composio — aucune app à créer
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {unsupported && (
+            <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Ce connecteur n'expose qu'un schéma d'authentification que nous ne supportons pas encore.
+            </p>
+          )}
+          {customOAuth && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              Nécessite votre propre application OAuth — le client id et le secret vous seront demandés à l'étape suivante.
+            </p>
+          )}
+
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <span className="text-xs text-muted-foreground">
+              {connected ? "Déjà connecté à cet espace." : status === "pending" ? "Connexion en attente." : `Composio${t.version ? ` · v${t.version}` : ""}`}
+            </span>
+            <button
+              type="button"
+              disabled={unsupported}
+              onClick={onConnect}
+              className={cn(
+                "rounded-full bg-white px-5 py-2 text-sm font-medium text-zinc-900 shadow-sm transition-colors",
+                unsupported ? "cursor-not-allowed opacity-40" : "hover:bg-zinc-100",
+              )}
+            >
+              {connected ? "Reconnecter" : "Connecter"}
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ComposioConnectDialog({
-  toolkit, workspaceId, projectId, onOpenChange, onConnected,
+  toolkit, workspaceId, projectId, serviceDashboardId, scope = "project", onOpenChange, onConnected,
 }: {
   toolkit: ComposioToolkit | null;
   workspaceId: string | null | undefined;
   projectId: string | null | undefined;
+  /** Which connection is being created (migration 0177). Defaults to the
+   *  legacy project-wide scope for callers outside a service dashboard. */
+  serviceDashboardId?: string;
+  scope?: "project" | "dashboard" | "personal";
   onOpenChange: (open: boolean) => void;
   onConnected: () => void;
 }) {
@@ -392,6 +547,7 @@ export function ComposioConnectDialog({
         // custom OAuth app, which Composio needs BEFORE it can build a page.
         const res = await callEdge<{ ok: boolean; redirect_url?: string; status?: string }>("composio-connect", {
           workspace_id: workspaceId, project_id: projectId, toolkit: toolkit.slug, auth_scheme: toolkit.authScheme,
+          scope, ...(serviceDashboardId ? { service_dashboard_id: serviceDashboardId } : {}),
           ...(credentials ? { credentials } : {}),
         });
         if (cancelled) return;
@@ -412,6 +568,7 @@ export function ComposioConnectDialog({
           try {
             const s = await callEdge<{ status: string }>("composio-connection-status", {
               workspace_id: workspaceId, project_id: projectId, toolkit: toolkit.slug,
+              scope, ...(serviceDashboardId ? { service_dashboard_id: serviceDashboardId } : {}),
             });
             if (s.status === "connected") {
               if (pollRef.current) clearInterval(pollRef.current);

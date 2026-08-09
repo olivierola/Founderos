@@ -86,25 +86,43 @@ export function RoomPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "general" && (
-          <div className="flex h-full flex-col">
-            <div className="min-h-0 flex-[2]"><RoomGraph participants={participants} pendingAgentIds={pending ?? []} /></div>
-            <div className="space-y-1 border-t border-border/60 p-3">
+          // The roster floats OVER the graph instead of stacking under it: a
+          // room has a handful of agents, and a full-width row each pushed the
+          // graph — the thing you actually came to look at — into a sliver.
+          <div className="relative h-full">
+            <RoomGraph participants={participants} pendingAgentIds={pending ?? []} />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1.5 p-3">
               {participants.map((a) => (
-                <div key={a.id} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted/60">
+                <span
+                  key={a.id}
+                  className="pointer-events-auto group flex items-center gap-1.5 rounded-full border border-border/60 bg-card/85 py-1 pl-1 pr-2.5 text-xs shadow-sm backdrop-blur transition-colors hover:border-border"
+                  title={a.is_orchestrator ? `${a.name} · assistant` : a.name}
+                >
                   <AgentIdentity url={a.avatar_url} seed={a.name} size={20} rounded="rounded-full" />
-                  <span className="min-w-0 flex-1 truncate">{a.name}{a.is_orchestrator ? " · assistant" : ""}</span>
-                  {!a.is_orchestrator && (
-                    <button onClick={() => onRemove(a.id)} className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
+                  <span
+                    className="max-w-[120px] truncate font-medium"
+                    style={a.accent_color ? { color: a.accent_color } : undefined}
+                  >{a.name}</span>
+                  {a.is_orchestrator ? (
+                    <span className="rounded-full bg-primary/15 px-1.5 text-[9px] font-medium text-primary">chef</span>
+                  ) : (
+                    <button
+                      onClick={() => onRemove(a.id)} title="Retirer de la room"
+                      className="-mr-1 rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    ><X className="h-3 w-3" /></button>
                   )}
-                </div>
+                </span>
               ))}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-90">
-                    <Plus className="h-3.5 w-3.5" /> Add
+                  <button
+                    title="Ajouter un agent"
+                    className="pointer-events-auto flex items-center gap-1 rounded-full border border-dashed border-border bg-card/85 px-2.5 py-1.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:border-primary/60 hover:text-foreground"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Agent
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="center" className="w-52 rounded-xl">
+                <DropdownMenuContent align="start" side="top" className="w-52 rounded-xl">
                   {addable.length === 0 ? <div className="px-2 py-2 text-xs text-muted-foreground">Tous les agents sont déjà là.</div> :
                     addable.map((a) => (
                       <DropdownMenuItem key={a.id} className="rounded-lg" onSelect={() => onAdd(a.id)}>

@@ -1,4 +1,4 @@
-// automation-receiver — public webhook receiver. Authenticated via AchiCorp API key.
+// automation-receiver — public webhook receiver. Authenticated via Anduran API key.
 // Body: arbitrary JSON. Header: Authorization: Bearer fos_...
 // Logs the event in product_events AND in activity_logs.
 
@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   try {
     const auth = req.headers.get("Authorization") ?? "";
     const m = auth.match(/^Bearer\s+(fos_[A-Za-z0-9]+)$/);
-    if (!m) return jsonResponse({ error: "Missing or malformed AchiCorp API key" }, { status: 401 });
+    if (!m) return jsonResponse({ error: "Missing or malformed Anduran API key" }, { status: 401 });
     const apiKey = m[1]!;
     const hash = await sha256(apiKey);
 

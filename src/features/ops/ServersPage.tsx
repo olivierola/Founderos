@@ -61,7 +61,7 @@ export function OpsServersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Servers"
-        description="Connect VPS or cloud servers to AchiCorp. SSH keys are stored encrypted (project-scoped)."
+        description="Connect VPS or cloud servers to Anduran. SSH keys are stored encrypted (project-scoped)."
         actions={
           <Button onClick={() => setAddOpen(true)} className="gap-1.5">
             <Plus className="h-4 w-4" /> Add server
@@ -397,7 +397,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
               Targets in Ops can be a VPS you manage yourself, or a managed PaaS where
-              AchiCorp drives the deploy via API using one of your configured connectors.
+              Anduran drives the deploy via API using one of your configured connectors.
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button

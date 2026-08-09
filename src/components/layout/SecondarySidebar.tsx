@@ -414,7 +414,7 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
           <span className="min-w-0 flex-1 truncate">Collections</span>
         </button>
 
-        {/* ── Custom Skills ── */}
+        {/* ── Skills (custom + catalogue) ── */}
         <div className="mt-4 border-t border-border/60 pt-3">
           <SectionLabel>Compétences</SectionLabel>
         </div>
@@ -428,7 +428,7 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
           )}
         >
           <PuzzlePieceIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
-          <span className="min-w-0 flex-1 truncate">Custom Skills</span>
+          <span className="min-w-0 flex-1 truncate">Skills</span>
         </button>
         <button
           onClick={() => navigate(`${base}/agent/mcp`)}
@@ -442,6 +442,7 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
           <PlugsConnectedIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
           <span className="min-w-0 flex-1 truncate">MCP Servers</span>
         </button>
+
       </div>
     </aside>
   );

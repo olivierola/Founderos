@@ -1,10 +1,17 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
+import { paintTheme, resolveBase, type ThemeKey } from "@/lib/themes";
 
-export type Theme = "light" | "dark";
+/** Kept as an alias: plenty of callers only care about light vs dark. */
+export type Theme = ThemeKey;
 
 type ThemeContextValue = {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
+  /** The chosen key — may be "system". */
+  theme: ThemeKey;
+  /** What "system" actually resolves to right now. */
+  base: "light" | "dark";
+  setTheme: (theme: ThemeKey) => void;
+  /** Flip between plain light and plain dark, whatever skin was on. */
   toggleTheme: () => void;
 };
 
@@ -12,41 +19,84 @@ const STORAGE_KEY = "founderos.theme";
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-function getInitialTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
+function getInitialTheme(): ThemeKey {
+  if (typeof window === "undefined") return "system";
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark") return stored;
-  const prefersLight = window.matchMedia?.("(prefers-color-scheme: light)").matches;
-  return prefersLight ? "light" : "dark";
+  return (stored as ThemeKey) || "system";
 }
 
-function applyTheme(theme: Theme) {
-  const root = document.documentElement;
-  root.classList.remove("light", "dark");
-  root.classList.add(theme);
-  root.style.colorScheme = theme;
-}
-
+/**
+ * One theme per user, for the whole app.
+ *
+ * localStorage is the fast path — it is read synchronously so the first paint
+ * is already correct — and `profiles.theme` (0178) is the durable copy that
+ * follows the account to another browser.
+ */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => getInitialTheme());
+  const [theme, setThemeState] = useState<ThemeKey>(() => getInitialTheme());
+  // Guards the first DB read from overwriting a choice made in the meantime.
+  const touched = useRef(false);
 
   useEffect(() => {
-    applyTheme(theme);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, theme);
-    } catch {
-      /* ignore storage errors (private mode, etc.) */
-    }
+    paintTheme(document.documentElement, theme);
+    try { window.localStorage.setItem(STORAGE_KEY, theme); } catch { /* private mode */ }
   }, [theme]);
 
-  const value = useMemo<ThemeContextValue>(
-    () => ({
+  // Another tab changed the theme — follow it, so every open dashboard of this
+  // person lands on the same skin without a reload.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY || !e.newValue) return;
+      touched.current = true;
+      setThemeState(e.newValue as ThemeKey);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Repaint when the OS flips and we are following it.
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia?.("(prefers-color-scheme: light)");
+    if (!mq) return;
+    const onChange = () => paintTheme(document.documentElement, "system");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme]);
+
+  // Adopt the account's saved theme once, on sign-in.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid || cancelled || touched.current) return;
+      const { data } = await supabase.from("profiles").select("theme").eq("id", uid).maybeSingle();
+      const saved = (data as { theme: string | null } | null)?.theme as ThemeKey | undefined;
+      if (saved && !cancelled && !touched.current) setThemeState(saved);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const value = useMemo<ThemeContextValue>(() => {
+    const commit = (next: ThemeKey) => {
+      touched.current = true;
+      setThemeState(next);
+      // Durable copy — best effort, the local one already took effect.
+      void (async () => {
+        const { data: auth } = await supabase.auth.getUser();
+        const uid = auth.user?.id;
+        if (!uid) return;
+        await supabase.from("profiles").update({ theme: next }).eq("id", uid);
+      })();
+    };
+    return {
       theme,
-      setTheme: setThemeState,
-      toggleTheme: () => setThemeState((t) => (t === "dark" ? "light" : "dark")),
-    }),
-    [theme],
-  );
+      base: resolveBase(theme),
+      setTheme: commit,
+      toggleTheme: () => commit(resolveBase(theme) === "dark" ? "light" : "dark"),
+    };
+  }, [theme]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

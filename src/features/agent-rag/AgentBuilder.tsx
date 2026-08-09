@@ -515,7 +515,7 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
             <div ref={endRef} />
           </div>
           {/* Branding + input */}
-          <div className="px-4 pb-1 text-center text-[10px] text-muted-foreground">Powered by AchiCorp</div>
+          <div className="px-4 pb-1 text-center text-[10px] text-muted-foreground">Powered by Anduran</div>
           <div className="flex items-center gap-2 border-t border-border p-3">
             <input
               value={input}
@@ -791,7 +791,7 @@ add_action("wp_footer", function () {
       {/* Interface */}
       <Section title="Interface" desc="Configure the parts of the widget interface.">
         <Toggle label="Collapsible" desc="Visitors can collapse the chat back to the bubble." checked={cfg.collapsible} onChange={(v) => set("collapsible", v)} />
-        <Toggle label="Show branding" desc="Display a small 'Powered by AchiCorp' line at the bottom." checked={cfg.show_branding} onChange={(v) => set("show_branding", v)} />
+        <Toggle label="Show branding" desc="Display a small 'Powered by Anduran' line at the bottom." checked={cfg.show_branding} onChange={(v) => set("show_branding", v)} />
         <div>
           <label className="mb-1.5 block text-sm font-medium">Variant</label>
           <div className="inline-flex rounded-md bg-secondary/60 p-0.5">

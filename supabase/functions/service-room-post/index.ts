@@ -7,9 +7,14 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { type ChatMessage } from "../_shared/ai.ts";
-import { buildInternalToolset, type InternalToolContext, type AgentToolRow, type ArtifactDraft } from "../_shared/internal-agent-tools.ts";
+import { type InternalToolContext, type AgentToolRow, type ArtifactDraft } from "../_shared/internal-agent-tools.ts";
 import { runParallelSubagents } from "../_shared/subagents.ts";
-import { classifyTier, modelForTier } from "../_shared/model-router.ts";
+import { classifyTier, modelForTier, resolveProvider } from "../_shared/model-router.ts";
+import {
+  routeTurn, ensureAgents, createMission, createEmptyMission, advanceRoomMission, logMissionEvent,
+  buildRoomSystemPrompt, postSystemMessage,
+  type RoomRef, type RosterAgent,
+} from "../_shared/room-orchestrator.ts";
 
 type Admin = ReturnType<typeof createServiceClient>;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -119,6 +124,7 @@ async function createRoomArtifact(
 
 interface AgentRow {
   id: string; name: string; persona: string | null; instructions: string | null;
+  model: string | null;
   temperature: number | null; is_orchestrator: boolean | null;
   service_dashboard_id: string | null; created_by: string | null;
   swarm_enabled: boolean | null; swarm_max_concurrency: number | null;
@@ -135,6 +141,44 @@ Deno.serve(async (req) => {
     const userId = u.user.id;
 
     const body = await req.json().catch(() => ({}));
+
+    // Human override on the mission board (reassign, move a card back to "à
+    // faire", resume a paused mission) → re-enter the orchestrator's frontier.
+    // Folded in here rather than shipped as its own edge function: the project
+    // is two slots from Supabase's 100-function ceiling.
+    if (str(body.op) === "advance_mission") {
+      const missionId = str(body.mission_id);
+      if (!missionId) return jsonResponse({ error: "mission_id required" }, { status: 400 });
+      const admin = createServiceClient();
+      const { data: m } = await admin.from("service_room_missions")
+        .select("id, workspace_id").eq("id", missionId).maybeSingle();
+      if (!m) return jsonResponse({ error: "Mission not found" }, { status: 404 });
+      const { data: mem } = await admin.from("workspace_members").select("role")
+        .eq("workspace_id", (m as { workspace_id: string }).workspace_id).eq("user_id", userId).maybeSingle();
+      if (!mem) return jsonResponse({ error: "Not authorized" }, { status: 403 });
+      const er0 = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+      const job = advanceRoomMission(admin, missionId);
+      if (er0?.waitUntil) er0.waitUntil(job); else await job;
+      return jsonResponse({ ok: true });
+    }
+
+    // Create a mission from the board's "Nouvelle mission" form, without going
+    // through a conversation. Two modes: "auto" hands the brief to the
+    // assistant to decompose and starts it, "empty" creates the shell so the
+    // human can author the cards themselves.
+    if (str(body.op) === "create_mission") {
+      const admin = createServiceClient();
+      const created = await createMissionFromForm(admin, {
+        roomId: str(body.room_id),
+        title: str(body.title).trim(),
+        objective: str(body.objective).trim(),
+        mode: str(body.mode) === "empty" ? "empty" : "auto",
+        userId,
+      });
+      if ("error" in created) return jsonResponse({ error: created.error }, { status: created.status });
+      return jsonResponse({ ok: true, mission_id: created.missionId });
+    }
+
     const roomId = str(body.room_id);
     const content = str(body.content).trim();
     const mentions: string[] = Array.isArray(body.mention_agent_ids) ? body.mention_agent_ids.map(String) : [];
@@ -157,21 +201,28 @@ Deno.serve(async (req) => {
     const roomSettings = ((dash?.settings ?? {}) as { rooms?: { default_responder_agent_id?: string | null } }).rooms;
     const defaultResponder = roomSettings?.default_responder_agent_id ?? null;
 
+    // A follow-up typed while a mission is open belongs to that mission — the
+    // client passes it so the message lands under the right badge.
+    const explicitMissionId = str(body.mission_id) || null;
+
     // Post the human message — with an attached image (uploaded client-side
     // into office_media) shown as an artifact card on the user's own message.
-    await admin.from("service_room_messages").insert({
+    const { data: postedUserMsg } = await admin.from("service_room_messages").insert({
       room_id: roomId, workspace_id: room.workspace_id, project_id: room.project_id,
       author_kind: "user", user_id: userId, content, status: "done",
+      mission_id: explicitMissionId,
       ui_blocks: attachmentMediaId
         ? [{ component: "artifact", props: { id: attachmentMediaId, table: "office_media", kind: "image", title: "Image" } }]
         : null,
-    });
+    }).select("id").single();
+    const userMessageId = (postedUserMsg as { id: string } | null)?.id ?? null;
     await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomId);
 
     // Who replies: explicitly-mentioned participants, else the dashboard's
     // configured default responder, else the orchestrator, else the first
     // participant. Cap concurrent responders.
     let responders = mentions.filter((id) => participantIds.includes(id));
+    const explicitlyAddressed = responders.length > 0;
     if (responders.length === 0 && participantIds.length) {
       if (defaultResponder && participantIds.includes(defaultResponder)) {
         responders = [defaultResponder];
@@ -183,12 +234,43 @@ Deno.serve(async (req) => {
     responders = responders.slice(0, 3);
     if (responders.length === 0) return jsonResponse({ ok: true, responders: [] });
 
+    const roomRef: RoomRef = {
+      id: room.id, dashboard_id: room.dashboard_id,
+      workspace_id: room.workspace_id, project_id: room.project_id, title: room.title,
+    };
+
+    // ── Orchestration ────────────────────────────────────────────────────────
+    // An UNADDRESSED turn goes through the room's assistant, which decides what
+    // this is: something it answers itself, something one specialist should own,
+    // or real multi-agent work worth a mission. An @mention is the human taking
+    // that decision back — it is always obeyed verbatim.
+    if (!explicitlyAddressed) {
+      const { data: orchRow } = await admin.from("internal_agents")
+        .select("id, name, persona, instructions, role, is_orchestrator, created_by, service_dashboard_id, swarm_enabled, swarm_max_concurrency")
+        .in("id", participantIds).eq("is_orchestrator", true).limit(1).maybeSingle();
+      if (orchRow) {
+        const routed = await orchestrateTurn(admin, {
+          room: roomRef, dashboardName,
+          assistant: orchRow as RosterAgent,
+          participantIds, userId, userText: content, userMessageId,
+        }).catch((e) => {
+          // Routing is an OPTIMISATION, never a gate: on any failure the turn
+          // falls through to the plain responder path below.
+          console.error("room routing failed", e);
+          return null;
+        });
+        if (routed?.handled) return jsonResponse({ ok: true, ...routed.result });
+        if (routed?.responder) responders = [routed.responder];
+      }
+    }
+
     // Insert a "thinking" placeholder per responder so the UI shows them typing.
     const placeholders: Record<string, string> = {};
     for (const aid of responders) {
       const { data: ph } = await admin.from("service_room_messages").insert({
         room_id: roomId, workspace_id: room.workspace_id, project_id: room.project_id,
         author_kind: "agent", agent_id: aid, content: "", status: "thinking",
+        mission_id: explicitMissionId,
       }).select("id").single();
       if (ph) placeholders[aid] = (ph as { id: string }).id;
     }
@@ -196,7 +278,7 @@ Deno.serve(async (req) => {
     const work = async () => {
       for (const aid of responders) {
         try {
-          await runResponder(admin, room, dashboardName, aid, placeholders[aid], participantIds);
+          await runResponder(admin, room, dashboardName, aid, placeholders[aid], participantIds, explicitMissionId);
         } catch (e) {
           await admin.from("service_room_messages").update({
             status: "failed", content: `⚠️ ${e instanceof Error ? e.message : "erreur"}`,
@@ -214,15 +296,207 @@ Deno.serve(async (req) => {
   }
 });
 
+/**
+ * Create a mission from the board form.
+ *
+ * "auto" is the interesting path: the brief goes to the same planner the room
+ * uses, so a mission authored from the board and one born in a conversation are
+ * the same object, planned the same way, driven by the same frontier. "empty"
+ * exists because a human who already knows the plan should not have to argue
+ * with a planner to get it on the board.
+ */
+async function createMissionFromForm(admin: Admin, opts: {
+  roomId: string; title: string; objective: string; mode: "auto" | "empty"; userId: string;
+}): Promise<{ missionId: string } | { error: string; status: number }> {
+  if (!opts.roomId || !opts.title) return { error: "room_id et title requis", status: 400 };
+
+  const { data: roomRow } = await admin.from("service_rooms")
+    .select("id, dashboard_id, workspace_id, project_id, title").eq("id", opts.roomId).maybeSingle();
+  if (!roomRow) return { error: "Room introuvable", status: 404 };
+  const room = roomRow as RoomRef;
+  const { data: mem } = await admin.from("workspace_members").select("role")
+    .eq("workspace_id", room.workspace_id).eq("user_id", opts.userId).maybeSingle();
+  if (!mem) return { error: "Non autorisé", status: 403 };
+
+  const { data: parts } = await admin.from("service_room_agents").select("agent_id").eq("room_id", room.id);
+  const participantIds = (parts ?? []).map((p: { agent_id: string }) => p.agent_id);
+  const { data: rosterRows } = await admin.from("internal_agents")
+    .select("id, name, persona, instructions, role, is_orchestrator, created_by, service_dashboard_id")
+    .in("id", participantIds.length ? participantIds : ["00000000-0000-0000-0000-000000000000"]);
+  const roster = (rosterRows ?? []) as RosterAgent[];
+  const assistant = roster.find((a) => a.is_orchestrator) ?? null;
+
+  if (opts.mode === "empty" || !assistant) {
+    const id = await createEmptyMission(admin, room, assistant, { title: opts.title, objective: opts.objective }, opts.userId);
+    if (!id) return { error: "Création impossible", status: 500 };
+    return { missionId: id };
+  }
+
+  const { data: dash } = await admin.from("service_dashboards").select("name").eq("id", room.dashboard_id).maybeSingle();
+  const decision = await routeTurn({
+    room, dashboardName: (dash as { name?: string } | null)?.name ?? "workspace",
+    assistant, roster, thread: [], openMissions: [], forceMission: true,
+    userText: [opts.title, opts.objective].filter(Boolean).join("\n\n"),
+  });
+
+  // A planner that came back empty must not lose the user's brief — fall back
+  // to the shell so the mission still exists and can be authored by hand.
+  if (decision.mode !== "mission" || !decision.mission) {
+    const id = await createEmptyMission(admin, room, assistant, { title: opts.title, objective: opts.objective }, opts.userId);
+    if (!id) return { error: "Planification impossible", status: 500 };
+    return { missionId: id };
+  }
+
+  const idByName = new Map(roster.map((a) => [a.name, a.id]));
+  if (decision.new_agents?.length) {
+    const created = await ensureAgents(admin, room, decision.new_agents, assistant.created_by ?? opts.userId);
+    for (const [name, id] of created) idByName.set(name, id);
+  }
+  for (const t of decision.mission.tasks) if (!idByName.has(t.agent)) t.agent = assistant.name;
+  idByName.set(assistant.name, assistant.id);
+
+  // The form's own wording wins over the planner's paraphrase — the user wrote
+  // that title on purpose.
+  decision.mission.title = opts.title;
+  if (opts.objective) decision.mission.objective = opts.objective;
+
+  const missionId = await createMission(admin, room, assistant, decision.mission, idByName, opts.userId);
+  if (!missionId) return { error: "Création impossible", status: 500 };
+
+  await logMissionEvent(admin, missionId, {
+    kind: "routed", agent_id: assistant.id,
+    message: decision.reason, payload: { source: "form" },
+  });
+  await postSystemMessage(admin, room, missionId, [
+    `🎯 **${decision.mission.title}** — mission créée depuis le tableau.`,
+    `${decision.mission.milestones.length} jalon(s), ${decision.mission.tasks.length} tâche(s).`,
+  ].join("\n\n"));
+
+  const er = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+  const job = advanceRoomMission(admin, missionId);
+  if (er?.waitUntil) er.waitUntil(job); else await job;
+  return { missionId };
+}
+
+/**
+ * Run the assistant's routing decision for one unaddressed turn.
+ *
+ * Returns `{ handled: true }` when the turn is fully taken care of here (a
+ * mission was planned and its first agents are already working), or a
+ * `responder` override when the turn should be answered by a specific agent —
+ * either the one the assistant picked, or one it just created for the purpose.
+ * Returning nothing means "let the default responder handle it".
+ */
+async function orchestrateTurn(admin: Admin, opts: {
+  room: RoomRef;
+  dashboardName: string;
+  assistant: RosterAgent;
+  participantIds: string[];
+  userId: string;
+  userText: string;
+  /** The message that triggered the turn — stamped with the mission it spawned. */
+  userMessageId: string | null;
+}): Promise<{ handled: boolean; responder?: string; result?: Record<string, unknown> } | null> {
+  const { room, assistant } = opts;
+
+  const [{ data: rosterRows }, { data: threadRows }, { data: openRows }] = await Promise.all([
+    admin.from("internal_agents")
+      .select("id, name, persona, instructions, role, is_orchestrator")
+      .in("id", opts.participantIds.length ? opts.participantIds : [assistant.id]),
+    admin.from("service_room_messages")
+      .select("author_kind, agent_id, content").eq("room_id", room.id).eq("status", "done")
+      .order("created_at", { ascending: false }).limit(14),
+    admin.from("service_room_missions")
+      .select("id, title").eq("room_id", room.id).in("status", ["planning", "running", "blocked"]).limit(6),
+  ]);
+  const roster = (rosterRows ?? []) as RosterAgent[];
+  const nameById = new Map(roster.map((a) => [a.id, a.name]));
+  const thread = ((threadRows ?? []) as Array<{ author_kind: string; agent_id: string | null; content: string }>)
+    .reverse()
+    .filter((m) => m.content?.trim())
+    .map((m) => ({
+      who: m.author_kind === "user" ? "Utilisateur" : m.author_kind === "system" ? "Système" : (nameById.get(m.agent_id ?? "") ?? "Agent"),
+      text: m.content,
+    }));
+
+  const decision = await routeTurn({
+    room, dashboardName: opts.dashboardName, assistant, roster, thread,
+    userText: opts.userText,
+    openMissions: (openRows ?? []) as Array<{ id: string; title: string }>,
+  });
+
+  // Staffing first: an agent named by the plan must exist before anything is
+  // routed to it.
+  const idByName = new Map(roster.map((a) => [a.name, a.id]));
+  if (decision.new_agents?.length) {
+    const created = await ensureAgents(admin, room, decision.new_agents, assistant.created_by ?? opts.userId);
+    for (const [name, id] of created) idByName.set(name, id);
+    if (created.size) {
+      await postSystemMessage(admin, room, null,
+        `🤖 ${[...created.keys()].map((n) => `« ${n} »`).join(", ")} ${created.size > 1 ? "créés et ajoutés" : "créé et ajouté"} à la room par ${assistant.name}.`);
+    }
+  }
+
+  if (decision.mode === "route" && decision.agent) {
+    const target = idByName.get(decision.agent);
+    if (!target) return null;
+    if (target !== assistant.id) {
+      await postSystemMessage(admin, room, null, `↪️ ${assistant.name} confie ce point à @${decision.agent} — ${decision.reason}`);
+    }
+    return { handled: false, responder: target };
+  }
+
+  if (decision.mode !== "mission" || !decision.mission) return null;
+
+  // Any task pointing at an agent that neither existed nor could be created
+  // falls back to the assistant, which can at least do it or say why not.
+  for (const t of decision.mission.tasks) {
+    if (!idByName.has(t.agent)) t.agent = assistant.name;
+  }
+  idByName.set(assistant.name, assistant.id);
+
+  const missionId = await createMission(
+    admin, room, assistant, decision.mission, idByName, assistant.created_by ?? opts.userId,
+  );
+  if (!missionId) return null;
+
+  // The request that started it carries the badge too, so the thread reads as
+  // one continuous story rather than starting at the assistant's announcement.
+  if (opts.userMessageId) {
+    await admin.from("service_room_messages").update({ mission_id: missionId }).eq("id", opts.userMessageId).then(() => {}, () => {});
+  }
+  await logMissionEvent(admin, missionId, {
+    kind: "routed", agent_id: assistant.id,
+    message: decision.reason, payload: { mode: "mission" },
+  });
+  const byAgent = new Map<string, number>();
+  for (const t of decision.mission.tasks) byAgent.set(t.agent, (byAgent.get(t.agent) ?? 0) + 1);
+  await postSystemMessage(admin, room, missionId, [
+    `🎯 **${decision.mission.title}** — mission créée par ${assistant.name}.`,
+    decision.reason,
+    `${decision.mission.milestones.length} jalon(s), ${decision.mission.tasks.length} tâche(s) — ${[...byAgent].map(([n, c]) => `@${n} (${c})`).join(", ")}.`,
+    `Suivez-la dans l'onglet **Missions**.`,
+  ].join("\n\n"));
+
+  // Dispatch the ready frontier. Everything after this is driven by task
+  // completions re-entering the orchestrator from the tick engine.
+  await advanceRoomMission(admin, missionId);
+  return { handled: true, result: { mission_id: missionId, mode: "mission" } };
+}
+
 async function runResponder(
   admin: Admin, room: { id: string; workspace_id: string; project_id: string; title: string; dashboard_id: string },
   dashboardName: string, agentId: string, placeholderId: string, participantIds: string[],
+  missionId: string | null = null,
 ) {
   const { data: agent } = await admin.from("internal_agents")
-    .select("id, name, persona, instructions, temperature, is_orchestrator, service_dashboard_id, created_by, swarm_enabled, swarm_max_concurrency")
+    .select("id, name, persona, instructions, model, temperature, is_orchestrator, service_dashboard_id, created_by, swarm_enabled, swarm_max_concurrency")
     .eq("id", agentId).maybeSingle();
   if (!agent) throw new Error("Agent introuvable");
   const a = agent as AgentRow;
+  // Each agent answers on ITS OWN provider — a room turn is the same agent as
+  // its direct chat, and must not silently run on a different vendor.
+  const agentProvider = resolveProvider(a.model);
   const { data: toolRows } = await admin.from("internal_agent_tools")
     .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", agentId);
 
@@ -278,7 +552,7 @@ async function runResponder(
     return await runParallelSubagents({
       admin, parentRunId: turnRunId,
       agentId: a.id, workspaceId: room.workspace_id, projectId: room.project_id, createdBy: a.created_by ?? null,
-      tools: (toolRows ?? []) as AgentToolRow[], provider: "deepseek", temperature: a.temperature ?? 0.4,
+      tools: (toolRows ?? []) as AgentToolRow[], provider: agentProvider, temperature: a.temperature ?? 0.4,
       makeChildContext: (childRunId) => ({ ...ctx, runId: childRunId, isSubagent: true, spawnParallel: undefined }),
       buildChildSystem: (cap) => [
         `You are ${a.name}${a.persona ? ` — ${a.persona}` : ""}, focused on a single subtask for the "${room.title}" room.`,
@@ -288,11 +562,6 @@ async function runResponder(
       maxConcurrency: a.swarm_max_concurrency ?? undefined,
     }, subtasks);
   };
-
-  // We only need the capability summary for the system prompt — the DURABLE tick
-  // engine (internal-agent-run) rebuilds the real toolset + executor and runs the
-  // loop, so a long room turn survives the edge wall-clock.
-  const { capabilitySummary } = buildInternalToolset((toolRows ?? []) as AgentToolRow[], ctx);
 
   // Build the shared-thread history from the responder's point of view.
   const { data: msgs } = await admin.from("service_room_messages")
@@ -311,23 +580,21 @@ async function runResponder(
       return { role: "user", content: `[${nameCache.get(m.agent_id ?? "") || "Agent"}] ${m.content}` } as ChatMessage;
     });
 
-  const orchNote = a.is_orchestrator
-    ? "\nYou are this workspace's orchestrator: when asked, create agents (create_agent) or schedule recurring work (create_mission with a cron schedule), and confirm plainly."
-    : "";
-  const system = [
-    `You are ${a.name}${a.persona ? ` — ${a.persona}` : ""}, an agent in a shared room "${room.title}" of the "${dashboardName}" workspace.`,
-    a.instructions ? `Your instructions:\n${a.instructions}` : "",
-    orchNote,
-    "The human and possibly other agents talk here; each message is prefixed with the speaker in [brackets]. Reply AS YOURSELF, directly and concisely — no need to restate the question or your name. Don't answer for other agents.",
-    "Use render_ui for metrics/tables/charts, and create_deliverable to produce a document/file/report (it appears as a card). Real data only.",
-    "QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : NE demande PAS quoi faire, ne réponds PAS juste par du texte conversationnel. Fais l'analyse avec tes outils MAINTENANT et produis-la avec create_deliverable(kind=\"report\") (sections, KPIs, tableaux, risques — conçu avec ton skill report-designer). Pour un gros rapport, construis-le avec report_section puis finalise avec create_deliverable(kind=\"report\") sans content. Ne pose une question de clarification QUE si c'est réellement impossible d'avancer.",
-    "",
-    "Your tools:",
-    capabilitySummary,
-  ].filter(Boolean).join("\n");
+  // The prompt compiler owns the shape: canonical section order, budgeted
+  // knowledge, one place that decides what a room turn sees. The DURABLE tick
+  // engine (internal-agent-run) rebuilds the real toolset + executor and runs
+  // the loop, so a long room turn survives the edge wall-clock.
+  const system = buildRoomSystemPrompt({
+    admin, agent: a as RosterAgent,
+    room: { id: room.id, dashboard_id: room.dashboard_id, workspace_id: room.workspace_id, project_id: room.project_id, title: room.title },
+    dashboardName, toolRows: (toolRows ?? []) as AgentToolRow[],
+    extraContext: missionId
+      ? "Cette conversation appartient à une mission en cours de la room : tiens-en compte et reste dans son périmètre."
+      : undefined,
+  });
 
   const messages: ChatMessage[] = [{ role: "system", content: system }, ...history];
-  const model = modelForTier(classifyTier(history.at(-1)?.content ?? "", { mode: "chat" }));
+  const model = modelForTier(classifyTier(history.at(-1)?.content ?? "", { mode: "chat" }), agentProvider);
 
   if (!turnRunId) {
     await admin.from("service_room_messages").update({

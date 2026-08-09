@@ -99,9 +99,9 @@ export function ArchitectureDiagram({ className }: { className?: string }) {
       {/* Glow behind center */}
       <ellipse cx="280" cy="160" rx="220" ry="110" fill="url(#ad-glow)" />
 
-      {/* Central node — AchiCorp */}
+      {/* Central node — Anduran */}
       <rect x="220" y="130" width="120" height="60" rx="10" fill="hsl(var(--card))" stroke="hsl(var(--primary-soft))" strokeWidth="1.5" />
-      <text x="280" y="156" textAnchor="middle" fontSize="12" fontWeight="600" fill="hsl(var(--foreground))">AchiCorp</text>
+      <text x="280" y="156" textAnchor="middle" fontSize="12" fontWeight="600" fill="hsl(var(--foreground))">Anduran</text>
       <text x="280" y="172" textAnchor="middle" fontSize="9" fill="hsl(var(--muted-foreground))">cockpit</text>
 
       {/* External nodes */}

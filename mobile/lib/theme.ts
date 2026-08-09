@@ -1,4 +1,4 @@
-// AchiCorp mobile — premium dark design tokens.
+// Anduran mobile — premium dark design tokens.
 // A deep, near-black cockpit with an electric-violet accent, layered surfaces and
 // soft glows. Everything the UI needs (color, spacing, radius, type, shadow) lives
 // here so screens stay consistent.

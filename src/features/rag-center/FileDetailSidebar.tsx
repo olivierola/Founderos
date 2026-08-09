@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: ExtractConfig = {
 };
 
 const MODELS = [
-  { id: "founderos-extract", label: "AchiCorp Extract", hint: "Extraction texte + tableaux (par défaut)" },
+  { id: "founderos-extract", label: "Anduran Extract", hint: "Extraction texte + tableaux (par défaut)" },
   { id: "mistral-ocr-latest", label: "Mistral OCR Latest", hint: "OCR haute fidélité (mistral-ocr-latest)" },
   { id: "fast-extract", label: "Extraction rapide", hint: "Plus rapide, moins précise" },
 ];

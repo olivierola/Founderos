@@ -1,4 +1,4 @@
-import { Search, Bell, Sun, Moon, PanelLeft, PanelLeftOpen, LogOut } from "lucide-react";
+import { Search, Bell, PanelLeft, PanelLeftOpen, LogOut } from "lucide-react";
 import { ChatCircleDotsIcon } from "@phosphor-icons/react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { Logo } from "@/components/Logo";
 import { DashboardSwitcher } from "./DashboardSwitcher";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { useTheme } from "@/lib/theme-context";
+import { ThemeMenu } from "@/components/ThemeMenu";
 import { useAuth } from "@/lib/auth-context";
 import { useShellNav } from "./AppShell";
 import { useAssistant } from "@/lib/assistant-context";
@@ -22,7 +22,6 @@ import { cn } from "@/lib/utils";
 
 export function Topbar() {
   const { workspace, project } = useCurrentContext();
-  const { theme, toggleTheme } = useTheme();
   const { setMobileOpen, primaryExpanded, setPrimaryExpanded } = useShellNav();
   const { user, signOut } = useAuth();
   const assistant = useAssistant();
@@ -177,16 +176,9 @@ export function Topbar() {
               <Search className="h-4 w-4" />
             </Button>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-white/80 hover:bg-white/10 hover:text-white"
-              onClick={toggleTheme}
-              aria-label={theme === "dark" ? "Passer en mode clair" : "Passer en mode sombre"}
-              title={theme === "dark" ? "Passer en mode clair" : "Passer en mode sombre"}
-            >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
+            {/* One control: the list already carries Light and Dark, so a
+                separate toggle was a second door to the same room. */}
+            <ThemeMenu className="h-9 w-9 text-white/80 hover:bg-white/10 hover:text-white" />
             <Button variant="ghost" size="icon" className="h-9 w-9 text-white/80 hover:bg-white/10 hover:text-white" aria-label="Notifications">
               <Bell className="h-4 w-4" />
             </Button>

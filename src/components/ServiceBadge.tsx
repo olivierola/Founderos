@@ -33,7 +33,7 @@ export function ServiceBadge({ service, category, className }: ServiceBadgeProps
   return (
     <button
       onClick={() =>
-        navigate(`/app/${workspaceSlug}/${projectSlug}/admin/connectors?connect=${provider.slug}`)
+        navigate(`/app/${workspaceSlug}/${projectSlug}/agent/connectors?connect=${provider.slug}`)
       }
       title={`Configure ${provider.name}`}
       className={cn(

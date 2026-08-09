@@ -23,7 +23,9 @@ interface Scene { elements: readonly unknown[]; appState?: Record<string, unknow
 // board row and sync collaborators via Supabase Realtime.
 export function WhiteboardEditor({ boardId, onBack }: Props) {
   const { user } = useAuth();
-  const { theme } = useTheme();
+  // Excalidraw only knows light vs dark — hand it the resolved base, not the
+  // skin key (which can be "ocean", "sand", …).
+  const { base: theme } = useTheme();
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [apiReady, setApiReady] = useState(0);
   const [title, setTitle] = useState("");

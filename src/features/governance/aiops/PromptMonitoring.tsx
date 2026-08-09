@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { Eye, User, Wrench, DatabaseZap, ChevronRight } from "lucide-react";
+import { Eye, User, Wrench, DatabaseZap, ChevronRight, Copy, Check } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -12,7 +13,7 @@ import {
   useProjectAgents, timeAgo, usd, modelById,
   PROMPT_CATEGORY_META, OUTCOME_META, HOSTING_META, type PromptRecord,
 } from "./data";
-import { useRealPrompts, useRunTools } from "./db";
+import { useRealPrompts, useRunTools, useRunPrompt, type RunPromptDetail } from "./db";
 
 export function GovPromptMonitoringPage() {
   const { data: agents } = useProjectAgents();
@@ -24,8 +25,10 @@ export function GovPromptMonitoringPage() {
   const [outcomeFilter, setOutcomeFilter] = useState("all");
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<PromptRecord | null>(null);
-  // Real drill-down: which tools this specific run actually invoked.
+  // Real drill-down: which tools this specific run actually invoked, and the
+  // exact request it was given.
   const toolsQ = useRunTools(sel ? sel.id : null);
+  const promptQ = useRunPrompt(sel ? sel.id : null);
   const selTools = sel ? toolsQ.data?.tools ?? [] : [];
   const selData = sel ? toolsQ.data?.data ?? [] : [];
 
@@ -69,6 +72,9 @@ export function GovPromptMonitoringPage() {
           <option value="all">Tous résultats</option>
           {Object.entries(OUTCOME_META).map(([v, m]) => <option key={v} value={v}>{m.label}</option>)}
         </Select>
+        <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />Live
+        </span>
       </div>
 
       {filtered.length === 0 ? (
@@ -109,6 +115,8 @@ export function GovPromptMonitoringPage() {
           subtitle={`${sel.agentName} · ${timeAgo(sel.ts)}`}
           icon={<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground"><Eye className="h-[18px] w-[18px]" /></div>}
         >
+          <PromptText detail={promptQ.data} loading={promptQ.isLoading} />
+
           <DetailSection title="Demande">
             <DetailRow label="Catégorie"><Pill meta={PROMPT_CATEGORY_META[sel.category]} /></DetailRow>
             <DetailRow label="Résultat"><Pill meta={OUTCOME_META[sel.outcome]} /></DetailRow>
@@ -133,7 +141,12 @@ export function GovPromptMonitoringPage() {
                 <DetailRow label="Hébergement"><Pill meta={HOSTING_META[m.hosting]} /></DetailRow>
                 <DetailRow label="Fournisseur">{m.vendor} · {m.family}</DetailRow>
               </>
-            ) : <p className="text-xs text-muted-foreground">{sel.model}</p>; })()}
+            ) : (
+              <>
+                <DetailRow label="Modèle"><code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{sel.model}</code></DetailRow>
+                {sel.custom && <DetailRow label="Hébergement"><Pill meta={HOSTING_META.self_hosted} /></DetailRow>}
+              </>
+            ); })()}
           </DetailSection>
 
           <DetailSection title="Accès mobilisés">
@@ -163,5 +176,72 @@ export function GovPromptMonitoringPage() {
         </DetailSheet>
       )}
     </div>
+  );
+}
+
+/** The verbatim request the agent received, read back from its origin (mission
+ *  brief, chat/room message, sub-agent subtask), plus the system-level
+ *  instructions prepended to it. */
+function PromptText({ detail, loading }: { detail?: RunPromptDetail; loading: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const system = [detail?.persona, detail?.instructions].filter(Boolean).join("\n\n");
+
+  const copy = async () => {
+    if (!detail?.text) return;
+    try {
+      await navigator.clipboard.writeText(detail.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch { /* clipboard blocked — the text stays selectable */ }
+  };
+
+  return (
+    <DetailSection title="Prompt exact envoyé">
+      {loading ? (
+        <p className="text-xs text-muted-foreground">Chargement du prompt…</p>
+      ) : (
+        <>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-[11px] text-muted-foreground">{detail?.sourceLabel}</span>
+            {detail?.text && (
+              <Button size="sm" variant="ghost" className="h-6 shrink-0 gap-1 px-2 text-[11px]" onClick={copy}>
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                {copied ? "Copié" : "Copier"}
+              </Button>
+            )}
+          </div>
+          {detail?.text ? (
+            <pre className="scrollbar-slim max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/60 bg-muted/40 p-3 text-[12px] leading-relaxed">
+              {detail.text}
+            </pre>
+          ) : (
+            <p className="rounded-md border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
+              Aucun texte de demande n'a été conservé pour ce run (déclenchement automatique, ou conversation/mission supprimée depuis).
+            </p>
+          )}
+          {detail?.missionTitle && <DetailRow label="Mission">{detail.missionTitle}</DetailRow>}
+          {detail?.acceptance && <DetailRow label="Critères d'acceptation"><span className="whitespace-pre-wrap">{detail.acceptance}</span></DetailRow>}
+          {detail?.deliverables?.length ? (
+            <DetailRow label="Livrables attendus">
+              <span className="flex flex-wrap justify-end gap-1">
+                {detail.deliverables.map((d) => (
+                  <span key={d} className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">{d}</span>
+                ))}
+              </span>
+            </DetailRow>
+          ) : null}
+          {system && (
+            <details className="mt-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2">
+              <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+                Instructions système de l'agent (préfixées à chaque demande)
+              </summary>
+              <pre className="scrollbar-slim mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted-foreground">
+                {system}
+              </pre>
+            </details>
+          )}
+        </>
+      )}
+    </DetailSection>
   );
 }

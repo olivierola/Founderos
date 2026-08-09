@@ -6,23 +6,42 @@ import { MetricCard } from "@/components/MetricCard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Pill } from "../ui";
+import { Pill, FormDialog, type FieldDef } from "../ui";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
-import { timeAgo, type FtExperiment } from "./data";
-import { useFtExperimentsDb } from "./db";
+import { timeAgo, SELF_HOSTED_MODELS, type FtExperiment } from "./data";
+import { useFtExperimentsDb, useFtDatasetsDb } from "./db";
 
 export function GovFtExperimentsPage() {
-  const { experiments } = useFtExperimentsDb();
+  const { experiments, createExperiment } = useFtExperimentsDb();
+  const { datasets } = useFtDatasetsDb();
   const [sel, setSel] = useState<FtExperiment | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const runsTotal = experiments.reduce((s, e) => s + e.runs.length, 0);
+
+  const fields: FieldDef[] = [
+    { key: "name", label: "Nom de l'expérience", required: true, placeholder: "exp-llm-vs-qlora" },
+    { key: "goal", label: "Objectif", required: true, placeholder: "Meilleur modèle pour le support client", half: true },
+    { key: "dataset", label: "Dataset", type: "select", half: true, required: true,
+      options: datasets.map((d) => ({ value: d.name, label: d.name })) },
+    { key: "model1", label: "Modèle 1 · avancé", type: "select", half: true, options: SELF_HOSTED_MODELS.map((m) => ({ value: m.id, label: m.label })) },
+    { key: "model2", label: "Modèle 2 · avancé", type: "select", half: true, options: SELF_HOSTED_MODELS.map((m) => ({ value: m.id, label: m.label })) },
+    { key: "model3", label: "Modèle 3 · avancé", type: "select", half: true, options: SELF_HOSTED_MODELS.map((m) => ({ value: m.id, label: m.label })) },
+  ];
+
+  const create = async (values: Record<string, unknown>) => {
+    await createExperiment({
+      name: String(values.name), goal: String(values.goal), dataset: String(values.dataset),
+      models: [String(values.model1 ?? ""), String(values.model2 ?? ""), String(values.model3 ?? "")],
+    });
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Experiments"
         description="Chaque entraînement devient une expérience : comparez plusieurs modèles, datasets ou hyperparamètres sur le même objectif, puis gardez le vainqueur."
-        actions={<Button><Plus className="mr-1.5 h-4 w-4" />Expérience</Button>}
+        actions={<Button onClick={() => setCreating(true)}><Plus className="mr-1.5 h-4 w-4" />Expérience</Button>}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -119,6 +138,17 @@ export function GovFtExperimentsPage() {
             </p>
           </DetailSection>
         </DetailSheet>
+      )}
+
+      {creating && (
+        <FormDialog
+          title="Nouvelle expérience"
+          fields={fields}
+          initial={{ name: "", goal: "", dataset: datasets[0]?.name ?? "", model1: "", model2: "", model3: "" }}
+          submitLabel="Lancer l'expérience"
+          onClose={() => setCreating(false)}
+          onSubmit={create}
+        />
       )}
     </div>
   );

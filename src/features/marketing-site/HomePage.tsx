@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Blocks, Compass, EyeOff, Layers, Minus, Plus, ShieldCheck, Sparkles } from "lucide-react";
+import { BrandSplash } from "./BrandSplash";
 import { LandingNav } from "./LandingNav";
 import { LandingComparison } from "./LandingComparison";
 import { LandingFooter } from "./LandingFooter";
@@ -117,7 +118,7 @@ const SOLUTIONS = [
 
 const FAQ = [
   {
-    q: "What does AchiCorp actually do?",
+    q: "What does Anduran actually do?",
     a: "We help companies adopt AI safely. In practice, that means three things: we assess where your processes and data stand today, we build the secured foundation so AI has something solid to work on, and we guide adoption across your organisation with governance and change enablement.",
   },
   {
@@ -146,6 +147,8 @@ export function HomePage() {
 
   return (
     <div className="amplify min-h-screen overflow-x-hidden">
+      <BrandSplash />
+
       <LandingNav />
 
       {/* ══ 1. Hero — light canvas, inline photo chips, floating video ════ */}

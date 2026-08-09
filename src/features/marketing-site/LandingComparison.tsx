@@ -73,7 +73,7 @@ export function LandingComparison() {
               style={{ background: ACCENT, color: ON_ACCENT, boxShadow: "0 24px 60px -20px rgba(255,77,0,0.45)" }}
             >
               {/* Everything inherits the white ink set on the card. */}
-              <div className="text-[16px] font-bold uppercase tracking-[0.02em]">AchiCorp</div>
+              <div className="text-[16px] font-bold uppercase tracking-[0.02em]">Anduran</div>
               <div className="mt-5 space-y-5">
                 {COMPARISON.map((row) => (
                   <div key={row.axis} className="flex gap-3">

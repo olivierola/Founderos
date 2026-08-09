@@ -216,7 +216,7 @@ Deno.serve(async (req) => {
       if (!changes?.length) return jsonResponse({ error: "Aucun changement à appliquer" }, { status: 400 });
       const commitMsg = title || "Vibe Code: changes";
       const prTitle = title || "Vibe Code changes";
-      const prBodyFull = (prBody || "Changements proposés par l'agent Vibe Code.") + "\n\n— AchiCorp · Vibe Code";
+      const prBodyFull = (prBody || "Changements proposés par l'agent Vibe Code.") + "\n\n— Anduran · Vibe Code";
       let result: { mode: string; branch: string; head_repo: string; commit_sha: string; pull_request?: { html_url: string; number: number } };
       const login = await getAuthenticatedLogin(token).catch(() => null);
       const [ownerLogin, repoShort] = fullName.split("/");

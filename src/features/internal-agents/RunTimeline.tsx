@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, Circle,
-  CircleCheck, CircleAlert, Play, MessageSquare, BrainCircuit, ListTree,
+  CircleCheck, CircleAlert, Play, MessageSquare, BrainCircuit, ListTree, ShieldCheck,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,19 @@ const ACTIVE_STATUSES = ["queued", "running"];
 function fmtElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+
+// ── Loop engine (see supabase/functions/_shared/agent-loop.ts) ───────────────
+// The run's success contract (typed checks derived from the goal), the last
+// verification of it, and the controller's last decision.
+interface ContractCheck { label: string; kind: string; required: boolean }
+interface CheckResultRow {
+  label: string; pass: boolean; skipped: boolean;
+  required: boolean; deterministic: boolean; detail: string;
+}
+interface LoopState {
+  action: string; reason: string; iteration: number;
+  verdict: string | null; stagnant: number; rounds: string;
 }
 
 // One executed action = a tool_call paired with its following tool_result.
@@ -133,10 +146,15 @@ export function RunTimeline({
 
   // Build the action list: pair each tool_call with its result, and attribute
   // it to the todo that was active at that moment (todos snapshots as markers).
-  const { actions, notices } = useMemo(() => {
+  const { actions, notices, contractChecks, checkResults, loopState } = useMemo(() => {
     const evs = events ?? [];
     const acts: ActionItem[] = [];
     const notes: Array<{ id: string; kind: string; text: string; at: string }> = [];
+    // Loop engine: the run's success contract, its last verification and the
+    // controller's last decision.
+    let contract: ContractCheck[] = [];
+    let checks: CheckResultRow[] = [];
+    let loop: LoopState | null = null;
     let currentTodo: string | null = null;
     for (let i = 0; i < evs.length; i++) {
       const ev = evs[i];
@@ -163,9 +181,28 @@ export function RunTimeline({
         notes.push({ id: ev.id, kind: "status", text: String(p.message ?? "").slice(0, 200), at: ev.created_at });
       } else if (ev.kind === "question") {
         notes.push({ id: ev.id, kind: "question", text: String(p.question ?? "").slice(0, 300), at: ev.created_at });
+      } else if (ev.kind === "loop") {
+        if (p.phase === "contract") {
+          contract = Array.isArray(p.checks) ? (p.checks as ContractCheck[]) : [];
+        } else {
+          // A controller iteration: keep the latest verdict + decision, and
+          // surface anything that isn't "business as usual" as a notice.
+          if (Array.isArray(p.checks)) checks = p.checks as CheckResultRow[];
+          loop = {
+            action: String(p.action ?? "continue"),
+            reason: String(p.reason ?? ""),
+            iteration: Number(p.iteration ?? 0),
+            verdict: p.verdict ? String(p.verdict) : null,
+            stagnant: Number(p.signals?.stagnant_ticks ?? 0),
+            rounds: String(p.signals?.rounds ?? ""),
+          };
+          if (p.action && p.action !== "continue") {
+            notes.push({ id: ev.id, kind: p.action === "abort" ? "error" : "status", text: String(p.reason ?? p.action), at: ev.created_at });
+          }
+        }
       }
     }
-    return { actions: acts, notices: notes };
+    return { actions: acts, notices: notes, contractChecks: contract, checkResults: checks, loopState: loop };
   }, [events]);
 
   const todos: RunTodo[] = Array.isArray(run?.todos) ? (run!.todos as RunTodo[]) : [];
@@ -260,6 +297,48 @@ export function RunTimeline({
                     )}>{t.title}</span>
                     {t.note && <span className="ml-2 text-[11px] text-muted-foreground/70">— {t.note}</span>}
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Success contract — what this run is verified against before it may
+              finish. Grey while pending, then green/red once the loop's verify
+              step has run. */}
+          {(contractChecks.length > 0 || checkResults.length > 0) && (
+            <div className="space-y-1 border-b border-border/60 px-3.5 py-2.5">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className={cn("h-3.5 w-3.5", loopState?.verdict === "pass" ? "text-emerald-500" : loopState?.verdict === "fail" ? "text-amber-500" : "text-muted-foreground/60")} />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Contrat de réussite</span>
+                {loopState?.verdict === "pass" && <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">vérifié</span>}
+                {loopState?.verdict === "fail" && <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">écarts à corriger</span>}
+                {loopState?.rounds && <span className="ml-auto font-mono text-[10px] text-muted-foreground/60">{loopState.rounds} rounds</span>}
+              </div>
+              {(checkResults.length > 0
+                ? checkResults
+                : contractChecks.map((c) => ({ label: c.label, pass: false, skipped: true, required: c.required, deterministic: c.kind !== "judge", detail: "en attente de vérification" }))
+              ).map((c, i) => (
+                <div key={`${c.label}-${i}`} className="flex items-start gap-2">
+                  {checkResults.length === 0 || c.skipped
+                    ? <Circle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+                    : c.pass
+                    ? <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    : c.required
+                    ? <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                    : <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[13px] leading-snug">{c.label}</span>
+                    {c.detail && <span className="ml-2 text-[11px] text-muted-foreground/70">— {c.detail}</span>}
+                  </div>
+                  <span
+                    className={cn(
+                      "mt-0.5 shrink-0 rounded px-1 text-[9px] font-semibold uppercase leading-tight",
+                      c.deterministic ? "bg-sky-500/15 text-sky-600 dark:text-sky-400" : "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+                    )}
+                    title={c.deterministic ? "Contrôle déterministe (mesuré, pas jugé)" : "Critère qualitatif évalué par un relecteur IA"}
+                  >
+                    {c.deterministic ? "auto" : "IA"}
+                  </span>
                 </div>
               ))}
             </div>

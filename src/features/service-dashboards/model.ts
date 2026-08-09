@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
+import type { ThemeKey } from "@/lib/themes";
 
 export interface ServiceDashboard {
   id: string;
@@ -16,9 +17,11 @@ export interface ServiceDashboard {
 
 // ── Per-dashboard settings ────────────────────────────────────────────────────
 // Everything a service dashboard can configure about ITSELF (its nav, its
-// assistant defaults, its rooms). Org-wide concerns (billing, members,
-// connectors) stay in the Admin area — this is deliberately dashboard-scoped.
-export type DashboardTabSlug = "home" | "agents" | "schedules" | "memory" | "artifacts";
+// assistant defaults, its rooms, its connections). Org-wide concerns (billing,
+// members) stay in the Admin area — this is deliberately dashboard-scoped.
+// Connectors moved IN (migration 0177): a connection belongs to one dashboard,
+// or to one person inside it, never to the whole org by default.
+export type DashboardTabSlug = "home" | "agents" | "schedules" | "memory" | "artifacts" | "connectors";
 
 export interface AgentDefaults {
   model: string;
@@ -36,11 +39,9 @@ export interface RoomDefaults {
   default_responder_agent_id: string | null;
 }
 
-/** Named look of the dashboard shell. "system" follows the app's light/dark. */
-export type DashboardTheme =
-  | "system" | "light" | "dark"
-  | "purple" | "midnight" | "slate" | "forest" | "mocha" | "crimson"
-  | "burnt-orange" | "sand" | "mist";
+/** A dashboard wears one of the app-wide skins (src/lib/themes.ts);
+ *  "system" means "no per-service override". */
+export type DashboardTheme = ThemeKey;
 
 export interface DashboardSettings {
   landing: DashboardTabSlug;
@@ -300,6 +301,9 @@ export interface RoomMessage {
   status: "thinking" | "done" | "failed";
   /** Turn run — set when the agent fanned out parallel sub-agents this turn. */
   run_id: string | null;
+  /** The mission this turn belongs to (migration 0179) — rendered as a badge. */
+  mission_id: string | null;
+  task_id: string | null;
   created_at: string;
 }
 
@@ -359,11 +363,17 @@ export async function deleteRoom(roomId: string) {
   await supabase.from("service_rooms").delete().eq("id", roomId);
 }
 
+// select("*") on purpose: mission_id / task_id only exist once migration 0179
+// is pushed, and naming them would make the whole thread fail on a stale DB.
 export async function fetchRoomMessages(roomId: string): Promise<RoomMessage[]> {
   const { data } = await supabase.from("service_room_messages")
-    .select("id, author_kind, user_id, agent_id, content, ui_blocks, status, run_id, created_at")
+    .select("*")
     .eq("room_id", roomId).order("created_at", { ascending: true }).limit(200);
-  return (data ?? []) as RoomMessage[];
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as RoomMessage),
+    mission_id: (r.mission_id as string | null) ?? null,
+    task_id: (r.task_id as string | null) ?? null,
+  }));
 }
 
 export async function fetchRoomParticipants(roomId: string): Promise<string[]> {
@@ -379,9 +389,213 @@ export async function removeRoomAgent(roomId: string, agentId: string) {
 
 export async function postRoomMessage(
   roomId: string, content: string, mentionAgentIds: string[], attachmentMediaId?: string,
+  missionId?: string | null,
 ) {
   await callEdge("service-room-post", {
     room_id: roomId, content, mention_agent_ids: mentionAgentIds,
     attachment_media_id: attachmentMediaId ?? null,
+    mission_id: missionId ?? null,
   });
+}
+
+// ── Room missions (migration 0179) ───────────────────────────────────────────
+// The assistant decomposes multi-agent work into milestones holding tasks, each
+// owned by one agent. Everything here is READ-side plus the few human overrides
+// the board offers (move a card, pause, cancel) — the orchestrator owns the
+// rest, server-side.
+
+export type MissionStatus = "planning" | "running" | "paused" | "blocked" | "done" | "failed" | "cancelled";
+export type TaskStatus = "todo" | "in_progress" | "waiting" | "review" | "blocked" | "done" | "failed" | "skipped";
+
+export interface RoomMission {
+  id: string;
+  room_id: string;
+  dashboard_id: string;
+  orchestrator_agent_id: string | null;
+  title: string;
+  objective: string | null;
+  plan_rationale: string | null;
+  status: MissionStatus;
+  progress: number;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface RoomMilestone {
+  id: string;
+  mission_id: string;
+  title: string;
+  description: string | null;
+  position: number;
+  status: "pending" | "active" | "done" | "blocked";
+  starts_at: string | null;
+  ends_at: string | null;
+  progress: number;
+}
+
+export interface RoomTask {
+  id: string;
+  mission_id: string;
+  milestone_id: string | null;
+  agent_id: string | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  position: number;
+  depends_on: string[];
+  run_id: string | null;
+  message_id: string | null;
+  result_summary: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface MissionEvent {
+  id: string;
+  mission_id: string;
+  task_id: string | null;
+  agent_id: string | null;
+  kind: string;
+  message: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export const MISSION_STATUS_META: Record<MissionStatus, { label: string; tone: string }> = {
+  planning: { label: "Planification", tone: "bg-sky-500/15 text-sky-600 dark:text-sky-400" },
+  running: { label: "En cours", tone: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" },
+  paused: { label: "En pause", tone: "bg-amber-500/15 text-amber-600 dark:text-amber-400" },
+  blocked: { label: "Bloquée", tone: "bg-red-500/15 text-red-600 dark:text-red-400" },
+  done: { label: "Terminée", tone: "bg-violet-500/15 text-violet-600 dark:text-violet-400" },
+  failed: { label: "Échec", tone: "bg-red-500/15 text-red-600 dark:text-red-400" },
+  cancelled: { label: "Annulée", tone: "bg-muted text-muted-foreground" },
+};
+
+/** Kanban columns — several task states collapse into one column: a card that
+ *  is waiting on a dependency and one being worked on are both "in flight" to
+ *  a reader, and splitting them would make the board unreadable. */
+export const KANBAN_COLUMNS: Array<{ key: string; label: string; statuses: TaskStatus[] }> = [
+  { key: "todo", label: "À faire", statuses: ["todo"] },
+  { key: "doing", label: "En cours", statuses: ["in_progress", "waiting"] },
+  { key: "review", label: "En revue / bloqué", statuses: ["review", "blocked"] },
+  { key: "done", label: "Terminé", statuses: ["done", "skipped", "failed"] },
+];
+
+export async function fetchRoomMissions(roomId: string): Promise<RoomMission[]> {
+  const { data } = await supabase.from("service_room_missions")
+    .select("*").eq("room_id", roomId).order("created_at", { ascending: false });
+  return (data ?? []) as RoomMission[];
+}
+
+export async function fetchDashboardMissions(dashboardId: string): Promise<RoomMission[]> {
+  const { data } = await supabase.from("service_room_missions")
+    .select("*").eq("dashboard_id", dashboardId).order("updated_at", { ascending: false }).limit(60);
+  return (data ?? []) as RoomMission[];
+}
+
+export async function fetchMission(missionId: string): Promise<RoomMission | null> {
+  const { data } = await supabase.from("service_room_missions").select("*").eq("id", missionId).maybeSingle();
+  return (data ?? null) as RoomMission | null;
+}
+
+export async function fetchMissionMilestones(missionId: string): Promise<RoomMilestone[]> {
+  const { data } = await supabase.from("service_room_milestones")
+    .select("*").eq("mission_id", missionId).order("position", { ascending: true });
+  return (data ?? []) as RoomMilestone[];
+}
+
+export async function fetchMissionTasks(missionId: string): Promise<RoomTask[]> {
+  const { data } = await supabase.from("service_room_tasks")
+    .select("*").eq("mission_id", missionId).order("position", { ascending: true });
+  return ((data ?? []) as Record<string, unknown>[]).map((t) => ({
+    ...(t as unknown as RoomTask),
+    depends_on: Array.isArray(t.depends_on) ? (t.depends_on as string[]) : [],
+  }));
+}
+
+export async function fetchMissionEvents(missionId: string): Promise<MissionEvent[]> {
+  const { data } = await supabase.from("service_room_mission_events")
+    .select("*").eq("mission_id", missionId).order("created_at", { ascending: true }).limit(300);
+  return (data ?? []) as MissionEvent[];
+}
+
+/** Deliverables produced by the mission's task runs — the "Livrables" tab. */
+export async function fetchMissionDeliverables(runIds: string[]) {
+  if (runIds.length === 0) return [];
+  const { data } = await supabase.from("internal_agent_deliverables")
+    .select("id, run_id, agent_id, name, kind, summary, created_at")
+    .in("run_id", runIds).order("created_at", { ascending: false });
+  return (data ?? []) as Array<{ id: string; run_id: string; agent_id: string | null; name: string; kind: string; summary: string | null; created_at: string }>;
+}
+
+/** Human override on the board. Moving a card is a real instruction to the
+ *  orchestrator, not decoration: dropping a task back into "À faire" makes it
+ *  eligible for dispatch again on the next frontier pass. */
+export async function setTaskStatus(taskId: string, status: TaskStatus) {
+  const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+  if (status === "done") patch.finished_at = new Date().toISOString();
+  if (status === "todo") { patch.started_at = null; patch.finished_at = null; }
+  const { error } = await supabase.from("service_room_tasks").update(patch).eq("id", taskId);
+  if (error) throw new Error(error.message);
+}
+
+export async function setMissionStatus(missionId: string, status: MissionStatus) {
+  const { error } = await supabase.from("service_room_missions")
+    .update({ status, updated_at: new Date().toISOString() }).eq("id", missionId);
+  if (error) throw new Error(error.message);
+}
+
+/** Re-enter the orchestrator's frontier after a human edit (reassignment, a
+ *  card moved back to "À faire", a paused mission resumed). */
+export async function advanceMission(missionId: string) {
+  await callEdge("service-room-post", { op: "advance_mission", mission_id: missionId });
+}
+
+export async function assignTaskAgent(taskId: string, agentId: string | null) {
+  const { error } = await supabase.from("service_room_tasks")
+    .update({ agent_id: agentId, updated_at: new Date().toISOString() }).eq("id", taskId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Create a mission from the board.
+ *
+ * `auto` hands the brief to the room's assistant, which decomposes it into
+ * milestones and tasks and starts the ready ones — the same path a mission born
+ * in conversation takes. `empty` creates the shell so the plan can be authored
+ * by hand on the kanban.
+ */
+export async function createMissionFromForm(input: {
+  roomId: string; title: string; objective: string; mode: "auto" | "empty";
+}): Promise<string | null> {
+  const res = await callEdge<{ mission_id?: string }>("service-room-post", {
+    op: "create_mission",
+    room_id: input.roomId, title: input.title, objective: input.objective, mode: input.mode,
+  });
+  return res?.mission_id ?? null;
+}
+
+/** Add a card by hand. Position goes last so a manual insert never reorders
+ *  the plan the orchestrator laid out. */
+export async function createMissionTask(missionId: string, input: {
+  title: string; description: string; agentId: string | null; milestoneId: string | null; position: number;
+}) {
+  const { error } = await supabase.from("service_room_tasks").insert({
+    mission_id: missionId, milestone_id: input.milestoneId, agent_id: input.agentId,
+    title: input.title.slice(0, 160), description: input.description.slice(0, 4000) || input.title,
+    status: "todo", position: input.position,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteMissionTask(taskId: string) {
+  const { error } = await supabase.from("service_room_tasks").delete().eq("id", taskId);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteMission(missionId: string) {
+  const { error } = await supabase.from("service_room_missions").delete().eq("id", missionId);
+  if (error) throw new Error(error.message);
 }

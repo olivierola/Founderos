@@ -1,4 +1,4 @@
-// Canonical AchiCorp SDK sources, embedded server-side.
+// Canonical Anduran SDK sources, embedded server-side.
 //
 // WHY: the install_sdk agent tool must inject the REAL SDK, byte-for-byte — not
 // whatever a small model might hallucinate (e.g. a non-existent `git clone
@@ -10,7 +10,7 @@
 
 /** The full JS/TS analytics SDK — identical to sdk/js/founderos.ts. */
 export const SDK_JS_FOUNDEROS_TS = String.raw`/**
- * AchiCorp analytics SDK — JavaScript / TypeScript.
+ * Anduran analytics SDK — JavaScript / TypeScript.
  *
  * Works in two runtimes from one file:
  *   - Browser: event tracking + optional rrweb session replay recording.
@@ -25,7 +25,7 @@ export const SDK_JS_FOUNDEROS_TS = String.raw`/**
  * workspace is then resolved from the key, so only projectId is required.
  */
 
-export interface AchiCorpConfig {
+export interface AnduranConfig {
   /** Supabase project URL, e.g. https://xxxx.supabase.co */
   host: string;
   /** The project (cockpit) you are sending events for. */
@@ -62,17 +62,17 @@ interface QueuedEvent {
 
 const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
 
-export class AchiCorp {
-  private cfg: Required<Pick<AchiCorpConfig, "flushIntervalMs" | "batchSize">> & AchiCorpConfig;
+export class Anduran {
+  private cfg: Required<Pick<AnduranConfig, "flushIntervalMs" | "batchSize">> & AnduranConfig;
   private queue: QueuedEvent[] = [];
   private distinctId?: string;
   private timer: ReturnType<typeof setInterval> | null = null;
   private recorderStop: (() => void) | null = null;
 
-  constructor(config: AchiCorpConfig) {
+  constructor(config: AnduranConfig) {
     this.cfg = { flushIntervalMs: 5000, batchSize: 20, ...config };
     if (!this.cfg.host || !this.cfg.projectId) {
-      throw new Error("AchiCorp: host and projectId are required");
+      throw new Error("Anduran: host and projectId are required");
     }
     if (isBrowser && !this.cfg.anonKey) {
       this.log("warning: no anonKey set — browser ingestion will be rejected");
@@ -370,8 +370,8 @@ export class AchiCorp {
 }
 
 /** Convenience factory. */
-export function createClient(config: AchiCorpConfig): AchiCorp {
-  return new AchiCorp(config);
+export function createClient(config: AnduranConfig): Anduran {
+  return new Anduran(config);
 }
 `;
 
@@ -417,7 +417,7 @@ export function buildSdkInstall(p: InstallSdkParams): { files: SdkFileChange[]; 
       "window.FounderOSAgent MUST be set before the script loads — key is the agent's public key, " +
       "endpoint targets the public rag-chat function. config.proactive enables the activation engine " +
       "(idle / rage-click / route-change interventions).";
-    const snippet = `<!-- AchiCorp RAG agent widget -->
+    const snippet = `<!-- Anduran RAG agent widget -->
 <script>
   window.FounderOSAgent = {
     key: "${key}",
@@ -442,7 +442,7 @@ export function buildSdkInstall(p: InstallSdkParams): { files: SdkFileChange[]; 
 
   if (p.runtime === "browser") {
     const anon = p.anonKeyExpr || "import.meta.env.VITE_SUPABASE_ANON_KEY";
-    initContent = `// AchiCorp analytics — browser init. Import \`analytics\` and call
+    initContent = `// Anduran analytics — browser init. Import \`analytics\` and call
 // analytics.track("event_name", { properties }) anywhere in the app.
 import { createClient } from "./founderos";
 
@@ -476,7 +476,7 @@ void analytics.loadFlags();
       'Call analytics.identify(email) after login. Tag key buttons with data-fos-event="name" and add explicit analytics.track(...) on important business actions (signup, checkout, activation).';
   } else {
     const apiKey = p.apiKeyExpr || "process.env.FOUNDEROS_API_KEY!";
-    initContent = `// AchiCorp analytics — server init. Never expose the API key to the browser.
+    initContent = `// Anduran analytics — server init. Never expose the API key to the browser.
 import { createClient } from "./founderos";
 
 export const analytics = createClient({

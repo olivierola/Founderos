@@ -562,7 +562,7 @@ export function AgentConnectorsTab({ agent }: { agent: InternalAgent }) {
                 onConnect={() =>
                   connectedSlugs.has(s.slug)
                     ? setDetailsSlug(s.slug)
-                    : navigate(`/app/${workspaceSlug}/${projectSlug}/admin/connectors?connect=${s.slug}`)}
+                    : navigate(`/app/${workspaceSlug}/${projectSlug}/agent/connectors?connect=${s.slug}`)}
               />
             ))}
           </div>
@@ -739,6 +739,7 @@ interface ChatMessage {
 const AGENT_MODELS = [
   { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "Default — strong reasoning & tool calling" },
   { id: "groq-llama-3.3", name: "Groq Llama 3.3", description: "Fast fallback for quick replies" },
+  { id: "groq-llama-3.3-70b", name: "Groq Llama 3.3 70B", description: "Largest Llama on Groq — heavier but smarter" },
 ];
 
 // Dismissible-per-session reminder that some tools still need configuring. A
@@ -2275,7 +2276,7 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "web_fetch", label: "Fetch URL", icon: Globe, description: "Download and extract text from a URL." },
   { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed/ingested knowledge base." },
   { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM — contacts, deals, companies. Writes need approval unless the agent is on autopilot." },
-  { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal AchiCorp function (notifications, email, marketing…)." },
+  { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Anduran function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
   { kind: "connector_action", label: "Integration", icon: Plug, description: "Read data from a connected integration (CRM, HR, data lake) via its official API." },
   { kind: "security_scan", label: "Security scan", icon: ShieldCheck, description: "Run a consented security scan against a registered target." },
@@ -3549,7 +3550,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
                 className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
               >
                 <option value="deepseek">DeepSeek</option>
-                <option value="groq">Groq (Llama 3.1)</option>
+                <option value="groq">Groq (Llama 3.3 70B)</option>
                 <option value="gpt-4">GPT-4</option>
               </select>
             </div>
@@ -3868,7 +3869,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
         </div>
       )}
 
-      {/* Mobile — pair this agent with the AchiCorp mobile app via id + secret. */}
+      {/* Mobile — pair this agent with the Anduran mobile app via id + secret. */}
       {embedded && <AccordionHeader label="Mobile" icon={Smartphone} open={openSections.has("mobile")} onClick={() => toggleSection("mobile")} />}
       {(embedded ? openSections.has("mobile") : section === "mobile") && (
         <div className="py-6">
@@ -3966,7 +3967,7 @@ function MobileAccessSection({ agent }: { agent: InternalAgent }) {
   return (
     <SettingsSection
       title="Mobile access" icon={Smartphone}
-      description="Pair this agent with the AchiCorp mobile app. Register it there with the ID and secret below, then chat from your phone."
+      description="Pair this agent with the Anduran mobile app. Register it there with the ID and secret below, then chat from your phone."
     >
       <ToggleRow
         icon={Smartphone}
@@ -4404,13 +4405,49 @@ function StatTile({ label, value, accent }: { label: string; value: number; acce
 }
 
 // ── Skills tab: toggle skills on/off per agent ──────────────────────────────
-type SkillRow = { id: string; name: string; slug: string; description: string | null; category: string | null; icon: string; required_tools: string[]; config: any; is_system: boolean; system_prompt_extension: string | null };
+// List shape: everything the catalogue needs to render, search and toggle a
+// skill. The playbook body is deliberately NOT here — it is fetched per opened
+// skill (900+ system skills × ~10 KB would be megabytes per page load).
+type SkillRow = { id: string; name: string; slug: string; description: string | null; category: string | null; icon: string; required_tools: string[]; config: any; is_system: boolean };
 
 const SKILL_FILTERS: { key: "all" | "mine" | "examples"; label: string }[] = [
   { key: "all", label: "Tous" },
   { key: "mine", label: "Custom Skills" },
-  { key: "examples", label: "Exemples de Skills" },
+  // Was "Exemples de Skills" — it holds the imported catalogue (900+ system
+  // skills across cybersecurity / data / engineering / productivity), not a
+  // handful of examples.
+  { key: "examples", label: "Catalogue" },
 ];
+
+// Upstream packs imported into the catalogue (agent_skills.config.pack — see
+// scripts/gen-skills-repo-migrations.mjs).
+const PACK_LABELS: Record<string, string> = {
+  cybersecurity: "Cybersécurité",
+  data: "Data & Analytics",
+  engineering: "Engineering",
+  productivity: "Documents & Design",
+};
+
+/** Compact facet pill with its result count. */
+function FacetChip({ label, count, active, subtle, onClick }: {
+  label: string; count: number; active: boolean; subtle?: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "rounded-full border transition-colors",
+        subtle ? "px-2.5 py-1 text-[11px]" : "px-3 py-1 text-xs",
+        active
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border/70 text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+      )}
+    >
+      {label}
+      <span className={cn("ml-1.5 tabular-nums", active ? "text-primary/70" : "text-muted-foreground/60")}>{count}</span>
+    </button>
+  );
+}
 
 // Lightweight lexical-semantic search for skills. Beyond substring matching we
 // expand each query term with a small FR/EN domain synonym map and score hits
@@ -4473,18 +4510,40 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
   const { workspaceSlug, projectSlug } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<"all" | "mine" | "examples">("all");
+  // The library page opens on the user's own skills; an agent's tab opens on
+  // everything so the catalogue is one click from activation.
+  const [filter, setFilter] = useState<"all" | "mine" | "examples">(customOnly ? "mine" : "all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SkillRow | null>(null);
   const [focused, setFocused] = useState(false);
+  // Facets over a 900-skill catalogue: pack first (broad family), then category.
+  const [pack, setPack] = useState<string | null>(null);
+  const [cat, setCat] = useState<string | null>(null);
+  const [allCats, setAllCats] = useState(false);
   const skillsBase = `/app/${workspaceSlug}/${projectSlug}/agent/skills`;
 
+  // LIST columns only. The catalogue holds 900+ system skills whose playbooks
+  // (system_prompt_extension) weigh ~10 KB each — selecting "*" here pulled
+  // ~9 MB of markdown nobody looks at. The playbook is fetched for the ONE
+  // skill the user opens (see the query below).
   const { data: allSkills } = useQuery({
     queryKey: ["agent_skills_all"],
     queryFn: async () => {
-      const { data } = await supabase.from("agent_skills").select("*")
-        .or(`workspace_id.is.null,workspace_id.eq.${workspaceId}`).order("category, name");
+      const { data } = await supabase.from("agent_skills")
+        .select("id, name, slug, description, category, icon, required_tools, config, is_system")
+        .or(`workspace_id.is.null,workspace_id.eq.${workspaceId}`).order("category, name").limit(2000);
       return (data ?? []) as SkillRow[];
+    },
+  });
+
+  // The opened skill's playbook, loaded on demand.
+  const { data: selectedBody } = useQuery({
+    queryKey: ["agent_skill_body", selected?.id],
+    enabled: !!selected?.id,
+    queryFn: async () => {
+      const { data } = await supabase.from("agent_skills")
+        .select("system_prompt_extension").eq("id", selected!.id).maybeSingle();
+      return (data as { system_prompt_extension: string | null } | null)?.system_prompt_extension ?? "";
     },
   });
 
@@ -4516,13 +4575,32 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
     queryClient.invalidateQueries({ queryKey: ["agent_skills_all"] });
   }
 
-  // customOnly (the "Custom Skills" library page) hard-restricts to skills the
-  // user created (non-system) and drops the Tous/Custom/Exemples filter chips.
-  const skillsList = (allSkills ?? []).filter((s) => (customOnly ? !s.is_system : true));
-  const base = customOnly ? skillsList
-    : filter === "mine" ? skillsList.filter((s) => !s.is_system)
-      : filter === "examples" ? skillsList.filter((s) => s.is_system)
-        : skillsList;
+  // The library page used to HIDE every system skill, which made the imported
+  // catalogue (900+ skills) unreachable from its own dedicated page. It now
+  // simply opens on "mine" and keeps the chips, so the catalogue is browsable
+  // from both places.
+  const skillsList = allSkills ?? [];
+  const byOwner = filter === "mine" ? skillsList.filter((s) => !s.is_system)
+    : filter === "examples" ? skillsList.filter((s) => s.is_system)
+      : skillsList;
+
+  // ── Facets ────────────────────────────────────────────────────────────────
+  // Pack = the upstream family a system skill came from (config.pack); custom
+  // skills have none. Category = its domain/subdomain. Both are computed from
+  // the CURRENT owner filter so the counts always match what's listed.
+  const packOf = (s: SkillRow) => (typeof s.config?.pack === "string" ? s.config.pack : null);
+  const packCounts = (() => {
+    const m = new Map<string, number>();
+    for (const s of byOwner) { const p = packOf(s); if (p) m.set(p, (m.get(p) ?? 0) + 1); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  })();
+  const byPack = pack ? byOwner.filter((s) => packOf(s) === pack) : byOwner;
+  const catCounts = (() => {
+    const m = new Map<string, number>();
+    for (const s of byPack) { const c = s.category; if (c) m.set(c, (m.get(c) ?? 0) + 1); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  })();
+  const base = cat ? byPack.filter((s) => s.category === cat) : byPack;
 
   // Semantic-ish search: score each skill across name, slug, domain, tags,
   // tools and description (with synonym expansion) and rank by relevance, so
@@ -4571,10 +4649,10 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
       {/* Header — title + description on the left, search on the right. */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">{customOnly ? "Custom Skills" : "Skills"}</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">Skills</h2>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">
             {customOnly
-              ? "Vos compétences sur-mesure, réutilisables et activables sur n'importe quel agent."
+              ? "Vos compétences sur-mesure et le catalogue prêt à l'emploi, activables sur n'importe quel agent."
               : "Étendez les capacités de vos agents grâce à des compétences réutilisables."}{" "}
             <span className="cursor-pointer text-primary hover:underline">En savoir plus</span>
           </p>
@@ -4601,7 +4679,7 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
                     <button
                       key={s.id}
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => { setSelected(s); setFocused(false); }}
+                      onClick={() => { setFocused(false); navigate(`${skillsBase}/${s.id}/edit`); }}
                       className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-secondary"
                     >
                       <Zap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -4636,10 +4714,10 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
       {/* Filter pills + create. */}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          {!customOnly && SKILL_FILTERS.map((f) => (
+          {SKILL_FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => { setFilter(f.key); setSelected(null); }}
+              onClick={() => { setFilter(f.key); setPack(null); setCat(null); setSelected(null); }}
               className={cn(
                 "rounded-full border px-4 py-1.5 text-sm transition-colors",
                 filter === f.key
@@ -4648,6 +4726,11 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
               )}
             >
               {f.label}
+              {f.key === "examples" && skillsList.some((s) => s.is_system) && (
+                <span className="ml-1.5 text-[11px] tabular-nums text-muted-foreground">
+                  {skillsList.filter((s) => s.is_system).length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -4656,14 +4739,52 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
         </Button>
       </div>
 
+      {/* Facets — pack, then category. A 900-skill catalogue is unusable
+          without a way to narrow down before typing anything. */}
+      {packCounts.length > 1 && (
+        <div className="mt-4 flex flex-wrap items-center gap-1.5">
+          <FacetChip label="Tous les packs" count={byOwner.length} active={pack === null}
+            onClick={() => { setPack(null); setCat(null); setSelected(null); }} />
+          {packCounts.map(([p, n]) => (
+            <FacetChip key={p} label={PACK_LABELS[p] ?? p} count={n} active={pack === p}
+              onClick={() => { setPack(p); setCat(null); setSelected(null); }} />
+          ))}
+        </div>
+      )}
+      {catCounts.length > 1 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <FacetChip label="Toutes catégories" count={byPack.length} active={cat === null} subtle
+            onClick={() => { setCat(null); setSelected(null); }} />
+          {(allCats ? catCounts : catCounts.slice(0, 12)).map(([c, n]) => (
+            <FacetChip key={c} label={CAT_LABELS[c] ?? c.replace(/-/g, " ")} count={n} active={cat === c} subtle
+              onClick={() => { setCat(cat === c ? null : c); setSelected(null); }} />
+          ))}
+          {catCounts.length > 12 && (
+            <button
+              onClick={() => setAllCats((v) => !v)}
+              className="rounded-full px-2.5 py-1 text-[11px] text-primary hover:underline"
+            >
+              {allCats ? "Réduire" : `+${catCounts.length - 12} autres`}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Card grid — 2 columns, title + description + ⋮ menu. */}
       {filtered.length === 0 ? (
-        customOnly && !search ? (
+        filter === "mine" && !search ? (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <p className="text-sm text-muted-foreground">Vous n'avez pas encore créé de skill.</p>
-            <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
-              <Plus className="mr-1 h-4 w-4" /> Créer votre premier Skill
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
+                <Plus className="mr-1 h-4 w-4" /> Créer votre premier Skill
+              </Button>
+              {skillsList.some((s) => s.is_system) && (
+                <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setFilter("examples")}>
+                  Parcourir le catalogue
+                </Button>
+              )}
+            </div>
           </div>
         ) : (
           <p className="py-16 text-center text-sm text-muted-foreground">
@@ -4677,7 +4798,10 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
             return (
               <div
                 key={s.id}
-                onClick={() => setSelected(s)}
+                // Opens the full-page skill view (SKILL.md + bundled files) —
+                // read-only for catalogue skills, editable for your own. The
+                // side panel stays reachable via ⋮ → Voir les détails.
+                onClick={() => navigate(`${skillsBase}/${s.id}/edit`)}
                 className="group relative cursor-pointer rounded-xl border border-border bg-card/40 p-4 transition-colors hover:bg-card"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -4831,14 +4955,14 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
                 </div>
               )}
 
-              {/* System prompt extension */}
-              {selected.system_prompt_extension && (
+              {/* Playbook (system_prompt_extension) — loaded on demand. */}
+              {selectedBody && (
                 <details className="rounded-md border border-border">
                   <summary className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-secondary/30">
                     <Brain className="h-3 w-3 text-muted-foreground shrink-0" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Prompt Extension</span>
                   </summary>
-                  <div className="px-3 py-2 text-[10px] text-muted-foreground whitespace-pre-wrap max-h-64 overflow-y-auto">{selected.system_prompt_extension}</div>
+                  <div className="px-3 py-2 text-[10px] text-muted-foreground whitespace-pre-wrap max-h-64 overflow-y-auto">{selectedBody}</div>
                 </details>
               )}
 
@@ -4864,6 +4988,9 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
 // sidebar. Reuses SkillsTab with NO agent, so it drops the per-agent activation
 // UI and becomes a pure browse / search / create / edit / delete library for the
 // whole workspace. Per-agent activation still lives in each agent's Skills tab.
+/** Workspace-level Skills page (AI Workforce → Compétences → Skills). Same
+ *  component as an agent's Skills tab, minus the per-agent activation toggles:
+ *  it opens on the user's own skills but the whole catalogue is one chip away. */
 export function SkillsLibraryPage() {
   return <SkillsTab customOnly />;
 }

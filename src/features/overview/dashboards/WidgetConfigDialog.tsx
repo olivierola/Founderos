@@ -147,7 +147,7 @@ export function WidgetConfigDialog({ open, onOpenChange, widget, onSave }: Props
                   className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                 >
                   <option value="metrics">Calculated metrics (time series)</option>
-                  <option value="internal">AchiCorp table</option>
+                  <option value="internal">Anduran table</option>
                   <option value="project_db">Connected project DB</option>
                   <option value="static">Static values</option>
                 </select>

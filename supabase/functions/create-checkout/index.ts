@@ -1,5 +1,5 @@
-// create-checkout — creates a Stripe Checkout Session for AchiCorp subscription upgrade.
-// Uses the FOUNDEROS_STRIPE_SECRET_KEY (AchiCorp's own Stripe account), not the workspace's.
+// create-checkout — creates a Stripe Checkout Session for Anduran subscription upgrade.
+// Uses the FOUNDEROS_STRIPE_SECRET_KEY (Anduran's own Stripe account), not the workspace's.
 // Body: { workspace_id, plan }
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
       return jsonResponse(
         {
           error: "Billing not yet wired",
-          detail: "AchiCorp Stripe price IDs / secret key not configured in Edge secrets.",
+          detail: "Anduran Stripe price IDs / secret key not configured in Edge secrets.",
         },
         { status: 503 },
       );

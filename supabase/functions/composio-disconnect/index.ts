@@ -4,7 +4,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { getComposio } from "../_shared/composio.ts";
+import { getComposio, resolveScope, applyScope } from "../_shared/composio.ts";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -18,8 +18,9 @@ Deno.serve(async (req) => {
     if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
     const body = await req.json();
-    const { workspace_id, project_id, toolkit } = body as {
+    const { workspace_id, project_id, toolkit, scope, service_dashboard_id } = body as {
       workspace_id?: string; project_id?: string; toolkit?: string;
+      scope?: string; service_dashboard_id?: string;
     };
     if (!workspace_id || !project_id || !toolkit) {
       return jsonResponse({ error: "workspace_id, project_id, toolkit required" }, { status: 400 });
@@ -32,16 +33,26 @@ Deno.serve(async (req) => {
       .eq("workspace_id", workspace_id)
       .eq("user_id", userData.user.id)
       .maybeSingle();
-    if (!membership || !["owner", "admin"].includes(membership.role)) {
+    // Disconnect the SCOPE the caller is looking at (0177): a personal account
+    // and the dashboard's shared one are separate rows.
+    const scoped = resolveScope({ scope, service_dashboard_id, user_id: userData.user.id });
+    if ("error" in scoped) return jsonResponse({ error: scoped.error }, { status: 400 });
+    // Shared connections are an admin action; your OWN account is yours to
+    // unplug whatever your role is (the row is bound to your user id).
+    const allowed = scoped.scope === "personal"
+      ? !!membership
+      : !!membership && ["owner", "admin"].includes(membership.role);
+    if (!allowed) {
       return jsonResponse({ error: "Not authorized for this workspace" }, { status: 403 });
     }
-
-    const { data: connector } = await admin
-      .from("connectors")
-      .select("id, composio_connected_account_id")
-      .eq("workspace_id", workspace_id).eq("project_id", project_id)
-      .eq("provider", toolkit).eq("source", "composio")
-      .maybeSingle();
+    const { data: connector } = await applyScope(
+      admin
+        .from("connectors")
+        .select("id, composio_connected_account_id, owner_user_id")
+        .eq("workspace_id", workspace_id).eq("project_id", project_id)
+        .eq("provider", toolkit).eq("source", "composio"),
+      scoped,
+    ).maybeSingle();
     if (!connector) return jsonResponse({ ok: true, already_gone: true });
 
     if (connector.composio_connected_account_id) {

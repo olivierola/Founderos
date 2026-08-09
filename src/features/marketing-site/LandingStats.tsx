@@ -8,7 +8,7 @@ const BARS = [
   { value: 8, label: "Generic copilot rollout" },
   { value: 24, label: "In-house build" },
   { value: 31, label: "Traditional consultancy" },
-  { value: 79, label: "AchiCorp", highlight: true, tooltip: "weekly active use" },
+  { value: 79, label: "Anduran", highlight: true, tooltip: "weekly active use" },
 ];
 
 // Animated proof bars — the candy-striped track, spring-grown fills and the

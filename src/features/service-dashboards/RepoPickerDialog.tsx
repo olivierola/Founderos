@@ -122,7 +122,7 @@ export function RepoPickerDialog({
             </p>
             {workspaceSlug && projectSlug && (
               <Button asChild variant="outline" size="sm">
-                <a href={`/app/${workspaceSlug}/${projectSlug}/admin/connectors?connect=github`}>
+                <a href={`/app/${workspaceSlug}/${projectSlug}/agent/connectors?connect=github`}>
                   Connecter GitHub <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
                 </a>
               </Button>

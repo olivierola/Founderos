@@ -15,17 +15,29 @@ export function GovFtSettingsPage() {
   const { settings, loading, save: saveDb } = useFtSettingsDb();
   const [draft, setDraft] = useState<FtSettings | null>(null);
   const [saved, setSaved] = useState(false);
-  const [connected, setConnected] = useState<Set<string>>(() => new Set(FT_INTEGRATIONS.filter((i) => i.connected).map((i) => i.id)));
+  const [connected, setConnected] = useState<Set<string>>(() => new Set(Object.entries(settings.integrations).filter(([, v]) => v).map(([k]) => k)));
 
   // Local draft over the persisted config; "Enregistrer" writes the row.
-  useEffect(() => { if (!loading) setDraft(settings); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [loading]);
+  useEffect(() => {
+    if (!loading) {
+      setDraft(settings);
+      setConnected(new Set(Object.entries(settings.integrations).filter(([, v]) => v).map(([k]) => k)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
   const s = draft;
   if (!s) return <PageSkeleton cards={0} rows={8} />;
 
   const set = <K extends keyof FtSettings>(k: K, v: FtSettings[K]) => { setDraft((p) => (p ? { ...p, [k]: v } : p)); setSaved(false); };
   const save = () => { if (s) { void saveDb(s).then(() => setSaved(true)); } };
   const toggleIntegration = (id: string) =>
-    setConnected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    setConnected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      setDraft((p) => (p ? { ...p, integrations: Object.fromEntries(FT_INTEGRATIONS.map((i) => [i.id, n.has(i.id)])) } : p));
+      setSaved(false);
+      return n;
+    });
 
   return (
     <div className="space-y-6">

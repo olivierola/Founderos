@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import {
   Database, Upload, Eraser, ShieldCheck, CheckCircle2, Loader2, CircleAlert, Circle,
   Eye, Pencil, GitMerge, Trash2, ArrowDown,
@@ -7,9 +7,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { Pill } from "../ui";
+import { Pill, FormDialog, type FieldDef } from "../ui";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
 import {
   timeAgo, DS_QUALITY_META, CLEAN_STEP_META, DS_TYPE_META, IMPORT_PIPELINE,
@@ -26,27 +26,71 @@ const STEP_COLOR: Record<CleanStepStatus, string> = {
 
 const fmtK = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)} M` : n >= 1000 ? `${(n / 1000).toFixed(1)} k` : String(n));
 
-// Fabricated preview lines shown in the sheet's "Prévisualiser" section.
-const PREVIEW_LINES = [
-  '{"messages":[{"role":"user","content":"Ma commande n\'est pas arrivée…"},{"role":"assistant","content":"Bonjour Camille, je vérifie tout de suite votre suivi…"}]}',
-  '{"messages":[{"role":"user","content":"Comment exporter mes contacts ?"},{"role":"assistant","content":"Depuis CRM → Records, cliquez Export ; voici les étapes…"}]}',
-  '{"messages":[{"role":"user","content":"Le paiement a échoué deux fois"},{"role":"assistant","content":"Je vois l\'erreur 402 côté banque — voici comment la résoudre…"}]}',
-];
-
 export function GovFtDatasetsPage() {
-  const { datasets, createFromUpload, remove, updateCleaning } = useFtDatasetsDb();
+  const { datasets, createFromUpload, remove, updateCleaning, updateMeta, merge } = useFtDatasetsDb();
   // Advance the cleaning pipeline of freshly imported datasets (real row updates).
   useCleaningTicker(datasets, updateCleaning);
   const fileRef = useRef<HTMLInputElement>(null);
   const [selId, setSelId] = useState<string | null>(null);
   const sel = useMemo(() => datasets.find((d) => d.id === selId) ?? null, [datasets, selId]);
   const [preview, setPreview] = useState(false);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [merging, setMerging] = useState(false);
+
+  // Real preview: download the first lines of the imported file from Storage.
+  useEffect(() => {
+    if (!preview || !sel || !sel.storagePath) { setPreviewText(null); setPreviewLoading(false); return; }
+    let cancelled = false;
+    setPreviewLoading(true);
+    (async () => {
+      try {
+        const { data, error } = await supabase.storage.from("ft-datasets").createSignedUrl(sel.storagePath!, 60);
+        if (cancelled) return;
+        if (error || !data?.signedUrl) { setPreviewText(null); return; }
+        const res = await fetch(data.signedUrl);
+        const text = await res.text();
+        if (cancelled) return;
+        setPreviewText(text.split("\n").filter((l) => l.trim()).slice(0, 3).join("\n"));
+      } catch { if (!cancelled) setPreviewText(null); }
+      finally { if (!cancelled) setPreviewLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [preview, sel]);
 
   const stats = useMemo(() => ({
     total: datasets.length,
     validated: datasets.filter((d) => d.quality === "validated").length,
     tokens: datasets.reduce((s, d) => s + d.tokens, 0),
   }), [datasets]);
+
+  const editFields: FieldDef[] = [
+    { key: "name", label: "Nom", required: true },
+    { key: "version", label: "Version", half: true, placeholder: "v1" },
+    { key: "lang", label: "Langue", half: true, placeholder: "FR" },
+    { key: "tags", label: "Tags (séparés par des virgules)", placeholder: "support, ton de marque" },
+  ];
+
+  const edit = async (values: Record<string, unknown>) => {
+    if (!sel) return;
+    await updateMeta(sel, {
+      name: String(values.name).trim() || sel.name,
+      tags: String(values.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean),
+      lang: String(values.lang || "FR"),
+      version: String(values.version || sel.version),
+    });
+  };
+
+  const mergeFields: FieldDef[] = [
+    { key: "other", label: "Fusionner avec…", type: "select", required: true,
+      options: datasets.filter((d) => d.id !== sel?.id).map((d) => ({ value: d.id, label: d.name })) },
+  ];
+
+  const doMerge = async (values: Record<string, unknown>) => {
+    const other = datasets.find((d) => d.id === String(values.other));
+    if (sel && other) { await merge(sel, other); setSelId(null); setPreview(false); }
+  };
 
   return (
     <div className="space-y-6">
@@ -141,8 +185,8 @@ export function GovFtDatasetsPage() {
           actions={
             <div className="flex gap-1">
               <Button size="icon" variant="ghost" className="h-8 w-8" title="Prévisualiser" onClick={() => setPreview((v) => !v)}><Eye className="h-4 w-4" /></Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8" title="Modifier"><Pencil className="h-4 w-4" /></Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8" title="Fusionner avec…"><GitMerge className="h-4 w-4" /></Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" title="Modifier" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /></Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" title="Fusionner avec…" onClick={() => setMerging(true)}><GitMerge className="h-4 w-4" /></Button>
               <Button size="icon" variant="ghost" className="h-8 w-8" title="Supprimer"
                 onClick={() => { if (confirm("Supprimer ce dataset ?")) { void remove(sel); setSelId(null); } }}>
                 <Trash2 className="h-4 w-4" />
@@ -151,10 +195,20 @@ export function GovFtDatasetsPage() {
           }
         >
           {preview && (
-            <DetailSection title="Prévisualisation (3 premières lignes)">
-              <pre className="scrollbar-slim overflow-x-auto rounded-md border border-border bg-[#0b0b0f] p-3 text-[10px] leading-relaxed text-zinc-300">
-                {PREVIEW_LINES.join("\n")}
-              </pre>
+            <DetailSection title={`Prévisualisation${sel.storagePath ? "" : " — aucun fichier réel"}`}>
+              {previewLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Téléchargement du fichier…</div>
+              ) : sel.storagePath && previewText ? (
+                <pre className="scrollbar-slim overflow-x-auto rounded-md border border-border bg-[#0b0b0f] p-3 text-[10px] leading-relaxed text-zinc-300">
+                  {previewText}
+                </pre>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {sel.storagePath
+                    ? "Impossible de lire le fichier (bucket inaccessible ?)."
+                    : "Ce dataset n'a pas de fichier réel importé. Importez un .jsonl (bouton Importer) pour pouvoir le prévisualiser et l'entraîner sur RunPod."}
+                </p>
+              )}
             </DetailSection>
           )}
 
@@ -224,6 +278,28 @@ export function GovFtDatasetsPage() {
             </Button>
           )}
         </DetailSheet>
+      )}
+
+      {editing && sel && (
+        <FormDialog
+          title={`Modifier « ${sel.name} »`}
+          fields={editFields}
+          initial={{ name: sel.name, version: sel.version, lang: sel.lang, tags: sel.tags.join(", ") }}
+          submitLabel="Enregistrer"
+          onClose={() => setEditing(false)}
+          onSubmit={edit}
+        />
+      )}
+
+      {merging && sel && (
+        <FormDialog
+          title={`Fusionner « ${sel.name} »`}
+          fields={mergeFields}
+          initial={{ other: "" }}
+          submitLabel="Fusionner"
+          onClose={() => setMerging(false)}
+          onSubmit={doMerge}
+        />
       )}
     </div>
   );

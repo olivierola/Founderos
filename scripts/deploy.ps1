@@ -1,4 +1,4 @@
-# AchiCorp — Supabase deploy script
+# Anduran — Supabase deploy script
 # Usage:
 #   $env:SUPABASE_ACCESS_TOKEN = "sbp_xxx"
 #   $env:SUPABASE_DB_PASSWORD  = "your-db-password"

@@ -3,24 +3,17 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot, Target, Package, ShieldCheck, Clock, CheckCircle, XCircle,
-  TrendingUp, Activity, Users, FolderKanban, Loader2, ChevronRight,
+  Activity, Users, FolderKanban, Loader2, ChevronRight,
   Zap, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { cn } from "@/lib/utils";
-import { fetchModuleProjects } from "@/features/module-projects/moduleProjectModel";
 import { MODULE_PROJECT_CONFIGS } from "@/lib/module-project-config";
 import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
-
-interface Agent { id: string; name: string; description: string | null; avatar_emoji: string | null; avatar_url: string | null; accent_color: string | null; chat_enabled: boolean; mission_enabled: boolean; created_at: string }
-interface Mission { id: string; agent_id: string; title: string; status: string; created_at: string }
-interface Run { id: string; mission_id: string; status: string; created_at: string; finished_at: string | null }
-interface Deliverable { id: string; run_id: string; kind: string; title: string; created_at: string }
-interface Approval { id: string; agent_id: string; tool_name: string; reason: string | null; status: string; requested_at: string; action_kind: string; payload: any }
+import { useHqAnalytics, HqAnalytics, type HqAnalyticsData } from "./HqAnalytics";
+import type { RangeKey } from "@/features/crm/overview/crmStats";
 
 export function AiHqDashboard() {
   const { workspaceSlug, projectSlug } = useParams();
@@ -28,58 +21,13 @@ export function AiHqDashboard() {
   const queryClient = useQueryClient();
   const { projectId } = useCurrentContext();
   const [deciding, setDeciding] = useState<string | null>(null);
+  const [range, setRange] = useState<RangeKey>("30d");
 
-  const { data: agents, isLoading: loadingAgents } = useQuery({
-    queryKey: ["hq_agents", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await supabase.from("internal_agents").select("id, name, description, avatar_emoji, avatar_url, accent_color, chat_enabled, mission_enabled, created_at")
-        .eq("project_id", projectId!).order("created_at", { ascending: false });
-      return (data ?? []) as Agent[];
-    },
-  });
+  const {
+    agents, runs, missions, deliverables, approvals, loopEvents, isLoading: loadingAgents,
+  } = useHqAnalytics(projectId);
 
-  const { data: missions } = useQuery({
-    queryKey: ["hq_missions", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await supabase.from("internal_agent_missions").select("id, agent_id, title, status, created_at")
-        .eq("project_id", projectId!).order("created_at", { ascending: false }).limit(50);
-      return (data ?? []) as Mission[];
-    },
-  });
-
-  const { data: recentRuns } = useQuery({
-    queryKey: ["hq_runs", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await supabase.from("internal_agent_runs").select("id, mission_id, status, created_at, finished_at")
-        .eq("project_id", projectId!).order("created_at", { ascending: false }).limit(30);
-      return (data ?? []) as Run[];
-    },
-  });
-
-  const { data: deliverables } = useQuery({
-    queryKey: ["hq_deliverables", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await supabase.from("internal_agent_deliverables").select("id, run_id, kind, title, created_at")
-        .eq("project_id", projectId!).order("created_at", { ascending: false }).limit(20);
-      return (data ?? []) as Deliverable[];
-    },
-  });
-
-  const { data: approvals } = useQuery({
-    queryKey: ["hq_approvals", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await supabase.from("internal_agent_approvals")
-        .select("id, agent_id, tool_name, reason, status, requested_at, action_kind, payload")
-        .eq("project_id", projectId!).eq("status", "pending")
-        .order("requested_at", { ascending: false });
-      return (data ?? []) as Approval[];
-    },
-  });
+  const analyticsData: HqAnalyticsData = { agents, runs, missions, deliverables, approvals, loopEvents };
 
   const { data: moduleProjects } = useQuery({
     queryKey: ["hq_module_projects", projectId],
@@ -91,14 +39,13 @@ export function AiHqDashboard() {
     },
   });
 
-  const agentCount = (agents ?? []).length;
-  const activeMissions = (missions ?? []).filter((m) => m.status === "active" || m.status === "running").length;
-  const deliverableCount = (deliverables ?? []).length;
-  const pendingApprovals = (approvals ?? []).length;
-  const runningRuns = (recentRuns ?? []).filter((r) => r.status === "running").length;
-  const agentById = Object.fromEntries((agents ?? []).map((a) => [a.id, a]));
+  const agentCount = agents.length;
+  const activeMissions = missions.filter((m) => m.status === "active" || m.status === "running").length;
+  const deliverableCount = deliverables.length;
+  const pendingApprovals = approvals.filter((a) => a.status === "pending").length;
+  const runningRuns = runs.filter((r) => r.status === "running").length;
+  const agentById = Object.fromEntries(agents.map((a) => [a.id, a]));
 
-  // Group module projects by module
   const deptGroups = Object.entries(
     (moduleProjects ?? []).reduce<Record<string, typeof moduleProjects>>((acc, mp) => {
       (acc[mp!.module_slug] ??= []).push(mp!);
@@ -115,6 +62,9 @@ export function AiHqDashboard() {
         <h1 className="text-xl font-bold">AI Headquarters</h1>
         <p className="mt-1 text-sm text-muted-foreground">Your AI workforce at a glance — agents, missions, deliverables, and decisions.</p>
       </div>
+
+      {/* ── Advanced analytics & governance ── */}
+      <HqAnalytics data={analyticsData} range={range} onRangeChange={setRange} />
 
       {/* ── KPI Bar ── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -145,11 +95,11 @@ export function AiHqDashboard() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {(agents ?? []).map((a) => {
-                const agentMissions = (missions ?? []).filter((m) => m.agent_id === a.id);
+              {agents.map((a) => {
+                const agentMissions = missions.filter((m) => m.agent_id === a.id);
                 const active = agentMissions.filter((m) => m.status === "active" || m.status === "running").length;
                 const completed = agentMissions.filter((m) => m.status === "completed").length;
-                const hasApproval = (approvals ?? []).some((ap) => ap.agent_id === a.id);
+                const hasApproval = approvals.some((ap) => ap.agent_id === a.id && ap.status === "pending");
 
                 return (
                   <button key={a.id}
@@ -191,7 +141,7 @@ export function AiHqDashboard() {
               <p className="rounded-lg border border-border px-3 py-4 text-center text-xs text-muted-foreground">No pending approvals</p>
             ) : (
               <div className="space-y-2">
-                {(approvals ?? []).map((ap) => {
+                {approvals.filter((ap) => ap.status === "pending").map((ap) => {
                   const agent = agentById[ap.agent_id];
                   const isDeciding = deciding === ap.id;
                   async function decide(decision: "approve" | "reject") {
@@ -242,23 +192,23 @@ export function AiHqDashboard() {
           <div>
             <h2 className="mb-2 text-sm font-semibold flex items-center gap-1.5"><Activity className="h-4 w-4 text-muted-foreground" /> Recent Activity</h2>
             <div className="space-y-1">
-              {(deliverables ?? []).slice(0, 8).map((d) => (
+              {deliverables.slice(0, 8).map((d) => (
                 <div key={d.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-secondary/40">
                   <Package className="h-3 w-3 shrink-0 text-emerald-500" />
-                  <span className="truncate flex-1">{d.title}</span>
+                  <span className="truncate flex-1">{d.name}</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(d.created_at)}</span>
                 </div>
               ))}
-              {(recentRuns ?? []).filter((r) => r.status === "completed" || r.status === "failed").slice(0, 4).map((r) => (
+              {[...runs].sort((a, b) => b.created_at.localeCompare(a.created_at)).filter((r) => r.status === "succeeded" || r.status === "failed").slice(0, 4).map((r) => (
                 <div key={r.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-secondary/40">
-                  {r.status === "completed"
+                  {r.status === "succeeded"
                     ? <CheckCircle className="h-3 w-3 shrink-0 text-emerald-500" />
                     : <XCircle className="h-3 w-3 shrink-0 text-destructive" />}
                   <span className="truncate flex-1">Run {r.status}</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(r.created_at)}</span>
                 </div>
               ))}
-              {(deliverables ?? []).length === 0 && (recentRuns ?? []).length === 0 && (
+              {deliverables.length === 0 && runs.length === 0 && (
                 <p className="py-4 text-center text-xs text-muted-foreground">No activity yet.</p>
               )}
             </div>

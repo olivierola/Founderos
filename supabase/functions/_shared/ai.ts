@@ -79,7 +79,8 @@ export async function callAi(opts: CallOpts): Promise<{ content: string; provide
     : provider === "groq"
       ? "https://api.groq.com/openai/v1/chat/completions"
       : "https://api.deepseek.com/chat/completions";
-  const model = ep?.model ?? opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
+  const overrideModel = opts.model && opts.model !== "groq" && opts.model !== "deepseek" ? opts.model : undefined;
+  const model = ep?.model ?? overrideModel ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
 
   const body: Record<string, unknown> = {
     model,
@@ -131,6 +132,12 @@ export function truncateMiddle(s: string, max: number): string {
   const tail = max - head;
   return `${s.slice(0, head)}\n…[${s.length - max} caractères coupés au milieu]…\n${s.slice(-tail)}`;
 }
+
+/** Max size of a single tool result carried into the transcript. Tools that can
+ *  emit more declare a `compress` (see internal-agent-tools.ts) that shrinks
+ *  their own output deterministically under this cap; anything else gets the
+ *  generic middle-cut below. */
+export const TOOL_RESULT_CAP = 12_000;
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -409,7 +416,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
       messages.push({
         role: "tool",
         tool_call_id: call.id,
-        content: truncateMiddle(result, 12000),
+        content: truncateMiddle(result, TOOL_RESULT_CAP),
       });
     }
   }
@@ -451,7 +458,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
         if (nm === "RunCancelledError" || nm === "AwaitingInputError" || nm === "AwaitingApprovalError") throw e;
         result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
       }
-      messages.push({ role: "tool", tool_call_id: call.id, content: truncateMiddle(result, 12000) });
+      messages.push({ role: "tool", tool_call_id: call.id, content: truncateMiddle(result, TOOL_RESULT_CAP) });
     }
   }
 
@@ -532,7 +539,8 @@ export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsRes
   const apiKey = ep ? (ep.apiKey ?? "") : (provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY"));
   if (!ep && !apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
   const url = ep ? chatCompletionsUrl(ep.baseUrl) : TOOL_ENDPOINTS[provider];
-  const model = ep?.model ?? opts.model ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
+  const overrideModel = opts.model && opts.model !== "groq" && opts.model !== "deepseek" ? opts.model : undefined;
+  const model = ep?.model ?? overrideModel ?? (provider === "groq" ? GROQ_MODEL : DEEPSEEK_MODEL);
   const messages = opts.messages;
   const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
@@ -596,7 +604,7 @@ export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsRes
         result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
       }
       if (result.startsWith("ERROR")) errorCount++;
-      messages.push({ role: "tool", tool_call_id: call.id, content: truncateMiddle(result, 12000) });
+      messages.push({ role: "tool", tool_call_id: call.id, content: truncateMiddle(result, TOOL_RESULT_CAP) });
     }
   }
   // Tick budget exhausted without a final answer — resume on the next tick.
@@ -788,7 +796,10 @@ async function postChat(
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      // No key → no header at all. A self-hosted endpoint (vLLM/Ollama on the
+      // company network) is often unauthenticated, and some of them reject a
+      // bare "Bearer " outright.
+      headers: { ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}), "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (res.ok) return (await res.json()) as ToolChatResponse;

@@ -76,7 +76,7 @@ export function AcceptInvitePage() {
             <>
               <div className="text-base font-semibold">Sign in to accept the invitation</div>
               <p className="text-sm text-muted-foreground">
-                You need a AchiCorp account matching the invited email.
+                You need a Anduran account matching the invited email.
               </p>
               <Button onClick={() => navigate(`/login?next=/accept-invite?token=${token}`)}>Sign in</Button>
             </>

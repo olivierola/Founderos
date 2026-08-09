@@ -20,6 +20,39 @@ const ACTION_ICON: Record<AccessAction, typeof Wrench> = {
   tool_call: Wrench, data_read: DatabaseZap, data_write: PenLine, external_call: Globe,
 };
 
+const formatDuration = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+
+/** Monospaced, scrollable, never breaks the sheet's width. */
+function CodeBlock({ text, tone = "default" }: { text: string; tone?: "default" | "error" }) {
+  return (
+    <pre className={cn(
+      "max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border px-2.5 py-2 font-mono text-[11px] leading-relaxed",
+      tone === "error" ? "border-destructive/30 bg-destructive/5 text-destructive" : "border-border/60 bg-secondary/50 text-foreground",
+    )}>{text}</pre>
+  );
+}
+
+/**
+ * One argument of a tool call. Short scalars read best inline; anything long or
+ * structured gets a code block — a 400-character prompt or a nested object
+ * squeezed onto a label row is unreadable, which is why the sheet showed
+ * nothing useful before.
+ */
+function ArgRow({ name, value }: { name: string; value: unknown }) {
+  const isScalar = value == null || ["string", "number", "boolean"].includes(typeof value);
+  const text = isScalar ? String(value ?? "—") : JSON.stringify(value, null, 2);
+  const inline = isScalar && text.length <= 80 && !text.includes("\n");
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline gap-2">
+        <code className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium">{name}</code>
+        {inline && <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{text}</span>}
+      </div>
+      {!inline && <CodeBlock text={text} />}
+    </div>
+  );
+}
+
 export function GovAccessLogsPage() {
   const { data: agents } = useProjectAgents();
   const roster = agents ?? [];
@@ -30,10 +63,14 @@ export function GovAccessLogsPage() {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<AccessLog | null>(null);
 
+  // Search covers the ARGUMENTS too: people look for "which agent touched this
+  // URL / this table / this file", and that only ever appears in the payload.
   const filtered = logs.filter((l) =>
     (agentFilter === "all" || l.agentId === agentFilter) &&
     (actionFilter === "all" || l.action === actionFilter) &&
-    (q === "" || `${l.target} ${l.detail} ${l.agentName}`.toLowerCase().includes(q.toLowerCase())),
+    (q === "" ||
+      `${l.target} ${l.detail} ${l.agentName} ${l.args ? JSON.stringify(l.args) : ""}`
+        .toLowerCase().includes(q.toLowerCase())),
   );
 
   const stats = useMemo(() => ({
@@ -56,7 +93,7 @@ export function GovAccessLogsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une ressource, un outil…" className="h-9 w-64" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Outil, URL, table, paramètre…" className="h-9 w-64" />
         <Select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)} className="h-9 w-44">
           <option value="all">Tous les agents</option>
           {roster.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -65,7 +102,10 @@ export function GovAccessLogsPage() {
           <option value="all">Tous les types</option>
           {Object.entries(ACCESS_ACTION_META).map(([v, m]) => <option key={v} value={v}>{m.label}</option>)}
         </Select>
-        <span className="ml-auto text-xs text-muted-foreground">{filtered.length} événement{filtered.length > 1 ? "s" : ""}</span>
+        <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />Live</span>
+          {filtered.length} événement{filtered.length > 1 ? "s" : ""}
+        </span>
       </div>
 
       {filtered.length === 0 ? (
@@ -114,13 +154,35 @@ export function GovAccessLogsPage() {
           <DetailSection title="Événement">
             <DetailRow label="Type"><Pill meta={ACCESS_ACTION_META[sel.action]} /></DetailRow>
             <DetailRow label="Statut"><Pill meta={ACCESS_STATUS_META[sel.status]} /></DetailRow>
-            <DetailRow label="Cible"><code className="rounded bg-secondary px-1.5 py-0.5 text-xs">{sel.target}</code></DetailRow>
+            <DetailRow label="Outil"><code className="rounded bg-secondary px-1.5 py-0.5 text-xs">{sel.target}</code></DetailRow>
             <DetailRow label="Détail">{sel.detail}</DetailRow>
             <DetailRow label="Horodatage">{new Date(sel.ts).toLocaleString("fr-FR")}</DetailRow>
+            {sel.durationMs != null && <DetailRow label="Durée">{formatDuration(sel.durationMs)}</DetailRow>}
           </DetailSection>
+
+          {/* The whole point of an access log: WHAT was asked of the tool. */}
+          <DetailSection title="Paramètres de l'appel">
+            {sel.args && Object.keys(sel.args).length > 0 ? (
+              <div className="space-y-2">
+                {Object.entries(sel.args).map(([k, v]) => <ArgRow key={k} name={k} value={v} />)}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Cet appel n'a pris aucun paramètre.</p>
+            )}
+          </DetailSection>
+
+          {sel.resultPreview && (
+            <DetailSection title={sel.resultOk === false ? "Erreur renvoyée" : "Résultat renvoyé"}>
+              <CodeBlock text={sel.resultPreview} tone={sel.resultOk === false ? "error" : "default"} />
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Aperçu tronqué à 1 000 caractères — le résultat complet reste dans la timeline du run.
+              </p>
+            </DetailSection>
+          )}
+
           <DetailSection title="Contexte d'exécution">
             <DetailRow label="Agent">{sel.agentName}</DetailRow>
-            <DetailRow label="Run"><span className="font-mono text-xs">{sel.runId}</span></DetailRow>
+            <DetailRow label="Run"><span className="font-mono text-xs">{sel.runIdFull ?? sel.runId}</span></DetailRow>
           </DetailSection>
           {sel.status !== "ok" && (
             <DetailSection title="Pourquoi ?">

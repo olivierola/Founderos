@@ -175,6 +175,10 @@ const PAGES: Record<string, PageEl> = {
   "agent/collections": <KnowledgeCollectionsPage />,
   "agent/skills": <SkillsLibraryPage />,
   "agent/mcp": <McpServersPage />,
+  // Connecteurs is a TAB OF A SERVICE DASHBOARD (see ServiceDashboardShell) —
+  // a connection belongs to one dashboard, or to one person inside it (0177).
+  // This page stays routed for the legacy project-wide rows only.
+  "agent/connectors": <ComposioCatalog />,
 
   // Ops group (infra/servers/workflows — reachable via explicit detail routes)
   "devops/ops-overview": <OpsOverviewPage />,
@@ -243,7 +247,6 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   access: <SettingsRolesPage />,
   members: <MembersPage />,
   workspaces: <SettingsProjectsPage />,
-  connectors: <ComposioCatalog />,
   repositories: <RepositoriesPage />,
   security: <SettingsSecurityPage />,
   // ── Abonnements ──
@@ -580,10 +583,11 @@ export const router = createBrowserRouter([
       // The Settings module was folded into the Admin dashboard.
       { path: "settings", element: <AbsRedirect to={`admin/${ADMIN_LANDING}`} /> },
       { path: "settings/:sub", element: <SettingsRedirect /> },
-      // The Integrations module was folded into the Admin dashboard's single
-      // "Connecteurs" tab — every old sub-tab redirects there.
-      { path: "integrations", element: <AbsRedirect to="admin/connectors" /> },
-      { path: "integrations/:sub", element: <AbsRedirect to="admin/connectors" /> },
+      // The Integrations module was folded into a single "Connecteurs" tab,
+      // which now lives in AI Workforce — every old link lands there.
+      { path: "integrations", element: <AbsRedirect to="agent/connectors" /> },
+      { path: "integrations/:sub", element: <AbsRedirect to="agent/connectors" /> },
+      { path: "admin/connectors", element: <AbsRedirect to="agent/connectors" /> },
       // The "Agentic Onboarding" module became a conditional tab on public
       // agents — its old deep links land on the public agents list.
       { path: "onboarding", element: <AbsRedirect to="agent/public-agents" /> },

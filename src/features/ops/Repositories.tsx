@@ -152,7 +152,7 @@ export function RepositoriesPage() {
             <p className="text-sm text-muted-foreground">
               Créez un Personal Access Token <span className="font-medium text-foreground">classique</span> avec le scope{" "}
               <code className="rounded bg-muted px-1 text-xs">repo</code> sur{" "}
-              <a href="https://github.com/settings/tokens/new?scopes=repo&description=AchiCorp" target="_blank" rel="noreferrer" className="text-foreground underline-offset-4 hover:underline">github.com/settings/tokens</a>.
+              <a href="https://github.com/settings/tokens/new?scopes=repo&description=Anduran" target="_blank" rel="noreferrer" className="text-foreground underline-offset-4 hover:underline">github.com/settings/tokens</a>.
               Le scope <code className="rounded bg-muted px-1 text-xs">repo</code> permet la lecture (import + scan) <span className="font-medium text-foreground">et l'écriture</span> (Vibe Code : PR + fork). Un token <span className="font-medium text-foreground">fine-grained</span> ne peut pas forker. Le token est chiffré avant stockage, jamais renvoyé au navigateur.
             </p>
             <Input type="password" placeholder="ghp_… (classique) ou github_pat_…" value={token} onChange={(e) => setToken(e.target.value)} />

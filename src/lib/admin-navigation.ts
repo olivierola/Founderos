@@ -3,7 +3,6 @@ import {
   ShieldCheckIcon,
   UsersThreeIcon,
   KanbanIcon,
-  PlugsConnectedIcon,
   GithubLogoIcon,
   LockKeyIcon,
   SparkleIcon,
@@ -46,7 +45,8 @@ export const ADMIN_SECTIONS: AdminNavSection[] = [
       { label: "Accès", slug: "access", icon: ShieldCheckIcon },
       { label: "Membres", slug: "members", icon: UsersThreeIcon },
       { label: "Espaces de travail", slug: "workspaces", icon: KanbanIcon },
-      { label: "Connecteurs", slug: "connectors", icon: PlugsConnectedIcon },
+      // "Connecteurs" moved to AI Workforce → Connexions (agent/connectors):
+      // connecting an app is about what the agents can act on, not admin.
       // The Dépôts module left the nav with the "Outils IA" dashboard, but
       // connecting a repository is a prerequisite of the Vibe Code studio
       // agent — so it lives here, next to the other connection surfaces.

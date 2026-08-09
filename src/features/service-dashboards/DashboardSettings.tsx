@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import {
   SlidersIcon, SquaresFourIcon, RobotIcon, ChatsCircleIcon, WarningIcon, CheckIcon,
   CalendarDotsIcon, BrainIcon, FilesIcon, TrashIcon, FloppyDiskIcon, SparkleIcon,
-  GaugeIcon, ShareNetworkIcon, EyeIcon, type Icon as PhosphorIcon,
+  GaugeIcon, ShareNetworkIcon, EyeIcon, PlugIcon, type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,15 +17,16 @@ import { AvatarPicker } from "@/features/internal-agents/AvatarPicker";
 import { cn } from "@/lib/utils";
 import {
   updateServiceDashboard, deleteServiceDashboard, ensureOrchestrator, fetchRooms, deleteEmptyRooms,
-  fetchUserDashboardTheme, setUserDashboardTheme,
   type ServiceDashboard, type DashboardSettings as Settings, type DashboardTabSlug,
 } from "./model";
 import { DASHBOARD_ICONS, DASHBOARD_COLORS, DashboardTile } from "./dashboardIcons";
-import { DASHBOARD_THEMES } from "./dashboardThemes";
+import { THEMES } from "@/lib/themes";
+import { useTheme } from "@/lib/theme-context";
 
 // The dashboard's own settings — deliberately scoped to THIS service. Org-wide
-// concerns (billing, members, connectors) stay in the Admin area; everything
-// here changes only how this one dashboard looks and behaves.
+// concerns (billing, members) stay in the Admin area; everything here changes
+// only how this one dashboard looks and behaves. Connectors are dashboard-owned
+// since 0177, so their nav entry is hideable like any other section.
 type SectionKey = "general" | "navigation" | "assistant" | "agents" | "rooms" | "danger";
 
 const SECTIONS: { key: SectionKey; label: string; icon: PhosphorIcon }[] = [
@@ -43,11 +44,12 @@ const HIDEABLE: { slug: DashboardTabSlug; label: string; icon: PhosphorIcon }[] 
   { slug: "schedules", label: "Schedules", icon: CalendarDotsIcon },
   { slug: "memory", label: "Workspace memory", icon: BrainIcon },
   { slug: "artifacts", label: "Artifacts", icon: FilesIcon },
+  { slug: "connectors", label: "Connecteurs", icon: PlugIcon },
 ];
 
 const MODELS = [
   { id: "deepseek", label: "DeepSeek", hint: "Par défaut — raisonnement + outils" },
-  { id: "groq", label: "Groq (Llama 3.1)", hint: "Réponses rapides" },
+  { id: "groq", label: "Groq (Llama 3.3 70B)", hint: "Llama 3.3 70B — rapide" },
   { id: "gpt-4", label: "GPT-4", hint: "Fallback" },
 ];
 
@@ -118,11 +120,8 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
   useEffect(() => { setAssistant(orchestrator ? { ...orchestrator } : null); }, [orchestrator?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const setA = (p: Partial<Orchestrator>) => setAssistant((a) => (a ? { ...a, ...p } : a));
 
-  // The skin is personal (0162), so the picker reflects THIS viewer's choice.
-  const { data: myTheme } = useQuery({
-    queryKey: ["sd_user_theme", dashboard.id],
-    queryFn: () => fetchUserDashboardTheme(dashboard.id),
-  });
+  // One theme per person, app-wide.
+  const { theme: appTheme, setTheme } = useTheme();
 
   const { data: rooms } = useQuery({
     queryKey: ["service_rooms", dashboard.id],
@@ -258,21 +257,18 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                   ))}
                 </div>
               </Field>
-              <Field label="Votre thème" hint="Personnel — vos coéquipiers gardent le leur.">
+              <Field label="Votre thème" hint="Personnel, et appliqué à toute l'app — vos coéquipiers gardent le leur.">
                 <div className="flex flex-wrap gap-2">
-                  {DASHBOARD_THEMES.map((t) => (
+                  {THEMES.map((t) => (
                     <button
                       key={t.key} type="button"
                       // A switcher, not a form field: it lands right away rather
-                      // than waiting for Save, and writes the viewer's own row
-                      // (0162) instead of the shared dashboard settings.
-                      onClick={async () => {
-                        await setUserDashboardTheme(dashboard.id, t.key);
-                        queryClient.invalidateQueries({ queryKey: ["sd_user_theme"] });
-                      }}
+                      // than waiting for Save, and it drives the ONE theme the
+                      // person has — every dashboard repaints at once.
+                      onClick={() => setTheme(t.key)}
                       className={cn(
                         "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors",
-                        myTheme === t.key ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:border-primary/40",
+                        appTheme === t.key ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:border-primary/40",
                       )}
                     >
                       <span className="h-4 w-4 shrink-0 rounded-full border border-border" style={{ background: t.swatch }} />

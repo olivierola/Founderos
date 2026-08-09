@@ -84,7 +84,7 @@ export async function validateProvider(
         const token = payload.token;
         if (!token) return fail("token required");
         const r = await fetchJson("https://api.github.com/user", {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "AchiCorp" },
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "Anduran" },
         });
         if (!r.ok) return fail("Invalid GitHub token");
         const b = r.body as { login: string; id: number };
@@ -287,11 +287,11 @@ export async function validateProvider(
       // --- Messaging (webhook ping) ---
       case "slack":
         return payload.webhook_url
-          ? pingWebhook(payload.webhook_url, { text: "✅ AchiCorp connected" })
+          ? pingWebhook(payload.webhook_url, { text: "✅ Anduran connected" })
           : fail("webhook_url required");
       case "discord":
         return payload.webhook_url
-          ? pingWebhook(payload.webhook_url, { content: "✅ AchiCorp connected" })
+          ? pingWebhook(payload.webhook_url, { content: "✅ Anduran connected" })
           : fail("webhook_url required");
       case "telegram": {
         if (!payload.api_key || !payload.chat_id) return fail("bot token + chat_id required");

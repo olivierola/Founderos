@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
       headers: {
         Authorization: `Bearer ${body.token}`,
         Accept: "application/vnd.github+json",
-        "User-Agent": "AchiCorp-Scanner",
+        "User-Agent": "Anduran-Scanner",
       },
     });
     if (!ghRes.ok) {

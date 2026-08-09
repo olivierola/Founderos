@@ -5,10 +5,11 @@ import { Loader2 } from "lucide-react";
 // Phosphor everywhere in this dashboard — one icon family, consistent weights
 // (the app's Admin nav already uses it).
 import {
-  HouseIcon, RobotIcon, BrainIcon, GearSixIcon, PulseIcon, CalendarDotsIcon, FilesIcon,
+  HouseIcon, RobotIcon, BrainIcon, GearSixIcon, PulseIcon, CalendarDotsIcon, FilesIcon, PlugIcon,
   ChatsCircleIcon, GraphIcon, DatabaseIcon, SlidersIcon, SquaresFourIcon,
   SparkleIcon, WarningIcon, MagnifyingGlassIcon, PlusIcon, CheckIcon, CaretDownIcon,
-  DotsThreeIcon, PencilSimpleIcon, TrashIcon, HashIcon, SidebarSimpleIcon,
+  DotsThreeIcon, PencilSimpleIcon, TrashIcon, HashIcon, SidebarSimpleIcon, UsersThreeIcon, UserIcon,
+  TargetIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import {
@@ -27,7 +28,7 @@ import { ADMIN_LANDING } from "@/lib/admin-navigation";
 import { cn } from "@/lib/utils";
 import {
   fetchServiceDashboards, createServiceDashboard, deleteServiceDashboard, fetchRooms, renameRoom, deleteRoom,
-  createRoom, deleteEmptyRooms, fetchUserDashboardTheme, DEFAULT_DASHBOARD_SETTINGS,
+  createRoom, deleteEmptyRooms, DEFAULT_DASHBOARD_SETTINGS,
   type ServiceDashboard, type Room, type DashboardTabSlug,
 } from "./model";
 import { RoomView } from "./RoomView";
@@ -37,31 +38,45 @@ import {
   AgentsTab, SchedulesTab, WorkspaceMemoryTab, HomeTab, ActivityTab, AgentDetailInDashboard,
 } from "./ServiceDashboardTabs";
 import { DashboardArtifactsPage } from "./RoomArtifacts";
+import { DashboardMissionsTab } from "./RoomMissions";
+import { ComposioCatalog } from "@/features/integrations/ComposioCatalog";
 import { DashboardSettingsTab, DASHBOARD_SETTINGS_SECTIONS, type DashboardSettingsSection } from "./DashboardSettings";
 import { CreateAgentPage } from "./CreateAgent";
 import { fetchAgentFolders } from "./agentFolders";
 import { DashboardTile } from "./dashboardIcons";
-import { applyDashboardTheme } from "./dashboardThemes";
-import { useTheme } from "@/lib/theme-context";
+import { ThemeMenu } from "@/components/ThemeMenu";
 
 // ── Structure ────────────────────────────────────────────────────────────────
 // Two rails, like the reference: a narrow icon rail holding the top-level
 // sections, and a contextual panel showing that section's own navigation
 // (Home → rooms & agent DMs, Agents → the roster, Memory → its views, Settings
 // → its sections). The content is flush — no floating rounded panel.
-type RailKey = "home" | "agents" | "memory" | "settings";
+type RailKey = "home" | "agents" | "memory" | "connectors" | "settings";
 
 const RAIL: { key: RailKey; label: string; icon: PhosphorIcon; tab: DashboardTabSlug | "settings" }[] = [
   { key: "home", label: "Home", icon: HouseIcon, tab: "home" },
   { key: "agents", label: "Agents", icon: RobotIcon, tab: "agents" },
   { key: "memory", label: "Memory", icon: BrainIcon, tab: "memory" },
+  // Its own section, not a Home sub-tab: the connections of this space are a
+  // subject in themselves (shared account vs each member's own — 0177).
+  { key: "connectors", label: "Connecteurs", icon: PlugIcon, tab: "connectors" },
 ];
 
 // Tabs that live INSIDE the Home panel rather than on the rail.
-const HOME_NAV: { slug: DashboardTabSlug | "activity"; label: string; icon: PhosphorIcon }[] = [
+const HOME_NAV: { slug: DashboardTabSlug | "activity" | "missions"; label: string; icon: PhosphorIcon }[] = [
+  // Missions first: it is the board where the service's collective work lives,
+  // and it is what people come back to between conversations.
+  { slug: "missions", label: "Missions", icon: TargetIcon },
   { slug: "activity", label: "Activity", icon: PulseIcon },
   { slug: "schedules", label: "Schedules", icon: CalendarDotsIcon },
   { slug: "artifacts", label: "Artifacts", icon: FilesIcon },
+];
+
+// The connectors section's own tabs — the scope separation, surfaced as
+// navigation instead of chips buried in the page.
+const CONNECTOR_VIEWS: { key: "space" | "personal"; label: string; icon: PhosphorIcon }[] = [
+  { key: "space", label: "Connexions de l'espace", icon: UsersThreeIcon },
+  { key: "personal", label: "Mes connexions", icon: UserIcon },
 ];
 
 const MEMORY_VIEWS: { key: string; label: string; icon: PhosphorIcon }[] = [
@@ -95,7 +110,7 @@ export function ServiceDashboardPage() {
   const isCreateAgent = tab === "agents" && sub === "new";
   // Unknown tabs (old links, e.g. the retired /new-room) fall back to the
   // dashboard's landing page rather than rendering an empty content area.
-  const KNOWN = ["home", "agents", "schedules", "activity", "memory", "artifacts", "settings"];
+  const KNOWN = ["home", "agents", "schedules", "activity", "missions", "memory", "artifacts", "connectors", "settings"];
   const activeTab = isRoom ? "room"
     : isAgent ? "agent"
     : (tab && KNOWN.includes(tab) ? tab : settings.landing);
@@ -103,6 +118,7 @@ export function ServiceDashboardPage() {
   // secondary tabs (activity/schedules/artifacts) belong to Home.
   const rail: RailKey = activeTab === "agents" || isAgent ? "agents"
     : activeTab === "memory" ? "memory"
+    : activeTab === "connectors" ? "connectors"
     : activeTab === "settings" ? "settings"
     : "home";
 
@@ -121,19 +137,13 @@ export function ServiceDashboardPage() {
     if (untouched && settings.sidebar_collapsed) setCollapsed(true);
   }, [current?.id, settings.sidebar_collapsed]);
 
-  // Skin: the viewer's own choice (0162) wins over the service's default; the
-  // dashboard wears it for as long as it is open, then the app theme returns.
-  const { theme: appTheme } = useTheme();
-  const { data: myTheme } = useQuery({
-    queryKey: ["sd_user_theme", dashboardId],
-    enabled: !!dashboardId,
-    queryFn: () => fetchUserDashboardTheme(dashboardId!),
-  });
-  const skin = myTheme ?? settings.theme;
-  useEffect(() => applyDashboardTheme(skin, appTheme), [skin, appTheme]);
+  // No skin of its own: the person's theme (ThemeProvider) already paints
+  // <html>, so a service dashboard looks like the rest of their app. A
+  // per-service override would drift out of step the moment they changed the
+  // theme somewhere else.
 
   const railItems = RAIL.filter((r) => r.key === "home" || !hidden(r.key));
-  const panelTitle = rail === "home" ? "Home" : rail === "agents" ? "Agents" : rail === "memory" ? "Memory" : "Settings";
+  const panelTitle = rail === "home" ? "Home" : rail === "agents" ? "Agents" : rail === "memory" ? "Memory" : rail === "connectors" ? "Connecteurs" : "Settings";
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[hsl(var(--sd-ground))] text-foreground">
@@ -152,6 +162,9 @@ export function ServiceDashboardPage() {
             onClick={() => navigate(`${base}/settings`)}
           />
         </div>
+        {/* Same picker as the Topbar's — this space has no navbar, so the
+            theme has to be reachable from the rail itself. */}
+        <ThemeMenu align="start" className="h-10 w-10 hover:bg-sidebar-accent/60" />
         <SidebarProfileFooter compact />
       </aside>
 
@@ -175,6 +188,7 @@ export function ServiceDashboardPage() {
             )}
             {rail === "agents" && <AgentsPanel base={base} dashboardId={dashboardId!} activeAgent={isAgent ? sub : undefined} />}
             {rail === "memory" && <MemoryPanel base={base} active={sub || "graph"} />}
+            {rail === "connectors" && <ConnectorsPanel base={base} active={(sub === "personal" ? "personal" : "space")} />}
             {rail === "settings" && <SettingsPanel base={base} active={(sub || "general") as DashboardSettingsSection} />}
           </div>
 
@@ -200,8 +214,14 @@ export function ServiceDashboardPage() {
             {activeTab === "agents" && <AgentsTab dashboardId={dashboardId!} />}
             {activeTab === "schedules" && <SchedulesTab dashboardId={dashboardId!} workspaceId={workspaceId} projectId={projectId} />}
             {activeTab === "activity" && <ActivityTab dashboardId={dashboardId!} />}
+            {activeTab === "missions" && (
+              <DashboardMissionsTab dashboardId={dashboardId!} dashboardName={current.name} workspaceId={workspaceId} projectId={projectId} />
+            )}
             {activeTab === "memory" && <WorkspaceMemoryTab workspaceId={workspaceId} dashboardId={dashboardId!} projectId={projectId} view={sub || "graph"} />}
             {activeTab === "artifacts" && <DashboardArtifactsPage workspaceId={workspaceId} projectId={projectId} />}
+            {activeTab === "connectors" && (
+              <ComposioCatalog serviceDashboardId={dashboardId!} scope={sub === "personal" ? "personal" : "dashboard"} />
+            )}
             {activeTab === "settings" && (
               <DashboardSettingsTab
                 dashboard={current} workspaceId={workspaceId} projectId={projectId}
@@ -465,6 +485,23 @@ function MemoryPanel({ base, active }: { base: string; active: string }) {
       {MEMORY_VIEWS.map((v) => (
         <PanelItem
           key={v.key} active={active === v.key} onClick={() => navigate(`${base}/memory/${v.key}`)}
+          leading={<v.icon className="h-4 w-4" />} label={v.label}
+        />
+      ))}
+    </nav>
+  );
+}
+
+// Connections of this space, split by who owns them. The separation is the
+// whole point, so it lives in the navigation rather than in a chip row: a
+// shared account and someone's own mailbox are not two filters of one list.
+function ConnectorsPanel({ base, active }: { base: string; active: "space" | "personal" }) {
+  const navigate = useNavigate();
+  return (
+    <nav className="space-y-0.5 px-2.5">
+      {CONNECTOR_VIEWS.map((v) => (
+        <PanelItem
+          key={v.key} active={active === v.key} onClick={() => navigate(`${base}/connectors/${v.key}`)}
           leading={<v.icon className="h-4 w-4" />} label={v.label}
         />
       ))}

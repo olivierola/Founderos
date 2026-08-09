@@ -1,4 +1,4 @@
-// Choose which model an agent runs on: the AchiCorp default, one of the
+// Choose which model an agent runs on: the Anduran default, one of the
 // company's registered cloud/custom models (aiops_providers cloud_endpoint —
 // added in AI Ops → Modèles), or a self-hosted RunPod GPU server. The choice is
 // written onto the agent (hosted_provider_id / hosted_endpoint_url / hosted_model
@@ -101,7 +101,7 @@ export function AgentHostedModelCard({ agent, disabled }: { agent: InternalAgent
         {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Choisissez le modèle sur lequel cet agent tourne : le modèle par défaut AchiCorp, l'un de vos modèles enregistrés
+        Choisissez le modèle sur lequel cet agent tourne : le modèle par défaut Anduran, l'un de vos modèles enregistrés
         (API cloud ou endpoint), ou un serveur GPU auto-hébergé. Ajoutez vos modèles dans{" "}
         <Link to="../../../aiops/ops-models" className="inline-flex items-center gap-0.5 text-primary hover:underline">
           AI Ops → Modèles <ExternalLink className="h-3 w-3" />
@@ -114,7 +114,7 @@ export function AgentHostedModelCard({ agent, disabled }: { agent: InternalAgent
         onChange={(e) => void choose(e.target.value)}
         className="mt-3 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm disabled:opacity-50"
       >
-        <option value="">Modèle par défaut (AchiCorp)</option>
+        <option value="">Modèle par défaut (Anduran)</option>
         {hasCloud && (
           <optgroup label="Vos modèles">
             {(providers ?? []).flatMap((p) =>

@@ -45,6 +45,7 @@ export function TemplateConfigPanel({
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [instructions, setInstructions] = useState("");
   const [skillSlugs, setSkillSlugs] = useState<string[]>([]);
+  const [skillQuery, setSkillQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<ComposioToolkit | null>(null);
@@ -61,6 +62,18 @@ export function TemplateConfigPanel({
       return (data ?? []) as Array<{ id: string; name: string; slug: string; description: string | null }>;
     },
   });
+
+  // Skill picker: selected skills stay visible, the rest surface on search —
+  // the catalogue is 900+ entries. Capped so the panel stays light.
+  const shownSkills = (() => {
+    const q = skillQuery.trim().toLowerCase();
+    const chosen = (allSkills ?? []).filter((s) => skillSlugs.includes(s.slug));
+    if (!q) return chosen;
+    const hits = (allSkills ?? []).filter((s) =>
+      !skillSlugs.includes(s.slug) &&
+      `${s.name} ${s.slug} ${s.description ?? ""}`.toLowerCase().includes(q));
+    return [...chosen, ...hits].slice(0, 40);
+  })();
 
   // Re-seed whenever another template is opened.
   useEffect(() => {
@@ -175,10 +188,22 @@ export function TemplateConfigPanel({
 
           <section>
             <h3 className="mb-2 text-sm font-semibold">Skills</h3>
+            {/* Search-driven: the catalogue holds 900+ skills, so only the
+                selected ones and the current matches are rendered. */}
+            <input
+              value={skillQuery}
+              onChange={(e) => setSkillQuery(e.target.value)}
+              placeholder="Rechercher un skill…"
+              className="mb-2 w-full rounded-lg border border-border/70 bg-background px-3 py-1.5 text-xs outline-none focus:border-primary/50"
+            />
             <div className="flex flex-wrap gap-1.5">
               {(allSkills ?? []).length === 0 ? (
                 <p className="text-xs text-muted-foreground">Aucun skill dans la bibliothèque.</p>
-              ) : (allSkills ?? []).map((s) => {
+              ) : shownSkills.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {skillQuery ? `Aucun skill pour « ${skillQuery} ».` : "Tapez pour chercher parmi les skills disponibles."}
+                </p>
+              ) : shownSkills.map((s) => {
                 const on = skillSlugs.includes(s.slug);
                 return (
                   <button

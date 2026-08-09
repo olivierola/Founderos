@@ -59,7 +59,7 @@ export function MarketingHero() {
         <div className="mx-auto flex w-full max-w-[1500px] items-center justify-between gap-6 px-6 py-4 md:px-10">
           <Link to="/" className="flex shrink-0 items-center gap-2">
             <Logo size={26} />
-            <span className="text-lg font-semibold tracking-tight text-neutral-900">AchiCorp</span>
+            <span className="text-lg font-semibold tracking-tight text-neutral-900">Anduran</span>
           </Link>
 
           <div className="hidden flex-1 items-center justify-center gap-8 lg:flex">
@@ -110,7 +110,7 @@ export function MarketingHero() {
         <div className="fixed inset-0 z-50 flex flex-col bg-[#efede7] p-6 md:hidden">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-lg font-semibold text-neutral-900">
-              <Logo size={24} /> AchiCorp
+              <Logo size={24} /> Anduran
             </span>
             <button className="text-neutral-900" onClick={() => setMenuOpen(false)} aria-label="Close menu">
               <X className="h-6 w-6" />
@@ -167,7 +167,7 @@ export function MarketingHero() {
                 visual={
                   <div className="flex h-full items-center justify-center gap-2 text-neutral-800">
                     <Bot className="h-6 w-6" style={{ color: ORANGE }} />
-                    <span className="text-sm font-semibold tracking-tight">AchiCorp</span>
+                    <span className="text-sm font-semibold tracking-tight">Anduran</span>
                     <span className="mx-1 h-4 w-px bg-black/15" />
                     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-500">Live</span>
                   </div>
@@ -344,7 +344,7 @@ function ChatBar() {
       <Mic className="h-4 w-4 shrink-0 text-neutral-400" />
       <input
         type="text"
-        placeholder="TRY ACHICORP ON A REAL PROJECT…"
+        placeholder="TRY ANDURAN ON A REAL PROJECT…"
         className="min-w-0 flex-1 bg-transparent text-[12px] font-medium uppercase tracking-[0.08em] text-neutral-300 placeholder:text-neutral-500 focus:outline-none"
       />
       <button

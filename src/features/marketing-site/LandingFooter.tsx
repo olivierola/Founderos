@@ -65,7 +65,7 @@ export function LandingFooter() {
               <Link to="/" className="flex items-center gap-2.5">
                 <Logo size={30} />
                 <span className="text-[20px] leading-tight" style={{ fontFamily: BRAND_FONT }}>
-                  AchiCorp
+                  Anduran
                 </span>
               </Link>
               <p className="mt-5 max-w-xs text-[14.5px] leading-relaxed text-white/55">
@@ -119,12 +119,12 @@ export function LandingFooter() {
             className="pointer-events-none mt-auto select-none overflow-hidden pt-16 text-center leading-[0.95] tracking-normal text-white/[0.045]"
             style={{ fontSize: "clamp(46px, 10vw, 150px)", fontFamily: BRAND_FONT }}
           >
-            AchiCorp
+            Anduran
           </div>
 
           <div className="mt-6 flex flex-col gap-3 border-t border-white/10 pt-7 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-[13px] text-white/45">
-              © {new Date().getFullYear()} AchiCorp. All rights reserved.
+              © {new Date().getFullYear()} Anduran. All rights reserved.
             </span>
             <div className="flex items-center gap-6">
               <Link to="/docs" className="text-[13px] text-white/45 transition-colors hover:text-white">

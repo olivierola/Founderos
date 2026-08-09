@@ -1,5 +1,5 @@
 // public-feature-flags — return the evaluated feature-flag state for a project,
-// for use by the AchiCorp analytics SDK (analytics.isFeatureEnabled(key)).
+// for use by the Anduran analytics SDK (analytics.isFeatureEnabled(key)).
 // No JWT required: callable from the browser with the anon key, like track-event.
 //
 // Body: { workspace_id, project_id, distinct_id? }

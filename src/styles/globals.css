@@ -233,11 +233,11 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 
 /* ── Service-dashboard skins ──────────────────────────────────────────────────
    A service dashboard can wear its own theme (Settings → Général, or the
-   account menu in its rail). The element carrying `data-sd-theme` also carries
+   account menu in its rail). The element carrying `data-skin` also carries
    the base `.light`/`.dark` class, so these blocks only need to restate what
    makes the skin different — everything else inherits from the base block.
    Scoped to the subtree, so the rest of the app keeps the app theme. */
-[data-sd-theme="purple"] {
+[data-skin="purple"] {
   --background: 260 30% 10%;
   --foreground: 265 25% 95%;
   --card: 260 26% 13%;
@@ -261,7 +261,7 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
   --accent-coral: 263 72% 62%;
 }
 
-[data-sd-theme="burnt-orange"] {
+[data-skin="burnt-orange"] {
   --background: 20 26% 9%;
   --foreground: 30 20% 95%;
   --card: 20 22% 12%;
@@ -285,7 +285,7 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
   --accent-coral: 18 84% 52%;
 }
 
-[data-sd-theme="sand"] {
+[data-skin="sand"] {
   --background: 42 38% 96%;
   --foreground: 30 16% 18%;
   --card: 40 45% 99%;
@@ -310,7 +310,7 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 }
 
 /* Deep navy — cool, high-contrast night skin. */
-[data-sd-theme="midnight"] {
+[data-skin="midnight"] {
   --background: 222 40% 10%;
   --foreground: 213 30% 95%;
   --card: 222 34% 13%;
@@ -335,7 +335,7 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 }
 
 /* Deep evergreen — calm, low-glare. */
-[data-sd-theme="forest"] {
+[data-skin="forest"] {
   --background: 158 24% 9%;
   --foreground: 150 18% 94%;
   --card: 158 20% 12%;
@@ -360,7 +360,7 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 }
 
 /* Warm brown — coffee-toned dark. */
-[data-sd-theme="mocha"] {
+[data-skin="mocha"] {
   --background: 25 16% 10%;
   --foreground: 30 18% 94%;
   --card: 25 14% 13%;
@@ -385,7 +385,7 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 }
 
 /* Cool light grey — the neutral daylight skin. */
-[data-sd-theme="mist"] {
+[data-skin="mist"] {
   --background: 210 30% 98%;
   --foreground: 215 22% 20%;
   --card: 0 0% 100%;
@@ -410,7 +410,7 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 }
 
 /* Cool neutral graphite — the quietest dark skin. */
-[data-sd-theme="slate"] {
+[data-skin="slate"] {
   --background: 215 20% 11%;
   --foreground: 214 18% 95%;
   --card: 215 17% 14%;
@@ -435,7 +435,7 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 }
 
 /* Deep wine — warm, low-light. */
-[data-sd-theme="crimson"] {
+[data-skin="crimson"] {
   --background: 348 22% 10%;
   --foreground: 350 16% 95%;
   --card: 348 19% 13%;
@@ -457,6 +457,156 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
   --primary-foreground: 0 0% 100%;
   --primary-soft: 346 82% 70%;
   --accent-coral: 346 72% 52%;
+}
+
+/* True black for OLED panels — neutral, with an inverted (white) accent. */
+[data-skin="carbon"] {
+  --background: 0 0% 7%;
+  --foreground: 0 0% 96%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 9%;
+  --popover-foreground: 0 0% 96%;
+  --sidebar: 0 0% 4%;
+  --sidebar-foreground: 0 0% 72%;
+  --sidebar-accent: 0 0% 17%;
+  --sd-ground: 0 0% 2%;
+  --sd-panel: 0 0% 5%;
+  --secondary: 0 0% 14%;
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 63%;
+  --accent: 0 0% 17%;
+  --border: 0 0% 19%;
+  --input: 0 0% 19%;
+  --primary: 0 0% 96%;
+  --primary-foreground: 0 0% 8%;
+  --primary-soft: 0 0% 88%;
+  --accent-coral: 0 0% 96%;
+}
+
+/* Deep sea — cool teal, the coldest of the dark skins. */
+[data-skin="ocean"] {
+  --background: 195 38% 9%;
+  --foreground: 190 20% 95%;
+  --card: 195 32% 12%;
+  --card-foreground: 190 20% 95%;
+  --popover: 195 34% 11%;
+  --popover-foreground: 190 20% 95%;
+  --sidebar: 196 44% 7%;
+  --sidebar-foreground: 192 14% 76%;
+  --sidebar-accent: 195 28% 19%;
+  --sd-ground: 197 52% 4.5%;
+  --sd-panel: 195 34% 6.5%;
+  --secondary: 195 26% 16%;
+  --muted: 195 26% 17%;
+  --muted-foreground: 192 12% 65%;
+  --accent: 195 28% 19%;
+  --border: 195 24% 21%;
+  --input: 195 24% 21%;
+  --primary: 187 82% 40%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 187 78% 62%;
+  --accent-coral: 187 82% 40%;
+}
+
+/* Warm neutral base under a gold accent — dark ink on the accent. */
+[data-skin="amber"] {
+  --background: 40 12% 9%;
+  --foreground: 42 18% 95%;
+  --card: 40 10% 12%;
+  --card-foreground: 42 18% 95%;
+  --popover: 40 11% 11%;
+  --popover-foreground: 42 18% 95%;
+  --sidebar: 40 16% 7%;
+  --sidebar-foreground: 40 10% 75%;
+  --sidebar-accent: 40 10% 19%;
+  --sd-ground: 40 22% 4.5%;
+  --sd-panel: 40 11% 6.5%;
+  --secondary: 40 9% 16%;
+  --muted: 40 9% 17%;
+  --muted-foreground: 40 8% 65%;
+  --accent: 40 10% 19%;
+  --border: 40 8% 21%;
+  --input: 40 8% 21%;
+  --primary: 42 94% 52%;
+  --primary-foreground: 40 45% 11%;
+  --primary-soft: 44 92% 62%;
+  --accent-coral: 42 94% 52%;
+}
+
+/* Magenta-leaning purple — warmer than Purple, cooler than Crimson. */
+[data-skin="plum"] {
+  --background: 300 22% 10%;
+  --foreground: 300 18% 95%;
+  --card: 300 19% 13%;
+  --card-foreground: 300 18% 95%;
+  --popover: 300 20% 12%;
+  --popover-foreground: 300 18% 95%;
+  --sidebar: 302 28% 8%;
+  --sidebar-foreground: 300 10% 76%;
+  --sidebar-accent: 300 18% 20%;
+  --sd-ground: 303 34% 5%;
+  --sd-panel: 300 21% 7.5%;
+  --secondary: 300 16% 17%;
+  --muted: 300 16% 18%;
+  --muted-foreground: 300 9% 65%;
+  --accent: 300 18% 20%;
+  --border: 300 14% 22%;
+  --input: 300 14% 22%;
+  --primary: 310 68% 56%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 310 80% 72%;
+  --accent-coral: 310 68% 56%;
+}
+
+/* Soft violet daylight. */
+[data-skin="lavender"] {
+  --background: 265 45% 98%;
+  --foreground: 265 22% 20%;
+  --card: 0 0% 100%;
+  --card-foreground: 265 22% 20%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 265 22% 20%;
+  --sidebar: 265 30% 94%;
+  --sidebar-foreground: 265 12% 40%;
+  --sidebar-accent: 265 28% 88%;
+  --sd-ground: 265 26% 91%;
+  --sd-panel: 265 34% 95.5%;
+  --secondary: 265 28% 93%;
+  --muted: 265 28% 93%;
+  --muted-foreground: 265 10% 45%;
+  --accent: 265 28% 88%;
+  --border: 265 22% 88%;
+  --input: 265 22% 88%;
+  --primary: 264 58% 52%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 264 54% 46%;
+  --accent-coral: 264 58% 52%;
+}
+
+/* Muted green daylight — the calmest light skin. */
+[data-skin="sage"] {
+  --background: 120 25% 97%;
+  --foreground: 140 16% 19%;
+  --card: 0 0% 100%;
+  --card-foreground: 140 16% 19%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 140 16% 19%;
+  --sidebar: 125 20% 93%;
+  --sidebar-foreground: 140 10% 38%;
+  --sidebar-accent: 125 20% 87%;
+  --sd-ground: 125 18% 90%;
+  --sd-panel: 122 22% 94.5%;
+  --secondary: 125 18% 92%;
+  --muted: 125 18% 92%;
+  --muted-foreground: 140 9% 43%;
+  --accent: 125 20% 87%;
+  --border: 125 16% 87%;
+  --input: 125 16% 87%;
+  --primary: 152 46% 33%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 152 44% 29%;
+  --accent-coral: 152 46% 33%;
 }
 
 /* Dotted canvas — the agent-in-dashboard page only. */

@@ -137,6 +137,9 @@ export const models: Model[] = [
     value: 'deepseek/deepseek-v3.2-exp-thinking',
   },
 
+  // Groq Models
+  { label: 'Llama 3.3 70B Versatile', value: 'groq/llama-3.3-70b-versatile' },
+
   // Inception Models
   { label: 'Mercury Coder Small', value: 'inception/mercury-coder-small' },
 

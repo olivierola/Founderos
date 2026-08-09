@@ -6,7 +6,7 @@
 #   1. Docker Desktop daemon
 #   2. aio-sandbox container on :8080  (verified via a REAL /v1/bash/exec call --
 #      the image's healthcheck lies; recreated fresh if the API won't serve)
-#   3. AchiCorp unified runner on :3847
+#   3. Anduran unified runner on :3847
 #   4. ngrok tunnels (sandbox + browser)
 #   5. Supabase secrets SANDBOX_URL / RUNNER_BROWSER_URL re-synced to the new
 #      tunnel URLs (free-tier URLs change on every ngrok restart)
@@ -81,7 +81,7 @@ if (-not $apiUp) { Write-Error "Sandbox API KO apres recreation - voir 'docker l
 Ok "API bash/exec repond"
 
 # -- 3. Runner (:3847) ---------------------------------------------------------
-Step "Runner AchiCorp (:3847)"
+Step "Runner Anduran (:3847)"
 $listening = $null -ne (Get-NetTCPConnection -State Listen -LocalPort 3847 -ErrorAction SilentlyContinue)
 if (-not $listening) {
     Start-Process node -ArgumentList "src/index.js" -WorkingDirectory $RunnerDir -WindowStyle Hidden `

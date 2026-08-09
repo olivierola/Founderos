@@ -14,7 +14,7 @@ import {
 } from "./data";
 import { useServersDb, useAgentDeploymentsDb } from "./db";
 import { ProvidersPanel } from "./ProvidersPanel";
-import { useInfraActions } from "./infra";
+import { useInfraActions, useCostReconciler } from "./infra";
 
 /** Load bar — the fill color IS the state: calm below 60%, amber to 85%, red above. */
 function LoadBar({ label, pct }: { label: string; pct: number }) {
@@ -50,8 +50,18 @@ function ServerCard({ s, onClick }: { s: PrivateServer; onClick: () => void }) {
         <div className="flex flex-col items-end gap-1">
           <Pill meta={SERVER_STATUS_META[s.status]} />
           {s.source === "runpod" && <Pill meta={{ label: "Loué · RunPod", tone: "violet" }} className="px-1.5 py-0 text-[10px]" />}
+          {s.source === "ovh" && <Pill meta={{ label: "OVHcloud", tone: "cyan" }} className="px-1.5 py-0 text-[10px]" />}
+          {s.source === "aws" && <Pill meta={{ label: "AWS · simulé", tone: "blue" }} className="px-1.5 py-0 text-[10px]" />}
         </div>
       </div>
+
+      {(s.source === "runpod" || s.source === "ovh" || s.source === "aws") && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{s.gpuCount}× · {s.cloudType === "community" ? "Community" : "Secure"}</span>
+          {s.quantization && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">quant {s.quantization}</span>}
+          {s.dockerImage && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{s.dockerImage.replace("vllm/", "").replace(":latest", "")}</span>}
+        </div>
+      )}
 
       <div className="mt-4 space-y-2.5">
         <LoadBar label="GPU" pct={s.gpuPct} />
@@ -83,16 +93,22 @@ export function GovOpsServersPage() {
   const { servers } = useServersDb();
   const { deployments, hasAgents } = useAgentDeploymentsDb(servers);
   const infra = useInfraActions();
+  // Persist real billing segments while paid pods run on this page too.
+  useCostReconciler(servers);
 
   const online = servers.filter((s) => s.status === "online").length;
-  const rented = servers.filter((s) => s.source === "runpod");
+  const rented = servers.filter((s) => s.source === "runpod" || s.source === "ovh" || s.source === "aws");
   const selfHosted = deployments.filter((d) => d.target !== "cloud").length;
   const infraDay = servers.reduce((s, x) => s + x.costPerDay, 0);
   const [sel, setSel] = useState<{ kind: "server"; s: PrivateServer } | { kind: "deploy"; d: Deployment } | null>(null);
   const [podBusy, setPodBusy] = useState(false);
 
-  // Poll real RunPod pods for status (only while some are non-terminal).
-  const pending = rented.filter((s) => s.desiredStatus === "RUNNING" && s.status !== "online");
+  // Poll real rented compute for status (only while some is non-terminal).
+  const pending = rented.filter((s) => {
+    const d = s.desiredStatus ?? "";
+    if (["STOPPED", "EXITED"].includes(d)) return false;
+    return s.status !== "online";
+  });
   const pendingSig = pending.map((s) => s.id).join(",");
   useEffect(() => {
     if (pending.length === 0) return;
@@ -107,14 +123,14 @@ export function GovOpsServersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Serveurs & déploiements"
-        description="Vos serveurs d'inférence — endpoints cloud de vos modèles ou GPU loués sur RunPod — leur charge, coût, et où chaque agent est déployé."
+        description="Vos serveurs d'inférence — endpoints cloud de vos modèles ou GPU loués (RunPod, OVHcloud, AWS) — leur charge, coût, et où chaque agent est déployé."
       />
 
       <ProvidersPanel />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard label="Serveurs en ligne" value={`${online}/${servers.length}`} icon={Server} />
-        <MetricCard label="GPU loués (RunPod)" value={String(rented.length)} icon={Zap} />
+        <MetricCard label="GPU loués (cloud)" value={String(rented.length)} icon={Zap} />
         <MetricCard label="Agents auto-hébergés" value={`${selfHosted}/${deployments.length}`} icon={Cpu} hint="le reste tourne sur des APIs cloud" />
         <MetricCard label="Coût infra / jour" value={usd(infraDay)} icon={Activity} />
       </div>
@@ -159,12 +175,18 @@ export function GovOpsServersPage() {
           subtitle={`${selServer.region} · ${selServer.gpu}`}
           icon={<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--accent-teal)/0.14)] text-[hsl(var(--accent-teal))]"><HardDrivesIcon weight="duotone" className="h-5 w-5" /></div>}
         >
-          {selServer.source === "runpod" && (
-            <DetailSection title="Pod RunPod (réel)">
-              <DetailRow label="Pod"><span className="font-mono text-xs">{selServer.podId}</span></DetailRow>
+          {(selServer.source === "runpod" || selServer.source === "ovh" || selServer.source === "aws") && (
+            <DetailSection title={selServer.source === "ovh" ? "Instance OVHcloud (réelle)" : selServer.source === "aws" ? "Instance AWS (simulée)" : "Pod RunPod (réel)"}>
+              <DetailRow label={selServer.source === "runpod" ? "Pod" : "Instance"}><span className="font-mono text-xs">{selServer.podId}</span></DetailRow>
               <DetailRow label="État souhaité">{selServer.desiredStatus ?? "—"}</DetailRow>
+              <DetailRow label="GPU">{selServer.gpuCount}× · {selServer.cloudType === "community" ? "Community" : "Secure"}{selServer.quantization ? ` · quant ${selServer.quantization}` : ""}</DetailRow>
               <DetailRow label="Coût horaire">{usd(selServer.hourlyUsd)} / h</DetailRow>
-              {selServer.endpointUrl && <DetailRow label="Endpoint"><span className="truncate font-mono text-[11px]">{selServer.endpointUrl}</span></DetailRow>}
+              {selServer.accruedCostUsd > 0 && (
+                <DetailRow label="Facturé (cumul)">{selServer.accruedHours.toFixed(1)} h · {usd(selServer.accruedCostUsd)}</DetailRow>
+              )}
+              {selServer.servedModel && <DetailRow label="Modèle servi"><span className="truncate font-mono text-[11px]">{selServer.servedModel}</span></DetailRow>}
+              {selServer.endpointUrl ? <DetailRow label="Endpoint"><span className="truncate font-mono text-[11px]">{selServer.endpointUrl}</span></DetailRow>
+                : <DetailRow label="Endpoint">simulé / en cours de provision</DetailRow>}
               <div className="mt-3 grid grid-cols-4 gap-2">
                 <Button size="sm" variant="outline" disabled={podBusy} onClick={async () => { setPodBusy(true); try { await infra.sync(selServer.id); } finally { setPodBusy(false); } }}><RefreshCw className="h-3.5 w-3.5" /></Button>
                 {selServer.status === "offline"

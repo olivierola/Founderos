@@ -4,7 +4,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { getComposio, mapConnectionStatus } from "../_shared/composio.ts";
+import { getComposio, mapConnectionStatus, resolveScope, applyScope } from "../_shared/composio.ts";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -18,12 +18,17 @@ Deno.serve(async (req) => {
     if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
     const body = await req.json();
-    const { workspace_id, project_id, toolkit } = body as {
+    const { workspace_id, project_id, toolkit, scope, service_dashboard_id } = body as {
       workspace_id?: string; project_id?: string; toolkit?: string;
+      scope?: string; service_dashboard_id?: string;
     };
     if (!workspace_id || !project_id || !toolkit) {
       return jsonResponse({ error: "workspace_id, project_id, toolkit required" }, { status: 400 });
     }
+    // Poll the scope that was just connected — a dashboard's account and the
+    // caller's own account for the same toolkit are different rows (0177).
+    const scoped = resolveScope({ scope, service_dashboard_id, user_id: userData.user.id });
+    if ("error" in scoped) return jsonResponse({ error: scoped.error }, { status: 400 });
 
     const admin = createServiceClient();
     const { data: membership } = await admin
@@ -34,12 +39,14 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!membership) return jsonResponse({ error: "Not authorized for this workspace" }, { status: 403 });
 
-    const { data: connector } = await admin
-      .from("connectors")
-      .select("id, status, composio_connected_account_id")
-      .eq("workspace_id", workspace_id).eq("project_id", project_id)
-      .eq("provider", toolkit).eq("source", "composio")
-      .maybeSingle();
+    const { data: connector } = await applyScope(
+      admin
+        .from("connectors")
+        .select("id, status, composio_connected_account_id")
+        .eq("workspace_id", workspace_id).eq("project_id", project_id)
+        .eq("provider", toolkit).eq("source", "composio"),
+      scoped,
+    ).maybeSingle();
     if (!connector?.composio_connected_account_id) {
       return jsonResponse({ status: "not_connected" });
     }

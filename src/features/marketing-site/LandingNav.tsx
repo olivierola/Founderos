@@ -116,7 +116,7 @@ export function LandingNav() {
             {/* Fascinate is a wide display cut, so it runs a touch smaller than
                 the sans it replaces and keeps a normal line box. */}
             <span className="text-[19px] leading-tight text-black/65" style={{ fontFamily: BRAND_FONT }}>
-              AchiCorp
+              Anduran
             </span>
           </Link>
 
@@ -178,7 +178,7 @@ export function LandingNav() {
             <span className="flex items-center gap-2.5">
               <Logo size={24} />
               <span className="text-[17px] leading-tight" style={{ fontFamily: BRAND_FONT }}>
-                AchiCorp
+                Anduran
               </span>
             </span>
             <button onClick={() => setOpen(false)} aria-label="Close menu" className="p-2">

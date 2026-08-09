@@ -27,10 +27,17 @@ supabase/.branches
 sandbox/
 skills_repo/
 MiroFish/
+strix/
+page-agent/
+claude_harness/
+
+# Local agent tooling
+.claude/
 
 # Personal documents (not part of the project)
 applications/
 Alternances_Marc/
+Alternances_Venus/
 Attestation-*.html
 *.xlsx
 ~$*.xlsx

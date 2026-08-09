@@ -1,5 +1,5 @@
-// AchiCorp onboarding co-pilot — runs page-agent's live GUI loop INSIDE the
-// host page (the client's app or AchiCorp itself). Built into a standalone
+// Anduran onboarding co-pilot — runs page-agent's live GUI loop INSIDE the
+// host page (the client's app or Anduran itself). Built into a standalone
 // IIFE (public/onboarding-agent.js) that the widget injects when an agent has
 // copilot onboarding on and the user opts in.
 //

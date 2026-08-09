@@ -331,7 +331,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "PostHog",
     category: "analytics",
     icon: BarChart3,
-    description: "Use PostHog as your external analytics: import events into AchiCorp and mirror tracked events back to PostHog.",
+    description: "Use PostHog as your external analytics: import events into Anduran and mirror tracked events back to PostHog.",
     mvp: true,
     fields: [
       {
@@ -656,7 +656,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "n8n",
     category: "automation",
     icon: Workflow,
-    description: "Trigger n8n workflows from AchiCorp events.",
+    description: "Trigger n8n workflows from Anduran events.",
     mvp: true,
     fields: [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://…/webhook/…", secret: true }],
   },

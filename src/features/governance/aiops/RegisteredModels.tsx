@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 // Company-registered models: bring-your-own cloud API (key) or a custom
 // OpenAI-compatible endpoint. Backed by aiops_providers (kind cloud_endpoint) —
 // aiops-infra tests the key and discovers the available models. Agents then pick
-// one of these in their settings (or keep the AchiCorp default).
+// one of these in their settings (or keep the Anduran default).
 
 interface ProviderRow {
   id: string; kind: string; name: string;
@@ -22,15 +22,23 @@ interface ProviderRow {
   metadata: { models?: string[] } | null;
 }
 
-// OpenAI-compatible cloud presets — base_url filled in for the user.
-const CLOUD_PRESETS: { id: string; label: string; base_url: string; example: string }[] = [
-  { id: "openai", label: "OpenAI", base_url: "https://api.openai.com/v1", example: "gpt-4o" },
-  { id: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com/v1", example: "deepseek-chat" },
-  { id: "groq", label: "Groq", base_url: "https://api.groq.com/openai/v1", example: "llama-3.3-70b-versatile" },
-  { id: "openrouter", label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", example: "anthropic/claude-3.5-sonnet" },
-  { id: "together", label: "Together AI", base_url: "https://api.together.xyz/v1", example: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
-  { id: "mistral", label: "Mistral", base_url: "https://api.mistral.ai/v1", example: "mistral-large-latest" },
-  { id: "xai", label: "xAI (Grok)", base_url: "https://api.x.ai/v1", example: "grok-2-latest" },
+// OpenAI-compatible cloud presets — base_url filled in so the company only has
+// to paste a key. `keysUrl` is where that key is issued; pointing everyone at
+// OpenAI's page (as this used to) is useless for the other seven.
+interface CloudPreset { id: string; label: string; base_url: string; example: string; keysUrl: string; keyPrefix: string }
+const CLOUD_PRESETS: CloudPreset[] = [
+  { id: "openai", label: "OpenAI", base_url: "https://api.openai.com/v1", example: "gpt-4o", keysUrl: "https://platform.openai.com/api-keys", keyPrefix: "sk-…" },
+  { id: "anthropic", label: "Anthropic", base_url: "https://api.anthropic.com/v1", example: "claude-sonnet-4-5", keysUrl: "https://console.anthropic.com/settings/keys", keyPrefix: "sk-ant-…" },
+  { id: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com/v1", example: "deepseek-chat", keysUrl: "https://platform.deepseek.com/api_keys", keyPrefix: "sk-…" },
+  { id: "groq", label: "Groq", base_url: "https://api.groq.com/openai/v1", example: "llama-3.3-70b-versatile", keysUrl: "https://console.groq.com/keys", keyPrefix: "gsk_…" },
+  { id: "mistral", label: "Mistral", base_url: "https://api.mistral.ai/v1", example: "mistral-large-latest", keysUrl: "https://console.mistral.ai/api-keys", keyPrefix: "…" },
+  { id: "openrouter", label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", example: "anthropic/claude-sonnet-4.5", keysUrl: "https://openrouter.ai/keys", keyPrefix: "sk-or-…" },
+  { id: "together", label: "Together AI", base_url: "https://api.together.xyz/v1", example: "meta-llama/Llama-3.3-70B-Instruct-Turbo", keysUrl: "https://api.together.ai/settings/api-keys", keyPrefix: "…" },
+  { id: "fireworks", label: "Fireworks", base_url: "https://api.fireworks.ai/inference/v1", example: "accounts/fireworks/models/llama-v3p3-70b-instruct", keysUrl: "https://fireworks.ai/account/api-keys", keyPrefix: "fw_…" },
+  { id: "cerebras", label: "Cerebras", base_url: "https://api.cerebras.ai/v1", example: "llama-3.3-70b", keysUrl: "https://cloud.cerebras.ai/platform", keyPrefix: "csk-…" },
+  { id: "xai", label: "xAI (Grok)", base_url: "https://api.x.ai/v1", example: "grok-4", keysUrl: "https://console.x.ai", keyPrefix: "xai-…" },
+  { id: "gemini", label: "Google Gemini", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", example: "gemini-2.5-flash", keysUrl: "https://aistudio.google.com/apikey", keyPrefix: "AIza…" },
+  { id: "azure", label: "Azure OpenAI", base_url: "", example: "gpt-4o", keysUrl: "https://portal.azure.com", keyPrefix: "…" },
 ];
 
 export function RegisteredModels() {
@@ -73,7 +81,7 @@ export function RegisteredModels() {
         <Card className="flex flex-col items-center gap-2 p-8 text-center">
           <Cloud className="h-6 w-6 text-muted-foreground/40" />
           <p className="text-sm font-medium">Aucun modèle enregistré</p>
-          <p className="max-w-md text-xs text-muted-foreground">Ajoutez un modèle cloud (avec sa clé API) ou un endpoint personnalisé pour que vos agents l'utilisent à la place du modèle par défaut AchiCorp.</p>
+          <p className="max-w-md text-xs text-muted-foreground">Ajoutez un modèle cloud (avec sa clé API) ou un endpoint personnalisé pour que vos agents l'utilisent à la place du modèle par défaut Anduran.</p>
         </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -91,11 +99,20 @@ export function RegisteredModels() {
               </div>
               <div className="mt-3 flex items-center gap-2">
                 {p.status === "connected" ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400"><Check className="h-3 w-3" /> connecté · {(p.metadata?.models ?? []).length} modèles</span>
+                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400"><Check className="h-3 w-3" /> connecté · {(p.metadata?.models ?? []).length} modèle{(p.metadata?.models ?? []).length > 1 ? "s" : ""}</span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400" title={p.status_detail ?? ""}><AlertTriangle className="h-3 w-3" /> {p.status_detail ? "erreur" : p.status}</span>
                 )}
               </div>
+              {/* A connected endpoint can still carry a note (no catalogue to
+                  list) — it is actionable, so it belongs on the card, not in a
+                  tooltip. */}
+              {p.status === "connected" && p.status_detail && (
+                <p className="mt-1.5 text-[10px] leading-snug text-amber-600 dark:text-amber-400">{p.status_detail}</p>
+              )}
+              {p.status !== "connected" && p.status_detail && (
+                <p className="mt-1.5 line-clamp-2 text-[10px] leading-snug text-muted-foreground">{p.status_detail}</p>
+              )}
             </Card>
           ))}
         </div>
@@ -126,10 +143,13 @@ function AddModelDialog({
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [manualModels, setManualModels] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const resolvedBaseUrl = mode === "cloud" ? preset.base_url : baseUrl.trim();
+  // Azure (and any preset with no fixed host) needs its own URL typed in.
+  const presetNeedsUrl = mode === "cloud" && !preset.base_url;
+  const resolvedBaseUrl = mode === "cloud" && preset.base_url ? preset.base_url : baseUrl.trim();
   const resolvedName = name.trim() || (mode === "cloud" ? preset.label : "");
 
   async function submit() {
@@ -145,7 +165,13 @@ function AddModelDialog({
         workspace_id: workspaceId, project_id: projectId,
         kind: "cloud_endpoint",
         name: resolvedName,
-        config: { base_url: resolvedBaseUrl },
+        config: {
+          base_url: resolvedBaseUrl,
+          // Used only when the endpoint exposes no /models catalogue.
+          manual_models: manualModels.split(/[,\n]/).map((s) => s.trim()).filter(Boolean),
+        },
+        // A private endpoint may have no auth at all — send nothing rather than
+        // an empty string, which some servers reject as a malformed header.
         api_key: apiKey.trim() || undefined,
       });
       if (res.provider?.status === "error") {
@@ -154,7 +180,7 @@ function AddModelDialog({
       }
       onAdded();
       onOpenChange(false);
-      setName(""); setBaseUrl(""); setApiKey("");
+      setName(""); setBaseUrl(""); setApiKey(""); setManualModels("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -180,19 +206,25 @@ function AddModelDialog({
             <>
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">Fournisseur</label>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-3 gap-1.5">
                   {CLOUD_PRESETS.map((p) => (
                     <button key={p.id} onClick={() => setPreset(p)}
-                      className={cn("rounded-lg border px-2.5 py-1.5 text-left text-xs transition-colors", preset.id === p.id ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30")}>
+                      className={cn("truncate rounded-lg border px-2 py-1.5 text-left text-[11px] transition-colors", preset.id === p.id ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30")}>
                       {p.label}
                     </button>
                   ))}
                 </div>
-                <p className="mt-1 truncate text-[11px] text-muted-foreground">{preset.base_url}</p>
+                {preset.base_url && <p className="mt-1 truncate text-[11px] text-muted-foreground">{preset.base_url}</p>}
               </div>
+              {presetNeedsUrl && (
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Endpoint de votre déploiement</label>
+                  <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://mon-ressource.openai.azure.com/openai/deployments/mon-deploiement" />
+                </div>
+              )}
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">Clé API</label>
-                <Input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" />
+                <Input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={preset.keyPrefix} />
               </div>
             </>
           ) : (
@@ -202,8 +234,8 @@ function AddModelDialog({
                 <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://mon-endpoint.example.com/v1" />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Clé API (optionnelle)</label>
-                <Input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="laisser vide si aucune" />
+                <label className="mb-1 block text-xs text-muted-foreground">Clé API <span className="text-muted-foreground/60">(optionnelle)</span></label>
+                <Input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="laisser vide si l'endpoint n'en demande pas" />
               </div>
             </>
           )}
@@ -213,14 +245,25 @@ function AddModelDialog({
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={mode === "cloud" ? preset.label : "Mon modèle"} />
           </div>
 
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              Identifiants de modèles <span className="text-muted-foreground/60">(optionnel)</span>
+            </label>
+            <Input value={manualModels} onChange={(e) => setManualModels(e.target.value)} placeholder={preset.example} />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Séparés par des virgules. Utile uniquement si l'endpoint n'expose pas de catalogue <code>/models</code> — sinon
+              il est découvert automatiquement.
+            </p>
+          </div>
+
           <p className="text-[11px] text-muted-foreground">
-            La clé est stockée chiffrée côté serveur et n'est jamais renvoyée au navigateur. Les modèles disponibles sont découverts automatiquement à la connexion.
+            La clé est stockée chiffrée côté serveur (AES-256) et n'est jamais renvoyée au navigateur.
           </p>
           {error && <p className="text-xs text-destructive">{error}</p>}
 
           <div className="flex items-center justify-end gap-2 pt-1">
-            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="mr-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-              Où trouver ma clé ? <ExternalLink className="h-3 w-3" />
+            <a href={preset.keysUrl} target="_blank" rel="noopener noreferrer" className="mr-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+              Où trouver ma clé {mode === "cloud" ? preset.label : ""} ? <ExternalLink className="h-3 w-3" />
             </a>
             <Button variant="ghost" onClick={() => onOpenChange(false)}>Annuler</Button>
             <Button onClick={submit} disabled={saving}>

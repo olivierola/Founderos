@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
     const grounding = await loadGrounding(admin, project_id, query, useKnowledge);
     const groundingBlock = groundingPromptBlock(grounding);
 
-    const systemPrompt = `Tu es l'assistant d'écriture intégré à l'éditeur bureautique de AchiCorp.
+    const systemPrompt = `Tu es l'assistant d'écriture intégré à l'éditeur bureautique de Anduran.
 Tu aides à rédiger, continuer, améliorer et reformuler le document de l'utilisateur.
 Réponds en markdown, dans la langue de l'utilisateur, de façon concise et directement utilisable (pas de méta-commentaire).
 ${groundingBlock ? `\nContexte du projet — utilise-le s'il est pertinent, n'invente rien:\n${groundingBlock}` : ""}`;

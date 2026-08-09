@@ -345,7 +345,7 @@ function WidgetError({ error, source }: { error: Error; source?: WidgetSource })
         <span className="text-[11px] text-muted-foreground">
           {isClient
             ? "Searched the connected project DB (PostgREST exposes only schema `public`)."
-            : "Searched AchiCorp internal tables."}
+            : "Searched Anduran internal tables."}
         </span>
         <span className="text-[10px] text-muted-foreground">Edit the widget to fix the table name.</span>
       </div>

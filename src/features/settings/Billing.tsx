@@ -38,7 +38,7 @@ export function SettingsBillingPage() {
     <div>
       <PageHeader
         title="Billing"
-        description="Your AchiCorp subscription. Upgrade via Stripe Checkout."
+        description="Your Anduran subscription. Upgrade via Stripe Checkout."
       />
       {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">

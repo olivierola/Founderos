@@ -32,7 +32,7 @@ export function MarketingShell({ children, hideHeader = false }: { children: Rea
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2">
             <Logo size={28} />
-            <span className="text-sm font-semibold tracking-tight">AchiCorp</span>
+            <span className="text-sm font-semibold tracking-tight">Anduran</span>
             <span className="hidden text-[10px] uppercase text-muted-foreground sm:inline">for agencies</span>
           </Link>
 

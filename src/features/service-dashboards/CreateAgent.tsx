@@ -23,13 +23,20 @@ import {
   useComposioToolkits, useConnectorStatus, toolSlugsFromTemplate, resolveNeeds,
 } from "./useToolkits";
 
-// Provider → the model values internal_agents.model actually accepts. The
-// mockup's two dropdowns map onto that single column.
+// The providers WE supply. `id` is written to internal_agents.model, which the
+// runtime reads to pick the vendor (see resolveProvider, edge side).
+//
+// "OpenAI / GPT-4" used to sit in this list and did nothing at all: there is no
+// OpenAI client in the runtime, so the value fell through to the default
+// provider. Using OpenAI (or anything else) now goes through a registered
+// model below, which is a real, tested connection.
 const PROVIDERS: { id: string; label: string; models: { id: string; label: string }[] }[] = [
-  { id: "deepseek", label: "DeepSeek", models: [{ id: "deepseek", label: "DeepSeek V4 Pro" }] },
-  { id: "groq", label: "Groq", models: [{ id: "groq", label: "Llama 3.3" }] },
-  { id: "openai", label: "OpenAI", models: [{ id: "gpt-4", label: "GPT-4" }] },
+  { id: "deepseek", label: "DeepSeek", models: [{ id: "deepseek", label: "DeepSeek — raisonnement & outils" }] },
+  { id: "groq", label: "Groq (Llama 3.3 70B)", models: [{ id: "groq", label: "Llama 3.3 70B — rapide" }] },
 ];
+
+/** Sentinel provider id for "one of the company's own registered models". */
+const OWN_MODELS = "__own__";
 
 // Template categories, mapped onto the buckets the mockup shows.
 const TEMPLATE_TABS: { key: string; label: string; match?: string[] }[] = [
@@ -105,12 +112,36 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
   const [runtime, setRuntime] = useState<"cloud" | "runner">(defaults.sandbox_mode === "runner" ? "runner" : "cloud");
   const [provider, setProvider] = useState(PROVIDERS.find((p) => p.models.some((m) => m.id === defaults.model))?.id ?? "deepseek");
   const [model, setModel] = useState(defaults.model);
+  /** "<providerId>|<modelId>" when the agent runs on one of the company's own
+   *  registered models rather than one of ours. */
+  const [ownModel, setOwnModel] = useState("");
   const [apps, setApps] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
   const [instructions, setInstructions] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<"apps" | "skills" | null>(null);
+  const [skillQuery, setSkillQuery] = useState("");
+
+  // The company's own models (AI Ops → Modèles). Only connected endpoints that
+  // actually resolved at least one model id are offerable — an endpoint with no
+  // usable model would produce an agent that fails on its first call.
+  const { data: ownProviders } = useQuery({
+    queryKey: ["aiops_own_models", projectId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("aiops_providers_public")
+        .select("id, name, status, metadata")
+        .eq("project_id", projectId).eq("kind", "cloud_endpoint");
+      return (data ?? []) as Array<{ id: string; name: string; status: string; metadata: { models?: string[] } | null }>;
+    },
+  });
+  const ownModelOptions = useMemo(
+    () => (ownProviders ?? [])
+      .filter((p) => p.status === "connected")
+      .flatMap((p) => (p.metadata?.models ?? []).map((m) => ({ value: `${p.id}|${m}`, label: `${p.name} · ${m}` }))),
+    [ownProviders],
+  );
 
   const { data: allSkills } = useQuery({
     queryKey: ["agent_skills_all", workspaceId],
@@ -140,8 +171,18 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
 
       // Service defaults first, then this form's explicit choices.
       await applyAgentDefaults(agentId, defaults, "blank");
-      await supabase.from("internal_agents")
-        .update({ model, sandbox_mode: runtime }).eq("id", agentId);
+      // A company model is a HOSTED endpoint, not one of our providers: it is
+      // stored on hosted_provider_id/hosted_model, which the runtime resolves
+      // ahead of everything else (resolveAgentEndpoint). `model` still gets a
+      // sane value so the run has a provider to fall back to if the endpoint
+      // is later deleted.
+      const own = provider === OWN_MODELS && ownModel ? ownModel.split("|") : null;
+      await supabase.from("internal_agents").update({
+        model: own ? defaults.model : model,
+        sandbox_mode: runtime,
+        hosted_provider_id: own ? own[0] : null,
+        hosted_model: own ? own.slice(1).join("|") : null,
+      }).eq("id", agentId);
 
       // Apps → connector_action tools (same shape the Connectors tab writes).
       if (apps.length) {
@@ -173,6 +214,25 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
 
   const skillName = (id: string) => (allSkills ?? []).find((s) => s.id === id)?.name ?? id;
 
+  // Skill picker: selected ones always shown, the rest only once searched, so
+  // a 900-skill catalogue stays navigable. Capped to keep the panel light.
+  const SKILL_PICK_LIMIT = 40;
+  const skillMatches = (() => {
+    const q = skillQuery.trim().toLowerCase();
+    if (!q) return skills.length;
+    return (allSkills ?? []).filter((s) =>
+      `${s.name} ${s.slug} ${s.description ?? ""}`.toLowerCase().includes(q)).length;
+  })();
+  const shownSkills = (() => {
+    const q = skillQuery.trim().toLowerCase();
+    const chosen = (allSkills ?? []).filter((s) => skills.includes(s.id));
+    if (!q) return chosen;
+    const hits = (allSkills ?? []).filter((s) =>
+      !skills.includes(s.id) &&
+      `${s.name} ${s.slug} ${s.description ?? ""}`.toLowerCase().includes(q));
+    return [...chosen, ...hits].slice(0, SKILL_PICK_LIMIT);
+  })();
+
   return (
     <div className="mx-auto mt-10 w-full max-w-[740px] rounded-3xl border border-border/60 bg-card/40 p-8 shadow-sm">
       {/* Identity */}
@@ -201,22 +261,42 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
           : "Votre runner : navigateur, shell, fichiers."}
       </p>
 
-      {/* Provider + model */}
+      {/* Provider + model — ours, or one of the company's own registered models. */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <SelectField
           value={provider}
           onChange={(v) => {
             setProvider(v);
-            const first = PROVIDERS.find((p) => p.id === v)?.models[0];
-            if (first) setModel(first.id);
+            if (v === OWN_MODELS) {
+              setModel(defaults.model);
+              setOwnModel(ownModelOptions[0]?.value ?? "");
+            } else {
+              const first = PROVIDERS.find((p) => p.id === v)?.models[0];
+              if (first) setModel(first.id);
+              setOwnModel("");
+            }
           }}
-          options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
+          options={[
+            ...PROVIDERS.map((p) => ({ value: p.id, label: p.label })),
+            ...(ownModelOptions.length ? [{ value: OWN_MODELS, label: "Vos modèles (AI Ops)" }] : []),
+          ]}
         />
-        <SelectField
-          value={model} onChange={setModel}
-          options={(PROVIDERS.find((p) => p.id === provider)?.models ?? []).map((m) => ({ value: m.id, label: m.label }))}
-        />
+        {provider === OWN_MODELS ? (
+          <SelectField value={ownModel} onChange={setOwnModel} options={ownModelOptions} />
+        ) : (
+          <SelectField
+            value={model} onChange={setModel}
+            options={(PROVIDERS.find((p) => p.id === provider)?.models ?? []).map((m) => ({ value: m.id, label: m.label }))}
+          />
+        )}
       </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {provider === OWN_MODELS
+          ? "L'agent appellera votre propre endpoint avec votre clé — aucune inférence ne passe par nos fournisseurs."
+          : ownModelOptions.length
+            ? "Vous pouvez aussi utiliser vos propres modèles (option « Vos modèles »)."
+            : <>Pour utiliser vos propres modèles (API cloud ou endpoint interne), ajoutez-les dans <span className="font-medium text-foreground">AI Ops → Modèles</span>.</>}
+      </p>
 
       {/* Apps + Skills */}
       <RowPicker
@@ -256,18 +336,39 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
       />
       {picker === "skills" && (
         <PickerPanel onClose={() => setPicker(null)}>
+          {/* The catalogue holds 900+ skills — dumping them all as chips is
+              unusable, so the panel is search-driven: selected skills stay
+              pinned, everything else appears as you type. */}
+          <input
+            value={skillQuery}
+            onChange={(e) => setSkillQuery(e.target.value)}
+            autoFocus
+            placeholder="Rechercher un skill (nom, domaine, tag…)"
+            className="mb-2 w-full rounded-lg border border-border/70 bg-background px-3 py-1.5 text-xs outline-none focus:border-primary/50"
+          />
           <div className="flex flex-wrap gap-1.5">
-            {(allSkills ?? []).length === 0
-              ? <p className="text-xs text-muted-foreground">Aucun skill disponible.</p>
-              : (allSkills ?? []).map((s) => (
+            {(allSkills ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">Aucun skill disponible.</p>
+            ) : shownSkills.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {skillQuery ? `Aucun skill pour « ${skillQuery} ».` : "Tapez pour chercher parmi les skills disponibles."}
+              </p>
+            ) : (
+              shownSkills.map((s) => (
                 <PickChip
                   key={s.id} active={skills.includes(s.id)} title={s.description ?? undefined}
                   onClick={() => setSkills((v) => v.includes(s.id) ? v.filter((x) => x !== s.id) : [...v, s.id])}
                 >
                   {s.name}
                 </PickChip>
-              ))}
+              ))
+            )}
           </div>
+          {skillMatches > shownSkills.length && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {skillMatches - shownSkills.length} autres résultats — affinez la recherche.
+            </p>
+          )}
         </PickerPanel>
       )}
 

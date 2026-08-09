@@ -199,7 +199,7 @@ export function AddAppSecretDialog({
         <DialogHeader>
           <DialogTitle>Add an app secret</DialogTitle>
           <DialogDescription>
-            AchiCorp will encrypt this value in the vault and push it to the backend(s) you select.
+            Anduran will encrypt this value in the vault and push it to the backend(s) you select.
             Plaintext is never returned to the browser.
           </DialogDescription>
         </DialogHeader>

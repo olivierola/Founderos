@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import remarkGfm from "remark-gfm";
-import { Plus, Pencil, Trash2, ShieldCheck } from "lucide-react";
+import { Plus, Pencil, Trash2, ShieldCheck, Zap } from "lucide-react";
 import { ShieldCheckIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 import { Pill, Field, Select } from "../ui";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
 import {
-  newGuardrail, ENFORCEMENT_META, timeAgo,
-  type Guardrail, type Enforcement,
+  newGuardrail, ENFORCEMENT_META, GUARDRAIL_SCOPE_META, timeAgo,
+  type Guardrail, type Enforcement, type GuardrailScope,
 } from "./data";
 import { useGuardrailsDb } from "./db";
 
@@ -35,7 +35,11 @@ export function GovGuardrailsPage() {
 
   const stats = useMemo(() => {
     const all = items;
-    return { total: all.length, active: all.filter((g) => g.enabled).length, blocking: all.filter((g) => g.enforcement === "block" && g.enabled).length };
+    return {
+      total: all.length, active: all.filter((g) => g.enabled).length,
+      blocking: all.filter((g) => g.enforcement === "block" && g.enabled).length,
+      enforced: all.filter((g) => g.enabled && g.matchPattern?.trim()).length,
+    };
   }, [items]);
 
   if (loading) return <PageSkeleton cards={0} rows={6} />;
@@ -48,9 +52,10 @@ export function GovGuardrailsPage() {
         actions={<Button onClick={() => setEditing(newGuardrail())}><Plus className="mr-1.5 h-4 w-4" />Guardrail</Button>}
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard label="Guardrails" value={String(stats.total)} icon={ShieldCheck} />
         <MetricCard label="Actifs" value={String(stats.active)} />
+        <MetricCard label="Appliqués en runtime" value={String(stats.enforced)} hint="avec un motif de détection" icon={Zap} />
         <MetricCard label="Bloquants" value={String(stats.blocking)} hint="stoppent l'action de l'agent" />
       </div>
 
@@ -70,6 +75,11 @@ export function GovGuardrailsPage() {
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     <Pill meta={ENFORCEMENT_META[g.enforcement]} />
                     <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">{g.category}</span>
+                    {g.matchPattern?.trim() ? (
+                      <Pill meta={{ label: GUARDRAIL_SCOPE_META[g.matchScope ?? "all"].label, tone: "blue" }} />
+                    ) : (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">documentaire</span>
+                    )}
                   </div>
                 </div>
                 <button
@@ -109,6 +119,12 @@ export function GovGuardrailsPage() {
             <DetailRow label="Application"><Pill meta={ENFORCEMENT_META[sel.enforcement]} /></DetailRow>
             <DetailRow label="Catégorie">{sel.category}</DetailRow>
             <DetailRow label="État">{sel.enabled ? "Actif" : "Désactivé"}</DetailRow>
+            {sel.matchPattern?.trim() && (
+              <>
+                <DetailRow label="Surface de contrôle"><Pill meta={GUARDRAIL_SCOPE_META[sel.matchScope ?? "all"]} /></DetailRow>
+                <DetailRow label="Motif de détection"><code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{sel.matchPattern}</code></DetailRow>
+              </>
+            )}
             <DetailRow label="Modifié">{new Date(sel.updatedAt).toLocaleString("fr-FR")}</DetailRow>
           </DetailSection>
           <DetailSection title="Contenu">
@@ -142,6 +158,22 @@ function GuardrailEditor({ initial, onClose, onSave }: { initial: Guardrail; onC
             </Select>
           </Field>
         </div>
+
+        <div className="mt-2 grid gap-3 md:grid-cols-2">
+          <Field label="Motif de détection (regex)">
+            <Input value={g.matchPattern ?? ""} onChange={(e) => set("matchPattern", e.target.value || undefined)} placeholder="\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b — vide = documentaire" className="font-mono text-[12px]" />
+          </Field>
+          <Field label="Surface de contrôle">
+            <Select value={g.matchScope ?? "all"} onChange={(e) => set("matchScope", e.target.value as GuardrailScope)}>
+              {Object.entries(GUARDRAIL_SCOPE_META).map(([v, m]) => <option key={v} value={v}>{m.label}</option>)}
+            </Select>
+          </Field>
+        </div>
+        {g.matchPattern?.trim() && (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Le motif est testé en runtime sur les {GUARDRAIL_SCOPE_META[g.matchScope ?? "all"].label.toLowerCase()} pendant chaque exécution d'agent ({g.enforcement === "block" ? "l'action est bloquée" : g.enforcement === "warn" ? "un avertissement est enregistré" : "le passage est journalisé"}).
+          </p>
+        )}
 
         <div className="mt-2 grid gap-3 md:grid-cols-2">
           <Field label="Contenu (markdown)">

@@ -1,5 +1,5 @@
 // sync-posthog — imports events from PostHog into product_events so PostHog can
-// power AchiCorp analytics (Events, Funnels, Retention, Growth).
+// power Anduran analytics (Events, Funnels, Retention, Growth).
 //
 // Body: { workspace_id, project_id, since?, limit? }
 //   since  — ISO timestamp to import from (defaults to the connector's stored

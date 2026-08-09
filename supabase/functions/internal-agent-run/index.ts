@@ -23,17 +23,34 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { decryptSecret } from "../_shared/crypto.ts";
-import { callAi, callAiWithTools, runToolRounds, safeParseJson, type ChatMessage } from "../_shared/ai.ts";
+import { callAi, runToolRounds, safeParseJson, type ChatMessage } from "../_shared/ai.ts";
 import { runParallelSubagents } from "../_shared/subagents.ts";
-import { classifyTier, classifyRequest, modelForTier, type ToolTier } from "../_shared/model-router.ts";
+import {
+  classifyTier, classifyRequest, modelForTier, resolveProvider, defaultProvider,
+  availableProviders, modelMatchesProvider, cheapProvider, providerMismatchNote,
+  contextBudgetFor, type ToolTier, type Provider, type ContextBudget,
+} from "../_shared/model-router.ts";
 import { embedTexts, toVectorLiteral } from "../_shared/jina.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
+import { estimateCostUsd } from "../_shared/llm-pricing.ts";
+import { loadGuardrails, checkGuardrails, strongestEnforcement, type GuardrailViolation } from "../_shared/guardrails.ts";
+import { recordRunIncident, recordGuardrailIncident } from "../_shared/governance-incidents.ts";
 import {
   buildInternalToolset, RunCancelledError, AwaitingInputError, embedMemoryVector,
   type AgentToolRow, type InternalToolContext,
 } from "../_shared/internal-agent-tools.ts";
 import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
 import { teamsSendMessage } from "../_shared/teams.ts";
+import {
+  deriveContract, evaluateContract, fingerprintProgress, hasAdvanced, decideNext,
+  resolveBudgets, loopEventPayload, evidenceSinceLastTodos,
+  type SuccessContract, type ProgressFingerprint, type LoopSignals, type LoopProbe,
+} from "../_shared/agent-loop.ts";
+import {
+  compileSystemPrompt, selectRelevant, selectTools, currentTaskText, budgetEventPayload, stableHash, transcriptPrefixHash,
+  type SectionInput, type PromptBudget,
+} from "../_shared/prompt-compiler.ts";
+import { completeMissionTask } from "../_shared/room-orchestrator.ts";
 
 interface AgentRow {
   id: string;
@@ -62,12 +79,12 @@ interface AgentRow {
   hosted_endpoint_url: string | null;
   hosted_model: string | null;
   /** Company-registered model (aiops_providers cloud_endpoint) the agent runs on;
-   *  its base_url + encrypted key are resolved at run time. Null = AchiCorp default. */
+   *  its base_url + encrypted key are resolved at run time. Null = Anduran default. */
   hosted_provider_id?: string | null;
 }
 
 /** Resolve the OpenAI-compatible endpoint an agent runs on, or undefined for the
- *  AchiCorp default. Provider-aware: a company-registered cloud/custom model
+ *  Anduran default. Provider-aware: a company-registered cloud/custom model
  *  (aiops_providers) carries its own base_url + encrypted key (decrypted here,
  *  never sent to the browser); a RunPod server uses the platform vLLM key. */
 async function resolveAgentEndpoint(
@@ -96,7 +113,9 @@ async function resolveAgentEndpoint(
   return undefined;
 }
 
-// Rough per-1k-token rates (USD). Adjust as providers change pricing.
+// Rough per-1k-token rates (USD). Adjust as providers change pricing. These are
+// the legacy provider-level rates; the shared llm-pricing table now drives cost
+// whenever a model id is available (which also covers self-hosted endpoints).
 const RATES: Record<string, { in: number; out: number }> = {
   groq: { in: 0.00005, out: 0.0001 },
   deepseek: { in: 0.00014, out: 0.00028 },
@@ -104,49 +123,62 @@ const RATES: Record<string, { in: number; out: number }> = {
 function estimateCost(
   usage: { prompt_tokens: number; completion_tokens: number } | undefined,
   provider: "groq" | "deepseek",
+  model?: string,
+  custom?: boolean,
 ): number {
   if (!usage) return 0;
-  const r = RATES[provider] ?? { in: 0, out: 0 };
+  if (model) return estimateCostUsd(model, usage.prompt_tokens, usage.completion_tokens, { custom });
+  const r = RATES[provider] ?? { in: 0.00005, out: 0.0001 };
   return (usage.prompt_tokens * r.in + usage.completion_tokens * r.out) / 1000;
 }
 
-// All internal agents run on DeepSeek for stronger reasoning, unless an agent
-// explicitly pins "groq" or DeepSeek isn't configured (then we fall back).
-function providerFor(agent: AgentRow): "groq" | "deepseek" {
-  // DeepSeek is strongly preferred for agents — much better at tool calling.
-  // Only use Groq if explicitly set AND no DeepSeek key is available.
-  if (Deno.env.get("DEEPSEEK_API_KEY")) return "deepseek";
-  return "groq";
+/**
+ * The provider this agent runs on.
+ *
+ * `internal_agents.model` is what the Model dropdown writes ("deepseek",
+ * "groq", …). It is now READ — until this, the function ignored the column
+ * entirely and returned DeepSeek whenever a DeepSeek key existed, so choosing
+ * Groq in the UI changed nothing. `resolveProvider` also handles rows holding a
+ * raw model id, and degrades to an available provider when the pinned one has
+ * no key configured.
+ */
+function providerFor(agent: AgentRow): Provider {
+  return resolveProvider(agent.model);
 }
-const AGENT_MODEL: Record<"groq" | "deepseek", string | undefined> = {
-  deepseek: Deno.env.get("AGENT_MODEL_DEEPSEEK") || "deepseek-v4-pro",
-  groq: undefined, // use ai.ts default
-};
 
-// Run the tool loop on the agent's provider; if DeepSeek fails (key/model
-// unavailable), fall back to Groq so a chat/mission never hard-fails.
-// `modelOverride` lets missions route to a stronger / more tool-call-reliable
-// model (set env AGENT_MODEL_MISSION) without changing chat behaviour.
-async function runTools(
-  provider: "groq" | "deepseek",
-  opts: Omit<Parameters<typeof callAiWithTools>[0], "provider" | "model">,
-  modelOverride?: string,
-) {
-  try {
-    return await callAiWithTools({ ...opts, provider, model: modelOverride || AGENT_MODEL[provider] });
-  } catch (e) {
-    if (provider === "deepseek") {
-      return await callAiWithTools({ ...opts, provider: "groq" });
-    }
-    throw e;
-  }
+/** The tier→model resolution for THIS agent's provider. Never let a provider
+ *  and a model id from different vendors meet. */
+function agentModelForTier(agent: AgentRow, tier: Parameters<typeof modelForTier>[0]): string {
+  return modelForTier(tier, providerFor(agent));
+}
+
+/**
+ * Normalize persisted run state models before sending them to the provider.
+ * Older rows or raw provider aliases like "groq"/"deepseek" are not valid
+ * model ids and must be replaced with the provider's concrete default.
+ */
+function resolveRunStateModel(stateModel: string | null | undefined, provider: Provider, agent: AgentRow): string | undefined {
+  const raw = String(stateModel ?? "").trim();
+  if (!raw) return undefined;
+  if (raw === "groq" || raw === "deepseek") return modelForTier("standard", provider);
+  return raw;
+}
+
+/**
+ * A provider-level failure (bad key, unknown model, provider outage) as opposed
+ * to a normal API error. These are the only ones worth retrying on the OTHER
+ * provider — a 429 or a malformed request would fail identically there.
+ */
+function isProviderFailure(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return /\b(401|403|404)\b|api[_ ]?key|unauthor|invalid.*model|model.*not.*(found|exist)|does not exist|decommission|deprecated/i.test(msg);
 }
 
 // Security operating doctrine — adapted from the strix pentesting agent prompt
 // (Apache-2.0). Injected ONLY for agents with a cybersecurity skill activated,
 // so the pentest agents carry the offensive-security mindset while every other
 // agent's prompt stays untouched. Framing, tools and reporting are mapped to
-// AchiCorp (pentest_scope gate, sandbox tools, delegate_mission, deliverables).
+// Anduran (pentest_scope gate, sandbox tools, delegate_mission, deliverables).
 const SECURITY_DOCTRINE = [
   "## Security operating doctrine (you are an application-security validation agent)",
   "Your purpose is AUTHORIZED security validation: reproduce and validate real weaknesses on IN-SCOPE assets and help remediate them. Frame the work as verification/validation/reproduction — not open-ended offensive activity.",
@@ -177,7 +209,7 @@ const SECURITY_DOCTRINE = [
   "",
   "PERSISTENCE: real issues take effort — push beyond shallow checks, treat each failed approach as signal and try another in-scope path, and keep going until the highest-value in-scope vectors are properly assessed. A single well-validated high-impact finding beats dozens of low-signal ones.",
   "",
-  "REPORTING: one create_deliverable(kind=\"report\") per CONFIRMED vulnerability — title, severity (CVSS-ish), affected endpoint/param (or file:line), reproduction steps, working PoC, business impact, and a concrete fix. Summarize with a render_ui findings table + severity chart. Operational hygiene: never put \"AchiCorp\"/agent identifiers in payloads, user-agents or request inputs.",
+  "REPORTING: one create_deliverable(kind=\"report\") per CONFIRMED vulnerability — title, severity (CVSS-ish), affected endpoint/param (or file:line), reproduction steps, working PoC, business impact, and a concrete fix. Summarize with a render_ui findings table + severity chart. Operational hygiene: never put \"Anduran\"/agent identifiers in payloads, user-agents or request inputs.",
 ].join("\n");
 
 /** True when the agent has any cybersecurity skill activated → gets the doctrine. */
@@ -197,6 +229,29 @@ const ORCHESTRATOR_DOCTRINE = [
   "Confirm each action plainly once done (\"Agent X créé\", \"Brief quotidien planifié à 6h\"). Ask a brief clarifying question only when the request is genuinely ambiguous (e.g. a schedule with no time).",
 ].join("\n");
 
+/** Per-section char budgets for the knowledge blocks. They are re-selected
+ *  against the CURRENT task on every build, so a tight budget costs relevance,
+ *  not reach: everything omitted stays reachable via search_memory /
+ *  search_context, which the operating rules tell the agent to use. */
+const SECTION_BUDGET = { memory: 2600, team: 1200, recent: 1200, skills: 2000 } as const;
+
+/** Keep only the lines of a pre-rendered "- …" block that matter for this task.
+ *  Pinned memories (rendered as "[kind, pinned]") always survive. */
+function selectLines(block: string, task: string, budget: number): { body: string; dropped: number; offered: number } {
+  const lines = (block ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return { body: "", dropped: 0, offered: 0 };
+  const offered = block.length;
+  if (!task || offered <= budget) return { body: lines.join("\n"), dropped: 0, offered };
+  const sel = selectRelevant(lines, {
+    task,
+    text: (l) => l,
+    pin: (l) => l.includes(", pinned]"),
+    budget,
+    floor: 0.08,
+  });
+  return { body: sel.kept.join("\n"), dropped: sel.dropped, offered };
+}
+
 function buildSystemPrompt(
   agent: AgentRow,
   capabilitySummary: string,
@@ -206,16 +261,25 @@ function buildSystemPrompt(
   skillPrompts: string = "",
   recentWorkSection: string = "",
   securityDoctrine: boolean = false,
-): string {
+  /** The turn's actual subject — drives which knowledge lines are worth sending.
+   *  Empty (sub-agents, cold starts) → no selection, previous behaviour. */
+  taskText: string = "",
+  toolStats?: { sent: number; omitted: number; chars: number },
+): { prompt: string; budget: PromptBudget } {
+  const sections: SectionInput[] = [];
+  const push = (id: SectionInput["id"], body: string, meta?: { dropped: number; offered: number }) => {
+    if (body && body.trim()) sections.push({ id, body, ...(meta ?? {}) });
+  };
+
+  push("identity", [
+    `You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`,
+    `You work as part of a TEAM of agents — you can discover, message and delegate to peers, and share knowledge through the team memory.`,
+  ].join("\n"));
+  if (agent.instructions) push("instructions", `Your detailed instructions:\n${agent.instructions}`);
+
   const lines: string[] = [];
-  lines.push(`You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`);
-  lines.push(`You work as part of a TEAM of agents — you can discover, message and delegate to peers, and share knowledge through the team memory.`);
-  if (agent.instructions) {
-    lines.push("", "Your detailed instructions:", agent.instructions);
-  }
   if (mode === "chat") {
     lines.push(
-      "",
       "## Sois humain et présent (ne travaille pas en silence)",
       "- Réponds dans la langue de l'utilisateur, comme un collègue serviable : chaleureux, clair, concis — pas de ton robotique.",
       "- Dès le départ, dis en UNE phrase naturelle que tu as compris la demande et que tu t'y mets (ex. « Ok, je regarde ça tout de suite »). Ne démarre jamais en silence.",
@@ -223,47 +287,26 @@ function buildSystemPrompt(
       "- APPROBATIONS : quand une action sensible demande une approbation, elle s'affiche DIRECTEMENT dans le chat (boutons Approuver/Refuser) et TON RUN CONTINUE DE TOURNER — tu n'es PAS interrompu. Demande-la naturellement puis attends la décision sur place ; dès qu'elle est donnée tu enchaînes avec le résultat. Ne t'arrête pas, ne redemande pas une approbation déjà accordée, ne dis pas seulement « c'est en attente » pour finir ton tour.",
     );
   }
-  if (securityDoctrine) {
-    lines.push("", SECURITY_DOCTRINE);
-  }
-  if (agent.is_orchestrator) {
-    lines.push("", ORCHESTRATOR_DOCTRINE);
-  }
-  if (skillPrompts) {
-    lines.push(
-      "",
-      "## Activated skills (your specialised playbooks)",
-      "These skills are activated for you. They are NOT loaded yet — when a step needs one, call use_skill(<slug>) to pull its full playbook into context, then apply it. Plan which skill each step needs.",
-      skillPrompts,
-    );
-  }
-  if (memorySection) {
-    lines.push(
-      "",
-      "Your persistent memory (knowledge carried over from previous sessions and runs):",
-      memorySection,
-    );
-  }
-  if (teamMemorySection) {
-    lines.push(
-      "",
-      "Shared TEAM memory (knowledge contributed by you and your teammate agents):",
-      teamMemorySection,
-    );
-  }
-  if (recentWorkSection) {
-    lines.push(
-      "",
-      "## Your recent work (latest runs — you already did this; build on it, don't redo it)",
-      recentWorkSection,
-    );
-  }
-  lines.push(
-    "",
-    "Your tools (full schemas are provided separately):",
-    capabilitySummary,
-    "",
-    "Operating rules:",
+  push("presence", lines.join("\n"));
+  if (securityDoctrine) push("doctrine", SECURITY_DOCTRINE);
+  if (agent.is_orchestrator) push("doctrine", ORCHESTRATOR_DOCTRINE);
+
+  // Knowledge blocks are SELECTED against this turn's subject, not dumped
+  // whole. Everything filtered out stays one search_memory / search_context
+  // away — the operating rules below say so explicitly.
+  const skills = selectLines(skillPrompts, taskText, SECTION_BUDGET.skills);
+  push("skills", skills.body, { dropped: skills.dropped, offered: skills.offered });
+  const mem = selectLines(memorySection, taskText, SECTION_BUDGET.memory);
+  push("memory", mem.body, { dropped: mem.dropped, offered: mem.offered });
+  const team = selectLines(teamMemorySection, taskText, SECTION_BUDGET.team);
+  push("team_memory", team.body, { dropped: team.dropped, offered: team.offered });
+  const recent = selectLines(recentWorkSection, taskText, SECTION_BUDGET.recent);
+  push("recent_work", recent.body, { dropped: recent.dropped, offered: recent.offered });
+
+  push("toolbox", `Your tools (full schemas are provided separately):\n${capabilitySummary}`);
+
+  const rules: string[] = [];
+  rules.push(
     "- PLAN then ACT: follow the execution plan below step by step, in order; deviate only when a result forces it, and say so.",
     "- TODO checklist (update_todos), kept live: exactly ONE leaf 'active'; mark it 'done' only after you VERIFY the result. Split a step into subtasks (parent_id, ≤3 levels) as soon as it's bigger than one action; a parent is done only when all its subtasks are.",
     "- VERIFY each result before the next call — read it, confirm success, then proceed. Real data only; never invent numbers or facts.",
@@ -277,18 +320,18 @@ function buildSystemPrompt(
     "- INITIATIVE (bounded): fix trivial in-scope issues you notice (and mention them); file bigger opportunities with propose_mission (nothing executes). Never run out-of-scope side effects.",
   );
   if (mode === "chat") {
-    lines.push("- RICH REPLIES: when a component communicates better than prose (metrics, trends, comparisons, tabular data), attach real UI blocks with render_ui (kpi_grid/chart/table/link_card) and place each [[ui:N]] tag on its own line; real data only. When a sentence is clearer, just write it.");
-    lines.push("- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : ne demande PAS quoi faire et ne réponds pas juste en prose — fais l'analyse avec tes outils MAINTENANT et PRODUIS-la avec create_deliverable(kind=\"report\") (sections/KPIs/tableaux/risques, via le skill report-designer ; gros rapport → report_section puis create_deliverable sans content). Une question de clarification UNIQUEMENT si c'est vraiment impossible d'avancer.");
+    rules.push("- RICH REPLIES: when a component communicates better than prose (metrics, trends, comparisons, tabular data), attach real UI blocks with render_ui (kpi_grid/chart/table/link_card) and place each [[ui:N]] tag on its own line; real data only. When a sentence is clearer, just write it.");
+    rules.push("- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : ne demande PAS quoi faire et ne réponds pas juste en prose — fais l'analyse avec tes outils MAINTENANT et PRODUIS-la avec create_deliverable(kind=\"report\") (sections/KPIs/tableaux/risques, via le skill report-designer ; gros rapport → report_section puis create_deliverable sans content). Une question de clarification UNIQUEMENT si c'est vraiment impossible d'avancer.");
   }
   if (agent.collaboration_enabled) {
-    lines.push("- COLLABORATE: if a teammate's skills fit part of the work, message (send_message_to_agent) or delegate (delegate_mission) instead of doing it all; record team decisions with team_memory.");
+    rules.push("- COLLABORATE: if a teammate's skills fit part of the work, message (send_message_to_agent) or delegate (delegate_mission) instead of doing it all; record team decisions with team_memory.");
   }
   // Essaim (swarm): only present when the owner enabled it — the capability
   // summary carries the spawn_parallel_agents line in that case. Make the agent
   // PROACTIVELY parallelise independent subtasks instead of grinding through
   // them one by one.
   if (capabilitySummary.includes("spawn_parallel_agents")) {
-    lines.push(
+    rules.push(
       "- RÉUTILISE AVANT DE (RE)FAIRE — ne parallélise JAMAIS par réflexe. Avant tout fan-out : (1) vérifie ce qui existe déjà pour cette demande via search_context(scope=\"past_runs\") (livrables/analyses des runs passés) et search_context(scope=\"run\") (étapes de CE run) ; (2) réutilise ce qui est déjà fait, ne relance que ce qui MANQUE réellement. Si le travail (ou une partie) a déjà été produit, RÉUTILISE-le et dis-le — ne relance pas des sous-agents pour ça.",
       "- PAR DÉFAUT, PARALLÉLISE : dès que le travail se décompose en 2+ sous-tâches NOUVELLES réellement indépendantes (aucune n'a besoin du résultat d'une autre) et non déjà faites, tu DOIS les lancer ENSEMBLE avec spawn_parallel_agents plutôt qu'une par une. Ne reste séquentiel QUE si les sous-tâches sont dépendantes (l'une a besoin du résultat de l'autre), s'il n'y en a qu'une, ou si le résultat existe déjà. En cas de doute sur l'indépendance : si elles ne se lisent/écrivent pas mutuellement, elles sont indépendantes → parallélise.",
       "- AUTO-CHECK PARALLÉLISME (à toi de le décider, pas besoin qu'on te le dise) : avant CHAQUE bloc de travail, demande-toi « est-ce que je m'apprête à répéter le MÊME type de travail sur plusieurs éléments indépendants ? » (produits, concurrents, marchés, URLs, comptes, fichiers, sections…). Si oui → découpe en UNE sous-tâche par élément et lance tout en un seul spawn_parallel_agents, jamais en séquentiel. Pas de petit plafond : autant de sous-tâches que d'éléments (des dizaines, ok — elles tournent par vagues).",
@@ -297,12 +340,12 @@ function buildSystemPrompt(
     );
   }
   if (mode === "mission") {
-    lines.push(
+    rules.push(
       "- Materialise every expected deliverable with create_deliverable before finishing.",
       "- Your final message is a concise mission report (markdown): what you did, key findings, deliverables produced, pending approvals if any — plus an 'Initiatives' section when you noticed opportunities (each one filed via propose_mission).",
     );
   } else {
-    lines.push(
+    rules.push(
       "- Respond in concise markdown, in the user's language. Avoid filler.",
       "- BE CONVERSATIONAL & THINK FIRST. If the request is ambiguous, under-specified, or could go several ways, ASK a brief clarifying question before acting (e.g. which target, which period, which audience). Don't guess on important details. A short back-and-forth is better than a wrong deliverable.",
       "- Confirm scope on big/irreversible actions before doing them.",
@@ -311,7 +354,10 @@ function buildSystemPrompt(
       "- INTERDIT : n'affirme JAMAIS « rapport créé », « le rapport est en carte », « livrable créé » si tu n'as pas RÉELLEMENT appelé create_deliverable dans CE tour. Un résumé écrit dans le chat n'est PAS un livrable et n'affiche aucune carte. Si l'utilisateur demande un rapport, tu DOIS appeler create_deliverable(kind=\"report\") — sinon ne prétends pas l'avoir fait.",
     );
   }
-  return lines.join("\n");
+  push("rules", rules.join("\n"));
+
+  const compiled = compileSystemPrompt(sections, toolStats);
+  return { prompt: compiled.system, budget: compiled.budget };
 }
 
 // ---------------------------------------------------------------------------
@@ -431,13 +477,15 @@ async function produceExecutionPlan(opts: {
     contextText ? `\n# Relevant context (memory / prior work)\n${contextText.slice(0, 4000)}` : "",
   ].join("\n");
 
-  const callOnce = (p: "groq" | "deepseek") =>
+  // Planning is a reasoning task: the heavy tier OF THIS PROVIDER, never a
+  // model id borrowed from the other one.
+  const callOnce = (p: Provider) =>
     callAi({
       task: "architecture_reasoning",
       systemPrompt,
       userPrompt,
       provider: p,
-      model: AGENT_MODEL[p],
+      model: Deno.env.get("AGENT_MODEL_PLANNER") || modelForTier("heavy", p),
       jsonMode: true,
       maxTokens: 1800,
       temperature: 0.3,
@@ -448,7 +496,10 @@ async function produceExecutionPlan(opts: {
     try {
       res = await callOnce(provider);
     } catch (e) {
-      if (provider === "deepseek") res = await callOnce("groq");
+      // Cross-provider retry, whichever way round: an agent pinned on Groq
+      // deserves the same resilience as one on DeepSeek.
+      const other = availableProviders().find((p) => p !== provider);
+      if (other) res = await callOnce(other);
       else throw e;
     }
     const parsed = safeParsePlan(res.content);
@@ -735,7 +786,7 @@ async function probeSandbox(url: string): Promise<string | null> {
 }
 
 const SANDBOX_DOWN_MSG =
-  "⚠️ Sandbox d'exécution injoignable — l'infrastructure locale (Docker/ngrok/runner) est arrêtée ou le tunnel a changé. " +
+  "⚠縏 Sandbox d'exécution injoignable — l'infrastructure locale (Docker/ngrok/runner) est arrêtée ou le tunnel a changé. " +
   "Relance-la en une commande : powershell -ExecutionPolicy Bypass -File scripts\\start-agents-infra.ps1 — puis relance la mission.";
 
 // Circuit breaker for RUNNER mode: same idea as probeSandbox, but the runner
@@ -762,7 +813,7 @@ async function probeRunner(url: string): Promise<string | null> {
 }
 
 const RUNNER_DOWN_MSG =
-  "⚠️ Runner injoignable — la machine self-hosted (runner + tunnel) est arrêtée ou son URL a changé. " +
+  "⚠縏 Runner injoignable — la machine self-hosted (runner + tunnel) est arrêtée ou son URL a changé. " +
   "Relance-la : powershell -ExecutionPolicy Bypass -File scripts\\start-agents-infra.ps1 — puis relance la mission.";
 
 // HYBRID health gate: probe both execution worlds configured on the context and
@@ -1009,8 +1060,13 @@ async function initChatRun(
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
   const chatSkillIndex = skillsIndex(chatSkills);
 
+  const chatPrompt = buildSystemPrompt(
+    agent, capabilitySummary + sandboxDownNote, "chat", memorySection, teamMemorySection,
+    chatSkillIndex, recentWorkSection, isSecurityAgent(chatSkills), lastUserText,
+  );
+  await ctx.logEvent("prompt", budgetEventPayload(chatPrompt.budget, null)).catch(() => {});
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(agent, capabilitySummary + sandboxDownNote, "chat", memorySection, teamMemorySection, chatSkillIndex, recentWorkSection, isSecurityAgent(chatSkills)) },
+    { role: "system", content: chatPrompt.prompt },
     ...(history ?? [])
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => {
@@ -1028,6 +1084,12 @@ async function initChatRun(
   await ctx.logEvent("status", { message: "Chat started — thinking…" });
 
   const provider = providerFor(agent);
+  // A pinned provider we could not honour (missing secret) is reported, not
+  // swallowed — otherwise it reads exactly like a broken switch.
+  {
+    const note = providerMismatchNote(agent.model);
+    if (note) await ctx.logEvent("status", { message: note }).catch(() => {});
+  }
 
   // Plan-first (chat): for a substantive request, reason and draft an ordered
   // plan before acting. Skipped for greetings / very short turns so quick Q&A
@@ -1035,6 +1097,8 @@ async function initChatRun(
   const lastUserMsg = String([...messages].reverse().find((m) => m.role === "user")?.content ?? "");
   // "continue"/"poursuis"/… are short but DO need a (resume-aware) plan.
   const isContinuation = /^\s*(continue|continu|poursuis|reprends?|resume|go on|keep going|next|suite|encore|vas[-\s]?y|ok\b)/i.test(lastUserMsg.trim());
+  /** Success contract for this turn — derived alongside the plan (below). */
+  let contract: SuccessContract | null = null;
   if ((lastUserMsg.trim().length >= 24 || isContinuation) && lastUserMsg !== "Greet the user.") {
     if (chatRunId) await ctx.logEvent("status", { message: "Reasoning & planning…" });
     // On a continuation, give the planner the prior reply so it resumes the
@@ -1056,6 +1120,19 @@ async function initChatRun(
       }));
       await admin.from("internal_agent_runs").update({ todos }).eq("id", chatRunId);
       if (chatRunId) await ctx.logEvent("todos", { todos });
+      // Chat runs get a success contract too — until now they were the ONLY
+      // path with no verification at all (the mission self-check required a
+      // brief/acceptance criteria), which is why chat needed regex rescue
+      // guards for "the agent said 'report' but saved nothing".
+      contract = await deriveContract({
+        source: "chat",
+        goal: lastUserMsg.slice(0, 800),
+        doneWhen: planned.plan.done_when ?? null,
+        hasTodos: true,
+      }).catch(() => null);
+      if (contract && chatRunId) {
+        await ctx.logEvent("loop", { phase: "contract", goal: contract.goal, checks: contract.checks.map((c) => ({ label: c.label, kind: c.kind, required: c.required !== false })) });
+      }
     }
   }
 
@@ -1081,12 +1158,15 @@ async function initChatRun(
     mission_id: null,
     messages,
     round: 0,
-    max_rounds: 400,
+    // Bounded by the agent's own budget (see resolveBudgets) instead of a
+    // hard-coded 400; hitting it wraps the turn up rather than killing it.
+    max_rounds: resolveBudgets(agent, "chat").maxRounds,
+    contract,
     provider,
-    meta: { tool_tier: requestClass.tools },
+    meta: { tool_tier: requestClass.tools, context_manifest: { prefix_hash: chatPrompt.budget.prefix_hash } },
     // Cost-tiered model: cheap by default, stronger only when the turn warrants
     // it (see classifyRequest). AGENT_MODEL_CHAT still overrides if set.
-    model: Deno.env.get("AGENT_MODEL_CHAT") || modelForTier(requestClass.model),
+    model: Deno.env.get("AGENT_MODEL_CHAT") || agentModelForTier(agent, requestClass.model),
     processing_until: null,
     // The triggering message is already in `messages`; only fold in turns that
     // arrive AFTER this point (mid-run steering).
@@ -1098,8 +1178,15 @@ async function initChatRun(
    // Any unexpected failure in the background worker: mark the run failed and
    // post an error reply so the client's poll terminates (not stuck "running").
    const msg = e instanceof Error ? e.message : String(e);
-   if (chatRunId) await admin.from("internal_agent_runs").update({ status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500) }).eq("id", chatRunId).then(() => {}, () => {});
-   await admin.from("internal_agent_messages").insert({ conversation_id: conversationId, agent_id: agent.id, role: "assistant", content: `⚠️ Le run a échoué : ${msg.slice(0, 400)}` }).then(() => {}, () => {});
+   if (chatRunId) {
+     await admin.from("internal_agent_runs").update({ status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500) }).eq("id", chatRunId).then(() => {}, () => {});
+     await recordRunIncident(admin, agent, chatRunId, {
+       title: "Échec d'exécution du run",
+       description: msg.slice(0, 1500),
+       category: "other", severity: "medium",
+     }).catch(() => {});
+   }
+   await admin.from("internal_agent_messages").insert({ conversation_id: conversationId, agent_id: agent.id, role: "assistant", content: `⚠縏 Le run a échoué : ${msg.slice(0, 400)}` }).then(() => {}, () => {});
    await admin.from("internal_agent_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId).then(() => {}, () => {});
  }
 }
@@ -1149,7 +1236,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
   if (ctx.hybrid) {
     const h = await gateHybridHealth(ctx);
     if (!h.runnerUp && !h.sandboxUp) {
-      const msg = `⚠️ Mission hybride impossible — les DEUX mondes d'exécution sont injoignables (${h.note}). Relance l'infra locale (scripts/start-agents-infra.ps1) puis relance la mission.`;
+      const msg = `⚠縏 Mission hybride impossible — les DEUX mondes d'exécution sont injoignables (${h.note}). Relance l'infra locale (scripts/start-agents-infra.ps1) puis relance la mission.`;
       await ctx.logEvent("error", { error: msg });
       await admin.from("internal_agent_runs").update({
         status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500),
@@ -1160,6 +1247,17 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
         kind: "learning", importance: 3, dedupePrefix: "Exec down:",
         content: `Exec down: mission "${mission.title}" — runner ET sandbox injoignables le ${new Date().toISOString().slice(0, 10)} (${h.note}). Relancer l'infra locale (start-agents-infra.ps1) avant toute mission d'exécution.`,
       });
+      await recordRunIncident(admin, agent, runId, {
+        title: `Infrastructure d'exécution injoignable — ${mission.title}`,
+        description: `Mission « ${mission.title} » : runner ET sandbox injoignables (${h.note}). Run interrompu avant le premier appel.`,
+        category: "outage", severity: "critical",
+      }).catch(() => {});
+      await admin.from("aiops_infra_incidents").insert({
+        workspace_id: agent.workspace_id, project_id: agent.project_id,
+        server_name: "runner + sandbox", kind: "service_down", severity: "critical",
+        cause: `runner ET sandbox injoignables (${h.note})`,
+        impact: `Run interrompu avant le premier appel — mission « ${mission.title} », agent ${agent.name}`,
+      }).catch(() => {});
       await postMissionReportToChannel(admin, mission.id, msg).catch(() => {});
       return jsonResponse({ ok: false, error: "both execution worlds unreachable", detail: h.note });
     }
@@ -1184,6 +1282,17 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
         kind: "learning", importance: 3, dedupePrefix: "Sandbox down:",
         content: `Sandbox down: run de la mission "${mission.title}" échoué le ${new Date().toISOString().slice(0, 10)} — sandbox injoignable (${probe}). L'infra locale doit être relancée (start-agents-infra.ps1) avant toute mission d'exécution.`,
       });
+      await recordRunIncident(admin, agent, runId, {
+        title: `Sandbox injoignable — ${mission.title}`,
+        description: `Mission « ${mission.title} » : sandbox injoignable (${probe}). Run interrompu avant le premier appel.`,
+        category: "outage", severity: "critical",
+      }).catch(() => {});
+      await admin.from("aiops_infra_incidents").insert({
+        workspace_id: agent.workspace_id, project_id: agent.project_id,
+        server_name: "sandbox", kind: "service_down", severity: "critical",
+        cause: `sandbox injoignable (${probe})`,
+        impact: `Run interrompu avant le premier appel — mission « ${mission.title} », agent ${agent.name}`,
+      }).catch(() => {});
       await postMissionReportToChannel(admin, mission.id, msg).catch(() => {});
       return jsonResponse({ ok: false, error: "sandbox unreachable", detail: probe });
     }
@@ -1203,6 +1312,17 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
         kind: "learning", importance: 3, dedupePrefix: "Runner down:",
         content: `Runner down: run de la mission "${mission.title}" échoué le ${new Date().toISOString().slice(0, 10)} — runner injoignable (${probe}). La machine self-hosted doit être relancée (start-agents-infra.ps1) avant toute mission d'exécution.`,
       });
+      await recordRunIncident(admin, agent, runId, {
+        title: `Runner injoignable — ${mission.title}`,
+        description: `Mission « ${mission.title} » : runner injoignable (${probe}). Run interrompu avant le premier appel.`,
+        category: "outage", severity: "critical",
+      }).catch(() => {});
+      await admin.from("aiops_infra_incidents").insert({
+        workspace_id: agent.workspace_id, project_id: agent.project_id,
+        server_name: "runner", kind: "service_down", severity: "critical",
+        cause: `runner injoignable (${probe})`,
+        impact: `Run interrompu avant le premier appel — mission « ${mission.title} », agent ${agent.name}`,
+      }).catch(() => {});
       await postMissionReportToChannel(admin, mission.id, msg).catch(() => {});
       return jsonResponse({ ok: false, error: "runner unreachable", detail: probe });
     }
@@ -1259,6 +1379,12 @@ ${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}${pr
 Execute this mission now. Use your tools to gather what you need, save each expected deliverable with create_deliverable, then write your final mission report.`;
 
   const provider = providerFor(agent);
+  // A pinned provider we could not honour (missing secret) is reported, not
+  // swallowed — otherwise it reads exactly like a broken switch.
+  {
+    const note = providerMismatchNote(agent.model);
+    if (note) await ctx.logEvent("status", { message: note }).catch(() => {});
+  }
 
   // Plan-first: the agent reasons about the goal and drafts an ordered task
   // plan (tools per task + how) BEFORE executing. Logged as a `plan` event and
@@ -1278,11 +1404,34 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     await ctx.logEvent("todos", { todos });
   }
 
+  // ── Success contract (loop engineering) ────────────────────────────────────
+  // The definition of done becomes a list of TYPED, mostly deterministic checks
+  // the run is verified against before it may finish — instead of a single LLM
+  // judge asked to grade free text. The planner's `done_when`, the mission's
+  // acceptance criteria and its expected deliverables all feed into it.
+  const contract = await deriveContract({
+    source: "mission",
+    goal: `${mission.title ?? ""} — ${(mission.brief ?? "").slice(0, 600)}`,
+    doneWhen: planned?.plan.done_when ?? null,
+    acceptanceCriteria: mission.acceptance_criteria ?? null,
+    expectedDeliverables: Array.isArray(mission.expected_deliverables) ? mission.expected_deliverables as Array<{ kind: string; name: string; description?: string }> : [],
+    hasTodos: Boolean(planned),
+  }).catch(() => null);
+  if (contract) {
+    await ctx.logEvent("loop", { phase: "contract", goal: contract.goal, checks: contract.checks.map((c) => ({ label: c.label, kind: c.kind, required: c.required !== false })) });
+  }
+  const budgets = resolveBudgets(agent, "mission");
+
   // Persist the initial conversation as resumable state and enqueue the FIRST
   // tick. The long loop then runs across many short ticks (runMissionTick),
   // never bounded by the Edge wall-clock.
+  const missionPrompt = buildSystemPrompt(
+    agent, capabilitySummary, "mission", memorySection, teamMemorySection,
+    skillPrompts, recentWorkSection, isSecurityAgent(missionSkills), missionTaskText,
+  );
+  await ctx.logEvent("prompt", budgetEventPayload(missionPrompt.budget, null)).catch(() => {});
   const initialMessages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(agent, capabilitySummary, "mission", memorySection, teamMemorySection, skillPrompts, recentWorkSection, isSecurityAgent(missionSkills)) },
+    { role: "system", content: missionPrompt.prompt },
     { role: "user", content: userPrompt },
     ...(planned ? planMessages(planned.markdown, "mission") : []),
   ];
@@ -1293,17 +1442,19 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     mission_id: mission.id,
     messages: initialMessages,
     round: 0,
-    // No real round limit — the mission stops only when the task is verified
-    // done. This is just an absolute backstop against a truly runaway loop.
-    max_rounds: 400,
+    // The agent's OWN budget (max_steps, expanded into rounds) now bounds the
+    // loop — it used to be a hard-coded 400 that ignored the configured value.
+    // Reaching it triggers a wrap-up, not a kill: the run still delivers.
+    max_rounds: budgets.maxRounds,
+    contract,
     provider,
     // Missions always ship the full toolbox: a mission that has to discover its
     // own tools wastes rounds it was given to do the work.
-    meta: { tool_tier: "full" as ToolTier },
+    meta: { tool_tier: "full" as ToolTier, context_manifest: { prefix_hash: missionPrompt.budget.prefix_hash } },
     // Cost-tiered from the mission's nature (title + brief). AGENT_MODEL_MISSION
     // still overrides if set. A run that keeps failing is escalated to the heavy
     // model in runMissionTick (see the replan branch).
-    model: Deno.env.get("AGENT_MODEL_MISSION") || modelForTier(classifyTier(missionTaskText, { mode: "mission" })),
+    model: Deno.env.get("AGENT_MODEL_MISSION") || agentModelForTier(agent, classifyTier(missionTaskText, { mode: "mission" })),
     processing_until: null,
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
@@ -1349,7 +1500,7 @@ async function finalizeMissionSuccess(
   runId: string,
   mission: { id: string; title?: string; schedule?: string | null; report_back_to_agent?: string | null },
   finalOutput: string,
-  stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: "groq" | "deepseek"; model: string },
+  stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: string; model: string; custom?: boolean },
 ) {
   const { count } = await admin
     .from("internal_agent_deliverables")
@@ -1423,7 +1574,9 @@ async function finalizeMissionSuccess(
     workspace_id: agent.workspace_id, project_id: agent.project_id,
     provider: stats.provider, model: stats.model,
     task: "content_generation", feature: "internal-agent-mission",
+    custom: stats.custom,
     usage: { prompt_tokens: stats.tokIn, completion_tokens: stats.tokOut, total_tokens: stats.tokIn + stats.tokOut },
+    metadata: { run_id: runId, agent_id: agent.id, mode: "mission", custom: !!stats.custom },
   });
   // If the mission was created from a channel (e.g. a Slack "mission: …"), post
   // the completion report back into that thread.
@@ -1560,7 +1713,7 @@ async function finalizeChatSuccess(
   conversationId: string,
   runId: string,
   finalOutput: string,
-  stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: "groq" | "deepseek"; model: string },
+  stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: string; model: string; custom?: boolean },
 ) {
   const reply = finalOutput?.trim() || "(no reply)";
   const uiBlocks = (await collectUiBlocks(admin, runId)) ?? [];
@@ -1593,7 +1746,9 @@ async function finalizeChatSuccess(
   await logLlmUsage({
     workspace_id: agent.workspace_id, project_id: agent.project_id,
     provider: stats.provider, model: stats.model, task: "chat_simple", feature: "internal-agent-chat",
+    custom: stats.custom,
     usage: { prompt_tokens: stats.tokIn, completion_tokens: stats.tokOut, total_tokens: stats.tokIn + stats.tokOut },
+    metadata: { run_id: runId, agent_id: agent.id, mode: "chat", custom: !!stats.custom },
   });
 }
 
@@ -1608,7 +1763,7 @@ async function finalizeRoomSuccess(
   room: { room_id: string; placeholder_id: string },
   runId: string,
   finalOutput: string,
-  stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: "groq" | "deepseek"; model: string },
+  stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: string; model: string; custom?: boolean },
 ) {
   const reply = (finalOutput?.trim() || "Terminé — voir les cartes ci-dessus.")
     .replace(/\n?\[\[ui:\d+\]\]\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -1634,7 +1789,9 @@ async function finalizeRoomSuccess(
   await logLlmUsage({
     workspace_id: agent.workspace_id, project_id: agent.project_id,
     provider: stats.provider, model: stats.model, task: "chat_simple", feature: "internal-agent-room",
+    custom: stats.custom,
     usage: { prompt_tokens: stats.tokIn, completion_tokens: stats.tokOut, total_tokens: stats.tokIn + stats.tokOut },
+    metadata: { run_id: runId, agent_id: agent.id, mode: "room", custom: !!stats.custom },
   });
 }
 
@@ -1647,8 +1804,15 @@ async function finalizeRoomSuccess(
 // the FOCUS header re-injects the objective + todo state on every tick, and the
 // agent can call search_history / recall to retrieve a specific past detail.
 // Mutates `messages` in place. Returns true when it trimmed.
-const COMPACT_TRIGGER_CHARS = 137_500;      // start trimming once the transcript is this heavy
-const CONTEXT_WINDOW_CHARS = 80_000;        // keep roughly this much recent transcript
+// Budgets scale with the request class (see contextBudgetFor): a `social` turn
+// keeps a tiny recency window, a `full` turn the largest.
+// The sealed zone is a contiguous run of these markers, sitting right after the
+// head (system + task grounding). It is APPEND-ONLY: a marker is written once
+// and never re-sealed, so the byte-identical prefix [head][sealed zone] stays
+// provider-cacheable across ticks, and only a compaction invalidates it.
+// NOTE: ASCII-only on purpose — some in-flight markers were written by older
+// builds in a double-encoded form, so we match on the encoding-agnostic head.
+const SEALED_PREFIX = "[Segment scell";
 
 /** Deterministic digest of a transcript span about to be sealed away: what was
  *  called, what was produced, what failed. No LLM — it must be free, instant and
@@ -1689,29 +1853,44 @@ function sealDigest(span: ChatMessage[]): string {
   if (errors.size) lines.push(`- Échecs rencontrés (ne pas réessayer à l'identique) :\n  ${[...errors].slice(0, 5).join("\n  ")}`);
   return lines.length ? lines.join("\n") : "- (aucune action outillée dans ce segment)";
 }
-function compactMessagesIfNeeded(messages: ChatMessage[]): boolean {
+function compactMessagesIfNeeded(
+  messages: ChatMessage[],
+  budget: ContextBudget = contextBudgetFor("full"),
+): boolean {
   if (messages.length < 16) return false;
-  if (JSON.stringify(messages).length < COMPACT_TRIGGER_CHARS) return false;
+  if (JSON.stringify(messages).length < budget.triggerChars) return false;
   const keepHead = Math.min(2, messages.length); // system + original task (grounding)
+
+  // Locate the end of the SEALED zone: consecutive markers right after the head.
+  // Markers are never re-sealed - they accumulate as the stable cache prefix.
+  let sealEnd = keepHead;
+  while (
+    sealEnd < messages.length &&
+    messages[sealEnd].role === "user" &&
+    String(messages[sealEnd].content ?? "").startsWith(SEALED_PREFIX)
+  ) sealEnd++;
+
   // Grow the recent-window backwards from the end until the char budget is hit.
   let start = messages.length;
   let size = 0;
-  while (start > keepHead) {
+  while (start > sealEnd) {
     size += JSON.stringify(messages[start - 1]).length;
-    if (size > CONTEXT_WINDOW_CHARS) break;
+    if (size > budget.windowChars) break;
     start--;
   }
-  // Never start the window on a tool message (would orphan it) — pull back to
+  // Never start the window on a tool message (would orphan it) ??" pull back to
   // include its calling assistant.
-  while (start > keepHead && messages[start]?.role === "tool") start--;
-  if (start <= keepHead + 1) return false; // window already covers (almost) everything
-  const dropped = start - keepHead;
+  while (start > sealEnd && messages[start]?.role === "tool") start--;
+  if (start <= sealEnd + 1) return false; // window already covers (almost) everything
+  const dropped = start - sealEnd;
   // SEAL, don't just drop: replace the removed span with a DETERMINISTIC digest
-  // of what happened in it (no LLM call — cheap, and it can't hallucinate). A
+  // of what happened in it (no LLM call ??" cheap, and it can't hallucinate). A
   // bare "N messages removed" marker was the reason agents redid work they had
   // already done: nothing in context said what the dropped span accomplished.
-  const digest = sealDigest(messages.slice(keepHead, start));
-  messages.splice(keepHead, dropped, {
+  // The new marker is APPENDED at the end of the sealed zone (right before the
+  // live window), never spliced into the middle - the seal is append-only.
+  const digest = sealDigest(messages.slice(sealEnd, start));
+  messages.splice(sealEnd, dropped, {
     role: "user",
     content:
       `[Segment scellé : ${dropped} messages retirés pour rester dans la fenêtre de contexte. ` +
@@ -1776,7 +1955,10 @@ async function verifyMissionOutcome(
     .join("\n") || "(no deliverables produced)";
   const res = await callAi({
     task: "classification",
-    provider: "groq",
+    // Cheap side-call: Groq when it is keyed, otherwise whatever is — this used
+    // to be hard-coded and silently disabled mission verification on a
+    // DeepSeek-only deployment.
+    provider: cheapProvider(),
     jsonMode: true,
     maxTokens: 500,
     systemPrompt:
@@ -1814,11 +1996,25 @@ async function runMissionTick(runId: string, msgId: number | null) {
     round: number; max_rounds: number; provider: string | null; model: string | null;
     tokens_in: number; tokens_out: number; cost_usd: number; last_input_at: string | null;
     error_count: number; replans: number; verify_fails: number; meta: Record<string, unknown> | null;
+    // Loop engine (migration 0164): the durable half of the control system.
+    contract: SuccessContract | null; progress: ProgressFingerprint | null;
+    stagnation: number; iteration: number;
   };
   const isChat = state.mode === "chat" || !state.mission_id;
   // Room-bound run: same durable tick engine as chat, but the reply/deliverables
   // are posted back to a room placeholder message instead of a conversation.
   const roomBinding = ((state.meta as { room?: { room_id: string; placeholder_id: string } } | undefined)?.room) ?? null;
+  // Room MISSION task: this run executes one card of a multi-agent mission. Its
+  // outcome is what unblocks the tasks waiting on it, so every terminal path
+  // below (success, failure, cancellation) must report back — a task whose run
+  // ends silently would stall the whole mission.
+  const missionTask = ((state.meta as { mission_task?: { mission_id: string; task_id: string } } | undefined)?.mission_task) ?? null;
+  const reportMissionTask = async (ok: boolean, output: string) => {
+    if (!missionTask?.task_id || !missionTask.mission_id) return;
+    await completeMissionTask(admin, {
+      missionId: missionTask.mission_id, taskId: missionTask.task_id, ok, output,
+    }).catch(() => {});
+  };
 
   // Run no longer active? clean up.
   const { data: runRow } = await admin.from("internal_agent_runs").select("status").eq("id", runId).maybeSingle();
@@ -1831,6 +2027,19 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const { agent, tools } = await loadAgentAndTools(state.agent_id);
   // Resolve the model endpoint once per tick (provider-aware; decrypts the key).
   const agentEndpoint = await resolveAgentEndpoint(admin, agent);
+
+  // ── Provider for this tick ────────────────────────────────────────────────
+  // The persisted provider wins — a run must not change vendor mid-flight just
+  // because someone edited the agent — but it is VALIDATED: a provider whose key
+  // has since been removed would otherwise 400 on every round for the rest of
+  // the run, which reads as an outage rather than a misconfiguration.
+  let tickProvider: Provider = (state.provider === "groq" || state.provider === "deepseek")
+    ? state.provider
+    : providerFor(agent);
+  let tickModel = resolveRunStateModel(state.model, tickProvider, agent);
+  const usable = availableProviders();
+  const providerUnavailable = usable.length > 0 && !usable.includes(tickProvider);
+  if (providerUnavailable) tickProvider = defaultProvider();
   const { data: mission } = state.mission_id
     ? await admin.from("internal_agent_missions")
         .select("id, title, brief, acceptance_criteria, schedule, report_back_to_agent, delegation_depth")
@@ -1840,19 +2049,24 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const ctx = makeToolContext({ admin, agent, runId, missionId: state.mission_id, conversationId: state.conversation_id, delegationDepth: (mission as { delegation_depth?: number } | null)?.delegation_depth ?? 0, runtimeConfig });
   ctx.skills = await loadActivatedSkills(admin, agent.id);
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  // ── Guardrails (runtime enforcement) ──────────────────────────────────────
+  // Loaded once per tick. Only guardrails carrying a match_pattern are enforced;
+  // documentation-only rules are never evaluated. Best-effort: a load failure
+  // means "no guardrails" rather than a broken run.
+  const guardrails = await loadGuardrails(admin, agent.workspace_id, agent.project_id);
   // This is a PRIMARY run — let it fan independent subtasks out to ephemeral
   // parallel sub-agents (children run in-process and stream to their own runId).
   ctx.spawnParallel = (subtasks) => runParallelSubagents({
     admin, parentRunId: runId,
     agentId: agent.id, workspaceId: agent.workspace_id, projectId: agent.project_id, createdBy: agent.created_by ?? null,
-    tools, provider: (state.provider as "groq" | "deepseek") || providerFor(agent), endpoint: agentEndpoint, temperature: agent.temperature ?? 0.3,
+    tools, provider: tickProvider, endpoint: agentEndpoint, temperature: agent.temperature ?? 0.3,
     parentLogEvent: (p) => ctx.logEvent("status", p),
     makeChildContext: (childRunId) => {
       const c = makeToolContext({ admin, agent, runId: childRunId, missionId: null, conversationId: null, delegationDepth: (ctx.delegationDepth ?? 0) + 1, runtimeConfig });
       c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.isSubagent = true;
       return c;
     },
-    buildChildSystem: (cap, c) => buildSystemPrompt(agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills)),
+    buildChildSystem: (cap, c) => buildSystemPrompt(agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills)).prompt,
     maxConcurrency: agent.swarm_max_concurrency ?? undefined,
   }, subtasks);
   // HYBRID: re-probe both worlds each tick and strip whichever is unreachable, so
@@ -1879,9 +2093,61 @@ async function runMissionTick(runId: string, msgId: number | null) {
   };
 
   const { defs, defsFor, executor } = buildInternalToolset(tools, ctx);
+
+  // ── Per-round tool selection (prompt compiler) ─────────────────────────────
+  // Tool schemas are re-sent on EVERY round, so on a wide agent (connectors +
+  // MCP servers + both execution worlds) they are the single largest recurring
+  // input cost — larger than the transcript. The compiler ranks them against
+  // what this tick is actually about and sends the ones that matter, under a
+  // char budget.
+  //
+  // This can only ever cost a round, never a capability: the toolbox INDEX in
+  // the system prompt still names every tool, need_tools("…") restores the full
+  // set inside the same turn, and anything the agent called recently is pinned
+  // so a multi-step pipeline can't lose its tool mid-way.
+  const TOOL_SCHEMA_BUDGET = 55_000;      // ≈14k tokens of JSON schema per round
+  const PINNED_TOOLS = new Set([
+    "ask_user", "update_todos", "create_deliverable", "report_section", "render_ui",
+    "search_context", "load_toolset", "need_tools", "say", "use_skill", "read_skill_file",
+    "save_memory", "spawn_parallel_agents",
+  ]);
+  /** Tools called in the recent transcript — the agent is mid-pipeline with
+   *  them, so their schemas stay whatever the ranking says. */
+  const recentlyUsedTools = (msgs: ChatMessage[]): string[] => {
+    const out = new Set<string>();
+    for (const m of msgs.slice(-24)) {
+      for (const c of (m as { tool_calls?: Array<{ function?: { name?: string } }> }).tool_calls ?? []) {
+        if (c.function?.name) out.add(c.function.name);
+      }
+    }
+    return [...out];
+  };
+  /** need_tools / load_toolset("*") turns selection OFF for the rest of the
+   *  tick — the agent explicitly asked for everything. */
+  let fullSchemas = false;
+  const prevOnToolsetLoaded = ctx.onToolsetLoaded;
+  ctx.onToolsetLoaded = async (family) => {
+    if (family === "*") fullSchemas = true;
+    await prevOnToolsetLoaded?.(family);
+  };
+  let toolStats = { sent: defs.length, omitted: 0, chars: 0 };
   /** Schemas for the current round — re-evaluated every round so a mid-loop
    *  need_tools / load_toolset is honoured immediately, not next tick. */
-  const liveTools = () => defsFor(toolTier);
+  const liveTools = () => {
+    const base = defsFor(toolTier);
+    if (fullSchemas || toolTier === "social") {
+      toolStats = { sent: base.length, omitted: 0, chars: 0 };
+      return base;
+    }
+    const sel = selectTools(base, {
+      task: tickTaskText,
+      keep: [...PINNED_TOOLS, ...recentlyUsedTools(state.messages)],
+      budget: TOOL_SCHEMA_BUDGET,
+      floorCount: 14,
+    });
+    toolStats = { sent: sel.defs.length, omitted: sel.omitted.length, chars: sel.chars };
+    return sel.defs;
+  };
   // Compact long string args (file content, code, html…) so the live timeline
   // shows WHAT a call does without storing megabytes per event.
   const compactArgs = (a: any): any => {
@@ -1901,15 +2167,94 @@ async function runMissionTick(runId: string, msgId: number | null) {
   };
   const loggingExecutor: typeof executor = async (name, args) => {
     await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args) });
+    // ── Guardrails — tool_call scope ─────────────────────────────────────────
+    // Tested BEFORE execution: a block stops the tool from ever running (the
+    // model receives an explanatory ERROR as its result), warn/log just trace.
+    if (guardrails.length > 0) {
+      const probe = `${name}\n${JSON.stringify(args ?? {})}`;
+      const hits = checkGuardrails(guardrails, "tool_call", probe);
+      if (hits.length > 0) {
+        const block = strongestEnforcement(hits) === "block";
+        for (const v of hits) {
+          await ctx.logEvent("guardrail", {
+            scope: "tool_call", guardrail: v.title, category: v.category,
+            enforcement: v.enforcement, tool: name, matched: v.matched,
+            blocked: block,
+          }).catch(() => {});
+        }
+        if (block) {
+          await recordGuardrailIncident(admin, agent, runId, hits[0].title, "tool_call", hits[0].matched).catch(() => {});
+          const msg = `ERROR: Action bloquée par le guardrail « ${hits[0].title} » (${hits[0].matched ? `correspondance : ${hits[0].matched}` : "règle de sécurité"}). Réessayez autrement ou expliquez l'action requise à l'utilisateur.`;
+          await ctx.logEvent("tool_result", { tool: name, preview: msg.slice(0, 1000), ok: false, guardrail: true }).catch(() => {});
+          return msg;
+        }
+      }
+    }
     const r = await executor(name, args);
     const text = String(r);
     const ok = !text.startsWith("ERROR");
     toolFails[name] = ok ? 0 : (toolFails[name] ?? 0) + 1;
+    // Step-level evidence: a successful tool result is what lets the agent close
+    // a checklist item. update_todos resets the counter itself.
+    if (ok && name !== "update_todos" && ctx.loopEvidence) ctx.loopEvidence.results++;
+    // ── Guardrails — tool_result scope ───────────────────────────────────────
+    if (guardrails.length > 0 && text) {
+      const hits = checkGuardrails(guardrails, "tool_result", text.slice(0, 4000));
+      if (hits.length > 0) {
+        const block = strongestEnforcement(hits) === "block";
+        for (const v of hits) {
+          await ctx.logEvent("guardrail", {
+            scope: "tool_result", guardrail: v.title, category: v.category,
+            enforcement: v.enforcement, tool: name, matched: v.matched,
+            blocked: block,
+          }).catch(() => {});
+        }
+        if (block) {
+          await recordGuardrailIncident(admin, agent, runId, hits[0].title, "tool_result", hits[0].matched).catch(() => {});
+          const redacted = `ERROR: Résultat bloqué par le guardrail « ${hits[0].title} » — le contenu renvoyé enfreint une règle de sécurité et n'est pas transmis.`;
+          await ctx.logEvent("tool_result", { tool: name, preview: redacted.slice(0, 1000), ok: false, guardrail: true }).catch(() => {});
+          return redacted;
+        }
+      }
+    }
     await ctx.logEvent("tool_result", { tool: name, preview: text.slice(0, 1000), ok });
     return r;
   };
 
   const messages = state.messages;
+
+  // Evidence carried over from the previous tick: tool results the transcript
+  // holds since the last update_todos. Without this seed, a step whose work
+  // finished at the end of tick N could not be closed at the start of tick N+1.
+  ctx.loopEvidence = { results: evidenceSinceLastTodos(messages) };
+
+  // ── Execution-world probe for contract checks ──────────────────────────────
+  // file_exists / command_exits_zero are only verifiable when this agent has an
+  // execution world. Without one the check is SKIPPED (never failed) — a
+  // verifier that can't observe must not accuse.
+  const hasTool = (n: string) => defs.some((d) => d.function.name === n);
+  const readTool = ["file_read", "runner_file_read", "sandbox_file_read"].find(hasTool);
+  const shellTool = ["shell_exec", "runner_shell_exec", "sandbox_shell_exec"].find(hasTool);
+  const loopProbe: LoopProbe | undefined = (readTool || shellTool)
+    ? async (kind, args) => {
+        if (kind === "file_exists") {
+          if (!readTool) return null;
+          const path = String(args.path ?? "");
+          if (!path) return null;
+          const out = String(await executor(readTool, { file: path }).catch(() => "ERROR"));
+          return out.startsWith("ERROR")
+            ? { pass: false, detail: `${path} introuvable` }
+            : { pass: true, detail: `${path} présent (${out.length} caractères)` };
+        }
+        if (!shellTool) return null;
+        const command = String(args.command ?? "");
+        if (!command) return null;
+        const out = String(await executor(shellTool, { command }).catch(() => "ERROR"));
+        const code = out.match(/\[exit:\s*(\d+)/)?.[1];
+        if (out.startsWith("ERROR") || code == null) return { pass: false, detail: `commande non exécutable (${out.slice(0, 80)})` };
+        return { pass: code === "0", detail: `\`${command.slice(0, 60)}\` → exit ${code}` };
+      }
+    : undefined;
 
   // Mid-run steering: fold in any user messages that arrived AFTER this run last
   // synced, so a correction/addition sent while the agent works is taken into
@@ -1931,9 +2276,11 @@ async function runMissionTick(runId: string, msgId: number | null) {
   }
 
   // Compact the transcript when it gets heavy (protects the model's context
-  // window on long runs). Best-effort — a compaction failure never blocks work.
+  // window on long runs). The budget scales with the request class: a `social`
+  // turn barely reads history, a `full` turn pipelines across many rounds.
+  // Best-effort — a compaction failure never blocks work.
   try {
-    if (compactMessagesIfNeeded(messages)) {
+    if (compactMessagesIfNeeded(messages, contextBudgetFor(toolTier))) {
       await ctx.logEvent("status", { message: "Fenêtre de contexte : l'historique ancien a été tronqué (objectif conservé, détails via search_context)." }).catch(() => {});
     }
   } catch { /* keep going untrimmed */ }
@@ -1953,11 +2300,39 @@ async function runMissionTick(runId: string, msgId: number | null) {
   // model, zero cache invalidation, and nothing to clean up next tick.
   const FOCUS_PREFIX = "[FOCUS — auto-generated recap";
   let focusMessage: ChatMessage | null = null;
+  /** What this tick is about — the query the tool selector ranks against.
+   *  Refined below with the mission goal and the active checklist step. */
+  let tickTaskText = currentTaskText(messages);
   // One-shot migration: purge FOCUS headers that the previous implementation
   // persisted into runs already in flight. Harmless once none remain.
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "user" && String(messages[i].content ?? "").startsWith(FOCUS_PREFIX)) messages.splice(i, 1);
   }
+  // ── Context manifest (per-tick cache fingerprint) ─────────────────────────
+  // The provider's prefix cache spans the byte-identical part of what we send:
+  // [system][head][sealed zone]. The live window legitimately grows every tick,
+  // so THIS is the span to fingerprint. Equal to the previous tick's hash → the
+  // provider should have served the prefix from cache; a false=false while the
+  // sealed zone didn't grow is a cache-thrash worth investigating.
+  const prevManifest = (metaNow.context_manifest ?? null) as
+    | { transcript_prefix_hash?: string; sealed_markers?: number }
+    | null;
+  let sealedMarkers = 0;
+  for (let i = Math.min(2, messages.length); i < messages.length; i++) {
+    if (messages[i].role !== "user") break;
+    if (!String(messages[i].content ?? "").startsWith(SEALED_PREFIX)) break;
+    sealedMarkers++;
+  }
+  const tickPrefixHash = transcriptPrefixHash(messages, SEALED_PREFIX);
+  const cacheExpected = prevManifest?.transcript_prefix_hash != null && prevManifest.transcript_prefix_hash === tickPrefixHash;
+  await ctx.logEvent("prompt", {
+    kind: "tick_manifest",
+    prefix_hash: tickPrefixHash,
+    cache_expected: cacheExpected,
+    sealed_markers: sealedMarkers,
+    sealed_grew: (prevManifest?.sealed_markers ?? 0) !== sealedMarkers,
+    transcript_chars: JSON.stringify(messages).length,
+  }).catch(() => {});
   try {
     const { data: runTodoRow } = await admin.from("internal_agent_runs").select("todos").eq("id", runId).maybeSingle();
     type Todo = { id: string; title: string; status: string; parent_id?: string; note?: string };
@@ -1993,17 +2368,90 @@ async function runMissionTick(runId: string, msgId: number | null) {
           "Stay the course: finish the current step, VERIFY it, update_todos, then move to the next. Never redo work already marked done.",
         ].filter(Boolean).join("\n"),
       };
+      // The tool selector ranks against the SAME picture the agent is looking
+      // at: the objective plus the step actually in flight. Without the active
+      // step, a mission whose brief says "audit" would keep scoring `web_search`
+      // above the file tools it needs three steps in.
+      tickTaskText = currentTaskText(messages, {
+        goal, activeStep: activeLeaf?.title ?? nextPending[0]?.title ?? null,
+      });
     }
   } catch { /* focus header is best-effort */ }
+  // Prime the selection so the notice below is accurate from the first round.
+  liveTools();
+
   /** Appended at SEND time, after the transcript, never persisted. */
-  const ephemeral = (): ChatMessage[] => (focusMessage ? [focusMessage] : []);
+  const ephemeral = (): ChatMessage[] => {
+    const out: ChatMessage[] = focusMessage ? [focusMessage] : [];
+    // A deferred schema must never read as a missing capability. The toolbox
+    // index in the system prompt still lists every tool; this says how to get
+    // the rest back, in one call, without losing the turn.
+    if (toolStats.omitted > 0) {
+      out.push({
+        role: "user",
+        content:
+          `[SCHÉMAS DIFFÉRÉS — ${toolStats.omitted} outil(s) de ta boîte sont listés dans ton inventaire mais leur schéma n'est pas chargé ce tour, pour rester compact. ` +
+          `Si tu as besoin de l'un d'eux, appelle need_tools("<ce que tu veux faire>") : la boîte complète revient immédiatement, dans le même tour. ` +
+          `Ne dis JAMAIS que tu n'as pas un outil listé dans ton inventaire.]`,
+      });
+    }
+    return out;
+  };
 
   // Model for THIS tick — may get escalated below if the run keeps struggling.
-  let tickModel = state.model || undefined;
+  // A self-hosted endpoint carries its own model id, so the vendor check only
+  // applies to OUR providers. A mismatch here is what a provider switch used to
+  // produce: the run kept its DeepSeek model id and sent it to Groq.
+  if (!agentEndpoint && !modelMatchesProvider(tickModel, tickProvider)) {
+    const corrected = agentModelForTier(agent, "standard");
+    await ctx.logEvent("status", {
+      message: `Modèle « ${tickModel} » incompatible avec le fournisseur « ${tickProvider} » — bascule sur « ${corrected} ».`,
+    }).catch(() => {});
+    tickModel = corrected;
+  }
+  if (providerUnavailable) {
+    await ctx.logEvent("status", {
+      message: `Fournisseur « ${state.provider} » non configuré — ce run continue sur « ${tickProvider} ».`,
+    }).catch(() => {});
+  }
+  // ── Guardrails — prompt scope ─────────────────────────────────────────────
+  // The user's actual instruction (auto-injected FOCUS / compaction / schema
+  // notices are internal and not "prompts"). A `block` match refuses the run
+  // outright with an actionable message; warn/log just trace on the timeline.
+  if (guardrails.length > 0) {
+    const lastUser = [...messages].reverse().find(
+      (m) => m.role === "user" && !/^\[(FOCUS|Segment scell|Historique|CONTEXT|SCHÉMAS DIFFÉRÉS|The user sent this while)/.test(String(m.content ?? "")),
+    );
+    const promptProbe = lastUser ? String(lastUser.content ?? "") : "";
+    if (promptProbe) {
+      const hits = checkGuardrails(guardrails, "prompt", promptProbe);
+      if (hits.length > 0) {
+        const block = strongestEnforcement(hits) === "block";
+        for (const v of hits) {
+          await ctx.logEvent("guardrail", {
+            scope: "prompt", guardrail: v.title, category: v.category,
+            enforcement: v.enforcement, matched: v.matched, blocked: block,
+          }).catch(() => {});
+        }
+        if (block) {
+          const msg = `Demande refusée par le guardrail « ${hits[0].title} »${hits[0].matched ? ` (correspondance : « ${hits[0].matched} »)` : ""}. La consigne enfreint une règle de sécurité de cet espace — reformulez votre demande.`;
+          await ctx.logEvent("error", { error: msg }).catch(() => {});
+          await recordGuardrailIncident(admin, agent, runId, hits[0].title, "prompt", hits[0].matched).catch(() => {});
+          await admin.from("internal_agent_runs").update({
+            status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500),
+          }).eq("id", runId);
+          await reportMissionTask(false, msg).catch(() => {});
+          await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
+          if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+          return jsonResponse({ ok: false, blocked: true, reason: msg });
+        }
+      }
+    }
+  }
   try {
-    const result = await runToolRounds({
-      provider: (state.provider as "groq" | "deepseek") || providerFor(agent),
-      model: tickModel,
+    const runRounds = (p: Provider, m: string | undefined) => runToolRounds({
+      provider: p,
+      model: m,
       endpoint: agentEndpoint,
       messages, tools: liveTools, executor: loggingExecutor, ephemeral,
       // 6000 (was 4000): a full report deliverable emitted in one tool call needs
@@ -2012,12 +2460,57 @@ async function runMissionTick(runId: string, msgId: number | null) {
       onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
     });
 
+    let result;
+    try {
+      result = await runRounds(tickProvider, tickModel);
+    } catch (e) {
+      // Cross-provider failover. Only for PROVIDER-level failures (bad key,
+      // unknown/retired model, 404) — a rate limit or a malformed request would
+      // fail identically on the other vendor, so retrying there just burns
+      // budget. A self-hosted endpoint has no alternative, so it never retries.
+      const other = agentEndpoint ? undefined : availableProviders().find((p) => p !== tickProvider);
+      if (!other || !isProviderFailure(e)) throw e;
+      const otherModel = modelForTier("standard", other);
+      await ctx.logEvent("status", {
+        message: `Le fournisseur « ${tickProvider} » a échoué (${e instanceof Error ? e.message.slice(0, 120) : "erreur"}) — reprise sur « ${other} » (${otherModel}).`,
+      }).catch(() => {});
+      // Persist the switch: subsequent ticks start on the working provider
+      // instead of re-failing on the broken one every single time.
+      tickProvider = other;
+      tickModel = otherModel;
+      sanitizeToolPairs(messages); // the failed attempt may have left a dangling pair
+      result = await runRounds(tickProvider, tickModel);
+    }
+    // Trace what the compiler spent this tick — context growth becomes visible
+    // in the timeline instead of silently eating the window.
+    if (toolStats.omitted > 0) {
+      await ctx.logEvent("prompt", {
+        tools: toolStats, focus: tickTaskText.slice(0, 200),
+      }).catch(() => {});
+    }
+
     let newRound = state.round + result.roundsRun;
     let tokIn = (state.tokens_in ?? 0) + (result.usage.prompt_tokens ?? 0);
     let tokOut = (state.tokens_out ?? 0) + (result.usage.completion_tokens ?? 0);
-    let cost = Number(state.cost_usd ?? 0) + estimateCost(result.usage, result.provider);
+    let cost = Number(state.cost_usd ?? 0) + estimateCost(result.usage, result.provider, result.model, !!agentEndpoint);
     let finalProvider = result.provider;
     let finalModel = result.model;
+
+    // ── Per-tick telemetry ───────────────────────────────────────────────────
+    // A real llm_usage row per round batch — not only at finalize — so Prompt
+    // Monitoring and the cost views see spend live, and a run that dies
+    // mid-flight (sandbox down, abort, worker kill) still leaves its cost trace.
+    // The finalizer later writes the run-total row (metadata without `tick`),
+    // which is the canonical per-run record for the monitoring UI.
+    const tickNo = (state.iteration ?? 0) + 1;
+    await logLlmUsage({
+      workspace_id: agent.workspace_id, project_id: agent.project_id,
+      provider: finalProvider, model: finalModel,
+      task: "content_generation", feature: isChat ? "internal-agent-chat" : "internal-agent-mission",
+      custom: !!agentEndpoint,
+      usage: { prompt_tokens: result.usage.prompt_tokens ?? 0, completion_tokens: result.usage.completion_tokens ?? 0 },
+      metadata: { run_id: runId, agent_id: agent.id, mode: isChat ? "chat" : "mission", tick: tickNo, custom: !!agentEndpoint },
+    }).catch(() => {});
 
     // ── FAIL-FAST: sandbox died MID-run ──────────────────────────────────────
     // 3+ consecutive "Sandbox unreachable" tool results = the tunnel/infra is
@@ -2035,7 +2528,11 @@ async function runMissionTick(runId: string, msgId: number | null) {
         status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500),
         tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost, action_count: newRound,
       }).eq("id", runId);
-      if (isChat && state.conversation_id) {
+      if (roomBinding) {
+        await admin.from("service_room_messages").update({ content: msg, status: "failed", run_id: runId }).eq("id", roomBinding.placeholder_id);
+        await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+        await reportMissionTask(false, msg);
+      } else if (isChat && state.conversation_id) {
         await admin.from("internal_agent_messages").insert({
           conversation_id: state.conversation_id, agent_id: agent.id, role: "assistant",
           content: msg, run_id: runId,
@@ -2049,6 +2546,17 @@ async function runMissionTick(runId: string, msgId: number | null) {
         kind: "learning", importance: 3, dedupePrefix: "Sandbox down:",
         content: `Sandbox down: run interrompu le ${new Date().toISOString().slice(0, 10)} — la sandbox est devenue injoignable en cours d'exécution. Relancer l'infra locale (start-agents-infra.ps1) avant de reprendre.`,
       });
+      await recordRunIncident(admin, agent, runId, {
+        title: "Sandbox injoignable en cours de run",
+        description: "Sandbox devenue injoignable pendant l'exécution (3+ résultats consécutifs « Sandbox unreachable »). Run interrompu.",
+        category: "outage", severity: "critical",
+      }).catch(() => {});
+      await admin.from("aiops_infra_incidents").insert({
+        workspace_id: agent.workspace_id, project_id: agent.project_id,
+        server_name: "sandbox", kind: "service_down", severity: "critical",
+        cause: "sandbox unreachable (3+ résultats consécutifs)",
+        impact: `Run interrompu — mission « ${mission?.title ?? ""} », agent ${agent.name}`,
+      }).catch(() => {});
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
       return jsonResponse({ ok: false, failed: true, reason: "sandbox unreachable" });
@@ -2068,39 +2576,100 @@ async function runMissionTick(runId: string, msgId: number | null) {
     // Circuit breaker: a specific tool that failed ≥3 times in a row (even with
     // varying args) is broken/unavailable — stop hammering it, adapt or skip.
     const brokenTools = Object.entries(toolFails).filter(([, n]) => (n as number) >= 3).map(([t]) => t);
-    if (!result.finished && brokenTools.length > 0) {
-      const list = brokenTools.join(", ");
-      messages.push({
-        role: "user",
-        content: `OUTIL(S) EN ÉCHEC RÉPÉTÉ : ${list} — a/ont échoué ≥3 fois d'affilée. N'insiste PAS de la même manière. Choisis : (a) une approche VRAIMENT différente (autre outil, autre source/paramètres — ex. read_url sur un site connu au lieu d'une recherche qui échoue), OU (b) marque l'étape concernée comme bloquée (update_todos status="blocked" + note expliquant pourquoi) et CONTINUE le reste du plan avec ce que tu as. Ne bloque jamais tout le run sur un seul outil cassé — livre un résultat partiel utile plutôt que rien.`,
-      });
-      for (const t of brokenTools) toolFails[t] = 0; // reset after nudging so we don't re-fire every tick
-      await ctx.logEvent("status", { message: `Disjoncteur : ${list} en échec répété — changement d'approche demandé.` }).catch(() => {});
-    }
     let errorCount = (state.error_count ?? 0) + result.errorCount;
     let replans = state.replans ?? 0;
-    if (!result.finished && (errorCount >= 10 || loopDetected) && replans < 3) {
-      replans++;
-      // Escalate to the heavy reasoning model when a run keeps struggling —
-      // start cheap, pay for more capability only where it's actually needed.
-      const heavy = Deno.env.get("AGENT_MODEL_MISSION") || modelForTier("heavy");
+
+    // ── Progress fingerprint → stagnation ────────────────────────────────────
+    // Steps closed, deliverables produced, genuinely new approaches tried. An
+    // agent burning rounds with varied arguments and producing nothing scores
+    // zero here — which the identical-signature guard above never caught.
+    const prevProgress = (state.progress ?? null) as ProgressFingerprint | null;
+    let progress = prevProgress;
+    let stagnation = state.stagnation ?? 0;
+    try {
+      progress = await fingerprintProgress(admin, runId, messages);
+      stagnation = hasAdvanced(prevProgress, progress) ? 0 : stagnation + 1;
+    } catch { /* fingerprinting is best-effort — never block the loop on it */ }
+
+    // ── THE CONTROLLER ───────────────────────────────────────────────────────
+    // One decision point reading every signal. It replaces the branches that
+    // used to be scattered through this handler, so the loop's behaviour is
+    // reproducible (pure function of the signals) and auditable (traced below).
+    const budgets = resolveBudgets(agent, isChat ? "chat" : "mission");
+    const iteration = (state.iteration ?? 0) + 1;
+    const signals: LoopSignals = {
+      finished: result.finished,
+      roundsUsed: newRound,
+      maxRounds: state.max_rounds || budgets.maxRounds,
+      costUsd: cost,
+      maxCostUsd: budgets.maxCostUsd,
+      errorCount, loopDetected, brokenTools,
+      stagnantTicks: stagnation,
+      replans, maxReplans: 3,
+    };
+    const decision = decideNext(signals);
+
+    // Apply the decision: inject its course corrections, escalate the model,
+    // consume a re-plan credit.
+    for (const iv of decision.interventions) messages.push({ role: "user", content: iv.content });
+    if (decision.interventions.some((i) => i.tag === "circuit_breaker")) {
+      for (const t of brokenTools) toolFails[t] = 0; // reset after nudging so we don't re-fire every tick
+    }
+    if (decision.escalateModel) {
+      // Start cheap, pay for more capability only where it's actually needed.
+      const heavy = Deno.env.get("AGENT_MODEL_MISSION") || modelForTier("heavy", tickProvider);
       if (tickModel !== heavy) {
         tickModel = heavy;
         await ctx.logEvent("status", { message: `Escalade vers un modèle plus puissant (${heavy}) pour débloquer.` }).catch(() => {});
       }
-      await ctx.logEvent("status", {
-        message: loopDetected
-          ? `Boucle détectée (même appel répété) — replanification ${replans}/3.`
-          : `Trop d'erreurs accumulées (${errorCount}) — replanification ${replans}/3.`,
-      }).catch(() => {});
-      messages.push({
-        role: "user",
-        content: loopDetected
-          ? "STOP — you are LOOPING: you've repeated the same tool call with the same arguments several times and it is not working. Do NOT run it again. Step back and write a short REVISED plan: state why the approach fails, pick a genuinely different approach (different tool, different inputs, or split the step), then execute the new plan."
-          : "STOP — you have accumulated many tool errors. Step back and RE-PLAN: list which steps of your plan are actually done, which failed and WHY (read the error messages), and write a short revised plan that works around the failures (different tool, different approach, or narrower scope). Then execute the revised plan. Do not repeat calls that already failed the same way.",
-      });
+    }
+    if (decision.consumesReplan) {
+      replans++;
       errorCount = 0;
       lastSig = ""; sigCount = 0;
+      stagnation = 0;
+    }
+    if (decision.action !== "continue") {
+      await ctx.logEvent("status", { message: decision.reason }).catch(() => {});
+    }
+    /** Trace one controller iteration (the audit record of the loop). Called
+     *  once per tick — with the contract verdict when the tick finalizes. */
+    const traceLoop = async (verdict: Parameters<typeof loopEventPayload>[0]["verdict"] = undefined) => {
+      await ctx.logEvent("loop", loopEventPayload({ iteration, decision, signals, progress: progress ?? undefined, verdict })).catch(() => {});
+    };
+
+    // ── Runaway: past every budget with no end in sight ──────────────────────
+    if (decision.action === "abort") {
+      await traceLoop();
+      await ctx.logEvent("error", { error: decision.reason }).catch(() => {});
+      const partial = (result.content?.trim() || "").slice(0, 4000);
+      await admin.from("internal_agent_runs").update({
+        status: "failed", finished_at: new Date().toISOString(),
+        error_message: decision.reason.slice(0, 500),
+        final_output: partial || null,
+        tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost, action_count: newRound,
+      }).eq("id", runId);
+      const notice = `⚠縏 ${decision.reason}\n\nLe travail déjà produit reste disponible (livrables et étapes ci-dessus).${partial ? `\n\n${partial}` : ""}`;
+      if (roomBinding) {
+        await admin.from("service_room_messages").update({ content: notice, status: "done", run_id: runId }).eq("id", roomBinding.placeholder_id);
+        await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+        // Partial work still counts: hand the frontier what was produced so
+        // dependent tasks can decide, rather than stalling on an empty result.
+        await reportMissionTask(false, partial || decision.reason);
+      } else if (isChat && state.conversation_id) {
+        await admin.from("internal_agent_messages").insert({ conversation_id: state.conversation_id, agent_id: agent.id, role: "assistant", content: notice, run_id: runId });
+        await admin.from("internal_agent_conversations").update({ updated_at: new Date().toISOString() }).eq("id", state.conversation_id);
+      } else if (state.mission_id) {
+        await admin.from("internal_agent_missions").update({ board_column: "todo" }).eq("id", state.mission_id).eq("board_column", "in_progress");
+      }
+      await recordRunIncident(admin, agent, runId, {
+        title: "Run interrompu — budget épuisé",
+        description: `Run arrêté par le contrôleur de boucle : ${decision.reason}.`,
+        category: "other", severity: "medium",
+      }).catch(() => {});
+      await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
+      if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+      return jsonResponse({ ok: false, aborted: true, reason: decision.reason });
     }
 
     // Build the meta to persist at tick-end. CRITICAL: re-read the CURRENT meta
@@ -2119,23 +2688,26 @@ async function runMissionTick(runId: string, msgId: number | null) {
         last_sig: lastSig, sig_count: sigCount, tool_fails: toolFails,
         // Progressive disclosure carried to the next tick.
         tool_tier: toolTier, loaded_families: [...loadedFamilies],
+        // Context manifest: the byte-identical transcript prefix sent this tick,
+        // so the next tick can say whether the provider cache was expected to hit.
+        context_manifest: { transcript_prefix_hash: tickPrefixHash, sealed_markers: sealedMarkers },
       };
     };
 
-    const reachedBudget = newRound >= state.max_rounds;
-    if (result.finished || reachedBudget) {
+    if (decision.action === "finalize") {
       let finalOutput = result.content?.trim() || "";
 
-      // Budget hit mid-work: give a FINALIZATION allowance so the agent wraps up
-      // (deliverables + summary for a mission, a clear reply for chat) instead of
-      // ending empty.
-      if (!result.finished && reachedBudget) {
+      // Finalizing WITHOUT a natural finish (budget reached, or stuck past its
+      // re-plan credits): give a wrap-up allowance so the agent ships what it
+      // has (deliverables + summary for a mission, a clear reply for chat)
+      // instead of ending empty-handed.
+      if (!result.finished) {
         messages.push({ role: "user", content: isChat
           ? "STOP — you've reached your step budget. Wrap up now, nothing else: save any final artifact you produced with create_deliverable (e.g. a report, or a running app's public URL), then write a concise reply to the user that INCLUDES any public URL and key file paths produced. Do not start new exploration, downloads or training."
           : "STOP — you've reached your step budget. Do ONLY this now, nothing else: (1) create your final deliverable(s) with create_deliverable — at minimum a structured report (kind=\"report\") with the key results / KPIs / tables you've already gathered, plus any artifact already produced (e.g. a running app's public URL); (2) then write a concise final summary that INCLUDES that URL if any. Do not start new exploration, downloads or training." });
         try {
           const fin = await runToolRounds({
-            provider: (state.provider as "groq" | "deepseek") || providerFor(agent),
+            provider: tickProvider,
             model: tickModel,
             endpoint: agentEndpoint,
             messages, tools: liveTools, executor: loggingExecutor, ephemeral,
@@ -2146,38 +2718,66 @@ async function runMissionTick(runId: string, msgId: number | null) {
           newRound += fin.roundsRun;
           tokIn += fin.usage.prompt_tokens ?? 0;
           tokOut += fin.usage.completion_tokens ?? 0;
-          cost += estimateCost(fin.usage, fin.provider);
+          cost += estimateCost(fin.usage, fin.provider, fin.model, !!agentEndpoint);
           finalProvider = fin.provider; finalModel = fin.model;
         } catch (e) {
+
           const nm = (e as { name?: string } | null)?.name;
           if (nm === "AwaitingInputError" || nm === "AwaitingApprovalError" || nm === "RunCancelledError") throw e;
           // Other errors during finalization: finalize with what we have.
         }
       }
 
-      // ── Self-verification (missions only, on a natural finish) ──────────────
-      // Check the outcome against the brief/criteria before shipping. A FAIL
-      // feeds the concrete gaps back into the loop and the run continues.
-      if (!isChat && result.finished && (state.verify_fails ?? 0) < 2) {
-        const verdict = await verifyMissionOutcome(admin, runId, mission as any, finalOutput).catch(() => null);
-        if (verdict && !verdict.pass) {
-          await ctx.logEvent("status", { message: `Auto-vérification: ÉCHEC — ${verdict.feedback.slice(0, 200) || "critères non remplis"}. Reprise du travail.` }).catch(() => {});
+      // ── Contract verification (chat AND missions, on a natural finish) ──────
+      // The run is checked against its SUCCESS CONTRACT before shipping:
+      // deterministic checks first (a deliverable exists, a URL answers, a file
+      // is on disk, the checklist is closed), LLM judge only for what none of
+      // them can express. Required gaps go back into the loop as a concrete
+      // punch list. Two failed verifications max, then we ship what we have.
+      let verdict: Awaited<ReturnType<typeof evaluateContract>> | null = null;
+      if (result.finished && (state.verify_fails ?? 0) < 2) {
+        let gaps: string[] = [];
+        let hints: string[] = [];
+        const contract = state.contract ?? null;
+        if (contract) {
+          verdict = await evaluateContract({ admin, runId, contract, finalOutput, probe: loopProbe }).catch(() => null);
+          if (verdict) { gaps = verdict.gaps; hints = verdict.soft; }
+        } else if (!isChat) {
+          // No contract (mission without criteria, or a run started before the
+          // loop engine shipped) → previous behaviour, unchanged.
+          const legacy = await verifyMissionOutcome(admin, runId, mission as any, finalOutput).catch(() => null);
+          if (legacy && !legacy.pass) gaps = [legacy.feedback || "Les critères d'acceptation ne sont pas tous satisfaits."];
+        }
+        if (gaps.length > 0) {
+          await ctx.logEvent("status", { message: `Vérification du contrat : ÉCHEC — ${gaps[0].slice(0, 180)}. Reprise du travail.` }).catch(() => {});
+          await traceLoop(verdict);
           messages.push({
             role: "user",
-            content: `SELF-CHECK FAILED — the mission is NOT complete. A QA review found these gaps:\n${verdict.feedback || "The acceptance criteria are not all satisfied."}\n\nFix exactly these gaps now (create the missing deliverables / correct the wrong ones), then produce your final report again.`,
+            content: [
+              `SELF-CHECK FAILED — the work is NOT complete. These checks did not pass:`,
+              ...gaps.map((g) => `- ${g}`),
+              ...(hints.length ? ["", "Also worth fixing while you're at it:", ...hints.map((h) => `- ${h}`)] : []),
+              "",
+              "Fix exactly these gaps now (create the missing deliverables, correct the wrong ones, close the open steps), then produce your final answer again. Do not re-do anything that already passed.",
+            ].join("\n"),
           });
           await admin.from("internal_agent_run_state").update({
             messages, round: newRound, tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost,
             error_count: errorCount, replans, verify_fails: (state.verify_fails ?? 0) + 1,
+            progress, stagnation, iteration,
             meta: await buildNextMeta(),
             processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
           }).eq("run_id", runId);
           if (msgId != null) await admin.rpc("agent_tick_next", { p_msg_id: msgId, p_run_id: runId });
           else await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
-          return jsonResponse({ ok: true, verify_failed: true, continued: true });
+          return jsonResponse({ ok: true, verify_failed: true, gaps: gaps.length, continued: true });
         }
-        if (verdict?.pass) await ctx.logEvent("status", { message: "Auto-vérification: OK — critères remplis." }).catch(() => {});
+        if (verdict?.pass) {
+          const checked = verdict.results.filter((r) => !r.skipped).length;
+          await ctx.logEvent("status", { message: `Vérification du contrat : OK (${checked} contrôle${checked > 1 ? "s" : ""} passé${checked > 1 ? "s" : ""}).` }).catch(() => {});
+        }
       }
+      await traceLoop(verdict);
 
       // ── Salvage a pending report draft ─────────────────────────────────────
       // The agent may build a report section-by-section (report_section →
@@ -2218,7 +2818,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
         // Did the USER actually ask for a report/deliverable? (Scan real user
         // messages, skipping auto-injected FOCUS / trim / compaction markers.)
         const userText = messages
-          .filter((m) => m.role === "user" && !/^\[(FOCUS|Historique|CONTEXT)/.test(String(m.content ?? "")))
+          .filter((m) => m.role === "user" && !/^\[(FOCUS|Segment scell|Historique|CONTEXT)/.test(String(m.content ?? "")))
           .map((m) => String(m.content ?? "")).join(" \n ");
         const reportRequested = /\b(rapport|report|livrable|deliverable|analyse|analyser|audit|synth[eè]se|bilan|plan de|tableau de bord|dashboard)\b/i.test(userText);
         // Fire when a deliverable is expected (the final text claims one OR the
@@ -2233,7 +2833,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
           });
           try {
             const fin = await runToolRounds({
-              provider: (state.provider as "groq" | "deepseek") || providerFor(agent),
+              provider: tickProvider,
               model: tickModel, endpoint: agentEndpoint,
               messages, tools: liveTools, executor: loggingExecutor, ephemeral,
               temperature: agent.temperature, maxTokens: 4000, maxRounds: 4,
@@ -2242,7 +2842,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
             finalOutput = fin.content?.trim() || finalOutput;
             newRound += fin.roundsRun;
             tokIn += fin.usage.prompt_tokens ?? 0; tokOut += fin.usage.completion_tokens ?? 0;
-            cost += estimateCost(fin.usage, fin.provider);
+            cost += estimateCost(fin.usage, fin.provider, fin.model, !!agentEndpoint);
             finalProvider = fin.provider; finalModel = fin.model;
           } catch (e) {
             const nm = (e as { name?: string } | null)?.name;
@@ -2286,15 +2886,19 @@ async function runMissionTick(runId: string, msgId: number | null) {
         if (!finalOutput) finalOutput = "Terminé — voir le détail des étapes ci-dessus.";
         if (roomBinding) {
           await finalizeRoomSuccess(admin, agent, roomBinding, runId, finalOutput,
-            { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel });
+            { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel, custom: !!agentEndpoint });
+          // The orchestrator's frontier moves here: this task is done, its
+          // result is folded into whatever was waiting on it, and the next
+          // agent starts.
+          await reportMissionTask(true, finalOutput);
         } else {
           await finalizeChatSuccess(admin, agent, state.conversation_id!, runId, finalOutput,
-            { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel });
+            { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel, custom: !!agentEndpoint });
         }
       } else {
         if (!finalOutput) finalOutput = "Mission terminée — voir le détail des étapes et des livrables.";
         await finalizeMissionSuccess(admin, agent, runId, (mission ?? { id: state.mission_id }) as any, finalOutput,
-          { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel });
+          { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel, custom: !!agentEndpoint });
       }
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       // Race net: a message that landed during this FINAL tick (after the sync)
@@ -2316,11 +2920,17 @@ async function runMissionTick(runId: string, msgId: number | null) {
       return jsonResponse({ ok: true, finished: true, rounds: newRound });
     }
 
-    // Not done → persist updated messages and chain the next tick atomically.
-    // `model` carries any mid-run escalation forward to the next tick.
+    // Not done (continue / replan) → trace the iteration, persist the loop state
+    // and chain the next tick atomically. `model` carries any mid-run escalation
+    // forward; `progress`/`stagnation` are what the next tick compares against.
+    await traceLoop();
     await admin.from("internal_agent_run_state").update({
       messages, round: newRound, tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost,
-      error_count: errorCount, replans, model: tickModel ?? state.model,
+      error_count: errorCount, replans,
+      // Carry the provider forward with the model it belongs to: a failover (or
+      // a corrected mismatch) must survive the tick, or the next one re-fails.
+      provider: tickProvider, model: tickModel ?? state.model,
+      progress, stagnation, iteration,
       meta: await buildNextMeta(),
       processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
     }).eq("run_id", runId);
@@ -2342,6 +2952,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
           content: q, status: "done", run_id: runId,
         }).eq("id", roomBinding.placeholder_id);
         await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+        // A mission task that ends on a question cannot be waited on forever —
+        // report it as failed so the frontier either reroutes or blocks visibly.
+        await reportMissionTask(false, `Question posée, sans réponse : ${q}`);
       } else if (isChat) {
         // Surface the question as the assistant's reply so the user can just answer.
         // Options become clickable buttons in the chat (ui_blocks 'options').
@@ -2367,16 +2980,18 @@ async function runMissionTick(runId: string, msgId: number | null) {
       const summary = (e as { summary?: string }).summary ?? "action sensible";
       await admin.from("internal_agent_runs").update({ status: "awaiting_input", finished_at: new Date().toISOString() }).eq("id", runId);
       await admin.from("service_room_messages").update({
-        content: `⏸️ L'action « ${summary} » nécessite une approbation humaine. Ouvre-moi en chat direct (hors room) pour l'approuver et l'exécuter.`,
+        content: `⏸縏 L'action « ${summary} » nécessite une approbation humaine. Ouvre-moi en chat direct (hors room) pour l'approuver et l'exécuter.`,
         status: "done", run_id: runId,
       }).eq("id", roomBinding.placeholder_id);
       await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+      await reportMissionTask(false, `Approbation humaine requise : ${summary}`);
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
       return jsonResponse({ ok: true, awaiting_approval: true });
     }
     if (e instanceof RunCancelledError) {
       await admin.from("internal_agent_runs").update({ status: "cancelled", finished_at: new Date().toISOString() }).eq("id", runId);
+      await reportMissionTask(false, "Run annulé.");
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
       return jsonResponse({ ok: false, cancelled: true });
@@ -2424,7 +3039,7 @@ async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Mobile companion app. Two ways in — a logged-in AchiCorp **account** (user JWT
+// Mobile companion app. Two ways in — a logged-in Anduran **account** (user JWT
 // in Authorization) which unlocks every agent the user can access, or the legacy
 // per-agent **secret** which unlocks that one agent. Then dispatched on `action`,
 // using the SAME agent + conversation store as the web chat (shared memory, tools,
@@ -2442,7 +3057,7 @@ async function handleMobile(body: Record<string, unknown>, authHeader: string | 
   const action = String(body.action ?? (body.verify ? "verify" : "send"));
 
   // ── Resolve the caller ──
-  // No secret → account mode: authenticate the AchiCorp user from the JWT.
+  // No secret → account mode: authenticate the Anduran user from the JWT.
   let userId: string | null = null;
   let userClient: ReturnType<typeof createUserClient> | null = null;
   if (!secret) {
@@ -2697,7 +3312,7 @@ Deno.serve(async (req) => {
       return await runMissionTick(run_id, typeof msg_id === "number" ? msg_id : null);
     }
 
-    // Mobile companion app: authenticated by a AchiCorp account (user JWT) or the
+    // Mobile companion app: authenticated by a Anduran account (user JWT) or the
     // agent's own (id + secret). Dispatches on body.action (list_agents / verify /
     // list_conversations / get_messages / send), same store as the web chat.
     if (mode === "mobile" || mode === "mobile_chat") {

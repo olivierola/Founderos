@@ -1,4 +1,4 @@
-/* AchiCorp Agent Widget — single embeddable file.
+/* Anduran Agent Widget — single embeddable file.
  *
  * Usage (one line, in any HTML):
  *   <script src="https://founderos-peach.vercel.app/widget.js" data-agent="PUBLIC_KEY"></script>
@@ -367,7 +367,7 @@
     inputWrap.appendChild(dom.input); inputWrap.appendChild(dom.sendBtn);
     p.appendChild(inputWrap);
 
-    p.appendChild(el("div", "fosw-credit", "Powered by AchiCorp"));
+    p.appendChild(el("div", "fosw-credit", "Powered by Anduran"));
     return p;
   }
 

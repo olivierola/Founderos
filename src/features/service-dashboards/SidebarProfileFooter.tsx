@@ -1,6 +1,5 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { ChevronsUpDown, Settings, Plug, Users, LogOut, Check, Sun, Moon, ShieldCheck, Palette } from "lucide-react";
+import { ChevronsUpDown, Settings, Plug, Users, LogOut, Check, ShieldCheck, Palette } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuPortal,
@@ -10,8 +9,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useWorkspaces } from "@/hooks/useWorkspace";
 import { useTheme } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
-import { fetchUserDashboardTheme, setUserDashboardTheme } from "./model";
-import { DASHBOARD_THEMES } from "./dashboardThemes";
+import { THEMES } from "@/lib/themes";
 
 function Avatar({ name, url, size, rounded = "rounded-full" }: { name: string; url?: string; size: number; rounded?: string }) {
   const initial = (name.trim()[0] ?? "?").toUpperCase();
@@ -42,17 +40,10 @@ export function SidebarProfileFooter({ compact }: { compact?: boolean } = {}) {
   const { user, signOut } = useAuth();
   const { workspace, workspaceId, project } = useCurrentContext();
   const { data: memberships } = useWorkspaces();
-  const { theme, toggleTheme } = useTheme();
+  const { theme: appTheme, setTheme } = useTheme();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   // The footer only renders inside a service dashboard, so the id is in the URL.
   const { dashboardId } = useParams();
-  const { data: myTheme } = useQuery({
-    queryKey: ["sd_user_theme", dashboardId],
-    enabled: !!dashboardId,
-    queryFn: () => fetchUserDashboardTheme(dashboardId!),
-  });
-  const current = myTheme ?? "system";
 
   const name = (user?.user_metadata?.name as string | undefined) ?? user?.email ?? "Compte";
   const email = user?.email ?? "";
@@ -126,42 +117,31 @@ export function SidebarProfileFooter({ compact }: { compact?: boolean } = {}) {
               <Settings className="mr-2 h-4 w-4" /> Paramètres du service
             </DropdownMenuItem>
           )}
-          {/* Skin of THIS dashboard. "Système" falls back to the app theme,
-              which the two entries below still drive. */}
-          {dashboardId && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className="rounded-xl">
-                <Palette className="mr-2 h-4 w-4" />
-                <span className="min-w-0 flex-1 truncate">Thème du service</span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuPortal>
-                <DropdownMenuSubContent className="w-52 rounded-2xl p-1.5">
-                  {DASHBOARD_THEMES.map((t) => (
-                    <DropdownMenuItem
-                      key={t.key}
-                      className="rounded-xl"
-                      onSelect={async () => {
-                        await setUserDashboardTheme(dashboardId, t.key);
-                        queryClient.invalidateQueries({ queryKey: ["sd_user_theme"] });
-                      }}
-                    >
-                      <span className="mr-2 h-4 w-4 shrink-0 rounded-full border border-border" style={{ background: t.swatch }} />
-                      <span className="min-w-0 flex-1 truncate">{t.label}</span>
-                      {current === t.key && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuPortal>
-            </DropdownMenuSub>
-          )}
-          <DropdownMenuItem className="rounded-xl" onSelect={(e) => { e.preventDefault(); toggleTheme(); }}>
-            {theme === "dark" ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
-            Application en mode {theme === "dark" ? "clair" : "sombre"}
-          </DropdownMenuItem>
+          {/* One theme, one place. It repaints every dashboard at once, so
+              there is nothing service-specific to choose here any more. */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="rounded-xl">
+              <Palette className="mr-2 h-4 w-4" />
+              <span className="min-w-0 flex-1 truncate">Thème</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className="w-52 rounded-2xl p-1.5">
+                {THEMES.map((t) => (
+                  <DropdownMenuItem key={t.key} className="rounded-xl" onSelect={() => setTheme(t.key)}>
+                    <span className="mr-2 h-4 w-4 shrink-0 rounded-full border border-border" style={{ background: t.swatch }} />
+                    <span className="min-w-0 flex-1 truncate">{t.label}</span>
+                    {appTheme === t.key && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
 
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="px-2 text-[10px] uppercase tracking-wide text-muted-foreground">Organisation</DropdownMenuLabel>
-          <DropdownMenuItem className="rounded-xl" onSelect={() => navigate(`${base}/admin/connectors`)}>
+          {/* Connections belong to THIS dashboard now (0177) — its own tab,
+              not an org-wide page. */}
+          <DropdownMenuItem className="rounded-xl" onSelect={() => navigate(`${base}/service/${dashboardId}/connectors`)}>
             <Plug className="mr-2 h-4 w-4" /> Connecteurs
           </DropdownMenuItem>
           <DropdownMenuItem className="rounded-xl" onSelect={() => navigate(`${base}/admin/members`)}>

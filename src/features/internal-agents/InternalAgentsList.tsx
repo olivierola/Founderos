@@ -1,26 +1,24 @@
 import { useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Bot, Plus, Loader2, ChevronRight, MessageSquare, Target, Wrench, Users as UsersIcon,
-  Sparkles, Check, ShieldCheck, CalendarClock, Network,
-} from "lucide-react";
+import { Bot, Plus, Loader2, ChevronRight, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { STUDIO_LABELS, type AgentTemplate, type StudioKind } from "./agentTemplates";
+import { type AgentTemplate, type StudioKind } from "./agentTemplates";
 import { instantiateTemplate, type TemplateOverrides } from "./instantiateTemplate";
 import { TemplateDrawer } from "./TemplateDrawer";
 import { cn } from "@/lib/utils";
 import { AgentIdentity } from "@/components/AgentIdentity";
-import { AgentCard as AgentCardShell, CHIP_COLORS, type AgentChip } from "./AgentCard";
+import { CatalogCard } from "@/features/service-dashboards/CatalogCard";
+import {
+  useComposioToolkits, useConnectorStatus, toolSlugsFromRows, resolveNeeds,
+} from "@/features/service-dashboards/useToolkits";
 import { AvatarPicker, AVATAR_OPTIONS } from "./AvatarPicker";
 
 const ACCENT_COLORS = [
@@ -44,6 +42,8 @@ interface InternalAgent {
   is_orchestrator: boolean;
   studio: StudioKind | null;
   swarm_enabled: boolean | null;
+  model: string | null;
+  sandbox_mode: string | null;
 }
 
 export function InternalAgentsListPage() {
@@ -75,7 +75,7 @@ export function InternalAgentsListPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("internal_agents")
-        .select("id, name, description, avatar_emoji, avatar_url, avatar_style, accent_color, created_by, created_at, chat_enabled, mission_enabled, service_dashboard_id, is_orchestrator, studio, swarm_enabled")
+        .select("*")
         .eq("project_id", projectId!)
         .eq("is_archived", false)
         .order("created_at", { ascending: false });
@@ -125,26 +125,39 @@ export function InternalAgentsListPage() {
       : `/app/${workspaceSlug}/${projectSlug}/agent/internal/${a.id}/chat`);
   }
 
-  // Per-agent counts (missions, members, tools) for grid badges.
+  // Tool + skill counts and the connector slugs each agent depends on. Two
+  // queries for the whole roster, grouped client-side — this used to fire three
+  // round trips PER agent.
   const ids = (agents ?? []).map((a) => a.id);
   const { data: counts } = useQuery({
-    queryKey: ["internal_agents_counts", ids.sort().join(",")],
+    queryKey: ["internal_agents_counts", ids.slice().sort().join(",")],
     enabled: ids.length > 0,
     queryFn: async () => {
-      const out: Record<string, { missions: number; members: number; tools: number }> = {};
-      await Promise.all(
-        ids.map(async (id) => {
-          const [m, mb, tl] = await Promise.all([
-            supabase.from("internal_agent_missions").select("id", { count: "exact", head: true }).eq("agent_id", id),
-            supabase.from("internal_agent_members").select("id", { count: "exact", head: true }).eq("agent_id", id),
-            supabase.from("internal_agent_tools").select("id", { count: "exact", head: true }).eq("agent_id", id),
-          ]);
-          out[id] = { missions: m.count ?? 0, members: mb.count ?? 0, tools: tl.count ?? 0 };
-        }),
-      );
-      return out;
+      const [tools, skills] = await Promise.all([
+        supabase.from("internal_agent_tools").select("agent_id, kind, config").in("agent_id", ids),
+        supabase.from("agent_skill_activations").select("agent_id").in("agent_id", ids),
+      ]);
+      const map = new Map<string, { tools: number; skills: number; slugs: string[] }>();
+      const row = (id: string) => {
+        const cur = map.get(id) ?? { tools: 0, skills: 0, slugs: [] as string[] };
+        map.set(id, cur);
+        return cur;
+      };
+      for (const r of (tools.data ?? []) as Array<{ agent_id: string; kind: string; config: Record<string, unknown> | null }>) {
+        const cur = row(r.agent_id);
+        cur.tools += 1;
+        for (const s of toolSlugsFromRows([r])) if (!cur.slugs.includes(s)) cur.slugs.push(s);
+      }
+      for (const r of (skills.data ?? []) as Array<{ agent_id: string }>) row(r.agent_id).skills += 1;
+      return map;
     },
   });
+  const countMap = counts ?? new Map<string, { tools: number; skills: number; slugs: string[] }>();
+
+  // Composio catalogue + connection status, so each card shows the apps it
+  // runs on and which of them still need connecting.
+  const { data: toolkits } = useComposioToolkits();
+  const { data: connStatus } = useConnectorStatus(workspaceId, projectId);
 
   async function createAgent() {
     if (!workspaceId || !projectId || !user || !newName.trim()) return;
@@ -231,16 +244,27 @@ export function InternalAgentsListPage() {
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-1 gap-[30px] sm:grid-cols-2 lg:grid-cols-3">
-                {g.agents.map((a) => (
-                  <AgentCard
-                    key={a.id}
-                    agent={a}
-                    counts={counts?.[a.id]}
-                    isMine={a.created_by === user?.id}
-                    onOpen={() => openAgent(a)}
-                  />
-                ))}
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                {g.agents.map((a) => {
+                  const c = countMap.get(a.id);
+                  return (
+                    <CatalogCard
+                      key={a.id}
+                      className={cn(a.studio && "studio-border")}
+                      onClick={() => openAgent(a)}
+                      glyph={<AgentIdentity style={a.avatar_style} url={a.avatar_url} seed={a.name} size={54} rounded="rounded-xl" />}
+                      name={a.name}
+                      tools={c?.tools ?? null}
+                      extras={c?.skills ?? null}
+                      tools_needed={resolveNeeds(c?.slugs ?? [], toolkits, connStatus)}
+                      badges={[
+                        { label: a.model ?? "deepseek", tone: "auth", title: "Modèle" },
+                        { label: a.sandbox_mode ?? "cloud", tone: "key", title: "Environnement d'exécution" },
+                      ]}
+                      meta={new Date(a.created_at).toISOString().slice(0, 10)}
+                    />
+                  );
+                })}
               </div>
             </section>
           ))}
@@ -302,54 +326,5 @@ export function InternalAgentsListPage() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-// Internal-agent card — the shared shell, fed with this list's own chips and
-// counters. Identity is the agent's avatar OR floating orb, per avatar_style.
-function AgentCard({
-  agent,
-  counts,
-  isMine,
-  onOpen,
-}: {
-  agent: InternalAgent;
-  counts?: { missions: number; members: number; tools: number };
-  isMine: boolean;
-  onOpen: () => void;
-}) {
-  const chips: AgentChip[] = [];
-  if (agent.studio) chips.push({ icon: Sparkles, label: STUDIO_LABELS[agent.studio], color: CHIP_COLORS.studio });
-  if (agent.chat_enabled) chips.push({ icon: MessageSquare, label: "Chat", color: CHIP_COLORS.chat });
-  if (agent.mission_enabled) chips.push({ icon: Target, label: "Missions", color: CHIP_COLORS.missions });
-  if (agent.swarm_enabled !== false)
-    chips.push({
-      icon: Network,
-      label: "Essaim",
-      color: CHIP_COLORS.accent,
-      title: "Peut paralléliser en lançant plusieurs instances de lui-même",
-    });
-
-  return (
-    <AgentCardShell
-      // Studio agents keep the animated border they had as templates, so the
-      // class of agent stays recognisable once it's live.
-      className={cn(agent.studio && "studio-border")}
-      onClick={onOpen}
-      identity={
-        <AgentIdentity style={agent.avatar_style} url={agent.avatar_url} seed={agent.name} size={56} rounded="rounded-xl" lightOrb />
-      }
-      name={agent.name}
-      description={agent.description}
-      chips={chips.slice(0, 2)}
-      meta={
-        <span className="flex items-center justify-end gap-2.5">
-          <span className="inline-flex items-center gap-1" title="Missions"><Target className="h-3 w-3" /> {counts?.missions ?? 0}</span>
-          <span className="inline-flex items-center gap-1" title="Tools & integrations"><Wrench className="h-3 w-3" /> {counts?.tools ?? 0}</span>
-          <span className="inline-flex items-center gap-1" title="Members"><UsersIcon className="h-3 w-3" /> {counts?.members ?? 0}</span>
-          {isMine && <span title="You own this agent">· Owner</span>}
-        </span>
-      }
-    />
   );
 }

@@ -227,8 +227,11 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Agents internes", slug: "internal-agents", group: "Internes", icon: RobotIcon },
       { label: "Agents publics", slug: "public-agents", group: "Publics", icon: GlobeIcon },
       { label: "Base de connaissances", slug: "collections", group: "Connaissances", icon: BooksIcon },
-      { label: "Custom Skills", slug: "skills", group: "Compétences", icon: PuzzlePieceIcon },
+      { label: "Skills", slug: "skills", group: "Compétences", icon: PuzzlePieceIcon },
       { label: "MCP Servers", slug: "mcp", group: "MCP", icon: PlugsConnectedIcon },
+      // Connecteurs is NOT here: a connection belongs to one service dashboard
+      // (or to one person inside it) — see migration 0177. It lives as a tab of
+      // the dashboard that owns it.
     ],
   },
   {
@@ -269,27 +272,9 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Copywriter", slug: "gen-copy", icon: ScrollIcon },
     ],
   },
-  // Vibe Code, Test runs, Dépôts et Simulations ne sont plus des modules : ils
-  // sont pilotés par les agents studio (voir HIDDEN_MODULES en bas de fichier).
-  // DevOps reste visible mais rejoint la zone CONTROL du dashboard Workforce —
-  // c'est le plan de contrôle infra (serveurs, runners, jobs) dont dépendent le
-  // runner de test et les sandbox d'agents.
-  {
-    slug: "devops",
-    label: "DevOps",
-    icon: HardDrivesIcon,
-    color: "text-cyan-500/55",
-    zone: "control",
-    subItems: [
-      { label: "Overview", slug: "ops-overview", icon: GaugeIcon },
-      { label: "Serveurs", slug: "servers", icon: HardDrivesIcon },
-      { label: "Workflows", slug: "workflows", icon: FlowArrowIcon },
-      { label: "Checks", slug: "checks", icon: SealCheckIcon },
-      { label: "Testing", slug: "testing", icon: TestTubeIcon },
-      { label: "Jobs", slug: "jobs", icon: StackIcon },
-      { label: "Settings", slug: "settings", icon: GearSixIcon },
-    ],
-  },
+  // Vibe Code, Test runs, Dépôts, Simulations et DevOps ne sont plus des
+  // modules : ils sont pilotés par les agents studio / AI Ops (voir
+  // HIDDEN_MODULES en bas de fichier).
   // ── Zone CONTROL — the AI control plane, split into 3 full modules ───────
   // Standard modules: their sub-items render as onglets in the SecondarySidebar.
   {
@@ -368,6 +353,26 @@ export const MODULES: ModuleNavItem[] = [
  * instructions, opening a past run.
  */
 export const HIDDEN_MODULES: ModuleNavItem[] = [
+  // DevOps, retiré de la nav le 2026-08-07. Ses pages restent routées parce
+  // qu'elles sont la SEULE surface de configuration du runner auto-hébergé et
+  // des serveurs — ce dont dépendent le mode sandbox/runner des agents et le
+  // test-runner. Le supprimer de la nav enlève le module du produit ; supprimer
+  // les pages enlèverait la possibilité d'enregistrer un runner.
+  {
+    slug: "devops",
+    label: "DevOps",
+    icon: HardDrivesIcon,
+    color: "text-cyan-500/55",
+    subItems: [
+      { label: "Overview", slug: "ops-overview", icon: GaugeIcon },
+      { label: "Serveurs", slug: "servers", icon: HardDrivesIcon },
+      { label: "Workflows", slug: "workflows", icon: FlowArrowIcon },
+      { label: "Checks", slug: "checks", icon: SealCheckIcon },
+      { label: "Testing", slug: "testing", icon: TestTubeIcon },
+      { label: "Jobs", slug: "jobs", icon: StackIcon },
+      { label: "Settings", slug: "settings", icon: GearSixIcon },
+    ],
+  },
   {
     slug: "simulations",
     label: "Simulations",
