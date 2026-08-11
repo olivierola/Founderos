@@ -18,7 +18,8 @@ import {
   type InternalAgent, type Deliverable, type Mission,
   downloadDeliverable, relativeDate,
 } from "./shared";
-import { DeliverableReport, RichMarkdown, tryParseReport } from "./DeliverableReport";
+import { ArtifactReport, ArtifactDeck } from "@/features/artifacts/BlockRenderer";
+import { parseDocument } from "@/features/artifacts/blocks";
 import { CodingSession, tryParseCodingSession } from "./CodingSession";
 import {
   TestSession, SimulationSession, tryParseTestSession, tryParseSimulationSession,
@@ -75,11 +76,9 @@ function DeliverableBody({ d }: { d: Deliverable }) {
   const sim = tryParseSimulationSession(d.content);
   if (sim) return <SimulationSession session={sim} />;
 
-  // Render a structured report whenever the content IS one — regardless of the
-  // stored kind (agents sometimes save report JSON under kind "markdown"/"json").
-  const report = tryParseReport(d.content);
-  if (report) return <DeliverableReport report={report} />;
-
+  // Reports and decks are Editor.js documents now — one renderer, no
+  // format sniffing. Anything that is not one of the session kinds above and
+  // not a url/json/code payload IS a block document.
   if (d.kind === "url") {
     return (
       <a href={d.content ?? d.file_url ?? "#"} target="_blank" rel="noreferrer" className="break-all text-sm text-primary underline">
@@ -88,15 +87,10 @@ function DeliverableBody({ d }: { d: Deliverable }) {
     );
   }
   if (d.kind === "json" || d.kind === "code") {
-    return (
-      <div className="prose prose-sm max-w-none dark:prose-invert">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {"```" + (d.kind === "json" ? "json" : "") + "\n" + (d.content ?? "(no inline content)") + "\n```"}
-        </ReactMarkdown>
-      </div>
-    );
+    return <pre className="overflow-x-auto rounded-xl border border-border bg-muted/40 p-3 text-xs"><code>{d.content ?? "(no inline content)"}</code></pre>;
   }
-  return <RichMarkdown content={d.content ?? "_Empty_"} />;
+  const doc = parseDocument(d.content);
+  return d.kind === "presentation" ? <ArtifactDeck doc={doc} /> : <ArtifactReport doc={doc} />;
 }
 
 export function DeliverablesHub({ agent }: { agent: InternalAgent }) {

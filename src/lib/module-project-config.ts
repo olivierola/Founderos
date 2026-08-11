@@ -2,7 +2,7 @@ import {
   Shield, ShieldCheck, Code2, Server, TestTube2,
   BarChart3, GitBranch, Brain, Eraser, Activity,
   Bot, Cpu, UserCheck, Workflow,
-  KanbanSquare, Clock, FlaskConical, PenTool,
+  KanbanSquare, Clock, FlaskConical,
   FileText, Image, Video, Megaphone,
   Headphones, Phone, BookOpen,
   Package, ShoppingCart, Truck,
@@ -75,8 +75,6 @@ const TYPES: ProjectTypeDef[] = [
     description: "Devis → staffing → exécution → facturation → rentabilité." },
   { key: "simulation", label: "Simulation", icon: FlaskConical, color: "#8b5cf6", category: "Project Management",
     description: "Modéliser des scénarios what-if, comparer les outcomes." },
-  { key: "whiteboard", label: "Whiteboard", icon: PenTool, color: "#f59e0b", category: "Project Management",
-    description: "Idéation et cartographie visuelles libres." },
 
   // Creation & Docs
   { key: "document_project", label: "Document Project", icon: FileText, color: "#3b82f6", category: "Creation & Docs",

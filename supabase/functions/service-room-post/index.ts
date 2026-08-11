@@ -15,60 +15,20 @@ import {
   buildRoomSystemPrompt, postSystemMessage,
   type RoomRef, type RosterAgent,
 } from "../_shared/room-orchestrator.ts";
+import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
 
 type Admin = ReturnType<typeof createServiceClient>;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
-
-// --- create_artifact content parsing ---------------------------------------
-// Small, independent mirror of the shapes src/features/office/shared.ts uses
-// (Plate document nodes / presentation slides / spreadsheet rows) — edge
-// functions don't share a bundle with the frontend, so this stays minimal
-// (headings, bullet/numbered lists, paragraphs) rather than importing it.
-
-function parseMarkdownToSlateNodes(md: string): Record<string, unknown>[] {
-  const out: Record<string, unknown>[] = [];
-  for (const raw of (md ?? "").split("\n")) {
-    const line = raw.replace(/\r$/, "");
-    const h = line.match(/^(#{1,3})\s+(.*)$/);
-    if (h) { out.push({ type: `h${h[1].length}`, children: [{ text: h[2] }] }); continue; }
-    if (/^>\s+/.test(line)) { out.push({ type: "blockquote", children: [{ text: line.replace(/^>\s+/, "") }] }); continue; }
-    const ul = line.match(/^(\s*)[-*+]\s+(.*)$/);
-    if (ul) { out.push({ type: "p", listStyleType: "disc", indent: 1, children: [{ text: ul[2] }] }); continue; }
-    const ol = line.match(/^(\s*)\d+\.\s+(.*)$/);
-    if (ol) { out.push({ type: "p", listStyleType: "decimal", indent: 1, children: [{ text: ol[2] }] }); continue; }
-    if (line.trim() === "") continue;
-    out.push({ type: "p", children: [{ text: line }] });
-  }
-  return out.length ? out : [{ type: "p", children: [{ text: "" }] }];
-}
-
-function parseSlideLines(text: string): Array<{ title: string; body: string; layout: string }> {
-  const lines = (text ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
-  const slides = lines.map((line) => {
-    const idx = line.indexOf("|");
-    const title = idx === -1 ? line : line.slice(0, idx).trim();
-    const body = idx === -1 ? "" : line.slice(idx + 1).trim();
-    return { title: title || "Untitled slide", body, layout: "title-content" };
-  });
-  return slides.length ? slides : [{ title: "Untitled presentation", body: "", layout: "title" }];
-}
-
-function parseCsvToSpreadsheet(csv: string): { columns: string[]; rows: (string | null)[][] } {
-  const lines = (csv ?? "").split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-  const splitLine = (l: string) => l.split(",").map((c) => c.trim());
-  const columns = lines.length ? splitLine(lines[0]) : ["A", "B", "C", "D"];
-  const rows = lines.slice(1).map((l) => {
-    const cells: (string | null)[] = splitLine(l);
-    while (cells.length < columns.length) cells.push("");
-    return cells;
-  });
-  return { columns, rows: rows.length ? rows : Array.from({ length: 8 }, () => columns.map(() => "")) };
-}
 
 // create_artifact, room flow: office_documents for document/presentation/
 // spreadsheet (tagged with service_room_id so the Artifacts tab can scope
 // "in this room"), office-ai media.generate for images, and a table-less
 // inline block for plain text. Always pushes an `artifact` ui block.
+//
+// The parsing and persistence themselves live in _shared/artifact-content.ts:
+// the room flow and the plain-chat flow must build the SAME artifact from the
+// same agent text, and they used to drift (the chat flow dropped images and
+// stored raw, unparsed lines).
 async function createRoomArtifact(
   admin: Admin,
   room: { id: string; workspace_id: string; project_id: string },
@@ -76,50 +36,28 @@ async function createRoomArtifact(
   artifact: ArtifactDraft,
   uiBlocks: Array<Record<string, unknown>>,
 ): Promise<void> {
+  const scope = {
+    workspaceId: room.workspace_id, projectId: room.project_id,
+    roomId: room.id, createdBy,
+  };
+
   if (artifact.kind === "image") {
-    const base = Deno.env.get("SUPABASE_URL");
-    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!base || !key) {
-      uiBlocks.push({ component: "artifact", props: { table: "text", kind: "text", title: artifact.title, content: "Image generation is not configured." } });
-      return;
-    }
-    const res = await fetch(`${base}/functions/v1/office-ai`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ op: "media.generate", workspace_id: room.workspace_id, project_id: room.project_id, kind: "image", prompt: artifact.content }),
-    });
-    const json = await res.json().catch(() => ({} as Record<string, unknown>));
-    const media = (json as { media?: { id?: string } }).media;
-    if (!res.ok || !media?.id) {
-      const err = (json as { error?: string }).error ?? `HTTP ${res.status}`;
-      uiBlocks.push({ component: "artifact", props: { table: "text", kind: "text", title: artifact.title, content: `Image generation failed: ${err}` } });
-      return;
-    }
-    await admin.from("office_media").update({ service_room_id: room.id }).eq("id", media.id);
-    uiBlocks.push({ component: "artifact", props: { id: media.id, table: "office_media", kind: "image", title: artifact.title } });
+    const mediaId = await generateArtifactImage(admin, artifact.content, scope);
+    uiBlocks.push(mediaId
+      ? { component: "artifact", props: { id: mediaId, table: "office_media", kind: "image", title: artifact.title } }
+      : { component: "artifact", props: { table: "text", kind: "text", title: artifact.title, content: "Image generation failed or is not configured." } });
     return;
   }
 
-  if (artifact.kind === "text") {
+  if (!isDocKind(artifact.kind)) {
     uiBlocks.push({ component: "artifact", props: { table: "text", kind: "text", title: artifact.title, content: artifact.content } });
     return;
   }
 
-  const content = artifact.kind === "document"
-    ? { nodes: parseMarkdownToSlateNodes(artifact.content) }
-    : artifact.kind === "presentation"
-    ? { slides: parseSlideLines(artifact.content) }
-    : parseCsvToSpreadsheet(artifact.content);
-
-  const { data, error } = await admin.from("office_documents").insert({
-    workspace_id: room.workspace_id, project_id: room.project_id, service_room_id: room.id,
-    kind: artifact.kind, title: artifact.title, content, created_by: createdBy,
-  }).select("id").single();
-  if (error || !data) {
-    uiBlocks.push({ component: "artifact", props: { table: "text", kind: "text", title: artifact.title, content: `Failed to create ${artifact.kind}: ${error?.message}` } });
-    return;
-  }
-  uiBlocks.push({ component: "artifact", props: { id: (data as { id: string }).id, table: "office_documents", kind: artifact.kind, title: artifact.title } });
+  const id = await insertArtifact(admin, artifact.kind, artifact.title, artifact.content, scope);
+  uiBlocks.push(id
+    ? { component: "artifact", props: { id, table: "office_documents", kind: artifact.kind, title: artifact.title } }
+    : { component: "artifact", props: { table: "text", kind: "text", title: artifact.title, content: `Failed to create ${artifact.kind}.` } });
 }
 
 interface AgentRow {
@@ -529,7 +467,7 @@ async function runResponder(
       const { data } = await admin.from("internal_agent_deliverables").insert({
         agent_id: a.id, run_id: turnRunId, kind: d.kind, name: d.name, content: d.content, summary: d.summary,
       }).select("id").single();
-      uiBlocks.push({ component: "deliverable", props: { id: (data as { id: string } | null)?.id, name: d.name, kind: d.kind } });
+      uiBlocks.push({ component: "deliverable", props: { id: (data as { id: string } | null)?.id, name: d.name, kind: d.kind, agentId: a.id } });
       await logRunEvent("status", { message: `Livrable créé : ${d.name}` });
     },
     createArtifact: (artifact: ArtifactDraft) => createRoomArtifact(admin, room, a.created_by, artifact, uiBlocks),

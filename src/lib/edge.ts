@@ -6,14 +6,19 @@ async function authHeader(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export async function callEdge<T = unknown>(name: string, body: unknown): Promise<T> {
+export async function callEdge<T = unknown>(
+  name: string,
+  body: unknown,
+  /** Abort the in-flight call (a composer's stop button, an unmounting view). */
+  signal?: AbortSignal,
+): Promise<T> {
   const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
     ...(await authHeader()),
   };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal });
   const text = await res.text();
   let data: unknown;
   try {

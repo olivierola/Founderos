@@ -36,7 +36,7 @@ export function RecordContent({ object, record }: { object: CrmObject; record: C
   );
   if (object.slug === "documents") return (
     <div className="p-4">
-      <Button variant="outline" size="sm" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/office/document/${sid}`)}>
+      <Button variant="outline" size="sm" onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/artifact/document/${sid}`)}>
         <ExternalLink className="mr-1 h-3.5 w-3.5" /> Open document editor
       </Button>
     </div>

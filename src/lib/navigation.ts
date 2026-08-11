@@ -39,7 +39,6 @@ import {
   DatabaseIcon,
   ClockCounterClockwiseIcon,
   PlugsConnectedIcon,
-  GlobeIcon,
   FlowArrowIcon,
   UserCircleIcon,
   BuildingsIcon,
@@ -54,8 +53,6 @@ import {
   GitPullRequestIcon,
   GitForkIcon,
   TargetIcon,
-  FileTextIcon,
-  PencilLineIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -221,11 +218,13 @@ export const MODULES: ModuleNavItem[] = [
     icon: RobotIcon,
     color: "text-white",
     zone: "run",
-    // Two parts of the same workforce: internal agents (private team workers)
-    // and public agents (customer-facing — SAV, e-commerce, onboarding, guides).
+    // "Agents" is the DIRECTORY of the whole workforce — internal agents and
+    // public agents in one roster, told apart by a badge. Internal agents are
+    // still WORKED WITH inside their service dashboard (the card opens there);
+    // splitting them into two tabs only asked the reader to know the difference
+    // before they could find anyone.
     subItems: [
-      { label: "Agents internes", slug: "internal-agents", group: "Internes", icon: RobotIcon },
-      { label: "Agents publics", slug: "public-agents", group: "Publics", icon: GlobeIcon },
+      { label: "Agents", slug: "agents", group: "Agents", icon: RobotIcon },
       { label: "Base de connaissances", slug: "collections", group: "Connaissances", icon: BooksIcon },
       { label: "Skills", slug: "skills", group: "Compétences", icon: PuzzlePieceIcon },
       { label: "MCP Servers", slug: "mcp", group: "MCP", icon: PlugsConnectedIcon },
@@ -253,25 +252,13 @@ export const MODULES: ModuleNavItem[] = [
     ],
   },
   // ── Support & PM supprimés (2026-07-17) après évaluation : tickets, projets,
-  // tâches et discussions vivent comme records CRM ; le whiteboard a rejoint
-  // Office ; le portail public d'aide (/help/:publicKey) survit. ──
-  {
-    slug: "office",
-    label: "Office",
-    icon: FileTextIcon,
-    color: "text-violet-400/60",
-    zone: "run",
-    subItems: [
-      { label: "Library", slug: "library", icon: BooksIcon },
-      { label: "Documents", slug: "documents", icon: FileTextIcon },
-      { label: "Spreadsheets", slug: "spreadsheets", icon: TableIcon },
-      { label: "Presentations", slug: "presentations", icon: MonitorIcon },
-      { label: "Whiteboard", slug: "whiteboard", icon: PencilLineIcon },
-      { label: "Image Studio", slug: "gen-image", icon: MagicWandIcon },
-      { label: "Video Studio", slug: "gen-video", icon: MonitorIcon },
-      { label: "Copywriter", slug: "gen-copy", icon: ScrollIcon },
-    ],
-  },
+  // tâches et discussions vivent comme records CRM ; le portail public d'aide
+  // (/help/:publicKey) survit. ──
+  // ── Office (Bureautique) supprimé le 2026-08-10 : produire un document, un
+  // tableur, une présentation ou une image n'est plus un ENDROIT où l'on va,
+  // c'est ce qu'un agent fait (create_artifact). Les éditeurs survivent comme
+  // visionneuse d'artefacts (src/features/artifacts), ouverte depuis l'onglet
+  // Artifacts d'une room ou un record CRM — plus jamais depuis le rail. ──
   // Vibe Code, Test runs, Dépôts, Simulations et DevOps ne sont plus des
   // modules : ils sont pilotés par les agents studio / AI Ops (voir
   // HIDDEN_MODULES en bas de fichier).

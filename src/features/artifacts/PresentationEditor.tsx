@@ -10,9 +10,9 @@ import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
-import { useOfficeDoc } from "./useOfficeDoc";
-import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
-import { OfficePlateEditor } from "./OfficePlateEditor";
+import { useArtifactDoc } from "./useArtifactDoc";
+import { ArtifactAiPanel, type AiResult } from "./AiPanel";
+import { ArtifactPlateEditor } from "./PlateEditor";
 import { type PresentationContent, type Slide, sanitizeFilename, slateToMarkdown } from "./shared";
 
 const LAYOUTS: Slide["layout"][] = ["title", "title-content", "section", "blank"];
@@ -23,7 +23,7 @@ export function PresentationEditorPage({ docId: docIdProp, onBack, embedded }: {
   const navigate = useNavigate();
   const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
-  const { data: doc, isLoading, saving, savedAt, scheduleSave } = useOfficeDoc(docId, "presentation");
+  const { data: doc, isLoading, saving, savedAt, scheduleSave } = useArtifactDoc(docId, "presentation");
 
   const [title, setTitle] = useState("");
   const [slides, setSlides] = useState<Slide[]>([]);
@@ -205,7 +205,7 @@ export function PresentationEditorPage({ docId: docIdProp, onBack, embedded }: {
               {/* Slide body — full rich editor with toolbar */}
               {slide.layout !== "section" && slide.layout !== "blank" ? (
                 <div className="min-h-[260px] flex-1 overflow-hidden rounded-b-lg border border-t-0 border-border">
-                  <OfficePlateEditor
+                  <ArtifactPlateEditor
                     // Remount when switching slide so the editor hydrates the new body.
                     key={active}
                     value={slide.body}
@@ -237,7 +237,7 @@ export function PresentationEditorPage({ docId: docIdProp, onBack, embedded }: {
           )}
         </div>
 
-        <OfficeAiPanel
+        <ArtifactAiPanel
           open={aiOpen}
           onClose={() => setAiOpen(false)}
           kind="presentation"

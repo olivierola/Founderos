@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
-import { type OfficeDoc, type OfficeKind, extractPreview } from "./shared";
+import { type ArtifactDoc, type ArtifactKind, extractPreview } from "./shared";
 
-// Loads a single office doc and provides a debounced autosave for title/content.
-export function useOfficeDoc(docId: string | undefined, expectedKind: OfficeKind) {
+// Loads a single artifact doc and provides a debounced autosave for title/content.
+export function useArtifactDoc(docId: string | undefined, expectedKind: ArtifactKind) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
@@ -17,12 +17,12 @@ export function useOfficeDoc(docId: string | undefined, expectedKind: OfficeKind
     enabled: !!docId,
     queryFn: async () => {
       const { data } = await supabase.from("office_documents").select("*").eq("id", docId!).maybeSingle();
-      return (data as OfficeDoc | null) ?? null;
+      return (data as ArtifactDoc | null) ?? null;
     },
   });
 
   const doSave = useCallback(
-    async (patch: { title?: string; content?: OfficeDoc["content"]; emoji?: string }) => {
+    async (patch: { title?: string; content?: ArtifactDoc["content"]; emoji?: string }) => {
       if (!docId) return;
       setSaving(true);
       try {
@@ -47,7 +47,7 @@ export function useOfficeDoc(docId: string | undefined, expectedKind: OfficeKind
 
   // Debounced save — call on every edit; persists ~800ms after the last change.
   const scheduleSave = useCallback(
-    (patch: { title?: string; content?: OfficeDoc["content"]; emoji?: string }) => {
+    (patch: { title?: string; content?: ArtifactDoc["content"]; emoji?: string }) => {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => doSave(patch), 800);
     },

@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, FolderKanban, Loader2 } from "lucide-react";
-import { ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, ChartBarIcon, GearSixIcon, UsersThreeIcon, GlobeIcon, CompassIcon } from "@phosphor-icons/react";
+import { ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, ChartBarIcon, GearSixIcon, GlobeIcon, CompassIcon } from "@phosphor-icons/react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { INTERNAL_AGENT_TABS } from "@/features/internal-agents/InternalAgentDetail";
 import { MODULE_PROJECT_CONFIGS, type ModuleProjectConfig } from "@/lib/module-project-config";
 import { fetchModuleProjects, type ModuleProject } from "@/features/module-projects/moduleProjectModel";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -66,7 +65,7 @@ export function SecondarySidebar() {
   }
 
   // AI Workforce module → show hired agents in sidebar.
-  if (moduleSlug === "agent" && segments[appIdx + 4] !== "builder" && segments[appIdx + 4] !== "internal") {
+  if (moduleSlug === "agent" && segments[appIdx + 4] !== "builder") {
     return <AgentWorkforceSidebar base={base} />;
   }
 
@@ -76,28 +75,8 @@ export function SecondarySidebar() {
     return <AgentBuilderSidebar base={base} agentId={segments[appIdx + 5] ?? ""} />;
   }
 
-  // Internal agent detail → show the agent's own tabs.
-  // Path: /app/:ws/:proj/agent/internal/:agentId/:tab?
-  if (moduleSlug === "agent" && segments[appIdx + 4] === "internal") {
-    const agentId = segments[appIdx + 5];
-    return (
-      <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
-        <div className="flex h-14 items-center border-b border-border px-4">
-          <NavLink to={`${base}/agent/internal-agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" /> Internal agents
-          </NavLink>
-        </div>
-        <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
-          {INTERNAL_AGENT_TABS.map((t) => (
-            <NavLink key={t.slug} end to={`${base}/agent/internal/${agentId}/${t.slug}`} className={linkClass}>
-              <t.icon weight="duotone" className="h-4 w-4 shrink-0" />
-              <span className="truncate">{t.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
-    );
-  }
+  // (The internal-agent detail sidebar lived here — removed with the pages it
+  // navigated: /agent/internal/:id now redirects to the service dashboard.)
 
   // Vibe Code → onglets + persisted chat sessions.
   if (moduleSlug === "vibe-code") {
@@ -331,8 +310,8 @@ function AgentBuilderSidebar({ base, agentId }: { base: string; agentId: string 
   return (
     <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center border-b border-border px-4">
-        <NavLink to={`${base}/agent/public-agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Agents publics
+        <NavLink to={`${base}/agent/agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Agents
         </NavLink>
       </div>
       <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
@@ -356,14 +335,14 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
     const idx = segs.indexOf("agent");
     return idx >= 0 ? segs[idx + 1] : undefined;
   })();
-  const onInternalList = agentSeg === "internal-agents";
   const onPublicList = agentSeg === "public-agents";
   const onCollections = agentSeg === "collections";
   const onSkills = agentSeg === "skills";
   const onMcp = agentSeg === "mcp";
 
-  // The per-agent lists were removed — agents live in their service dashboards
-  // now, and this module is a by-service overview (agent/internal-agents).
+  // Internal agents are NOT listed here: they belong to their service dashboard.
+  // What's left in this module is what the whole workforce shares — public
+  // agents, knowledge collections, skills, MCP servers.
   return (
     <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
@@ -371,22 +350,8 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
       </div>
 
       <div className="scrollbar-slim flex-1 overflow-y-auto p-2">
-        {/* ── Internal agents ── */}
-        <SectionLabel>Agents internes</SectionLabel>
-        <button
-          onClick={() => navigate(`${base}/agent/internal-agents`)}
-          className={cn(
-            "mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
-            onInternalList ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-          )}
-        >
-          <UsersThreeIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Tous les agents
-        </button>
-
         {/* ── Public agents ── */}
-        <div className="mt-4 border-t border-border/60 pt-3">
-          <SectionLabel>Agents publics</SectionLabel>
-        </div>
+        <SectionLabel>Agents publics</SectionLabel>
         <button
           onClick={() => navigate(`${base}/agent/public-agents`)}
           className={cn(

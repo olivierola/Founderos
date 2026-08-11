@@ -10,6 +10,9 @@ export function GradientBackground({ className }: { className?: string }) {
     <div className={cn("absolute inset-0 -z-10", className)}>
       <GrainGradient
         style={{ height: "100%", width: "100%" }}
+        // Keeps the drawing buffer readable so callers can snapshot the canvas
+        // after the frame is presented (the splash shatters that snapshot).
+        webGlContextAttributes={{ preserveDrawingBuffer: true }}
         colorBack="hsl(0, 0%, 0%)"
         softness={0.76}
         intensity={0.45}

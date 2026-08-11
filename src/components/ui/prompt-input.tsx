@@ -399,6 +399,10 @@ export interface PromptInputProps {
   maxAttachments?: number;
   /** A run is in progress: keep the input open and spin an accent border around it. */
   busy?: boolean;
+  /** Stop the run in flight. When given, the action button becomes a stop
+   *  button for as long as `busy` — you cancel where you launched, not in a
+   *  menu somewhere else on the page. */
+  onStop?: () => void;
   /** Never collapse to the pill — the card stays open (used in rooms). */
   alwaysExpanded?: boolean;
   /** Enable @ tagging: taggable agents (name + accent colour + connector badges). */
@@ -426,6 +430,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       onChange,
       maxAttachments = 6,
       busy = false,
+      onStop,
       alwaysExpanded = false,
       mentionAgents = [],
       slashCommands = [],
@@ -814,16 +819,21 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       setExpandedBlockId((cur) => (cur === id ? null : cur));
     };
 
-    // Calculate action button states
+    // Calculate action button states. During a run the empty composer offers
+    // "stop"; the moment there's text it goes back to "send", because typing
+    // while the agent works is mid-run steering, not a cancellation.
+    const canStopRun = busy && !!onStop && !hasValue && !isRecording && !isConnecting;
     const showArrow = hasValue && !isRecording && !isConnecting;
-    const showStop = isRecording;
-    const showMic = !hasValue && !isRecording && !isConnecting;
+    const showStop = isRecording || canStopRun;
+    const showMic = !hasValue && !canStopRun && !isRecording && !isConnecting;
 
     const onActionButtonClick = (e: React.MouseEvent) => {
       e.preventDefault();
       if (isConnecting) return;
       if (isRecording) {
         stopRecording();
+      } else if (canStopRun) {
+        onStop!();
       } else if (hasValue) {
         handleSubmit();
       } else {
@@ -1234,7 +1244,8 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               type="button"
               onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onClick={onActionButtonClick}
-              aria-label={showArrow ? "Send prompt" : showStop ? "Stop recording" : "Use voice input"}
+              aria-label={showArrow ? "Send prompt" : canStopRun ? "Arrêter le run" : showStop ? "Stop recording" : "Use voice input"}
+              title={canStopRun ? "Arrêter le run" : undefined}
               style={{ borderRadius: 9999 }}
               className="absolute right-2 bottom-2 z-[10] flex h-8 w-8 items-center justify-center bg-primary text-primary-foreground transition-all duration-300 hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-default"
             >

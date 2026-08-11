@@ -2,7 +2,7 @@
 // (create_deliverable kind="coding_session"). A coding session is not a wall
 // of prose: it's a goal, a plan, the files it touched with their diffs, the
 // commands it ran, and the PR it opened. This renders that as a session view —
-// the same role DeliverableReport plays for kind="report".
+// the same role BlockRenderer plays for a report document.
 import { useMemo, useState } from "react";
 import {
   GitPullRequest, ExternalLink, CheckCircle2, XCircle, MinusCircle, AlertTriangle,

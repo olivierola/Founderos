@@ -250,12 +250,48 @@ export async function evaluateContract(opts: {
         // picked "markdown" where the brief said "report") — accept any
         // non-empty deliverable whose NAME matches.
         const byName = !hit && wantName ? nonEmpty.find((d) => String(d.name).toLowerCase().includes(wantName)) : null;
+        // …and neither is a NAME mismatch. The expected name is a guess the
+        // planner made before the work existed ("Rapport d'analyse"); the agent
+        // titles its report from what it found ("Marchés bouleversés par l'IA").
+        // Failing on that marked correct runs red and told the human "aucun
+        // livrable enregistré" while the report sat right there. The name is a
+        // bonus; the deliverable existing is the check.
+        const anyOfKind = !hit && !byName
+          ? nonEmpty.find((d) => !wantKind || String(d.kind).toLowerCase() === wantKind) ?? nonEmpty[0]
+          : null;
+        const found = hit ?? byName ?? anyOfKind;
+
+        // A report must be the JSON DOCUMENT, not prose in a JSON wrapper.
+        // Only the structure is required: a report made of plain sections is
+        // legitimate — charts and KPIs are the right answer when there are
+        // numbers to show, not a quota to fill. What is rejected is content
+        // that never was the report shape at all.
+        // A report or a deck must be the Editor.js DOCUMENT, not prose in a
+        // JSON wrapper. This checked  — the field of the format that
+        // preceded blocks — so every correctly published report failed the
+        // contract the day the contract stopped matching reality.
+        const kindLower = String(found?.kind ?? "").toLowerCase();
+        if (found && (kindLower === "report" || kindLower === "presentation")) {
+          let blocks = 0;
+          try {
+            const doc = JSON.parse(String(found.content ?? "{}"));
+            blocks = Array.isArray(doc?.blocks) ? doc.blocks.length : 0;
+          } catch { blocks = 0; }
+          if (blocks === 0) {
+            results.push({
+              ...base, deterministic: true, pass: false,
+              detail: `« ${found.name} » ne contient aucun bloc : son contenu n'est pas le document attendu ({ blocks: [...] }). Reconstruis-le avec add_block puis publish_artifact.`,
+            });
+            break;
+          }
+        }
+
         results.push({
           ...base, deterministic: true,
-          pass: Boolean(hit || byName),
-          detail: hit || byName
-            ? `trouvé : ${(hit ?? byName)!.name}`
-            : nonEmpty.length ? `absent (livrables présents : ${nonEmpty.map((d) => d.name).slice(0, 4).join(", ")})` : "aucun livrable enregistré",
+          pass: Boolean(found),
+          detail: found
+            ? (hit || byName ? `trouvé : ${found.name}` : `trouvé : ${found.name} (nom différent de « ${wantName ?? "?"} » attendu)`)
+            : "aucun livrable enregistré pour ce run",
         });
         break;
       }
@@ -289,9 +325,27 @@ export async function evaluateContract(opts: {
         break;
       }
       case "text_contains": {
-        const needle = String(args.needle ?? "").toLowerCase();
+        // Keyword match, not literal-phrase match. The planner writes needles
+        // like "secteurs où l'impact est déjà mesurable"; no report ever
+        // contains that exact string, so the check failed on every correct run.
+        // What it is really asking is whether the subject is covered.
+        const needle = String(args.needle ?? "").toLowerCase().trim();
         const hay = `${finalOutput}\n${deliverables.map((d) => d.content ?? "").join("\n")}`.toLowerCase();
-        results.push({ ...base, deterministic: true, pass: !needle || hay.includes(needle), detail: needle ? (hay.includes(needle) ? `« ${needle} » présent` : `« ${needle} » absent du rapport`) : "rien à chercher" });
+        if (!needle) { results.push({ ...base, deterministic: true, pass: true, detail: "rien à chercher" }); break; }
+        const words = needle
+          .normalize("NFD").replace(/[̀-ͯ]/g, "")
+          .split(/[^a-z0-9]+/)
+          .filter((w) => w.length > 3 && !/^(dans|pour|avec|est|sont|leur|plus|tout|deja|ou)$/.test(w));
+        const flat = hay.normalize("NFD").replace(/[̀-ͯ]/g, "");
+        const hits = words.filter((w) => flat.includes(w));
+        // Literal hit, or two thirds of the significant words present.
+        const pass = hay.includes(needle) || (words.length > 0 && hits.length >= Math.ceil(words.length * 0.66));
+        results.push({
+          ...base, deterministic: true, pass,
+          detail: pass
+            ? `« ${needle} » couvert (${hits.length}/${words.length} termes)`
+            : `sujet « ${needle} » peu couvert (${hits.length}/${words.length} termes présents)`,
+        });
         break;
       }
       case "judge":

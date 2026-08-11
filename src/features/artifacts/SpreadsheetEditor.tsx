@@ -9,9 +9,9 @@ import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
-import { useOfficeDoc } from "./useOfficeDoc";
-import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
-import { OfficePlateEditor } from "./OfficePlateEditor";
+import { useArtifactDoc } from "./useArtifactDoc";
+import { ArtifactAiPanel, type AiResult } from "./AiPanel";
+import { ArtifactPlateEditor } from "./PlateEditor";
 import { type SpreadsheetContent, downloadBlob, sanitizeFilename, slateToMarkdown, richValueToText } from "./shared";
 
 export function SpreadsheetEditorPage({ docId: docIdProp, onBack, embedded }: { docId?: string; onBack?: () => void; embedded?: boolean } = {}) {
@@ -20,7 +20,7 @@ export function SpreadsheetEditorPage({ docId: docIdProp, onBack, embedded }: { 
   const navigate = useNavigate();
   const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
-  const { data: doc, isLoading, saving, savedAt, scheduleSave } = useOfficeDoc(docId, "spreadsheet");
+  const { data: doc, isLoading, saving, savedAt, scheduleSave } = useArtifactDoc(docId, "spreadsheet");
 
   const [title, setTitle] = useState("");
   const [columns, setColumns] = useState<string[]>([]);
@@ -234,7 +234,7 @@ export function SpreadsheetEditorPage({ docId: docIdProp, onBack, embedded }: { 
           })()}
         </div>
 
-        <OfficeAiPanel
+        <ArtifactAiPanel
           open={aiOpen}
           onClose={() => setAiOpen(false)}
           kind="spreadsheet"
@@ -269,7 +269,7 @@ function CellRichPanel({
         <Button size="sm" variant="ghost" onClick={onClose} className="h-7">Done</Button>
       </div>
       <div className="max-h-[40vh] overflow-hidden">
-        <OfficePlateEditor
+        <ArtifactPlateEditor
           value={value}
           onChange={(v) => onChange(slateToMarkdown(v))}
           placeholder="Type the cell content — use the toolbar for formatting…"

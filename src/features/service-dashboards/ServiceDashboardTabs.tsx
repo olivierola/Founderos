@@ -3,12 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import {
-  RobotIcon, PlusIcon, ChatsCircleIcon, CalendarDotsIcon, PulseIcon, CaretRightIcon,
+  RobotIcon, PlusIcon, ChatsCircleIcon, CalendarDotsIcon, CaretRightIcon,
   CheckCircleIcon, XCircleIcon, TargetIcon, PencilSimpleIcon, ArrowLeftIcon,
   GearSixIcon, LightningIcon, HardDrivesIcon, FileTextIcon, BrainIcon, FlowArrowIcon,
   ChartBarIcon, PlugsConnectedIcon, PlayIcon, PauseIcon, TrashIcon, ClockCountdownIcon,
   WarningIcon, CalendarBlankIcon, CalendarCheckIcon, ArrowsClockwiseIcon, TimerIcon, XIcon,
-  FolderPlusIcon, DotsThreeIcon,
+  FolderPlusIcon, DotsThreeIcon, SparkleIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { AgentIdentity } from "@/components/AgentIdentity";
 import { AgentOrb } from "@/components/AgentOrb";
 import { BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
+import { useAssistant } from "@/lib/assistant-context";
 import {
   ChatTab, AgentMcpTab, MissionTab, MemoryTab, AnalyticsTab, SettingsTab, SkillsTab, AgentConnectorsTab,
 } from "@/features/internal-agents/InternalAgentDetail";
@@ -42,6 +43,7 @@ import { createRoom } from "./model";
 import { AssetsHub } from "./AssetsHub";
 import { MemoryGraph } from "./MemoryGraph";
 import { CatalogCard } from "./CatalogCard";
+import { GradientBackground } from "@/components/ui/paper-design-shader-background";
 import {
   useComposioToolkits, useConnectorStatus, toolSlugsFromRows, resolveNeeds,
 } from "./useToolkits";
@@ -50,6 +52,8 @@ import {
   fetchAgentFolders, createAgentFolder, renameAgentFolder, deleteAgentFolder, moveAgentToFolder,
   FOLDER_COLORS, type AgentFolder,
 } from "./agentFolders";
+import { useHqData, useHqRefresh, HqCockpit } from "@/features/dashboard/hq/Cockpit";
+import type { RangeKey } from "@/features/crm/overview/crmStats";
 
 // Agents scoped to this dashboard drive every other tab (rooms, schedules,
 // activity, artifacts are all their conversations / missions / runs / outputs).
@@ -424,6 +428,7 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
   const { workspaceSlug, projectSlug } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
   const navigate = useNavigate();
+  const assistant = useAssistant();
   const [params, setParams] = useSearchParams();
   const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
   const rawTab = params.get("t") || "settings";
@@ -464,16 +469,28 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
               </div>
             }
             headerTrailing={
-              <button
-                onClick={() => setPanelOpen((v) => !v)}
-                title="Configurer l'agent"
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur transition-colors",
-                  panelOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <GearSixIcon className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {/* Conversational configuration: opens the assistant on this
+                    agent's setup cards. The gear next to it stays the manual
+                    path (the forms) for anyone who prefers it. */}
+                <button
+                  onClick={() => assistant.ask({ agent: { id: agent.id, name: agent.name } })}
+                  title="Configurer avec l'assistant"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+                >
+                  <SparkleIcon weight="duotone" className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setPanelOpen((v) => !v)}
+                  title="Réglages manuels"
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur transition-colors",
+                    panelOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <GearSixIcon className="h-4 w-4" />
+                </button>
+              </div>
             }
           />
         )}
@@ -990,38 +1007,55 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// ── Activity (recent runs) ────────────────────────────────────────────────────
-export function ActivityTab({ dashboardId }: { dashboardId: string }) {
-  const { data: agents } = useDashboardAgents(dashboardId);
-  const agentIds = (agents ?? []).map((a) => a.id);
-  const nameOf = new Map((agents ?? []).map((a) => [a.id, a.name]));
-  const { data: runs, isLoading } = useQuery({
-    queryKey: ["sd_activity", dashboardId, agentIds.join(",")],
-    enabled: agentIds.length > 0,
-    queryFn: async () => {
-      const { data } = await supabase.from("internal_agent_runs")
-        .select("id, agent_id, status, created_at, final_output, action_count").in("agent_id", agentIds)
-        .order("created_at", { ascending: false }).limit(50);
-      return (data ?? []) as Array<{ id: string; agent_id: string; status: string; created_at: string; final_output: string | null; action_count: number | null }>;
-    },
-  });
-  if (agentIds.length === 0 || (!isLoading && (runs ?? []).length === 0))
-    return <div className="p-6"><Empty icon={PulseIcon} title="Aucune activité" hint="Les exécutions des agents apparaîtront ici." /></div>;
-  if (isLoading) return <Centered />;
+// ── Dashboard (the service's own statistics) ──────────────────────────────────
+// Replaces the old Activity feed (2026-08-10): a flat list of the last 50 runs
+// answered "what happened" but never "how is this service doing". The HQ
+// cockpit is rendered here on THIS dashboard's agents only — same components,
+// same derivations as AI Headquarters, scoped to the service. The activity feed
+// survives inside its "Vue d'ensemble" tab.
+export function DashboardStatsTab({ dashboardId, dashboardName }: {
+  dashboardId: string; dashboardName: string;
+}) {
+  const { workspaceSlug, projectSlug } = useParams();
+  const navigate = useNavigate();
+  const { projectId } = useCurrentContext();
+  const [range, setRange] = useState<RangeKey>("30d");
+  const { raw, isLoading, isFetching, hasAgents } = useHqData(projectId, dashboardId);
+  const refresh = useHqRefresh();
+  const base = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
+
+  if (!projectId || isLoading) return <Centered />;
+  if (!hasAgents) {
+    return (
+      <div className="p-6">
+        <Empty icon={ChartBarIcon} title="Aucune donnée à afficher"
+          hint="Ajoutez un agent à ce service : ses exécutions, coûts, outils et livrables apparaîtront ici." />
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-3xl space-y-1.5 p-6">
-      {(runs ?? []).map((r) => (
-        <div key={r.id} className="flex items-start gap-2 rounded-xl border border-border bg-card/60 p-3">
-          {r.status === "succeeded" ? <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-            : r.status === "failed" ? <XCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-            : <TargetIcon className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />}
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm">{nameOf.get(r.agent_id)} <span className="text-muted-foreground">· {r.status} · {r.action_count ?? 0} actions</span></span>
-            {r.final_output && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{r.final_output.replace(/[#*`>_\n]+/g, " ").slice(0, 120)}</span>}
-            <span className="block text-[11px] text-muted-foreground/70">{fmt(r.created_at)}</span>
-          </span>
-        </div>
-      ))}
+    <div className="min-h-full px-6 py-6">
+      <div className="mx-auto max-w-[1400px]">
+        <HqCockpit
+          raw={raw}
+          isFetching={isFetching}
+          range={range}
+          onRangeChange={setRange}
+          onRefresh={refresh}
+          hideServices
+          header={
+            <div>
+              <h1 className="text-[26px] font-semibold tracking-tight">{dashboardName}</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Toutes les statistiques de ce service — exécutions, coûts, outils, connaissances et gouvernance.
+              </p>
+            </div>
+          }
+          onOpenAgent={(id) => navigate(`${base}/agent/${id}`)}
+          onOpenCollection={(id) => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/knowledge/${id}`)}
+        />
+      </div>
     </div>
   );
 }
@@ -1185,7 +1219,14 @@ export function HomeTab({ dashboardId, dashboardName, workspaceId, projectId }: 
   }
 
   return (
-    <div className="flex min-h-full flex-col items-center px-6 py-16">
+    /* The shader field is dark whatever the app theme is, so the dark tokens are
+       scoped to this subtree — the cards and copy below read against it in both
+       themes without being restyled one by one. `isolate` keeps the -z-10 layers
+       inside this stacking context rather than sliding behind the shell. */
+    <div className="dark relative isolate flex min-h-full flex-col items-center px-6 py-16 text-foreground">
+      <GradientBackground />
+      <div aria-hidden className="absolute inset-0 -z-10 bg-black/25" />
+
       <AgentOrb size={76} accentColor={(lead as { accent_color?: string | null } | undefined)?.accent_color} />
       <h1 className="mt-7 text-[26px] font-semibold tracking-tight">Welcome, {firstName}</h1>
 

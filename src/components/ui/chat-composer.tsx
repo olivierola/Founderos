@@ -1,13 +1,6 @@
 import { cn } from "@/lib/utils";
 import { PromptInput } from "./prompt-input";
-
-// A model as accepted by callers (id/name/description). Only `name` is surfaced by
-// the underlying PromptInput, which renders the model picker + icons.
-interface Model {
-  id: string;
-  name: string;
-  description: string;
-}
+import { CHAT_MODELS, type ChatModel as Model } from "@/lib/models";
 
 export interface ChatComposerSubmit {
   message: string;
@@ -21,6 +14,8 @@ interface ChatComposerProps {
   loading?: boolean;
   /** A run is already active: spins an accent border and keeps the input open. */
   running?: boolean;
+  /** Cancel the active run from the composer itself. */
+  onStop?: () => void;
   value?: string;
   onValueChange?: (value: string) => void;
   placeholder?: string;
@@ -41,10 +36,13 @@ export function ChatComposer({
   disabled = false,
   loading = false,
   running,
+  onStop,
   value,
   onValueChange,
   placeholder = "How can I help you today?",
-  models,
+  // Default to the real list: PromptInput's own fallback is a demo list of
+  // models we don't run, and a picker that lies is worse than no picker.
+  models = CHAT_MODELS,
   footerHint,
   className,
 }: ChatComposerProps) {
@@ -55,12 +53,16 @@ export function ChatComposer({
         onChange={onValueChange}
         placeholder={placeholder}
         busy={running ?? loading}
+        onStop={onStop}
         models={models?.map((m) => m.name)}
         onSubmit={(message, meta) => {
           // Preserve ChatComposer semantics: don't emit while busy/disabled.
           if (disabled || loading) return;
           if (message.trim() === "") return;
-          onSubmit({ message, model: meta.model, thinking: meta.effort !== "Low" });
+          // PromptInput only knows display names; callers need the model ID they
+          // declared, which is what the backend routes on.
+          const picked = models?.find((m) => m.name === meta.model);
+          onSubmit({ message, model: picked?.id ?? meta.model, thinking: meta.effort !== "Low" });
         }}
       />
       {footerHint && <p className="mt-3 text-center text-xs text-muted-foreground">{footerHint}</p>}

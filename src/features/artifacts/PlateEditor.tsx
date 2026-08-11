@@ -13,10 +13,10 @@ const STREAM_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/office-ai-
 const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 // Full Plate editor (playground-grade fixed toolbar with the "more" dropdown,
-// drag handle, tables, media, AI menu, slash commands…) wired for our Office
-// module. The inline AI (⌘+J menu + copilot autocomplete) is grounded in the
+// drag handle, tables, media, AI menu, slash commands…) wired for the artifact
+// editors. The inline AI (⌘+J menu + copilot autocomplete) is grounded in the
 // project's RAG knowledge base via the office-ai-stream edge function.
-export function OfficePlateEditor({
+export function ArtifactPlateEditor({
   value,
   onChange,
   placeholder,
@@ -86,8 +86,10 @@ export function OfficePlateEditor({
             <Editor
               variant="default"
               placeholder={placeholder ?? "Type / for commands…"}
-              // Full-width: drop the variant's large centering side padding.
-              className={cn("px-6 pt-4 pb-24 sm:px-8", editorClassName)}
+              // A measure, not a full-bleed wall of text: a report line running
+              // the whole width of a 24" screen is unreadable. Centred with
+              // generous gutters, wider than prose so tables still breathe.
+              className={cn("mx-auto w-full max-w-[900px] px-8 pt-8 pb-24 sm:px-14 lg:px-16", editorClassName)}
             />
           </EditorContainer>
         </div>

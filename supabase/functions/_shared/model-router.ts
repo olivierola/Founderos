@@ -122,6 +122,35 @@ export function classifyTier(text: string, opts?: { mode?: "chat" | "mission"; c
   return "standard";
 }
 
+// The two models we run on, and the only ones a tier or an override may resolve
+// to. Groq's small models are BANNED, not deprecated: `llama-3.1-8b-instant` is
+// capped at 6 000 tokens/minute on the on-demand tier, so a single turn carrying
+// a real toolbox dies on a 413 ("Request too large") — "cheap" there means
+// "cannot run our agents at all". The ban is enforced here rather than by fixing
+// an env var, because the value can also come from a stale secret or a persisted
+// run row, and one bad id anywhere brings the same 413 back.
+export const GROQ_MODEL_ID = "llama-3.3-70b-versatile";
+export const DEEPSEEK_MODEL_ID = "deepseek-chat";       // DeepSeek V4
+export const DEEPSEEK_REASONER = "deepseek-reasoner";   // DeepSeek V4 reasoning
+
+const BANNED_MODELS = /(llama-?3(\.1)?-?8b|8b-instant|gemma|mixtral|llama-?3(\.[12])?-?(1|3)b)/i;
+
+/**
+ * Force a model id onto a supported one. Any banned/empty/foreign id becomes the
+ * provider's default, so no code path can route a run to a model we don't run on.
+ */
+export function sanitizeModel(
+  model: string | null | undefined,
+  provider: Provider,
+  fallback?: string,
+): string {
+  const def = fallback ?? (provider === "groq" ? GROQ_MODEL_ID : DEEPSEEK_MODEL_ID);
+  const m = String(model ?? "").trim();
+  if (!m || BANNED_MODELS.test(m)) return def;
+  if (!modelMatchesProvider(m, provider)) return def;
+  return m;
+}
+
 /**
  * Resolve a tier to a concrete model id FOR A GIVEN PROVIDER (env-overridable).
  *
@@ -132,13 +161,13 @@ export function classifyTier(text: string, opts?: { mode?: "chat" | "mission"; c
  */
 export function modelForTier(tier: ModelTier, provider: Provider = defaultProvider()): string {
   if (provider === "groq") {
-    if (tier === "heavy") return env("AGENT_MODEL_GROQ_HEAVY") || "llama-3.3-70b-versatile";
-    if (tier === "light") return env("AGENT_MODEL_GROQ_LIGHT") || "llama-3.3-70b-versatile";
-    return env("AGENT_MODEL_GROQ_STANDARD") || "llama-3.3-70b-versatile";
+    if (tier === "heavy") return sanitizeModel(env("AGENT_MODEL_GROQ_HEAVY"), "groq");
+    if (tier === "light") return sanitizeModel(env("AGENT_MODEL_GROQ_LIGHT"), "groq");
+    return sanitizeModel(env("AGENT_MODEL_GROQ_STANDARD"), "groq");
   }
-  if (tier === "heavy") return env("AGENT_MODEL_HEAVY") || "deepseek-reasoner";
-  if (tier === "light") return env("AGENT_MODEL_LIGHT") || "deepseek-chat";
-  return env("AGENT_MODEL_STANDARD") || "deepseek-chat";
+  if (tier === "heavy") return sanitizeModel(env("AGENT_MODEL_HEAVY"), "deepseek", DEEPSEEK_REASONER);
+  if (tier === "light") return sanitizeModel(env("AGENT_MODEL_LIGHT"), "deepseek");
+  return sanitizeModel(env("AGENT_MODEL_STANDARD"), "deepseek");
 }
 
 /** Convenience: classify + resolve in one call, honouring an explicit override. */

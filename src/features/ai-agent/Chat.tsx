@@ -104,7 +104,7 @@ export function AiChatPage() {
     }
   }, [messages?.length, sending]);
 
-  async function handleSend(text?: string) {
+  async function handleSend(text?: string, model?: string) {
     const content = (text ?? input).trim();
     if (!content || !workspaceId || !projectId) return;
     setSending(true);
@@ -116,6 +116,7 @@ export function AiChatPage() {
         project_id: projectId,
         conversation_id: currentConvoId,
         message: content,
+        ...(model ? { model } : {}),
       });
       if (!currentConvoId) {
         setCurrentConvoId(res.conversation_id);
@@ -152,7 +153,7 @@ export function AiChatPage() {
             <ChatComposer
               value={input}
               onValueChange={setInput}
-              onSubmit={({ message }) => handleSend(message)}
+              onSubmit={({ message, model }) => handleSend(message, model)}
               loading={sending}
               footerHint="AI can make mistakes. Please check important information."
             />
@@ -195,7 +196,7 @@ export function AiChatPage() {
           <ChatComposer
             value={input}
             onValueChange={setInput}
-            onSubmit={({ message }) => handleSend(message)}
+            onSubmit={({ message, model }) => handleSend(message, model)}
             loading={sending}
             placeholder="Reply…"
           />

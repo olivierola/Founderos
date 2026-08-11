@@ -23,12 +23,12 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { decryptSecret } from "../_shared/crypto.ts";
-import { callAi, runToolRounds, safeParseJson, type ChatMessage } from "../_shared/ai.ts";
+import { callAi, runToolRounds, safeParseJson, PayloadTooLargeError, type ChatMessage } from "../_shared/ai.ts";
 import { runParallelSubagents } from "../_shared/subagents.ts";
 import {
   classifyTier, classifyRequest, modelForTier, resolveProvider, defaultProvider,
   availableProviders, modelMatchesProvider, cheapProvider, providerMismatchNote,
-  contextBudgetFor, type ToolTier, type Provider, type ContextBudget,
+  contextBudgetFor, sanitizeModel, type ToolTier, type Provider, type ContextBudget,
 } from "../_shared/model-router.ts";
 import { embedTexts, toVectorLiteral } from "../_shared/jina.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
@@ -50,7 +50,11 @@ import {
   compileSystemPrompt, selectRelevant, selectTools, currentTaskText, budgetEventPayload, stableHash, transcriptPrefixHash,
   type SectionInput, type PromptBudget,
 } from "../_shared/prompt-compiler.ts";
-import { completeMissionTask } from "../_shared/room-orchestrator.ts";
+import { completeMissionTask, advanceRoomMission } from "../_shared/room-orchestrator.ts";
+import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
+import {
+  PROACTIVITY_DOCTRINE, ORCHESTRATOR_PROACTIVITY, reflectAndPropose, proposalsFooter,
+} from "../_shared/proactivity.ts";
 
 interface AgentRow {
   id: string;
@@ -161,7 +165,9 @@ function resolveRunStateModel(stateModel: string | null | undefined, provider: P
   const raw = String(stateModel ?? "").trim();
   if (!raw) return undefined;
   if (raw === "groq" || raw === "deepseek") return modelForTier("standard", provider);
-  return raw;
+  // A row written before the small-model ban (or by a stale env) must not be
+  // replayed onto a model we no longer run on — that's the 413 coming back.
+  return sanitizeModel(raw, provider);
 }
 
 /**
@@ -265,6 +271,9 @@ function buildSystemPrompt(
    *  Empty (sub-agents, cold starts) → no selection, previous behaviour. */
   taskText: string = "",
   toolStats?: { sent: number; omitted: number; chars: number },
+  /** Spawned worker with ONE narrow subtask: it inherits no initiative — its
+   *  job is to return its piece, not to have ideas about the whole engagement. */
+  isSubAgent: boolean = false,
 ): { prompt: string; budget: PromptBudget } {
   const sections: SectionInput[] = [];
   const push = (id: SectionInput["id"], body: string, meta?: { dropped: number; offered: number }) => {
@@ -290,6 +299,11 @@ function buildSystemPrompt(
   push("presence", lines.join("\n"));
   if (securityDoctrine) push("doctrine", SECURITY_DOCTRINE);
   if (agent.is_orchestrator) push("doctrine", ORCHESTRATOR_DOCTRINE);
+  // Initiative is a doctrine, not a footnote: as one line inside the operating
+  // rules it was reliably ignored. Sub-agents are excluded — a spawned worker
+  // has ONE narrow subtask and must not start filing ideas of its own.
+  if (!isSubAgent) push("doctrine", PROACTIVITY_DOCTRINE);
+  if (agent.is_orchestrator) push("doctrine", ORCHESTRATOR_PROACTIVITY);
 
   // Knowledge blocks are SELECTED against this turn's subject, not dumped
   // whole. Everything filtered out stays one search_memory / search_context
@@ -317,7 +331,10 @@ function buildSystemPrompt(
     "- FINISH the whole job: not done until EVERY plan step is complete AND every expected deliverable is saved with create_deliverable. No partial hand-back.",
     "- SAVE durable knowledge as you learn it (save_memory), one self-contained line each: stable facts, preferences, installed tools, produced files (with paths), key results. Skip transient details and anything already known.",
     "- Approvals: a gated tool queues for review and your run KEEPS RUNNING — acknowledge and continue; never re-ask an approval already granted. If a tool errors, adapt or state the limitation.",
-    "- INITIATIVE (bounded): fix trivial in-scope issues you notice (and mention them); file bigger opportunities with propose_mission (nothing executes). Never run out-of-scope side effects.",
+    // Initiative itself is covered by PROACTIVITY_DOCTRINE above; this line only
+    // ties it back to the checklist discipline the rules are about.
+    "- INITIATIVE : applique la doctrine d'initiative ci-dessus — ce qui découle de la demande fait partie du travail, ce qui en sort se dépose avec propose_mission. Jamais d'effet de bord hors périmètre.",
+    "- ARTIFACTS : avant de créer un document/tableur/présentation, vérifie avec list_artifacts s'il existe déjà ; si oui, read_artifact puis update_artifact pour le corriger EN PLACE. Ne produis jamais une v2 à côté d'une v1 restée fausse.",
   );
   if (mode === "chat") {
     rules.push("- RICH REPLIES: when a component communicates better than prose (metrics, trends, comparisons, tabular data), attach real UI blocks with render_ui (kpi_grid/chart/table/link_card) and place each [[ui:N]] tag on its own line; real data only. When a sentence is clearer, just write it.");
@@ -844,6 +861,11 @@ async function gateHybridHealth(
   return { runnerUp, sandboxUp, note: notes.join(" · ") };
 }
 
+/** The last thing the human actually asked, out of a tick's message history. */
+function lastUserText(messages: ChatMessage[]): string {
+  return String([...messages].reverse().find((m) => m.role === "user")?.content ?? "");
+}
+
 function makeToolContext(opts: {
   admin: ReturnType<typeof createServiceClient>;
   agent: AgentRow;
@@ -857,6 +879,14 @@ function makeToolContext(opts: {
   const { admin, agent, runId, missionId } = opts;
   let lastCancelCheck = 0;
   let cancelled = false;
+  // Standalone so the context's own members (createArtifact) can record events
+  // too — inside the object literal `logEvent` is only reachable via `this`.
+  const writeEvent = async (kind: string, payload: Record<string, unknown>) => {
+    if (!runId) return;
+    await admin.from("internal_agent_run_events").insert({
+      run_id: runId, agent_id: agent.id, kind, payload,
+    }).then(() => {}, () => {});
+  };
   return {
     admin,
     workspaceId: agent.workspace_id,
@@ -888,7 +918,7 @@ function makeToolContext(opts: {
     serviceDashboardId: agent.service_dashboard_id ?? null,
     userId: agent.created_by ?? null,
     createDeliverable: async (d) => {
-      await admin.from("internal_agent_deliverables").insert({
+      const { data: row } = await admin.from("internal_agent_deliverables").insert({
         run_id: runId,
         mission_id: missionId,
         conversation_id: opts.conversationId ?? null,
@@ -897,26 +927,50 @@ function makeToolContext(opts: {
         name: d.name,
         content: d.content,
         summary: d.summary,
-      });
+      }).select("id").maybeSingle();
+      // Announce it NOW, like createArtifact does. The card used to be attached
+      // only by the success finalizer, so a run that ended any other way — the
+      // Gmail approval gate, a question, an exhausted budget — produced a real
+      // deliverable that appeared NOWHERE in the room, and the agent's "j'ai
+      // produit le rapport" read as a hallucination. The 'ui' event also gives
+      // the run timeline (and the closing report) hard proof the file exists.
+      const id = (row as { id?: string } | null)?.id;
+      if (id) {
+        await writeEvent("ui", {
+          block: { component: "deliverable", props: { id, name: d.name, kind: d.kind, agentId: agent.id } },
+        }).catch(() => {});
+      }
     },
-    // Rooms-only UX for now (inline card + side-panel viewer) — outside a room
-    // this just persists the artifact so the tool is safe to call everywhere;
-    // no service_room_id, no inline chat card yet.
+    // Outside a room there is no inline card, but the artifact itself must be
+    // IDENTICAL to the one a room turn produces: same parsing, same storage,
+    // same image pipeline. It used to differ — markdown landed as a single
+    // paragraph, CSV as one column, and images/text were silently dropped — so
+    // an agent's spreadsheet was unusable unless it happened to run in a room.
+    // Every kind is now materialised and announced on the timeline, which is
+    // also what read_artifact/update_artifact need to find it again.
     createArtifact: async (a) => {
-      if (a.kind === "image" || a.kind === "text") return;
-      const content = a.kind === "document"
-        ? { nodes: [{ type: "p", children: [{ text: a.content }] }] }
-        : a.kind === "presentation"
-        ? { slides: [{ title: a.title, body: a.content, layout: "title-content" }] }
-        : { columns: ["A"], rows: a.content.split("\n").map((l) => [l]) };
-      await admin.from("office_documents").insert({
-        workspace_id: agent.workspace_id ?? null,
-        project_id: agent.project_id ?? null,
-        kind: a.kind,
-        title: a.title,
-        content,
-        created_by: agent.created_by ?? null,
-      });
+      const scope = {
+        workspaceId: agent.workspace_id ?? null,
+        projectId: agent.project_id ?? null,
+        createdBy: agent.created_by ?? null,
+        agentId: agent.id,
+      };
+      if (a.kind === "image") {
+        const mediaId = await generateArtifactImage(admin, a.content, scope);
+        await writeEvent("ui", mediaId
+          ? { block: { component: "artifact", props: { id: mediaId, table: "office_media", kind: "image", title: a.title } } }
+          : { block: { component: "artifact", props: { table: "text", kind: "text", title: a.title, content: "Image generation failed or is not configured." } } });
+        return;
+      }
+      if (!isDocKind(a.kind)) {
+        // Plain text: inline block only, nothing to store.
+        await writeEvent("ui", { block: { component: "artifact", props: { table: "text", kind: "text", title: a.title, content: a.content } } });
+        return;
+      }
+      const id = await insertArtifact(admin, a.kind, a.title, a.content, scope);
+      if (id) {
+        await writeEvent("ui", { block: { component: "artifact", props: { id, table: "office_documents", kind: a.kind, title: a.title } } });
+      }
     },
     requestApproval: async (r) => {
       const { data, error } = await admin
@@ -968,7 +1022,13 @@ function makeToolContext(opts: {
 // Chat mode
 // ---------------------------------------------------------------------------
 
-async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: string) {
+async function runChat(
+  agent: AgentRow,
+  tools: AgentToolRow[],
+  conversationId: string,
+  /** Model picked in the composer for THIS turn (overrides the cost tiering). */
+  modelChoice?: string | null,
+) {
   const admin = createServiceClient();
 
   // Mid-run steering: if a run is already in flight for this conversation, DON'T
@@ -999,7 +1059,7 @@ async function runChat(agent: AgentRow, tools: AgentToolRow[], conversationId: s
   // (init is light: one planning call + an upsert). The long tool loop then runs
   // across many short ticks (runMissionTick handles chat too), never bounded by
   // the Edge wall-clock that used to kill long chats and orphan the run.
-  await initChatRun(admin, agent, tools, conversationId, chatRunId);
+  await initChatRun(admin, agent, tools, conversationId, chatRunId, modelChoice);
   return jsonResponse({ ok: true, run_id: chatRunId, queued: true });
 }
 
@@ -1009,6 +1069,7 @@ async function initChatRun(
   tools: AgentToolRow[],
   conversationId: string,
   chatRunId: string,
+  modelChoice?: string | null,
 ): Promise<void> {
  try {
   const { data: history } = await admin
@@ -1083,11 +1144,17 @@ async function initChatRun(
 
   await ctx.logEvent("status", { message: "Chat started — thinking…" });
 
-  const provider = providerFor(agent);
+  // The composer can pin THIS turn's model. It only wins when its provider has
+  // a key — otherwise we'd send a Groq id to DeepSeek and 400 every round.
+  const wantedProvider = modelChoice ? resolveProvider(modelChoice) : null;
+  const provider = wantedProvider ?? providerFor(agent);
+  const pickedModel = modelChoice && modelMatchesProvider(modelChoice, provider)
+    ? sanitizeModel(modelChoice, provider)
+    : null;
   // A pinned provider we could not honour (missing secret) is reported, not
   // swallowed — otherwise it reads exactly like a broken switch.
   {
-    const note = providerMismatchNote(agent.model);
+    const note = providerMismatchNote(modelChoice || agent.model);
     if (note) await ctx.logEvent("status", { message: note }).catch(() => {});
   }
 
@@ -1164,9 +1231,11 @@ async function initChatRun(
     contract,
     provider,
     meta: { tool_tier: requestClass.tools, context_manifest: { prefix_hash: chatPrompt.budget.prefix_hash } },
-    // Cost-tiered model: cheap by default, stronger only when the turn warrants
-    // it (see classifyRequest). AGENT_MODEL_CHAT still overrides if set.
-    model: Deno.env.get("AGENT_MODEL_CHAT") || agentModelForTier(agent, requestClass.model),
+    // Model, most explicit wins: the composer's pick for this turn, then the
+    // AGENT_MODEL_CHAT override, then the cost tier (see classifyRequest).
+    // Sanitised either way — a banned id here is a 413 three rounds later.
+    model: pickedModel
+      ?? sanitizeModel(Deno.env.get("AGENT_MODEL_CHAT"), provider, agentModelForTier(agent, requestClass.model)),
     processing_until: null,
     // The triggering message is already in `messages`; only fold in turns that
     // arrive AFTER this point (mid-run steering).
@@ -1697,7 +1766,9 @@ async function collectUiBlocks(
       .from("internal_agent_run_events")
       .select("payload")
       .eq("run_id", runId).eq("kind", "ui")
-      .order("created_at", { ascending: true }).limit(8);
+      // Deliverables now emit a block too, so a productive run legitimately has
+      // more than a handful; a cap of 8 silently swallowed the later cards.
+      .order("created_at", { ascending: true }).limit(24);
     const blocks = (data ?? [])
       .map((e: { payload?: { block?: Record<string, unknown> } }) => e.payload?.block)
       .filter((b): b is Record<string, unknown> => !!b && typeof b === "object");
@@ -1752,6 +1823,99 @@ async function finalizeChatSuccess(
   });
 }
 
+/**
+ * Persist a report the agent built section-by-section but never finalised.
+ *
+ * `report_section` accumulates into run_state.meta.report_draft, and only
+ * `create_deliverable(kind="report")` turns it into a row. A run that stops
+ * before that call — budget exhausted, approval gate, context overflow, or a
+ * worker killed and later reaped (which DELETES the state row) — used to throw
+ * the whole report away: the human then sees an agent claiming a report that
+ * exists nowhere. Called from every terminal path, idempotent by the count
+ * check below.
+ */
+async function salvageReportDraft(
+  admin: ReturnType<typeof createServiceClient>,
+  agent: AgentRow,
+  runId: string,
+  state: { mission_id: string | null; conversation_id: string | null },
+): Promise<boolean> {
+  try {
+    const { data: fs } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
+    const draft = ((fs as { meta?: { report_draft?: { title?: string; subtitle?: string; author?: string; summary?: string; sections?: unknown[] } } } | null)?.meta?.report_draft) ?? null;
+    if (!draft || !Array.isArray(draft.sections) || draft.sections.length === 0) return false;
+    const { count } = await admin.from("internal_agent_deliverables")
+      .select("id", { count: "exact", head: true }).eq("run_id", runId).eq("kind", "report");
+    if ((count ?? 0) > 0) return false;
+    const content = JSON.stringify({
+      title: draft.title || "Rapport", subtitle: draft.subtitle, author: draft.author,
+      summary: draft.summary, sections: draft.sections,
+    });
+    await admin.from("internal_agent_deliverables").insert({
+      run_id: runId, mission_id: state.mission_id ?? null, conversation_id: state.conversation_id,
+      agent_id: agent.id, kind: "report", name: draft.title || "Rapport",
+      content, summary: (draft.summary || draft.title || "Rapport").slice(0, 200),
+    }).then(() => {}, () => {});
+    await admin.from("internal_agent_run_events").insert({
+      run_id: runId, agent_id: agent.id, kind: "status",
+      payload: { message: `Rapport « ${draft.title || "Rapport"} » sauvegardé depuis les ${draft.sections.length} sections construites (le run s'est arrêté avant de le finaliser).` },
+    }).then(() => {}, () => {});
+    return true;
+  } catch {
+    return false; // best-effort salvage
+  }
+}
+
+/** Every card this run produced: UI blocks it emitted, plus its deliverables,
+ *  de-duplicated (createDeliverable now emits its own block, and a run from
+ *  before that change has only the row). */
+async function runCards(
+  admin: ReturnType<typeof createServiceClient>,
+  runId: string,
+  agentId: string,
+): Promise<Array<Record<string, unknown>>> {
+  const uiBlocks = (await collectUiBlocks(admin, runId)) ?? [];
+  const seen = new Set(
+    uiBlocks
+      .filter((b) => b.component === "deliverable")
+      .map((b) => String((b.props as { id?: string } | undefined)?.id ?? "")),
+  );
+  const { data: delivs } = await admin
+    .from("internal_agent_deliverables").select("id, name, kind")
+    .eq("run_id", runId).order("created_at", { ascending: true });
+  const deliverableBlocks = (delivs ?? [])
+    .filter((d) => !seen.has((d as { id: string }).id))
+    .map((d) => ({
+      component: "deliverable",
+      props: { id: (d as { id: string }).id, name: (d as { name: string }).name, kind: (d as { kind: string }).kind, agentId },
+    }));
+  return [...uiBlocks, ...deliverableBlocks];
+}
+
+/**
+ * Close a room turn that did NOT end in success — an approval gate, a question,
+ * an exhausted budget, an unreachable sandbox.
+ *
+ * These paths used to write plain text over the placeholder, discarding the
+ * cards for work the agent had genuinely finished before it stopped. Stopping
+ * early is not the same as producing nothing, and the room has to show the
+ * difference.
+ */
+async function closeRoomMessage(
+  admin: ReturnType<typeof createServiceClient>,
+  agent: AgentRow,
+  room: { room_id: string; placeholder_id: string },
+  runId: string,
+  content: string,
+  status: "done" | "failed",
+) {
+  const blocks = await runCards(admin, runId, agent.id);
+  await admin.from("service_room_messages").update({
+    content, status, run_id: runId, ui_blocks: blocks.length ? blocks : null,
+  }).eq("id", room.placeholder_id);
+  await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", room.room_id);
+}
+
 // Finalize a ROOM-bound run on the durable tick engine: update the room
 // placeholder message (content + UI blocks + deliverable cards produced) so the
 // room reply materialises exactly like a chat reply — but survives the edge
@@ -1767,16 +1931,7 @@ async function finalizeRoomSuccess(
 ) {
   const reply = (finalOutput?.trim() || "Terminé — voir les cartes ci-dessus.")
     .replace(/\n?\[\[ui:\d+\]\]\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-  const uiBlocks = (await collectUiBlocks(admin, runId)) ?? [];
-  // Turn deliverables produced during the run into openable cards on the message.
-  const { data: delivs } = await admin
-    .from("internal_agent_deliverables").select("id, name, kind")
-    .eq("run_id", runId).order("created_at", { ascending: true });
-  const deliverableBlocks = (delivs ?? []).map((d) => ({
-    component: "deliverable",
-    props: { id: (d as { id: string }).id, name: (d as { name: string }).name, kind: (d as { kind: string }).kind, agentId: agent.id },
-  }));
-  const allBlocks = [...uiBlocks, ...deliverableBlocks];
+  const allBlocks = await runCards(admin, runId, agent.id);
   await admin.from("service_room_messages").update({
     content: reply, ui_blocks: allBlocks.length ? allBlocks : null, status: "done", run_id: runId,
   }).eq("id", room.placeholder_id);
@@ -1972,6 +2127,13 @@ async function verifyMissionOutcome(
 
 const TICK_ROUNDS = 4;
 
+/** Lease held while a tick processes a run. MUST stay LONGER than the pgmq
+ *  visibility timeout used by drain_agent_ticks (180s): a redelivery that lands
+ *  while a live tick is still working has to find the lease held and back off.
+ *  A tick whose worker was killed therefore recovers on the SECOND redelivery
+ *  (~6 min) — well inside the 12-minute zombie cutoff. */
+const TICK_LEASE_MS = 4 * 60 * 1000;
+
 // Process ONE tick of a mission: lease, run a few rounds against persisted
 // state, then finalize / re-enqueue. Invoked by the pg_cron drainer via pg_net.
 async function runMissionTick(runId: string, msgId: number | null) {
@@ -1981,13 +2143,18 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const nowIso = new Date().toISOString();
   const { data: leased } = await admin
     .from("internal_agent_run_state")
-    .update({ processing_until: new Date(Date.now() + 3 * 60 * 1000).toISOString() })
+    .update({ processing_until: new Date(Date.now() + TICK_LEASE_MS).toISOString() })
     .eq("run_id", runId)
     .or(`processing_until.is.null,processing_until.lt.${nowIso}`)
     .select("*")
     .maybeSingle();
   if (!leased) {
-    if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+    // Someone else holds the lease. Do NOT ack: pgmq redelivers the SAME message
+    // (same msg_id), and the only worker allowed to delete it is the one that
+    // owns the tick — via agent_tick_next when it chains the next one. Acking
+    // here dropped the run's only queued tick, so a worker the edge runtime had
+    // already killed left the run with nothing to wake it: the mission stayed
+    // "en cours" and never moved again.
     return jsonResponse({ ok: true, skipped: true });
   }
   const state = leased as {
@@ -2017,8 +2184,20 @@ async function runMissionTick(runId: string, msgId: number | null) {
   };
 
   // Run no longer active? clean up.
-  const { data: runRow } = await admin.from("internal_agent_runs").select("status").eq("id", runId).maybeSingle();
+  const { data: runRow } = await admin.from("internal_agent_runs")
+    .select("status, error_message").eq("id", runId).maybeSingle();
   if (!runRow || ["cancelled", "failed", "succeeded"].includes(runRow.status as string)) {
+    // Report before cleaning up. This branch is what the zombie reconciler
+    // leaves behind (it flips a timed-out run to 'failed' from SQL, which no
+    // TypeScript path observes) — returning silently left the mission's task
+    // 'in_progress' for good, and the mission "en cours" with nothing running.
+    const st = (runRow?.status as string | undefined) ?? "disparu";
+    await reportMissionTask(
+      st === "succeeded",
+      st === "succeeded"
+        ? "Run terminé hors tick — résultat repris depuis la room."
+        : `Run ${st} avant d'avoir rendu son résultat${(runRow as { error_message?: string } | null)?.error_message ? ` : ${(runRow as { error_message?: string }).error_message}` : "."}`,
+    );
     await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
     if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
     return jsonResponse({ ok: true, done: true });
@@ -2066,7 +2245,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
       c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.isSubagent = true;
       return c;
     },
-    buildChildSystem: (cap, c) => buildSystemPrompt(agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills)).prompt,
+    buildChildSystem: (cap, c) => buildSystemPrompt(agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills), "", undefined, true).prompt,
     maxConcurrency: agent.swarm_max_concurrency ?? undefined,
   }, subtasks);
   // HYBRID: re-probe both worlds each tick and strip whichever is unreachable, so
@@ -2165,7 +2344,96 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const toolFails: Record<string, number> = {
     ...((state.meta as { tool_fails?: Record<string, number> } | undefined)?.tool_fails ?? {}),
   };
+  // ── Repeated-research guard ───────────────────────────────────────────────
+  // The identical-signature loop guard below compares the LAST call only, and a
+  // model researching a topic never repeats itself exactly: it rotates through
+  // "McKinsey France effectif 2024", "McKinsey France 700 consultants Paris",
+  // "McKinsey France effectif consultants CA 2023"… Each signature differs from
+  // the previous one, so sig_count resets every call and the run can search the
+  // same six things until the wall clock kills it — which is exactly what a
+  // stuck research mission looks like from the outside.
+  //
+  // So searches are deduplicated SEMANTICALLY and across the whole run: the
+  // query is normalised (accents, stop-words, order) and a repeat is answered
+  // without spending the call, with an instruction to move on to reading.
+  const searchSigs: Record<string, number> = {
+    ...((state.meta as { search_sigs?: Record<string, number> } | undefined)?.search_sigs ?? {}),
+  };
+  const SEARCH_TOOLS = new Set(["web_search", "deep_research", "search_knowledge", "search_memory", "search_past_work"]);
+  const querySig = (name: string, args: Record<string, unknown>): string | null => {
+    if (!SEARCH_TOOLS.has(name)) return null;
+    const q = String((args?.query ?? args?.q ?? "") || "").toLowerCase();
+    if (!q) return null;
+    const words = q
+      .normalize("NFD").replace(/[̀-ͯ]/g, "")   // strip accents
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !/^(les|des|une|dans|pour|avec|sur|par|the|and|for|with|from)$/.test(w))
+      .sort();
+    return words.length ? `${name}:${[...new Set(words)].join(" ")}` : null;
+  };
+
+  // ── The two memories ──────────────────────────────────────────────────────
+  // TEMPORARY (this run): every research result is written in full to the run's
+  // event log, which compaction never touches, and read back with
+  // recall_findings. The transcript can shrink without the facts being lost.
+  // PERMANENT (across runs): the same material is condensed into
+  // internal_agent_memories at the end of the run, so the NEXT mission on the
+  // same subject searches memory instead of paying for the web again.
+  const RESEARCH_TOOLS = new Set(["web_search", "deep_research", "read_url", "http_get", "browse_web", "search_knowledge"]);
+  const findings: Array<{ tool: string; label: string; text: string }> = [];
+  const recordFinding = async (tool: string, args: Record<string, unknown>, text: string) => {
+    const label = String(args?.query ?? args?.url ?? args?.q ?? "").slice(0, 200) || tool;
+    const body = text.slice(0, 12_000);
+    findings.push({ tool, label, text: body });
+    await admin.from("internal_agent_run_events").insert({
+      run_id: runId, agent_id: agent.id, kind: "log",
+      payload: { finding: { tool, label, text: body } },
+    }).then(() => {}, () => {});
+  };
+
+  // Before the FIRST web search of a run, look in permanent memory. Done here
+  // rather than trusted to the prompt: "check your memory first" is advice a
+  // model skips, a prepended hit is a fact it cannot miss — and it is the whole
+  // point of remembering, that the second mission on a subject costs less.
+  let memoryProbed = false;
+  const probeMemory = async (query: string): Promise<string> => {
+    if (memoryProbed || !query.trim()) return "";
+    memoryProbed = true;
+    try {
+      const { data } = await admin.from("internal_agent_memories")
+        .select("content, created_at")
+        .eq("project_id", agent.project_id)
+        .in("kind", ["context", "learning", "fact"])
+        .order("created_at", { ascending: false }).limit(60);
+      const terms = query.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+      const hits = (data ?? [])
+        .map((m) => String((m as { content: string }).content ?? ""))
+        .filter((c) => terms.filter((t) => c.toLowerCase().includes(t)).length >= 2)
+        .slice(0, 3);
+      if (hits.length === 0) return "";
+      await ctx.logEvent("status", { message: `${hits.length} élément(s) déjà en mémoire sur ce sujet — réutilisés au lieu d'être recherchés.` }).catch(() => {});
+      return `⚡ DÉJÀ EN MÉMOIRE (travail antérieur sur ce sujet — vérifie la date, réutilise plutôt que de rechercher) :\n${hits.map((h) => `- ${h.slice(0, 700)}`).join("\n")}\n\n— Résultats web ci-dessous —\n`;
+    } catch { return ""; }
+  };
+
   const loggingExecutor: typeof executor = async (name, args) => {
+    // Short-circuit a search this run has already run. Cheaper than the call,
+    // and far more useful to the model than the same snippets a third time.
+    const sig = querySig(name, args ?? {});
+    if (sig) {
+      const seen = (searchSigs[sig] ?? 0) + 1;
+      searchSigs[sig] = seen;
+      if (seen > 1) {
+        const distinct = Object.keys(searchSigs).length;
+        const msg = `ERROR: recherche déjà effectuée dans ce run (${seen}× « ${String(args?.query ?? "")} »). Ses résultats sont DÉJÀ dans ton contexte plus haut — les relancer ne donnera rien de neuf.\n`
+          + `Tu as lancé ${distinct} recherches distinctes. Passe à l'exploitation : ouvre les URL les plus prometteuses avec read_url(url) pour en extraire les chiffres, puis écris tes sections avec report_section. `
+          + `Si une donnée reste introuvable après lecture, écris « non publié » et avance — ne reformule pas la même requête.`;
+        await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args), deduped: true });
+        await ctx.logEvent("tool_result", { tool: name, preview: msg.slice(0, 400), ok: false, deduped: true });
+        return msg;
+      }
+    }
     await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args) });
     // ── Guardrails — tool_call scope ─────────────────────────────────────────
     // Tested BEFORE execution: a block stops the tool from ever running (the
@@ -2218,6 +2486,16 @@ async function runMissionTick(runId: string, msgId: number | null) {
       }
     }
     await ctx.logEvent("tool_result", { tool: name, preview: text.slice(0, 1000), ok });
+    // Keep the full result out-of-band, and enrich the FIRST search with what
+    // we already knew. Both are best-effort: research must never fail on its
+    // bookkeeping.
+    if (ok && RESEARCH_TOOLS.has(name) && text.length > 80) {
+      await recordFinding(name, args ?? {}, text).catch(() => {});
+      if (name === "web_search" || name === "deep_research") {
+        const known = await probeMemory(String((args as { query?: string })?.query ?? ""));
+        if (known) return `${known}${text}`;
+      }
+    }
     return r;
   };
 
@@ -2529,8 +2807,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
         tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost, action_count: newRound,
       }).eq("id", runId);
       if (roomBinding) {
-        await admin.from("service_room_messages").update({ content: msg, status: "failed", run_id: runId }).eq("id", roomBinding.placeholder_id);
-        await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+        await closeRoomMessage(admin, agent, roomBinding, runId, msg, "failed");
         await reportMissionTask(false, msg);
       } else if (isChat && state.conversation_id) {
         await admin.from("internal_agent_messages").insert({
@@ -2567,12 +2844,22 @@ async function runMissionTick(runId: string, msgId: number | null) {
     let lastSig = typeof meta.last_sig === "string" ? meta.last_sig : "";
     let sigCount = Number(meta.sig_count) || 0;
     let loopDetected = false;
+    // A rolling window, not just the previous call: the common loop is not
+    // A-A-A-A but A-B-C-A-B-C — six calls that each differ from the one before,
+    // so a "same as last" test never fires while the run goes nowhere.
+    const recentSigs: string[] = Array.isArray(meta.recent_sigs) ? (meta.recent_sigs as string[]).slice(-12) : [];
+    let cycleHits = 0;
     for (const c of result.toolCalls) {
       const sig = `${c.name}:${JSON.stringify(c.args ?? {}).slice(0, 180)}`;
       if (sig === lastSig) sigCount++;
       else { lastSig = sig; sigCount = 1; }
       if (sigCount >= 4) loopDetected = true;
+      if (recentSigs.includes(sig)) cycleHits++;
+      recentSigs.push(sig);
+      if (recentSigs.length > 12) recentSigs.shift();
     }
+    // Half the calls in this tick were already made recently → it is cycling.
+    if (result.toolCalls.length >= 4 && cycleHits >= Math.ceil(result.toolCalls.length / 2)) loopDetected = true;
     // Circuit breaker: a specific tool that failed ≥3 times in a row (even with
     // varying args) is broken/unavailable — stop hammering it, adapt or skip.
     const brokenTools = Object.entries(toolFails).filter(([, n]) => (n as number) >= 3).map(([t]) => t);
@@ -2627,6 +2914,10 @@ async function runMissionTick(runId: string, msgId: number | null) {
       replans++;
       errorCount = 0;
       lastSig = ""; sigCount = 0;
+      // The replan gets a clean slate on the CYCLE window too — the new plan is
+      // allowed to revisit a tool the old one had exhausted. `search_sigs` is
+      // NOT cleared: re-running the identical query is never the new idea.
+      recentSigs.length = 0;
       stagnation = 0;
     }
     if (decision.action !== "continue") {
@@ -2649,10 +2940,14 @@ async function runMissionTick(runId: string, msgId: number | null) {
         final_output: partial || null,
         tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost, action_count: newRound,
       }).eq("id", runId);
+      // Before announcing "le travail déjà produit reste disponible", make it
+      // true for a half-built report too.
+      await salvageReportDraft(admin, agent, runId, state);
       const notice = `⚠縏 ${decision.reason}\n\nLe travail déjà produit reste disponible (livrables et étapes ci-dessus).${partial ? `\n\n${partial}` : ""}`;
       if (roomBinding) {
-        await admin.from("service_room_messages").update({ content: notice, status: "done", run_id: runId }).eq("id", roomBinding.placeholder_id);
-        await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+        // "les livrables ci-dessus" has to be true: closeRoomMessage carries the
+        // cards for whatever the agent finished before the budget ran out.
+        await closeRoomMessage(admin, agent, roomBinding, runId, notice, "done");
         // Partial work still counts: hand the frontier what was produced so
         // dependent tasks can decide, rather than stalling on an empty result.
         await reportMissionTask(false, partial || decision.reason);
@@ -2686,6 +2981,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
         ...freshMeta, // DB truth: spawned_subtasks, report_draft (incl. deletions)
         deliverable_forced: (meta.deliverable_forced as boolean | undefined) ?? freshMeta.deliverable_forced,
         last_sig: lastSig, sig_count: sigCount, tool_fails: toolFails,
+        // Carried across ticks: a research loop spans them, so a per-tick set
+        // would forget the queries between two ticks and let it start over.
+        search_sigs: searchSigs, recent_sigs: recentSigs,
         // Progressive disclosure carried to the next tick.
         tool_tier: toolTier, loaded_families: [...loadedFamilies],
         // Context manifest: the byte-identical transcript prefix sent this tick,
@@ -2727,6 +3025,36 @@ async function runMissionTick(runId: string, msgId: number | null) {
           // Other errors during finalization: finalize with what we have.
         }
       }
+
+      // ── Promote the run's findings to permanent memory ────────────────────
+      // What this run paid the web for becomes the next mission's starting
+      // point. One condensed row per run, not one per page: memory that grows
+      // by the hundred stops being searchable, and the point is that the second
+      // mission on a subject is cheaper, not that everything is hoarded.
+      if (findings.length >= 2 && (ctx.delegationDepth ?? 0) === 0) {
+        try {
+          const subject = (findings[0]?.label ?? "").slice(0, 120);
+          const digest = findings.slice(0, 12)
+            .map((f) => `• [${f.label}] ${f.text.replace(/\s+/g, " ").slice(0, 320)}`)
+            .join("\n");
+          const content = `[Recherche — ${subject} · ${new Date().toISOString().slice(0, 10)}]\n${digest}`.slice(0, 4000);
+          const embedding = await embedMemoryVector(content).catch(() => null);
+          await admin.from("internal_agent_memories").insert({
+            workspace_id: agent.workspace_id, project_id: agent.project_id,
+            agent_id: agent.id, source: "agent", kind: "context", importance: 3,
+            source_run_id: runId, content, ...(embedding ? { embedding } : {}),
+          }).then(() => {}, () => {});
+          await ctx.logEvent("status", {
+            message: `${findings.length} collecte(s) versées en mémoire permanente — une prochaine mission sur « ${subject} » les retrouvera sans rechercher.`,
+          }).catch(() => {});
+        } catch { /* memory is a bonus, never a blocker */ }
+      }
+
+      // Finalise the section-by-section draft BEFORE the contract is judged.
+      // It ran after, so a run that had built eight sections was graded "aucun
+      // livrable enregistré" — a red cross on a report that materialised two
+      // lines later. The check must see the same state the human will.
+      await salvageReportDraft(admin, agent, runId, state);
 
       // ── Contract verification (chat AND missions, on a natural finish) ──────
       // The run is checked against its SUCCESS CONTRACT before shipping:
@@ -2779,33 +3107,10 @@ async function runMissionTick(runId: string, msgId: number | null) {
       }
       await traceLoop(verdict);
 
-      // ── Salvage a pending report draft ─────────────────────────────────────
-      // The agent may build a report section-by-section (report_section →
-      // run_state.meta.report_draft) but end the run WITHOUT calling
-      // create_deliverable to finalize it — so the draft would be lost and the
-      // card empty. Auto-finalize any pending draft into a real report here.
-      if (result.finished) {
-        try {
-          const { data: fs } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
-          const draft = ((fs as { meta?: { report_draft?: { title?: string; subtitle?: string; author?: string; summary?: string; sections?: unknown[] } } } | null)?.meta?.report_draft) ?? null;
-          if (draft && Array.isArray(draft.sections) && draft.sections.length > 0) {
-            const { count } = await admin.from("internal_agent_deliverables")
-              .select("id", { count: "exact", head: true }).eq("run_id", runId).eq("kind", "report");
-            if ((count ?? 0) === 0) {
-              const content = JSON.stringify({
-                title: draft.title || "Rapport", subtitle: draft.subtitle, author: draft.author,
-                summary: draft.summary, sections: draft.sections,
-              });
-              await admin.from("internal_agent_deliverables").insert({
-                run_id: runId, mission_id: state.mission_id ?? null, conversation_id: state.conversation_id,
-                agent_id: agent.id, kind: "report", name: draft.title || "Rapport",
-                content, summary: (draft.summary || draft.title || "Rapport").slice(0, 200),
-              }).then(() => {}, () => {});
-              await ctx.logEvent("status", { message: "Rapport finalisé automatiquement depuis les sections construites." }).catch(() => {});
-            }
-          }
-        } catch { /* best-effort salvage */ }
-      }
+      // Salvage a report built section-by-section but never finalised. No
+      // longer gated on `result.finished`: a run that stopped short is exactly
+      // the one whose draft would otherwise be lost.
+      await salvageReportDraft(admin, agent, runId, state);
 
       // ── Chat guard: agent CLAIMED a deliverable but never saved one ─────────
       // The #1 confusing failure: the model writes "le rapport est en carte"
@@ -2869,6 +3174,40 @@ async function runMissionTick(runId: string, msgId: number | null) {
             }).then(() => {}, () => {});
             await ctx.logEvent("status", { message: "Livrable matérialisé automatiquement (l'agent avait fini sans l'enregistrer)." }).catch(() => {});
           }
+        }
+      }
+
+      // ── Closing reflex: what did this work open up? ────────────────────────
+      // One cheap pass over what just happened, filing genuine follow-ups as
+      // PAUSED backlog missions. It runs here, before the answer is finalized,
+      // because a proposal the human never sees is a proposal that does not
+      // exist — the footer goes out with the reply.
+      //
+      // Gated so it stays a signal rather than a tax: only runs that actually
+      // did something (3+ rounds), never sub-agents (a spawned worker owns one
+      // narrow subtask), never a stub answer. Failures are swallowed inside
+      // reflectAndPropose — the user's answer never waits on an idea.
+      // A room-mission TASK is excluded too: it is one card of a plan the
+      // orchestrator already owns, and its follow-ups belong to that plan's
+      // closing report, not to a backlog item filed per card.
+      if (newRound >= 3 && (ctx.delegationDepth ?? 0) === 0 && !missionTask && finalOutput.trim().length > 120) {
+        const usedTools = [...new Set(
+          messages.flatMap((m) => (m.tool_calls ?? []).map((c) => c.function?.name ?? "").filter(Boolean)),
+        )];
+        const m = mission as { title?: string; brief?: string } | null;
+        const proposals = await reflectAndPropose(admin, {
+          agentId: agent.id,
+          workspaceId: agent.workspace_id ?? null,
+          projectId: agent.project_id ?? null,
+          goal: state.contract?.goal || (isChat ? lastUserText(messages) : `${m?.title ?? ""} — ${m?.brief ?? ""}`),
+          output: finalOutput,
+          actions: usedTools,
+        });
+        if (proposals.length > 0) {
+          finalOutput += proposalsFooter(proposals);
+          await ctx.logEvent("status", {
+            message: `💡 ${proposals.length} initiative(s) déposée(s) dans le backlog : ${proposals.map((p) => p.title).join(" · ")}.`,
+          }).catch(() => {});
         }
       }
 
@@ -2940,6 +3279,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
   } catch (e) {
     if (e instanceof AwaitingInputError) {
       const q = e.options.length ? `${e.question}\n\n${e.options.map((o) => `- ${o}`).join("\n")}` : e.question;
+      await salvageReportDraft(admin, agent, runId, state);
       await admin.from("internal_agent_runs").update({
         status: "awaiting_input", finished_at: new Date().toISOString(),
         final_output: q.slice(0, 2000), pending_question: { question: e.question, options: e.options },
@@ -2948,10 +3288,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
         // Rooms don't have inline answer buttons — surface the question as the
         // room reply; the user answers with a new message (which starts a fresh
         // room turn carrying the context).
-        await admin.from("service_room_messages").update({
-          content: q, status: "done", run_id: runId,
-        }).eq("id", roomBinding.placeholder_id);
-        await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+        await closeRoomMessage(admin, agent, roomBinding, runId, q, "done");
         // A mission task that ends on a question cannot be waited on forever —
         // report it as failed so the frontier either reroutes or blocks visibly.
         await reportMissionTask(false, `Question posée, sans réponse : ${q}`);
@@ -2978,12 +3315,13 @@ async function runMissionTick(runId: string, msgId: number | null) {
     // turn with a clear note (don't loop the tick) — approve in direct chat.
     if ((e as { name?: string })?.name === "AwaitingApprovalError" && roomBinding) {
       const summary = (e as { summary?: string }).summary ?? "action sensible";
+      await salvageReportDraft(admin, agent, runId, state);
       await admin.from("internal_agent_runs").update({ status: "awaiting_input", finished_at: new Date().toISOString() }).eq("id", runId);
-      await admin.from("service_room_messages").update({
-        content: `⏸縏 L'action « ${summary} » nécessite une approbation humaine. Ouvre-moi en chat direct (hors room) pour l'approuver et l'exécuter.`,
-        status: "done", run_id: runId,
-      }).eq("id", roomBinding.placeholder_id);
-      await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomBinding.room_id);
+      // The gate stops the ACTION, not the work already done: the report the
+      // agent wrote before asking for permission ships with this message.
+      await closeRoomMessage(admin, agent, roomBinding, runId,
+        `⏸️ L'action « ${summary} » nécessite une approbation humaine. Ouvre-moi en chat direct (hors room) pour l'approuver et l'exécuter.`,
+        "done");
       await reportMissionTask(false, `Approbation humaine requise : ${summary}`);
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
@@ -2996,9 +3334,37 @@ async function runMissionTick(runId: string, msgId: number | null) {
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
       return jsonResponse({ ok: false, cancelled: true });
     }
+    const msg = e instanceof Error ? e.message : String(e);
+
+    // Over budget even after compaction AND the provider failover: retrying is
+    // pointless — the same transcript would be re-sent every redelivery until
+    // the zombie reaper kills the run 12 minutes later, which is how a plain
+    // "prompt too big" surfaced as "Run did not finish in time". End it now,
+    // with the reason a human can act on (raise the tier, or shorten the brief).
+    if (e instanceof PayloadTooLargeError) {
+      // The context blew up AFTER the agent had written most of its report —
+      // keep the sections rather than losing the whole run's output.
+      await salvageReportDraft(admin, agent, runId, state);
+      const detail = e.limit
+        ? `${msg} — le contexte de l'agent (${e.requested ?? "?"} tokens) dépasse le quota du modèle (${e.limit}).`
+        : msg;
+      await ctx.logEvent("error", { error: detail }).catch(() => {});
+      await admin.from("internal_agent_runs").update({
+        status: "failed", finished_at: new Date().toISOString(), error_message: detail.slice(0, 500),
+      }).eq("id", runId);
+      if (roomBinding) {
+        await closeRoomMessage(admin, agent, roomBinding, runId,
+          `⚠️ Contexte trop volumineux pour le modèle configuré. ${detail}\n\nPistes : réduire la portée de la tâche, ou passer l'agent sur DeepSeek (fenêtre plus large).`,
+          "failed");
+      }
+      await reportMissionTask(false, detail);
+      await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
+      if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+      return jsonResponse({ ok: false, error: detail }, { status: 200 });
+    }
+
     // Transient error: release the lease and DON'T ack → pgmq redelivers (the
     // #8 reconciler caps it if it never recovers).
-    const msg = e instanceof Error ? e.message : String(e);
     await admin.from("internal_agent_run_state").update({ processing_until: null }).eq("run_id", runId);
     await ctx.logEvent("error", { error: msg }).catch(() => {});
     return jsonResponse({ ok: false, error: msg }, { status: 500 });
@@ -3312,6 +3678,23 @@ Deno.serve(async (req) => {
       return await runMissionTick(run_id, typeof msg_id === "number" ? msg_id : null);
     }
 
+    // Room-mission watchdog, same trust model as the tick above: the SQL cron
+    // (reconcile_stalled_room_missions) spots a mission whose frontier has
+    // nothing alive left and re-enters the orchestrator here. advanceRoomMission
+    // heals the dead in-flight tasks itself, then dispatches, replans or closes
+    // — so a killed worker no longer parks a mission at "en cours" for ever.
+    if (mode === "room_advance") {
+      const tickSecret = Deno.env.get("AGENT_TICK_SECRET");
+      const provided = req.headers.get("x-tick-secret");
+      if (!isService && (!tickSecret || provided !== tickSecret)) {
+        return jsonResponse({ error: "room_advance is internal-only" }, { status: 403 });
+      }
+      const missionId = (body as { mission_id?: string }).mission_id;
+      if (!missionId) return jsonResponse({ error: "mission_id required" }, { status: 400 });
+      await advanceRoomMission(createServiceClient(), missionId);
+      return jsonResponse({ ok: true });
+    }
+
     // Mobile companion app: authenticated by a Anduran account (user JWT) or the
     // agent's own (id + secret). Dispatches on body.action (list_agents / verify /
     // list_conversations / get_messages / send), same store as the web chat.
@@ -3355,7 +3738,7 @@ Deno.serve(async (req) => {
 
     if (mode === "chat") {
       if (!conversation_id) return jsonResponse({ error: "conversation_id required for chat mode" }, { status: 400 });
-      return await runChat(agent, tools, conversation_id);
+      return await runChat(agent, tools, conversation_id, (body as { model?: string }).model ?? null);
     }
     if (mode === "mission") {
       if (!run_id) return jsonResponse({ error: "run_id required for mission mode" }, { status: 400 });

@@ -3,9 +3,9 @@ import { Sparkles, Loader2, X, BookOpen, WandSparkles, ArrowRight } from "lucide
 import { Button } from "@/components/ui/button";
 import { callEdge } from "@/lib/edge";
 import { cn } from "@/lib/utils";
-import type { OfficeKind } from "./shared";
+import type { ArtifactKind } from "./shared";
 
-// A slide-over assistant used inside every office editor. It calls office-ai
+// A slide-over assistant used inside every artifact editor. It calls office-ai
 // with the current document context and returns either markdown (to insert) or
 // structured content the editor knows how to apply.
 export interface AiResult {
@@ -16,7 +16,7 @@ export interface AiResult {
   answer?: string;
 }
 
-const QUICK_ACTIONS: Record<OfficeKind, { label: string; prompt: string; icon: any }[]> = {
+const QUICK_ACTIONS: Record<ArtifactKind, { label: string; prompt: string; icon: any }[]> = {
   document: [
     { label: "Continue writing", prompt: "Continue le document à partir de là où il s'arrête.", icon: ArrowRight },
     { label: "Summarize", prompt: "Résume ce document en quelques points clés.", icon: WandSparkles },
@@ -32,12 +32,12 @@ const QUICK_ACTIONS: Record<OfficeKind, { label: string; prompt: string; icon: a
   ],
 };
 
-export function OfficeAiPanel({
+export function ArtifactAiPanel({
   open, onClose, kind, docTitle, contextText, workspaceId, projectId, onResult,
 }: {
   open: boolean;
   onClose: () => void;
-  kind: OfficeKind;
+  kind: ArtifactKind;
   docTitle: string;
   contextText: string;
   workspaceId: string | null;

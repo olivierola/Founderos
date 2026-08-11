@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 // Phosphor everywhere in this dashboard — one icon family, consistent weights
 // (the app's Admin nav already uses it).
 import {
-  HouseIcon, RobotIcon, BrainIcon, GearSixIcon, PulseIcon, CalendarDotsIcon, FilesIcon, PlugIcon,
+  HouseIcon, RobotIcon, BrainIcon, GearSixIcon, ChartBarIcon, CalendarDotsIcon, FilesIcon, PlugIcon,
   ChatsCircleIcon, GraphIcon, DatabaseIcon, SlidersIcon, SquaresFourIcon,
   SparkleIcon, WarningIcon, MagnifyingGlassIcon, PlusIcon, CheckIcon, CaretDownIcon,
   DotsThreeIcon, PencilSimpleIcon, TrashIcon, HashIcon, SidebarSimpleIcon, UsersThreeIcon, UserIcon,
@@ -35,7 +35,7 @@ import { RoomView } from "./RoomView";
 import { SidebarProfileFooter } from "./SidebarProfileFooter";
 import { SidebarGetStarted } from "./SidebarGetStarted";
 import {
-  AgentsTab, SchedulesTab, WorkspaceMemoryTab, HomeTab, ActivityTab, AgentDetailInDashboard,
+  AgentsTab, SchedulesTab, WorkspaceMemoryTab, HomeTab, DashboardStatsTab, AgentDetailInDashboard,
 } from "./ServiceDashboardTabs";
 import { DashboardArtifactsPage } from "./RoomArtifacts";
 import { DashboardMissionsTab } from "./RoomMissions";
@@ -45,6 +45,8 @@ import { CreateAgentPage } from "./CreateAgent";
 import { fetchAgentFolders } from "./agentFolders";
 import { DashboardTile } from "./dashboardIcons";
 import { ThemeMenu } from "@/components/ThemeMenu";
+import { AssistantProvider, useAssistant } from "@/lib/assistant-context";
+import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
 
 // ── Structure ────────────────────────────────────────────────────────────────
 // Two rails, like the reference: a narrow icon rail holding the top-level
@@ -63,11 +65,13 @@ const RAIL: { key: RailKey; label: string; icon: PhosphorIcon; tab: DashboardTab
 ];
 
 // Tabs that live INSIDE the Home panel rather than on the rail.
-const HOME_NAV: { slug: DashboardTabSlug | "activity" | "missions"; label: string; icon: PhosphorIcon }[] = [
+const HOME_NAV: { slug: DashboardTabSlug | "dashboard" | "missions"; label: string; icon: PhosphorIcon }[] = [
   // Missions first: it is the board where the service's collective work lives,
   // and it is what people come back to between conversations.
   { slug: "missions", label: "Missions", icon: TargetIcon },
-  { slug: "activity", label: "Activity", icon: PulseIcon },
+  // Replaces the old "Activity" run feed — the whole service's statistics, the
+  // feed included (see DashboardStatsTab).
+  { slug: "dashboard", label: "Dashboard", icon: ChartBarIcon },
   { slug: "schedules", label: "Schedules", icon: CalendarDotsIcon },
   { slug: "artifacts", label: "Artifacts", icon: FilesIcon },
 ];
@@ -110,7 +114,7 @@ export function ServiceDashboardPage() {
   const isCreateAgent = tab === "agents" && sub === "new";
   // Unknown tabs (old links, e.g. the retired /new-room) fall back to the
   // dashboard's landing page rather than rendering an empty content area.
-  const KNOWN = ["home", "agents", "schedules", "activity", "missions", "memory", "artifacts", "connectors", "settings"];
+  const KNOWN = ["home", "agents", "schedules", "dashboard", "missions", "memory", "artifacts", "connectors", "settings"];
   const activeTab = isRoom ? "room"
     : isAgent ? "agent"
     : (tab && KNOWN.includes(tab) ? tab : settings.landing);
@@ -146,6 +150,9 @@ export function ServiceDashboardPage() {
   const panelTitle = rail === "home" ? "Home" : rail === "agents" ? "Agents" : rail === "memory" ? "Memory" : rail === "connectors" ? "Connecteurs" : "Settings";
 
   return (
+    // The SaaS assistant lives here too: internal agents are configured through
+    // it (see ToolSetupReminder), and this is now the only place an agent opens.
+    <AssistantProvider>
     <div className="flex h-screen w-screen overflow-hidden bg-[hsl(var(--sd-ground))] text-foreground">
       {/* ── Icon rail ── */}
       <aside className="flex h-full w-[60px] shrink-0 flex-col items-center gap-1.5 py-3">
@@ -163,7 +170,8 @@ export function ServiceDashboardPage() {
           />
         </div>
         {/* Same picker as the Topbar's — this space has no navbar, so the
-            theme has to be reachable from the rail itself. */}
+            theme (and the assistant) have to be reachable from the rail. */}
+        <AssistantRailButton />
         <ThemeMenu align="start" className="h-10 w-10 hover:bg-sidebar-accent/60" />
         <SidebarProfileFooter compact />
       </aside>
@@ -213,7 +221,7 @@ export function ServiceDashboardPage() {
             {activeTab === "home" && <HomeTab dashboardId={dashboardId!} dashboardName={current.name} workspaceId={workspaceId} projectId={projectId} />}
             {activeTab === "agents" && <AgentsTab dashboardId={dashboardId!} />}
             {activeTab === "schedules" && <SchedulesTab dashboardId={dashboardId!} workspaceId={workspaceId} projectId={projectId} />}
-            {activeTab === "activity" && <ActivityTab dashboardId={dashboardId!} />}
+            {activeTab === "dashboard" && <DashboardStatsTab dashboardId={dashboardId!} dashboardName={current.name} />}
             {activeTab === "missions" && (
               <DashboardMissionsTab dashboardId={dashboardId!} dashboardName={current.name} workspaceId={workspaceId} projectId={projectId} />
             )}
@@ -239,7 +247,30 @@ export function ServiceDashboardPage() {
       </main>
         </div>
       </div>
+
+      {/* Floating full-height assistant, same panel as the main dashboard. */}
+      <AssistantPanel />
     </div>
+    </AssistantProvider>
+  );
+}
+
+// Opens the SaaS assistant from the rail — the configuration surface for the
+// agents that live in this dashboard.
+function AssistantRailButton() {
+  const assistant = useAssistant();
+  return (
+    <button
+      onClick={assistant.toggle}
+      title="Assistant IA"
+      aria-label="Assistant IA"
+      className={cn(
+        "flex h-10 w-10 items-center justify-center rounded-xl transition-colors",
+        assistant.open ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+      )}
+    >
+      <ChatsCircleIcon weight="duotone" className="h-[18px] w-[18px]" />
+    </button>
   );
 }
 
@@ -307,7 +338,6 @@ function HomePanel({ base, dashboardId, activeTab, sub, hidden, dashboardName, w
       return (data ?? []) as Array<{ id: string; name: string; avatar_url: string | null; accent_color: string | null; is_orchestrator: boolean }>;
     },
   });
-  const assistant = (agents ?? []).find((a) => a.is_orchestrator) ?? null;
   const dms = (agents ?? []).filter((a) => !a.is_orchestrator);
 
   const { data: rooms } = useQuery({
@@ -328,14 +358,12 @@ function HomePanel({ base, dashboardId, activeTab, sub, hidden, dashboardName, w
   return (
     <>
       <nav className="space-y-0.5 px-2.5">
-        {assistant && (
-          <PanelItem
-            active={activeTab === "agent" && sub === assistant.id}
-            onClick={() => navigate(`${base}/agent/${assistant.id}`)}
-            leading={<AgentOrb size={18} accentColor={assistant.accent_color} glow={false} />}
-            label={assistant.name}
-          />
-        )}
+        <PanelItem
+          active={activeTab === "home"}
+          onClick={() => navigate(`${base}/home`)}
+          leading={<HouseIcon className="h-4 w-4" />}
+          label="Home"
+        />
         {HOME_NAV.filter((n) => !hidden(n.slug)).map((n) => (
           <PanelItem
             key={n.slug} active={activeTab === n.slug} onClick={() => navigate(`${base}/${n.slug}`)}

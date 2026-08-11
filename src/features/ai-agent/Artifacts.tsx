@@ -1,17 +1,19 @@
 import { useState } from "react";
 import {
   FileText, FileJson, Table as TableIcon, Code as CodeIcon, FileDown,
-  Download, Copy, Check, ChevronDown, ChevronRight,
+  Download, Copy, Check, ChevronDown, ChevronRight, Plug,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ConnectorCards, type ConnectorProposal } from "./ConnectorCards";
 
 export interface AiArtifact {
   id: string;
   message_id: string;
-  kind: "document" | "json" | "table" | "code" | "csv";
+  /** "connectors" is interactive (real connect buttons), not a downloadable file. */
+  kind: "document" | "json" | "table" | "code" | "csv" | "connectors";
   title: string;
   content: string | null;
   data: any | null;
@@ -25,6 +27,8 @@ const KIND_META: Record<AiArtifact["kind"], { icon: any; label: string }> = {
   table: { icon: TableIcon, label: "Table" },
   code: { icon: CodeIcon, label: "Code" },
   csv: { icon: FileDown, label: "CSV" },
+  // Rendered by ConnectorCards, never by ArtifactCard — listed for completeness.
+  connectors: { icon: Plug, label: "Connecteurs" },
 };
 
 function download(filename: string, content: string, mime: string) {
@@ -53,7 +57,10 @@ export function MessageArtifacts({
   return (
     <div className="mt-3 space-y-2">
       {artifacts.map((a) => (
-        <ArtifactCard key={a.id} artifact={a} onOpenDocument={onOpenDocument} />
+        a.kind === "connectors"
+          // Interactive: real connect buttons, not a collapsible file card.
+          ? <ConnectorCards key={a.id} proposal={(a.data ?? {}) as ConnectorProposal} />
+          : <ArtifactCard key={a.id} artifact={a} onOpenDocument={onOpenDocument} />
       ))}
     </div>
   );

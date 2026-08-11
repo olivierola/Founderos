@@ -1,10 +1,10 @@
-// Shared types + helpers for the Office (Bureautique) module.
-// One polymorphic record type backs documents, spreadsheets and presentations.
+// Shared types + helpers for AGENT ARTIFACTS — the documents, spreadsheets and
+// presentations agents produce with create_artifact (they land in
+// `office_documents`, the table name kept for compatibility). One polymorphic
+// record type backs all three kinds; the editors under this folder are the
+// surface a human opens them in, from a room's Artifacts tab or a CRM record.
 
-import { supabase } from "@/lib/supabase";
-import { FileText, Table as TableIcon, Presentation } from "lucide-react";
-
-export type OfficeKind = "document" | "spreadsheet" | "presentation";
+export type ArtifactKind = "document" | "spreadsheet" | "presentation";
 
 // --- content payloads (per kind) -------------------------------------------
 
@@ -29,11 +29,11 @@ export interface PresentationContent {
   slides: Slide[];
 }
 
-export interface OfficeDoc {
+export interface ArtifactDoc {
   id: string;
   workspace_id: string;
   project_id: string;
-  kind: OfficeKind;
+  kind: ArtifactKind;
   title: string;
   content: DocumentContent | SpreadsheetContent | PresentationContent | Record<string, unknown>;
   preview_text: string | null;
@@ -46,18 +46,9 @@ export interface OfficeDoc {
   updated_at: string;
 }
 
-export const KIND_META: Record<
-  OfficeKind,
-  { label: string; plural: string; icon: any; emoji: string; accent: string }
-> = {
-  document: { label: "Document", plural: "Documents", icon: FileText, emoji: "📝", accent: "text-sky-500" },
-  spreadsheet: { label: "Spreadsheet", plural: "Spreadsheets", icon: TableIcon, emoji: "📊", accent: "text-emerald-500" },
-  presentation: { label: "Presentation", plural: "Presentations", icon: Presentation, emoji: "🖼️", accent: "text-amber-500" },
-};
-
 // --- default empty content per kind ----------------------------------------
 
-export function emptyContent(kind: OfficeKind): OfficeDoc["content"] {
+export function emptyContent(kind: ArtifactKind): ArtifactDoc["content"] {
   if (kind === "document") {
     return { nodes: [{ type: "p", children: [{ text: "" }] }] } as DocumentContent;
   }
@@ -74,7 +65,7 @@ export function emptyContent(kind: OfficeKind): OfficeDoc["content"] {
 
 // --- plain-text extraction for preview/search ------------------------------
 
-export function extractPreview(kind: OfficeKind, content: OfficeDoc["content"]): string {
+export function extractPreview(kind: ArtifactKind, content: ArtifactDoc["content"]): string {
   try {
     if (kind === "document") {
       return slateToText((content as DocumentContent).nodes ?? []).slice(0, 400);
@@ -164,14 +155,100 @@ export function slateToMarkdown(nodes: any[]): string {
 
 // Convert a markdown string (subset) into a Plate/Slate value. Used when the AI
 // returns markdown that we insert into a document.
+const tableCells = (line: string): string[] =>
+  line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+
+const isTableSeparator = (line: string): boolean =>
+  /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+
+/** Header row + rows → a Plate table node. */
+function buildTable(header: string[], rows: string[][]): any {
+  const cell = (t: string, head: boolean) => ({
+    type: head ? "th" : "td",
+    children: [{ type: "p", children: parseInlineMarks(t) }],
+  });
+  // Without explicit column sizes Plate falls back to a narrow default, so a
+  // three-column comparison rendered as a thin strip with every header wrapped
+  // over three lines. Spread the usable width evenly instead.
+  const width = Math.max(120, Math.round(760 / Math.max(1, header.length)));
+  return {
+    type: "table",
+    colSizes: header.map(() => width),
+    children: [
+      { type: "tr", children: header.map((h) => cell(h, true)) },
+      ...rows.map((r) => ({ type: "tr", children: header.map((_, i) => cell(r[i] ?? "", false)) })),
+    ],
+  };
+}
+
+/**
+ * Repair a document whose markdown was flattened when it was written.
+ *
+ * Documents created before the converter understood tables and inline marks are
+ * already stored as paragraphs of raw text — `**gras**` with its asterisks, and
+ * a comparison table as a stack of `| a | b |` lines. Reparsing at write time
+ * cannot fix what is already in the database, so we heal on load: only the
+ * nodes that still carry literal markdown are touched, everything else is
+ * passed through untouched.
+ */
+export function healFlatMarkdown(nodes: any[]): any[] {
+  if (!Array.isArray(nodes) || nodes.length === 0) return nodes;
+  const textOf = (n: any): string =>
+    Array.isArray(n?.children) ? n.children.map((c: any) => (typeof c?.text === "string" ? c.text : "")).join("") : "";
+  const isPlainP = (n: any) => n?.type === "p" && !n.listStyleType && (n.children ?? []).every((c: any) => typeof c?.text === "string");
+
+  const out: any[] = [];
+  let changed = false;
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const text = textOf(n);
+
+    // A table: this paragraph is a pipe row and the next is the |---|---| rule.
+    if (isPlainP(n) && text.includes("|") && i + 1 < nodes.length && isTableSeparator(textOf(nodes[i + 1]))) {
+      const header = tableCells(text);
+      const rows: string[][] = [];
+      let j = i + 2;
+      while (j < nodes.length && isPlainP(nodes[j]) && textOf(nodes[j]).includes("|")) { rows.push(tableCells(textOf(nodes[j]))); j++; }
+      out.push(buildTable(header, rows));
+      i = j - 1;
+      changed = true;
+      continue;
+    }
+
+    // Literal inline markers left in a text leaf. Single-asterisk italic is in
+    // the list too — `*août 2026*` survived the first pass because only the
+    // double-marker forms were detected.
+    if (Array.isArray(n?.children)
+      && /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|~~[^~]+~~|(^|[^*])\*[^*\n]+\*([^*]|$))/.test(text)) {
+      out.push({ ...n, children: parseInlineMarks(text) });
+      changed = true;
+      continue;
+    }
+    out.push(n);
+  }
+  return changed ? out : nodes;
+}
+
 export function markdownToSlate(md: string): any[] {
   const out: any[] = [];
   const lines = (md ?? "").split("\n");
-  for (const raw of lines) {
+  for (let li = 0; li < lines.length; li++) {
+    const raw = lines[li];
     const line = raw.replace(/\r$/, "");
+    // GFM table
+    if (line.includes("|") && li + 1 < lines.length && isTableSeparator(lines[li + 1])) {
+      const header = tableCells(line);
+      const rows: string[][] = [];
+      li += 2;
+      while (li < lines.length && lines[li].includes("|") && lines[li].trim() !== "") { rows.push(tableCells(lines[li])); li++; }
+      li--;
+      out.push(buildTable(header, rows));
+      continue;
+    }
     const h = line.match(/^(#{1,3})\s+(.*)$/);
-    if (h) { out.push({ type: `h${h[1].length}`, children: [{ text: h[2] }] }); continue; }
-    if (/^>\s+/.test(line)) { out.push({ type: "blockquote", children: [{ text: line.replace(/^>\s+/, "") }] }); continue; }
+    if (h) { out.push({ type: `h${h[1].length}`, children: parseInlineMarks(h[2]) }); continue; }
+    if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) { out.push({ type: "hr", children: [{ text: "" }] }); continue; }
+    if (/^>\s+/.test(line)) { out.push({ type: "blockquote", children: parseInlineMarks(line.replace(/^>\s+/, "")) }); continue; }
     // Bulleted / numbered lists → Plate v53 indent-based list paragraphs.
     const ol = line.match(/^(\s*)\d+\.\s+(.*)$/);
     if (ol) {
@@ -206,32 +283,6 @@ function parseInlineMarks(text: string): any[] {
   }
   if (last < text.length) runs.push({ text: text.slice(last) });
   return runs.length ? runs : [{ text }];
-}
-
-// --- data access -----------------------------------------------------------
-
-export async function loadOfficeDocs(projectId: string, kind?: OfficeKind): Promise<OfficeDoc[]> {
-  let q = supabase
-    .from("office_documents")
-    .select("*")
-    .eq("project_id", projectId)
-    .eq("is_archived", false)
-    .order("updated_at", { ascending: false });
-  if (kind) q = q.eq("kind", kind);
-  const { data } = await q;
-  return (data ?? []) as OfficeDoc[];
-}
-
-export function relativeDate(iso: string): string {
-  const d = new Date(iso);
-  const mins = Math.round((Date.now() - d.getTime()) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.round(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return d.toLocaleDateString();
 }
 
 export function downloadBlob(filename: string, content: string | Blob, mime = "text/plain") {

@@ -6,6 +6,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { callAi, callAiWithTools, safeParseJson, type AiTask, type ChatMessage } from "../_shared/ai.ts";
+import { sanitizeModel } from "../_shared/model-router.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import {
   type WorkspaceRole, type EmittedArtifact, type ToolContext,
@@ -23,6 +24,15 @@ Règles:
 - FORMAT OBLIGATOIRE: structure toujours ta réponse en markdown propre. Quand tu listes des options, des étapes ou des actions, utilise une VRAIE liste markdown (chaque item sur sa propre ligne commençant par "- "), JAMAIS un paragraphe avec des libellés en gras collés les uns aux autres. Sépare les paragraphes par une ligne vide. Utilise des titres "###" pour les sections, du gras pour les libellés d'item ("- **Action** — description"). Reste bref.
 - Respecte strictement ton périmètre d'accès décrit ci-dessous.
 - Si un snapshot de la page actuelle de l'utilisateur est fourni, traite-le comme contexte PREMIER : réponds d'abord par rapport à ce qu'il voit à l'écran (chiffres, tableaux, sections visibles) avant de chercher ailleurs.
+
+CONFIGURATION DES AGENTS (tu es LE point de configuration — il n'y a pas de formulaire à conseiller):
+Configurer un agent porte sur TROIS choses, et rien d'autre: son PROMPT SYSTÈME (ce qu'on lui demande de faire), ses CONNECTEURS (ce sur quoi il peut agir) et ses SKILLS (comment il travaille). Le reste (modèle, autonomie, identité, sandbox) a une valeur par défaut qui marche : n'en parle QUE si l'utilisateur le demande explicitement, ne le propose jamais de toi-même.
+L'utilisateur voit ces trois cartes dans ce panneau ; il clique "Configurer" sur l'une d'elles et cela ouvre une conversation sur CETTE étape. Mène-la à son terme sans déborder sur les autres.
+  1) get_agent_setup (l'agent_id est dans le message) — ne devine JAMAIS un id d'outil, de connexion ou de skill.
+  2) Lis ce qui concerne l'étape : "profile.instructions_excerpt" (prompt système), "tools" + "options.connectors" (connecteurs réellement connectés dans ce projet, avec leur statut), "skills.active". Si aucune connexion utile n'existe, dis-le et propose de la créer dans l'onglet Connecteurs — n'invente pas de provider.
+  3) Propose du CONCRET et court, une seule question à la fois ("Je rattache Slack — je valide ?"). Pour le prompt système, montre le texte proposé avant de l'écrire.
+  4) Après accord, écris : update_agent_profile (instructions), configure_agent_tool / add_agent_tool avec kind 'connector_action' ou 'composio_toolkit' (connecteurs), search_agent_skills puis set_agent_skills (skills).
+  5) Termine par l'état de CETTE carte : ce qui est prêt, ce qui reste.
 
 INSTRUMENTATION DU CODE & ANALYTICS AVANCÉE:
 Tu peux instrumenter le dépôt GitHub connecté du projet : poser du tracking d'events, du feature flagging, installer les SDK Anduran (analytics & RAG), et définir une analytics avancée à partir d'une description en langage naturel.
@@ -114,12 +124,14 @@ Deno.serve(async (req) => {
     if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
     const userId = userData.user.id;
 
-    const { workspace_id, project_id, message, page_context } = body as {
+    const { workspace_id, project_id, message, page_context, model } = body as {
       workspace_id?: string;
       project_id?: string;
       conversation_id?: string;
       message?: string;
       page_context?: string;
+      /** Model picked in the composer for this turn. */
+      model?: string;
     };
     let conversation_id = body.conversation_id as string | undefined;
 
@@ -213,12 +225,25 @@ ${JSON.stringify({ project: context.project, connectors: context.connectors, cod
 
     // DeepSeek handles native tool-calling reliably; Groq/Llama frequently emits
     // malformed tool calls (400 tool_use_failed). Prefer DeepSeek when available,
-    // fall back to Groq otherwise.
-    const preferred: "groq" | "deepseek" = Deno.env.get("DEEPSEEK_API_KEY") ? "deepseek" : "groq";
+    // fall back to Groq otherwise — unless the composer pinned a model, whose
+    // provider then decides. Banned/unknown ids fall back to the provider's own
+    // default rather than reaching the API (see sanitizeModel).
+    const pinned = String(model ?? "").trim();
+    const pinnedProviderName: "groq" | "deepseek" | null = pinned
+      ? (pinned.startsWith("deepseek") ? "deepseek" : "groq")
+      : null;
+    const hasKey = (p: "groq" | "deepseek") =>
+      !!Deno.env.get(p === "groq" ? "GROQ_API_KEY" : "DEEPSEEK_API_KEY");
+    const preferred: "groq" | "deepseek" =
+      pinnedProviderName && hasKey(pinnedProviderName)
+        ? pinnedProviderName
+        : (hasKey("deepseek") ? "deepseek" : "groq");
+    const pinnedModel = pinnedProviderName === preferred ? sanitizeModel(pinned, preferred) : undefined;
     let aiResult;
     try {
       aiResult = await callAiWithTools({
         provider: preferred,
+        model: pinnedModel,
         messages: chatMessages,
         tools: toolDefsForRole(userRole),
         executor: buildExecutor(toolCtx),

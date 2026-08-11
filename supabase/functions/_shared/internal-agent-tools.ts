@@ -28,6 +28,9 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { TOOL_RESULT_CAP } from "./ai.ts";
+import {
+  DOC_KINDS, isDocKind, contentForKind, renderContent, CONTENT_FORMAT_HELP,
+} from "./artifact-content.ts";
 import type { ToolDef, ToolExecutor } from "./ai.ts";
 import type { ToolTier } from "./model-router.ts";
 import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
@@ -353,6 +356,26 @@ function str(v: unknown, fallback = ""): string {
 
 function cap(s: string, max = 8000): string {
   return s.length > max ? s.slice(0, max) + "\n…(truncated)" : s;
+}
+
+/**
+ * Coerce what a model typically passes as a "url" into an absolute one.
+ *
+ * Models routinely hand over `api.example.com/v1/x`, `//host/path` or a quoted
+ * URL, and the fetch tools used to reject all of those with a flat "url must be
+ * absolute" — an error the model can't act on, so it retries the same shape and
+ * burns rounds. Anything that plainly isn't a host (a bare path, a sentence)
+ * still returns null: guessing a host would be worse than refusing.
+ */
+function normalizeUrl(raw: string): string | null {
+  const s = raw.trim().replace(/^['"<]+|['">]+$/g, "");
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.startsWith("//")) return `https:${s}`;
+  // host[:port][/path…] — a dotted label before the first slash is enough to
+  // call it a host; "docs/readme.md" or "explique-moi ceci" are not.
+  if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(:\d+)?(\/|\?|#|$)/i.test(s)) return `https://${s}`;
+  return null;
 }
 
 // ── Per-tool deterministic output compression (the `compress` contract) ───────
@@ -695,8 +718,9 @@ function parseDdgLite(html: string, maxResults: number): SearchHit[] {
   return results;
 }
 
-export async function readUrl(url: string): Promise<string> {
-  if (!/^https?:\/\//i.test(url)) return "ERROR: url must be an absolute http(s) URL.";
+export async function readUrl(raw: string): Promise<string> {
+  const url = normalizeUrl(raw);
+  if (!url) return `ERROR: « ${raw.slice(0, 80)} » n'est pas une URL. Donne une adresse complète (https://…), ou passe par web_search si tu ne connais pas encore le lien.`;
   // Jina Reader proxies and extracts readable content; no API key required.
   const res = await fetch(`https://r.jina.ai/${url}`, {
     headers: { "X-Return-Format": "markdown" },
@@ -965,6 +989,25 @@ const DELIVERABLE_KINDS = [
   "report", "coding_session", "test_session", "simulation_session",
   "markdown", "json", "code", "url",
 ];
+/**
+ * What the MODEL is allowed to choose. `markdown` is deliberately absent: an
+ * option a model can see is an option it will take, and prose is a downgrade of
+ * every deliverable this app renders. Removing it from the enum is what makes
+ * "always JSON" real — the refusal further down is only the backstop for a
+ * model that ignores its own schema.
+ *
+ * DELIVERABLE_KINDS above stays complete: rows written before this change, and
+ * the session kinds the studios emit, must still validate.
+ */
+const OFFERED_DELIVERABLE_KINDS = ["report", "json", "code", "url"];
+/** Block types the renderer knows — mirrors src/features/artifacts/blocks.ts.
+ *  A type absent here is refused at write time rather than rendering as a
+ *  silent blank in the document. */
+const ARTIFACT_BLOCK_TYPES = [
+  "header", "paragraph", "list", "checklist", "image", "table", "quote", "code", "delimiter",
+  "kpi", "chart", "banner", "comparison", "matrix", "callout", "slide",
+];
+const safeJson = (raw: string): unknown => { try { return JSON.parse(raw); } catch { return null; } };
 /** Structured kinds whose content is JSON validated at save time. */
 const STRUCTURED_KINDS = new Set(["report", "coding_session", "test_session", "simulation_session"]);
 
@@ -985,6 +1028,18 @@ function parseEdgeJson(raw: string): Record<string, unknown> | null {
   }
 }
 const ARTIFACT_KINDS = ["document", "presentation", "spreadsheet", "image", "text"];
+/**
+ * What the MODEL may create. `document` and `text` are withheld: their content
+ * is markdown prose, which is exactly the format that must never carry a piece
+ * of written work here. Locking create_deliverable alone was not enough — the
+ * agent simply used this other door and shipped its analysis as a Plate
+ * document, with the figures as markdown tables and no KPI or chart anywhere.
+ *
+ * The kinds left are the ones whose content is genuinely structured:
+ * a deck, a sheet, an image. Anything WRITTEN goes through
+ * create_deliverable(kind="report").
+ */
+const OFFERED_ARTIFACT_KINDS = ["image"];
 
 // Guidance shown to the model for the structured `report` kind. The content is
 // a JSON string matching this shape; the UI renders it as a designed report.
@@ -1003,12 +1058,25 @@ const REPORT_SCHEMA_HINT = `For kind="report", content MUST be a JSON string wit
       "charts": [{ "type": "bar|line|area|pie|donut|radar|scatter", "title": "string", "x": "category key", "series": ["key1"], "data": [{ "<x>": "Jan", "key1": 12 }], "stacked": false }],
       "table": { "title": "string, optional", "columns": ["A","B"], "rows": [["x", 1]] },
       "timeline": [{ "date": "2026-06-01", "title": "string", "detail": "string", "tone": "info|success|warning|danger" }],
-      "callout": { "tone": "info|success|warning|danger", "text": "string" }
+      "callout": { "tone": "info|success|warning|danger", "text": "string" },
+      "images": [{ "url": "https://…", "caption": "what it shows and why it matters", "alt": "string, optional", "source": "site name, optional" }],
+      "comparison": { "title": "string", "columns": ["Us","Rival A","Rival B"], "highlight": 0,
+                      "rows": [{ "label": "criterion", "note": "optional detail", "cells": [true, "partial", false] }] },
+      "matrix": { "title": "string", "x_label": "axis name", "y_label": "axis name",
+                  "x_low": "low end", "x_high": "high end", "y_low": "low end", "y_high": "high end",
+                  "quadrants": ["top-left","top-right","bottom-right","bottom-left"],
+                  "items": [{ "label": "Player", "x": 70, "y": 40, "note": "why here", "highlight": false }] }
     }
   ]
 }
 MAKE REPORTS VISUAL AND PROFESSIONAL. Whenever you have numbers, SHOW them: lead a section with KPI cards, add at least one chart (pick the right type — line for trends over time, bar for comparisons, donut/pie for composition, radar for multi-dimension scores, scatter for correlation), use gauges for scores/completion, tables for detailed rows, a timeline for sequences of events, and callouts to highlight risks/wins. Prefer charts/KPIs over long prose. Every analytical report should contain visuals, not just text.
-You may also embed a chart inside markdown deliverables using a fenced block: \`\`\`chart\\n{ "type":"bar", "x":"month", "series":["mrr"], "data":[...] }\\n\`\`\``;
+MINIMUM BAR for any analytical report: an executive KPI row in the first section, at least one chart, at least one table, and a closing callout with the recommendation. A section that is a wall of prose with no visual is a section you have not finished designing.
+STRUCTURE the document like a consultant's deck, not a blog post: (1) executive summary with the KPIs and the verdict up front — a reader who stops after section 1 must already have the answer; (2) one section per subject, each opening with its own finding in one bold sentence, then the evidence; (3) a synthesis section that CONFRONTS the findings (what they mean together, what contradicts what); (4) a closing section with a ranked, actionable recommendation. Never end on a summary of what you did — end on what to do.
+"comparison" is the right block for "X versus Y versus Z" (booleans render as real ✓/✕, and highlight marks our own column) — reach for it before a plain table. "matrix" is the right block for a positioning map: place every player on two named axes (0-100), name the four quadrants, and set highlight:true on us. Both beat a paragraph describing the same thing.
+ANALYSE, do not inventory. Every section states a finding, backs it with a figure, and says the consequence. "Rival A charges $99/seat" is data; "Rival A's $99/seat puts them out of the SMB segment we own, which is why their published logos are all enterprise" is analysis. The report is judged on the second kind of sentence.
+IMAGES: use "images" whenever the subject is visual — a product screenshot, a pricing page, a UI you are comparing, a diagram or photo you found while researching. The url must be a direct, absolute link to the image itself (ending in .png/.jpg/.webp/.svg, or a CDN image url), NEVER a link to the page that contains it. Always write a caption saying what it shows; a picture with no caption is decoration. Two to four well-chosen figures beat a gallery. If an image you generated is what matters, produce it with create_artifact(kind="image") instead — it becomes its own openable artifact.
+A section body may also carry a chart as a fenced block: \`\`\`chart\\n{ "type":"bar", "x":"month", "series":["mrr"], "data":[...] }\\n\`\`\`
+Markdown in "body" is rendered fully: headings, GFM tables, lists, links, images (![caption](url)), blockquotes and fenced code all work — use them instead of flattening everything into paragraphs.`;
 
 // The studio artifact: a coding session rendered as a real session view (goal,
 // plan, per-file diffs, commands, PR + preview). This is what the Vibe Code
@@ -1110,6 +1178,112 @@ export function buildInternalToolset(
     hasKind("testing") ? TEST_SESSION_SCHEMA_HINT : "",
     hasKind("simulation") ? SIMULATION_SESSION_SCHEMA_HINT : "",
   ].filter(Boolean).join("\n");
+  // ══════════════════════════════════════════════════════════════════════════
+  // ARTIFACTS — one JSON contract, two shapes
+  // ══════════════════════════════════════════════════════════════════════════
+  // Everything an agent writes is an Editor.js document: `{ blocks: [{type,
+  // data}] }`. A REPORT is those blocks top to bottom; a PRESENTATION is the
+  // same blocks cut into pages by `slide` blocks. There is no third format, no
+  // markdown, no CSV, no prose blob — the front renders blocks with React
+  // components and nothing else.
+  //
+  // Blocks accumulate in the run's draft (run_state.meta.artifact_draft) so a
+  // long document is never squeezed into one tool-call argument, and so a run
+  // that dies mid-way can still be salvaged.
+
+  const BLOCK_CATALOGUE =
+    'Types de blocs. Texte : header {text, level:1-4}, paragraph {text}, list {style:"ordered"|"unordered", items:[]}, '
+    + 'checklist {items:[{text,checked}]}, quote {text, caption?}, code {code}, delimiter {}. '
+    + 'Données : table {withHeadings:true, content:[[..],[..]]}, kpi {items:[{label,value,delta?,trend:"up"|"down"|"flat"}]}, '
+    + 'chart {chartType:"bar"|"line"|"area"|"pie"|"donut"|"radar"|"scatter", title?, x, series:[], data:[{...}], stacked?}. '
+    + 'Analyse : comparison {title?, columns:[], highlight?, rows:[{label, note?, cells:[true|false|"texte"]}]}, '
+    + 'matrix {title?, xLabel, yLabel, xLow?, xHigh?, yLow?, yHigh?, quadrants:[4], items:[{label,x:0-100,y:0-100,note?,highlight?}]}. '
+    + 'Mise en avant : banner {title, subtitle?, author?, tone?, imageUrl?}, callout {tone:"info"|"success"|"warning"|"danger", text}, '
+    + 'image {file:{url}, caption?}. Découpage : slide {title?, layout?} — ouvre une nouvelle page dans une présentation. '
+    + 'Le texte accepte le HTML inline restreint : <b> <i> <code> <a href> <mark>.';
+
+  const draftKey = (target: string) => (target === "presentation" ? "deck_draft" : "report_draft_v2");
+
+  tools.set("add_block", {
+    incompressible: true,
+    family: "DELIVER",
+    def: {
+      name: "add_block",
+      description:
+        "Ajoute UN bloc au document en cours de construction. C'est ainsi que tu écris : un appel par bloc, dans l'ordre de lecture. "
+        + "Appelle-le dès que tu as les faits d'une partie — le fil de conversation est compacté au fil du run, un chiffre non écrit dans un bloc est un chiffre perdu. "
+        + "Quand le document est complet, appelle publish_artifact. " + BLOCK_CATALOGUE,
+      parameters: {
+        type: "object",
+        properties: {
+          target: { type: "string", enum: ["report", "presentation"], description: "Le document auquel ce bloc appartient." },
+          block: { type: "object", description: 'Un bloc : { "type": "...", "data": { ... } }. Voir le catalogue ci-dessus.' },
+        },
+        required: ["target", "block"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const target = str(args.target) === "presentation" ? "presentation" : "report";
+      const raw = args.block;
+      const block = (raw && typeof raw === "object" ? raw : safeJson(str(raw))) as { type?: string; data?: unknown } | null;
+      if (!block?.type) {
+        return 'ERROR: `block` doit être un objet { "type": "...", "data": { ... } }. ' + BLOCK_CATALOGUE;
+      }
+      if (!ARTIFACT_BLOCK_TYPES.includes(String(block.type))) {
+        return `ERROR: type de bloc « ${block.type} » inconnu. ${BLOCK_CATALOGUE}`;
+      }
+      const meta = await readRunMeta(ctx);
+      const key = draftKey(target);
+      const draft = (Array.isArray(meta[key]) ? meta[key] : []) as unknown[];
+      draft.push({ type: block.type, data: block.data ?? {} });
+      await writeRunMeta(ctx, { ...meta, [key]: draft });
+      return `Bloc « ${block.type} » ajouté (${draft.length} bloc(s) dans le ${target}). Continue, puis publish_artifact(target="${target}", title="…") pour publier.`;
+    },
+  });
+
+  tools.set("publish_artifact", {
+    incompressible: true,
+    family: "DELIVER",
+    def: {
+      name: "publish_artifact",
+      description:
+        "Publie le document construit avec add_block. C'est le SEUL moyen de livrer quelque chose de rédigé — rapport d'analyse, veille, audit, compte rendu, présentation. "
+        + "Le contenu est le JSON des blocs, rendu par l'application. Il n'existe aucun autre format : ni markdown, ni tableur, ni document texte.",
+      parameters: {
+        type: "object",
+        properties: {
+          target: { type: "string", enum: ["report", "presentation"], description: "report = document défilant ; presentation = slides." },
+          title: { type: "string", description: "Titre court et lisible." },
+        },
+        required: ["target", "title"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const target = str(args.target) === "presentation" ? "presentation" : "report";
+      const title = str(args.title, target === "presentation" ? "Présentation" : "Rapport").slice(0, 120);
+      const meta = await readRunMeta(ctx);
+      const key = draftKey(target);
+      const blocks = (Array.isArray(meta[key]) ? meta[key] : []) as Array<{ type: string; data: unknown }>;
+      if (blocks.length === 0) {
+        return `ERROR: aucun bloc n'a été construit pour ce ${target}. Appelle d'abord add_block(target="${target}", block={type, data}) une fois par bloc. ${BLOCK_CATALOGUE}`;
+      }
+      const content = JSON.stringify({ time: Date.now(), version: "2.30.0", blocks });
+      const summary = blocks
+        .map((b) => (b.data as { text?: string; title?: string })?.title ?? (b.data as { text?: string })?.text ?? "")
+        .filter(Boolean).join(" · ").replace(/<[^>]+>/g, "").slice(0, 200) || title;
+      await ctx.createDeliverable({ kind: target, name: title, content, summary });
+      // Consume the draft so a second publish cannot duplicate the document.
+      const { [key]: _used, ...rest } = meta;
+      await writeRunMeta(ctx, rest);
+      return `${target === "presentation" ? "Présentation" : "Rapport"} « ${title} » publié (${blocks.length} blocs). Résume-le en deux phrases dans ta réponse — le document s'ouvre en carte.`;
+    },
+  });
+
+  summaryLines.push('- add_block / publish_artifact: écrire un rapport ou une présentation, un bloc à la fois, en JSON rendu par l\'app (le SEUL format de livrable).');
+
+
   tools.set("create_deliverable", {
     incompressible: true,
     family: "DELIVER",
@@ -1121,7 +1295,7 @@ export function buildInternalToolset(
       parameters: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: DELIVERABLE_KINDS, description: "Deliverable format. Use 'report' for structured analyses with charts/KPIs." },
+          kind: { type: "string", enum: OFFERED_DELIVERABLE_KINDS, description: "'report' par défaut, pour absolument tout contenu rédigé (analyse, veille, audit, bilan, comparatif, note, compte rendu) : son content est un JSON structuré rendu par l'app. Il n'existe PAS d'option markdown — ne rédige jamais un livrable en prose markdown. 'json' = données brutes, 'code' = du code, 'url' = un simple lien." },
           name: { type: "string", description: "Short human-readable name." },
           content: { type: "string", description: "The full deliverable content (for report: the JSON string described above)." },
         },
@@ -1129,46 +1303,9 @@ export function buildInternalToolset(
         additionalProperties: false,
       },
     },
-    run: async (args) => {
-      let kind = DELIVERABLE_KINDS.includes(str(args.kind)) ? str(args.kind) : "markdown";
-      const name = str(args.name, "Output").slice(0, 120);
-      // The model often passes a report as a nested OBJECT rather than a JSON
-      // string — coerce so we don't dead-end on "content required".
-      let content = strOrJson(args.content);
-      if (!content && kind === "report") {
-        // No inline content — finalize an incremental report draft if one exists
-        // (built section-by-section via report_section, so a big report never has
-        // to fit in one tool-call argument).
-        const meta = await readRunMeta(ctx);
-        const draft = (meta.report_draft ?? null) as { title?: string; subtitle?: string; author?: string; summary?: string; sections?: unknown[] } | null;
-        if (draft && Array.isArray(draft.sections) && draft.sections.length > 0) {
-          content = JSON.stringify({
-            title: draft.title || name, subtitle: draft.subtitle, author: draft.author,
-            summary: draft.summary, sections: draft.sections,
-          });
-          const { report_draft: _clear, ...rest } = meta;
-          await writeRunMeta(ctx, rest); // consume the draft
-        }
-      }
-      if (!content) {
-        return "ERROR: content is required. Pass the FULL deliverable as the `content` argument (for a report: the JSON described above, or rich markdown). For a LARGE report, build it incrementally instead: call report_section(...) once per section, then create_deliverable(kind=\"report\") with NO content to finalize.";
-      }
-      // Validate report JSON; downgrade to markdown if it's not parseable so we
-      // never persist a broken report.
-      let summary: string | null;
-      if (STRUCTURED_KINDS.has(kind)) {
-        try {
-          const parsed = JSON.parse(content);
-          summary = (str(parsed.summary) || str(parsed.title) || str(parsed.goal) || str(parsed.verdict)).slice(0, 200) || null;
-        } catch {
-          kind = "markdown";
-          summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
-        }
-      } else {
-        summary = content.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null;
-      }
-      await ctx.createDeliverable({ kind, name, content, summary });
-      return `Deliverable "${name}" (${kind}) saved.`;
+    run: async () => {
+      // Retired: the artifact system is add_block + publish_artifact now.
+      return "ERROR: create_deliverable n'existe plus. Tout ce que tu rédiges est un document JSON rendu par l'app : construis-le avec add_block(target=\"report\"|\"presentation\", block={type,data}) une fois par bloc, puis publie avec publish_artifact(target, title). Il n'y a plus de markdown, plus de kind à choisir.";
     },
   });
   summaryLines.push("- create_deliverable: save your outputs as durable deliverables, ideally as a structured 'report' with charts/KPIs (always available).");
@@ -1177,11 +1314,67 @@ export function buildInternalToolset(
   // at a time so a large report never has to fit in a single (truncation-prone)
   // create_deliverable argument. Set the header once, add sections, then finalize
   // with create_deliverable(kind="report") and NO content.
+  // ── Run scratchpad ──────────────────────────────────────────────────────
+  // The transcript is compacted as a run grows, so what an agent read early is
+  // a stub by the time it writes. Every research result is therefore ALSO
+  // written, in full, to a run-scoped store (see recordFinding in
+  // internal-agent-run) that compaction never touches. This tool reads it back:
+  // the agent's own working memory for the length of the run.
+  tools.set("recall_findings", {
+    family: "MEMORY",
+    def: {
+      name: "recall_findings",
+      description:
+        "Relis ce que TU as déjà trouvé pendant ce run (résultats de recherche, pages lues), en texte intégral. À utiliser dès que tu as besoin d'un chiffre, d'une date ou d'une URL vus plus tôt : le fil de conversation est compacté au fil du run, mais ce magasin, non. TOUJOURS préférer ceci à relancer la même recherche.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Mots-clés à retrouver (nom d'entreprise, « effectif », une URL…). Vide = tout lister." },
+          limit: { type: "number", description: "Nombre d'entrées (défaut 6, max 15)." },
+        },
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      if (!ctx.runId) return "Aucun run en cours — rien à relire.";
+      const { data } = await ctx.admin
+        .from("internal_agent_run_events")
+        .select("payload, created_at")
+        .eq("run_id", ctx.runId).eq("kind", "log")
+        .order("created_at", { ascending: true }).limit(200);
+      const all = (data ?? [])
+        .map((e) => (e as { payload?: { finding?: { tool: string; label: string; text: string } } }).payload?.finding)
+        .filter((f): f is { tool: string; label: string; text: string } => !!f?.text);
+      if (all.length === 0) return "Rien n'a encore été collecté dans ce run.";
+
+      const q = str(args.query).toLowerCase().trim();
+      const terms = q ? q.split(/\s+/).filter((w) => w.length > 2) : [];
+      const scored = all
+        .map((f) => {
+          const hay = `${f.label}\n${f.text}`.toLowerCase();
+          return { f, score: terms.length === 0 ? 1 : terms.filter((t) => hay.includes(t)).length };
+        })
+        .filter((s) => s.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, Math.max(1, Math.min(15, Number(args.limit) || 6)));
+      if (scored.length === 0) {
+        return `Aucune de tes ${all.length} collectes ne mentionne « ${str(args.query)} ». Cette donnée n'a pas encore été trouvée : cherche-la (requête NOUVELLE), ou écris « non publié » et avance.`;
+      }
+      return cap(
+        `${scored.length} collecte(s) sur ${all.length} :\n\n`
+        + scored.map(({ f }) => `### [${f.tool}] ${f.label}\n${f.text}`).join("\n\n---\n\n"),
+        14000,
+      );
+    },
+  });
+  summaryLines.push("- recall_findings: relire tes propres recherches/lectures de ce run en texte intégral (le fil est compacté, pas ce magasin).");
+
   tools.set("report_section", {
     def: {
       name: "report_section",
       description:
-        "Build a kind=\"report\" deliverable INCREMENTALLY — one section per call — so you never have to emit a huge JSON in a single create_deliverable argument (which gets truncated). First call may set the header (title/subtitle/summary/author); each call may append one `section`. When done, call create_deliverable(kind=\"report\") with NO content to finalize from the accumulated draft. A `section` = one entry of the report 'sections' array: { heading, body?, kpis?, gauges?, charts?, table?, timeline?, callout? }.",
+        "Build a kind=\"report\" deliverable INCREMENTALLY — one section per call — so you never have to emit a huge JSON in a single create_deliverable argument (which gets truncated). First call may set the header (title/subtitle/summary/author); each call may append one `section`. When done, call create_deliverable(kind=\"report\") with NO content to finalize from the accumulated draft. A `section` = one entry of the report 'sections' array: { heading, body?, kpis?, gauges?, charts?, table?, timeline?, callout?, images?, comparison?, matrix? }.\n"
+        + "WRITE AS YOU GO — this is not optional on a long run. Your transcript is COMPACTED as the run grows: old tool results are cut down to a stub, so the search results and pages you read EARLY are no longer readable by the time you write the report. A figure you have not written into a section is a figure you have lost. So the moment you have the facts for one section (one company, one theme), call report_section for THAT section immediately — with the numbers, the dates and the source urls in it — then move on. Never gather everything first and write at the end: that is how a report ends up with \"nombre d'employés\" missing after twenty successful searches.",
       parameters: {
         type: "object",
         properties: {
@@ -1189,24 +1382,14 @@ export function buildInternalToolset(
           subtitle: { type: "string" },
           author: { type: "string" },
           summary: { type: "string", description: "Executive summary (1-3 sentences)." },
-          section: { type: "object", description: "One report section object to append (heading + optional body/kpis/gauges/charts/table/timeline/callout)." },
+          section: { type: "object", description: "One report section object to append (heading + optional body/kpis/gauges/charts/table/timeline/callout/images/comparison/matrix)." },
         },
         additionalProperties: true,
       },
     },
-    run: async (args) => {
-      const meta = await readRunMeta(ctx);
-      const draft = ((meta.report_draft ?? {}) as { title?: string; subtitle?: string; author?: string; summary?: string; sections?: unknown[] });
-      if (!Array.isArray(draft.sections)) draft.sections = [];
-      if (str(args.title)) draft.title = str(args.title).slice(0, 200);
-      if (str(args.subtitle)) draft.subtitle = str(args.subtitle).slice(0, 200);
-      if (str(args.author)) draft.author = str(args.author).slice(0, 120);
-      if (str(args.summary)) draft.summary = str(args.summary).slice(0, 800);
-      let sec: unknown = args.section;
-      if (typeof sec === "string" && sec.trim()) { try { sec = JSON.parse(sec); } catch { sec = { heading: "Section", body: sec }; } }
-      if (sec && typeof sec === "object") draft.sections.push(sec);
-      await writeRunMeta(ctx, { ...meta, report_draft: draft });
-      return `Report draft updated: ${draft.sections.length} section(s)${draft.title ? ` — "${draft.title}"` : ""}. Add more with report_section, or finalize with create_deliverable(kind="report") (no content needed).`;
+    run: async () => {
+      // Retired: the artifact system is add_block + publish_artifact now.
+      return "ERROR: report_section n'existe plus. Un rapport se construit bloc par bloc : add_block(target=\"report\", block={type:\"header\"|\"paragraph\"|\"kpi\"|\"chart\"|\"table\"|\"comparison\"|\"matrix\"|\"callout\"|..., data:{...}}), puis publish_artifact(target=\"report\", title=\"…\").";
     },
   });
   summaryLines.push("- report_section: build a big report section-by-section, then finalize with create_deliverable(kind=\"report\") (no content).");
@@ -1374,15 +1557,12 @@ export function buildInternalToolset(
     def: {
       name: "create_artifact",
       description:
-        "Create a rich artifact the user can open and keep working on — a document, presentation, spreadsheet, image, or a simple text block. Shows up as a card in the chat.\n" +
-        "- kind=\"document\" or \"text\": content is markdown (headings with #, bullet lists with -, plain paragraphs).\n" +
-        "- kind=\"presentation\": content is one slide per line, formatted \"Title | body text\" (body may be empty).\n" +
-        "- kind=\"spreadsheet\": content is CSV — comma-separated, first line is the header row.\n" +
-        "- kind=\"image\": content is a detailed image-generation prompt, NOT markdown.",
+        "Generate an IMAGE. content is a detailed image-generation prompt (never markdown, never JSON). Shows up as a card in the chat. " +
+        "This tool does nothing else. There is no document, no spreadsheet and no presentation artifact: EVERYTHING you write — analysis, note, recap, deck, table of figures — is create_deliverable(kind=\"report\"), whose content is structured JSON the app renders with React components. A deck is a report whose sections are its slides; tabular data is a report section carrying a table block.",
       parameters: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: ARTIFACT_KINDS },
+          kind: { type: "string", enum: OFFERED_ARTIFACT_KINDS },
           title: { type: "string", description: "Short human-readable title." },
           content: { type: "string", description: "Format depends on kind — see above." },
         },
@@ -1390,16 +1570,131 @@ export function buildInternalToolset(
         additionalProperties: false,
       },
     },
-    run: async (args) => {
-      const kind = (ARTIFACT_KINDS.includes(str(args.kind)) ? str(args.kind) : "text") as ArtifactDraft["kind"];
-      const title = str(args.title, "Untitled").slice(0, 120);
-      const content = str(args.content);
-      if (!content) return "ERROR: content is required.";
-      await ctx.createArtifact({ kind, title, content });
-      return `Artifact "${title}" (${kind}) created.`;
+    run: async () => {
+      // Retired: the artifact system is add_block + publish_artifact now.
+      return "ERROR: create_artifact n'existe plus. Un rapport ou une présentation se construit avec add_block puis publish_artifact. Une présentation = les mêmes blocs, séparés par des blocs {type:\"slide\"}. Il n'existe ni document markdown, ni tableur, ni artifact texte.";
     },
   });
-  summaryLines.push("- create_artifact: create a document/presentation/spreadsheet/image/text artifact the user can open (always available).");
+  summaryLines.push("- create_artifact: generate an IMAGE only (everything written goes through create_deliverable as a report).");
+
+  // ── Always-on: artifacts are EDITABLE, not write-once ──────────────────────
+  // create_artifact alone made every correction a new file: an agent asked to
+  // "add a column" produced a second spreadsheet and left the first one wrong.
+  // These three close the loop — find it, read it back in the same text format
+  // it was written in, save the edit in place.
+
+  tools.set("list_artifacts", {
+    def: {
+      name: "list_artifacts",
+      description:
+        "List the documents, spreadsheets and presentations of this workspace — yours and your teammates'. Call this BEFORE creating an artifact that may already exist, and to get the id of one you want to read or update. Returns id, kind, title and last-updated date, newest first.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional keywords matched against the title." },
+          kind: { type: "string", enum: DOC_KINDS, description: "Optional filter to one kind." },
+          limit: { type: "number", description: "Max results (default 15, max 40)." },
+        },
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      if (!ctx.projectId) return "ERROR: no project context.";
+      const limit = Math.min(Math.max(Number(args.limit) || 15, 1), 40);
+      let q = ctx.admin.from("office_documents")
+        .select("id, kind, title, updated_at, service_room_id")
+        .eq("project_id", ctx.projectId).eq("is_archived", false)
+        .order("updated_at", { ascending: false }).limit(limit);
+      const kind = str(args.kind);
+      if (isDocKind(kind)) q = q.eq("kind", kind);
+      const query = str(args.query).trim();
+      if (query) q = q.ilike("title", `%${query.replace(/[%_]/g, (m) => `\\${m}`)}%`);
+      const { data, error } = await q;
+      if (error) return `ERROR listing artifacts: ${error.message}`;
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      if (rows.length === 0) {
+        return query
+          ? `No artifact matches "${query}". Create it with create_artifact.`
+          : "No artifacts yet in this workspace.";
+      }
+      return rows.map((r) =>
+        `[${String(r.kind)}] ${String(r.title)} — id ${String(r.id)} (updated ${String(r.updated_at ?? "").slice(0, 10)})`,
+      ).join("\n");
+    },
+  });
+  summaryLines.push("- list_artifacts: list existing documents/spreadsheets/presentations before creating a new one (always available).");
+
+  tools.set("read_artifact", {
+    def: {
+      name: "read_artifact",
+      description:
+        "Read an artifact's full content back, in the SAME text format you write it in (" + CONTENT_FORMAT_HELP + "). Use it to check what is already there before editing, to reuse a teammate's work, or to answer a question about a document. Get the id from list_artifacts.",
+      parameters: {
+        type: "object",
+        properties: { artifact_id: { type: "string", description: "The artifact id from list_artifacts." } },
+        required: ["artifact_id"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const id = str(args.artifact_id).trim();
+      if (!id) return "ERROR: artifact_id is required.";
+      const { data, error } = await ctx.admin.from("office_documents")
+        .select("id, kind, title, content, project_id, updated_at").eq("id", id).maybeSingle();
+      if (error) return `ERROR reading artifact: ${error.message}`;
+      const row = data as Record<string, unknown> | null;
+      if (!row) return `ERROR: no artifact with id ${id}.`;
+      // Scope check: the service role bypasses RLS, so the tool enforces the
+      // project boundary itself — an agent must never read another project's work.
+      if (ctx.projectId && String(row.project_id) !== ctx.projectId) return "ERROR: that artifact belongs to another project.";
+      const body = renderContent(String(row.kind), row.content);
+      return cap(`# ${String(row.title)} (${String(row.kind)}, id ${id})\n\n${body || "(empty)"}`, 12000);
+    },
+  });
+  summaryLines.push("- read_artifact: read an artifact's content back as markdown/CSV/slide lines (always available).");
+
+  tools.set("update_artifact", {
+    def: {
+      name: "update_artifact",
+      description:
+        "Rewrite an existing artifact IN PLACE — use this instead of creating a second one whenever you are correcting, extending or reworking something that already exists. `content` REPLACES the whole body, so read_artifact first and send back the complete edited version, not just your change. Format: " + CONTENT_FORMAT_HELP,
+      parameters: {
+        type: "object",
+        properties: {
+          artifact_id: { type: "string", description: "The artifact id from list_artifacts." },
+          content: { type: "string", description: "The COMPLETE new body (replaces the current one)." },
+          title: { type: "string", description: "Optional new title." },
+        },
+        required: ["artifact_id", "content"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const id = str(args.artifact_id).trim();
+      const content = str(args.content);
+      if (!id || !content) return "ERROR: artifact_id and content are required.";
+      const { data: cur } = await ctx.admin.from("office_documents")
+        .select("id, kind, title, project_id").eq("id", id).maybeSingle();
+      const row = cur as Record<string, unknown> | null;
+      if (!row) return `ERROR: no artifact with id ${id}.`;
+      if (ctx.projectId && String(row.project_id) !== ctx.projectId) return "ERROR: that artifact belongs to another project.";
+      const kind = String(row.kind);
+      if (!isDocKind(kind)) return `ERROR: artifacts of kind ${kind} cannot be edited.`;
+      const patch: Record<string, unknown> = {
+        content: contentForKind(kind, content),
+        updated_at: new Date().toISOString(),
+      };
+      const title = str(args.title).trim();
+      if (title) patch.title = title.slice(0, 200);
+      const { error } = await ctx.admin.from("office_documents").update(patch).eq("id", id);
+      if (error) return `ERROR updating artifact: ${error.message}`;
+      await ctx.logEvent("ui", {
+        block: { component: "artifact", props: { id, table: "office_documents", kind, title: title || String(row.title) } },
+      }).catch(() => {});
+      return `Artifact "${title || String(row.title)}" updated in place (id ${id}).`;
+    },
+  });
+  summaryLines.push("- update_artifact: rewrite an existing artifact in place instead of creating a duplicate (always available).");
 
   // Always-on: attach rich UI blocks to the reply — the chat renders them as
   // real components (generative UI). Blocks are logged as 'ui' events during
@@ -2065,8 +2360,10 @@ export function buildInternalToolset(
       },
     },
     run: async (args) => {
-      const url = str(args.url);
-      if (!/^https?:\/\//i.test(url)) return "ERROR: url must be absolute http(s).";
+      const url = normalizeUrl(str(args.url));
+      if (!url) {
+        return `ERROR: « ${str(args.url).slice(0, 80)} » n'est pas une URL. Passe une adresse complète, par exemple https://api.exemple.com/v1/data. Pour lire des données internes, utilise query_table ou un outil connecteur plutôt que http_get.`;
+      }
       // Block obvious internal/metadata targets (SSRF guard).
       if (/(localhost|127\.0\.0\.1|169\.254\.169\.254|::1|metadata\.google)/i.test(url)) {
         return "ERROR: that host is not allowed.";
@@ -4227,6 +4524,11 @@ export function buildInternalToolset(
   const CORE_TOOLS = new Set([
     "ask_user", "update_todos", "create_deliverable", "report_section",
     "search_context", "load_toolset", "need_tools", "say", "use_skill", "read_skill_file",
+    // Initiative must never cost a load_toolset round. propose_mission is the
+    // ONLY safe channel for an agent to act on something it noticed (it files a
+    // paused backlog item, it executes nothing) — behind a lazily-loaded family
+    // it simply never got called, and the initiative died with it.
+    "propose_mission",
   ]);
   // Families whose schemas ship by default: the ones that DO work, plus MEMORY
   // (tiny, and saving knowledge is opportunistic hygiene — it must never cost a
@@ -4372,6 +4674,11 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
   search_knowledge: "DATA", query_table: "DATA", list_connectors: "DATA",
   update_todos: "PLAN", use_skill: "PLAN", read_skill_file: "PLAN", ask_user: "PLAN",
   create_deliverable: "DELIVER", report_section: "DELIVER", render_ui: "DELIVER",
+  // Artifacts are a DELIVER concern. Unmapped, they fell through to
+  // INTEGRATIONS — a family that does NOT ship by default — so the tools
+  // documented as "always available" needed a load_toolset round first, and
+  // agents routinely concluded they couldn't produce a document at all.
+  create_artifact: "DELIVER", list_artifacts: "DELIVER", read_artifact: "DELIVER", update_artifact: "DELIVER",
   save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY", search_past_work: "MEMORY",
   create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
   create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM", propose_mission: "TEAM", create_agent: "TEAM",

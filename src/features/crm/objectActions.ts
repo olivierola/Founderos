@@ -35,15 +35,11 @@ export const OBJECT_ACTIONS: Record<string, ObjectAction[]> = {
   ],
   documents: [
     { id: "open", label: "Open document", icon: "FileText", kind: "navigate",
-      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/office/document/${r.source_id}` },
+      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/artifact/document/${r.source_id}` },
   ],
   simulations: [
     { id: "open", label: "Open simulation", icon: "FlaskConical", kind: "navigate",
       path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/simulations/workspace` },
-  ],
-  whiteboards: [
-    { id: "open", label: "Open whiteboard", icon: "PenSquare", kind: "navigate",
-      path: (r, c) => `/app/${c.workspaceSlug}/${c.projectSlug}/office/whiteboard?board=${r.source_id}` },
   ],
   deliverables: [
     { id: "open_agent", label: "Open producing agent", icon: "Bot", kind: "navigate",

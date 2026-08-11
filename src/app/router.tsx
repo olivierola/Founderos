@@ -19,14 +19,16 @@ import { CustomDashboardsPage } from "@/features/overview/dashboards/CustomDashb
 import { DashboardBuilderPage } from "@/features/overview/dashboards/DashboardBuilder";
 
 import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
-import { RagAgentsPage } from "@/features/agent-rag/Agents";
+import { AgentsPage } from "@/features/agent-rag/Agents";
 // The "Agentic Onboarding" module was removed — onboarding is now a public
 // agent with a conditional Onboarding tab in the RAG builder. Old /onboarding/*
 // deep links redirect to the public agents list (see the app children below).
 import { RagCenterPage, RagCollectionDetailPage } from "@/features/rag-center/RagCenter";
 import { KnowledgeCollectionsPage } from "@/features/rag-center/KnowledgeCollections";
-import { InternalAgentsListPage } from "@/features/internal-agents/InternalAgentsList";
-import { InternalAgentDetailPage, SkillsLibraryPage } from "@/features/internal-agents/InternalAgentDetail";
+import { SkillsLibraryPage } from "@/features/internal-agents/InternalAgentDetail";
+import {
+  InternalAgentRedirect, InternalAgentsIndexRedirect,
+} from "@/features/internal-agents/AgentRouteRedirects";
 import { SkillEditorPage } from "@/features/internal-agents/SkillEditor";
 import { McpServersPage, McpOAuthCallbackPage } from "@/features/internal-agents/McpServers";
 import { AgentEcosystemPage } from "@/features/internal-agents/AgentEcosystem";
@@ -55,22 +57,22 @@ import { RecordViewPage } from "@/features/crm/RecordView";
 import { HelpCenterPage } from "@/features/support/HelpCenter";
 import { PmSimulationsPage } from "@/features/pm/PmSimulations";
 
-// Office (Bureautique)
+// Agent artifacts — the Office (Bureautique) module was deleted (2026-08-10):
+// agents produce documents/spreadsheets/presentations themselves via
+// create_artifact, so only the EDITORS survive, as the surface a human opens
+// an artifact in (from a room's Artifacts tab or a CRM record). They are
+// lazy-loaded — the Plate document editor pulls a large dependency graph
+// (media, tables, AI…), so we keep it out of the initial bundle.
 import { Suspense, lazy } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { OfficeLibraryPage } from "@/features/office/OfficeLibrary";
-import { OfficeCopywriterPage, OfficeImageStudioPage, OfficeVideoStudioPage } from "@/features/office/OfficeGenAi";
-import { OfficeWhiteboardPage } from "@/features/office/Whiteboard";
-// Office editors are lazy-loaded — the Plate document editor pulls a large
-// dependency graph (media, tables, AI…), so we keep it out of the initial bundle.
 const DocumentEditorPage = lazy(() =>
-  import("@/features/office/DocumentEditor").then((m) => ({ default: m.DocumentEditorPage })));
+  import("@/features/artifacts/DocumentEditor").then((m) => ({ default: m.DocumentEditorPage })));
 const SpreadsheetEditorPage = lazy(() =>
-  import("@/features/office/SpreadsheetEditor").then((m) => ({ default: m.SpreadsheetEditorPage })));
+  import("@/features/artifacts/SpreadsheetEditor").then((m) => ({ default: m.SpreadsheetEditorPage })));
 const PresentationEditorPage = lazy(() =>
-  import("@/features/office/PresentationEditor").then((m) => ({ default: m.PresentationEditorPage })));
+  import("@/features/artifacts/PresentationEditor").then((m) => ({ default: m.PresentationEditorPage })));
 
-function OfficeEditorFallback() {
+function ArtifactEditorFallback() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
@@ -167,8 +169,10 @@ const PAGES: Record<string, PageEl> = {
   // AI HQ dashboard
   "hq/dashboard": <AiHqDashboard />,
 
-  "agent/internal-agents": <InternalAgentsListPage />,
-  "agent/public-agents": <RagAgentsPage />,
+  // The internal-agent list & detail pages are gone from the main dashboard —
+  // agents are worked with in their service dashboard. Old URLs resolve there.
+  "agent/internal-agents": <InternalAgentsIndexRedirect />,
+  "agent/agents": <AgentsPage />,
   "agent/ecosystem": <AgentEcosystemPage />,
   "agent/tasks": <AgentTasksPage />,
   "agent/knowledge": <RagCenterPage />,
@@ -198,16 +202,6 @@ const PAGES: Record<string, PageEl> = {
   // "Outils IA" dashboard modules.
   "repos/list": <RepositoriesPage />,
   "simulations/workspace": <PmSimulationsPage />,
-
-  // Office (Bureautique) — library + per-kind filtered lists.
-  "office/library": <OfficeLibraryPage />,
-  "office/documents": <OfficeLibraryPage initialKind="document" />,
-  "office/spreadsheets": <OfficeLibraryPage initialKind="spreadsheet" />,
-  "office/presentations": <OfficeLibraryPage initialKind="presentation" />,
-  "office/whiteboard": <OfficeWhiteboardPage />,
-  "office/gen-image": <OfficeImageStudioPage />,
-  "office/gen-video": <OfficeVideoStudioPage />,
-  "office/gen-copy": <OfficeCopywriterPage />,
 
   // ── AI Governance module ──
   "governance/guardrails": <GovGuardrailsPage />,
@@ -332,7 +326,7 @@ function LegacyBuilderRedirect() {
 function buildModuleRoutes() {
   // test-runs & vibe-code render via explicit :sub routes (single page instance
   // that keeps its state across onglets), so they're excluded here.
-  // HIDDEN_MODULES (support/pm/office/devops) stay routed without appearing in
+  // HIDDEN_MODULES (devops/simulations/test-runs/repos…) stay routed without appearing in
   // the nav — deep links, CRM record actions and breadcrumbs keep working.
   return [...MODULES, ...HIDDEN_MODULES].filter((m) => m.slug !== "test-runs" && m.slug !== "vibe-code").flatMap((mod) => {
     const hasProjectConfig = MODULE_PROJECT_CONFIGS[mod.slug] != null;
@@ -489,10 +483,12 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        // Legacy deep links (…/chat, …/settings?s=tools) — the inner tab is
+        // dropped, the service dashboard opens the agent on its own tabs.
         path: "agent/internal/:agentId/:tab?",
         element: (
           <ErrorBoundary>
-            <InternalAgentDetailPage />
+            <InternalAgentRedirect />
           </ErrorBoundary>
         ),
       },
@@ -512,18 +508,26 @@ export const router = createBrowserRouter([
           </ErrorBoundary>
         ),
       },
+      // Agent artifact editors (the Office module's only survivors).
       {
-        path: "office/document/:docId",
-        element: <ErrorBoundary><Suspense fallback={<OfficeEditorFallback />}><DocumentEditorPage /></Suspense></ErrorBoundary>,
+        path: "artifact/document/:docId",
+        element: <ErrorBoundary><Suspense fallback={<ArtifactEditorFallback />}><DocumentEditorPage /></Suspense></ErrorBoundary>,
       },
       {
-        path: "office/spreadsheet/:docId",
-        element: <ErrorBoundary><Suspense fallback={<OfficeEditorFallback />}><SpreadsheetEditorPage /></Suspense></ErrorBoundary>,
+        path: "artifact/spreadsheet/:docId",
+        element: <ErrorBoundary><Suspense fallback={<ArtifactEditorFallback />}><SpreadsheetEditorPage /></Suspense></ErrorBoundary>,
       },
       {
-        path: "office/presentation/:docId",
-        element: <ErrorBoundary><Suspense fallback={<OfficeEditorFallback />}><PresentationEditorPage /></Suspense></ErrorBoundary>,
+        path: "artifact/presentation/:docId",
+        element: <ErrorBoundary><Suspense fallback={<ArtifactEditorFallback />}><PresentationEditorPage /></Suspense></ErrorBoundary>,
       },
+      // Old Office deep links → the artifact editor that replaced them; every
+      // other office/* page is gone, so it lands on the CRM.
+      { path: "office/document/:docId", element: <ParamRedirect build={(p) => `artifact/document/${p.docId}`} /> },
+      { path: "office/spreadsheet/:docId", element: <ParamRedirect build={(p) => `artifact/spreadsheet/${p.docId}`} /> },
+      { path: "office/presentation/:docId", element: <ParamRedirect build={(p) => `artifact/presentation/${p.docId}`} /> },
+      { path: "office", element: <AbsRedirect to="crm/workspace" /> },
+      { path: "office/:sub", element: <AbsRedirect to="crm/workspace" /> },
       {
         path: "devops/servers/:serverId",
         element: (
@@ -558,9 +562,10 @@ export const router = createBrowserRouter([
       },
       // Any other old /actions/* cockpit link → CRM Overview.
       { path: "actions/:sub", element: <AdminMergeRedirect to="overview" /> },
-      // PM & Support modules deleted (2026-07-17): whiteboard moved to Office,
-      // simulations have their own module, everything else lives as CRM records.
-      { path: "pm/whiteboard", element: <AbsRedirect to="office/whiteboard" /> },
+      // PM & Support modules deleted (2026-07-17); the whiteboard they had
+      // passed to Office went with the Office module itself (2026-08-10).
+      // Simulations have their own module, everything else lives as CRM records.
+      { path: "pm/whiteboard", element: <AbsRedirect to="crm/workspace" /> },
       { path: "pm/simulations", element: <AbsRedirect to="simulations/workspace" /> },
       { path: "pm/:sub", element: <AbsRedirect to="crm/workspace" /> },
       { path: "support/:sub", element: <AbsRedirect to="crm/workspace" /> },
@@ -590,8 +595,11 @@ export const router = createBrowserRouter([
       { path: "admin/connectors", element: <AbsRedirect to="agent/connectors" /> },
       // The "Agentic Onboarding" module became a conditional tab on public
       // agents — its old deep links land on the public agents list.
-      { path: "onboarding", element: <AbsRedirect to="agent/public-agents" /> },
-      { path: "onboarding/:sub", element: <AbsRedirect to="agent/public-agents" /> },
+      { path: "onboarding", element: <AbsRedirect to="agent/agents" /> },
+      { path: "onboarding/:sub", element: <AbsRedirect to="agent/agents" /> },
+      // "Agents publics" became the unified "Agents" roster (internal + public
+      // in one list), so its old slug redirects rather than 404-ing.
+      { path: "agent/public-agents", element: <AbsRedirect to="agent/agents" /> },
       ...buildModuleRoutes(),
     ],
   },

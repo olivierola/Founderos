@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import {
   ExternalLink, TrendingUp, TrendingDown, FileText, Presentation, Table as TableIcon, Image as ImageIcon, Type,
-  ShieldCheck, Check, X, Loader2,
+  ShieldCheck, Check, X, Loader2, ChartBar, Braces, Code2,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -171,8 +171,13 @@ function LinkCard({ props }: { props: Record<string, unknown> }) {
   );
 }
 
-// ── deliverable (a produced document/file/report → card with Open) ───────────
-function DeliverableBlock({ props, onOpen }: { props: Record<string, unknown>; onOpen?: (a: ArtifactOpenTarget) => void }) {
+// ── deliverable (a produced report/file → the SAME card as an artifact) ──────
+// A report an agent worked minutes on used to land as a thin one-line strip
+// while a throwaway spreadsheet got the full card. Same object to the reader,
+// same card: WorkCard below is shared by both.
+function DeliverableBlock({ props, agentName, onOpen }: {
+  props: Record<string, unknown>; agentName?: string; onOpen?: (a: ArtifactOpenTarget) => void;
+}) {
   const navigate = useNavigate();
   const { workspaceSlug, projectSlug } = useParams();
   const name = str(props.name) || "Livrable";
@@ -187,27 +192,19 @@ function DeliverableBlock({ props, onOpen }: { props: Record<string, unknown>; o
     if (id) navigate(`/app/${workspaceSlug}/${projectSlug}/agent/knowledge?d=${id}`);
   };
   return (
-    <button
-      type="button"
-      onClick={open}
-      className={cn(
-        chatCard,
-        "group flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40",
-      )}
-    >
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-        <FileText className="h-5 w-5 text-primary" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold">{name}</div>
-        <div className="mt-0.5 text-xs capitalize text-muted-foreground">{kind === "report" ? "Rapport" : kind}</div>
-      </div>
-      <span className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors group-hover:border-primary/50 group-hover:text-foreground">
-        Ouvrir →
-      </span>
-    </button>
+    <WorkCard
+      title={name}
+      subtitle={agentName ? `Créé par ${agentName}` : (DELIVERABLE_LABELS[kind] ?? kind)}
+      kind={kind}
+      onOpen={open}
+    />
   );
 }
+
+const DELIVERABLE_LABELS: Record<string, string> = {
+  report: "Rapport", markdown: "Document", json: "Données", file: "Fichier",
+  url: "Lien", code: "Code", csv: "Tableur",
+};
 
 // ── artifact (document/presentation/spreadsheet/image/text, created by
 //    create_artifact → card with Open; opens in the Room panel, not a route) ──
@@ -225,6 +222,8 @@ export interface ArtifactOpenTarget {
 
 const ARTIFACT_ICONS: Record<string, typeof FileText> = {
   document: FileText, text: Type, presentation: Presentation, spreadsheet: TableIcon, image: ImageIcon,
+  // Deliverable kinds share the registry — one produced object, one visual language.
+  report: ChartBar, markdown: FileText, json: Braces, code: Code2, csv: TableIcon, url: ExternalLink, file: FileText,
 };
 
 // Per-kind tone for the card's header (real photo only for a ready image;
@@ -235,53 +234,42 @@ const ARTIFACT_TONE: Record<string, { bg: string; icon: string }> = {
   presentation: { bg: "bg-amber-500/15", icon: "text-amber-600 dark:text-amber-400" },
   spreadsheet: { bg: "bg-emerald-500/15", icon: "text-emerald-600 dark:text-emerald-400" },
   image: { bg: "bg-violet-500/15", icon: "text-violet-600 dark:text-violet-400" },
+  report: { bg: "bg-indigo-500/15", icon: "text-indigo-600 dark:text-indigo-400" },
+  markdown: { bg: "bg-sky-500/15", icon: "text-sky-600 dark:text-sky-400" },
+  json: { bg: "bg-teal-500/15", icon: "text-teal-600 dark:text-teal-400" },
+  code: { bg: "bg-rose-500/15", icon: "text-rose-600 dark:text-rose-400" },
+  csv: { bg: "bg-emerald-500/15", icon: "text-emerald-600 dark:text-emerald-400" },
+  url: { bg: "bg-blue-500/15", icon: "text-blue-600 dark:text-blue-400" },
+  file: { bg: "bg-slate-500/15", icon: "text-slate-600 dark:text-slate-400" },
 };
 
-function ArtifactBlock({ props, agentName, onOpen }: { props: Record<string, unknown>; agentName?: string; onOpen?: (a: ArtifactOpenTarget) => void }) {
-  const navigate = useNavigate();
-  const { workspaceSlug, projectSlug } = useParams();
-  const title = str(props.title) || "Untitled";
-  const kind = str(props.kind) || "document";
-  const table = (str(props.table) || "office_documents") as ArtifactOpenTarget["table"];
-  const id = str(props.id);
+/**
+ * The card every produced object wears in the thread: a preview plate on the
+ * left, the title and its author, an "Ouvrir" pill on the right.
+ *
+ * Shared by artifacts and deliverables on purpose — the reader does not care
+ * which table a report was written to, and two different cards for the same
+ * gesture read as two different features.
+ */
+function WorkCard({ title, subtitle, kind, imageUrl, onOpen }: {
+  title: string; subtitle: string; kind: string; imageUrl?: string | null; onOpen: () => void;
+}) {
   const Icon = ARTIFACT_ICONS[kind] ?? FileText;
   const tone = ARTIFACT_TONE[kind] ?? ARTIFACT_TONE.document;
-
-  // Images are generated async — fetch the URL (and poll until ready) so the
-  // card's header shows the real photo once it lands, a colour tile until then.
-  const { data: media } = useQuery({
-    queryKey: ["artifact_media", id],
-    enabled: kind === "image" && !!id,
-    queryFn: async () => {
-      const { data } = await supabase.from("office_media").select("url, status").eq("id", id).maybeSingle();
-      return data as { url: string | null; status: string } | null;
-    },
-    refetchInterval: (q) => (q.state.data as { status?: string } | undefined)?.status === "generating" ? 1500 : false,
-  });
-
-  function open() {
-    if (onOpen) { onOpen({ id: id || undefined, table, kind, title, content: str(props.content) || undefined }); return; }
-    // No panel to open into here (e.g. a 1:1 chat session outside a Room) —
-    // fall back to the knowledge-base document route.
-    if (id) navigate(`/app/${workspaceSlug}/${projectSlug}/agent/knowledge?d=${id}`);
-  }
-
-  // One clean, wide artifact card (Oasis-style): a preview panel on the left,
-  // then title · "Créé par …" · an Open pill on the right.
-  const creator = agentName ? `Créé par ${agentName}` : kind.charAt(0).toUpperCase() + kind.slice(1);
-  const showImg = kind === "image" && !!media?.url;
-
   return (
     <motion.div
       whileHover={{ y: -2 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
-      onClick={open}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       className="group flex w-full max-w-2xl cursor-pointer items-stretch overflow-hidden rounded-2xl border border-border/70 bg-card transition-shadow hover:shadow-[0_8px_26px_-12px_rgba(0,0,0,0.22)]"
     >
       {/* Preview panel */}
       <div className="flex w-[36%] max-w-[210px] shrink-0 items-center justify-center border-r border-border/50 bg-muted/40 p-5">
-        {showImg ? (
-          <img src={media!.url!} alt={title} className="max-h-24 w-full rounded-lg object-cover shadow-sm" />
+        {imageUrl ? (
+          <img src={imageUrl} alt={title} className="max-h-24 w-full rounded-lg object-cover shadow-sm" />
         ) : (
           <div className="w-[4.75rem] -rotate-3 rounded-xl border border-border/60 bg-card p-2 shadow-[0_8px_18px_-8px_rgba(0,0,0,0.25)] transition-transform duration-200 group-hover:rotate-0">
             <div className={cn("mb-1.5 flex aspect-[4/3] items-center justify-center rounded-md", tone.bg)}>
@@ -299,18 +287,61 @@ function ArtifactBlock({ props, agentName, onOpen }: { props: Record<string, unk
       <div className="flex min-w-0 flex-1 items-center gap-4 px-6 py-5">
         <div className="min-w-0 flex-1">
           <div className="truncate text-lg font-semibold tracking-tight text-card-foreground">{title}</div>
-          <div className="mt-1 truncate text-sm text-muted-foreground">
-            {kind === "image" && media?.status === "generating" ? "Génération…" : creator}
-          </div>
+          <div className="mt-1 truncate text-sm text-muted-foreground">{subtitle}</div>
         </div>
         <button
-          onClick={(e) => { e.stopPropagation(); open(); }}
+          onClick={(e) => { e.stopPropagation(); onOpen(); }}
           className="shrink-0 rounded-full border border-border px-5 py-2 text-sm font-medium text-card-foreground transition-colors hover:bg-muted"
         >
           Ouvrir
         </button>
       </div>
     </motion.div>
+  );
+}
+
+function ArtifactBlock({ props, agentName, onOpen }: { props: Record<string, unknown>; agentName?: string; onOpen?: (a: ArtifactOpenTarget) => void }) {
+  const navigate = useNavigate();
+  const { workspaceSlug, projectSlug } = useParams();
+  const title = str(props.title) || "Untitled";
+  const kind = str(props.kind) || "document";
+  const table = (str(props.table) || "office_documents") as ArtifactOpenTarget["table"];
+  const id = str(props.id);
+
+  // Images are generated async — fetch the URL (and poll until ready) so the
+  // card's header shows the real photo once it lands, a colour tile until then.
+  const { data: media } = useQuery({
+    queryKey: ["artifact_media", id],
+    enabled: kind === "image" && !!id,
+    queryFn: async () => {
+      const { data } = await supabase.from("office_media").select("url, status").eq("id", id).maybeSingle();
+      return data as { url: string | null; status: string } | null;
+    },
+    refetchInterval: (q) => (q.state.data as { status?: string } | undefined)?.status === "generating" ? 1500 : false,
+  });
+
+  function open() {
+    if (onOpen) { onOpen({ id: id || undefined, table, kind, title, content: str(props.content) || undefined }); return; }
+    // No handler wired (a surface that renders blocks without owning a panel).
+    // Documents open in their editor route; the knowledge base — which the old
+    // fallback pointed at — is a different table entirely and never held these.
+    if (id && table === "office_documents") {
+      const k = ["document", "spreadsheet", "presentation"].includes(kind) ? kind : "document";
+      navigate(`/app/${workspaceSlug}/${projectSlug}/artifact/${k}/${id}`);
+    }
+  }
+
+  // One clean, wide card (Oasis-style): a preview panel on the left, then
+  // title · "Créé par …" · an Open pill on the right.
+  const creator = agentName ? `Créé par ${agentName}` : kind.charAt(0).toUpperCase() + kind.slice(1);
+  return (
+    <WorkCard
+      title={title}
+      subtitle={kind === "image" && media?.status === "generating" ? "Génération…" : creator}
+      kind={kind}
+      imageUrl={kind === "image" ? media?.url ?? null : null}
+      onOpen={open}
+    />
   );
 }
 
@@ -514,7 +545,7 @@ function renderBlock(
     case "image": return <ImageBlock key={key} props={b.props} />;
     case "code": return <CodeUiBlock key={key} props={b.props} />;
     case "products": case "product_card": case "product": return <ProductsBlock key={key} props={b.props} />;
-    case "deliverable": return <DeliverableBlock key={key} props={b.props} onOpen={onOpenArtifact} />;
+    case "deliverable": return <DeliverableBlock key={key} props={b.props} onOpen={onOpenArtifact} agentName={agentName} />;
     case "artifact": return <ArtifactBlock key={key} props={b.props} onOpen={onOpenArtifact} agentName={agentName} />;
     case "options": return <OptionsBlock key={key} props={b.props} onPick={onPick} disabled={optionsDisabled} />;
     case "approval": return <ApprovalBlock key={key} props={b.props} />;

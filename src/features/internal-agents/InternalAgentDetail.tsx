@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Bot, Plus, Trash2, Save, Check, FileText, Target,
@@ -46,7 +46,7 @@ import { AgentHostedModelCard } from "./AgentHostedModel";
 import { AgentAutomationsTab } from "./AgentAutomationsTab";
 import { RunTimeline } from "./RunTimeline";
 import { SubAgentInstances } from "./SubAgentInstances";
-import { InterleavedMessage, type UiBlock } from "./UiBlocks";
+import { InterleavedMessage, type UiBlock, type ArtifactOpenTarget } from "./UiBlocks";
 import { WorkspaceTab } from "./WorkspaceTab";
 import { chatUserBubble } from "@/lib/chatStyles";
 import { AgentIdentity } from "@/components/AgentIdentity";
@@ -54,6 +54,8 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { toolSummary } from "./runEventMeta";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
 import { pendingSetup, toolSetupIssue, type ConfigurableTool } from "./toolSetup";
+import { useAssistant } from "@/lib/assistant-context";
+import { CHAT_MODELS } from "@/lib/models";
 import { ConnectorDialog } from "@/features/integrations/ConnectorDialog";
 import { ToolkitCard, synthToolkit, type ComposioToolkit } from "@/features/integrations/ComposioCatalog";
 import { findProvider, type ProviderDef } from "@/lib/providers";
@@ -93,71 +95,9 @@ export type InternalAgentTab =
   | "analytics"
   | "settings";
 
-const VALID_TABS: InternalAgentTab[] = [
-  "chat", "workspace", "mission", "deliverables", "artifacts", "customize",
-  "skills", "memory", "connectors", "instructions",
-  "collaboration", "channels", "analytics", "settings",
-];
-
-export function InternalAgentDetailPage() {
-  const { agentId, tab: tabParam } = useParams();
-  const { workspaceId, projectId } = useCurrentContext();
-  const tab: InternalAgentTab = VALID_TABS.includes(tabParam as InternalAgentTab)
-    ? (tabParam as InternalAgentTab)
-    : "chat";
-
-  const { data: agent, isLoading } = useQuery({
-    queryKey: ["internal_agent", agentId],
-    enabled: !!agentId,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("internal_agents")
-        .select("*")
-        .eq("id", agentId!)
-        .maybeSingle();
-      return data as InternalAgent | null;
-    },
-  });
-
-  if (isLoading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-  if (!agent) return <EmptyState icon={Bot} title="Agent not found" />;
-
-  // The route is full-bleed: the chat fills the whole area (scrollbar at the
-  // screen edge); the other tabs restore their own padding + max-width + scroll.
-  if (tab === "chat") {
-    return (
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-        <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />
-      </div>
-    );
-  }
-  // Collaboration is full-bleed too — a two-panel split that fills the whole area.
-  if (tab === "collaboration") {
-    return (
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6">
-        <CollaborationTab agent={agent} />
-      </div>
-    );
-  }
-  return (
-    <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
-      <div className="mx-auto w-full max-w-6xl">
-        {tab === "workspace" && <WorkspaceTab agent={agent} />}
-        {MISSION_TAB_SLUGS.includes(tab) && <MissionsHubTab agent={agent} workspaceId={workspaceId} projectId={projectId} initialSection={missionSectionFor(tab)} />}
-        {CUSTOMIZE_TAB_SLUGS.includes(tab) && <CustomizeTab agent={agent} initialSection={customizeSectionFor(tab)} />}
-        {tab === "channels" && <AgentChannelsTab agent={agent} />}
-        {tab === "analytics" && <AnalyticsTab agent={agent} />}
-        {tab === "settings" && <SettingsTab agent={agent} />}
-      </div>
-    </div>
-  );
-}
+// (InternalAgentDetailPage lived here — removed 2026-08-10 with the main
+// dashboard's internal-agent pages. An agent is opened inside its service
+// dashboard, which embeds the same tabs through AgentTabContent below.)
 
 // Reusable agent tab body — lets other surfaces (e.g. the CRM record view)
 // embed the real agent tabs (Chat / Missions / Deliverables / …) by agent id,
@@ -734,23 +674,20 @@ interface ChatMessage {
   ui_blocks?: UiBlock[] | null;
 }
 
-// Our base models (the agent runs server-side on DeepSeek, Groq as fallback) —
-// shown in the composer's model selector instead of the generic Claude defaults.
-const AGENT_MODELS = [
-  { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "Default — strong reasoning & tool calling" },
-  { id: "groq-llama-3.3", name: "Groq Llama 3.3", description: "Fast fallback for quick replies" },
-  { id: "groq-llama-3.3-70b", name: "Groq Llama 3.3 70B", description: "Largest Llama on Groq — heavier but smarter" },
-];
+// The models a turn can run on — see src/lib/models.ts for why the list is
+// exactly these two.
+const AGENT_MODELS = CHAT_MODELS;
 
 // Dismissible-per-session reminder that some tools still need configuring. A
 // blocking tool (the worker skips it) is framed as a warning; a soft one (the
 // agent will just decide by itself) as a hint — so a Vibe Coder without a pinned
 // repo doesn't look broken next to a CRM agent that literally can't read.
 function ToolSetupReminder({
-  items, onConfigure,
+  items, onConfigure, ctaLabel = "Configurer les outils",
 }: {
   items: Array<ConfigurableTool & { issue: string; blocking: boolean }>;
   onConfigure: () => void;
+  ctaLabel?: string;
 }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
@@ -778,7 +715,7 @@ function ToolSetupReminder({
             ))}
           </ul>
           <div className="mt-2.5 flex items-center gap-2">
-            <Button size="sm" onClick={onConfigure}>Configurer les outils</Button>
+            <Button size="sm" onClick={onConfigure}>{ctaLabel}</Button>
             <button onClick={() => setDismissed(true)} className="text-xs text-muted-foreground hover:text-foreground">
               Plus tard
             </button>
@@ -808,9 +745,23 @@ export function ChatTab({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const assistant = useAssistant();
   const { workspaceSlug, projectSlug } = useParams();
   function openDeliverable(id: string) {
     navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${agent.id}/deliverables?d=${id}`);
+  }
+  /** Where an artifact card opens depends on what backs it. Outside a Room
+   *  there is no side panel, so a document/spreadsheet/presentation opens in
+   *  its editor route; a deliverable goes to the deliverables tab; an image and
+   *  a text block are already fully shown on the card itself. */
+  function openArtifactTarget(t: ArtifactOpenTarget) {
+    if (!t.id) return;
+    if (t.table === "office_documents") {
+      const kind = ["document", "spreadsheet", "presentation"].includes(t.kind) ? t.kind : "document";
+      navigate(`/app/${workspaceSlug}/${projectSlug}/artifact/${kind}/${t.id}`);
+      return;
+    }
+    if (t.table === "deliverable") openDeliverable(t.id);
   }
   const [convoId, setConvoId] = useState<string | null>(null);
   // null convoId + started=false → resume the latest session; once the user
@@ -918,6 +869,20 @@ export function ChatTab({
     }
   }, [conversations, convoId, startedFresh]);
 
+  /** Stop the run in flight, from the composer. Cancelling the run row is
+   *  enough: the tick loop checks the status before its next action and cleans
+   *  up its own state, and handleSend's poll exits on any non-running status. */
+  async function stopRun() {
+    if (!activeRun?.id) return;
+    await supabase
+      .from("internal_agent_runs")
+      .update({ status: "cancelled", finished_at: new Date().toISOString() })
+      .eq("id", activeRun.id)
+      .in("status", ["queued", "running"]);
+    queryClient.invalidateQueries({ queryKey: ["agent_active_run", agent.id, convoId] });
+    queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", convoId] });
+  }
+
   async function deleteConversation(id: string) {
     if (!confirm("Delete this session and its messages?")) return;
     await supabase.from("internal_agent_conversations").delete().eq("id", id);
@@ -975,7 +940,7 @@ export function ChatTab({
     if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [messages?.length]);
 
-  async function handleSend(text: string) {
+  async function handleSend(text: string, model?: string) {
     if (!user || !workspaceId || !projectId || !text.trim() || sending) return;
     // NB: sending is allowed WHILE a run is active — the message is folded into the
     // running agent on its next tick (mid-run steering), not queued as a new run.
@@ -1014,6 +979,9 @@ export function ChatTab({
         agent_id: agent.id,
         mode: "chat",
         conversation_id: cid,
+        // The composer's pick wins over the agent's default and over the cost
+        // tiering for this turn.
+        ...(model ? { model } : {}),
       });
       // Chat always runs on the durable tick runtime now — the edge returns
       // immediately with { run_id, queued|injected } (never `async`). Poll the run
@@ -1109,7 +1077,28 @@ export function ChatTab({
       {setupPending.length > 0 && (
         <ToolSetupReminder
           items={setupPending}
-          onConfigure={() => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${agent.id}/settings?s=tools`)}
+          ctaLabel={assistant.available ? "Configurer avec l'assistant" : "Configurer les outils"}
+          onConfigure={() => {
+            // Agent configuration goes through the SaaS assistant: it opens on
+            // the agent's setup cards (identity, prompt, tools, knowledge,
+            // skills, runtime) and each card hands its step to the assistant.
+            if (!assistant.available) {
+              navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${agent.id}/settings?s=tools`);
+              return;
+            }
+            // The cards cover the three configuration areas; this banner fires on
+            // a tool that is concretely broken right now, so we also hand the
+            // assistant that exact gap instead of making the user re-explain it.
+            assistant.ask({
+              agent: { id: agent.id, name: agent.name },
+              autoSend: true,
+              prompt: [
+                `Aide-moi à débloquer l'agent « ${agent.name} » (agent_id: ${agent.id}).`,
+                ...setupPending.map((t) => `- ${t.name} (${t.kind}) — ${t.issue}`),
+                "Appelle get_agent_setup pour les valeurs réellement disponibles, puis propose-moi des choix concrets une question à la fois.",
+              ].join("\n"),
+            });
+          }}
         />
       )}
 
@@ -1133,9 +1122,11 @@ export function ChatTab({
             <ChatComposer
               value={input}
               onValueChange={setInput}
-              onSubmit={({ message }) => handleSend(message)}
+              onSubmit={({ message, model }) => handleSend(message, model)}
               loading={isBusy}
               disabled={isBusy}
+              running={isBusy}
+              onStop={activeRun ? stopRun : undefined}
               placeholder={isBusy ? "L'agent travaille…" : `Demandez à ${agent.name}…`}
               models={AGENT_MODELS}
               className="max-w-full"
@@ -1214,6 +1205,7 @@ export function ChatTab({
                       msg={m}
                       artifacts={msgArtifacts}
                       onOpenArtifact={openDeliverable}
+                      onOpenTarget={openArtifactTarget}
                       onEdit={(c) => setInput(c)}
                       onResend={(c) => handleSend(c)}
                       onPickOption={(o) => handleSend(o)}
@@ -1243,10 +1235,11 @@ export function ChatTab({
               <ChatComposer
                 value={input}
                 onValueChange={setInput}
-                onSubmit={({ message }) => handleSend(message)}
+                onSubmit={({ message, model }) => handleSend(message, model)}
                 loading={false}
                 disabled={false}
                 running={isBusy}
+                onStop={activeRun ? stopRun : undefined}
                 placeholder={isBusy ? "L'agent travaille — écris pour ajouter ou corriger en cours de route…" : `Message ${agent.name}…`}
                 models={AGENT_MODELS}
                 className="max-w-full"
@@ -1263,11 +1256,14 @@ export function ChatTab({
 interface ChatArtifact { id: string; kind: string; name: string; summary: string | null }
 
 function ChatBubble({
-  msg, artifacts = [], onOpenArtifact, onEdit, onResend, onPickOption, isLast, agentName, agentStyle, agentAvatarUrl,
+  msg, artifacts = [], onOpenArtifact, onOpenTarget, onEdit, onResend, onPickOption, isLast, agentName, agentStyle, agentAvatarUrl,
 }: {
   msg: ChatMessage;
   artifacts?: ChatArtifact[];
   onOpenArtifact?: (id: string) => void;
+  /** An artifact CARD (create_artifact) — its destination depends on which
+   *  table backs it, so it can't reuse the deliverable-only handler above. */
+  onOpenTarget?: (t: ArtifactOpenTarget) => void;
   onEdit?: (content: string) => void;
   onResend?: (content: string) => void;
   /** ask_user quick replies: sends the picked option as the user's answer. */
@@ -1372,7 +1368,7 @@ function ChatBubble({
             blocks={msg.ui_blocks}
             onPick={onPickOption}
             optionsDisabled={!isLast}
-            onOpenArtifact={(t) => { if (t.id) onOpenArtifact?.(t.id); }}
+            onOpenArtifact={(t) => onOpenTarget?.(t)}
             agentName={agentName}
           />
         ) : msg.content && msg.content.trim() ? (
@@ -3412,6 +3408,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 
 export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedded?: boolean }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { workspaceSlug, projectSlug } = useParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -3501,7 +3498,12 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
     if (!confirm("Archive this agent? Members will lose access. You can restore it later from the database.")) return;
     await supabase.from("internal_agents").update({ is_archived: true }).eq("id", agent.id);
     queryClient.invalidateQueries({ queryKey: ["internal_agents"] });
-    navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal-agents`);
+    // Back to the agent list of the service dashboard we're inside (the agent
+    // itself is gone, so we can't stay on it).
+    const dashboardId = location.pathname.match(/\/service\/([^/]+)/)?.[1];
+    navigate(dashboardId
+      ? `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}/agents`
+      : `/app/${workspaceSlug}/${projectSlug}/hq/dashboard`);
   }
 
   // Embedded: no sub-tab bar — Save covers the form sections (general/autonomy/

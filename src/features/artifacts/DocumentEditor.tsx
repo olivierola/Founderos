@@ -18,21 +18,27 @@ import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
-import { useOfficeDoc } from "./useOfficeDoc";
-import { OfficePlateEditor } from "./OfficePlateEditor";
-import { OfficeAiPanel, type AiResult } from "./OfficeAiPanel";
+import { useArtifactDoc } from "./useArtifactDoc";
+import { ArtifactPlateEditor } from "./PlateEditor";
+import { ArtifactAiPanel, type AiResult } from "./AiPanel";
 import {
   type DocumentContent, slateToText, slateToMarkdown, markdownToSlate,
-  downloadBlob, sanitizeFilename,
+  healFlatMarkdown, downloadBlob, sanitizeFilename,
 } from "./shared";
 
-export function DocumentEditorPage({ docId: docIdProp, onBack, embedded }: { docId?: string; onBack?: () => void; embedded?: boolean } = {}) {
+export function DocumentEditorPage({ docId: docIdProp, onBack, embedded, reading }: {
+  docId?: string; onBack?: () => void; embedded?: boolean;
+  /** Reading mode: the document only, with a floating back button instead of
+   *  the editing toolbar. Opening a finished report to READ it should not put a
+   *  ribbon of undo/redo/table/AI controls between the reader and the page. */
+  reading?: boolean;
+} = {}) {
   const params = useParams();
   const docId = docIdProp ?? params.docId;
   const navigate = useNavigate();
   const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
-  const { data: doc, isLoading, saving, savedAt, scheduleSave } = useOfficeDoc(docId, "document");
+  const { data: doc, isLoading, saving, savedAt, scheduleSave } = useArtifactDoc(docId, "document");
 
   const [title, setTitle] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
@@ -48,7 +54,11 @@ export function DocumentEditorPage({ docId: docIdProp, onBack, embedded }: { doc
     if (!doc) return;
     setTitle(doc.title);
     const nodes = (doc.content as DocumentContent)?.nodes;
-    const v = Array.isArray(nodes) && nodes.length ? nodes : [{ type: "p", children: [{ text: "" }] }];
+    // Heal documents written before the converter understood tables and inline
+    // marks — their pipes and asterisks are already in the database.
+    const v = Array.isArray(nodes) && nodes.length
+      ? healFlatMarkdown(nodes)
+      : [{ type: "p", children: [{ text: "" }] }];
     nodesRef.current = v;
     setInitialNodes(v);
     setEditorKey((k) => k + 1);
@@ -176,19 +186,27 @@ export function DocumentEditorPage({ docId: docIdProp, onBack, embedded }: { doc
     <div className={cn("flex flex-col", embedded ? "h-full" : "h-[calc(100vh-3.5rem)]")}>
       {/* Body: full Plate editor (with in-tree header) + AI panel */}
       <div className="flex min-h-0 flex-1">
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          <OfficePlateEditor
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+          <ArtifactPlateEditor
             key={editorKey}
             value={initialNodes}
             onChange={onEditorChange}
             placeholder="Type / for commands, or start writing…"
             workspaceId={workspaceId}
             projectId={projectId}
-            renderHeader={header}
+            renderHeader={reading ? undefined : header}
           />
+          {reading && (
+            <button
+              type="button" onClick={handleBack} title="Retour"
+              className="absolute left-3 top-3 z-40 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background/80 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
-        <OfficeAiPanel
+        <ArtifactAiPanel
           open={aiOpen}
           onClose={() => setAiOpen(false)}
           kind="document"

@@ -35,7 +35,7 @@ export function roleAllows(userRole: WorkspaceRole, minRole: WorkspaceRole): boo
 }
 
 export interface EmittedArtifact {
-  kind: "document" | "json" | "table" | "code" | "csv";
+  kind: "document" | "json" | "table" | "code" | "csv" | "connectors";
   title: string;
   content?: string;
   data?: unknown;
@@ -1556,6 +1556,621 @@ const recruitmentOverview: AssistantTool = {
   },
 };
 
+// ===========================================================================
+// AGENT CONFIGURATION — configuring an internal agent happens HERE, through the
+// assistant, not through a settings form: the chat banner "Cet agent a besoin
+// d'être configuré" hands the user over to this conversation. So the assistant
+// must be able to (1) see what is missing, (2) list the concrete values that can
+// fill it, and (3) write them back.
+//
+// The "what is missing" rules mirror src/features/internal-agents/toolSetup.ts
+// (the same rules drive the banner and the Tools tab badges) — keep in sync.
+// ===========================================================================
+
+interface AgentToolRow {
+  id: string;
+  kind: string;
+  name: string;
+  description: string | null;
+  config: Record<string, unknown> | null;
+  enabled: boolean | null;
+  requires_approval: boolean | null;
+}
+
+/** Human explanation of what this tool still needs, or null when it's ready. */
+function agentToolIssue(kind: string, config: Record<string, unknown> | null | undefined): string | null {
+  const cfg = config ?? {};
+  switch (kind) {
+    case "db_read":
+      return Array.isArray(cfg.tables) && cfg.tables.length > 0
+        ? null
+        : "No allowed tables — the agent cannot read anything.";
+    case "edge_function":
+      return /^[a-z0-9-]+$/.test(str(cfg.slug)) ? null : "No function chosen — the tool is skipped at runtime.";
+    case "custom":
+      return /^https?:\/\//.test(str(cfg.webhook_url)) ? null : "No webhook URL — the tool is skipped at runtime.";
+    case "connector_action":
+      return str(cfg.provider) ? null : "No integration chosen — connect the service and select it.";
+    case "composio_toolkit":
+      return str(cfg.toolkit) ? null : "No Composio toolkit chosen — connect the app first.";
+    case "rag_search":
+      return Array.isArray(cfg.collection_ids) && cfg.collection_ids.length > 0
+        ? null
+        : "No knowledge collection attached — the agent searches an empty index.";
+    case "vibe_code":
+      return str(cfg.repository_id) ? null : "No repository pinned — the agent picks one itself if several exist.";
+    case "testing":
+      return str(cfg.suite_id) ? null : "No test suite pinned — the agent picks one itself.";
+    case "security_scan":
+      return str(cfg.target) ? null : "No target registered — declare the authorised scope before any scan.";
+    default:
+      return null;
+  }
+}
+
+/** vibe_code/testing merely lose their pin; every other gap makes the worker skip the tool. */
+function isBlockingSetup(kind: string): boolean {
+  return !["vibe_code", "testing"].includes(kind);
+}
+
+/** The config shape the model must produce, per kind. */
+const AGENT_TOOL_CONFIG_HINTS: Record<string, string> = {
+  db_read: '{"tables": ["crm_records", "product_events"]} — whitelist of table names, project-scoped at runtime.',
+  edge_function: '{"slug": "send-notification"} — a Supabase edge function slug (see options.edge_functions).',
+  custom: '{"webhook_url": "https://…"} — the endpoint called with model-provided arguments.',
+  connector_action: '{"provider": "slack"} — a connected integration (see options.connectors).',
+  composio_toolkit: '{"toolkit": "gmail"} — a Composio toolkit slug the workspace has connected.',
+  rag_search: '{"collection_ids": ["<uuid>", …]} — knowledge collections (see options.rag_collections).',
+  vibe_code: '{"repository_id": "<uuid>", "actions": ["run","apply"]} — repo pin (see options.repositories); actions grant write powers ("apply" opens the PR, "merge_pr" merges).',
+  testing: '{"suite_id": "<uuid>"} — the test suite to pin (see options.test_suites).',
+  security_scan: '{"target": "https://app.example.com"} — the explicitly authorised scope.',
+  simulation: '{"max_rounds": 8} — model calls per simulation; above 8 the cost climbs fast.',
+};
+
+const CONFIGURABLE_TOOL_KINDS = [
+  "web_search", "web_fetch", "db_read", "rag_search", "edge_function",
+  "vault_connector", "connector_action", "composio_toolkit", "crm",
+  "security_scan", "vibe_code", "testing", "simulation", "custom",
+];
+
+function describeAgentTool(t: AgentToolRow) {
+  const issue = t.enabled === false ? null : agentToolIssue(t.kind, t.config);
+  return {
+    tool_id: t.id,
+    kind: t.kind,
+    name: t.name,
+    enabled: t.enabled !== false,
+    requires_approval: t.requires_approval === true,
+    config: t.config ?? {},
+    needs_setup: issue,
+    blocking: issue ? isBlockingSetup(t.kind) : false,
+    expects: AGENT_TOOL_CONFIG_HINTS[t.kind] ?? null,
+  };
+}
+
+/** Resolve an agent of the current workspace by id or (fuzzy) name. */
+async function resolveAgent(ctx: ToolContext, agentId: string, agentName: string) {
+  if (!agentId && !agentName) return null;
+  const base = ctx.admin
+    .from("internal_agents")
+    .select("id, name, description, project_id, workspace_id")
+    .eq("workspace_id", ctx.workspaceId);
+  const q = agentId ? base.eq("id", agentId) : base.ilike("name", `%${agentName}%`);
+  const { data } = await q.limit(1).maybeSingle();
+  return data as { id: string; name: string; description: string | null; project_id: string | null } | null;
+}
+
+const listAgents: AssistantTool = {
+  name: "list_agents",
+  minRole: "viewer",
+  scope: "Internal agents of the workspace and which ones still need configuring.",
+  def: {
+    name: "list_agents",
+    description:
+      "List the workspace's internal (autonomous) agents with, for each, how many of its tools are still unconfigured. Use to find an agent's id before get_agent_setup, or to answer 'which agents are not ready?'.",
+    parameters: {
+      type: "object",
+      properties: { search: { type: "string", description: "Optional name filter." } },
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    let q = ctx.admin
+      .from("internal_agents")
+      .select("id, name, description")
+      .eq("workspace_id", ctx.workspaceId)
+      .eq("is_archived", false);
+    const search = str(args.search);
+    if (search) q = q.ilike("name", `%${search}%`);
+    const { data: agents } = await q.limit(60);
+    if (!agents?.length) return "No internal agent in this workspace yet.";
+
+    const { data: tools } = await ctx.admin
+      .from("internal_agent_tools")
+      .select("agent_id, kind, config, enabled")
+      .in("agent_id", agents.map((a) => a.id));
+
+    return JSON.stringify(
+      agents.map((a) => {
+        const own = (tools ?? []).filter((t) => t.agent_id === a.id && t.enabled !== false);
+        const pending = own.filter((t) => agentToolIssue(t.kind, t.config));
+        return {
+          agent_id: a.id,
+          name: a.name,
+          description: a.description,
+          tools: own.length,
+          tools_needing_setup: pending.length,
+          blocking: pending.filter((t) => isBlockingSetup(t.kind)).length,
+        };
+      }),
+    );
+  },
+};
+
+// Curated internal functions an agent can be granted — mirrors
+// EDGE_FUNCTION_CATALOGUE in src/features/internal-agents/InternalAgentDetail.tsx.
+const EDGE_FUNCTION_SLUGS = [
+  "send-notification", "send-email", "send-bulk-email", "marketing-generate",
+  "marketing-publish", "run-workflow", "analytics-query", "calculate-metrics", "daily-briefing",
+];
+
+const getAgentSetup: AssistantTool = {
+  name: "get_agent_setup",
+  minRole: "viewer",
+  scope: "One agent's tools, what each still needs, and the values available to fill it.",
+  def: {
+    name: "get_agent_setup",
+    description:
+      "Return one internal agent's tools with their current config, what is still missing for each ('needs_setup'), the expected config shape ('expects'), and the concrete values available in this project to fill them (knowledge collections, repositories, test suites, connected integrations, callable edge functions). ALWAYS call this before configure_agent_tool — never invent an id.",
+    parameters: {
+      type: "object",
+      properties: {
+        agent_id: { type: "string", description: "The agent's uuid (preferred)." },
+        agent_name: { type: "string", description: "Agent name, if the id is unknown." },
+      },
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const agent = await resolveAgent(ctx, str(args.agent_id), str(args.agent_name));
+    if (!agent) return "ERROR: agent not found in this workspace. Call list_agents first.";
+
+    const projectId = agent.project_id ?? ctx.projectId;
+    const [profileRes, skillsRes] = await Promise.all([
+      ctx.admin
+        .from("internal_agents")
+        .select("name, description, role, persona, instructions, model, temperature, max_steps, sandbox_mode, swarm_enabled, chat_enabled, mission_enabled, service_dashboard_id")
+        .eq("id", agent.id)
+        .maybeSingle(),
+      ctx.admin
+        .from("agent_skill_activations")
+        .select("skill_id, agent_skills(id, slug, name, category)")
+        .eq("agent_id", agent.id),
+    ]);
+    const p = (profileRes.data ?? {}) as Record<string, unknown>;
+    // Connections are scoped per service dashboard (0177) — an agent only sees
+    // its own dashboard's connections plus the project-wide ones.
+    const agentDashboardId = (p.service_dashboard_id ?? null) as string | null;
+
+    const [toolsRes, collections, repos, suites, connectors] = await Promise.all([
+      ctx.admin
+        .from("internal_agent_tools")
+        .select("id, kind, name, description, config, enabled, requires_approval")
+        .eq("agent_id", agent.id)
+        .order("created_at", { ascending: true }),
+      ctx.admin.from("rag_collections").select("id, name, description, enabled").eq("project_id", projectId).limit(50),
+      ctx.admin.from("repositories").select("id, full_name").eq("project_id", projectId).limit(50),
+      ctx.admin.from("test_suites").select("id, name").eq("project_id", projectId).limit(50),
+      ctx.admin
+        .from("connectors")
+        .select("provider, status, scope, source, service_dashboard_id")
+        .eq("project_id", projectId)
+        .limit(80),
+    ]);
+
+    const tools = (toolsRes.data ?? []) as AgentToolRow[];
+    const kinds = new Set(tools.map((t) => t.kind));
+    // Only ship the option lists the agent's tools can actually consume — a
+    // full dump would drown the model in ids it has no use for. Connectors are
+    // the exception: they're one of the three configuration areas, so the model
+    // needs them even when the agent has no connector tool yet.
+    const options: Record<string, unknown> = {
+      connectors: ((connectors.data ?? []) as Array<Record<string, unknown>>)
+        // Personal connections belong to one person and are opt-in per call —
+        // never propose them as the agent's connection.
+        .filter((c) => c.scope !== "personal"
+          && (!c.service_dashboard_id || c.service_dashboard_id === agentDashboardId))
+        .map((c) => ({ provider: c.provider, status: c.status, scope: c.scope, source: c.source })),
+    };
+    if (kinds.has("rag_search")) options.rag_collections = collections.data ?? [];
+    if (kinds.has("vibe_code")) options.repositories = repos.data ?? [];
+    if (kinds.has("testing")) options.test_suites = suites.data ?? [];
+    if (kinds.has("edge_function")) options.edge_functions = EDGE_FUNCTION_SLUGS;
+
+    const instructions = str(p.instructions);
+    return JSON.stringify({
+      agent: { agent_id: agent.id, name: agent.name, description: agent.description },
+      // The setup deck in the assistant shows one card per area below — the
+      // model must be able to read and write each of them.
+      profile: {
+        name: p.name, description: p.description, role: p.role ?? null, persona: p.persona ?? null,
+        instructions_length: instructions.length,
+        instructions_excerpt: instructions.slice(0, 1200),
+      },
+      runtime: {
+        model: p.model, temperature: p.temperature, max_steps: p.max_steps,
+        sandbox_mode: p.sandbox_mode, swarm_enabled: p.swarm_enabled,
+        chat_enabled: p.chat_enabled, mission_enabled: p.mission_enabled,
+      },
+      skills: {
+        active: (skillsRes.data ?? []).map((r: Record<string, unknown>) => {
+          const s = r.agent_skills as { id?: string; slug?: string; name?: string; category?: string } | null;
+          return { skill_id: s?.id ?? r.skill_id, slug: s?.slug, name: s?.name, category: s?.category };
+        }),
+        hint: "The workspace skill catalogue is large — find candidates with search_agent_skills, then activate with set_agent_skills.",
+      },
+      tools: tools.map(describeAgentTool),
+      options,
+      note: "An empty option list means the underlying resource does not exist yet — tell the user to create it (e.g. a knowledge collection in the Knowledge base) instead of guessing an id.",
+    });
+  },
+};
+
+const configureAgentTool: AssistantTool = {
+  name: "configure_agent_tool",
+  minRole: "member",
+  scope: "Write an agent tool's configuration (tables, collections, repo, webhook…).",
+  def: {
+    name: "configure_agent_tool",
+    description:
+      "Set the configuration of ONE tool of an internal agent (identified by tool_id from get_agent_setup). The config object is merged into the existing one unless replace=true. Can also enable/disable the tool or toggle its approval gate. Only use ids returned by get_agent_setup, and tell the user what you are about to set before calling it.",
+    parameters: {
+      type: "object",
+      properties: {
+        tool_id: { type: "string", description: "Tool uuid from get_agent_setup." },
+        config: { type: "object", description: "Config keys to set — see the tool's 'expects' field." },
+        replace: { type: "boolean", description: "Replace the whole config instead of merging (default false)." },
+        enabled: { type: "boolean", description: "Enable or disable the tool." },
+        requires_approval: { type: "boolean", description: "Whether each call must be approved by a human." },
+      },
+      required: ["tool_id"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const toolId = str(args.tool_id);
+    if (!toolId) return "ERROR: tool_id is required.";
+    const { data: tool } = await ctx.admin
+      .from("internal_agent_tools")
+      .select("id, kind, name, config, enabled, requires_approval, agent_id")
+      .eq("id", toolId)
+      .maybeSingle();
+    if (!tool) return "ERROR: no such tool. Call get_agent_setup to get valid tool_ids.";
+
+    // The tool row carries no workspace — check its agent's, so one workspace
+    // can never reconfigure another's agent.
+    const { data: agent } = await ctx.admin
+      .from("internal_agents")
+      .select("id, name, workspace_id")
+      .eq("id", tool.agent_id)
+      .maybeSingle();
+    if (!agent || agent.workspace_id !== ctx.workspaceId) {
+      return "ACCESS DENIED: this tool belongs to another workspace.";
+    }
+
+    const patch = (args.config && typeof args.config === "object" ? args.config : {}) as Record<string, unknown>;
+    const nextConfig = args.replace === true
+      ? patch
+      : { ...((tool.config ?? {}) as Record<string, unknown>), ...patch };
+
+    const update: Record<string, unknown> = { config: nextConfig };
+    if (typeof args.enabled === "boolean") update.enabled = args.enabled;
+    if (typeof args.requires_approval === "boolean") update.requires_approval = args.requires_approval;
+
+    const { error } = await ctx.admin.from("internal_agent_tools").update(update).eq("id", toolId);
+    if (error) return `ERROR: could not save the configuration (${error.message}).`;
+
+    const remaining = agentToolIssue(tool.kind, nextConfig);
+    return JSON.stringify({
+      ok: true,
+      agent: agent.name,
+      tool: tool.name,
+      kind: tool.kind,
+      config: nextConfig,
+      still_missing: remaining,
+      message: remaining
+        ? `Saved, but the tool is still incomplete: ${remaining}`
+        : "Saved — this tool is now fully configured.",
+    });
+  },
+};
+
+const addAgentTool: AssistantTool = {
+  name: "add_agent_tool",
+  minRole: "member",
+  scope: "Grant a new capability (tool) to an internal agent.",
+  def: {
+    name: "add_agent_tool",
+    description:
+      "Grant a new tool to an internal agent. Use only when the agent is MISSING a capability the user asked for — to fix an existing tool, use configure_agent_tool. Provide the config right away when you know it.",
+    parameters: {
+      type: "object",
+      properties: {
+        agent_id: { type: "string", description: "The agent's uuid." },
+        kind: { type: "string", enum: CONFIGURABLE_TOOL_KINDS, description: "Tool kind." },
+        name: { type: "string", description: "Display name shown in the Tools tab." },
+        config: { type: "object", description: "Initial config — see the kind's expected shape." },
+      },
+      required: ["agent_id", "kind"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const kind = str(args.kind);
+    if (!CONFIGURABLE_TOOL_KINDS.includes(kind)) {
+      return `ERROR: unknown tool kind "${kind}". Allowed: ${CONFIGURABLE_TOOL_KINDS.join(", ")}.`;
+    }
+    const agent = await resolveAgent(ctx, str(args.agent_id), "");
+    if (!agent) return "ERROR: agent not found in this workspace.";
+
+    const config = (args.config && typeof args.config === "object" ? args.config : {}) as Record<string, unknown>;
+    const { data, error } = await ctx.admin
+      .from("internal_agent_tools")
+      .insert({
+        agent_id: agent.id,
+        kind,
+        name: str(args.name) || kind,
+        config,
+        // Action tools start approval-gated — same default as the Tools tab.
+        requires_approval: kind === "edge_function" || kind === "custom",
+      })
+      .select("id")
+      .single();
+    if (error) return `ERROR: could not add the tool (${error.message}).`;
+
+    const issue = agentToolIssue(kind, config);
+    return JSON.stringify({
+      ok: true,
+      agent: agent.name,
+      tool_id: data.id,
+      kind,
+      still_missing: issue,
+      expects: AGENT_TOOL_CONFIG_HINTS[kind] ?? null,
+    });
+  },
+};
+
+// Fields the assistant may write on the agent itself, with their guardrails.
+// Anything not listed here (ownership, archive, hosted model, costs) stays out
+// of reach — a conversation shouldn't be able to re-plumb an agent's billing.
+const SANDBOX_MODES = ["cloud", "runner", "sandbox", "hybrid"];
+
+// The assistant cannot connect a service itself — credentials and OAuth belong
+// to the user's browser. What it CAN do is put the real connector cards in the
+// conversation: the user clicks "Connecter", the normal flow runs client-side,
+// and (when an agent_id is given) the connector is attached to that agent as
+// soon as it comes back connected.
+const proposeConnectors: AssistantTool = {
+  name: "propose_connectors",
+  minRole: "member",
+  scope: "Show connector cards in the chat so the user can connect a service in one click.",
+  def: {
+    name: "propose_connectors",
+    description:
+      "Render interactive connector cards in the conversation. Use this EVERY TIME a service isn't connected yet or the user asks to connect/attach one — never tell them to go to the Integrations screen, show the cards instead. You cannot connect a service yourself: the card runs the real connection flow in their browser. Propose only services that make sense for the agent's role, with a short reason each.",
+    parameters: {
+      type: "object",
+      properties: {
+        connectors: {
+          type: "array",
+          description: "The services to propose, 1 to 6.",
+          items: {
+            type: "object",
+            properties: {
+              slug: { type: "string", description: "Provider slug, lowercase (e.g. 'slack', 'github', 'hubspot')." },
+              name: { type: "string", description: "Display name (e.g. 'Slack')." },
+              reason: { type: "string", description: "One short line: what the agent would do with it." },
+            },
+            required: ["slug"],
+          },
+        },
+        agent_id: {
+          type: "string",
+          description: "Attach each connector to this agent once connected. Pass it whenever the conversation is about configuring an agent.",
+        },
+        title: { type: "string", description: "Card group title (default: 'Connecteurs proposés')." },
+      },
+      required: ["connectors"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const raw = Array.isArray(args.connectors) ? args.connectors : [];
+    const items = raw.slice(0, 6).map((c) => {
+      const o = (c ?? {}) as Record<string, unknown>;
+      const slug = str(o.slug).toLowerCase().trim();
+      return { slug, name: str(o.name) || slug, reason: str(o.reason) };
+    }).filter((c) => /^[a-z0-9_.-]+$/.test(c.slug));
+    if (!items.length) return "ERROR: pass at least one connector with a valid slug.";
+
+    // Stamp each card with the connection that exists right now, so the cards
+    // and the sentence above them can't disagree.
+    const { data: existing } = await ctx.admin
+      .from("connectors")
+      .select("provider, status, scope")
+      .eq("project_id", ctx.projectId)
+      .in("provider", items.map((c) => c.slug));
+    const statusOf = (slug: string) =>
+      ((existing ?? []).find((c) => c.provider === slug && c.scope !== "personal")?.status ?? "not_connected") as string;
+
+    const withStatus = items.map((c) => ({ ...c, status: statusOf(c.slug) }));
+    const agentId = str(args.agent_id) || null;
+
+    ctx.emitArtifact({
+      kind: "connectors",
+      title: str(args.title) || "Connecteurs proposés",
+      data: { agent_id: agentId, items: withStatus },
+    });
+
+    return JSON.stringify({
+      shown: withStatus.map((c) => ({ slug: c.slug, status: c.status })),
+      note: "Cards are displayed. Do NOT repeat their content in your reply and do NOT tell the user to open the Integrations screen — just say what to click and why, in one or two lines.",
+    });
+  },
+};
+
+const updateAgentProfile: AssistantTool = {
+  name: "update_agent_profile",
+  minRole: "member",
+  scope: "Write an agent's identity, system prompt (instructions) and runtime settings.",
+  def: {
+    name: "update_agent_profile",
+    description:
+      "Update an internal agent's identity (name/description/role/persona), its SYSTEM PROMPT (instructions) or its runtime settings (model, temperature, max_steps, sandbox_mode, swarm). Only pass the fields you are changing. For instructions, write the FULL new text — it replaces the previous one, so read it first with get_agent_setup and show the user what you propose before writing.",
+    parameters: {
+      type: "object",
+      properties: {
+        agent_id: { type: "string", description: "The agent's uuid." },
+        name: { type: "string" },
+        description: { type: "string", description: "One line: what this agent is for." },
+        role: { type: "string", description: "Its role in the team (e.g. 'Analyste support')." },
+        persona: { type: "string", description: "Tone and posture." },
+        instructions: { type: "string", description: "FULL system prompt — replaces the existing one." },
+        model: { type: "string", description: "Inference model key (e.g. 'deepseek', 'groq')." },
+        temperature: { type: "number", description: "0–1. Low = factual, high = creative." },
+        max_steps: { type: "number", description: "Tool-loop steps per run (1–60)." },
+        sandbox_mode: { type: "string", enum: SANDBOX_MODES, description: "Where the agent executes." },
+        swarm_enabled: { type: "boolean", description: "May fan out to parallel sub-agents." },
+      },
+      required: ["agent_id"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const agent = await resolveAgent(ctx, str(args.agent_id), "");
+    if (!agent) return "ERROR: agent not found in this workspace.";
+
+    const update: Record<string, unknown> = {};
+    for (const k of ["name", "description", "role", "persona", "instructions"]) {
+      const v = str(args[k]);
+      if (v) update[k] = v;
+    }
+    if (str(args.model)) update.model = str(args.model);
+    if (typeof args.temperature === "number") {
+      update.temperature = Math.min(Math.max(args.temperature, 0), 1);
+    }
+    if (typeof args.max_steps === "number") {
+      update.max_steps = Math.min(Math.max(Math.round(args.max_steps), 1), 60);
+    }
+    if (SANDBOX_MODES.includes(str(args.sandbox_mode))) update.sandbox_mode = str(args.sandbox_mode);
+    if (typeof args.swarm_enabled === "boolean") update.swarm_enabled = args.swarm_enabled;
+    if (Object.keys(update).length === 0) return "ERROR: nothing to update — pass at least one field.";
+
+    update.updated_at = new Date().toISOString();
+    const { error } = await ctx.admin.from("internal_agents").update(update).eq("id", agent.id);
+    if (error) return `ERROR: could not save (${error.message}).`;
+    return JSON.stringify({
+      ok: true,
+      agent: agent.name,
+      updated: Object.keys(update).filter((k) => k !== "updated_at"),
+    });
+  },
+};
+
+const searchAgentSkills: AssistantTool = {
+  name: "search_agent_skills",
+  minRole: "viewer",
+  scope: "Search the skill catalogue (system + workspace skills) an agent can be given.",
+  def: {
+    name: "search_agent_skills",
+    description:
+      "Search the agent-skill catalogue by name, category or keyword. A skill bundles a system-prompt extension + the tools it needs. Use it to propose concrete skills before set_agent_skills — the catalogue is far too large to list whole.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Keyword matched on name/slug/description." },
+        category: { type: "string", description: "Optional category filter." },
+        limit: { type: "number", description: "Max results (default 15, max 40)." },
+      },
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const q = str(args.query);
+    const limit = Math.min(Math.max(Number(args.limit ?? 15) || 15, 1), 40);
+    let sel = ctx.admin
+      .from("agent_skills")
+      .select("id, slug, name, description, category, required_tools")
+      // Workspace skills + the system catalogue (workspace_id is null).
+      .or(`workspace_id.eq.${ctx.workspaceId},workspace_id.is.null`);
+    if (q) sel = sel.or(`name.ilike.%${q}%,slug.ilike.%${q}%,description.ilike.%${q}%`);
+    if (str(args.category)) sel = sel.eq("category", str(args.category));
+    const { data, error } = await sel.limit(limit);
+    if (error) return `ERROR: skill search failed (${error.message}).`;
+    if (!data?.length) return "No skill matches. Try a broader keyword, or propose writing a custom skill.";
+    return JSON.stringify(data);
+  },
+};
+
+const setAgentSkills: AssistantTool = {
+  name: "set_agent_skills",
+  minRole: "member",
+  scope: "Activate or deactivate skills on an agent.",
+  def: {
+    name: "set_agent_skills",
+    description:
+      "Activate and/or deactivate skills on an internal agent. Pass skill ids returned by search_agent_skills (slugs are accepted too). Activating a skill extends the agent's system prompt with that skill's playbook.",
+    parameters: {
+      type: "object",
+      properties: {
+        agent_id: { type: "string", description: "The agent's uuid." },
+        activate: { type: "array", items: { type: "string" }, description: "Skill ids (or slugs) to activate." },
+        deactivate: { type: "array", items: { type: "string" }, description: "Skill ids (or slugs) to remove." },
+      },
+      required: ["agent_id"],
+      additionalProperties: false,
+    },
+  },
+  run: async (args, ctx) => {
+    const agent = await resolveAgent(ctx, str(args.agent_id), "");
+    if (!agent) return "ERROR: agent not found in this workspace.";
+
+    const asList = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x)).filter(Boolean) : []);
+    const activate = asList(args.activate);
+    const deactivate = asList(args.deactivate);
+    if (!activate.length && !deactivate.length) return "ERROR: pass at least one skill to activate or deactivate.";
+
+    // Accept slugs as well as ids — the model reads slugs more reliably.
+    const resolveIds = async (refs: string[]) => {
+      if (!refs.length) return [] as string[];
+      const { data } = await ctx.admin
+        .from("agent_skills")
+        .select("id, slug")
+        .or(`workspace_id.eq.${ctx.workspaceId},workspace_id.is.null`);
+      const rows = (data ?? []) as Array<{ id: string; slug: string }>;
+      return refs
+        .map((r) => rows.find((s) => s.id === r || s.slug === r)?.id)
+        .filter((x): x is string => !!x);
+    };
+    const [addIds, removeIds] = await Promise.all([resolveIds(activate), resolveIds(deactivate)]);
+
+    if (addIds.length) {
+      const { error } = await ctx.admin
+        .from("agent_skill_activations")
+        .upsert(addIds.map((skill_id) => ({ agent_id: agent.id, skill_id })), { onConflict: "agent_id,skill_id" });
+      if (error) return `ERROR: could not activate the skills (${error.message}).`;
+    }
+    if (removeIds.length) {
+      await ctx.admin.from("agent_skill_activations").delete().eq("agent_id", agent.id).in("skill_id", removeIds);
+    }
+    const unknown = [...activate, ...deactivate].length - (addIds.length + removeIds.length);
+    return JSON.stringify({
+      ok: true, agent: agent.name, activated: addIds.length, deactivated: removeIds.length,
+      unresolved: unknown > 0 ? `${unknown} reference(s) matched no skill — search first.` : null,
+    });
+  },
+};
+
 const ALL_TOOLS: AssistantTool[] = [
   getMetrics,
   supplyOverview,
@@ -1587,6 +2202,15 @@ const ALL_TOOLS: AssistantTool[] = [
   addFeatureFlag,
   installSdk,
   defineJourney,
+  // Internal-agent configuration (the assistant is the configuration surface)
+  listAgents,
+  getAgentSetup,
+  configureAgentTool,
+  addAgentTool,
+  updateAgentProfile,
+  searchAgentSkills,
+  setAgentSkills,
+  proposeConnectors,
 ];
 
 /** Tools the given role is allowed to use. */

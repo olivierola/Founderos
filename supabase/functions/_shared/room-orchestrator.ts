@@ -34,6 +34,8 @@ import { callAi, safeParseJson, type ChatMessage } from "./ai.ts";
 import { buildInternalToolset, type AgentToolRow, type InternalToolContext } from "./internal-agent-tools.ts";
 import { classifyTier, modelForTier, resolveProvider, cheapProvider } from "./model-router.ts";
 import { compileSystemPrompt, type SectionInput } from "./prompt-compiler.ts";
+import { ORCHESTRATOR_PROACTIVITY } from "./proactivity.ts";
+import { deriveContract } from "./agent-loop.ts";
 
 type Admin = SupabaseClient;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -485,12 +487,31 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
     { role: "user", content: [opts.context ? `# Contexte\n${opts.context}` : "", opts.brief].filter(Boolean).join("\n\n") },
   ];
 
+  // A MISSION TASK gets a success contract; a plain room turn does not.
+  //
+  // These runs go through the tick engine in "chat" mode, and the chat path
+  // only derives a contract when the request enters through internal-agent-run
+  // itself — a task dispatched from here had NO verification at all. That is how
+  // "j'ai produit le rapport" became a `done` card with nothing saved: nobody
+  // ever checked. With a contract, evaluateContract's deterministic
+  // `deliverable_exists` runs against the DB, and the controller replans instead
+  // of finalising on a claim.
+  const contract = opts.taskId
+    ? await deriveContract({
+        source: "mission",
+        goal: opts.brief.slice(0, 800),
+        doneWhen: opts.context?.slice(0, 400) ?? null,
+        hasTodos: false,
+      }).catch(() => null)
+    : null;
+
   await admin.from("internal_agent_run_state").upsert({
     run_id: runId,
     mode: "chat",
     agent_id: a.id,
     conversation_id: null,
     mission_id: null,
+    contract,
     messages,
     round: 0,
     max_rounds: 400,
@@ -560,6 +581,8 @@ export function buildRoomSystemPrompt(opts: {
         "- Planifie du récurrent avec create_mission (schedule cron), lance de l'immédiat avec create_mission (start_now) sur l'agent le mieux placé.",
         "- Quand une mission de room est en cours, tu en es le responsable : tu suis l'avancement, tu synthétises les résultats des autres agents, et tu conclus.",
         "Confirme chaque action faite, en une phrase (« Agent X créé », « Brief quotidien planifié à 6h »).",
+        "",
+        ORCHESTRATOR_PROACTIVITY,
       ].join("\n"),
     });
   }
@@ -581,6 +604,7 @@ export function buildRoomSystemPrompt(opts: {
       "- Use render_ui for metrics/tables/charts, and create_deliverable to produce a document/file/report (it appears as a card). Real data only.",
       "- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : NE demande PAS quoi faire, ne réponds PAS juste par du texte conversationnel. Fais l'analyse avec tes outils MAINTENANT et produis-la avec create_deliverable(kind=\"report\"). Pour un gros rapport, construis-le avec report_section puis finalise avec create_deliverable(kind=\"report\") sans content.",
       "- Ne pose une question de clarification QUE si c'est réellement impossible d'avancer.",
+      "- ARTIFACTS : list_artifacts pour voir ce qui existe déjà, read_artifact pour le relire, update_artifact pour le corriger EN PLACE. Ne crée pas un deuxième document là où il faut modifier le premier.",
     ].join("\n"),
   });
   sections.push({ id: "toolbox", body: `Your tools (full schemas are provided separately):\n${capabilitySummary}` });
@@ -595,6 +619,86 @@ export function buildRoomSystemPrompt(opts: {
 /** A task may start when every dependency is finished. `skipped` counts as
  *  finished (a dependency the orchestrator gave up on must not deadlock the
  *  rest); `failed` does NOT — the dependent work would be built on sand. */
+/** A task claimed for this long with no run at all is a dispatch that never
+ *  landed. Generous: a legitimate turn ticks for minutes. */
+const ORPHAN_GRACE_MS = 20 * 60 * 1000;
+
+/**
+ * Close tasks whose run is already over.
+ *
+ * A task moves out of `in_progress` when its run's tick engine reports back.
+ * Every terminal path in that engine does report — but a run can also die
+ * OUTSIDE it: the edge worker is killed mid-turn and the SQL zombie reconciler
+ * flips the run to `failed` from the database, where no TypeScript observes it.
+ * The task then stays `in_progress` for ever, the frontier reads "something is
+ * in flight", and the mission sits at "en cours" with nothing running — the
+ * exact deadlock a human sees as "l'agent s'est arrêté".
+ *
+ * So the frontier verifies its own in-flight set on every pass: any task whose
+ * run is terminal (or which never got a run) is closed here, with the room's
+ * own reply as the result when there is one. Mutates `tasks` so the caller
+ * continues on the healed shape.
+ */
+async function healOrphanedTasks(admin: Admin, missionId: string, tasks: TaskRow[]): Promise<boolean> {
+  const inflight = tasks.filter((t) => ["in_progress", "waiting", "review"].includes(t.status));
+  if (inflight.length === 0) return false;
+
+  const runIds = inflight.map((t) => t.run_id).filter((id): id is string => !!id);
+  const runById = new Map<string, { status: string; error_message: string | null }>();
+  if (runIds.length > 0) {
+    const { data } = await admin.from("internal_agent_runs")
+      .select("id, status, error_message").in("id", runIds);
+    for (const r of (data ?? []) as Array<{ id: string; status: string; error_message: string | null }>) {
+      runById.set(r.id, { status: r.status, error_message: r.error_message });
+    }
+  }
+
+  let healed = false;
+  for (const t of inflight) {
+    const run = t.run_id ? runById.get(t.run_id) : undefined;
+    const missingRun = !t.run_id || (t.run_id && !run);
+    const terminal = run && ["succeeded", "failed", "cancelled"].includes(run.status);
+    if (!terminal && !missingRun) continue;
+    // A task with no run row yet may simply have been claimed a second ago.
+    if (missingRun) {
+      const { data: fresh } = await admin.from("service_room_tasks")
+        .select("started_at").eq("id", t.id).maybeSingle();
+      const startedAt = (fresh as { started_at?: string | null } | null)?.started_at;
+      if (!startedAt || Date.now() - +new Date(startedAt) < ORPHAN_GRACE_MS) continue;
+    }
+
+    // The agent may have answered in the room before its run was cut down; that
+    // reply is the task's real result and must not be thrown away.
+    const { data: msg } = await admin.from("service_room_messages")
+      .select("content, status").eq("task_id", t.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const reply = ((msg as { content?: string } | null)?.content ?? "").trim();
+    const replyFailed = (msg as { status?: string } | null)?.status === "failed";
+    const ok = run?.status === "succeeded" && !replyFailed && reply.length > 0;
+
+    const summary = ok
+      ? condense(reply)
+      : condense(reply || run?.error_message || "Le run de cette tâche s'est arrêté sans rendre de résultat (worker interrompu).");
+
+    await admin.from("service_room_tasks").update({
+      status: ok ? "done" : "failed",
+      result_summary: summary,
+      finished_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", t.id);
+    t.status = ok ? "done" : "failed";
+    t.result_summary = summary;
+    healed = true;
+
+    await logMissionEvent(admin, missionId, {
+      kind: ok ? "completed" : "failed", task_id: t.id, agent_id: t.agent_id,
+      message: ok
+        ? `« ${t.title} » récupérée : le run s'était terminé sans notifier la mission.`
+        : `« ${t.title} » abandonnée : son run s'est arrêté (${run?.status ?? "run introuvable"}) sans rendre de résultat.`,
+    });
+  }
+  return healed;
+}
+
 function isReady(t: TaskRow, byId: Map<string, TaskRow>): boolean {
   if (t.status !== "todo") return false;
   if (!t.agent_id) return false;
@@ -639,6 +743,11 @@ export async function advanceRoomMission(admin: Admin, missionId: string): Promi
     .eq("mission_id", missionId).order("position", { ascending: true });
   const tasks = (taskRows ?? []) as TaskRow[];
   if (tasks.length === 0) return;
+
+  // Verify the in-flight set before trusting it — see healOrphanedTasks. Without
+  // this, one killed worker freezes the mission permanently: the branch below
+  // would report "en attente de 1 tâche en cours" on every pass, for ever.
+  await healOrphanedTasks(admin, missionId, tasks);
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
   // ── Finished? Close it with the orchestrator's report ──────────────────────
@@ -660,8 +769,18 @@ export async function advanceRoomMission(admin: Admin, missionId: string): Promi
       });
       return;
     }
-    // Nothing running, nothing ready: either everything left is blocked behind a
-    // FAILED dependency, or a task has no assignee. Say so instead of hanging.
+    // Nothing running, nothing ready: everything left sits behind a FAILED
+    // dependency, or a task has no assignee. A human orchestrator would not
+    // give up here — it would look at what broke and route around it. So
+    // before declaring the mission dead, REPLAN once.
+    const replanned = await replanMission(admin, room, mission, tasks, dashboardName);
+    if (replanned) {
+      // The plan changed (a task was retried, reassigned or skipped) — re-enter
+      // the frontier on the new shape.
+      await advanceRoomMission(admin, missionId);
+      return;
+    }
+
     const stuck = tasks.filter((t) => t.status === "todo");
     for (const t of stuck) {
       await admin.from("service_room_tasks").update({ status: "blocked", updated_at: new Date().toISOString() }).eq("id", t.id);
@@ -671,10 +790,10 @@ export async function advanceRoomMission(admin: Admin, missionId: string): Promi
       kind: "failed",
       message: stuck.some((t) => !t.agent_id)
         ? "Mission bloquée : une tâche n'a pas d'agent assigné."
-        : "Mission bloquée : les tâches restantes dépendent d'une tâche en échec.",
+        : "Mission bloquée : les tâches restantes dépendent d'une tâche en échec, et la replanification n'a rien trouvé.",
     });
     await postSystemMessage(admin, room, missionId,
-      "⛔ Mission bloquée — les tâches restantes attendent un résultat qui n'arrivera pas. Ouvrez la mission pour réassigner ou relancer.");
+      "⛔ Mission bloquée — les tâches restantes attendent un résultat qui n'arrivera pas, et je n'ai pas trouvé de contournement. Ouvrez la mission pour réassigner ou relancer.");
     return;
   }
 
@@ -716,6 +835,153 @@ export async function advanceRoomMission(admin: Admin, missionId: string): Promi
     .update({ status: "running", updated_at: new Date().toISOString() }).eq("id", missionId);
 }
 
+// ---------------------------------------------------------------------------
+// Replanning — routing around a failure instead of dying on it
+// ---------------------------------------------------------------------------
+
+/** How many times one mission may be replanned. Two is enough to route around
+ *  a bad task or a wrong assignee; past that the failure is structural and a
+ *  human needs to look at it, not another LLM round. */
+const MAX_REPLANS = 2;
+
+interface ReplanAction {
+  task_id: string;
+  action: "retry" | "reassign" | "skip";
+  /** For reassign: the NAME of the agent to hand it to. */
+  agent?: string;
+  /** For retry/reassign: a corrected brief that accounts for what went wrong. */
+  brief?: string;
+  reason?: string;
+}
+
+/**
+ * The frontier stalled with work still open. Ask the orchestrator what to do
+ * about the tasks that failed — the same decision a human lead makes when a
+ * teammate comes back empty:
+ *
+ *   retry    — the brief was the problem; run it again with a better one.
+ *   reassign — the agent was the problem; give it to someone else.
+ *   skip     — it is not worth it; unblock whatever depended on it.
+ *
+ * Returns true when it actually changed something (the caller then re-enters
+ * the frontier), false when the mission really is stuck.
+ */
+async function replanMission(
+  admin: Admin, room: RoomRef,
+  mission: { id: string; title: string; objective: string | null; orchestrator_agent_id: string | null },
+  tasks: TaskRow[], dashboardName: string,
+): Promise<boolean> {
+  const { count } = await admin.from("service_room_mission_events")
+    .select("id", { count: "exact", head: true })
+    .eq("mission_id", mission.id).eq("kind", "replanned");
+  if ((count ?? 0) >= MAX_REPLANS) return false;
+
+  const failed = tasks.filter((t) => t.status === "failed");
+  const blocked = tasks.filter((t) => t.status === "todo");
+  // Nothing to route around, or nothing left that would benefit — a task with
+  // no assignee is a planning bug the LLM can fix, so that counts too.
+  if (failed.length === 0 && !blocked.some((t) => !t.agent_id)) return false;
+
+  const { data: roster } = await admin.from("internal_agents")
+    .select("id, name, role, persona, is_orchestrator")
+    .eq("service_dashboard_id", room.dashboard_id).eq("is_archived", false);
+  const team = ((roster ?? []) as RosterAgent[]).filter((a) => !a.is_orchestrator);
+  const byName = new Map(team.map((a) => [a.name.toLowerCase(), a.id]));
+
+  const system = [
+    `Tu es l'assistant-chef d'orchestre du service « ${dashboardName} ». Une mission que tu as planifiée est bloquée.`,
+    `Des tâches ont ÉCHOUÉ, et tout ce qui en dépendait attend un résultat qui n'arrivera pas.`,
+    ``,
+    `Pour CHAQUE tâche en échec, choisis UNE action :`,
+    `- "retry" : le problème venait du BRIEF (trop vague, mauvaise cible, information manquante). Réécris-le dans "brief" en corrigeant précisément ce qui a manqué.`,
+    `- "reassign" : le problème venait de l'EXÉCUTANT (pas les bonnes compétences/outils). Donne le NOM EXACT d'un autre agent dans "agent", et un brief adapté à lui.`,
+    `- "skip" : cette tâche n'est pas indispensable au résultat. Ce qui en dépendait pourra continuer sans elle.`,
+    ``,
+    `AGENTS DISPONIBLES :`,
+    team.length ? team.map(rosterCard).join("\n") : "(aucun autre agent)",
+    ``,
+    `Sois honnête : si relancer à l'identique ne changerait rien, choisis "skip" ou "reassign". Ne relance pas deux fois la même chose en espérant un autre résultat.`,
+    ``,
+    `JSON STRICT, sans prose ni fence : {"actions":[{"task_id":"","action":"retry|reassign|skip","agent":"","brief":"","reason":"une phrase"}]}`,
+  ].join("\n");
+
+  const digest = tasks.map((t) =>
+    `- [${t.status}] id=${t.id} « ${t.title} »${t.agent_id ? "" : " (AUCUN AGENT ASSIGNÉ)"}` +
+    `${t.description ? `\n  brief: ${t.description.slice(0, 300)}` : ""}` +
+    `${t.result_summary ? `\n  résultat/erreur: ${t.result_summary.slice(0, 400)}` : ""}`,
+  ).join("\n");
+
+  let actions: ReplanAction[] = [];
+  try {
+    const res = await callAi({
+      task: "classification", provider: cheapProvider(), jsonMode: true,
+      maxTokens: 1400, temperature: 0.2, systemPrompt: system,
+      userPrompt: `# Mission\n${mission.title}${mission.objective ? `\n${mission.objective}` : ""}\n\n# État des tâches\n${digest}`,
+    });
+    actions = safeParseJson<{ actions?: ReplanAction[] }>(res.content)?.actions ?? [];
+  } catch {
+    return false;
+  }
+
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  let changed = 0;
+  for (const a of actions.slice(0, 8)) {
+    const task = byId.get(str(a?.task_id));
+    // Only tasks that are actually stuck may be rewritten — a replan must never
+    // reopen work that succeeded.
+    if (!task || !["failed", "todo"].includes(task.status)) continue;
+    const action = str(a?.action);
+    const brief = str(a?.brief).trim().slice(0, 4000);
+
+    if (action === "skip") {
+      await admin.from("service_room_tasks")
+        .update({ status: "skipped", result_summary: `Abandonnée à la replanification : ${str(a?.reason) || "non indispensable"}.`, updated_at: new Date().toISOString() })
+        .eq("id", task.id);
+      changed++;
+      continue;
+    }
+    if (action === "reassign") {
+      const wanted = str(a?.agent).trim().toLowerCase();
+      const newId = byName.get(wanted) ?? [...byName.entries()].find(([n]) => wanted && n.includes(wanted))?.[1];
+      // An unknown name would silently produce an unassignable task — treat it
+      // as a plain retry on the current assignee instead.
+      if (newId && newId !== task.agent_id) {
+        await admin.from("service_room_tasks").update({
+          agent_id: newId, status: "todo", run_id: null, message_id: null,
+          description: brief || task.description, updated_at: new Date().toISOString(),
+        }).eq("id", task.id);
+        changed++;
+        continue;
+      }
+    }
+    // retry (and reassign fallbacks): back to todo with the corrected brief. A
+    // retry with an IDENTICAL brief is refused — that is the loop we are here
+    // to avoid.
+    if (!brief || brief === (task.description ?? "")) continue;
+    await admin.from("service_room_tasks").update({
+      status: "todo", run_id: null, message_id: null,
+      description: brief, updated_at: new Date().toISOString(),
+    }).eq("id", task.id);
+    changed++;
+  }
+
+  if (changed === 0) return false;
+
+  const summary = actions.slice(0, 8)
+    .map((a) => `${str(a?.action)} « ${byId.get(str(a?.task_id))?.title ?? "?"} »${a?.reason ? ` — ${str(a.reason)}` : ""}`)
+    .join(" · ");
+  await logMissionEvent(admin, mission.id, {
+    kind: "replanned",
+    message: `Replanification après échec : ${changed} tâche(s) ajustée(s). ${summary}`.slice(0, 900),
+    payload: { actions },
+  });
+  await admin.from("service_room_missions")
+    .update({ status: "running", updated_at: new Date().toISOString() }).eq("id", mission.id);
+  await postSystemMessage(admin, room, mission.id,
+    `🔄 Une étape a échoué — j'ai réorganisé la suite plutôt que d'arrêter la mission : ${summary}`.slice(0, 900));
+  return true;
+}
+
 /**
  * A mission task's run just finished. Record the result, write it to the shared
  * team memory so the knowledge outlives the mission, then re-enter the frontier
@@ -728,12 +994,23 @@ export async function completeMissionTask(admin: Admin, opts: {
   output: string;
 }): Promise<void> {
   const { data: taskRow } = await admin.from("service_room_tasks")
-    .select("id, mission_id, title, agent_id, status").eq("id", opts.taskId).maybeSingle();
+    .select("id, mission_id, title, agent_id, status, run_id").eq("id", opts.taskId).maybeSingle();
   if (!taskRow) return;
-  const task = taskRow as { id: string; mission_id: string; title: string; agent_id: string | null; status: string };
+  const task = taskRow as { id: string; mission_id: string; title: string; agent_id: string | null; status: string; run_id: string | null };
   if (["done", "failed", "skipped"].includes(task.status)) return; // already reconciled
 
-  const summary = condense(opts.output);
+  // Stamp the summary with what the run actually persisted. The summary is the
+  // agent's own prose — "j'ai produit le rapport" costs it nothing to write —
+  // and it is what every downstream task and the closing report read. Recording
+  // the real inventory next to it is what keeps the claim checkable.
+  const { data: produced } = task.run_id
+    ? await admin.from("internal_agent_deliverables").select("name, kind").eq("run_id", task.run_id)
+    : { data: [] as Array<{ name: string; kind: string }> };
+  const madeList = (produced ?? []) as Array<{ name: string; kind: string }>;
+  const inventory = madeList.length
+    ? `\n\n[Livrables enregistrés : ${madeList.map((d) => `« ${d.name} » (${d.kind})`).join(", ")}]`
+    : "\n\n[Aucun livrable enregistré par cette tâche.]";
+  const summary = condense(opts.output) + inventory;
   await admin.from("service_room_tasks").update({
     status: opts.ok ? "done" : "failed",
     result_summary: summary,
@@ -807,16 +1084,37 @@ async function finishMission(
   const digest = tasks.map((t) =>
     `- [${t.status}] ${t.title}${t.result_summary ? `\n  ${t.result_summary.replace(/\n/g, "\n  ").slice(0, 900)}` : ""}`,
   ).join("\n");
+
+  // Ground the report in what was ACTUALLY persisted. A task summary is the
+  // agent's own prose, and an agent that says "j'ai produit le rapport" without
+  // having called create_deliverable would otherwise see that claim copied
+  // verbatim into the closing report — the human then looks for a file that
+  // does not exist. The list below is the record, not a claim.
+  const runIds = tasks.map((t) => t.run_id).filter((id): id is string => !!id);
+  const { data: delivRows } = runIds.length
+    ? await admin.from("internal_agent_deliverables")
+        .select("name, kind, created_at").in("run_id", runIds).order("created_at", { ascending: true })
+    : { data: [] as Array<{ name: string; kind: string }> };
+  const delivs = (delivRows ?? []) as Array<{ name: string; kind: string }>;
+  const inventory = delivs.length
+    ? delivs.map((d) => `- « ${d.name} » (${d.kind})`).join("\n")
+    : "(aucun)";
+
   await dispatchRoomTurn(admin, {
     room, agentId: mission.orchestrator_agent_id, missionId: mission.id, dashboardName,
     brief: [
       `La mission « ${mission.title} » est terminée. Rédige le compte rendu final pour la room.`,
       `Structure : ce qui a été accompli, les résultats clés (chiffres/faits concrets tirés des tâches), ce qui reste ouvert ou a échoué, et la prochaine action recommandée.`,
-      `Sois factuel : n'invente rien qui ne soit pas dans les résultats ci-dessus. Si un livrable consolidé a du sens, produis-le avec create_deliverable.`,
+      `Sois factuel : n'invente rien qui ne soit pas dans les résultats ci-dessus.`,
+      `RÈGLE STRICTE sur les livrables : la seule liste qui fait foi est « Livrables réellement enregistrés » ci-dessous.`,
+      delivs.length
+        ? `Ne cite QUE ces livrables. Si un résumé de tâche en annonce un autre, écris explicitement qu'il n'a pas été enregistré.`
+        : `Aucun livrable n'existe : ne dis PAS qu'un rapport a été produit. Si le contenu est là, produis-le maintenant toi-même avec create_deliverable ; sinon dis clairement qu'il manque.`,
     ].join("\n"),
     context: [
       mission.objective ? `Objectif : ${mission.objective}` : "",
       `\nRésultats des tâches :\n${digest}`,
+      `\nLivrables réellement enregistrés :\n${inventory}`,
     ].filter(Boolean).join("\n"),
   });
 }

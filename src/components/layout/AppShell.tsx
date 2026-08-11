@@ -58,9 +58,9 @@ export function AppShell() {
     <ShellNavContext.Provider value={{ mobileOpen, setMobileOpen, primaryExpanded, setPrimaryExpanded }}>
       <PermissionsProvider>
       <AssistantProvider>
-      {/* Soft-black chrome. Outer is a ROW: the left column holds the topbar +
-          content; the assistant is a full-height right rail so it reaches up to
-          the navbar level (not just the content area). */}
+      {/* Soft-black chrome. The assistant is NOT part of this row: it floats
+          above the app as a full-height right-hand modal, so opening it never
+          reflows the page it is talking about. */}
       <div className="flex h-screen w-screen overflow-hidden bg-[#060608]">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopbarTabsProvider>
@@ -134,8 +134,8 @@ export function AppShell() {
         </TopbarTabsProvider>
         </div>
 
-        {/* Global assistant — full-height right rail, aligned to the navbar top,
-            splitting the whole shell (topbar + content) when open. */}
+        {/* Global assistant — floating full-height panel overlaying the right
+            side of the shell (topbar included) when open. */}
         <AssistantPanel />
       </div>
       </AssistantProvider>
@@ -182,8 +182,8 @@ function isFullbleedRoute(pathname: string): boolean {
   // Match /app/<ws>/<proj>/devops/infra/<id> and .../devops/workflows/<id>
   // — both render the architecture canvas inside the page.
   if (/\/app\/[^/]+\/[^/]+\/devops\/(infra|workflows)\/[^/]+/.test(pathname)) return true;
-  // Office editors (document / spreadsheet / presentation) are full-bleed canvases.
-  if (/\/app\/[^/]+\/[^/]+\/office\/(document|spreadsheet|presentation)\/[^/]+/.test(pathname)) return true;
+  // Agent artifact editors (document / spreadsheet / presentation) are full-bleed canvases.
+  if (/\/app\/[^/]+\/[^/]+\/artifact\/(document|spreadsheet|presentation)\/[^/]+/.test(pathname)) return true;
   // E2E Testing: tabbed workspace with a live app preview + agent chatbot.
   if (/\/app\/[^/]+\/[^/]+\/devops\/testing(\/.*)?$/.test(pathname)) return true;
   // Agent ecosystem: full-screen infinite collaboration canvas.
@@ -198,8 +198,6 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/agent\/skills\/[^/]+/.test(pathname)) return true;
   // Project Inbox: Slack-style full-width chatroom.
   if (/\/app\/[^/]+\/[^/]+\/pm\/inbox(\/.*)?$/.test(pathname)) return true;
-  // Project Whiteboard canvas (open board) — full-screen collaborative canvas.
-  if (/\/app\/[^/]+\/[^/]+\/pm\/whiteboard(\/.*)?$/.test(pathname)) return true;
   // Simulations — MiroFish-style two-pane full-screen workspace (now its own module).
   if (/\/app\/[^/]+\/[^/]+\/(pm|crm\/)?simulations(\/.*)?$/.test(pathname)) return true;
   // Outils IA: Test runs + Vibe Code are full-bleed workspaces; a repo DETAIL is

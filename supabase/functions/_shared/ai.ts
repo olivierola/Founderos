@@ -263,7 +263,13 @@ function ensureToolPairing(msgs: ChatMessage[]): ChatMessage[] {
   return dirty ? out : msgs;
 }
 
-function shrinkOldToolResults(msgs: ChatMessage[], keepRecentTools = 5, stub = 350): ChatMessage[] {
+// Keep more, and keep it longer, than we used to (5 × 350 chars). A research
+// run reads pages worth thousands of characters and writes its report from
+// them: a 350-char stub erased the figures three rounds after fetching them,
+// and the agent re-searched what it had already found. Affordable now that an
+// over-budget request compacts and fails over instead of dying (see
+// chatWithinBudget) — the ceiling is enforced there, not by starving every run.
+function shrinkOldToolResults(msgs: ChatMessage[], keepRecentTools = 8, stub = 700): ChatMessage[] {
   const toolPositions: number[] = [];
   for (let i = 0; i < msgs.length; i++) if (msgs[i].role === "tool") toolPositions.push(i);
   if (toolPositions.length <= keepRecentTools) return msgs;
@@ -273,6 +279,131 @@ function shrinkOldToolResults(msgs: ChatMessage[], keepRecentTools = 5, stub = 3
       ? { ...m, content: truncateMiddle(m.content as string, stub) }
       : m,
   );
+}
+
+// ── Over-budget recovery ─────────────────────────────────────────────────────
+// A transcript that no longer fits is squeezed in escalating passes rather than
+// abandoned. Each pass keeps the system prompt and the most recent exchanges —
+// what the model needs to act next — and sacrifices the middle, which is where
+// re-readable detail (old tool payloads) lives.
+
+/** Rough token count. Deliberately pessimistic (3.4 chars/token instead of the
+ *  usual 4) so the pre-flight guard fires slightly early rather than late. */
+function estimateTokens(body: unknown): number {
+  return Math.ceil(JSON.stringify(body).length / 3.4);
+}
+
+/** What one request may weigh, per provider. Groq's on-demand tier caps tokens
+ *  PER MINUTE (12k on the free plan) and rejects anything above it outright, so
+ *  in practice that is a per-request ceiling; DeepSeek has a 64k window. */
+const REQUEST_TOKEN_BUDGET: Record<"groq" | "deepseek", number> = {
+  groq: 10_000,
+  deepseek: 48_000,
+};
+
+/** Squeeze pass `n` of the transcript. Pairing is re-established by the caller. */
+function squeeze(msgs: ChatMessage[], pass: number): ChatMessage[] {
+  if (pass === 0) return shrinkOldToolResults(msgs, 2, 200);
+  if (pass === 1) {
+    return shrinkOldToolResults(msgs, 1, 120).map((m) =>
+      m.role !== "system" && typeof m.content === "string" && m.content.length > 4000
+        ? { ...m, content: truncateMiddle(m.content, 4000) }
+        : m);
+  }
+  // Last resort: keep the brief (system + first user turn) and the tail, drop
+  // the middle behind an explicit marker so the model knows history is missing.
+  const base = shrinkOldToolResults(msgs, 1, 120);
+  const head: ChatMessage[] = [];
+  let i = 0;
+  while (i < base.length && (base[i].role === "system" || head.length < 2)) { head.push(base[i]); i++; }
+  const tail = base.slice(-8);
+  if (head.length + tail.length >= base.length) return base;
+  return [
+    ...head,
+    { role: "user", content: `[${base.length - head.length - tail.length} messages intermédiaires coupés — contexte trop long pour le modèle. Appuie-toi sur ce qui suit.]` } as ChatMessage,
+    ...tail,
+  ];
+}
+
+interface BudgetedChat {
+  json: ToolChatResponse;
+  /** Provider actually used — a failover swaps it. */
+  provider: "groq" | "deepseek";
+  model: string;
+}
+
+/**
+ * Send a chat request, compacting (then failing over) when the provider says it
+ * is too large.
+ *
+ * `build` is called with the messages to send, so every retry rebuilds the body
+ * with the same tools/params around a smaller transcript.
+ */
+async function chatWithinBudget(opts: {
+  url: string; apiKey: string | undefined; provider: "groq" | "deepseek"; model: string;
+  /** Set for a custom endpoint — no failover then: the caller pinned a host. */
+  pinned: boolean;
+  messages: ChatMessage[];
+  build: (msgs: ChatMessage[], model: string) => Record<string, unknown>;
+  onNotice?: (n: { type: "tool_error" | "info"; message: string; detail?: string }) => Promise<void>;
+}): Promise<BudgetedChat> {
+  const budget = REQUEST_TOKEN_BUDGET[opts.provider];
+  const deepseekKey = opts.pinned ? null : Deno.env.get("DEEPSEEK_API_KEY") ?? null;
+  const canFailover = !opts.pinned && opts.provider === "groq" && !!deepseekKey;
+  let msgs = ensureToolPairing(shrinkOldToolResults(opts.messages));
+
+  // Pre-flight: a body we can already see is over budget is squeezed before the
+  // round trip, so the common case costs no failed request at all.
+  if (!opts.pinned) {
+    for (let pass = 0; pass < 3 && estimateTokens(opts.build(msgs, opts.model)) > budget; pass++) {
+      msgs = ensureToolPairing(squeeze(msgs, pass));
+    }
+    // Still over after squeezing? Don't mutilate the transcript to fit a narrow
+    // tier — move the work to the provider that has room, keeping the context
+    // the agent needs. (Groq's 12k-TPM on-demand tier cannot hold an agent
+    // transcript plus its toolset; DeepSeek's 64k window can.)
+    if (canFailover && estimateTokens(opts.build(msgs, opts.model)) > budget) {
+      const full = ensureToolPairing(shrinkOldToolResults(opts.messages));
+      await opts.onNotice?.({
+        type: "info",
+        message: "Bascule sur DeepSeek : le contexte dépasse le quota de tokens de Groq.",
+      }).catch(() => {});
+      return {
+        json: await completeChat(TOOL_ENDPOINTS.deepseek, deepseekKey!, opts.build(full, DEEPSEEK_MODEL)),
+        provider: "deepseek",
+        model: DEEPSEEK_MODEL,
+      };
+    }
+  }
+
+  let lastError: PayloadTooLargeError | null = null;
+  for (let pass = 0; pass < 3; pass++) {
+    try {
+      return { json: await completeChat(opts.url, opts.apiKey ?? "", opts.build(msgs, opts.model)), provider: opts.provider, model: opts.model };
+    } catch (e) {
+      if (!(e instanceof PayloadTooLargeError)) throw e;
+      lastError = e;
+      msgs = ensureToolPairing(squeeze(msgs, pass));
+      await opts.onNotice?.({
+        type: "info",
+        message: `Contexte trop long pour ${opts.model} — compaction et nouvelle tentative.`,
+        detail: e.limit ? `limite ${e.limit} tokens, demandé ${e.requested}` : undefined,
+      }).catch(() => {});
+    }
+  }
+
+  // The provider refused even the squeezed transcript — move it, rather than
+  // failing a run over a rate tier.
+  if (canFailover) {
+    await opts.onNotice?.({
+      type: "info",
+      message: "Bascule sur DeepSeek : la requête dépasse le quota de tokens de Groq.",
+      detail: lastError?.limit ? `Groq : limite ${lastError.limit} tokens/min, demandé ${lastError.requested}` : undefined,
+    }).catch(() => {});
+    const json = await completeChat(TOOL_ENDPOINTS.deepseek, deepseekKey!, opts.build(msgs, DEEPSEEK_MODEL));
+    return { json, provider: "deepseek", model: DEEPSEEK_MODEL };
+  }
+  throw lastError ?? new PayloadTooLargeError("le contexte dépasse la fenêtre du modèle", null, null);
 }
 
 export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResult> {
@@ -318,16 +449,34 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
   }
 
   const slimTools = compactToolDefs(opts.tools);
+  // The provider may change mid-loop (an over-budget failover); usage and the
+  // reported model must follow whatever actually answered.
+  let activeProvider = provider;
+  let activeUrl = url;
+  let activeKey = apiKey;
+  let activeModel = model;
   for (let round = 0; round < maxRounds; round++) {
-    const json = await completeChat(url, apiKey, {
-      model,
-      messages: ensureToolPairing(shrinkOldToolResults(messages)),
-      tools: slimTools,
-      tool_choice: "auto",
-      temperature: opts.temperature ?? 0.3,
-      max_tokens: opts.maxTokens ?? 4000,
+    const sent = await chatWithinBudget({
+      url: activeUrl, apiKey: activeKey, provider: activeProvider, model: activeModel, pinned: !!ep,
+      messages,
+      onNotice: opts.onNotice,
+      build: (msgs, m) => ({
+        model: m,
+        messages: msgs,
+        tools: slimTools,
+        tool_choice: "auto",
+        temperature: opts.temperature ?? 0.3,
+        max_tokens: opts.maxTokens ?? 4000,
+      }),
     });
-    modelName = json.model ?? model;
+    if (sent.provider !== activeProvider) {
+      activeProvider = sent.provider;
+      activeUrl = TOOL_ENDPOINTS[sent.provider];
+      activeKey = Deno.env.get(sent.provider === "groq" ? "GROQ_API_KEY" : "DEEPSEEK_API_KEY") ?? "";
+      activeModel = sent.model;
+    }
+    const json = sent.json;
+    modelName = json.model ?? activeModel;
     if (json.usage) {
       usageTotal.prompt_tokens += json.usage.prompt_tokens ?? 0;
       usageTotal.completion_tokens += json.usage.completion_tokens ?? 0;
@@ -375,7 +524,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
       }
       return {
         content: await finalizeAnswer(choice?.content),
-        provider,
+        provider: activeProvider,
         model: modelName,
         usage: usageTotal,
         toolCalls,
@@ -425,10 +574,15 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
   // leaked as DSML text. Drain up to 2 more recovered calls so the agent doesn't
   // abandon work mid-flight, then force a clean (sanitized) final answer.
   for (let drain = 0; drain < 2; drain++) {
-    const dj = await completeChat(url, apiKey, {
-      model, messages: ensureToolPairing(messages), tools: opts.tools, tool_choice: "auto",
-      temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000,
+    const drained = await chatWithinBudget({
+      url: activeUrl, apiKey: activeKey, provider: activeProvider, model: activeModel, pinned: !!ep,
+      messages, onNotice: opts.onNotice,
+      build: (msgs, m) => ({
+        model: m, messages: msgs, tools: slimTools, tool_choice: "auto",
+        temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000,
+      }),
     });
+    const dj = drained.json;
     if (dj.usage) {
       usageTotal.prompt_tokens += dj.usage.prompt_tokens ?? 0;
       usageTotal.completion_tokens += dj.usage.completion_tokens ?? 0;
@@ -443,7 +597,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
       }
     }
     if (!dcalls.length) {
-      return { content: await finalizeAnswer(dchoice?.content), provider, model: dj.model ?? modelName, usage: usageTotal, toolCalls };
+      return { content: await finalizeAnswer(dchoice?.content), provider: activeProvider, model: dj.model ?? modelName, usage: usageTotal, toolCalls };
     }
     messages.push({ role: "assistant", content: dchoice?.content ?? null, tool_calls: dcalls });
     for (const call of dcalls) {
@@ -463,12 +617,17 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
   }
 
   // Final answer, no tools.
-  const json = await completeChat(url, apiKey, {
-    model,
-    messages: ensureToolPairing(messages),
-    temperature: opts.temperature ?? 0.3,
-    max_tokens: opts.maxTokens ?? 4000,
+  const closing = await chatWithinBudget({
+    url: activeUrl, apiKey: activeKey, provider: activeProvider, model: activeModel, pinned: !!ep,
+    messages, onNotice: opts.onNotice,
+    build: (msgs, m) => ({
+      model: m,
+      messages: msgs,
+      temperature: opts.temperature ?? 0.3,
+      max_tokens: opts.maxTokens ?? 4000,
+    }),
   });
+  const json = closing.json;
   if (json.usage) {
     usageTotal.prompt_tokens += json.usage.prompt_tokens ?? 0;
     usageTotal.completion_tokens += json.usage.completion_tokens ?? 0;
@@ -476,7 +635,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
   }
   return {
     content: await finalizeAnswer(json.choices?.[0]?.message?.content),
-    provider,
+    provider: closing.provider,
     model: json.model ?? modelName,
     usage: usageTotal,
     toolCalls,
@@ -550,17 +709,33 @@ export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsRes
   let errorCount = 0;
 
   const resolveTools = () => compactToolDefs(typeof opts.tools === "function" ? opts.tools() : opts.tools);
+  // May switch mid-tick when the transcript outgrows the provider's allowance.
+  let activeProvider = provider;
+  let activeUrl = url;
+  let activeKey = apiKey;
+  let activeModel = model;
   for (let round = 0; round < opts.maxRounds; round++) {
     roundsRun++;
     // Order matters: the cached prefix is the transcript; ephemeral goes AFTER it.
     const ephemeral = opts.ephemeral?.() ?? [];
-    const json = await completeChat(url, apiKey, {
-      model,
-      messages: [...ensureToolPairing(shrinkOldToolResults(messages)), ...ephemeral],
-      tools: resolveTools(), tool_choice: "auto",
-      temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000,
+    const sent = await chatWithinBudget({
+      url: activeUrl, apiKey: activeKey, provider: activeProvider, model: activeModel, pinned: !!ep,
+      messages, onNotice: opts.onNotice,
+      build: (msgs, m) => ({
+        model: m,
+        messages: [...msgs, ...ephemeral],
+        tools: resolveTools(), tool_choice: "auto",
+        temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000,
+      }),
     });
-    modelName = json.model ?? model;
+    if (sent.provider !== activeProvider) {
+      activeProvider = sent.provider;
+      activeUrl = TOOL_ENDPOINTS[sent.provider];
+      activeKey = Deno.env.get(sent.provider === "groq" ? "GROQ_API_KEY" : "DEEPSEEK_API_KEY") ?? "";
+      activeModel = sent.model;
+    }
+    const json = sent.json;
+    modelName = json.model ?? activeModel;
     if (json.usage) {
       usage.prompt_tokens += json.usage.prompt_tokens ?? 0;
       usage.completion_tokens += json.usage.completion_tokens ?? 0;
@@ -580,7 +755,7 @@ export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsRes
         messages.push({ role: "user", content: "Your previous message contained a PARTIAL or MALFORMED tool call that could not be executed. Re-issue it now as ONE complete, valid tool call via the proper tool-calling interface. No DSML/function-tag markup in your text." });
         continue;
       }
-      return { messages, finished: true, content: sanitizeLeakedToolCalls(choice?.content ?? ""), roundsRun, toolCalls, errorCount, usage, provider, model: modelName };
+      return { messages, finished: true, content: sanitizeLeakedToolCalls(choice?.content ?? ""), roundsRun, toolCalls, errorCount, usage, provider: activeProvider, model: modelName };
     }
     for (const call of calls) {
       const raw = call.function.name ?? "";
@@ -608,7 +783,7 @@ export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsRes
     }
   }
   // Tick budget exhausted without a final answer — resume on the next tick.
-  return { messages, finished: false, content: "", roundsRun, toolCalls, errorCount, usage, provider, model: modelName };
+  return { messages, finished: false, content: "", roundsRun, toolCalls, errorCount, usage, provider: activeProvider, model: modelName };
 }
 
 // Heuristic: does this content carry the tell-tale markers of a tool call the
@@ -787,6 +962,36 @@ function extractFirstJsonObject(text: string): string | null {
   return null;
 }
 
+/**
+ * The provider refused the request because it is too big — either for the
+ * model's context window, or (Groq's on-demand tier) for the per-minute token
+ * allowance, which rejects the WHOLE call rather than queueing it.
+ *
+ * Typed, because the answer is never "retry the same payload": the caller has
+ * to shrink the transcript, and failing that switch to a provider with room.
+ * Retrying blind is what turned a 15k-token prompt into a 12-minute run that
+ * died as "worker timed out".
+ */
+export class PayloadTooLargeError extends Error {
+  readonly requested: number | null;
+  readonly limit: number | null;
+  constructor(detail: string, requested: number | null, limit: number | null) {
+    super(`payload too large: ${detail.slice(0, 200)}`);
+    this.name = "PayloadTooLargeError";
+    this.requested = requested;
+    this.limit = limit;
+  }
+}
+
+/** Providers word this a dozen ways; match the meaning, not one vendor's text. */
+const OVERSIZE_RE = /request too large|reduce your message size|too many tokens|maximum context length|context[_ ]length[_ ]exceeded|prompt is too long|tokens per minute/i;
+
+function oversizeFrom(status: number, body: string): PayloadTooLargeError | null {
+  if (status !== 413 && !(OVERSIZE_RE.test(body) && (status === 400 || status === 429))) return null;
+  const m = /Limit\s+(\d+),\s*Requested\s+(\d+)/i.exec(body);
+  return new PayloadTooLargeError(body, m ? Number(m[2]) : null, m ? Number(m[1]) : null);
+}
+
 async function postChat(
   url: string,
   apiKey: string,
@@ -805,6 +1010,11 @@ async function postChat(
     if (res.ok) return (await res.json()) as ToolChatResponse;
     const text = await res.text();
     lastErr = `${res.status} ${text}`;
+    // Too big: surface it as its own failure so the caller can compact. Checked
+    // before the 429 backoff below — a TPM rejection is reported as 429 by some
+    // gateways, and sleeping does not make the payload any smaller.
+    const oversize = oversizeFrom(res.status, text);
+    if (oversize) throw oversize;
     // Recover a malformed tool call (Groq tool_use_failed) instead of failing.
     if (res.status === 400) {
       const recovered = recoverFailedToolCall(text);

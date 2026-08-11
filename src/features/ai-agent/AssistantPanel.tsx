@@ -19,10 +19,12 @@ import { useAssistant } from "@/lib/assistant-context";
 import { capturePageSnapshot, snapshotToText } from "@/lib/page-snapshot";
 import { DocumentCanvas } from "./DocumentCanvas";
 import { MessageArtifacts, type AiArtifact } from "./Artifacts";
+import { AgentSetupDeck } from "./AgentSetupDeck";
 
 const MIN_W = 340;
 const MAX_W = 720;
 const DEFAULT_W = 400;
+
 
 // Quick-start actions shown on the empty state as actionable cards.
 const QUICK_ACTIONS = [
@@ -42,10 +44,11 @@ interface AiMessage {
 interface Convo { id: string; title: string | null; updated_at: string }
 
 export function AssistantPanel() {
-  const { open, setOpen } = useAssistant();
+  const { open, setOpen, request, clearRequest, agent, setAgent } = useAssistant();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Resizable width (persisted), dragged from the left edge.
   const [width, setWidth] = useState<number>(() => {
@@ -127,32 +130,97 @@ export function AssistantPanel() {
     if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [messages?.length, sending]);
 
-  async function handleSend(text?: string) {
+  async function handleSend(text?: string, opts?: { freshChat?: boolean; model?: string }) {
     const content = (text ?? input).trim();
     if (!content || !workspaceId || !projectId || sending) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setSending(true);
     setError(null);
     setInput("");
     try {
       // Capture what the user is looking at right now as primary context.
       const snapshot = snapshotToText(capturePageSnapshot());
-      const res = await callEdge<{ conversation_id: string }>("ai-agent-chat", {
+      const res = await callEdge<{
+        conversation_id: string;
+        assistant_message?: { metadata?: { tool_calls?: string[] } };
+      }>("ai-agent-chat", {
         workspace_id: workspaceId,
         project_id: projectId,
-        conversation_id: convoId,
+        // A hand-off ("configure this agent") opens its own thread, so it never
+        // lands in the middle of an unrelated conversation.
+        conversation_id: opts?.freshChat ? null : convoId,
         message: content,
         page_context: snapshot,
-      });
-      if (!convoId) setConvoId(res.conversation_id);
+        ...(opts?.model ? { model: opts.model } : {}),
+      }, controller.signal);
+      if (!convoId || opts?.freshChat) setConvoId(res.conversation_id);
       await queryClient.invalidateQueries({ queryKey: ["assistant_convos", projectId] });
       await queryClient.invalidateQueries({ queryKey: ["ai_messages", res.conversation_id] });
       await queryClient.invalidateQueries({ queryKey: ["ai_artifacts", res.conversation_id] });
+      // When the assistant actually reconfigured an agent, refresh the setup
+      // cards and the page behind them, so what's shown is what was written.
+      const called = res.assistant_message?.metadata?.tool_calls ?? [];
+      const AGENT_WRITES = ["configure_agent_tool", "add_agent_tool", "update_agent_profile", "set_agent_skills"];
+      if (called.some((t) => AGENT_WRITES.includes(t))) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["assistant_agent_setup"] }),
+          queryClient.invalidateQueries({ queryKey: ["agent_tools_setup"] }),
+          queryClient.invalidateQueries({ queryKey: ["internal_agent_tools"] }),
+          queryClient.invalidateQueries({ queryKey: ["internal_agent"] }),
+          queryClient.invalidateQueries({ queryKey: ["agent_skill_activations"] }),
+        ]);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // An aborted request is the user pressing stop, not a failure.
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
+      abortRef.current = null;
       setSending(false);
     }
   }
+
+  /** Stop the turn in flight. The server-side call may still finish (an edge
+   *  function can't be recalled); we stop waiting on it and reload the thread,
+   *  so whatever it did persist still shows up. */
+  function stopSending() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setSending(false);
+    if (convoId) {
+      queryClient.invalidateQueries({ queryKey: ["ai_messages", convoId] });
+      queryClient.invalidateQueries({ queryKey: ["ai_artifacts", convoId] });
+    }
+  }
+
+  // A page can hand a prompt over to the assistant (agent configuration, "explain
+  // this"…). We wait for the workspace/project context to resolve before firing,
+  // otherwise the send is dropped on a cold page load.
+  useEffect(() => {
+    if (!request) return;
+    if (!request.autoSend) {
+      if (request.newChat) setConvoId(null);
+      setInput(request.prompt);
+      clearRequest();
+      return;
+    }
+    if (!workspaceId || !projectId || sending) return;
+    clearRequest();
+    void handleSend(request.prompt, { freshChat: request.newChat });
+    // `sending` is a dep so a hand-off arriving mid-send fires once the current
+    // exchange finishes instead of being dropped.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request, workspaceId, projectId, sending]);
+
+  // Escape closes the floating panel.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, setOpen]);
 
   if (!open) return null;
 
@@ -161,16 +229,21 @@ export function AssistantPanel() {
 
   return (
     <aside
-      className="relative flex h-full shrink-0 flex-col border-l border-border bg-background text-foreground"
+      // Floating right-hand modal: overlays the app full-height instead of
+      // squeezing it, so a hand-off ("configure this agent") keeps the page the
+      // user came from visible behind it.
+      className="fixed inset-y-2 right-2 z-50 flex max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-2xl shadow-black/40 duration-200 animate-in slide-in-from-right-6 fade-in"
       style={{ width }}
+      role="dialog"
+      aria-label="Assistant IA"
     >
       {/* Resize handle (left edge). */}
       <div
         onMouseDown={startResize}
-        className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
+        className="absolute left-0 top-0 z-20 h-full w-1.5 cursor-col-resize hover:bg-primary/40"
         title="Drag to resize"
       />
-      {/* Header — h-14 to align its bottom border with the app topbar. */}
+      {/* Header — h-14, same rhythm as the app topbar it floats over. */}
       <div className="flex h-14 items-center gap-2 border-b border-border px-3">
         <span className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-900">
           <ChatCircleDotsIcon weight="duotone" className="h-4 w-4" />
@@ -202,7 +275,22 @@ export function AssistantPanel() {
 
       {/* Messages */}
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto px-3">
-        {isEmpty ? (
+        {/* Configuring an agent: its setup areas as cards, each handing that one
+            step to the assistant. Stays above the thread so the user can move to
+            the next card once a step is done. */}
+        {agent && (
+          <AgentSetupDeck
+            agentId={agent.id}
+            busy={sending}
+            onConfigure={(prompt) => handleSend(prompt)}
+            onDismiss={() => setAgent(null)}
+          />
+        )}
+        {isEmpty && agent ? (
+          <p className="px-2 py-6 text-center text-[11px] text-muted-foreground">
+            Choisissez une carte à configurer — ou demandez-moi directement ce que vous voulez changer.
+          </p>
+        ) : isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-2 text-center">
             <AssistantAvatar />
             <p className="text-sm font-medium text-foreground">Ask about this page</p>
@@ -253,8 +341,10 @@ export function AssistantPanel() {
         <ChatComposer
           value={input}
           onValueChange={setInput}
-          onSubmit={({ message }) => handleSend(message)}
+          onSubmit={({ message, model }) => handleSend(message, { model })}
           loading={sending}
+          running={sending}
+          onStop={sending ? stopSending : undefined}
           placeholder="Ask about this page…"
         />
         {error && <p className="mt-1.5 text-center text-[11px] text-destructive">{error}</p>}

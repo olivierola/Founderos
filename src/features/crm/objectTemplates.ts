@@ -13,7 +13,7 @@ export interface ObjectTemplate {
 }
 
 export const OBJECT_TEMPLATES: ObjectTemplate[] = [
-  { slug: "documents", label: "Document", label_plural: "Documents", icon: "FileText", color: "text-zinc-400", description: "Docs, spreadsheets & presentations from Création." },
+  { slug: "documents", label: "Document", label_plural: "Documents", icon: "FileText", color: "text-zinc-400", description: "Docs, tableurs & présentations produits par les agents." },
   { slug: "discussions", label: "Discussion", label_plural: "Discussions", icon: "MessageSquare", color: "text-sky-500", description: "Project inbox channels." },
   { slug: "simulations", label: "Simulation", label_plural: "Simulations", icon: "FlaskConical", color: "text-purple-500", description: "Persona simulations." },
   { slug: "autonomous_agents", label: "Autonomous agent", label_plural: "Autonomous agents", icon: "Bot", color: "text-fuchsia-500", description: "Internal autonomous agents." },
@@ -22,7 +22,6 @@ export const OBJECT_TEMPLATES: ObjectTemplate[] = [
   { slug: "projects", label: "Project", label_plural: "Projects", icon: "FolderKanban", color: "text-blue-500", description: "Delivery projects (status, tasks)." },
   { slug: "tasks_pm", label: "Task", label_plural: "Tasks", icon: "CheckSquare", color: "text-emerald-500", description: "Project tasks — linked to their project." },
   { slug: "employees", label: "Team member", label_plural: "Team members", icon: "Users", color: "text-teal-500", description: "Employees, with manager relations." },
-  { slug: "whiteboards", label: "Whiteboard", label_plural: "Whiteboards", icon: "PenSquare", color: "text-orange-500", description: "Collaborative whiteboards." },
   { slug: "inventory", label: "Good", label_plural: "Inventory", icon: "Package", color: "text-amber-600", description: "Stock items — linked to suppliers." },
   { slug: "suppliers", label: "Supplier", label_plural: "Suppliers", icon: "Truck", color: "text-orange-500", description: "Supply-chain suppliers." },
   { slug: "invoices", label: "Invoice", label_plural: "Invoices", icon: "Receipt", color: "text-amber-500", description: "AR invoices — linked to projects." },

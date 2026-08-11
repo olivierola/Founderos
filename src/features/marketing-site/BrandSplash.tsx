@@ -1,30 +1,48 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { GradientBackground } from "@/components/ui/paper-design-shader-background";
 import { BRAND_FONT } from "./LandingKit";
 
 /* Brand curtain held over the landing page until the visitor asks to go in.
-   On "Accéder" it breaks into a grid of tiles that blink out in random order,
-   uncovering the page that has been sitting underneath the whole time. */
-const TILE_PX = 90; // target edge length — the grid rounds to fit the viewport
-const SWAP_MS = 300; // shader dims into the flat black the tiles are cut from
+   On "Accéder" the shader is frozen into a still, cut into tiles, and the tiles
+   blink out in random order — so it is the animated screen itself that comes
+   apart, uncovering the landing that has been sitting underneath all along. */
+const TILE_PX = 120; // target edge length — the grid rounds to fit the viewport
+const MAX_TILES = 260; // every tile becomes its own composited layer, so cap them
+const LEAD_MS = 180; // lets the wordmark clear before the first tile goes
 const TILE_FADE_MS = 420;
 const STAGGER_MS = 900; // window across which the tiles are dealt out
+const SCRIM = "rgba(0,0,0,0.2)"; // the dark wash carried over the resting shader
 
 function gridFor() {
   const w = typeof window === "undefined" ? 1280 : window.innerWidth;
   const h = typeof window === "undefined" ? 800 : window.innerHeight;
+  let size = TILE_PX;
+  while (Math.ceil(w / size) * Math.ceil(h / size) > MAX_TILES) size += 10;
   return {
-    cols: Math.max(4, Math.ceil(w / TILE_PX)),
-    rows: Math.max(3, Math.ceil(h / TILE_PX)),
+    w,
+    h,
+    cols: Math.max(4, Math.ceil(w / size)),
+    rows: Math.max(3, Math.ceil(h / size)),
   };
 }
 
 export function BrandSplash() {
-  const [phase, setPhase] = useState<"in" | "out" | "gone">("in");
+  const [phase, setPhase] = useState<"in" | "armed" | "out" | "gone">("in");
   const [entered, setEntered] = useState(false);
   const [grid, setGrid] = useState(gridFor);
+  const [still, setStill] = useState<string | null>(null);
+  const shaderRef = useRef<HTMLDivElement>(null);
+  const stillUrl = useRef<string | null>(null);
+
+  // The blob backing the still is held by the browser until it is revoked.
+  useEffect(
+    () => () => {
+      if (stillUrl.current) URL.revokeObjectURL(stillUrl.current);
+    },
+    [],
+  );
 
   // A tick after mount so the mark animates in rather than appearing painted.
   useEffect(() => {
@@ -51,16 +69,32 @@ export function BrandSplash() {
     };
   }, [phase]);
 
+  /* "armed" paints the tiles opaque over the hidden shader — pixel-identical,
+     so nothing appears to happen. Only once the browser has committed that
+     frame can the tiles transition away from a known opacity of 1. */
+  useEffect(() => {
+    if (phase !== "armed") return;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setPhase("out"));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [phase]);
+
   useEffect(() => {
     if (phase !== "out") return;
     const t = window.setTimeout(
       () => setPhase("gone"),
-      SWAP_MS + STAGGER_MS + TILE_FADE_MS + 120,
+      LEAD_MS + STAGGER_MS + TILE_FADE_MS + 120,
     );
     return () => window.clearTimeout(t);
   }, [phase]);
 
-  const count = grid.cols * grid.rows;
+  const { w, h, cols, rows } = grid;
+  const count = cols * rows;
 
   /* Each tile gets its own departure time: shuffle the indices, then spread the
      stagger across that shuffled order so no two neighbours leave together. */
@@ -77,58 +111,105 @@ export function BrandSplash() {
     return out;
   }, [count]);
 
+  /* One WebGL canvas cannot be in a hundred places at once, so the tiles inherit
+     a still of it. It is flattened onto a 2D canvas at CSS size and handed out
+     as a blob URL: a base64 data URL would be megabytes of string repeated into
+     every tile's inline style, which is enough to stall the tab. A failed read
+     (context lost, buffer cleared) falls back to flat black rather than
+     flashing an empty curtain. */
+  async function shatter() {
+    if (phase !== "in") return;
+    const source = shaderRef.current?.querySelector("canvas");
+    let url: string | null = null;
+    if (source) {
+      try {
+        const flat = document.createElement("canvas");
+        flat.width = w;
+        flat.height = h;
+        const ctx = flat.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(source, 0, 0, w, h);
+          url = await new Promise<string | null>((resolve) => {
+            flat.toBlob(
+              (blob) => resolve(blob ? URL.createObjectURL(blob) : null),
+              "image/jpeg",
+              0.92,
+            );
+          });
+        }
+      } catch {
+        url = null;
+      }
+    }
+    stillUrl.current = url;
+    setStill(url);
+    setPhase("armed");
+  }
+
   if (phase === "gone") return null;
 
-  const leaving = phase === "out";
+  const leaving = phase !== "in";
+  const tileW = w / cols;
+  const tileH = h / rows;
 
   return (
     <div
       className="fixed inset-0 z-[300] flex items-center justify-center overflow-hidden"
       style={{ pointerEvents: leaving ? "none" : "auto" }}
     >
-      {/* Live shader — on screen while the curtain rests, handed over to the
-          tiled still at the top of the dissolve. */}
-      <div
-        aria-hidden
-        className="absolute inset-0 transition-opacity ease-out"
-        style={{ opacity: leaving ? 0 : 1, transitionDuration: `${SWAP_MS}ms` }}
-      >
-        <GradientBackground className="z-0" />
-        <div className="absolute inset-0 bg-black/20" />
-      </div>
+      {/* Live shader — on screen while the curtain rests, then torn down once
+          the tiles carry its still, so its render loop and WebGL context are
+          not competing with the dissolve. */}
+      {!leaving && (
+        <div aria-hidden ref={shaderRef} className="absolute inset-0">
+          <GradientBackground className="z-0" />
+          <div className="absolute inset-0" style={{ background: SCRIM }} />
+        </div>
+      )}
 
-      {/* The tiles: flat black, invisible at rest, faded in as the shader dims,
-          then dealt out one by one to let the landing through. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 grid transition-opacity ease-out"
-        style={{
-          gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
-          gridTemplateRows: `repeat(${grid.rows}, 1fr)`,
-          opacity: leaving ? 1 : 0,
-          transitionDuration: `${SWAP_MS}ms`,
-        }}
-      >
-        {delays.map((delay, i) => (
-          <div
-            key={i}
-            style={{
-              backgroundColor: "#000",
-              opacity: leaving ? 0 : 1,
-              transform: leaving ? "scale(0.72)" : "none",
-              transition: `opacity ${TILE_FADE_MS}ms ease-out, transform ${TILE_FADE_MS}ms ease-out`,
-              transitionDelay: `${SWAP_MS + delay}ms`,
-            }}
-          />
-        ))}
-      </div>
+      {/* The tiles: each one shows its own slice of the still, positioned by
+          hand rather than by `background-attachment`, which a transformed
+          element re-anchors to itself. */}
+      {leaving && (
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          {delays.map((delay, i) => {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            return (
+              <div
+                key={i}
+                className="absolute"
+                style={{
+                  left: col * tileW,
+                  top: row * tileH,
+                  // The extra pixel overlaps neighbours so no seam shows through.
+                  width: tileW + 1,
+                  height: tileH + 1,
+                  backgroundColor: "#000",
+                  ...(still
+                    ? {
+                        backgroundImage: `linear-gradient(${SCRIM}, ${SCRIM}), url(${still})`,
+                        backgroundSize: `auto, ${w}px ${h}px`,
+                        backgroundPosition: `0 0, ${-col * tileW}px ${-row * tileH}px`,
+                      }
+                    : null),
+                  opacity: phase === "out" ? 0 : 1,
+                  transform: phase === "out" ? "scale(0.72)" : "none",
+                  transition: `opacity ${TILE_FADE_MS}ms ease-out, transform ${TILE_FADE_MS}ms ease-out`,
+                  transitionDelay: `${LEAD_MS + delay}ms`,
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
 
       <div
-        className="relative flex flex-col items-center transition-all duration-700 ease-out"
+        className="relative flex flex-col items-center transition-all ease-out"
         style={{
           opacity: entered && !leaving ? 1 : 0,
           transform: entered ? "none" : "translateY(10px) scale(0.96)",
-          transitionDuration: leaving ? "200ms" : "700ms",
+          transitionDuration: leaving ? `${LEAD_MS}ms` : "700ms",
         }}
       >
         <div className="flex items-center gap-4">
@@ -143,7 +224,7 @@ export function BrandSplash() {
 
         <button
           type="button"
-          onClick={() => setPhase((p) => (p === "in" ? "out" : p))}
+          onClick={shatter}
           className="mt-10 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-[14px] font-medium text-[#0C0C0E] transition-transform duration-200 hover:scale-[1.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/60"
         >
           Accéder
