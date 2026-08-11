@@ -381,6 +381,20 @@ async function chatWithinBudget(opts: {
     try {
       return { json: await completeChat(opts.url, opts.apiKey ?? "", opts.build(msgs, opts.model)), provider: opts.provider, model: opts.model };
     } catch (e) {
+      // Quota spent on this provider: squeezing cannot help and the reset is
+      // half an hour away. Move the work, or say so plainly.
+      if (e instanceof ProviderExhaustedError) {
+        if (!canFailover) throw e;
+        await opts.onNotice?.({
+          type: "info",
+          message: `Quota ${opts.provider} épuisé — bascule sur DeepSeek pour la suite du run.`,
+        }).catch(() => {});
+        return {
+          json: await completeChat(TOOL_ENDPOINTS.deepseek, deepseekKey!, opts.build(msgs, DEEPSEEK_MODEL)),
+          provider: "deepseek",
+          model: DEEPSEEK_MODEL,
+        };
+      }
       if (!(e instanceof PayloadTooLargeError)) throw e;
       lastError = e;
       msgs = ensureToolPairing(squeeze(msgs, pass));
@@ -986,6 +1000,28 @@ export class PayloadTooLargeError extends Error {
 /** Providers word this a dozen ways; match the meaning, not one vendor's text. */
 const OVERSIZE_RE = /request too large|reduce your message size|too many tokens|maximum context length|context[_ ]length[_ ]exceeded|prompt is too long|tokens per minute/i;
 
+/**
+ * The provider will not serve this request for a while — a daily or minute
+ * token quota is spent. Distinct from PayloadTooLargeError: shrinking changes
+ * nothing, and distinct from a transient 429, because the wait is measured in
+ * tens of minutes. The only useful answer is another provider.
+ */
+export class ProviderExhaustedError extends Error {
+  constructor(readonly provider: string, detail: string) {
+    super(`provider ${provider} exhausted: ${detail.slice(0, 200)}`);
+    this.name = "ProviderExhaustedError";
+  }
+}
+
+/** A quota that resets in more than a minute is not something a run can wait
+ *  out; a short burst limit still deserves the normal backoff. */
+const QUOTA_RE = /tokens per day|TPD|requests per day|RPD|quota exceeded|insufficient_quota/i;
+function exhaustedFrom(status: number, body: string): boolean {
+  if (status !== 429) return false;
+  if (QUOTA_RE.test(body)) return true;
+  const wait = /try again in (\d+)m/i.exec(body);
+  return !!wait && Number(wait[1]) >= 1;
+}
 function oversizeFrom(status: number, body: string): PayloadTooLargeError | null {
   if (status !== 413 && !(OVERSIZE_RE.test(body) && (status === 400 || status === 429))) return null;
   const m = /Limit\s+(\d+),\s*Requested\s+(\d+)/i.exec(body);
