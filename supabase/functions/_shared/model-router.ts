@@ -18,9 +18,17 @@ const env = (k: string) => (typeof Deno !== "undefined" ? Deno.env.get(k) : unde
 
 const hasKey = (p: Provider) => Boolean(env(p === "groq" ? "GROQ_API_KEY" : "DEEPSEEK_API_KEY"));
 
+// ── DeepSeek only, for now ──────────────────────────────────────────────────
+// Decision (2026-08-11): Groq leaves the rotation. Its tier caps tokens PER DAY,
+// and a run that hit the cap died on a 34-minute reset while the other provider
+// sat idle. One provider means one quota to reason about and no mid-run vendor
+// switch. The failover machinery in ai.ts stays — flip this back to re-enable.
+const GROQ_ENABLED = false;
+
 /** Providers actually usable in this deployment, best-first. */
 export function availableProviders(): Provider[] {
-  return (["deepseek", "groq"] as Provider[]).filter(hasKey);
+  const all = GROQ_ENABLED ? (["deepseek", "groq"] as Provider[]) : (["deepseek"] as Provider[]);
+  return all.filter(hasKey);
 }
 
 /** The provider to use when nothing is pinned. DeepSeek first — it is markedly
@@ -36,7 +44,7 @@ export function defaultProvider(): Provider {
  * DeepSeek key: those calls threw, and the features degraded silently.
  */
 export function cheapProvider(): Provider {
-  return hasKey("groq") ? "groq" : defaultProvider();
+  return GROQ_ENABLED && hasKey("groq") ? "groq" : defaultProvider();
 }
 
 /**
@@ -55,7 +63,10 @@ export function cheapProvider(): Provider {
 export function resolveProvider(modelSetting?: string | null): Provider {
   const wanted = pinnedProvider(modelSetting);
   if (!wanted) return defaultProvider();
-  return hasKey(wanted) ? wanted : defaultProvider();
+  // A provider that is pinned but DISABLED falls back too, not just one whose
+  // key is missing: an agent someone configured on Groq months ago keeps
+  // working instead of failing every run.
+  return availableProviders().includes(wanted) ? wanted : defaultProvider();
 }
 
 /**

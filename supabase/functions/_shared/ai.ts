@@ -30,8 +30,11 @@ const GROQ_TASKS: AiTask[] = [
   "code_analysis",
 ];
 
-export function routeAiRequest(task: AiTask): "groq" | "deepseek" {
-  return GROQ_TASKS.includes(task) ? "groq" : "deepseek";
+/** Everything runs on DeepSeek while Groq is out of the rotation (see
+ *  model-router's GROQ_ENABLED). GROQ_TASKS above is kept as the routing table
+ *  to restore, not as a live decision. */
+export function routeAiRequest(_task: AiTask): "groq" | "deepseek" {
+  return "deepseek";
 }
 
 interface CallOpts {
