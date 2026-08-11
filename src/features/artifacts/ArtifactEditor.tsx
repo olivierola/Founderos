@@ -92,6 +92,18 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     };
     for (const { type, label } of PASSTHROUGH) tools[type] = passthroughTool(type, label);
 
+    // Drop any tool whose import did not resolve to a constructor. Editor.js
+    // throws during init on a malformed tool and leaves the holder empty, so a
+    // single bad interop default looked exactly like "the editor deleted
+    // everything". Losing one block type beats losing the whole editor.
+    for (const [name, t] of Object.entries(tools)) {
+      const cls = (t as { class?: unknown })?.class ?? t;
+      if (typeof cls !== "function") {
+        console.warn(`[artifact] outil « ${name} » indisponible — bloc rendu en lecture seule`);
+        tools[name] = passthroughTool(name, name);
+      }
+    }
+
     const instance = new EditorJS({
       holder: holder.current,
       data: { blocks: doc.blocks } as OutputData,
@@ -106,7 +118,16 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
         timer.current = setTimeout(async () => {
           try {
             const out = await instance.save();
-            onChange({ time: out.time, version: out.version, blocks: out.blocks as ArtifactDocument["blocks"] });
+            const next = out.blocks as ArtifactDocument["blocks"];
+            // REFUSE to persist an emptied document. Editor.js drops blocks it
+            // has no tool for, and a single unregistered type would otherwise
+            // turn "open the editor" into "delete the report" — the save runs
+            // 600 ms later, with nothing on screen to warn anyone.
+            if (doc.blocks.length > 0 && next.length === 0) {
+              console.error("[artifact] éditeur vidé au montage — sauvegarde annulée pour ne pas perdre le document");
+              return;
+            }
+            onChange({ time: out.time, version: out.version, blocks: next });
           } catch { /* a save that fails must not break typing */ }
         }, 600);
       },
