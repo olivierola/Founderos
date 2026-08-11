@@ -1,0 +1,21 @@
+-- 0190_fix_deliverable_crm_sync.sql
+-- No deliverable could EVER be written. Every insert into
+-- internal_agent_deliverables raised:
+--
+--   record "new" has no field "project_id"
+--
+-- `crm_sync_from_source` (0074) mirrors a source row into the CRM and resolves
+-- its object with `where project_id = new.project_id`. Every table it was
+-- attached to has that column — except internal_agent_deliverables, which
+-- scopes through its agent. 0129 attached the trigger to it anyway, and since
+-- createDeliverable discarded the insert error, the failure was invisible: the
+-- tool reported "published", the run finished with nothing, and the salvage
+-- logged "materialised automatically". Days of symptoms, one missing column.
+--
+-- The mirror is not worth a broken write path, so the trigger goes. Deliverables
+-- are read from their own table everywhere that matters (the artifacts gallery,
+-- the mission tab, the success contract); the CRM "deliverables" object simply
+-- stops being fed. Re-attaching it needs a project_id-aware variant of the sync
+-- function, which is a separate piece of work.
+
+drop trigger if exists trg_crm_sync_deliverables on public.internal_agent_deliverables;
