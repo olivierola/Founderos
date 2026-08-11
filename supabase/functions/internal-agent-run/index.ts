@@ -918,7 +918,12 @@ function makeToolContext(opts: {
     serviceDashboardId: agent.service_dashboard_id ?? null,
     userId: agent.created_by ?? null,
     createDeliverable: async (d) => {
-      const { data: row } = await admin.from("internal_agent_deliverables").insert({
+      // The error was discarded here. A failed insert therefore looked exactly
+      // like a successful one: publish_artifact answered "publié (17 blocs)",
+      // the agent moved on, and the run finished with zero deliverables — which
+      // is what the "materialised automatically" salvage was catching. An insert
+      // that fails must say so, loudly, to the model AND to the timeline.
+      const { data: row, error } = await admin.from("internal_agent_deliverables").insert({
         run_id: runId,
         mission_id: missionId,
         conversation_id: opts.conversationId ?? null,
@@ -935,11 +940,14 @@ function makeToolContext(opts: {
       // produit le rapport" read as a hallucination. The 'ui' event also gives
       // the run timeline (and the closing report) hard proof the file exists.
       const id = (row as { id?: string } | null)?.id;
-      if (id) {
-        await writeEvent("ui", {
-          block: { component: "deliverable", props: { id, name: d.name, kind: d.kind, agentId: agent.id } },
-        }).catch(() => {});
+      if (error || !id) {
+        const why = error?.message ?? "aucune ligne écrite";
+        await writeEvent("error", { error: `Enregistrement du livrable « ${d.name} » impossible : ${why}` }).catch(() => {});
+        throw new Error(`enregistrement impossible : ${why}`);
       }
+      await writeEvent("ui", {
+        block: { component: "deliverable", props: { id, name: d.name, kind: d.kind, agentId: agent.id } },
+      }).catch(() => {});
     },
     // Outside a room there is no inline card, but the artifact itself must be
     // IDENTICAL to the one a room turn produces: same parsing, same storage,

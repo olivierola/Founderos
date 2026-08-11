@@ -1273,7 +1273,14 @@ export function buildInternalToolset(
       const summary = blocks
         .map((b) => (b.data as { text?: string; title?: string })?.title ?? (b.data as { text?: string })?.text ?? "")
         .filter(Boolean).join(" · ").replace(/<[^>]+>/g, "").slice(0, 200) || title;
-      await ctx.createDeliverable({ kind: target, name: title, content, summary });
+      // Never announce a publish that did not happen — and never consume the
+      // draft when it failed, or the seventeen blocks the agent just wrote
+      // would be gone with no way to retry.
+      try {
+        await ctx.createDeliverable({ kind: target, name: title, content, summary });
+      } catch (e) {
+        return `ERROR: le ${target} n'a PAS été enregistré (${e instanceof Error ? e.message : "erreur inconnue"}). Tes ${blocks.length} blocs sont conservés — réessaie publish_artifact, ou signale l'échec dans ta réponse plutôt que d'affirmer que le document existe.`;
+      }
       // Consume the draft so a second publish cannot duplicate the document.
       const { [key]: _used, ...rest } = meta;
       await writeRunMeta(ctx, rest);
