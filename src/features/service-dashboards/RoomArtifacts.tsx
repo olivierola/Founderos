@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Upload, FileText, Presentation, Table as TableIcon, Image as ImageIcon, Type, Loader2, ArrowLeft, Palette, Check, Trash2 } from "lucide-react";
+import { Search, Plus, Upload, FileText, Presentation, Table as TableIcon, Image as ImageIcon, Type, Loader2, ArrowLeft, Palette, Check, Trash2, PencilLine, Eye } from "lucide-react";
 import { WarpCard, WARP_CONFIGS, configForKey, cssGradientForConfig, type WarpConfig } from "@/components/ui/warp-card";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -13,10 +13,11 @@ import { useToast } from "@/components/ToastProvider";
 import { CodeBlock, CodeBlockCode } from "@/components/ui/code-block";
 import { type ArtifactDoc } from "@/features/artifacts/shared";
 import { ArtifactWorkspace } from "@/features/artifacts/ArtifactWorkspace";
+import { ArtifactEditor } from "@/features/artifacts/ArtifactEditor";
 import { type ArtifactOpenTarget } from "@/features/internal-agents/UiBlocks";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { ArtifactReport, ArtifactDeck } from "@/features/artifacts/BlockRenderer";
-import { parseDocument } from "@/features/artifacts/blocks";
+import { parseDocument, type ArtifactDocument } from "@/features/artifacts/blocks";
 
 const KIND_ICON: Record<string, typeof FileText> = {
   document: FileText, presentation: Presentation, spreadsheet: TableIcon, image: ImageIcon, text: Type,
@@ -118,14 +119,20 @@ function ArtifactViewer({ target, onBack, dense }: { target: ArtifactOpenTarget;
 }
 
 /**
- * An artifact, rendered.
+ * An agent's artifact, rendered — and editable.
  *
- * One path for everything now: the stored content is an Editor.js document and
- * BlockRenderer draws it — a report scrolls, a presentation is cut into slides.
- * The old branch (parse the bespoke report schema, else fall back to markdown)
- * is gone with the formats it served.
+ * A report an agent wrote is not a receipt: the reader is the one who has to use
+ * it, and a figure to correct or a paragraph to cut should not require asking
+ * the agent again. Same Editor.js document, same renderer and same editor as a
+ * hand-authored artifact; only the table differs (deliverables carry the run the
+ * success contract verifies against).
  */
 function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; onBack: () => void }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const { data, isLoading } = useQuery({
     queryKey: ["room_deliverable_one", id],
     enabled: !!id,
@@ -138,21 +145,46 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
   const doc = parseDocument(data?.content);
   const isDeck = data?.kind === "presentation";
 
+  // Debounced write-back. `content` is a text column holding the JSON document,
+  // so it is stringified here exactly as the agent wrote it.
+  const persist = (next: ArtifactDocument) => {
+    if (!id) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      setSaving(true);
+      try {
+        await supabase.from("internal_agent_deliverables")
+          .update({ content: JSON.stringify(next) }).eq("id", id);
+        qc.invalidateQueries({ queryKey: ["room_deliverable_one", id] });
+      } finally { setSaving(false); }
+    }, 600);
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="relative z-20 flex items-center gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
         <button type="button" onClick={onBack} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <span className="truncate text-sm font-semibold">{data?.name || title}</span>
-        <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{data?.name || title}</span>
+        <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
           {isDeck ? "présentation" : "rapport"}
         </span>
+        {saving && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />}
+        <button
+          type="button" onClick={() => setEditing((v) => !v)}
+          className={cn("flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+            editing ? "border-primary/50 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}
+        >
+          {editing ? <><Eye className="h-3.5 w-3.5" /> Aperçu</> : <><PencilLine className="h-3.5 w-3.5" /> Éditer</>}
+        </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading
           ? <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
-          : isDeck ? <ArtifactDeck doc={doc} /> : <ArtifactReport doc={doc} />}
+          : editing
+            ? <div className="mx-auto w-full max-w-[900px] px-8 py-8"><ArtifactEditor doc={doc} onChange={persist} /></div>
+            : isDeck ? <ArtifactDeck doc={doc} /> : <ArtifactReport doc={doc} />}
       </div>
     </div>
   );
