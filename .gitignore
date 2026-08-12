@@ -30,6 +30,7 @@ MiroFish/
 strix/
 page-agent/
 claude_harness/
+editor.js/
 
 # Local agent tooling
 .claude/

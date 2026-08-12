@@ -6,6 +6,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { embedTexts, chunkText, toVectorLiteral, fetchWithTimeout } from "../_shared/jina.ts";
+import { assertCredits, assertQuota, isQuotaError, quotaErrorResponse } from "../_shared/metering.ts";
 
 // Strip HTML to readable text (lightweight).
 function htmlToText(html: string): string {
@@ -122,6 +123,16 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Not authorized" }, { status: 403 });
     }
 
+    // Quotas avant d'écrire quoi que ce soit : le texte ingéré compte dans le
+    // volume stocké, et sa vectorisation appelle Jina.
+    try {
+      await assertQuota(workspace_id, "storage_mb", 0, { fresh: true });
+      await assertCredits(workspace_id, { minimum: 1 });
+    } catch (e) {
+      if (isQuotaError(e)) return quotaErrorResponse(e);
+      throw e;
+    }
+
     // Create the source row (processing).
     const { data: source, error: srcErr } = await admin
       .from("rag_sources")
@@ -174,7 +185,9 @@ Deno.serve(async (req) => {
       const rows: Record<string, unknown>[] = [];
       for (let i = 0; i < chunks.length; i += batchSize) {
         const batch = chunks.slice(i, i + batchSize);
-        const vectors = await embedTexts(batch, "retrieval.passage");
+        const vectors = await embedTexts(batch, "retrieval.passage", {
+          workspace_id, project_id, feature: "rag-ingest",
+        });
         batch.forEach((c, j) => {
           rows.push({
             workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, source_id: source.id,

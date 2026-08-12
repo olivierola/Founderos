@@ -1,6 +1,8 @@
 // Jina AI embeddings helper. jina-embeddings-v3 → 1024-dim vectors.
 // Requires JINA_API_KEY in the function secrets.
 
+import { meterJinaTokens, type MeterScope } from "./metering.ts";
+
 const JINA_URL = "https://api.jina.ai/v1/embeddings";
 const MODEL = "jina-embeddings-v3";
 
@@ -16,9 +18,15 @@ export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs
   }
 }
 
+/**
+ * @param scope  Workspace/projet à débiter. Facultatif : un appel sans scope est
+ *   exécuté mais non facturé (tâche système). Le passer partout où le workspace
+ *   est connu — la vectorisation est, après les LLM, le second poste de dépense.
+ */
 export async function embedTexts(
   texts: string[],
   task: "retrieval.query" | "retrieval.passage" = "retrieval.passage",
+  scope?: MeterScope,
 ): Promise<number[][]> {
   const apiKey = Deno.env.get("JINA_API_KEY");
   if (!apiKey) throw new Error("JINA_API_KEY is not configured");
@@ -47,6 +55,17 @@ export async function embedTexts(
       const vectors = data.map((d: any) => d.embedding as number[]);
       if (vectors.length !== texts.length) {
         throw new Error(`Jina returned ${vectors.length} vectors for ${texts.length} inputs`);
+      }
+      // Métrage sur les tokens facturés par Jina, pas sur une estimation locale :
+      // c'est ce nombre qui apparaîtra sur notre propre facture. Repli sur
+      // ~4 caractères/token si la réponse omet `usage`.
+      if (scope?.workspace_id) {
+        const tokens =
+          Number(json?.usage?.total_tokens ?? json?.usage?.prompt_tokens ?? 0) ||
+          Math.ceil(texts.reduce((n, t) => n + t.length, 0) / 4);
+        void meterJinaTokens({ ...scope, task: scope.task ?? task }, MODEL, tokens, {
+          inputs: texts.length,
+        });
       }
       return vectors;
     }

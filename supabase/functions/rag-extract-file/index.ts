@@ -6,6 +6,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { embedTexts, chunkText, toVectorLiteral } from "../_shared/jina.ts";
+import { assertCredits, assertQuota, isQuotaError, quotaErrorResponse } from "../_shared/metering.ts";
 
 // NOTE: the PDF (unpdf) and DOCX (zip.js) parsers are imported *dynamically*,
 // inside the handlers below — never at the top level. A failing CDN import at
@@ -86,6 +87,18 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Not authorized" }, { status: 403 });
     }
 
+    // Quotas AVANT de créer la source : refuser après avoir écrit une ligne
+    // « processing » laisserait un document fantôme dans la collection.
+    // Le fichier est déjà déposé côté client — on contrôle le volume total du
+    // workspace, et les crédits parce que la vectorisation appelle Jina.
+    try {
+      await assertQuota(workspace_id, "storage_mb", 0, { fresh: true });
+      await assertCredits(workspace_id, { minimum: 1 });
+    } catch (e) {
+      if (isQuotaError(e)) return quotaErrorResponse(e);
+      throw e;
+    }
+
     const { data: source } = await admin
       .from("rag_sources")
       .insert({ workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, type: "document", title: title || storage_path.split("/").pop(), source_ref: storage_path, status: "processing", metadata: config ? { extract_config: config } : {} })
@@ -134,7 +147,9 @@ Deno.serve(async (req) => {
       const batchSize = 32;
       for (let i = 0; i < chunks.length; i += batchSize) {
         const batch = chunks.slice(i, i + batchSize);
-        const vectors = await embedTexts(batch, "retrieval.passage");
+        const vectors = await embedTexts(batch, "retrieval.passage", {
+          workspace_id, project_id, feature: "rag-extract-file",
+        });
         batch.forEach((c, j) => rows.push({
           workspace_id, project_id, agent_id: agent_id ?? null, collection_id: collection_id ?? null, source_id: source.id,
           content: c, embedding: toVectorLiteral(vectors[j] ?? []), token_estimate: Math.ceil(c.length / 4),

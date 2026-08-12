@@ -32,6 +32,9 @@ import {
 } from "../_shared/model-router.ts";
 import { embedTexts, toVectorLiteral } from "../_shared/jina.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
+import {
+  assertCredits, assertQuota, checkQuota, checkRunBudget, isQuotaError, quotaErrorResponse,
+} from "../_shared/metering.ts";
 import { estimateCostUsd } from "../_shared/llm-pricing.ts";
 import { loadGuardrails, checkGuardrails, strongestEnforcement, type GuardrailViolation } from "../_shared/guardrails.ts";
 import { recordRunIncident, recordGuardrailIncident } from "../_shared/governance-incidents.ts";
@@ -1652,6 +1655,10 @@ async function finalizeMissionSuccess(
     provider: stats.provider, model: stats.model,
     task: "content_generation", feature: "internal-agent-mission",
     custom: stats.custom,
+    // Ligne de SYNTHÈSE du run : la dépense a déjà été facturée tick par tick
+    // (voir la télémétrie par tour). On la garde pour le monitoring, pas pour
+    // la facturation — sinon chaque run serait débité deux fois.
+    billable: false,
     usage: { prompt_tokens: stats.tokIn, completion_tokens: stats.tokOut, total_tokens: stats.tokIn + stats.tokOut },
     metadata: { run_id: runId, agent_id: agent.id, mode: "mission", custom: !!stats.custom },
   });
@@ -1826,6 +1833,7 @@ async function finalizeChatSuccess(
     workspace_id: agent.workspace_id, project_id: agent.project_id,
     provider: stats.provider, model: stats.model, task: "chat_simple", feature: "internal-agent-chat",
     custom: stats.custom,
+    billable: false, // synthèse du run — déjà facturé par tick
     usage: { prompt_tokens: stats.tokIn, completion_tokens: stats.tokOut, total_tokens: stats.tokIn + stats.tokOut },
     metadata: { run_id: runId, agent_id: agent.id, mode: "chat", custom: !!stats.custom },
   });
@@ -1953,6 +1961,7 @@ async function finalizeRoomSuccess(
     workspace_id: agent.workspace_id, project_id: agent.project_id,
     provider: stats.provider, model: stats.model, task: "chat_simple", feature: "internal-agent-room",
     custom: stats.custom,
+    billable: false, // synthèse du run — déjà facturé par tick
     usage: { prompt_tokens: stats.tokIn, completion_tokens: stats.tokOut, total_tokens: stats.tokIn + stats.tokOut },
     metadata: { run_id: runId, agent_id: agent.id, mode: "room", custom: !!stats.custom },
   });
@@ -2902,7 +2911,30 @@ async function runMissionTick(runId: string, msgId: number | null) {
       stagnantTicks: stagnation,
       replans, maxReplans: 3,
     };
-    const decision = decideNext(signals);
+    let decision = decideNext(signals);
+
+    // ── Budget IA : le contrôleur de boucle raisonne en tours et en dollars
+    // estimés ; le quota raisonne en crédits réellement facturés. Les deux
+    // doivent pouvoir arrêter le run. On réutilise l'action "abort" existante
+    // plutôt qu'un chemin d'erreur parallèle : le run se termine alors comme un
+    // run à court de budget — livrables sauvegardés, message clair, pas de 500.
+    const runBudget = await checkRunBudget(runId);
+    if (runBudget.exceeded) {
+      decision = {
+        action: "abort",
+        reason: `Plafond de l'offre atteint pour cette exécution (${Math.round(runBudget.credits)} crédits, maximum ${runBudget.cap}). Relancez en découpant la mission, ou passez à une offre supérieure.`,
+        interventions: [], escalateModel: false, consumesReplan: false,
+      };
+    } else {
+      const quota = await checkQuota(agent.workspace_id, "credits");
+      if (!quota.allowed) {
+        decision = {
+          action: "abort",
+          reason: quota.reason ?? "Crédits IA épuisés pour cette période.",
+          interventions: [], escalateModel: false, consumesReplan: false,
+        };
+      }
+    }
 
     // Apply the decision: inject its course corrections, escalate the model,
     // consume a re-plan credit.
@@ -3744,6 +3776,17 @@ Deno.serve(async (req) => {
 
     const { agent, tools } = await loadAgentAndTools(agent_id);
 
+    // ── Quota : on refuse AVANT d'engager la dépense ─────────────────────────
+    // Démarrer un run sans crédits produit un échec au deuxième tour et un
+    // client mécontent. Le minimum exigé (60 crédits ≈ deux tours d'agent)
+    // garantit qu'un run qui démarre a de quoi produire quelque chose.
+    // Les ticks (mode "tick") ne repassent pas ici : la boucle se contrôle
+    // elle-même à chaque tour, cf. le contrôleur plus bas.
+    if (mode === "chat" || mode === "mission") {
+      await assertCredits(agent.workspace_id, { minimum: 60 });
+      await assertQuota(agent.workspace_id, "concurrent_runs", 1, { fresh: true });
+    }
+
     if (mode === "chat") {
       if (!conversation_id) return jsonResponse({ error: "conversation_id required for chat mode" }, { status: 400 });
       return await runChat(agent, tools, conversation_id, (body as { model?: string }).model ?? null);
@@ -3754,6 +3797,9 @@ Deno.serve(async (req) => {
     }
     return jsonResponse({ error: "Unknown mode" }, { status: 400 });
   } catch (e) {
+    // 402 plutôt que 500 : le front doit pouvoir distinguer « plus de crédits »
+    // (action : recharger / changer d'offre) d'une panne (action : réessayer).
+    if (isQuotaError(e)) return quotaErrorResponse(e);
     return jsonResponse({ error: e instanceof Error ? e.message : "Internal error" }, { status: 500 });
   }
 });

@@ -107,6 +107,8 @@ import { SettingsSecurityPage } from "@/features/settings/Security2FA";
 // Admin dashboard (single-sidebar) — new page(s) + the mapping of its tabs to
 // the existing settings/integrations/governance page components.
 import { AdminSubscriptionPage } from "@/features/admin/AdminExtras";
+import { AdminUsagePage } from "@/features/admin/AdminUsage";
+import { BillingSuccessPage } from "@/features/settings/BillingSuccess";
 import { ADMIN_ITEMS, ADMIN_LANDING } from "@/lib/admin-navigation";
 
 import { GenericSubPage } from "@/features/GenericSubPage";
@@ -156,12 +158,14 @@ import { GovFtSettingsPage } from "@/features/governance/aiops/FtSettings";
 import { HomePage } from "@/features/marketing-site/HomePage";
 import {
   FeaturesPage,
-  PricingPage,
   IntegrationsPage,
   ChangelogPage,
   DocsPage,
   ContactPage,
 } from "@/features/marketing-site/OtherPages";
+// La page tarifs a son propre chrome (navbar de la landing, hero animé) au lieu
+// du MarketingShell partagé — d'où son fichier séparé.
+import { PricingPage } from "@/features/marketing-site/PricingPage";
 
 type PageEl = import("react").ReactElement;
 
@@ -245,6 +249,7 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   security: <SettingsSecurityPage />,
   // ── Abonnements ──
   subscription: <AdminSubscriptionPage />,
+  usage: <AdminUsagePage />,
   billing: <SettingsBillingPage />,
   // ── Gouvernance IA ──
   "gov-guardrails": <GovGuardrailsPage />,
@@ -368,6 +373,16 @@ export const router = createBrowserRouter([
   { path: "/signup", element: <SignupPage /> },
   { path: "/onboarding", element: <AuthOnboardingPage /> },
   { path: "/accept-invite", element: <AcceptInvitePage /> },
+  // Retour de Stripe Checkout : Stripe ne connaît que l'uuid du workspace, cette
+  // page résout les slugs et renvoie vers l'onglet Facturation.
+  {
+    path: "/billing-success",
+    element: (
+      <ProtectedRoute>
+        <BillingSuccessPage />
+      </ProtectedRoute>
+    ),
+  },
   {
     path: "/orgs",
     element: (

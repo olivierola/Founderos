@@ -157,6 +157,7 @@ export function ServiceDashboardPage() {
       {/* ── Icon rail ── */}
       <aside className="flex h-full w-[60px] shrink-0 flex-col items-center gap-1.5 py-3">
         <DashboardSelector current={current} dashboards={dashboards ?? []} />
+        <PanelToggleButton collapsed={collapsed} onToggle={toggleCollapsed} />
         <div className="mt-1.5 flex flex-1 flex-col items-center gap-1.5">
           {railItems.map((r) => (
             <RailButton
@@ -270,6 +271,24 @@ function AssistantRailButton() {
       )}
     >
       <ChatsCircleIcon weight="duotone" className="h-[18px] w-[18px]" />
+    </button>
+  );
+}
+
+// Folding the panel takes its header — and the header's fold button — with it,
+// so the way back has to sit on the rail, the one column that never folds. Same
+// corner as the button that folded it, so it reads as the same control.
+function PanelToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const label = collapsed ? "Déployer le panneau" : "Replier le panneau";
+  return (
+    <button
+      onClick={onToggle}
+      title={label}
+      aria-label={label}
+      aria-expanded={!collapsed}
+      className="mt-1.5 flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+    >
+      <SidebarSimpleIcon className={cn("h-[18px] w-[18px] transition-transform", collapsed && "-scale-x-100")} />
     </button>
   );
 }

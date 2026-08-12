@@ -46,7 +46,11 @@ Deno.serve(async (req) => {
     if (!agent) return jsonResponse({ error: "Agent not found" }, { status: 404 });
 
     // Embed the query and retrieve the most relevant chunks.
-    const [queryVec] = await embedTexts([String(message)], "retrieval.query");
+    const [queryVec] = await embedTexts([String(message)], "retrieval.query", {
+      workspace_id: agent.workspace_id ?? null,
+      project_id: agent.project_id ?? null,
+      feature: "rag-chat",
+    });
     const { data: matches } = await admin.rpc("match_rag_chunks", {
       p_agent_id: agent.id,
       p_query_embedding: toVectorLiteral(queryVec ?? []),

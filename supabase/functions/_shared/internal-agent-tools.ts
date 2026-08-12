@@ -740,7 +740,10 @@ export async function searchKnowledge(
   // when embeddings are unavailable.
   try {
     const { embedTexts, toVectorLiteral } = await import("./jina.ts");
-    const [vec] = await embedTexts([query], "retrieval.query");
+    const [vec] = await embedTexts([query], "retrieval.query", {
+      workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+      agent_id: ctx.agentId, run_id: ctx.runId, feature: "agent-search-knowledge",
+    });
     if (vec) {
       const vecLiteral = toVectorLiteral(vec);
       const hits: Array<{ similarity: number; text: string }> = [];
@@ -2608,7 +2611,10 @@ export function buildInternalToolset(
       // the exact words), keyword ilike as fallback.
       try {
         if (Deno.env.get("JINA_API_KEY")) {
-          const [qvec] = await embedTexts([query.slice(0, 500)], "retrieval.query");
+          const [qvec] = await embedTexts([query.slice(0, 500)], "retrieval.query", {
+            workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+            agent_id: ctx.agentId, run_id: ctx.runId, feature: "agent-search-memory",
+          });
           if (qvec) {
             const { data: sem } = await ctx.admin.rpc("match_agent_memories", {
               p_agent_id: ctx.agentId,

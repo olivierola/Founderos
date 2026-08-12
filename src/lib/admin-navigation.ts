@@ -7,6 +7,7 @@ import {
   LockKeyIcon,
   SparkleIcon,
   CreditCardIcon,
+  GaugeIcon,
   FingerprintIcon,
   EyeIcon,
   WalletIcon,
@@ -58,6 +59,9 @@ export const ADMIN_SECTIONS: AdminNavSection[] = [
     label: "Abonnements",
     items: [
       { label: "Abonnements", slug: "subscription", icon: SparkleIcon },
+      // Séparé de « Abonnements » : l'un répond « qu'ai-je droit de faire ? »,
+      // l'autre « où sont passés mes crédits ? ». Les mélanger noie la seconde.
+      { label: "Consommation", slug: "usage", icon: GaugeIcon },
       { label: "Facturation", slug: "billing", icon: CreditCardIcon },
     ],
   },
