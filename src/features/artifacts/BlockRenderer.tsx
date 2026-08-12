@@ -433,7 +433,7 @@ export function ArtifactReport({ doc }: { doc: ArtifactDocument }) {
     return <p className="py-16 text-center text-sm text-muted-foreground">Document vide.</p>;
   }
   return (
-    <article className="mx-auto w-full max-w-[900px] space-y-5 px-8 py-8 sm:px-14">
+    <article className="mx-auto w-full max-w-[1060px] space-y-5 px-5 py-8 sm:px-8">
       {doc.blocks.map((b, i) => <Block key={b.id ?? i} block={b} />)}
     </article>
   );

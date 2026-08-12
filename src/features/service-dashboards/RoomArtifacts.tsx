@@ -179,7 +179,7 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
             ? <ArtifactDeck doc={doc} />
             // A report IS the editor: click anywhere and the caret is there, with
             // the block toolbar. No mode to switch, nothing to discover.
-            : <div className="mx-auto w-full max-w-[900px] px-10 py-10"><ArtifactEditor doc={doc} onChange={persist} /></div>}
+            : <div className="mx-auto w-full max-w-[1060px] px-5 py-10 sm:px-8"><ArtifactEditor doc={doc} onChange={persist} /></div>}
       </div>
     </div>
   );

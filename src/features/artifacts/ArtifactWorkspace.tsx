@@ -102,7 +102,7 @@ export function ArtifactWorkspace({ docId, onBack, onDeleted }: {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {editing ? (
-          <div className="mx-auto w-full max-w-[900px] px-8 py-8">
+          <div className="mx-auto w-full max-w-[1060px] px-5 py-8 sm:px-8">
             <ArtifactEditor
               doc={doc}
               onChange={(next: ArtifactDocument) => persist({ content: next })}
