@@ -16,7 +16,7 @@ import { ArtifactWorkspace } from "@/features/artifacts/ArtifactWorkspace";
 import { ArtifactEditor } from "@/features/artifacts/ArtifactEditor";
 import { type ArtifactOpenTarget } from "@/features/internal-agents/UiBlocks";
 import { AgentIdentity } from "@/components/AgentIdentity";
-import { ArtifactDeck } from "@/features/artifacts/BlockRenderer";
+import { ArtifactDeck, ArtifactHeader } from "@/features/artifacts/BlockRenderer";
 import { parseDocument, type ArtifactDocument } from "@/features/artifacts/blocks";
 
 const KIND_ICON: Record<string, typeof FileText> = {
@@ -144,6 +144,14 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
   const doc = parseDocument(data?.content);
   const isDeck = data?.kind === "presentation";
 
+  // The header is system chrome now, so a `banner` block an older document still
+  // carries would render a second title under the real one. Drop it from the
+  // body and keep only its subtitle, which is the one part the agent knew and
+  // the record does not.
+  const legacyBanner = doc.blocks.find((b) => b.type === "banner");
+  const subtitle = (legacyBanner?.data as { subtitle?: string } | undefined)?.subtitle;
+  const body = legacyBanner ? { ...doc, blocks: doc.blocks.filter((b) => b.type !== "banner") } : doc;
+
   // Debounced write-back. `content` is a text column holding the JSON document,
   // so it is stringified here exactly as the agent wrote it.
   const persist = (next: ArtifactDocument) => {
@@ -160,26 +168,33 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="relative z-20 flex items-center gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
-        <button type="button" onClick={onBack} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{data?.name || title}</span>
-        <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {isDeck ? "présentation" : "rapport"}
-        </span>
-        {saving && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />}
-
-      </div>
+    <div className="relative flex h-full flex-col">
+      {/* The only chrome left. A toolbar of one button is a toolbar that costs a
+          strip of the document for nothing; this floats over the header instead. */}
+      <button
+        type="button" onClick={onBack} aria-label="Retour aux artifacts"
+        className="absolute left-3 top-3 z-30 flex h-8 w-8 items-center justify-center rounded-full bg-black/20 text-white backdrop-blur transition-colors hover:bg-black/35"
+      >
+        <ArrowLeft className="h-4 w-4" />
+      </button>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading
           ? <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
-          : isDeck
-            ? <ArtifactDeck doc={doc} />
-            // A report IS the editor: click anywhere and the caret is there, with
-            // the block toolbar. No mode to switch, nothing to discover.
-            : <div className="mx-auto w-full max-w-[1060px] px-5 py-10 sm:px-8"><ArtifactEditor doc={doc} onChange={persist} /></div>}
+          : (
+            <>
+              <ArtifactHeader
+                title={data?.name || title}
+                kind={isDeck ? "présentation" : "rapport"}
+                subtitle={subtitle}
+                aside={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-white/70" /> : null}
+              />
+              {isDeck
+                ? <ArtifactDeck doc={body} />
+                // A report IS the editor: click anywhere and the caret is there,
+                // with the block toolbar. No mode to switch, nothing to discover.
+                : <div className="mx-auto w-full max-w-[1060px] px-5 py-8 sm:px-8"><ArtifactEditor doc={body} onChange={persist} /></div>}
+            </>
+          )}
       </div>
     </div>
   );

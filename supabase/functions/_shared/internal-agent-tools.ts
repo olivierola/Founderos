@@ -1005,7 +1005,7 @@ const OFFERED_DELIVERABLE_KINDS = ["report", "json", "code", "url"];
  *  silent blank in the document. */
 const ARTIFACT_BLOCK_TYPES = [
   "header", "paragraph", "list", "checklist", "image", "table", "quote", "code", "delimiter", "warning", "embed", "raw",
-  "kpi", "chart", "banner", "comparison", "matrix", "callout", "slide",
+  "kpi", "chart", "comparison", "matrix", "callout", "slide",
 ];
 const safeJson = (raw: string): unknown => { try { return JSON.parse(raw); } catch { return null; } };
 /** Structured kinds whose content is JSON validated at save time. */
@@ -1213,7 +1213,8 @@ export function buildInternalToolset(
     + 'chart {chartType:"bar"|"line"|"area"|"pie"|"donut"|"radar"|"scatter", title?, x:"clé de catégorie", series:["clé"], data:[{"<x>":"Jan","clé":12}], stacked?} · '
     + 'comparison {title?, columns:["Nous","Rival A"], highlight?, rows:[{label, note?, cells:[true|false|"texte"]}]} (cells = 1 par colonne) · '
     + 'matrix {title?, xLabel, yLabel, xLow?, xHigh?, yLow?, yHigh?, quadrants:[4 libellés], items:[{label,x:0-100,y:0-100,note?,highlight?}]} · '
-    + 'banner {title, subtitle?, author?, tone?} · callout {tone:"info"|"success"|"warning"|"danger", text}. '
+    + 'callout {tone:"info"|"success"|"warning"|"danger", text}. '
+    + "Le TITRE du document est porté par l'application, pas par un bloc : n'écris ni bandeau de titre ni page de garde, commence directement par la première section. "
     + 'Présentation uniquement : slide {title:"Titre de la page"} — ouvre une page, le titre est obligatoire. '
     + 'RÈGLES : jamais de markdown dans un champ texte (ni #, ni **, ni |, ni -) — la structure passe par le TYPE du bloc. '
     + 'Le texte accepte seulement le HTML inline <b> <i> <code> <a href> <mark>. '
@@ -1303,7 +1304,7 @@ export function buildInternalToolset(
           return 'matrix.items exige x et y NUMÉRIQUES entre 0 et 100.';
         return null;
       }
-      case "banner": return s("title") ? null : 'banner exige data.title.';
+
       case "callout": return s("text") ? null : 'callout exige data.text.';
       case "slide": return s("title") ? null : 'slide exige data.title : une page sans titre est rendue comme un bloc vide et disparaît.';
       default: return null;

@@ -69,6 +69,35 @@ function BannerBlock({ d }: { d: BannerData }) {
   );
 }
 
+/**
+ * The document's header — system chrome, not content.
+ *
+ * The title of an artifact is a property of the artifact, so it belongs to the
+ * application, not to a block the agent may or may not have written. Letting the
+ * model author the header meant a document could open with no title, two, or one
+ * that no longer matched the name in the gallery. It is drawn here, full-bleed
+ * and flush with the top edge, from the record itself.
+ */
+export function ArtifactHeader({ title, kind, subtitle, aside }: {
+  title: string;
+  kind: string;
+  subtitle?: string;
+  aside?: React.ReactNode;
+}) {
+  return (
+    <header className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-indigo-800 px-5 pb-7 pt-12 text-white sm:px-8">
+      <div className="mx-auto w-full max-w-[1060px]">
+        <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-white/70">
+          <span>{kind}</span>
+          {subtitle && <><span aria-hidden>·</span><span className="truncate normal-case tracking-normal">{subtitle}</span></>}
+          {aside && <span className="ml-auto flex items-center">{aside}</span>}
+        </div>
+        <h1 className="mt-1.5 text-2xl font-bold leading-tight tracking-tight sm:text-3xl">{title}</h1>
+      </div>
+    </header>
+  );
+}
+
 function KpiBlock({ d }: { d: KpiData }) {
   const items = d.items ?? [];
   if (items.length === 0) return null;
