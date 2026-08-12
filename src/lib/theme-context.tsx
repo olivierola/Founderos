@@ -106,3 +106,23 @@ export function useTheme() {
   if (!ctx) throw new Error("useTheme must be used within a ThemeProvider");
   return ctx;
 }
+
+/**
+ * The active theme for code that may run OUTSIDE the provider.
+ *
+ * React context does not cross React roots, and we mount detached roots on
+ * purpose — an Editor.js block hosts its renderer in its own `createRoot`. A
+ * component in there calling `useTheme()` throws, and a throw inside a detached
+ * root during a synchronous mount takes down the tree that triggered it: that
+ * is how one chart in a report blanked the whole page.
+ *
+ * Reading the theme is not a reason to require a provider. The class the
+ * provider writes onto <html> is already the source of truth for every
+ * stylesheet in the app, so fall back to reading it.
+ */
+export function useThemeMode(): Theme {
+  const ctx = useContext(ThemeContext);
+  if (ctx) return ctx.theme;
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}

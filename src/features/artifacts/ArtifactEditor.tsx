@@ -60,6 +60,14 @@ const ICONS = {
 /** Inline formatting offered on every text-bearing block. */
 const INLINE = ["bold", "italic", "underline", "marker", "inlineCode", "link"];
 
+/**
+ * Types Editor.js provides on its own, which must therefore never be claimed by
+ * the catch-all. Registering `paragraph` here is the substitution that takes the
+ * whole editor down if the import resolves to a namespace instead of a class —
+ * so it is left to the core, and simply protected from being overwritten.
+ */
+const BUNDLED = new Set(["paragraph"]);
+
 /* ---------------------------------------------------------- custom blocks */
 
 /** Tones a callout can take, in the order the settings menu offers them. */
@@ -101,7 +109,19 @@ function dataTool(type: string, label: string, icon: string): BlockToolConstruct
       this.root = createRoot(host);
       // SYNCHRONOUS on purpose: Editor.js reads the node right after render()
       // and a normal React render has not painted by then.
-      flushSync(() => this.root!.render(createElement(Block, { block: { type, data: this.data } })));
+      //
+      // Guarded, because this root is DETACHED: it shares no context with the
+      // app, and a component of ours that throws here throws inside the effect
+      // that mounts the editor — which unmounts the whole page. One block must
+      // never be able to do that, so a failure degrades to a placard.
+      try {
+        flushSync(() => this.root!.render(createElement(Block, { block: { type, data: this.data } })));
+      } catch (err) {
+        console.error(`[artifact] le bloc « ${type} » n'a pas pu être rendu`, err);
+        try { this.root.unmount(); } catch { /* already torn down */ }
+        this.root = null;
+        host.innerHTML = "";
+      }
       if (host.childNodes.length === 0) {
         host.innerHTML = `<div class="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">${label} — vide</div>`;
       }
@@ -296,6 +316,21 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     ready.current = false;
     setMode("mounting");
 
+    // ONE HOST PER MOUNT, and a flag for everything async.
+    //
+    // StrictMode mounts effects twice in development: instance A starts, the
+    // cleanup schedules `isReady.then(destroy)` — which cannot run before A has
+    // finished initialising — and instance B mounts meanwhile. A's late
+    // `destroy()` then empties the holder, taking B's rendering with it. The
+    // editor reported itself healthy over a DOM that had just been wiped: the
+    // blank report, reproduced.
+    //
+    // Giving each mount its own child node means a late teardown can only ever
+    // touch its own; `cancelled` keeps a stale instance from driving the state.
+    let cancelled = false;
+    const host = document.createElement("div");
+    holder.current.appendChild(host);
+
     const tools: Record<string, unknown> = {
       // `paragraph` is deliberately NOT registered: Editor.js bundles it as the
       // default block, and overriding the default block is the one substitution
@@ -333,8 +368,14 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     // a block added later, a document from an older shape — silently deletes
     // content on open. Derive the list from the DOCUMENT instead of a constant,
     // and every type present is guaranteed a tool, known or not.
+    //
+    // …with ONE exception: the tools Editor.js bundles itself. `paragraph` is
+    // not in `tools` because the core provides it as the default block, so the
+    // catch-all happily claimed it and every paragraph in the document became a
+    // read-only card you could only edit as JSON. A missing entry here means
+    // "the core has it", not "nobody has it".
     for (const b of doc.blocks) {
-      if (!tools[b.type]) tools[b.type] = dataTool(b.type, b.type, ICONS.block);
+      if (!tools[b.type] && !BUNDLED.has(b.type)) tools[b.type] = dataTool(b.type, b.type, ICONS.block);
     }
 
     // Drop any tool whose import did not resolve to a constructor. Editor.js
@@ -356,7 +397,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     if (broken.length) console.error("[artifact] outils non résolus :", broken.join(", "));
 
     const instance = new EditorJS({
-      holder: holder.current,
+      holder: host,
       data: { blocks: doc.blocks } as OutputData,
       readOnly,
       minHeight: 120,
@@ -365,6 +406,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
       inlineToolbar: INLINE,
       tools: tools as never,
       onReady: () => {
+        if (cancelled) return;
         ready.current = true;
         // THE SAFETY NET. One misbehaving tool takes the whole document down —
         // that has happened more than once — and the failure looks identical to
@@ -381,7 +423,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
         }
       },
       onChange: async () => {
-        if (!onChange || readOnly || !ready.current) return;
+        if (!onChange || readOnly || !ready.current || cancelled) return;
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(async () => {
           try {
@@ -397,6 +439,13 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
               );
               return;
             }
+            // Mounting is not editing. Editor.js emits a change as it settles,
+            // so simply opening a report rewrote its row — every open another
+            // chance for a bad build to overwrite good content. Write only when
+            // the document actually differs from what was loaded.
+            const before = JSON.stringify(doc.blocks.map((b) => [b.type, b.data]));
+            const after = JSON.stringify(next.map((b) => [b.type, b.data]));
+            if (before === after) return;
             onChange({ time: out.time, version: out.version, blocks: next });
           } catch { /* a save that fails must not break typing */ }
         }, 600);
@@ -408,23 +457,26 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     // that is precisely the case that left a blank page. Catch the rejection,
     // and time out in case neither path resolves.
     instance.isReady.catch((err) => {
+      if (cancelled) return;
       console.error("[artifact] l'éditeur n'a pas pu s'initialiser — document affiché en lecture seule", err);
       setMode("fallback");
     });
     const bail = setTimeout(() => {
-      if (!ready.current) {
+      if (!ready.current && !cancelled) {
         console.error("[artifact] l'éditeur n'a pas répondu — document affiché en lecture seule");
         setMode("fallback");
       }
     }, 4000);
 
     return () => {
+      cancelled = true;
       clearTimeout(bail);
       if (timer.current) clearTimeout(timer.current);
       // destroy() is absent on a failed init; guard rather than throw on unmount.
       instance.isReady
         .then(() => instance.destroy?.())
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => host.remove());
       editor.current = null;
     };
     // Remounts only on a different document — not on every keystroke.
@@ -442,7 +494,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
   // never the content.
   const live = mode === "live";
   return (
-    <div className={cn("artifact-editor relative", className)}>
+    <div className={cn("artifact-editor relative", className)} data-mode={mode}>
       <div
         ref={holder}
         className={cn(!live && "pointer-events-none absolute inset-x-0 top-0 -z-10 opacity-0")}

@@ -9,7 +9,8 @@
     "build:onboarding-agent": "vite build --config vite.onboarding-agent.config.ts",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:editor": "node scripts/verify-editor.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.206",
@@ -179,6 +180,7 @@
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.12.0",
+    "playwright": "^1.62.1",
     "playwright-core": "^1.62.1",
     "postcss": "^8.4.47",
     "sharp": "^0.35.3",

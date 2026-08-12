@@ -1,4 +1,4 @@
-import { useTheme } from "@/lib/theme-context";
+import { useThemeMode } from "@/lib/theme-context";
 
 /**
  * Data-viz palette for the CRM overview.
@@ -49,7 +49,7 @@ export const STATUS = {
 
 /** The categorical slots for the active theme, in fixed order. */
 export function useCategorical(): string[] {
-  const { theme } = useTheme();
+  const theme = useThemeMode();
   return theme === "dark" ? CATEGORICAL_DARK : CATEGORICAL_LIGHT;
 }
 
@@ -65,7 +65,7 @@ export const MAX_SLOTS = 8;
  * card is 3.50 — both below the text bar. Don't "simplify" these back.)
  */
 export function useDeltaColors() {
-  const { theme } = useTheme();
+  const theme = useThemeMode();
   return theme === "dark"
     ? { good: "#0ca30c", bad: "#e66767" }
     : { good: "#006300", bad: "#d03b3b" };
@@ -73,7 +73,7 @@ export function useDeltaColors() {
 
 /** De-emphasis grey for the "context" series (comparison period) + empty grid. */
 export function useContextGreys() {
-  const { theme } = useTheme();
+  const theme = useThemeMode();
   return theme === "dark"
     ? { context: "#5c5b57", empty: "#2c2c2a" }
     : { context: "#c3c2b7", empty: "#ececea" };
