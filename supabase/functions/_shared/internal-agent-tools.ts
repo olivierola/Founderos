@@ -1191,16 +1191,117 @@ export function buildInternalToolset(
   // long document is never squeezed into one tool-call argument, and so a run
   // that dies mid-way can still be salvaged.
 
+  // The document IS an Editor.js document, so a block is only valid if the
+  // Editor.js tool that owns it accepts its shape. A block whose data does not
+  // match its tool renders as an empty node, and Editor.js treats an empty node
+  // as an empty block — it is dropped the first time a human opens the report.
+  // These shapes are the installed tools' own contracts, not a convention.
   const BLOCK_CATALOGUE =
-    'Types de blocs. Texte : header {text, level:1-4}, paragraph {text}, list {style:"ordered"|"unordered", items:[]}, '
-    + 'checklist {items:[{text,checked}]}, quote {text, caption?}, code {code}, delimiter {}. '
-    + 'Données : table {withHeadings:true, content:[[..],[..]]}, kpi {items:[{label,value,delta?,trend:"up"|"down"|"flat"}]}, '
-    + 'chart {chartType:"bar"|"line"|"area"|"pie"|"donut"|"radar"|"scatter", title?, x, series:[], data:[{...}], stacked?}. '
-    + 'Analyse : comparison {title?, columns:[], highlight?, rows:[{label, note?, cells:[true|false|"texte"]}]}, '
-    + 'matrix {title?, xLabel, yLabel, xLow?, xHigh?, yLow?, yHigh?, quadrants:[4], items:[{label,x:0-100,y:0-100,note?,highlight?}]}. '
-    + 'Mise en avant : banner {title, subtitle?, author?, tone?, imageUrl?}, callout {tone:"info"|"success"|"warning"|"danger", text}, '
-    + 'image {file:{url}, caption?}. Découpage : slide {title?, layout?} — ouvre une nouvelle page dans une présentation. '
-    + 'Le texte accepte le HTML inline restreint : <b> <i> <code> <a href> <mark>.';
+    'BLOCS EDITOR.JS — la forme de `data` est imposée par l\'outil, un écart et le bloc est perdu à l\'ouverture. '
+    + 'Natifs : header {text:"…", level:1|2|3|4} · paragraph {text:"…"} · '
+    + 'list {style:"ordered"|"unordered", items:["texte","texte"]} (items = chaînes, jamais d\'objets) · '
+    + 'checklist {items:[{text:"…", checked:false}]} · '
+    + 'table {withHeadings:true, content:[["En-tête A","En-tête B"],["cellule","cellule"]]} '
+    + '(content = tableau de lignes de CHAÎNES, toutes de même longueur ; la 1re ligne est l\'en-tête) · '
+    + 'quote {text:"…", caption:"source", alignment:"left"} · code {code:"…"} · delimiter {} · '
+    + 'image {file:{url:"https://…"}, caption:"…", withBorder:false, withBackground:false, stretched:false}. '
+    + 'Analytiques (outils maison, même exigence) : '
+    + 'kpi {items:[{label,value,delta?,trend:"up"|"down"|"flat"}]} (1 à 4 items) · '
+    + 'chart {chartType:"bar"|"line"|"area"|"pie"|"donut"|"radar"|"scatter", title?, x:"clé de catégorie", series:["clé"], data:[{"<x>":"Jan","clé":12}], stacked?} · '
+    + 'comparison {title?, columns:["Nous","Rival A"], highlight?, rows:[{label, note?, cells:[true|false|"texte"]}]} (cells = 1 par colonne) · '
+    + 'matrix {title?, xLabel, yLabel, xLow?, xHigh?, yLow?, yHigh?, quadrants:[4 libellés], items:[{label,x:0-100,y:0-100,note?,highlight?}]} · '
+    + 'banner {title, subtitle?, author?, tone?} · callout {tone:"info"|"success"|"warning"|"danger", text}. '
+    + 'Présentation uniquement : slide {title:"Titre de la page"} — ouvre une page, le titre est obligatoire. '
+    + 'RÈGLES : jamais de markdown dans un champ texte (ni #, ni **, ni |, ni -) — la structure passe par le TYPE du bloc. '
+    + 'Le texte accepte seulement le HTML inline <b> <i> <code> <a href> <mark>. '
+    + 'Un bloc sans contenu (liste vide, table sans lignes, chart sans data) est refusé.';
+
+  /** Reject a block whose data its Editor.js tool would not accept.
+   *  Refusing here, with the reason, is the only way the agent learns the shape:
+   *  a block accepted now and dropped at render time is a silent data loss. */
+  const checkBlockShape = (type: string, data: Record<string, unknown>): string | null => {
+    const s = (k: string) => (typeof data[k] === "string" ? (data[k] as string).trim() : "");
+    const arr = (k: string) => (Array.isArray(data[k]) ? data[k] as unknown[] : null);
+    const hasMd = (t: string) => /(^|\n)\s{0,3}#{1,6}\s|\*\*|(^|\n)\s*[-*]\s+|(^|\n)\s*\|/.test(t);
+    switch (type) {
+      case "header": {
+        if (!s("text")) return 'header exige data.text non vide.';
+        const lvl = Number(data.level);
+        if (!Number.isInteger(lvl) || lvl < 1 || lvl > 4) return 'header exige data.level entier de 1 à 4.';
+        if (hasMd(s("text"))) return 'header.text ne doit pas contenir de markdown : le niveau est porté par data.level.';
+        return null;
+      }
+      case "paragraph": {
+        if (!s("text")) return 'paragraph exige data.text non vide.';
+        if (hasMd(s("text")))
+          return 'paragraph.text contient du markdown. Un titre est un bloc header, une liste un bloc list, un tableau un bloc table.';
+        return null;
+      }
+      case "list": {
+        const items = arr("items");
+        if (!items?.length) return 'list exige data.items : un tableau de chaînes non vide.';
+        if (items.some((i) => typeof i !== "string" || !i.trim()))
+          return 'list.items doit contenir des CHAÎNES non vides (pas d\'objets {text:…}).';
+        if (data.style !== "ordered" && data.style !== "unordered")
+          return 'list exige data.style = "ordered" ou "unordered".';
+        return null;
+      }
+      case "checklist": {
+        const items = arr("items");
+        if (!items?.length) return 'checklist exige data.items:[{text, checked}].';
+        if (items.some((i) => !i || typeof i !== "object" || typeof (i as { text?: unknown }).text !== "string"))
+          return 'checklist.items exige des objets {text:"…", checked:true|false}.';
+        return null;
+      }
+      case "table": {
+        const rows = arr("content");
+        if (!rows?.length) return 'table exige data.content : un tableau de lignes, la première étant l\'en-tête.';
+        if (rows.some((r) => !Array.isArray(r))) return 'table.content doit être un tableau de TABLEAUX (une ligne = un tableau de cellules).';
+        const width = (rows[0] as unknown[]).length;
+        if (!width) return 'table : la ligne d\'en-tête est vide.';
+        if ((rows as unknown[][]).some((r) => r.length !== width))
+          return `table : toutes les lignes doivent avoir ${width} cellules, comme l'en-tête.`;
+        return null;
+      }
+      case "quote": return s("text") ? null : 'quote exige data.text.';
+      case "code": return s("code") ? null : 'code exige data.code.';
+      case "image": {
+        const file = data.file as { url?: unknown } | undefined;
+        return typeof file?.url === "string" && file.url.trim() ? null : 'image exige data.file.url (une URL http(s)).';
+      }
+      case "kpi": {
+        const items = arr("items");
+        if (!items?.length) return 'kpi exige data.items:[{label, value}] (1 à 4).';
+        if (items.some((i) => !i || typeof i !== "object" || !(i as { label?: unknown }).label))
+          return 'kpi.items exige des objets {label:"…", value:"…"}.';
+        return null;
+      }
+      case "chart": {
+        if (!arr("data")?.length) return 'chart exige data.data : les points, ex. [{"mois":"Jan","valeur":12}].';
+        if (!arr("series")?.length) return 'chart exige data.series : les clés à tracer, ex. ["valeur"].';
+        if (!s("x")) return 'chart exige data.x : la clé de catégorie, ex. "mois".';
+        return null;
+      }
+      case "comparison": {
+        const cols = arr("columns"); const rows = arr("rows");
+        if (!cols?.length || !rows?.length) return 'comparison exige data.columns et data.rows non vides.';
+        if (rows.some((r) => !Array.isArray((r as { cells?: unknown }).cells) || ((r as { cells: unknown[] }).cells).length !== cols.length))
+          return `comparison : chaque ligne doit porter cells avec ${cols.length} entrées, une par colonne.`;
+        return null;
+      }
+      case "matrix": {
+        const items = arr("items");
+        if (!items?.length) return 'matrix exige data.items:[{label, x:0-100, y:0-100}].';
+        if (items.some((i) => typeof (i as { x?: unknown }).x !== "number" || typeof (i as { y?: unknown }).y !== "number"))
+          return 'matrix.items exige x et y NUMÉRIQUES entre 0 et 100.';
+        return null;
+      }
+      case "banner": return s("title") ? null : 'banner exige data.title.';
+      case "callout": return s("text") ? null : 'callout exige data.text.';
+      case "slide": return s("title") ? null : 'slide exige data.title : une page sans titre est rendue comme un bloc vide et disparaît.';
+      default: return null;
+    }
+  };
 
   const draftKey = (target: string) => (target === "presentation" ? "deck_draft" : "report_draft_v2");
 
@@ -1233,10 +1334,16 @@ export function buildInternalToolset(
       if (!ARTIFACT_BLOCK_TYPES.includes(String(block.type))) {
         return `ERROR: type de bloc « ${block.type} » inconnu. ${BLOCK_CATALOGUE}`;
       }
+      const data = (block.data && typeof block.data === "object" ? block.data : {}) as Record<string, unknown>;
+      if (block.type === "slide" && target !== "presentation") {
+        return "ERROR: le bloc « slide » n'existe que dans une présentation. Dans un rapport, une partie s'ouvre par un bloc header.";
+      }
+      const shapeError = checkBlockShape(String(block.type), data);
+      if (shapeError) return `ERROR: ${shapeError} Le bloc n'a pas été ajouté — corrige sa forme et rappelle add_block.`;
       const meta = await readRunMeta(ctx);
       const key = draftKey(target);
       const draft = (Array.isArray(meta[key]) ? meta[key] : []) as unknown[];
-      draft.push({ type: block.type, data: block.data ?? {} });
+      draft.push({ type: block.type, data });
       await writeRunMeta(ctx, { ...meta, [key]: draft });
       return `Bloc « ${block.type} » ajouté (${draft.length} bloc(s) dans le ${target}). Continue, puis publish_artifact(target="${target}", title="…") pour publier.`;
     },

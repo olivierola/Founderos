@@ -16,6 +16,7 @@
  */
 import { createElement, useEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { flushSync } from "react-dom";
 import EditorJS, { type BlockToolConstructable, type OutputData } from "@editorjs/editorjs";
 import Header from "@editorjs/header";
 import List from "@editorjs/list";
@@ -65,6 +66,16 @@ function renderedTool(type: string, label: string): BlockToolConstructable {
     private root: Root | null = null;
     static get isReadOnlySupported() { return true; }
     static get toolbox() { return { title: label, icon: "▦" }; }
+    /**
+     * Without this, the block is DELETED on open.
+     *
+     * Editor.js drops a block it considers empty, and it decides that from the
+     * DOM right after `render()`. React's createRoot renders asynchronously, so
+     * the host node is still empty at that instant — every custom block was
+     * judged empty and stripped, which is the content flashing then vanishing.
+     * A tool that declares `validate` is trusted instead of measured.
+     */
+    validate() { return true; }
     constructor({ data }: { data: Record<string, unknown> }) { this.data = data ?? {}; }
     render() {
       const el = document.createElement("div");
@@ -72,7 +83,20 @@ function renderedTool(type: string, label: string): BlockToolConstructable {
       el.contentEditable = "false";
       // React owns this subtree; Editor.js only holds the host node.
       this.root = createRoot(el);
-      this.root.render(createElement(Block, { block: { type, data: this.data } }));
+      // SYNCHRONOUS on purpose. Editor.js judges a block empty by reading its
+      // DOM immediately after render() (Block.isEmpty → pluginsContent), and a
+      // normal React render has not painted by then: the block was measured
+      // empty and stripped. flushSync makes the content exist before we return
+      // the node.
+      flushSync(() => this.root!.render(createElement(Block, { block: { type, data: this.data } })));
+      // A renderer that returned null (unknown type, or a block whose data is
+      // empty) leaves an empty node, which Editor.js reads as an empty block.
+      // Give it visible content so the block is never mistaken for a blank line
+      // the user can backspace away.
+      if (el.childNodes.length === 0) {
+        el.innerHTML =
+          `<div class="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">${label}</div>`;
+      }
       return el;
     }
     destroy() {
@@ -155,8 +179,15 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
             // has no tool for, and a single unregistered type would otherwise
             // turn "open the editor" into "delete the report" — the save runs
             // 600 ms later, with nothing on screen to warn anyone.
-            if (doc.blocks.length > 0 && next.length === 0) {
-              console.error("[artifact] éditeur vidé au montage — sauvegarde annulée pour ne pas perdre le document");
+            // Guard on LOSS, not just on emptiness. Checking `length === 0`
+            // let a partial drop through: half the blocks stripped still looked
+            // like a legitimate edit, and the debounce wrote the truncation
+            // 600 ms later. Deleting most of a document is never something a
+            // human does in one keystroke.
+            if (doc.blocks.length > 2 && next.length < doc.blocks.length / 2) {
+              console.error(
+                `[artifact] ${doc.blocks.length} blocs à l'ouverture, ${next.length} après montage — sauvegarde annulée pour ne pas perdre le document`,
+              );
               return;
             }
             onChange({ time: out.time, version: out.version, blocks: next });
