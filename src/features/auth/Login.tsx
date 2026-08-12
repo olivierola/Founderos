@@ -1,18 +1,16 @@
-import { useState, type FormEvent } from "react";
-import { Navigate, Link, useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
-import { Logo } from "@/components/Logo";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
+import { useState } from "react";
+import { Navigate, useNavigate } from "react-router-dom";
+import {
+  AuthSection,
+  type AuthSocialProvider,
+  type AuthSubmitPayload,
+} from "@/components/ui/auth-section-1";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { session, loading: authLoading } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,8 +18,7 @@ export function LoginPage() {
     return <Navigate to="/orgs" replace />;
   }
 
-  async function handleLogin(e: FormEvent) {
-    e.preventDefault();
+  async function handleLogin({ email, password }: AuthSubmitPayload) {
     setSubmitting(true);
     setError(null);
     const { error: err } = await supabase.auth.signInWithPassword({ email, password });
@@ -33,69 +30,28 @@ export function LoginPage() {
     navigate("/orgs", { replace: true });
   }
 
+  // The provider must be enabled in the Supabase dashboard (Auth → Providers);
+  // otherwise the redirect never happens and the error lands in the form.
+  async function handleSocial(provider: AuthSocialProvider) {
+    setSubmitting(true);
+    setError(null);
+    const { error: err } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/orgs` },
+    });
+    if (err) {
+      setSubmitting(false);
+      setError(err.message);
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex items-center gap-3">
-          <Logo size={40} />
-          <div>
-            <div className="text-lg font-semibold">Anduran</div>
-            <div className="text-xs text-muted-foreground">SaaS cockpit for builders</div>
-          </div>
-        </div>
-
-        <Card>
-          <CardContent className="p-6">
-            <h1 className="text-xl font-semibold">Sign in</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Connect your repo, we generate your admin cockpit.
-            </p>
-
-            <form onSubmit={handleLogin} className="mt-6 space-y-3">
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground" htmlFor="email">
-                  Email
-                </label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@founder.dev"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground" htmlFor="password">
-                  Password
-                </label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={submitting || !email || !password}>
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                Sign in
-              </Button>
-            </form>
-
-            {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
-
-            <p className="mt-6 text-center text-xs text-muted-foreground">
-              No account?{" "}
-              <Link to="/signup" className="text-foreground underline-offset-4 hover:underline">
-                Create one
-              </Link>
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    <AuthSection
+      mode="login"
+      submitting={submitting}
+      error={error}
+      onSubmit={handleLogin}
+      onSocial={handleSocial}
+    />
   );
 }

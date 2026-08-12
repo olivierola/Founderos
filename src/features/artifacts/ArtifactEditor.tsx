@@ -446,7 +446,9 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
             const before = JSON.stringify(doc.blocks.map((b) => [b.type, b.data]));
             const after = JSON.stringify(next.map((b) => [b.type, b.data]));
             if (before === after) return;
-            onChange({ time: out.time, version: out.version, blocks: next });
+            // Spread `doc` first: the document carries fields the editor knows nothing
+            // about (the cover), and rebuilding the object from scratch dropped them.
+            onChange({ ...doc, time: out.time, version: out.version, blocks: next });
           } catch { /* a save that fails must not break typing */ }
         }, 600);
       },

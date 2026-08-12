@@ -18,9 +18,10 @@ import {
   ScatterChart, Scatter,
 } from "recharts";
 import {
-  TrendingUp, TrendingDown, Minus, Info, CheckCircle2, AlertTriangle, AlertOctagon, Check, X,
+  TrendingUp, TrendingDown, Minus, Info, CheckCircle2, AlertTriangle, AlertOctagon, Check, X, Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { COVERS, resolveCover } from "./covers";
 import { useCategorical, useContextGreys, STATUS } from "@/features/crm/overview/vizPalette";
 import {
   type ArtifactBlock, type ArtifactDocument, type BannerData, type CalloutData,
@@ -78,23 +79,59 @@ function BannerBlock({ d }: { d: BannerData }) {
  * that no longer matched the name in the gallery. It is drawn here, full-bleed
  * and flush with the top edge, from the record itself.
  */
-export function ArtifactHeader({ title, kind, subtitle, aside }: {
+export function ArtifactHeader({ title, kind, subtitle, aside, cover, seed, onCoverChange }: {
   title: string;
   kind: string;
   subtitle?: string;
   aside?: React.ReactNode;
+  /** Chosen cover key; falls back to one derived from `seed`. */
+  cover?: string;
+  seed?: string;
+  onCoverChange?: (key: string) => void;
 }) {
+  const art = resolveCover(cover, seed ?? title);
   return (
-    <header className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-indigo-800 px-5 pb-7 pt-12 text-white sm:px-8">
-      <div className="mx-auto w-full max-w-[1060px]">
-        <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-white/70">
+    <header
+      className={cn("relative isolate flex min-h-[220px] flex-col justify-end overflow-hidden px-5 pb-8 pt-16 text-white sm:min-h-[260px] sm:px-8", art.className)}
+      style={art.style}
+    >
+      {art.art}
+      {/* A scrim, not a tint: the title has to stay legible over the busiest
+          covers (sumi strokes, vitrail) without flattening the quiet ones. */}
+      <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/45 to-transparent" aria-hidden />
+      {onCoverChange && <CoverPicker active={art.key} onPick={onCoverChange} />}
+      <div className="relative mx-auto w-full max-w-[1060px]">
+        <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-white/75">
           <span>{kind}</span>
           {subtitle && <><span aria-hidden>·</span><span className="truncate normal-case tracking-normal">{subtitle}</span></>}
           {aside && <span className="ml-auto flex items-center">{aside}</span>}
         </div>
-        <h1 className="mt-1.5 text-2xl font-bold leading-tight tracking-tight sm:text-3xl">{title}</h1>
+        <h1 className="mt-2 text-3xl font-bold leading-[1.15] tracking-tight drop-shadow-sm sm:text-[2.5rem]">{title}</h1>
       </div>
     </header>
+  );
+}
+
+/** Swatches for the cover, revealed on hover so they never compete with the title. */
+function CoverPicker({ active, onPick }: { active: string; onPick: (key: string) => void }) {
+  return (
+    <div className="group absolute right-3 top-3 z-20 flex items-center gap-1.5">
+      <span className="pointer-events-none rounded-full bg-black/25 px-2 py-1 text-[10px] text-white/80 backdrop-blur transition-opacity group-hover:opacity-0">
+        <Palette className="h-3.5 w-3.5" />
+      </span>
+      <div className="pointer-events-none absolute right-0 top-0 flex max-w-[min(70vw,26rem)] flex-wrap justify-end gap-1 rounded-full bg-black/30 p-1.5 opacity-0 backdrop-blur transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+        {COVERS.map((c) => (
+          <button
+            key={c.key} type="button" title={c.label} onClick={() => onPick(c.key)}
+            className={cn("h-5 w-5 rounded-full border transition-transform hover:scale-110",
+              c.className, c.key === active ? "border-white ring-1 ring-white/60" : "border-white/30")}
+            style={c.style}
+          >
+            <span className="sr-only">{c.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -32,6 +32,8 @@ export interface ArtifactBlock<T = Record<string, unknown>> {
 export interface ArtifactDocument {
   time?: number;
   version?: string;
+  /** Cover art key for the system header. Absent means "derive one from the id". */
+  cover?: string;
   blocks: ArtifactBlock[];
 }
 
@@ -140,6 +142,7 @@ export function parseDocument(content: unknown): ArtifactDocument {
   return {
     time: (raw as ArtifactDocument).time,
     version: (raw as ArtifactDocument).version,
+    cover: (raw as ArtifactDocument).cover,
     blocks: blocks.filter((b): b is ArtifactBlock => !!b && typeof b === "object" && typeof b.type === "string"),
   };
 }

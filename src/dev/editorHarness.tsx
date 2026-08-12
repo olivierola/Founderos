@@ -10,6 +10,8 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { ArtifactEditor } from "@/features/artifacts/ArtifactEditor";
+import { ArtifactHeader } from "@/features/artifacts/BlockRenderer";
+import { COVERS } from "@/features/artifacts/covers";
 import { type ArtifactDocument } from "@/features/artifacts/blocks";
 import "@/styles/globals.css";
 
@@ -63,8 +65,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   // StrictMode ON PURPOSE: the app runs in it, and its double mount is exactly
   // what broke the editor. A harness without it certifies the wrong thing.
   <StrictMode>
-    <div className="mx-auto max-w-[900px] px-8 py-8">
+    <div>
+      {/* Every cover, so a filter or gradient that fails to render is caught here. */}
+      {COVERS.map((c) => (
+        <ArtifactHeader key={c.key} title={c.label} kind="rapport" cover={c.key} onCoverChange={() => {}} />
+      ))}
+      <div className="mx-auto max-w-[900px] px-8 py-8">
     <ArtifactEditor doc={FIXTURE} onChange={(d) => { window.__harness.saved = d.blocks.length; }} />
+      </div>
     </div>
   </StrictMode>,
 );

@@ -186,6 +186,11 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
                 title={data?.name || title}
                 kind={isDeck ? "présentation" : "rapport"}
                 subtitle={subtitle}
+                cover={doc.cover}
+                seed={id ?? title}
+                // The cover lives in the document JSON, so it rides the same
+                // debounced write as the blocks — no column, no second request.
+                onCoverChange={(cover) => persist({ ...body, cover })}
                 aside={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-white/70" /> : null}
               />
               {isDeck
