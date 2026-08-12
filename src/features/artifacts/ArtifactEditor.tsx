@@ -22,7 +22,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import EditorJS, { type BlockToolConstructable, type OutputData } from "@editorjs/editorjs";
 import Header from "@editorjs/header";
-import Paragraph from "@editorjs/paragraph";
 import List from "@editorjs/list";
 import ImageTool from "@editorjs/image";
 import Table from "@editorjs/table";
@@ -298,7 +297,10 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     setMode("mounting");
 
     const tools: Record<string, unknown> = {
-      paragraph: { class: Paragraph, inlineToolbar: INLINE },
+      // `paragraph` is deliberately NOT registered: Editor.js bundles it as the
+      // default block, and overriding the default block is the one substitution
+      // that takes the whole editor down if the import resolves to anything but
+      // a class. It gains nothing here — the bundled tool is the same tool.
       header: { class: Header, inlineToolbar: INLINE, config: { levels: [1, 2, 3, 4], defaultLevel: 2 } },
       list: { class: List, inlineToolbar: INLINE, config: { defaultStyle: "unordered" } },
       checklist: { class: Checklist, inlineToolbar: INLINE },
@@ -346,6 +348,12 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
         tools[name] = dataTool(name, name, ICONS.block);
       }
     }
+    // Name the imports that did not resolve to a class. Every wipe so far has
+    // been one bad import, and the symptom — a blank page — never said which.
+    const broken = Object.entries(tools)
+      .filter(([, t]) => typeof ((t as { class?: unknown })?.class ?? t) !== "function")
+      .map(([n]) => n);
+    if (broken.length) console.error("[artifact] outils non résolus :", broken.join(", "));
 
     const instance = new EditorJS({
       holder: holder.current,
@@ -396,7 +404,22 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     });
     editor.current = instance;
 
+    // `onReady` is not a guarantee — it simply never fires when init throws, and
+    // that is precisely the case that left a blank page. Catch the rejection,
+    // and time out in case neither path resolves.
+    instance.isReady.catch((err) => {
+      console.error("[artifact] l'éditeur n'a pas pu s'initialiser — document affiché en lecture seule", err);
+      setMode("fallback");
+    });
+    const bail = setTimeout(() => {
+      if (!ready.current) {
+        console.error("[artifact] l'éditeur n'a pas répondu — document affiché en lecture seule");
+        setMode("fallback");
+      }
+    }, 4000);
+
     return () => {
+      clearTimeout(bail);
       if (timer.current) clearTimeout(timer.current);
       // destroy() is absent on a failed init; guard rather than throw on unmount.
       instance.isReady
@@ -408,14 +431,30 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readOnly]);
 
+  // CONTENT FIRST, EDITOR SECOND.
+  //
+  // The editor used to be the only thing rendered, so anything that went wrong
+  // inside it — a bad import, a tool that throws, an init that never resolves —
+  // showed up as a blank page and read as "the app deleted my report". Here the
+  // document is painted immediately by the renderer, which depends on no tools
+  // and cannot fail that way, and the editor only replaces it once it has
+  // reported in with the right number of blocks. A failure now costs editing,
+  // never the content.
+  const live = mode === "live";
   return (
-    <div className={cn("artifact-editor", className)}>
-      <div ref={holder} className={cn(mode === "fallback" && "hidden")} />
-      {mode === "fallback" && (
+    <div className={cn("artifact-editor relative", className)}>
+      <div
+        ref={holder}
+        className={cn(!live && "pointer-events-none absolute inset-x-0 top-0 -z-10 opacity-0")}
+        aria-hidden={!live}
+      />
+      {!live && (
         <div className="space-y-3">
-          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
-            Ce document ne s'ouvre pas dans l'éditeur — il est affiché en lecture seule et n'a pas été modifié.
-          </p>
+          {mode === "fallback" && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+              Ce document ne s'ouvre pas dans l'éditeur : il est affiché en lecture seule et n'a pas été modifié.
+            </p>
+          )}
           {doc.blocks.map((b, i) => <Block key={b.id ?? i} block={b} />)}
         </div>
       )}
