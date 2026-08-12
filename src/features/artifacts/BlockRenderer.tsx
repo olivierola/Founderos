@@ -384,6 +384,39 @@ export function Block({ block }: { block: ArtifactBlock }) {
       return <pre className="overflow-x-auto rounded-xl border border-border bg-muted/40 p-3 text-xs"><code>{(d as CodeData).code}</code></pre>;
     case "delimiter":
       return <hr className="my-2 border-border" />;
+    case "warning": {
+      const w = d as { title?: string; message?: string };
+      return (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+          {w.title && <p className="text-sm font-semibold text-amber-900 dark:text-amber-100" dangerouslySetInnerHTML={inlineHtml(w.title)} />}
+          {w.message && <p className="mt-0.5 text-sm text-amber-900/80 dark:text-amber-100/80" dangerouslySetInnerHTML={inlineHtml(w.message)} />}
+        </div>
+      );
+    }
+    case "embed": {
+      // The tool stores an already-embeddable URL; anything else is a link the
+      // reader can follow rather than a frame that silently fails to load.
+      const e = d as { embed?: string; source?: string; caption?: string; width?: number; height?: number };
+      if (!e.embed) {
+        return e.source
+          ? <a href={e.source} target="_blank" rel="noreferrer" className="text-sm text-primary underline underline-offset-2">{e.source}</a>
+          : null;
+      }
+      return (
+        <figure className="overflow-hidden rounded-xl border border-border">
+          <div className="relative w-full" style={{ aspectRatio: `${e.width ?? 16} / ${e.height ?? 9}` }}>
+            <iframe src={e.embed} title={e.caption || "Contenu intégré"} loading="lazy"
+              allowFullScreen className="absolute inset-0 h-full w-full" />
+          </div>
+          {e.caption && <figcaption className="border-t border-border px-3 py-2 text-xs text-muted-foreground">{e.caption}</figcaption>}
+        </figure>
+      );
+    }
+    case "raw":
+      // Deliberately NOT injected as HTML: this block exists so an agent can
+      // keep a snippet verbatim, and rendering arbitrary markup from a model
+      // into the reader is a script-injection surface for no gain.
+      return <pre className="overflow-x-auto rounded-xl border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground"><code>{(d as { html?: string }).html}</code></pre>;
     case "kpi": return <KpiBlock d={d as KpiData} />;
     case "chart": return <ChartBlock d={d as ChartData} />;
     case "comparison": return <ComparisonBlock d={d as ComparisonData} />;

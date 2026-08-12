@@ -1,24 +1,28 @@
 /**
  * The editing runtime — Editor.js itself.
  *
- * Loaded only when a human edits (the read path uses BlockRenderer and never
- * pulls this in). Two things matter here:
+ * Three things matter here.
  *
- *  1. THE CUSTOM BLOCKS MUST SURVIVE. Editor.js silently DROPS any block whose
- *     `type` has no registered tool. An agent's chart, KPI row or matrix would
- *     be destroyed the first time someone opened the document to fix a typo.
- *     Every custom type is therefore registered as a passthrough tool: it shows
- *     a labelled card, refuses inline editing, and hands its data back to
- *     `save()` byte-identical. The human edits the prose around it; the agent's
- *     structure is untouched.
- *  2. Saving is debounced and never fires on the initial render — mounting an
- *     editor is not a modification.
+ *  1. THE CUSTOM BLOCKS MUST SURVIVE. Editor.js hands each block to the tool
+ *     owning its `type`, and a tool that renders an empty node has its block
+ *     judged empty and dropped. An agent's chart or matrix would be destroyed
+ *     the first time someone opened the document to fix a typo. Every type
+ *     present in the document is therefore guaranteed a tool, and every tool is
+ *     guaranteed to render something.
+ *  2. THE CUSTOM BLOCKS ARE REAL TOOLS, not placards. A callout is edited by
+ *     typing in it and its tone is switched from the block settings menu; a
+ *     chart is edited through its data. They carry toolbox entries, icons and
+ *     settings like any native tool, because to the person writing there is no
+ *     such thing as "the agent's blocks" and "mine".
+ *  3. Saving is debounced, never fires on the initial render, and refuses to
+ *     persist a document that lost most of its blocks.
  */
-import { createElement, useEffect, useRef } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import EditorJS, { type BlockToolConstructable, type OutputData } from "@editorjs/editorjs";
 import Header from "@editorjs/header";
+import Paragraph from "@editorjs/paragraph";
 import List from "@editorjs/list";
 import ImageTool from "@editorjs/image";
 import Table from "@editorjs/table";
@@ -26,89 +30,253 @@ import Quote from "@editorjs/quote";
 import Code from "@editorjs/code";
 import Delimiter from "@editorjs/delimiter";
 import Checklist from "@editorjs/checklist";
+import Warning from "@editorjs/warning";
+import Embed from "@editorjs/embed";
+import Raw from "@editorjs/raw";
+import Marker from "@editorjs/marker";
+import InlineCode from "@editorjs/inline-code";
+import Underline from "@editorjs/underline";
+import { cn } from "@/lib/utils";
 import { type ArtifactDocument } from "./blocks";
 import { Block } from "./BlockRenderer";
+import "./editor.css";
 
-/** Types the agent produces that Editor.js has no tool for. */
-const PASSTHROUGH: Array<{ type: string; label: string }> = [
-  { type: "kpi", label: "Indicateurs clés" },
-  { type: "chart", label: "Graphique" },
-  { type: "banner", label: "Bandeau" },
-  { type: "comparison", label: "Grille comparative" },
-  { type: "matrix", label: "Matrice de positionnement" },
-  { type: "callout", label: "Encadré" },
-  { type: "slide", label: "Nouvelle slide" },
-];
+/* ------------------------------------------------------------------ icons */
+/** Editor.js draws toolbox and settings entries from raw SVG strings. */
+const svg = (d: string) =>
+  `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICONS = {
+  kpi: svg('<rect x="3" y="4" width="7" height="16" rx="1"/><rect x="14" y="4" width="7" height="16" rx="1"/>'),
+  chart: svg('<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="13" y="8" width="3" height="10"/>'),
+  banner: svg('<rect x="3" y="4" width="18" height="8" rx="2"/><path d="M3 17h12M3 21h8"/>'),
+  comparison: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18"/>'),
+  matrix: svg('<path d="M4 20V4M4 20h16"/><circle cx="9" cy="14" r="1.6"/><circle cx="16" cy="8" r="1.6"/>'),
+  callout: svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>'),
+  slide: svg('<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/>'),
+  block: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>'),
+  edit: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  tone: svg('<circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="14.5" r="2.5"/><circle cx="6.5" cy="12.5" r="4.5"/>'),
+};
+
+/** Inline formatting offered on every text-bearing block. */
+const INLINE = ["bold", "italic", "underline", "marker", "inlineCode", "link"];
+
+/* ---------------------------------------------------------- custom blocks */
+
+/** Tones a callout can take, in the order the settings menu offers them. */
+const TONES = [
+  { key: "info", label: "Information" },
+  { key: "success", label: "Confirmation" },
+  { key: "warning", label: "Vigilance" },
+  { key: "danger", label: "Alerte" },
+] as const;
 
 /**
- * A tool that renders a placard and preserves its data.
+ * A data block, drawn by the renderer the reader sees, editable as JSON.
  *
- * This is the whole reason agent-authored structure survives human editing.
- * `save()` returns the data it was constructed with — no parsing, no rewriting,
- * no chance of mangling a chart into a paragraph.
+ * A chart or a matrix has no sensible inline editing gesture — you do not type
+ * a scatter plot. But "not typeable" must not mean "not editable": the settings
+ * menu opens the block's data in place, and the block redraws on blur. The
+ * alternative, a grey placard saying "chart (generated by the agent)", made the
+ * editor a downgrade of the reader.
  */
-/**
- * A block Editor.js cannot author, drawn by its REAL renderer.
- *
- * The first version showed a grey placard saying "chart (generated by the
- * agent)". That made the editor a downgrade of the reader: opening a report to
- * fix a typo replaced every figure with a label. Here the block mounts the same
- * React component the read view uses, inside the Editor.js block element — so
- * the document looks identical whether you are reading it or writing in it.
- *
- * It stays non-editable inline (a chart is edited by the agent, or by hand in
- * its JSON) and  returns its data untouched, so nothing is ever
- * rewritten by passing through the editor.
- */
-function renderedTool(type: string, label: string): BlockToolConstructable {
+function dataTool(type: string, label: string, icon: string): BlockToolConstructable {
   return class {
     private data: Record<string, unknown>;
     private root: Root | null = null;
+    private host: HTMLElement | null = null;
     static get isReadOnlySupported() { return true; }
-    static get toolbox() { return { title: label, icon: "▦" }; }
+    static get toolbox() { return { title: label, icon }; }
     /**
-     * Without this, the block is DELETED on open.
-     *
-     * Editor.js drops a block it considers empty, and it decides that from the
-     * DOM right after `render()`. React's createRoot renders asynchronously, so
-     * the host node is still empty at that instant — every custom block was
-     * judged empty and stripped, which is the content flashing then vanishing.
-     * A tool that declares `validate` is trusted instead of measured.
+     * Without this the block is DELETED on open: Editor.js decides emptiness
+     * from the DOM, and a tool that declares `validate` is trusted instead of
+     * measured. The data is the truth here, not the rendering.
      */
     validate() { return true; }
     constructor({ data }: { data: Record<string, unknown> }) { this.data = data ?? {}; }
+
+    private draw() {
+      const host = this.host!;
+      this.root?.unmount();
+      host.innerHTML = "";
+      this.root = createRoot(host);
+      // SYNCHRONOUS on purpose: Editor.js reads the node right after render()
+      // and a normal React render has not painted by then.
+      flushSync(() => this.root!.render(createElement(Block, { block: { type, data: this.data } })));
+      if (host.childNodes.length === 0) {
+        host.innerHTML = `<div class="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">${label} — vide</div>`;
+      }
+    }
+
+    /** Swap the rendering for its JSON, and back on blur. */
+    private editJson() {
+      const host = this.host!;
+      this.root?.unmount();
+      this.root = null;
+      host.innerHTML = "";
+      const ta = document.createElement("textarea");
+      ta.value = JSON.stringify(this.data, null, 2);
+      ta.spellcheck = false;
+      ta.className =
+        "w-full rounded-lg border border-primary/40 bg-muted/40 p-3 font-mono text-xs leading-relaxed outline-none";
+      ta.rows = Math.min(24, ta.value.split("\n").length + 1);
+      const commit = () => {
+        try {
+          const parsed = JSON.parse(ta.value);
+          if (parsed && typeof parsed === "object") this.data = parsed as Record<string, unknown>;
+        } catch {
+          // Invalid JSON keeps the previous data rather than emptying the block.
+        }
+        this.draw();
+      };
+      ta.addEventListener("blur", commit);
+      ta.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); this.draw(); } });
+      host.appendChild(ta);
+      ta.focus();
+    }
+
     render() {
       const el = document.createElement("div");
-      el.className = "my-2";
+      el.className = "my-3";
       el.contentEditable = "false";
-      // React owns this subtree; Editor.js only holds the host node.
-      this.root = createRoot(el);
-      // SYNCHRONOUS on purpose. Editor.js judges a block empty by reading its
-      // DOM immediately after render() (Block.isEmpty → pluginsContent), and a
-      // normal React render has not painted by then: the block was measured
-      // empty and stripped. flushSync makes the content exist before we return
-      // the node.
-      flushSync(() => this.root!.render(createElement(Block, { block: { type, data: this.data } })));
-      // A renderer that returned null (unknown type, or a block whose data is
-      // empty) leaves an empty node, which Editor.js reads as an empty block.
-      // Give it visible content so the block is never mistaken for a blank line
-      // the user can backspace away.
-      if (el.childNodes.length === 0) {
-        el.innerHTML =
-          `<div class="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">${label}</div>`;
-      }
+      this.host = el;
+      this.draw();
       return el;
     }
+    renderSettings() {
+      return [{ icon: ICONS.edit, label: "Modifier les données", onActivate: () => this.editJson() }];
+    }
     destroy() {
-      // Unmount on the next tick: React refuses to unmount synchronously from
-      // inside a render/commit, which is where Editor.js calls destroy().
       const r = this.root;
       this.root = null;
+      // React refuses to unmount synchronously from inside a commit, which is
+      // where Editor.js calls destroy().
       if (r) setTimeout(() => r.unmount(), 0);
     }
     save() { return this.data; }
   } as unknown as BlockToolConstructable;
 }
+
+/**
+ * A callout: coloured box, text typed directly into it, tone in the settings.
+ *
+ * This one is written by hand rather than mounted from React because it is
+ * genuinely editable — the caret has to live in the block, and a React tree
+ * re-rendering under the caret fights it.
+ */
+class CalloutTool {
+  private data: { tone: string; text: string };
+  private wrap: HTMLElement | null = null;
+  private body: HTMLElement | null = null;
+  static get isReadOnlySupported() { return true; }
+  static get toolbox() { return { title: "Encadré", icon: ICONS.callout }; }
+  constructor({ data }: { data: Partial<{ tone: string; text: string }> }) {
+    this.data = { tone: String(data?.tone ?? "info"), text: String(data?.text ?? "") };
+  }
+  private paint() {
+    const tone = TONES.some((t) => t.key === this.data.tone) ? this.data.tone : "info";
+    const skin: Record<string, string> = {
+      info: "border-sky-500/30 bg-sky-500/10 text-sky-950 dark:text-sky-100",
+      success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-950 dark:text-emerald-100",
+      warning: "border-amber-500/30 bg-amber-500/10 text-amber-950 dark:text-amber-100",
+      danger: "border-rose-500/30 bg-rose-500/10 text-rose-950 dark:text-rose-100",
+    };
+    this.wrap!.className = `my-3 rounded-xl border-l-4 px-4 py-3 text-sm leading-relaxed ${skin[tone]}`;
+  }
+  render() {
+    this.wrap = document.createElement("div");
+    this.body = document.createElement("div");
+    this.body.contentEditable = "true";
+    this.body.dataset.placeholder = "Ce qu'il faut retenir…";
+    this.body.className = "outline-none";
+    this.body.innerHTML = this.data.text;
+    this.wrap.appendChild(this.body);
+    this.paint();
+    return this.wrap;
+  }
+  renderSettings() {
+    return TONES.map((t) => ({
+      icon: ICONS.tone,
+      label: t.label,
+      isActive: this.data.tone === t.key,
+      closeOnActivate: true,
+      onActivate: () => { this.data.tone = t.key; this.paint(); },
+    }));
+  }
+  save() { return { tone: this.data.tone, text: this.body?.innerHTML ?? this.data.text }; }
+  validate(data: { text?: string }) { return typeof data?.text === "string" && data.text.trim().length > 0; }
+}
+
+/**
+ * A banner: the document's opening block. Title and subtitle typed in place.
+ */
+class BannerTool {
+  private data: Record<string, unknown>;
+  private title: HTMLElement | null = null;
+  private sub: HTMLElement | null = null;
+  static get isReadOnlySupported() { return true; }
+  static get toolbox() { return { title: "Bandeau de titre", icon: ICONS.banner }; }
+  constructor({ data }: { data: Record<string, unknown> }) { this.data = data ?? {}; }
+  render() {
+    const wrap = document.createElement("div");
+    wrap.className = "my-3 rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-800 px-6 py-7 text-white";
+    this.title = document.createElement("div");
+    this.title.contentEditable = "true";
+    this.title.className = "text-2xl font-semibold leading-tight outline-none";
+    this.title.dataset.placeholder = "Titre du document";
+    this.title.innerHTML = String(this.data.title ?? "");
+    this.sub = document.createElement("div");
+    this.sub.contentEditable = "true";
+    this.sub.className = "mt-1.5 text-sm text-white/70 outline-none";
+    this.sub.dataset.placeholder = "Sous-titre, date, périmètre…";
+    this.sub.innerHTML = String(this.data.subtitle ?? "");
+    wrap.append(this.title, this.sub);
+    return wrap;
+  }
+  save() {
+    return { ...this.data, title: this.title?.innerHTML ?? "", subtitle: this.sub?.innerHTML ?? "" };
+  }
+  validate(data: { title?: string }) { return typeof data?.title === "string" && data.title.trim().length > 0; }
+}
+
+/**
+ * A slide break. It carries only a title, so it is a one-field block — and it
+ * must never render empty, since an empty node is a deleted block and deleting
+ * it silently reflows every page after it.
+ */
+class SlideTool {
+  private title: HTMLElement | null = null;
+  private data: Record<string, unknown>;
+  static get isReadOnlySupported() { return true; }
+  static get toolbox() { return { title: "Nouvelle page", icon: ICONS.slide }; }
+  constructor({ data }: { data: Record<string, unknown> }) { this.data = data ?? {}; }
+  render() {
+    const wrap = document.createElement("div");
+    wrap.className = "my-6 flex items-center gap-3 border-t-2 border-dashed border-primary/40 pt-3";
+    const tag = document.createElement("span");
+    tag.contentEditable = "false";
+    tag.className = "shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary";
+    tag.textContent = "page";
+    this.title = document.createElement("div");
+    this.title.contentEditable = "true";
+    this.title.className = "flex-1 text-base font-semibold outline-none";
+    this.title.dataset.placeholder = "Titre de la page";
+    this.title.innerHTML = String(this.data.title ?? "");
+    wrap.append(tag, this.title);
+    return wrap;
+  }
+  save() { return { ...this.data, title: this.title?.innerHTML ?? "" }; }
+  validate(data: { title?: string }) { return typeof data?.title === "string" && data.title.trim().length > 0; }
+}
+
+/** Data blocks with no inline editing gesture — edited through their JSON. */
+const DATA_BLOCKS: Array<{ type: string; label: string; icon: string }> = [
+  { type: "kpi", label: "Indicateurs clés", icon: ICONS.kpi },
+  { type: "chart", label: "Graphique", icon: ICONS.chart },
+  { type: "comparison", label: "Grille comparative", icon: ICONS.comparison },
+  { type: "matrix", label: "Matrice de positionnement", icon: ICONS.matrix },
+];
+
 export function ArtifactEditor({ doc, onChange, readOnly, className }: {
   doc: ArtifactDocument;
   onChange?: (doc: ArtifactDocument) => void;
@@ -120,24 +288,43 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Mounting fires onChange in some versions; ignore anything before ready.
   const ready = useRef(false);
+  // "mounting" until the editor reports in, then "live" — or "fallback" if it
+  // came up without the document, in which case we show the reader instead.
+  const [mode, setMode] = useState<"mounting" | "live" | "fallback">("mounting");
 
   useEffect(() => {
     if (!holder.current) return;
     ready.current = false;
+    setMode("mounting");
 
     const tools: Record<string, unknown> = {
-      header: { class: Header, inlineToolbar: true, config: { levels: [1, 2, 3, 4], defaultLevel: 2 } },
-      list: { class: List, inlineToolbar: true },
-      checklist: { class: Checklist, inlineToolbar: true },
-      table: { class: Table, inlineToolbar: true },
-      quote: { class: Quote, inlineToolbar: true },
+      paragraph: { class: Paragraph, inlineToolbar: INLINE },
+      header: { class: Header, inlineToolbar: INLINE, config: { levels: [1, 2, 3, 4], defaultLevel: 2 } },
+      list: { class: List, inlineToolbar: INLINE, config: { defaultStyle: "unordered" } },
+      checklist: { class: Checklist, inlineToolbar: INLINE },
+      table: { class: Table, inlineToolbar: INLINE, config: { withHeadings: true } },
+      quote: { class: Quote, inlineToolbar: INLINE, config: { quotePlaceholder: "Citation", captionPlaceholder: "Source" } },
+      warning: { class: Warning, inlineToolbar: INLINE, config: { titlePlaceholder: "Point d'attention", messagePlaceholder: "Détail" } },
       code: Code,
+      raw: Raw,
       delimiter: Delimiter,
+      embed: { class: Embed, config: { services: { youtube: true, vimeo: true, figma: true, miro: true, codepen: true } } },
       // Uploads are not wired: agents reference images by URL, and a paste-by-url
       // field is the honest affordance until a storage endpoint exists here.
-      image: { class: ImageTool, config: { uploader: { uploadByUrl: (url: string) => Promise.resolve({ success: 1, file: { url } }) } } },
+      image: {
+        class: ImageTool, inlineToolbar: INLINE,
+        config: { uploader: { uploadByUrl: (url: string) => Promise.resolve({ success: 1, file: { url } }) } },
+      },
+      // Inline tools — what the selection toolbar offers.
+      marker: Marker,
+      inlineCode: InlineCode,
+      underline: Underline,
     };
-    for (const { type, label } of PASSTHROUGH) tools[type] = renderedTool(type, label);
+
+    tools.callout = CalloutTool as unknown as BlockToolConstructable;
+    tools.banner = BannerTool as unknown as BlockToolConstructable;
+    tools.slide = SlideTool as unknown as BlockToolConstructable;
+    for (const b of DATA_BLOCKS) tools[b.type] = dataTool(b.type, b.label, b.icon);
 
     // CATCH-ALL. Registering the types we happen to know about is not enough:
     // Editor.js drops any block whose type has no tool, so one forgotten name —
@@ -145,7 +332,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     // content on open. Derive the list from the DOCUMENT instead of a constant,
     // and every type present is guaranteed a tool, known or not.
     for (const b of doc.blocks) {
-      if (!tools[b.type]) tools[b.type] = renderedTool(b.type, b.type);
+      if (!tools[b.type]) tools[b.type] = dataTool(b.type, b.type, ICONS.block);
     }
 
     // Drop any tool whose import did not resolve to a constructor. Editor.js
@@ -156,7 +343,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
       const cls = (t as { class?: unknown })?.class ?? t;
       if (typeof cls !== "function") {
         console.warn(`[artifact] outil « ${name} » indisponible — bloc rendu en lecture seule`);
-        tools[name] = renderedTool(name, name);
+        tools[name] = dataTool(name, name, ICONS.block);
       }
     }
 
@@ -165,9 +352,26 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
       data: { blocks: doc.blocks } as OutputData,
       readOnly,
       minHeight: 120,
-      placeholder: "Écrivez, ou tapez / pour un bloc…",
+      autofocus: false,
+      placeholder: "Écrivez, ou tapez / pour insérer un bloc…",
+      inlineToolbar: INLINE,
       tools: tools as never,
-      onReady: () => { ready.current = true; },
+      onReady: () => {
+        ready.current = true;
+        // THE SAFETY NET. One misbehaving tool takes the whole document down —
+        // that has happened more than once — and the failure looks identical to
+        // "the app deleted my report". Count what actually mounted: if the
+        // editor swallowed the document, fall back to the read-only rendering,
+        // which needs no tools and cannot fail this way. The content stays on
+        // screen and nothing is written back.
+        const mounted = instance.blocks?.getBlocksCount?.() ?? 0;
+        if (doc.blocks.length > 2 && mounted < doc.blocks.length / 2) {
+          console.error(`[artifact] ${doc.blocks.length} blocs dans le document, ${mounted} montés — passage en lecture seule`);
+          setMode("fallback");
+        } else {
+          setMode("live");
+        }
+      },
       onChange: async () => {
         if (!onChange || readOnly || !ready.current) return;
         if (timer.current) clearTimeout(timer.current);
@@ -175,15 +379,10 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
           try {
             const out = await instance.save();
             const next = out.blocks as ArtifactDocument["blocks"];
-            // REFUSE to persist an emptied document. Editor.js drops blocks it
-            // has no tool for, and a single unregistered type would otherwise
-            // turn "open the editor" into "delete the report" — the save runs
-            // 600 ms later, with nothing on screen to warn anyone.
-            // Guard on LOSS, not just on emptiness. Checking `length === 0`
-            // let a partial drop through: half the blocks stripped still looked
-            // like a legitimate edit, and the debounce wrote the truncation
-            // 600 ms later. Deleting most of a document is never something a
-            // human does in one keystroke.
+            // REFUSE to persist a gutted document. Guard on LOSS, not just on
+            // emptiness: a partial drop still looked like a legitimate edit, and
+            // the debounce wrote the truncation 600 ms later. Deleting most of a
+            // document is never something a human does in one keystroke.
             if (doc.blocks.length > 2 && next.length < doc.blocks.length / 2) {
               console.error(
                 `[artifact] ${doc.blocks.length} blocs à l'ouverture, ${next.length} après montage — sauvegarde annulée pour ne pas perdre le document`,
@@ -209,7 +408,19 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readOnly]);
 
-  return <div ref={holder} className={className} />;
+  return (
+    <div className={cn("artifact-editor", className)}>
+      <div ref={holder} className={cn(mode === "fallback" && "hidden")} />
+      {mode === "fallback" && (
+        <div className="space-y-3">
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+            Ce document ne s'ouvre pas dans l'éditeur — il est affiché en lecture seule et n'a pas été modifié.
+          </p>
+          {doc.blocks.map((b, i) => <Block key={b.id ?? i} block={b} />)}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default ArtifactEditor;

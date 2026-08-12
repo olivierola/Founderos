@@ -1,0 +1,163 @@
+/**
+ * Editor.js ships almost unstyled and hard-codes a light palette in the few
+ * places it does style. This maps it onto the app's tokens so the editor is the
+ * same document as the reader — same type scale, same borders, same dark mode —
+ * instead of a white panel dropped into the page.
+ */
+
+.artifact-editor .codex-editor__redactor {
+  padding-bottom: 120px !important; /* room to click below the last block */
+}
+.artifact-editor .ce-block__content,
+.artifact-editor .ce-toolbar__content {
+  max-width: none; /* the container owns the measure, not the editor */
+}
+.artifact-editor .ce-block--selected .ce-block__content {
+  background: hsl(var(--primary) / 0.08);
+  border-radius: 0.5rem;
+}
+
+/* ---------------------------------------------------------------- chrome */
+/* The floating UI: toolbar, plus button, settings, inline toolbar, popover. */
+.artifact-editor .ce-toolbar__plus,
+.artifact-editor .ce-toolbar__settings-btn {
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: 1px solid transparent;
+}
+.artifact-editor .ce-toolbar__plus:hover,
+.artifact-editor .ce-toolbar__settings-btn:hover {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.artifact-editor .ce-popover,
+.artifact-editor .ce-inline-toolbar,
+.artifact-editor .ce-conversion-toolbar {
+  background: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--popover-foreground));
+  box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35);
+}
+.artifact-editor .ce-popover-item__title,
+.artifact-editor .ce-popover-item__icon,
+.artifact-editor .ce-inline-tool,
+.artifact-editor .ce-conversion-tool__icon {
+  color: hsl(var(--popover-foreground));
+}
+.artifact-editor .ce-popover-item:hover:not(.ce-popover-item--disabled),
+.artifact-editor .ce-inline-tool:hover,
+.artifact-editor .ce-conversion-tool:hover {
+  background: hsl(var(--muted));
+}
+.artifact-editor .ce-popover-item--active {
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+}
+.artifact-editor .ce-popover-item__icon {
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  box-shadow: none;
+}
+.artifact-editor .ce-popover__search,
+.artifact-editor .cdx-search-field {
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.artifact-editor .cdx-search-field__input::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+/* ------------------------------------------------------------ native tools */
+.artifact-editor .ce-paragraph,
+.artifact-editor .cdx-block {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: hsl(var(--foreground) / 0.9);
+}
+.artifact-editor .ce-header {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: hsl(var(--foreground));
+  padding: 0.4em 0 0.2em;
+  margin: 0;
+}
+.artifact-editor h1.ce-header { font-size: 1.5rem; }
+.artifact-editor h2.ce-header { font-size: 1.25rem; }
+.artifact-editor h3.ce-header { font-size: 1.075rem; }
+.artifact-editor h4.ce-header { font-size: 0.95rem; }
+
+.artifact-editor .cdx-quote,
+.artifact-editor .cdx-warning,
+.artifact-editor .cdx-checklist__item-checkbox-check,
+.artifact-editor .tc-wrap,
+.artifact-editor .cdx-input {
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.artifact-editor .cdx-input {
+  background: hsl(var(--background));
+  box-shadow: none;
+  border-radius: 0.5rem;
+}
+/* Tables: Editor.js paints its own grid in a fixed grey. */
+.artifact-editor .tc-table,
+.artifact-editor .tc-row,
+.artifact-editor .tc-cell {
+  --color-border: hsl(var(--border));
+  --color-background: hsl(var(--muted) / 0.4);
+  border-color: hsl(var(--border));
+}
+.artifact-editor .tc-row--heading .tc-cell {
+  background: hsl(var(--muted) / 0.6);
+  font-weight: 600;
+}
+.artifact-editor .tc-add-column,
+.artifact-editor .tc-add-row {
+  color: hsl(var(--muted-foreground));
+}
+.artifact-editor .tc-add-column:hover,
+.artifact-editor .tc-add-row:hover {
+  background: hsl(var(--muted));
+}
+.artifact-editor .ce-code__textarea,
+.artifact-editor .cdx-raw__textarea {
+  background: hsl(var(--muted) / 0.4);
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  color: hsl(var(--foreground));
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.artifact-editor .ce-delimiter::before {
+  color: hsl(var(--muted-foreground));
+}
+.artifact-editor .cdx-marker {
+  background: hsl(48 96% 53% / 0.35);
+  color: inherit;
+  padding: 0 0.15em;
+  border-radius: 0.15em;
+}
+.artifact-editor .inline-code,
+.artifact-editor .cdx-inline-code {
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.3em;
+  padding: 0.1em 0.3em;
+  font-size: 0.85em;
+  color: hsl(var(--foreground));
+}
+
+/* ------------------------------------------------------------ placeholders */
+/* Editor.js only places a placeholder on its own paragraph tool; the custom
+ * blocks' editable fields need one too, or an empty banner is invisible. */
+.artifact-editor .ce-paragraph[data-placeholder]:empty::before {
+  color: hsl(var(--muted-foreground));
+}
+.artifact-editor [data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: currentColor;
+  opacity: 0.45;
+  pointer-events: none;
+}

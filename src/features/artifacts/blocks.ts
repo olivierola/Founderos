@@ -112,7 +112,7 @@ export interface SlideData { title?: string; layout?: "title" | "content" | "spl
 
 /** Every type the renderer knows. Anything else degrades to nothing. */
 export const BLOCK_TYPES = [
-  "header", "paragraph", "list", "checklist", "image", "table", "quote", "code", "delimiter",
+  "header", "paragraph", "list", "checklist", "image", "table", "quote", "code", "delimiter", "warning", "embed", "raw",
   "kpi", "chart", "banner", "comparison", "matrix", "callout", "slide",
 ] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];

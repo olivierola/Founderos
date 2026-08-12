@@ -1004,7 +1004,7 @@ const OFFERED_DELIVERABLE_KINDS = ["report", "json", "code", "url"];
  *  A type absent here is refused at write time rather than rendering as a
  *  silent blank in the document. */
 const ARTIFACT_BLOCK_TYPES = [
-  "header", "paragraph", "list", "checklist", "image", "table", "quote", "code", "delimiter",
+  "header", "paragraph", "list", "checklist", "image", "table", "quote", "code", "delimiter", "warning", "embed", "raw",
   "kpi", "chart", "banner", "comparison", "matrix", "callout", "slide",
 ];
 const safeJson = (raw: string): unknown => { try { return JSON.parse(raw); } catch { return null; } };
@@ -1204,6 +1204,9 @@ export function buildInternalToolset(
     + 'table {withHeadings:true, content:[["En-tête A","En-tête B"],["cellule","cellule"]]} '
     + '(content = tableau de lignes de CHAÎNES, toutes de même longueur ; la 1re ligne est l\'en-tête) · '
     + 'quote {text:"…", caption:"source", alignment:"left"} · code {code:"…"} · delimiter {} · '
+    + 'warning {title:"…", message:"…"} (limite, réserve méthodologique, angle mort) · '
+    + 'embed {service:"youtube"|"vimeo"|"figma"|"miro"|"codepen", source:"url de la page", embed:"url embarquable", width:580, height:320, caption?} · '
+    + 'raw {html:"…"} (extrait conservé tel quel, affiché en clair, jamais interprété) · '
     + 'image {file:{url:"https://…"}, caption:"…", withBorder:false, withBackground:false, stretched:false}. '
     + 'Analytiques (outils maison, même exigence) : '
     + 'kpi {items:[{label,value,delta?,trend:"up"|"down"|"flat"}]} (1 à 4 items) · '
@@ -1264,6 +1267,10 @@ export function buildInternalToolset(
         return null;
       }
       case "quote": return s("text") ? null : 'quote exige data.text.';
+      case "warning": return s("title") || s("message") ? null : 'warning exige data.title et data.message.';
+      case "raw": return s("html") ? null : 'raw exige data.html.';
+      case "embed":
+        return s("embed") || s("source") ? null : 'embed exige data.embed (URL embarquable) et data.source (URL de la page).';
       case "code": return s("code") ? null : 'code exige data.code.';
       case "image": {
         const file = data.file as { url?: unknown } | undefined;
