@@ -462,7 +462,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                     {others.map((a) => (
                       <button
                         key={a.id}
-                        onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/service/${dashboard.id}/agent/${a.id}?t=settings`)}
+                        onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/service/${dashboard.id}/agent-config/${a.id}?t=settings`)}
                         className="flex w-full items-center gap-3 rounded-xl border border-border bg-card/60 px-3 py-2 text-left transition-colors hover:border-primary/40"
                       >
                         <AgentIdentity url={a.avatar_url} seed={a.name} size={28} rounded="rounded-lg" />

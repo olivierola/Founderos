@@ -41,7 +41,7 @@ const TILE = "var(--vz-tile)";
 function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={`relative aspect-[4/4.5] w-full overflow-hidden rounded-xl border border-white/8 bg-black ${className}`}
+      className={`relative aspect-[4/4.5] w-full overflow-hidden rounded-xl border border-white/[0.08] bg-black ${className}`}
     >
       {children}
     </div>
@@ -118,7 +118,7 @@ export function ReadinessScan() {
                 >
                   <Icon className="h-3.5 w-3.5 text-white/70" />
                   <span className="text-[8.5px] leading-none text-white/70">{m.name}</span>
-                  <span className="rounded border border-white/12 px-1 text-[7.5px] leading-[1.4] text-white/50">
+                  <span className="rounded border border-white/[0.12] px-1 text-[7.5px] leading-[1.4] text-white/50">
                     {m.level}
                   </span>
                 </div>
@@ -144,13 +144,13 @@ export function ReadinessScan() {
             {SNAPSHOT.map((s) => (
               <div key={s.name} className="flex items-center gap-2">
                 <span className="w-14 shrink-0 text-[8px] text-white/45">{s.name}</span>
-                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
+                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
                   <span
                     className="block h-full rounded-full"
                     style={{ width: `${s.pct}%`, background: `linear-gradient(90deg, ${ACCENT}, ${NEON})` }}
                   />
                 </span>
-                <span className="rounded border border-white/12 px-1 text-[7.5px] leading-[1.4] text-white/50">
+                <span className="rounded border border-white/[0.12] px-1 text-[7.5px] leading-[1.4] text-white/50">
                   {s.level}
                 </span>
               </div>
@@ -272,10 +272,13 @@ export function SecuredAgents() {
     <Panel>
       <div className="flex h-full flex-col items-center gap-2 p-4">
         <Chip icon={Sparkles} title="Secured AI Agents" sub="Inside your tenant" />
-        {/* Height-driven: the aspect box derives its width, so the taller
-            five-ring shield always fits the panel instead of overflowing. */}
+        {/* Height-driven: the 3D shield icon displays at optimal size */}
         <div className="flex min-h-0 w-full flex-1 items-center justify-center">
-          <SecurityShield className="h-full w-auto" />
+          <img 
+            src="/landing/secure.jpg" 
+            alt="Secured AI Agents Shield" 
+            className="h-full w-auto max-w-xs rounded-lg drop-shadow-lg object-contain"
+          />
         </div>
       </div>
     </Panel>

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      width: 300px; margin: 0; padding: 16px;
+      font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      background: Canvas; color: CanvasText;
+    }
+    h1 { margin: 0 0 2px; font-size: 14px; font-weight: 600; }
+    p.sub { margin: 0 0 14px; font-size: 12px; opacity: .6; }
+    label { display: block; font-size: 11px; font-weight: 500; opacity: .7; margin-bottom: 4px; }
+    input {
+      width: 100%; box-sizing: border-box; padding: 8px 10px; margin-bottom: 10px;
+      border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+      border-radius: 8px; font: inherit; background: Canvas; color: CanvasText;
+    }
+    button {
+      width: 100%; padding: 8px 12px; border: 0; border-radius: 8px;
+      font: inherit; font-weight: 500; cursor: pointer;
+      background: color-mix(in srgb, CanvasText 88%, transparent); color: Canvas;
+    }
+    button.ghost {
+      background: transparent; color: CanvasText;
+      border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+    }
+    button:disabled { opacity: .5; cursor: default; }
+    .code {
+      font: 600 22px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .12em; text-align: center;
+      padding: 14px; margin: 4px 0 10px; border-radius: 10px;
+      background: color-mix(in srgb, CanvasText 7%, transparent);
+    }
+    .row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
+    .muted { font-size: 11px; opacity: .6; }
+    .err { font-size: 11px; color: #dc2626; margin-top: 6px; }
+    .stack > * + * { margin-top: 8px; }
+    select { width:100%; box-sizing:border-box; padding:7px 8px; margin-bottom:10px; border-radius:8px; font:inherit; background:Canvas; color:CanvasText; border:1px solid color-mix(in srgb, CanvasText 18%, transparent); }
+    .panel { margin:14px 0; padding:12px; border-radius:10px; background:color-mix(in srgb, CanvasText 5%, transparent); }
+    section { display: none; }
+    section.on { display: block; }
+  </style>
+</head>
+<body>
+  <h1>Skill Recorder</h1>
+  <p class="sub" id="sub">FounderOS</p>
+
+  <!-- 1. URL du projet -->
+  <section id="s-setup">
+    <label for="url">URL de votre FounderOS (Supabase)</label>
+    <input id="url" type="url" placeholder="https://xxxx.supabase.co" />
+    <button id="save">Continuer</button>
+    <p class="err" id="setup-err"></p>
+  </section>
+
+  <!-- 2. Appairage -->
+  <section id="s-pair">
+    <p class="muted">Saisissez ce code dans FounderOS&nbsp;: <em>Skills → Enregistrer une démonstration</em>.</p>
+    <div class="code" id="code">••••-••••</div>
+    <p class="muted" id="pair-hint">En attente de la saisie…</p>
+    <div class="stack">
+      <button class="ghost" id="new-code">Nouveau code</button>
+    </div>
+    <p class="err" id="pair-err"></p>
+  </section>
+
+  <!-- 3. Prêt -->
+  <section id="s-idle">
+    <p class="muted">Cet appareil est appairé. Lancez un enregistrement depuis FounderOS&nbsp;: il démarrera dans vos onglets.</p>
+
+    <div class="panel">
+      <div class="row" style="margin:0 0 6px">
+        <strong style="font-size:12px">Pilotage par un agent</strong>
+        <span class="muted" id="ctl-state" style="margin-left:auto">désactivé</span>
+      </div>
+      <p class="muted" style="margin:0 0 8px">
+        Un agent pourra cliquer et saisir dans vos onglets, avec vos sessions.
+        N'autorisez que le temps nécessaire.
+      </p>
+      <label for="ctl-scope">Périmètre</label>
+      <select id="ctl-scope">
+        <option value="site">Ce site uniquement</option>
+        <option value="all">Tous les sites</option>
+      </select>
+      <div class="stack">
+        <button id="arm15">Autoriser 15 minutes</button>
+        <button class="ghost" id="arm60">Autoriser 1 heure</button>
+        <button class="ghost" id="disarm" style="display:none">Couper le pilotage</button>
+      </div>
+      <p class="err" id="ctl-err"></p>
+    </div>
+
+    <div class="stack">
+      <button class="ghost" id="forget">Dissocier cet appareil</button>
+    </div>
+  </section>
+
+  <!-- 4. En cours -->
+  <section id="s-live">
+    <div class="row">
+      <span class="dot"></span>
+      <strong id="live-title">Enregistrement</strong>
+      <span class="muted" id="live-time" style="margin-left:auto">00:00</span>
+    </div>
+    <p class="muted">Vos gestes sont enregistrés dans tous les onglets sauf celui de FounderOS.</p>
+    <button id="stop">Arrêter et créer la skill</button>
+  </section>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

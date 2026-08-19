@@ -7,11 +7,11 @@ import {
   MessageSquare, Globe, Database, Zap, KeyRound, Play, Clock,
   CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
   CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
-  ListTree, Gauge, Brain, Pin, PinOff, ArrowLeft, ChevronDown, ChevronUp, History,
+  ListTree, Brain, Pin, PinOff, ArrowLeft, ChevronDown, ChevronUp, History,
   Network, MessagesSquare, Send, ArrowRight, Plug, AlertTriangle, Search, Slack, Workflow, ExternalLink,
   X, FileCode, TerminalSquare, BrainCircuit, Copy, ThumbsUp, ThumbsDown, RotateCcw,
   SlidersHorizontal, MoreVertical, LayoutGrid, Columns3, Smartphone, Server,
-  GitPullRequest, FlaskConical, Atom,
+  GitPullRequest, FlaskConical, Atom, Clapperboard,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -22,7 +22,6 @@ import { AgentMarkdown } from "@/components/AgentMarkdown";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -32,6 +31,9 @@ import {
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/EmptyState";
+import {
+  SoftField, SoftInput, SoftTextarea, SoftSelect, SoftToggle, SoftRange, SoftTags, SoftCardOption,
+} from "@/components/ui/soft-form";
 import { useRegisterTopbarTabs } from "@/components/layout/TopbarTabs";
 import { ChatComposer } from "@/components/ui/chat-composer";
 import { supabase } from "@/lib/supabase";
@@ -732,6 +734,7 @@ export function ChatTab({
   projectId,
   headerLeading,
   headerTrailing,
+  onConversationChange,
 }: {
   agent: InternalAgent;
   workspaceId: string | null;
@@ -741,6 +744,9 @@ export function ChatTab({
    *  the agent name and the panel toggle instead of a solid header bar. */
   headerLeading?: React.ReactNode;
   headerTrailing?: React.ReactNode;
+  /** Which session is open, for a host that acts on the same conversation
+   *  (the dashboard's side panel posts the terminal's commands into it). */
+  onConversationChange?: (conversationId: string | null) => void;
 }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -868,6 +874,12 @@ export function ChatTab({
       setConvoId(conversations[0].id);
     }
   }, [conversations, convoId, startedFresh]);
+
+  // Report the open session upward. Keyed on the id only: a host passing an
+  // inline callback would otherwise re-notify on each of its renders.
+  useEffect(() => { onConversationChange?.(convoId); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [convoId]);
 
   /** Stop the run in flight, from the composer. Cancelling the run row is
    *  enough: the tick loop checks the status before its next action and cleans
@@ -1896,10 +1908,10 @@ function MissionDetail({
         <CardHeader>
           <div className="flex items-start justify-between gap-3">
             <CardTitle className="text-base">
-              <Input
+              <SoftInput
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="border-0 px-0 text-base font-semibold focus-visible:ring-0"
+                className="bg-transparent px-0 text-base font-semibold focus:px-3.5"
               />
             </CardTitle>
             <div className="flex items-center gap-2">
@@ -1952,26 +1964,22 @@ function MissionDetail({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Brief</label>
-            <textarea
+          <SoftField label="Brief">
+            <SoftTextarea
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
               rows={7}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Describe the task in detail."
+              placeholder="Décrivez la tâche en détail."
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Acceptance criteria</label>
-            <textarea
+          </SoftField>
+          <SoftField label="Critères d'acceptation">
+            <SoftTextarea
               value={acceptance}
               onChange={(e) => setAcceptance(e.target.value)}
               rows={3}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="What counts as done?"
+              placeholder="Qu'est-ce qui compte comme terminé ?"
             />
-          </div>
+          </SoftField>
           <DeliverablesEditor deliverables={deliverables} onChange={setDeliverables} />
         </CardContent>
       </Card>
@@ -2043,22 +2051,21 @@ function DeliverablesEditor({
         <div className="space-y-2">
           {deliverables.map((d, i) => (
             <div key={i} className="flex items-center gap-2">
-              <select
+              <SoftSelect
+                className="w-[8.5rem]"
                 value={d.kind}
-                onChange={(e) => {
-                  const next = [...deliverables]; next[i] = { ...d, kind: e.target.value }; onChange(next);
+                onChange={(v) => {
+                  const next = [...deliverables]; next[i] = { ...d, kind: v }; onChange(next);
                 }}
-                className="rounded-md border border-input bg-background px-2 py-1 text-xs"
-              >
-                {DELIVERABLE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-              </select>
-              <Input
+                options={DELIVERABLE_KINDS.map((k) => ({ value: k, label: k }))}
+              />
+              <SoftInput
                 value={d.name}
                 onChange={(e) => {
                   const next = [...deliverables]; next[i] = { ...d, name: e.target.value }; onChange(next);
                 }}
-                placeholder="Name"
-                className="h-7 flex-1"
+                placeholder="Nom"
+                className="flex-1"
               />
               <Button size="sm" variant="ghost" onClick={() => onChange(deliverables.filter((_, j) => j !== i))}>
                 <Trash2 className="h-3 w-3 text-destructive" />
@@ -2320,10 +2327,10 @@ const EDGE_FUNCTION_CATALOGUE: Array<{ slug: string; label: string; description:
   { slug: "daily-briefing", label: "Daily briefing", description: "Generate the project's daily briefing." },
 ];
 
-function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; variant?: "full" | "tools" | "connectors" }) {
+export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; variant?: "full" | "tools" | "connectors" }) {
   // Which sections render. "connectors" = the agent's integrations only (used by
   // the Personnaliser → Connectors sub-tab); "tools" = generic capabilities only
-  // (used by Settings → Tools); "full" = both.
+  // (used by the configuration page's Outils tab); "full" = both.
   const showTools = variant !== "connectors";
   const showIntegrations = variant !== "tools";
   const queryClient = useQueryClient();
@@ -2798,32 +2805,26 @@ function StudioToolConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
       )}
 
       {(tool.kind === "vibe_code" || tool.kind === "testing") && (
-        <div>
-          <div className="text-[11px] font-medium uppercase text-muted-foreground">
-            {tool.kind === "vibe_code" ? "Dépôt imposé" : "Suite imposée"}
-          </div>
-          <select
+        <SoftField label={tool.kind === "vibe_code" ? "Dépôt imposé" : "Suite imposée"}>
+          <SoftSelect
             value={scopeValue}
-            onChange={(e) => onSave({ ...tool.config, [scopeKey]: e.target.value || undefined })}
-            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
-          >
-            <option value="">Laisser l'agent choisir</option>
-            {(scopes ?? []).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-        </div>
+            onChange={(v) => onSave({ ...tool.config, [scopeKey]: v || undefined })}
+            options={[
+              { value: "", label: "Laisser l'agent choisir" },
+              ...(scopes ?? []).map((s) => ({ value: s.id, label: s.label })),
+            ]}
+          />
+        </SoftField>
       )}
 
       {tool.kind === "simulation" && (
-        <div>
-          <div className="text-[11px] font-medium uppercase text-muted-foreground">Tours maximum</div>
-          <Input
+        <SoftField label="Tours maximum">
+          <SoftInput
             type="number" min={1} max={12}
             value={String(tool.config?.max_rounds ?? 8)}
             onChange={(e) => onSave({ ...tool.config, max_rounds: Number(e.target.value) || 8 })}
-            className="mt-1 h-8 text-xs"
           />
-          <p className="mt-1 text-[11px] text-muted-foreground">Chaque tour est un appel modèle — au-delà de 8 le coût grimpe vite.</p>
-        </div>
+        </SoftField>
       )}
     </div>
   );
@@ -2834,20 +2835,18 @@ function DbReadConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<st
     Array.isArray(tool.config?.tables) ? (tool.config.tables as string[]).join(", ") : "",
   );
   return (
-    <div>
-      <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
-        Allowed tables (comma-separated — the agent can only read these, scoped to this project)
-      </label>
+    <SoftField label="Tables autorisées">
       <div className="flex gap-2">
-        <Input
+        <SoftInput
           value={tables}
           onChange={(e) => setTables(e.target.value)}
           placeholder="product_events, deals, marketing_posts"
-          className="h-7 flex-1 text-xs"
+          className="flex-1"
         />
         <Button
           size="sm"
           variant="outline"
+          className="h-[42px] rounded-xl"
           onClick={() =>
             onSave({
               ...tool.config,
@@ -2855,37 +2854,35 @@ function DbReadConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<st
             })
           }
         >
-          Save
+          OK
         </Button>
       </div>
-    </div>
+    </SoftField>
   );
 }
 
 function EdgeFunctionConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<string, any>) => void }) {
   const [slug, setSlug] = useState(typeof tool.config?.slug === "string" ? tool.config.slug : "");
   return (
-    <div>
-      <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
-        Function slug (the agent gets one tool that POSTs to this function)
-      </label>
+    <SoftField label="Slug de la fonction">
       <div className="flex gap-2">
-        <Input
+        <SoftInput
           value={slug}
           onChange={(e) => setSlug(e.target.value)}
           placeholder="send-notification"
-          className="h-7 flex-1 font-mono text-xs"
+          className="flex-1 font-mono"
         />
         <Button
           size="sm"
           variant="outline"
+          className="h-[42px] rounded-xl"
           disabled={!/^[a-z0-9-]+$/.test(slug)}
           onClick={() => onSave({ ...tool.config, slug })}
         >
-          Save
+          OK
         </Button>
       </div>
-    </div>
+    </SoftField>
   );
 }
 
@@ -2893,34 +2890,31 @@ function CustomToolConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
   const [url, setUrl] = useState(typeof tool.config?.webhook_url === "string" ? tool.config.webhook_url : "");
   const [method, setMethod] = useState(typeof tool.config?.method === "string" ? tool.config.method : "POST");
   return (
-    <div className="space-y-2">
-      <label className="block text-[11px] font-medium text-muted-foreground">
-        Webhook URL (called with the agent's JSON arguments)
-      </label>
+    <SoftField label="Webhook">
       <div className="flex gap-2">
-        <select
+        <SoftSelect
+          className="w-[7.5rem]"
           value={method}
-          onChange={(e) => setMethod(e.target.value)}
-          className="rounded-md border border-input bg-background px-2 py-1 text-xs"
-        >
-          {["POST", "GET", "PUT", "PATCH"].map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <Input
+          onChange={setMethod}
+          options={["POST", "GET", "PUT", "PATCH"].map((m) => ({ value: m, label: m }))}
+        />
+        <SoftInput
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://hooks.example.com/agent"
-          className="h-7 flex-1 font-mono text-xs"
+          placeholder="https://hooks.exemple.com/agent"
+          className="flex-1 font-mono"
         />
         <Button
           size="sm"
           variant="outline"
+          className="h-[42px] rounded-xl"
           disabled={!/^https?:\/\//.test(url)}
           onClick={() => onSave({ ...tool.config, webhook_url: url, method })}
         >
-          Save
+          OK
         </Button>
       </div>
-    </div>
+    </SoftField>
   );
 }
 
@@ -2943,18 +2937,13 @@ function RawJsonConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<s
   return (
     <div>
       <button onClick={() => setOpen(!open)} className="text-[10px] text-muted-foreground/70 hover:text-foreground">
-        {open ? "Hide advanced (raw JSON)" : "Advanced (raw JSON)"}
+        {open ? "Masquer le JSON" : "JSON brut"}
       </button>
       {open && (
-        <div className="mt-1 space-y-2">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={6}
-            className="w-full rounded border border-input bg-background px-2 py-1.5 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-ring"
-          />
+        <div className="mt-1.5 space-y-2">
+          <SoftTextarea value={text} onChange={(e) => setText(e.target.value)} rows={6} className="font-mono text-[11px]" />
           {err && <p className="text-[11px] text-destructive">{err}</p>}
-          <Button size="sm" variant="outline" onClick={save}>Save config</Button>
+          <Button size="sm" variant="outline" className="rounded-xl" onClick={save}>Enregistrer</Button>
         </div>
       )}
     </div>
@@ -3044,45 +3033,37 @@ export function MemoryTab({ agent }: { agent: InternalAgent }) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      {/* Header — compact: what it is, in one line. */}
-      <div className="flex items-center gap-2">
-        <Brain className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-base font-semibold">Mémoire</h2>
-        <span className="text-xs text-muted-foreground">{memories?.length ?? 0}/300</span>
-        {pinnedCount > 0 && <span className="text-xs text-amber-600 dark:text-amber-400">· {pinnedCount} épinglée{pinnedCount > 1 ? "s" : ""}</span>}
+      {/* Header — the count only; the tab already names this page. */}
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Brain className="h-4 w-4" />
+        {memories?.length ?? 0}/300
+        {pinnedCount > 0 && <span className="text-amber-600 dark:text-amber-400">· {pinnedCount} épinglée{pinnedCount > 1 ? "s" : ""}</span>}
       </div>
 
-      {/* Add — one input + a kind chooser + Add. No importance jargon. */}
+      {/* Add — one input + a kind chooser + Add. */}
       <div className="flex items-center gap-2">
-        <Input
+        <SoftInput
           value={newContent}
           onChange={(e) => setNewContent(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") addMemory(); }}
           placeholder="Apprendre quelque chose de durable à l'agent…"
-          className="h-9 flex-1 text-sm"
+          className="flex-1"
         />
-        <select
+        <SoftSelect
+          className="w-[9rem]"
+          align="end"
           value={newKind}
-          onChange={(e) => setNewKind(e.target.value as MemoryKind)}
-          className="h-9 rounded-md border border-input bg-background px-2 text-xs"
-        >
-          {MEMORY_KINDS.map((k) => (
-            <option key={k} value={k}>{MEMORY_KIND_META[k].label}</option>
-          ))}
-        </select>
-        <Button size="sm" onClick={addMemory} disabled={adding || !newContent.trim()}>
+          onChange={(v) => setNewKind(v as MemoryKind)}
+          options={MEMORY_KINDS.map((k) => ({ value: k, label: MEMORY_KIND_META[k].label }))}
+        />
+        <Button size="sm" className="h-[42px] rounded-xl" onClick={addMemory} disabled={adding || !newContent.trim()}>
           {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
         </Button>
       </div>
 
       {/* Search only when there's enough to sift through. */}
       {hasMemories && (
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Rechercher…"
-          className="h-8 text-xs"
-        />
+        <SoftInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" />
       )}
 
       {/* A single clean list — no glass, no motion. */}
@@ -3240,16 +3221,18 @@ function MembersTab({ agent }: { agent: InternalAgent }) {
               <div key={m.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                 <div className="text-sm">{m.user_id.slice(0, 8)}…</div>
                 <div className="flex items-center gap-2">
-                  <select
+                  <SoftSelect
+                    className="w-[8rem]"
+                    align="end"
                     value={m.role}
                     disabled={!isOwner}
-                    onChange={(e) => changeRole(m.id, e.target.value as AgentMember["role"])}
-                    className="rounded border border-input bg-background px-1.5 py-0.5 text-xs"
-                  >
-                    <option value="viewer">viewer</option>
-                    <option value="user">user</option>
-                    <option value="editor">editor</option>
-                  </select>
+                    onChange={(v) => changeRole(m.id, v as AgentMember["role"])}
+                    options={[
+                      { value: "viewer", label: "viewer" },
+                      { value: "user", label: "user" },
+                      { value: "editor", label: "editor" },
+                    ]}
+                  />
                   {isOwner && (
                     <Button size="sm" variant="ghost" onClick={() => removeMember(m.id)}>
                       <Trash2 className="h-3 w-3 text-destructive" />
@@ -3426,7 +3409,6 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   // Collaboration profile.
   const [role, setRole] = useState(agent.role ?? "");
   const [skills, setSkills] = useState<string[]>(agent.skills ?? []);
-  const [skillInput, setSkillInput] = useState("");
   const [collabEnabled, setCollabEnabled] = useState(agent.collaboration_enabled ?? true);
   const [sandboxMode, setSandboxMode] = useState<"cloud" | "runner" | "sandbox" | "hybrid">(agent.sandbox_mode ?? "cloud");
   // Essaim (swarm): may the agent fan out to parallel sub-agents, and how many.
@@ -3434,12 +3416,11 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   const [swarmMax, setSwarmMax] = useState(agent.swarm_max_concurrency ?? 8);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
-  // Deep-link to a section via ?s=<key> (e.g. the chat setup reminder → tools).
+  // Deep-link to a section via ?s=<key>; legacy keys resolve to the section that
+  // absorbed them (see settingsSectionFor).
   const [settingsParams] = useSearchParams();
-  const sParam = settingsParams.get("s") as SettingsSectionKey | null;
-  const [section, setSection] = useState<SettingsSectionKey>(
-    sParam && SETTINGS_SECTIONS.some((s) => s.key === sParam) ? sParam : "general",
-  );
+  const sParam = settingsSectionFor(settingsParams.get("s"));
+  const [section, setSection] = useState<SettingsSectionKey>(sParam ?? "general");
   // Publish the settings sub-tabs to the Topbar (where the breadcrumb was).
   const settingsTabs = useMemo(
     () => SETTINGS_SECTIONS.filter((s) => s.key !== "danger" || isOwner),
@@ -3451,7 +3432,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   // an independently collapsible accordion item instead. Standalone keeps the
   // single-section-at-a-time layout above, unchanged.
   const [openSections, setOpenSections] = useState<Set<SettingsSectionKey>>(
-    () => new Set<SettingsSectionKey>([sParam && SETTINGS_SECTIONS.some((s) => s.key === sParam) ? sParam : "general"]),
+    () => new Set<SettingsSectionKey>([sParam ?? "general"]),
   );
   function toggleSection(key: SettingsSectionKey) {
     setOpenSections((prev) => {
@@ -3460,6 +3441,15 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
       return next;
     });
   }
+
+  // ?s= can also arrive AFTER mount — the configuration page rewrites a legacy
+  // ?t=memory into ?t=settings&s=memory once it has resolved it, and the section
+  // has to follow, or the URL and the open accordion disagree.
+  useEffect(() => {
+    if (!sParam) return;
+    setSection(sParam);
+    setOpenSections((prev) => new Set(prev).add(sParam));
+  }, [sParam]);
 
   async function save() {
     setSaving(true);
@@ -3471,7 +3461,10 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
           description,
           avatar_url: avatarUrl,
           avatar_style: "avatar",
-          model,
+          // Save what the select SHOWS: a legacy row on "gpt-4" (or on nothing)
+          // displays as DeepSeek, which is what the runtime already gave it, so
+          // it must not be written back as a value no provider answers to.
+          model: model === "groq" ? "groq" : "deepseek",
           temperature,
           chat_enabled: chatEnabled,
           mission_enabled: missionEnabled,
@@ -3506,394 +3499,210 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
       : `/app/${workspaceSlug}/${projectSlug}/hq/dashboard`);
   }
 
-  // Embedded: no sub-tab bar — Save covers the form sections (general/autonomy/
-  // infrastructure/collaboration), always shown since several may be open at once.
-  const showSave = embedded
-    ? true
-    : section !== "tools" && section !== "mobile" && section !== "members" && section !== "danger";
+  // Embedded: no sub-tab bar — Save covers the form sections (general/advanced),
+  // always shown since several may be open at once.
+  const showSave = embedded ? true : section === "general" || section === "advanced";
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Header + Save — flush on the background. */}
-      <div className="flex items-center justify-between pb-3">
-        <h2 className="text-lg font-semibold">Settings</h2>
-        <div className="flex items-center gap-2">
-          {savedAt && Date.now() - savedAt < 4000 && (
-            <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Saved</span>
-          )}
-          {showSave && (
-            <Button size="sm" onClick={save} disabled={saving || !isOwner}>
-              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-              <span className="ml-1">Save</span>
-            </Button>
-          )}
-        </div>
+      {/* Save only — the page already says where you are (no "Settings" title
+          repeating the tab you clicked). */}
+      <div className="flex items-center justify-end gap-2 pb-1">
+        {savedAt && Date.now() - savedAt < 4000 && (
+          <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Enregistré</span>
+        )}
+        {showSave && (
+          <Button size="sm" onClick={save} disabled={saving || !isOwner} className="rounded-full">
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+            <span className="ml-1">Enregistrer</span>
+          </Button>
+        )}
       </div>
 
-      {/* General */}
-      {embedded && <AccordionHeader label="General" icon={SettingsIcon} open={openSections.has("general")} onClick={() => toggleSection("general")} />}
+      {/* GÉNÉRAL — the whole of what makes a working agent: who it is, which
+          model, where it runs. Nothing here has a sane default we could hide. */}
+      {embedded && <AccordionHeader label="Général" icon={SettingsIcon} open={openSections.has("general")} onClick={() => toggleSection("general")} />}
       {(embedded ? openSections.has("general") : section === "general") && (
         <SettingsSection>
           <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!isOwner} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
-              <Input value={description} onChange={(e) => setDescription(e.target.value)} disabled={!isOwner} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Model</label>
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                disabled={!isOwner}
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-              >
-                <option value="deepseek">DeepSeek</option>
-                <option value="groq">Groq (Llama 3.3 70B)</option>
-                <option value="gpt-4">GPT-4</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Temperature ({temperature})</label>
-              <input
-                type="range" min={0} max={1} step={0.1}
-                value={temperature}
-                onChange={(e) => setTemperature(Number(e.target.value))}
-                disabled={!isOwner}
-                className="mt-2 w-full"
-              />
-            </div>
+            <SoftField label="Nom">
+              <SoftInput value={name} onChange={(e) => setName(e.target.value)} disabled={!isOwner} />
+            </SoftField>
+            <SoftField label="Description">
+              <SoftInput value={description} onChange={(e) => setDescription(e.target.value)} disabled={!isOwner} />
+            </SoftField>
           </div>
+
           {/* Visual identity — pick an illustrated avatar (DiceBear library). */}
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Identité visuelle</label>
+          <SoftField label="Avatar">
             <div className="flex items-start gap-3">
-              <AgentIdentity url={avatarUrl} seed={agent.name} size={56} rounded="rounded-2xl" className="mt-0.5 border border-border" />
+              <AgentIdentity url={avatarUrl} seed={agent.name} size={56} rounded="rounded-2xl" className="mt-0.5" />
               <div className="min-w-0 flex-1">
                 <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} />
               </div>
             </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <ToggleRow
-              icon={MessageSquare} label="Chat mode"
-              checked={chatEnabled} onChange={setChatEnabled} disabled={!isOwner}
+          </SoftField>
+
+          {/* Two models, both real. "GPT-4" used to sit in this list and led
+              nowhere: the runtime has no OpenAI client, so the value fell through
+              to the default provider (see pinnedProvider, model-router.ts) — an
+              option that silently does nothing is worse than no option. */}
+          <SoftField label="Modèle">
+            <SoftSelect
+              value={model === "deepseek" || model === "groq" ? model : "deepseek"}
+              onChange={setModel}
+              disabled={!isOwner}
+              options={[
+                { value: "deepseek", label: "DeepSeek", hint: "Par défaut — raisonnement et outils" },
+                { value: "groq", label: "Llama 3.3 70B (Groq)", hint: "Plus rapide, pour les échanges courts" },
+              ]}
             />
-            <ToggleRow
-              icon={Target} label="Mission mode"
-              checked={missionEnabled} onChange={setMissionEnabled} disabled={!isOwner}
-            />
-          </div>
-          <AgentHostedModelCard agent={agent} disabled={!isOwner} />
+          </SoftField>
+
+          {/* One card per runtime — what it gives you, not how it works. The
+              prerequisites (runner connected, Docker up) surface as a single
+              note under the chosen one instead of three paragraphs each. */}
+          <SoftField label="Exécution">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <SoftCardOption
+                active={sandboxMode === "cloud"} onClick={() => setSandboxMode("cloud")}
+                icon={Zap} title="Cloud" hint="Web, base, connecteurs. Rien à installer."
+              />
+              <SoftCardOption
+                active={sandboxMode === "runner"} onClick={() => setSandboxMode("runner")}
+                icon={Globe} title="Runner" hint="+ navigateur, terminal, fichiers."
+              />
+              <SoftCardOption
+                active={sandboxMode === "sandbox"} onClick={() => setSandboxMode("sandbox")}
+                icon={TerminalSquare} title="Sandbox" hint="+ conteneur Linux jetable, Jupyter."
+              />
+              <SoftCardOption
+                active={sandboxMode === "hybrid"} onClick={() => setSandboxMode("hybrid")}
+                icon={Workflow} title="Hybride" hint="Runner et sandbox, orchestrés."
+              />
+            </div>
+          </SoftField>
+
+          {sandboxMode !== "cloud" && (
+            <p className="flex items-center gap-2 rounded-xl bg-muted/50 px-3.5 py-2.5 text-xs text-muted-foreground">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+              {sandboxMode === "runner" ? "Nécessite le runner auto-hébergé connecté."
+                : sandboxMode === "sandbox" ? "Nécessite Docker sur la machine du runner."
+                : "Nécessite le runner ET la sandbox joignables."}
+              {sandboxMode === "sandbox" && agent.sandbox_url && (
+                <span className="ml-auto truncate font-mono text-[11px]">{agent.sandbox_url}</span>
+              )}
+            </p>
+          )}
         </SettingsSection>
       )}
 
-      {/* Autonomy budget */}
-      {embedded && <AccordionHeader label="Autonomy" icon={Gauge} open={openSections.has("autonomy")} onClick={() => toggleSection("autonomy")} />}
-      {(embedded ? openSections.has("autonomy") : section === "autonomy") && (
-        <SettingsSection
-          title="Autonomy budget" icon={Gauge}
-          description="Hard limits applied to every run. The agent stops when it reaches the step budget; runs exceeding the cost budget are flagged in the timeline."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Max steps per run (tool-call rounds, 1–30)
-              </label>
-              <Input
+      {/* AVANCÉ — every knob that already has a working default: budgets, swarm,
+          collaboration profile, a hosted model of your own. Closed by design. */}
+      {embedded && <AccordionHeader label="Avancé" icon={SlidersHorizontal} open={openSections.has("advanced")} onClick={() => toggleSection("advanced")} />}
+      {(embedded ? openSections.has("advanced") : section === "advanced") && (
+        <SettingsSection>
+          <div className="grid gap-4 md:grid-cols-3">
+            <SoftField label={`Créativité · ${temperature}`}>
+              <SoftRange
+                min={0} max={1} step={0.1}
+                value={temperature}
+                onChange={(e) => setTemperature(Number(e.target.value))}
+                disabled={!isOwner}
+                className="mt-2.5"
+              />
+            </SoftField>
+            <SoftField label="Étapes max par run (1–30)">
+              <SoftInput
                 type="number" min={1} max={30}
                 value={maxSteps}
                 onChange={(e) => setMaxSteps(Number(e.target.value))}
                 disabled={!isOwner}
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Max cost per run (USD)
-              </label>
-              <Input
+            </SoftField>
+            <SoftField label="Coût max par run (USD)">
+              <SoftInput
                 type="number" min={0} step={0.05}
                 value={maxCost}
                 onChange={(e) => setMaxCost(Number(e.target.value))}
                 disabled={!isOwner}
               />
-            </div>
+            </SoftField>
+          </div>
+
+          {/* Where the agent can be reached / put to work. Both default to on;
+              turning "missions planifiées" off also stops the scheduler firing
+              this agent (internal-agent-scheduler skips mission_enabled=false). */}
+          <div className="grid gap-3 md:grid-cols-2">
+            <SoftToggle icon={MessageSquare} label="Chat" checked={chatEnabled} onChange={setChatEnabled} disabled={!isOwner} />
+            <SoftToggle icon={Target} label="Missions planifiées" checked={missionEnabled} onChange={setMissionEnabled} disabled={!isOwner} />
           </div>
 
           {/* Essaim — parallel sub-agents. The switch only OFFERS the capability;
               the agent still decides, per task, whether to fan out. */}
-          <div className="mt-4 rounded-xl border border-border p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Network className="h-4 w-4 text-primary" /> Mode essaim
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Autorise l'agent à découper une tâche en sous-tâches indépendantes et à lancer
-                  plusieurs instances de lui-même en parallèle. Il décide seul quand c'est utile —
-                  désactivez-le pour un agent où ça n'a pas de sens.
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={swarmEnabled}
-                disabled={!isOwner}
-                onClick={() => setSwarmEnabled((v) => !v)}
-                className={cn(
-                  "relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50",
-                  swarmEnabled ? "bg-primary" : "bg-muted",
-                )}
-              >
-                <span className={cn(
-                  // `left` anchors the thumb: a <button> centres its static
-                  // position, which pushed the ON state past the track's edge.
-                  "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform",
-                  swarmEnabled ? "translate-x-5" : "translate-x-0",
-                )} />
-              </button>
-            </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <SoftToggle icon={Atom} label="Mode essaim (sous-agents en parallèle)" checked={swarmEnabled} onChange={setSwarmEnabled} disabled={!isOwner} />
             {swarmEnabled && (
-              <div className="mt-3 border-t border-border pt-3">
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Instances concurrentes maximum (2–6)
-                </label>
-                <Input
+              <SoftField label="Instances en parallèle (2–6)">
+                <SoftInput
                   type="number" min={2} max={6}
                   value={swarmMax}
                   onChange={(e) => setSwarmMax(Number(e.target.value))}
                   disabled={!isOwner}
-                  className="max-w-[8rem]"
                 />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Nombre d'instances qui tournent <em>en même temps</em> (par vague, limité pour ne pas saturer le fournisseur). Le nombre <em>total</em> de sous-agents par fan-out n'est pas limité — les surplus s'exécutent en vagues successives.
-                </p>
-              </div>
+              </SoftField>
             )}
           </div>
-        </SettingsSection>
-      )}
 
-      {/* Infrastructure — sandbox mode */}
-      {embedded && <AccordionHeader label="Infrastructure" icon={Database} open={openSections.has("infrastructure")} onClick={() => toggleSection("infrastructure")} />}
-      {(embedded ? openSections.has("infrastructure") : section === "infrastructure") && (
-        <SettingsSection
-          title="Execution Environment" icon={Database}
-          description="Choose how this agent runs. Cloud = serverless edge (web/db/connectors). Runner = + a real browser, shell, Python/Node and files on your self-hosted runner machine. Sandbox = + a full Linux container with terminal, files and code execution. Hybrid = BOTH runner and sandbox at once, with an orchestrator that picks the right world per task."
-        >
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <button onClick={() => setSandboxMode("cloud")}
-                className={cn("rounded-xl border p-4 text-left transition-all",
-                  sandboxMode === "cloud" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="h-4 w-4 text-amber-500" />
-                  <span className="text-sm font-semibold">Cloud</span>
-                  {sandboxMode === "cloud" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
-                </div>
-                <p className="text-[11px] text-muted-foreground">Serverless edge functions. Fast, stateless, pay-per-use. Best for chat, research, and data tasks.</p>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">web_search</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">deep_research</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">db_read</span>
-                </div>
-              </button>
-
-              <button onClick={() => setSandboxMode("runner")}
-                className={cn("rounded-xl border p-4 text-left transition-all",
-                  sandboxMode === "runner" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
-                <div className="flex items-center gap-2 mb-2">
-                  <Globe className="h-4 w-4 text-sky-500" />
-                  <span className="text-sm font-semibold">Runner</span>
-                  {sandboxMode === "runner" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
-                </div>
-                <p className="text-[11px] text-muted-foreground">Cloud + a real browser, terminal, Python/Node and a persistent file workspace on your runner machine. Best for coding, scripts, data work and web automation.</p>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">browse_web</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">shell_exec</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">python_exec</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">file_read/write</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">+ cloud tools</span>
-                </div>
-              </button>
-
-              <button onClick={() => setSandboxMode("sandbox")}
-                className={cn("rounded-xl border p-4 text-left transition-all",
-                  sandboxMode === "sandbox" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
-                <div className="flex items-center gap-2 mb-2">
-                  <TerminalSquare className="h-4 w-4 text-emerald-500" />
-                  <span className="text-sm font-semibold">Sandbox</span>
-                  {sandboxMode === "sandbox" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
-                </div>
-                <p className="text-[11px] text-muted-foreground">Dedicated Docker container with terminal, browser, filesystem, VSCode, Jupyter. Persistent between steps. Best for code, analysis, testing.</p>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">execute_code</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">file_read/write</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">browser</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">terminal</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">jupyter</span>
-                </div>
-              </button>
-
-              <button onClick={() => setSandboxMode("hybrid")}
-                className={cn("rounded-xl border p-4 text-left transition-all",
-                  sandboxMode === "hybrid" ? "border-primary ring-1 ring-primary/30 bg-primary/5" : "border-border hover:border-primary/40")}>
-                <div className="flex items-center gap-2 mb-2">
-                  <Workflow className="h-4 w-4 text-violet-500" />
-                  <span className="text-sm font-semibold">Hybrid</span>
-                  {sandboxMode === "hybrid" && <Badge variant="outline" className="text-[9px] py-0 ml-auto">Active</Badge>}
-                </div>
-                <p className="text-[11px] text-muted-foreground">Both Runner and Sandbox at once. An orchestrator picks the right world per task and falls back to the other if one is down.</p>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">runner_*</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">sandbox_*</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">orchestrated</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">auto-failover</span>
-                </div>
-              </button>
-            </div>
-
-            {sandboxMode === "runner" && (
-              <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-1">
-                <div className="flex items-center gap-2 text-xs">
-                  <Globe className="h-3.5 w-3.5 text-sky-500" />
-                  <span className="font-medium">Runner mode needs the self-hosted runner connected (runner_browser_url in app config).</span>
-                </div>
-                <p className="text-[10px] text-muted-foreground">The agent gets real hands on the runner machine: a Playwright browser (pages, DOM snapshots, clicks, forms, screenshots) plus a terminal (PowerShell/bash), Python & Node.js execution and a persistent per-agent file workspace — enough for coding, scripting and data tasks without a Docker sandbox.</p>
-              </div>
-            )}
-
-            {sandboxMode === "sandbox" && (
-              <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
-                <div className="flex items-center gap-2 text-xs">
-                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                  <span className="font-medium">Sandbox requires Docker running on the runner host.</span>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  The runner will spin up an AIO Sandbox container (ghcr.io/agent-infra/sandbox) for each mission.
-                  The container provides a full Linux environment with Python, Node.js, shell, browser, and file access.
-                  It is destroyed after the mission completes.
-                </p>
-                {agent.sandbox_url && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <Globe className="h-3 w-3 text-muted-foreground" />
-                    <span className="font-mono text-[10px] text-muted-foreground">{agent.sandbox_url}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {sandboxMode === "hybrid" && (
-              <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
-                <div className="flex items-center gap-2 text-xs">
-                  <Workflow className="h-3.5 w-3.5 text-violet-500" />
-                  <span className="font-medium">Orchestrated across two worlds — needs BOTH the runner (runner_browser_url) and the sandbox reachable.</span>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  The agent gets both toolsets at once, namespaced so they never collide:
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-md border border-border/60 bg-background/40 p-2">
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium"><Globe className="h-3 w-3 text-sky-500" /> runner_* — real machine</div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">Persistent workspace, real Playwright browser, dev servers &amp; long-running processes. For real-repo work and anything that must persist.</p>
-                  </div>
-                  <div className="rounded-md border border-border/60 bg-background/40 p-2">
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium"><TerminalSquare className="h-3 w-3 text-emerald-500" /> sandbox_* — disposable container</div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">Isolated Linux, stateful Jupyter, Chromium. For risky/untrusted code and throwaway analysis.</p>
-                  </div>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  At plan time the orchestrator tags each step with a world; a health-aware router degrades to the available world if one is down (it hard-fails only when both are unreachable). Files do not transfer between worlds — each pipeline stays in one.
-                </p>
-              </div>
-            )}
-          </div>
-        </SettingsSection>
-      )}
-
-      {/* Collaboration profile */}
-      {embedded && <AccordionHeader label="Collaboration" icon={Network} open={openSections.has("collaboration")} onClick={() => toggleSection("collaboration")} />}
-      {(embedded ? openSections.has("collaboration") : section === "collaboration") && (
-        <SettingsSection
-          title="Collaboration" icon={Network}
-          description="Role and skills help teammate agents decide when to message or delegate to this one."
-        >
-          <ToggleRow
-            icon={Network}
-            label="Allow this agent to collaborate with other agents (message, delegate, share knowledge)"
+          {/* Collaboration profile — how other agents find this one (A2A). */}
+          <SoftToggle
+            icon={Network} label="Collaborer avec les autres agents"
             checked={collabEnabled} onChange={setCollabEnabled} disabled={!isOwner}
           />
           <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Role</label>
-              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Research analyst" disabled={!isOwner} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Skills</label>
-              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5">
-                {skills.map((s) => (
-                  <span key={s} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
-                    {s}
-                    {isOwner && <button onClick={() => setSkills(skills.filter((x) => x !== s))} className="text-muted-foreground hover:text-foreground">×</button>}
-                  </span>
-                ))}
-                {isOwner && (
-                  <input
-                    value={skillInput}
-                    onChange={(e) => setSkillInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        const s = skillInput.trim().toLowerCase();
-                        if (s && !skills.includes(s)) setSkills([...skills, s]);
-                        setSkillInput("");
-                      }
-                    }}
-                    placeholder="add skill…"
-                    className="min-w-[80px] flex-1 bg-transparent text-xs focus:outline-none"
-                  />
-                )}
-              </div>
-            </div>
+            <SoftField label="Rôle">
+              <SoftInput value={role} onChange={(e) => setRole(e.target.value)} placeholder="ex. Analyste recherche" disabled={!isOwner} />
+            </SoftField>
+            <SoftField label="Compétences">
+              <SoftTags values={skills} onChange={setSkills} disabled={!isOwner} placeholder="ajouter…" />
+            </SoftField>
           </div>
+
+          <AgentHostedModelCard agent={agent} disabled={!isOwner} />
         </SettingsSection>
       )}
 
-      {/* Tools — generic agent capabilities (web search, DB read, edge functions…).
-          The app integrations live under Personnaliser → Connectors. */}
-      {embedded && <AccordionHeader label="Tools" icon={Wrench} open={openSections.has("tools")} onClick={() => toggleSection("tools")} />}
-      {(embedded ? openSections.has("tools") : section === "tools") && (
+      {/* Mémoire — the facts this agent carries between runs. */}
+      {embedded && <AccordionHeader label="Mémoire" icon={Brain} open={openSections.has("memory")} onClick={() => toggleSection("memory")} />}
+      {(embedded ? openSections.has("memory") : section === "memory") && (
         <div className="py-6">
-          <ToolsTab agent={agent} variant="tools" />
+          <MemoryTab agent={agent} />
         </div>
       )}
 
-      {/* Mobile — pair this agent with the Anduran mobile app via id + secret. */}
-      {embedded && <AccordionHeader label="Mobile" icon={Smartphone} open={openSections.has("mobile")} onClick={() => toggleSection("mobile")} />}
-      {(embedded ? openSections.has("mobile") : section === "mobile") && (
+      {/* Usage & coûts — runs, tokens, spend. Read-only; no Save. */}
+      {embedded && <AccordionHeader label="Usage & coûts" icon={BarChart3} open={openSections.has("usage")} onClick={() => toggleSection("usage")} />}
+      {(embedded ? openSections.has("usage") : section === "usage") && (
         <div className="py-6">
+          <AnalyticsTab agent={agent} />
+        </div>
+      )}
+
+      {/* Accès — who may use the agent, plus mobile-app pairing (id + secret). */}
+      {embedded && <AccordionHeader label="Accès" icon={UsersIcon} open={openSections.has("access")} onClick={() => toggleSection("access")} />}
+      {(embedded ? openSections.has("access") : section === "access") && (
+        <div className="space-y-2 py-6">
+          <MembersTab agent={agent} />
           <MobileAccessSection agent={agent} />
         </div>
       )}
 
-      {/* Members — merged in from the former Members tab. */}
-      {embedded && <AccordionHeader label="Members" icon={UsersIcon} open={openSections.has("members")} onClick={() => toggleSection("members")} />}
-      {(embedded ? openSections.has("members") : section === "members") && (
-        <div className="py-6">
-          <MembersTab agent={agent} />
-        </div>
-      )}
-
       {/* Danger zone */}
-      {embedded && isOwner && <AccordionHeader label="Danger zone" icon={Trash2} open={openSections.has("danger")} onClick={() => toggleSection("danger")} />}
+      {embedded && isOwner && <AccordionHeader label="Zone de danger" icon={Trash2} open={openSections.has("danger")} onClick={() => toggleSection("danger")} />}
       {(embedded ? openSections.has("danger") : section === "danger") && isOwner && (
-        <SettingsSection title="Danger zone" icon={Trash2} titleClassName="text-destructive"
-          description="Archiving removes the agent from your team. You can restore it later from the database.">
-          <Button variant="outline" onClick={archive} className="text-destructive">
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Archive agent
+        <SettingsSection>
+          <Button variant="outline" onClick={archive} className="rounded-xl text-destructive">
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Archiver l'agent
           </Button>
         </SettingsSection>
       )}
@@ -3901,18 +3710,39 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   );
 }
 
-type SettingsSectionKey = "general" | "autonomy" | "infrastructure" | "collaboration" | "tools" | "mobile" | "members" | "danger";
+// Six sections, not the eight this page used to carry — and only the first is
+// about the agent itself (name, model, where it runs). Everything an agent runs
+// fine without (temperature, budgets, swarm, collaboration profile) sits behind
+// "Avancé", closed: a form that asks twenty questions to create a working agent
+// reads as twenty decisions the user has to get right.
+type SettingsSectionKey = "general" | "advanced" | "memory" | "usage" | "access" | "danger";
 
 const SETTINGS_SECTIONS: { key: SettingsSectionKey; label: string; icon: any }[] = [
-  { key: "general", label: "General", icon: SettingsIcon },
-  { key: "autonomy", label: "Autonomy", icon: Gauge },
-  { key: "infrastructure", label: "Infrastructure", icon: Database },
-  { key: "collaboration", label: "Collaboration", icon: Network },
-  { key: "tools", label: "Tools", icon: Wrench },
-  { key: "mobile", label: "Mobile", icon: Smartphone },
-  { key: "members", label: "Members", icon: UsersIcon },
-  { key: "danger", label: "Danger zone", icon: Trash2 },
+  { key: "general", label: "Général", icon: SettingsIcon },
+  { key: "advanced", label: "Avancé", icon: SlidersHorizontal },
+  { key: "memory", label: "Mémoire", icon: Brain },
+  { key: "usage", label: "Usage & coûts", icon: BarChart3 },
+  { key: "access", label: "Accès", icon: UsersIcon },
+  { key: "danger", label: "Zone de danger", icon: Trash2 },
 ];
+
+// Deep-links written when each of these was a section (or a tab) of its own.
+// They resolve onto whatever absorbed them so old links still open the right form.
+const LEGACY_SETTINGS_SECTIONS: Record<string, SettingsSectionKey> = {
+  autonomy: "advanced",
+  infrastructure: "general",
+  collaboration: "advanced",
+  tools: "general",
+  analytics: "usage",
+  mobile: "access",
+  members: "access",
+};
+
+function settingsSectionFor(raw: string | null): SettingsSectionKey | null {
+  if (!raw) return null;
+  if (SETTINGS_SECTIONS.some((s) => s.key === raw)) return raw as SettingsSectionKey;
+  return LEGACY_SETTINGS_SECTIONS[raw] ?? null;
+}
 
 function randomAgentSecret(): string {
   const bytes = new Uint8Array(24);
@@ -3967,47 +3797,32 @@ function MobileAccessSection({ agent }: { agent: InternalAgent }) {
   }
 
   return (
-    <SettingsSection
-      title="Mobile access" icon={Smartphone}
-      description="Pair this agent with the Anduran mobile app. Register it there with the ID and secret below, then chat from your phone."
-    >
-      <ToggleRow
-        icon={Smartphone}
-        label="Allow this agent to be used from the mobile app"
-        checked={enabled}
-        onChange={toggleEnabled}
-      />
+    <SettingsSection>
+      <SoftToggle icon={Smartphone} label="Accès depuis l'app mobile" checked={enabled} onChange={toggleEnabled} />
 
-      <div className="rounded-lg border border-border p-3">
-        <div className="text-[11px] font-medium text-muted-foreground">Agent ID</div>
-        <div className="mt-1 flex items-center gap-2">
-          <code className="flex-1 truncate rounded bg-secondary px-2 py-1 font-mono text-xs">{agent.id}</code>
-          <Button size="sm" variant="outline" onClick={() => copy(agent.id, "id")}>
-            <Copy className="mr-1 h-3 w-3" /> {copied === "id" ? "Copied" : "Copy"}
+      <SoftField label="Agent ID">
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-xl bg-muted/50 px-3.5 py-2.5 font-mono text-xs">{agent.id}</code>
+          <Button size="sm" variant="outline" className="rounded-xl" onClick={() => copy(agent.id, "id")}>
+            <Copy className="mr-1 h-3 w-3" /> {copied === "id" ? "Copié" : "Copier"}
           </Button>
         </div>
-      </div>
+      </SoftField>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={generate} disabled={busy}>
-          {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <KeyRound className="mr-1 h-3 w-3" />}
-          {hasSecret ? "Regenerate secret" : "Generate secret"}
-        </Button>
-        {hasSecret && !generated && (
-          <span className="text-[11px] text-muted-foreground">A secret is set. Regenerate to reveal a new one.</span>
-        )}
-      </div>
+      <Button size="sm" onClick={generate} disabled={busy} className="rounded-full">
+        {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <KeyRound className="mr-1 h-3 w-3" />}
+        {hasSecret ? "Régénérer le secret" : "Générer un secret"}
+      </Button>
 
       {generated && (
-        <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
-          <p className="text-[11px] font-medium text-foreground">Copy this secret now — it won't be shown again.</p>
+        <SoftField label="Secret — visible une seule fois">
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded bg-background px-2 py-1 font-mono text-xs">{generated}</code>
-            <Button size="sm" variant="outline" onClick={() => copy(generated, "secret")}>
-              <Copy className="mr-1 h-3 w-3" /> {copied === "secret" ? "Copied" : "Copy"}
+            <code className="min-w-0 flex-1 truncate rounded-xl bg-primary/10 px-3.5 py-2.5 font-mono text-xs">{generated}</code>
+            <Button size="sm" variant="outline" className="rounded-xl" onClick={() => copy(generated, "secret")}>
+              <Copy className="mr-1 h-3 w-3" /> {copied === "secret" ? "Copié" : "Copier"}
             </Button>
           </div>
-        </div>
+        </SoftField>
       )}
     </SettingsSection>
   );
@@ -4064,30 +3879,7 @@ function SettingsSection({
   );
 }
 
-// A borderless checkbox row used inside settings sections.
-function ToggleRow({
-  icon: Icon, label, checked, onChange, disabled,
-}: {
-  icon?: any;
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label className="flex items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        disabled={disabled}
-        className="h-4 w-4 accent-primary"
-      />
-      {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
-      {label}
-    </label>
-  );
-}
+// (ToggleRow — the bare checkbox row — was replaced by SoftToggle.)
 
 // ============================================================================
 // COLLABORATION TAB — this agent's inter-agent (A2A) messages + peers
@@ -4648,27 +4440,22 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
 
   return (
     <div className="mx-auto max-w-5xl">
-      {/* Header — title + description on the left, search on the right. */}
+      {/* Header — the title only outside a config tab (the tab already names
+          it there); search on the right. */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Skills</h2>
-          <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            {customOnly
-              ? "Vos compétences sur-mesure et le catalogue prêt à l'emploi, activables sur n'importe quel agent."
-              : "Étendez les capacités de vos agents grâce à des compétences réutilisables."}{" "}
-            <span className="cursor-pointer text-primary hover:underline">En savoir plus</span>
-          </p>
+          {customOnly && <h2 className="text-2xl font-semibold tracking-tight">Skills</h2>}
         </div>
         <div className="relative w-full sm:w-72">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <SoftInput
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => setFocused(true)}
             onBlur={() => setTimeout(() => setFocused(false), 120)}
             onKeyDown={(e) => { if (e.key === "Escape") setFocused(false); }}
-            placeholder="Rechercher par nom, domaine, tag…"
-            className="h-10 rounded-lg pl-9"
+            placeholder="Rechercher…"
+            className="pl-10"
           />
 
           {/* Autocomplete dropdown */}
@@ -4736,9 +4523,16 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
             </button>
           ))}
         </div>
-        <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
-          <Plus className="mr-1 h-4 w-4" /> Créer un Skill
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Écrire un playbook à la main suppose de savoir le formuler ; le
+              montrer ne suppose que de savoir le faire. */}
+          <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/record`)}>
+            <Clapperboard className="mr-1 h-4 w-4" /> Enregistrer une démonstration
+          </Button>
+          <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
+            <Plus className="mr-1 h-4 w-4" /> Créer un Skill
+          </Button>
+        </div>
       </div>
 
       {/* Facets — pack, then category. A 900-skill catalogue is unusable
@@ -4778,8 +4572,11 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <p className="text-sm text-muted-foreground">Vous n'avez pas encore créé de skill.</p>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
-                <Plus className="mr-1 h-4 w-4" /> Créer votre premier Skill
+              <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/record`)}>
+                <Clapperboard className="mr-1 h-4 w-4" /> Enregistrer une démonstration
+              </Button>
+              <Button variant="ghost" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
+                <Plus className="mr-1 h-4 w-4" /> Écrire un skill
               </Button>
               {skillsList.some((s) => s.is_system) && (
                 <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setFilter("examples")}>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Library, Upload, Settings2, Trash2, FolderPlus, ArrowLeft } from "lucide-react";
+import { Loader2, Plus, Library, Upload, Settings2, Trash2, FolderPlus, ArrowLeft, PenLine, FileText } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,9 +14,10 @@ import { cn } from "@/lib/utils";
 import { CollectionFolderCard, fileKindOf } from "./FileFolderGallery";
 import { FileCard, formatOfSource } from "./FileCard";
 import { DocumentAiWorkspace, type WorkspaceSource } from "./DocumentAiWorkspace";
+import { ProcedureEditor, type ProcedureSource } from "./ProcedureEditor";
 
 interface Collection { id: string; name: string; description: string | null; enabled: boolean; created_at: string }
-interface SourceRow { id: string; collection_id: string; type: string; title: string; source_ref: string | null; status: string }
+interface SourceRow { id: string; collection_id: string; type: string; title: string; source_ref: string | null; status: string; metadata?: { body?: string; authored?: boolean } | null }
 
 // The Document-AI workspace target: a new local file, or an existing source.
 type WsTarget = { kind: "new"; file: File } | { kind: "existing"; source: WorkspaceSource };
@@ -43,7 +44,7 @@ export function KnowledgeCollectionsPage() {
     enabled: !!projectId,
     queryFn: async () => {
       const { data } = await supabase.from("rag_sources")
-        .select("id, collection_id, type, title, source_ref, status")
+        .select("id, collection_id, type, title, source_ref, status, metadata")
         .eq("project_id", projectId!).not("collection_id", "is", null)
         .order("created_at", { ascending: false });
       return (data ?? []) as SourceRow[];
@@ -133,11 +134,32 @@ function CollectionDetail({ collection, files, onBack, onChanged, onDeleted }: {
   const { workspaceSlug, projectSlug } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
   const [ws, setWs] = useState<WsTarget | null>(null);
+  /** "new" opens a blank procedure; a source opens it for editing. */
+  const [proc, setProc] = useState<"new" | ProcedureSource | null>(null);
+  // Written procedures are text sources we authored — told apart from an
+  // ingested .txt by the flag the editor stamps on them.
+  const written = files.filter((f) => f.type === "text" && f.metadata?.authored);
+  const documents = files.filter((f) => !(f.type === "text" && f.metadata?.authored));
 
   async function remove() {
     if (!confirm("Supprimer cette collection et tous ses fichiers ? Les agents qui l'utilisent perdront cette connaissance.")) return;
     await supabase.from("rag_collections").delete().eq("id", collection.id);
     onDeleted();
+  }
+
+  // ── Written procedure (markdown, same editor as skills and playbooks) ──
+  if (proc && workspaceId && projectId) {
+    return (
+      <ProcedureEditor
+        key={proc === "new" ? "new" : proc.id}
+        collectionId={collection.id}
+        workspaceId={workspaceId}
+        projectId={projectId}
+        source={proc === "new" ? undefined : proc}
+        onClose={() => setProc(null)}
+        onSaved={onChanged}
+      />
+    );
   }
 
   // ── Document-AI extraction workspace (full-width, with margins) ──
@@ -168,6 +190,9 @@ function CollectionDetail({ collection, files, onBack, onChanged, onDeleted }: {
             <h1 className="truncate text-lg font-semibold">{collection.name}</h1>
             {collection.description && <p className="truncate text-xs text-muted-foreground">{collection.description}</p>}
           </div>
+          <Button size="sm" variant="outline" onClick={() => setProc("new")}>
+            <PenLine className="mr-1 h-3.5 w-3.5" /> Rédiger une procédure
+          </Button>
           <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/40">
             <Upload className="h-3.5 w-3.5" /> Ajouter des fichiers
             <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setWs({ kind: "new", file: f }); e.target.value = ""; }} />
@@ -178,28 +203,64 @@ function CollectionDetail({ collection, files, onBack, onChanged, onDeleted }: {
           <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-500" onClick={remove}><Trash2 className="h-4 w-4" /></Button>
         </div>
 
-        {/* File grid */}
-        <div className="py-5">
-          {files.length === 0 ? (
-            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-16 text-sm text-muted-foreground hover:bg-muted/20">
-              <Upload className="h-6 w-6" />
-              <span>Aucun fichier — cliquez pour importer (PDF, DOCX, XLSX, images…)</span>
-              <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setWs({ kind: "new", file: f }); e.target.value = ""; }} />
-            </label>
-          ) : (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-x-2 gap-y-5">
-              {files.map((f) => (
+        {/* Written procedures — listed apart from imported documents: one is
+            authored here and re-editable, the other is an extraction. */}
+        {written.length > 0 && (
+          <section className="pt-5">
+            <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Procédures rédigées
+            </h2>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {written.map((f) => (
                 <button
                   key={f.id}
-                  onClick={() => setWs({ kind: "existing", source: f })}
-                  className={cn("group flex flex-col items-center gap-2 rounded-lg p-2 text-center transition-colors hover:bg-muted/40")}
-                  title={f.title}
+                  onClick={() => setProc({ id: f.id, title: f.title, metadata: f.metadata ?? null })}
+                  className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-card p-3 text-left transition-colors hover:border-primary/50"
                 >
-                  <FileCard formatFile={formatOfSource(f)} />
-                  <span className="w-full truncate text-[11px] text-muted-foreground">{f.title}</span>
+                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{f.title}</span>
+                    <span className="mt-0.5 block line-clamp-2 text-[11px] text-muted-foreground">
+                      {(f.metadata?.body ?? "").replace(/[#*`>_\n]+/g, " ").trim().slice(0, 120) || "Vide"}
+                    </span>
+                  </span>
                 </button>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* Imported documents */}
+        <div className="py-5">
+          {documents.length === 0 ? (
+            written.length === 0 ? (
+              <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-16 text-sm text-muted-foreground hover:bg-muted/20">
+                <Upload className="h-6 w-6" />
+                <span>Collection vide — importez un fichier (PDF, DOCX, XLSX, images…) ou rédigez une procédure.</span>
+                <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setWs({ kind: "new", file: f }); e.target.value = ""; }} />
+              </label>
+            ) : null
+          ) : (
+            <>
+              {written.length > 0 && (
+                <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Documents importés
+                </h2>
+              )}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-x-2 gap-y-5">
+                {documents.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setWs({ kind: "existing", source: f })}
+                    className={cn("group flex flex-col items-center gap-2 rounded-lg p-2 text-center transition-colors hover:bg-muted/40")}
+                    title={f.title}
+                  >
+                    <FileCard formatFile={formatOfSource(f)} />
+                    <span className="w-full truncate text-[11px] text-muted-foreground">{f.title}</span>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>

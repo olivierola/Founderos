@@ -1,41 +1,31 @@
 // create-checkout — Stripe Checkout pour les offres Anduran et les packs de crédits.
-// Utilise FOUNDEROS_STRIPE_SECRET_KEY (le compte Stripe d'Anduran), pas celui du workspace.
+// Utilise la clé du compte Stripe d'Anduran (FOUNDEROS_STRIPE_SECRET_KEY, ou à
+// défaut STRIPE_SECRET_KEY), jamais celle d'un workspace.
 //
 // Body:
 //   { workspace_id, plan }               → session d'abonnement
 //   { workspace_id, pack }               → session de paiement unique (recharge)
-//   { workspace_id, action: "confirm", session_id } → applique l'achat après retour
+//   { workspace_id, action: "confirm", session_id } → applique l'achat au retour
+//   { workspace_id, action: "portal" }   → portail client Stripe (carte,
+//                                          factures, résiliation)
 //
 // Les prix ne sont plus dans le code : ils viennent de billing_plans /
 // credit_packs (migration 0194), qui portent aussi les crédits inclus. Une
 // grille tarifaire qui vit à deux endroits finit toujours par diverger.
 //
-// À FAIRE (dette assumée) : "confirm" est déclenché par le retour navigateur.
-// C'est suffisant tant que le catalogue est simple, mais un webhook Stripe
-// signé reste la source de vérité pour les renouvellements et les échecs de
-// paiement — il occupera un slot de fonction dès qu'il y en aura un de libre
-// (le projet est à 99/100).
+// `confirm` n'est plus le seul chemin d'application : `stripe-webhook`
+// (migration 0200) applique les mêmes achats côté serveur, et prend en charge
+// tout ce que le retour navigateur ne peut pas voir (renouvellements, échecs de
+// paiement, résiliations). Les deux passent par `applyCheckoutSession`, dont le
+// verrou d'idempotence arbitre la course. `confirm` reste utile : il rend la
+// page de retour immédiatement juste, sans attendre la livraison du webhook.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { applyCheckoutSession, stripeApi } from "../_shared/billing-stripe.ts";
+import type { StripeCheckoutSession } from "../_shared/billing-stripe.ts";
 
 const APP_URL = () => Deno.env.get("APP_URL") ?? "http://localhost:5173";
-
-async function stripe(path: string, init: RequestInit): Promise<Record<string, unknown>> {
-  const key = Deno.env.get("FOUNDEROS_STRIPE_SECRET_KEY");
-  if (!key) throw new Error("FOUNDEROS_STRIPE_SECRET_KEY absente des secrets Edge");
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      ...(init.headers ?? {}),
-    },
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(`Stripe: ${data?.error?.message ?? res.status}`);
-  return data;
-}
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -47,7 +37,7 @@ Deno.serve(async (req) => {
     const { data: userData } = await userClient.auth.getUser();
     if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
-    const { workspace_id, plan, pack, action, session_id } = await req.json();
+    const { workspace_id, plan, pack, action, session_id, return_path } = await req.json();
     if (!workspace_id) return jsonResponse({ error: "workspace_id requis" }, { status: 400 });
 
     const admin = createServiceClient();
@@ -64,58 +54,57 @@ Deno.serve(async (req) => {
     // ── Appliquer un achat au retour de Stripe ───────────────────────────────
     if (action === "confirm") {
       if (!session_id) return jsonResponse({ error: "session_id requis" }, { status: 400 });
-      const session = await stripe(`checkout/sessions/${encodeURIComponent(String(session_id))}`, {
-        method: "GET",
-      });
-      const meta = (session.metadata ?? {}) as Record<string, string>;
-      // Le workspace vient des métadonnées de la session, jamais du corps de la
-      // requête : sinon n'importe quel owner pourrait créditer son workspace
-      // avec l'identifiant d'une session payée par quelqu'un d'autre.
-      if (meta.workspace_id !== workspace_id) {
-        return jsonResponse({ error: "Cette session ne concerne pas cet espace de travail" }, { status: 403 });
-      }
+      const session = await stripeApi<StripeCheckoutSession>(
+        `checkout/sessions/${encodeURIComponent(String(session_id))}`,
+      );
       if (session.payment_status !== "paid" && session.status !== "complete") {
         return jsonResponse({ ok: false, pending: true, status: session.status }, { status: 202 });
       }
 
-      // Verrou d'idempotence AVANT d'appliquer : la page de retour peut être
-      // rafraîchie, et créditer un pack deux fois se remarque tout de suite.
-      const { error: lockErr } = await admin.from("billing_checkout_sessions").insert({
-        session_id: String(session.id ?? session_id),
-        workspace_id,
-        kind: meta.plan ? "plan" : "pack",
-        reference: meta.plan ?? meta.pack ?? "",
+      // Le workspace vient des métadonnées de la session, jamais du corps de la
+      // requête : sinon n'importe quel owner pourrait créditer son workspace
+      // avec l'identifiant d'une session payée par quelqu'un d'autre. C'est
+      // `applyCheckoutSession` qui compare les deux.
+      const res = await applyCheckoutSession(admin, session, String(workspace_id));
+      if (!res.ok) {
+        const forbidden = res.error?.includes("ne concerne pas");
+        return jsonResponse({ error: res.error }, { status: forbidden ? 403 : 400 });
+      }
+      return jsonResponse({
+        ok: true,
+        applied: res.applied,
+        already_applied: res.already_applied ?? false,
+        result: res.result,
       });
-      if (lockErr) {
-        // 23505 = déjà appliqué. Toute autre erreur est réelle et doit remonter.
-        if (lockErr.code === "23505") return jsonResponse({ ok: true, already_applied: true });
-        throw new Error(lockErr.message);
-      }
+    }
 
-      if (meta.plan) {
-        const { data, error } = await admin.rpc("billing_apply_plan", {
-          p_workspace: workspace_id,
-          p_plan: meta.plan,
-          p_stripe_customer: (session.customer as string) ?? null,
-          p_stripe_subscription: (session.subscription as string) ?? null,
-          p_seats: null,
-        });
-        if (error) throw new Error(error.message);
-        return jsonResponse({ ok: true, applied: "plan", result: data });
+    // ── Portail client Stripe ────────────────────────────────────────────────
+    // Moyen de paiement, factures, résiliation : tout ce qui suit l'achat vit
+    // là-bas. Le reconstruire chez nous demanderait de manipuler des données de
+    // carte — le portail hébergé est aussi la réponse la plus sûre.
+    // Les changements faits dans le portail nous reviennent par webhook.
+    if (action === "portal") {
+      const { data: sub } = await admin
+        .from("workspace_subscriptions")
+        .select("stripe_customer_id")
+        .eq("workspace_id", workspace_id).maybeSingle();
+      if (!sub?.stripe_customer_id) {
+        return jsonResponse(
+          {
+            error: "Aucun abonnement à gérer",
+            detail: "Cet espace n'a pas encore de paiement enregistré.",
+          },
+          { status: 400 },
+        );
       }
-      if (meta.pack) {
-        const { data: packRow } = await admin
-          .from("credit_packs").select("credits").eq("code", meta.pack).maybeSingle();
-        if (!packRow) return jsonResponse({ error: "Pack inconnu" }, { status: 400 });
-        const { data, error } = await admin.rpc("billing_apply_topup", {
-          p_workspace: workspace_id,
-          p_credits: packRow.credits,
-          p_reference: String(session.id ?? session_id),
-        });
-        if (error) throw new Error(error.message);
-        return jsonResponse({ ok: true, applied: "topup", result: data });
-      }
-      return jsonResponse({ error: "Session sans offre ni pack" }, { status: 400 });
+      const form = new URLSearchParams({
+        customer: sub.stripe_customer_id,
+        return_url: `${APP_URL()}${typeof return_path === "string" && return_path.startsWith("/") ? return_path : "/app"}`,
+      });
+      const portal = await stripeApi<{ url: string }>("billing_portal/sessions", {
+        method: "POST", form,
+      });
+      return jsonResponse({ ok: true, url: portal.url });
     }
 
     // ── Créer une session de paiement ────────────────────────────────────────
@@ -160,17 +149,102 @@ Deno.serve(async (req) => {
       );
     }
 
+    const { data: currentSub } = await admin
+      .from("workspace_subscriptions")
+      .select("stripe_customer_id, stripe_subscription_id")
+      .eq("workspace_id", workspace_id).maybeSingle();
+
+    // ── Changement d'offre d'un client déjà abonné ───────────────────────────
+    // Une nouvelle session de checkout créerait un SECOND abonnement Stripe : le
+    // client paierait deux offres, et deux `invoice.paid` se disputeraient son
+    // plan. On modifie donc l'abonnement existant.
+    // `always_invoice` facture le prorata immédiatement, ce qui déclenche
+    // `invoice.paid` et donc l'allocation tout de suite : sans ça, un client qui
+    // monte d'offre paierait aujourd'hui pour des crédits le mois prochain.
+    if (mode === "subscription" && currentSub?.stripe_subscription_id) {
+      const existingSub = await stripeApi<{
+        id: string;
+        status: string;
+        items?: { data?: Array<{ id: string; price?: { id?: string } }> };
+      }>(`subscriptions/${encodeURIComponent(currentSub.stripe_subscription_id)}`).catch(() => null);
+
+      const item = existingSub?.items?.data?.[0];
+      const live = existingSub && !["canceled", "incomplete_expired"].includes(existingSub.status);
+
+      if (live && item) {
+        if (item.price?.id === priceId) {
+          return jsonResponse({ ok: true, unchanged: true, plan: metadata.plan });
+        }
+        const upd = new URLSearchParams({
+          "items[0][id]": item.id,
+          "items[0][price]": priceId,
+          proration_behavior: "always_invoice",
+          // Un changement d'offre annule une résiliation programmée : le client
+          // qui choisit une nouvelle offre ne veut pas qu'elle s'arrête au 30.
+          cancel_at_period_end: "false",
+        });
+        for (const [k, v] of Object.entries(metadata)) upd.set(`metadata[${k}]`, v);
+        await stripeApi(`subscriptions/${encodeURIComponent(existingSub.id)}`, {
+          method: "POST", form: upd,
+          // Protège du double clic, pas plus. Le compartiment d'une minute est
+          // délibéré : une clé Stripe vit 24 h, et une clé stable ferait rejouer
+          // la réponse d'hier si le client fait pro → individual → pro dans la
+          // journée. Il resterait alors sur pro chez nous, facturé individual
+          // chez Stripe — une fuite invisible, bien pire qu'un prorata en trop.
+          idempotencyKey: `plan-change:${workspace_id}:${priceId}:${Math.floor(Date.now() / 60_000)}`,
+        });
+
+        // Appliqué tout de suite plutôt qu'à la livraison du webhook : le client
+        // vient de cliquer, il doit voir son offre changer. Le webhook repassera
+        // derrière avec les vraies dates de période — même résultat.
+        const { error } = await admin.rpc("billing_apply_plan", {
+          p_workspace: workspace_id,
+          p_plan: metadata.plan,
+          p_stripe_customer: currentSub.stripe_customer_id,
+          p_stripe_subscription: existingSub.id,
+          p_seats: null,
+        });
+        if (error) throw new Error(error.message);
+        return jsonResponse({ ok: true, updated: true, plan: metadata.plan });
+      }
+    }
+
     const form = new URLSearchParams({
       mode,
       "line_items[0][price]": priceId,
       "line_items[0][quantity]": "1",
       success_url: `${APP_URL()}/billing-success?session_id={CHECKOUT_SESSION_ID}&ws=${workspace_id}`,
       cancel_url: `${APP_URL()}/app`,
-      customer_email: userData.user.email ?? "",
+      // Second porteur du workspace, indépendant des métadonnées : si un jour
+      // une session en est dépourvue, le rattachement tient encore.
+      client_reference_id: workspace_id,
     });
-    for (const [k, v] of Object.entries(metadata)) form.set(`metadata[${k}]`, v);
 
-    const session = await stripe("checkout/sessions", { method: "POST", body: form.toString() });
+    // Réutiliser le client Stripe déjà connu : un client par achat éclaterait
+    // l'historique de facturation en autant de fiches, et le portail n'en
+    // montrerait qu'une. C'est aussi ce qui permet au webhook de retrouver le
+    // workspace depuis un événement qui ne porte pas nos métadonnées.
+    if (currentSub?.stripe_customer_id) {
+      form.set("customer", currentSub.stripe_customer_id);
+    } else {
+      form.set("customer_email", userData.user.email ?? "");
+      // Sans ça, un paiement unique ne crée aucun client Stripe : plus de
+      // portail, et un remboursement impossible à rattacher.
+      if (mode === "payment") form.set("customer_creation", "always");
+    }
+
+    for (const [k, v] of Object.entries(metadata)) form.set(`metadata[${k}]`, v);
+    if (mode === "subscription") {
+      // PIÈGE : un événement `customer.subscription.*` ne porte PAS les
+      // métadonnées de la session de checkout. Sans cette recopie sur
+      // l'abonnement lui-même, aucun renouvellement ni aucune résiliation ne
+      // saurait à quel workspace il se rapporte.
+      for (const [k, v] of Object.entries(metadata)) form.set(`subscription_data[metadata][${k}]`, v);
+    }
+
+    const session = await stripeApi<{ url: string }>("checkout/sessions", {
+      method: "POST", form,
+    });
     return jsonResponse({ ok: true, url: session.url });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

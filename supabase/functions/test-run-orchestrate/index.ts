@@ -6,12 +6,17 @@
 //   { action: "answer", workspace_id, project_id, run_id, answer } → resume a
 //        run that paused for input; records the answer and re-queues it.
 //
+//   { action: "synthesize_recording", workspace_id, project_id, recording_id }
+//        → force the skill synthesis of a browser DEMONSTRATION whose recorder
+//          never closed it (see skill-recorder/), or retry one that failed.
+//
 // The per-step "what next?" decision is made in test-runner-poll (the runner
 // asks after each observation). This function owns start + human-in-the-loop.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { draftPlan, appendStep } from "../_shared/test-agent.ts";
+import { synthesizeSkill } from "../_shared/skill-synthesis.ts";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -147,6 +152,80 @@ Deno.serve(async (req) => {
         }).eq("id", runId);
       }
       return jsonResponse({ ok: true, resumed: isTerminal });
+    }
+
+    // ── PAIR RECORDER ────────────────────────────────────────────────────────
+    // L'utilisateur saisit le code affiché par son recorder local. C'est CE
+    // geste — fait depuis une session authentifiée — qui donne son identité à
+    // l'appareil : avant, la ligne recorder_devices n'appartient à personne.
+    //
+    // Le recorder n'a donc jamais à recevoir un secret par copier-coller, et
+    // n'hérite d'aucune portée qu'il n'ait besoin.
+    if (action === "pair_recorder") {
+      const raw = String(body.code ?? "").trim().toUpperCase().replace(/\s/g, "");
+      // Saisi à la main depuis un terminal : le tiret est optionnel.
+      const code = raw.length === 8 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
+      if (!code) return jsonResponse({ error: "code required" }, { status: 400 });
+
+      const { data: dev } = await admin.from("recorder_devices")
+        .select("id, name, paired_at, pairing_expires_at")
+        .eq("pairing_code", code).maybeSingle();
+      if (!dev) return jsonResponse({ error: "Code inconnu. Vérifiez la saisie." }, { status: 404 });
+      if (dev.paired_at) return jsonResponse({ error: "Ce code a déjà été utilisé." }, { status: 409 });
+      if (dev.pairing_expires_at && Date.parse(dev.pairing_expires_at) < Date.now()) {
+        return jsonResponse({ error: "Code expiré. Relancez le recorder pour en obtenir un nouveau." }, { status: 410 });
+      }
+
+      await admin.from("recorder_devices").update({
+        workspace_id, user_id: userId, paired_at: new Date().toISOString(),
+      }).eq("id", dev.id);
+
+      return jsonResponse({ ok: true, device: { id: dev.id, name: dev.name } });
+    }
+
+    // ── SYNTHESIZE RECORDING ─────────────────────────────────────────────────
+    // Porte de sortie pour une démonstration (skill_recordings) que le recorder
+    // n'a pas pu refermer lui-même : machine éteinte, réseau coupé, navigateur
+    // tué. Sans cela, une démo de vingt minutes resterait bloquée en
+    // 'recording' sans aucun moyen d'en tirer la skill — la synthèse n'est
+    // déclenchable que par le runner.
+    //
+    // Sert aussi à relancer une synthèse qui a échoué (LLM indisponible) : la
+    // trace, elle, est intacte en base.
+    if (action === "synthesize_recording") {
+      const recordingId = body.recording_id as string | undefined;
+      if (!recordingId) return jsonResponse({ error: "recording_id required" }, { status: 400 });
+
+      const { data: rec } = await admin.from("skill_recordings")
+        .select("id, workspace_id, status, started_at, duration_ms").eq("id", recordingId).maybeSingle();
+      if (!rec || rec.workspace_id !== workspace_id) {
+        return jsonResponse({ error: "Recording not found" }, { status: 404 });
+      }
+      if (rec.status === "processing") return jsonResponse({ ok: true, already: true });
+
+      const { count } = await admin.from("skill_recording_events")
+        .select("id", { count: "exact", head: true })
+        .eq("recording_id", recordingId).neq("source", "narration");
+      if (!count) {
+        return jsonResponse({ error: "Aucun geste enregistré : il n'y a rien à synthétiser." }, { status: 400 });
+      }
+
+      const now = Date.now();
+      const startedMs = rec.started_at ? Date.parse(rec.started_at) : now;
+      await admin.from("skill_recordings").update({
+        status: "processing",
+        ended_at: new Date(now).toISOString(),
+        duration_ms: rec.duration_ms ?? Math.max(0, now - startedMs),
+        error: null,
+      }).eq("id", recordingId);
+
+      const job = synthesizeSkill(recordingId).catch((e) => {
+        console.error("skill synthesis failed:", e instanceof Error ? e.message : String(e));
+      });
+      const er = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+      if (er?.waitUntil) er.waitUntil(job); else await job;
+
+      return jsonResponse({ ok: true, synthesizing: true });
     }
 
     return jsonResponse({ error: `Unknown action ${action}` }, { status: 400 });

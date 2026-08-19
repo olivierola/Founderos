@@ -5,11 +5,11 @@ import { Loader2 } from "lucide-react";
 // Phosphor everywhere in this dashboard — one icon family, consistent weights
 // (the app's Admin nav already uses it).
 import {
-  HouseIcon, RobotIcon, BrainIcon, GearSixIcon, ChartBarIcon, CalendarDotsIcon, FilesIcon, PlugIcon,
+  HouseIcon, RobotIcon, BrainIcon, GearSixIcon, ChartBarIcon, CalendarDotsIcon, FilesIcon,
   ChatsCircleIcon, GraphIcon, DatabaseIcon, SlidersIcon, SquaresFourIcon,
   SparkleIcon, WarningIcon, MagnifyingGlassIcon, PlusIcon, CheckIcon, CaretDownIcon,
   DotsThreeIcon, PencilSimpleIcon, TrashIcon, HashIcon, SidebarSimpleIcon, UsersThreeIcon, UserIcon,
-  TargetIcon,
+  TargetIcon, GlobeIcon, FlowArrowIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import {
@@ -36,12 +36,16 @@ import { SidebarProfileFooter } from "./SidebarProfileFooter";
 import { SidebarGetStarted } from "./SidebarGetStarted";
 import {
   AgentsTab, SchedulesTab, WorkspaceMemoryTab, HomeTab, DashboardStatsTab, AgentDetailInDashboard,
+  AgentConfigInDashboard,
 } from "./ServiceDashboardTabs";
 import { DashboardArtifactsPage } from "./RoomArtifacts";
 import { DashboardMissionsTab } from "./RoomMissions";
 import { ComposioCatalog } from "@/features/integrations/ComposioCatalog";
+import { WorkflowsList } from "@/features/workflows/WorkflowsList";
+import { WorkflowCanvas } from "@/features/workflows/WorkflowCanvas";
 import { DashboardSettingsTab, DASHBOARD_SETTINGS_SECTIONS, type DashboardSettingsSection } from "./DashboardSettings";
 import { CreateAgentPage } from "./CreateAgent";
+import { PublicAgentInDashboard } from "./PublicAgentInDashboard";
 import { fetchAgentFolders } from "./agentFolders";
 import { DashboardTile } from "./dashboardIcons";
 import { ThemeMenu } from "@/components/ThemeMenu";
@@ -53,15 +57,16 @@ import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
 // sections, and a contextual panel showing that section's own navigation
 // (Home → rooms & agent DMs, Agents → the roster, Memory → its views, Settings
 // → its sections). The content is flush — no floating rounded panel.
-type RailKey = "home" | "agents" | "memory" | "connectors" | "settings";
+type RailKey = "home" | "agents" | "resources" | "settings";
 
 const RAIL: { key: RailKey; label: string; icon: PhosphorIcon; tab: DashboardTabSlug | "settings" }[] = [
   { key: "home", label: "Home", icon: HouseIcon, tab: "home" },
   { key: "agents", label: "Agents", icon: RobotIcon, tab: "agents" },
-  { key: "memory", label: "Memory", icon: BrainIcon, tab: "memory" },
-  // Its own section, not a Home sub-tab: the connections of this space are a
-  // subject in themselves (shared account vs each member's own — 0177).
-  { key: "connectors", label: "Connecteurs", icon: PlugIcon, tab: "connectors" },
+  // Memory + connections + workflows in one section: they are the three things
+  // the workforce DRAWS ON rather than three separate destinations — what it
+  // knows, what it can reach, and what fires around it. Two rail icons for the
+  // first two only made you guess which one held a given setup step.
+  { key: "resources", label: "Ressources", icon: DatabaseIcon, tab: "memory" },
 ];
 
 // Tabs that live INSIDE the Home panel rather than on the rail.
@@ -76,17 +81,38 @@ const HOME_NAV: { slug: DashboardTabSlug | "dashboard" | "missions"; label: stri
   { slug: "artifacts", label: "Artifacts", icon: FilesIcon },
 ];
 
-// The connectors section's own tabs — the scope separation, surfaced as
-// navigation instead of chips buried in the page.
-const CONNECTOR_VIEWS: { key: "space" | "personal"; label: string; icon: PhosphorIcon }[] = [
-  { key: "space", label: "Connexions de l'espace", icon: UsersThreeIcon },
-  { key: "personal", label: "Mes connexions", icon: UserIcon },
-];
-
-const MEMORY_VIEWS: { key: string; label: string; icon: PhosphorIcon }[] = [
-  { key: "graph", label: "Graph", icon: GraphIcon },
-  { key: "memories", label: "Memories", icon: BrainIcon },
-  { key: "sources", label: "Sources", icon: DatabaseIcon },
+// The Ressources panel, in three groups. Each entry carries the tab it routes
+// to, so the merged section keeps the ORIGINAL urls — /memory/:view and
+// /connectors/:scope still resolve, and every deep link that ever shipped keeps
+// working. Only the rail merged; the routes did not.
+const RESOURCE_GROUPS: {
+  label: string;
+  items: { tab: "memory" | "connectors" | "workflows"; key: string; label: string; icon: PhosphorIcon }[];
+}[] = [
+  {
+    label: "Mémoire",
+    items: [
+      { tab: "memory", key: "graph", label: "Graph", icon: GraphIcon },
+      { tab: "memory", key: "memories", label: "Memories", icon: BrainIcon },
+      { tab: "memory", key: "sources", label: "Sources", icon: DatabaseIcon },
+    ],
+  },
+  {
+    // The scope separation is the whole point, so it lives in the navigation
+    // rather than in a chip row: a shared account and someone's own mailbox are
+    // not two filters of one list.
+    label: "Connexions",
+    items: [
+      { tab: "connectors", key: "space", label: "Connexions de l'espace", icon: UsersThreeIcon },
+      { tab: "connectors", key: "personal", label: "Mes connexions", icon: UserIcon },
+    ],
+  },
+  {
+    label: "Automatisations",
+    items: [
+      { tab: "workflows", key: "list", label: "Workflows", icon: FlowArrowIcon },
+    ],
+  },
 ];
 
 const SETTINGS_ICONS: Record<string, PhosphorIcon> = {
@@ -111,18 +137,28 @@ export function ServiceDashboardPage() {
 
   const isRoom = tab === "room" && !!sub;
   const isAgent = tab === "agent" && !!sub;
+  // An agent's configuration is a page of its own, not a panel over its chat.
+  const isAgentConfig = tab === "agent-config" && !!sub;
+  // A public (customer-facing) agent's own pages — the builder that used to be
+  // a separate module route (/agent/builder/:id/:tab), now hosted here.
+  const isPublicAgent = tab === "public" && !!sub;
   const isCreateAgent = tab === "agents" && sub === "new";
+  // /workflows/:id opens the canvas, which owns the whole content area.
+  const isWorkflowCanvas = tab === "workflows" && !!sub;
   // Unknown tabs (old links, e.g. the retired /new-room) fall back to the
   // dashboard's landing page rather than rendering an empty content area.
-  const KNOWN = ["home", "agents", "schedules", "dashboard", "missions", "memory", "artifacts", "connectors", "settings"];
+  const KNOWN = ["home", "agents", "schedules", "dashboard", "missions", "memory", "artifacts", "connectors", "workflows", "settings"];
   const activeTab = isRoom ? "room"
     : isAgent ? "agent"
+    : isAgentConfig ? "agent-config"
+    : isPublicAgent ? "public"
     : (tab && KNOWN.includes(tab) ? tab : settings.landing);
   // Which rail entry lights up: agent pages belong to Agents, rooms and the
-  // secondary tabs (activity/schedules/artifacts) belong to Home.
-  const rail: RailKey = activeTab === "agents" || isAgent ? "agents"
-    : activeTab === "memory" ? "memory"
-    : activeTab === "connectors" ? "connectors"
+  // secondary tabs (missions/dashboard/schedules/artifacts) belong to Home, and
+  // memory + connections + workflows share the merged Ressources section.
+  const RESOURCE_TABS = ["memory", "connectors", "workflows"];
+  const rail: RailKey = activeTab === "agents" || isAgent || isAgentConfig || isPublicAgent ? "agents"
+    : RESOURCE_TABS.includes(activeTab) ? "resources"
     : activeTab === "settings" ? "settings"
     : "home";
 
@@ -147,7 +183,7 @@ export function ServiceDashboardPage() {
   // theme somewhere else.
 
   const railItems = RAIL.filter((r) => r.key === "home" || !hidden(r.key));
-  const panelTitle = rail === "home" ? "Home" : rail === "agents" ? "Agents" : rail === "memory" ? "Memory" : rail === "connectors" ? "Connecteurs" : "Settings";
+  const panelTitle = rail === "home" ? "Home" : rail === "agents" ? "Agents" : rail === "resources" ? "Ressources" : "Settings";
 
   return (
     // The SaaS assistant lives here too: internal agents are configured through
@@ -195,9 +231,20 @@ export function ServiceDashboardPage() {
               <HomePanel base={base} dashboardId={dashboardId!} activeTab={activeTab} sub={sub} hidden={hidden}
                 dashboardName={current?.name ?? "Service"} workspaceId={workspaceId} projectId={projectId} />
             )}
-            {rail === "agents" && <AgentsPanel base={base} dashboardId={dashboardId!} activeAgent={isAgent ? sub : undefined} />}
-            {rail === "memory" && <MemoryPanel base={base} active={sub || "graph"} />}
-            {rail === "connectors" && <ConnectorsPanel base={base} active={(sub === "personal" ? "personal" : "space")} />}
+            {rail === "agents" && (
+              <AgentsPanel
+                base={base} dashboardId={dashboardId!}
+                activeAgent={isAgent || isAgentConfig ? sub : undefined}
+                activePublicAgent={isPublicAgent ? sub : undefined}
+              />
+            )}
+            {rail === "resources" && (
+              <ResourcesPanel
+                base={base}
+                activeTab={activeTab}
+                activeSub={sub || (activeTab === "connectors" ? "space" : "graph")}
+              />
+            )}
             {rail === "settings" && <SettingsPanel base={base} active={(sub || "general") as DashboardSettingsSection} />}
           </div>
 
@@ -213,8 +260,14 @@ export function ServiceDashboardPage() {
           <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : isRoom ? (
           <RoomView dashboardId={dashboardId!} roomId={sub!} workspaceId={workspaceId} />
+        ) : isWorkflowCanvas ? (
+          <WorkflowCanvas workflowId={sub!} onBack={() => navigate(`${base}/workflows`)} />
         ) : isAgent ? (
           <AgentDetailInDashboard dashboardId={dashboardId!} agentId={sub!} />
+        ) : isAgentConfig ? (
+          <AgentConfigInDashboard dashboardId={dashboardId!} agentId={sub!} />
+        ) : isPublicAgent ? (
+          <PublicAgentInDashboard dashboardId={dashboardId!} agentId={sub!} />
         ) : isCreateAgent ? (
           <CreateAgentPage dashboardId={dashboardId!} workspaceId={workspaceId} projectId={projectId} />
         ) : (
@@ -230,6 +283,15 @@ export function ServiceDashboardPage() {
             {activeTab === "artifacts" && <DashboardArtifactsPage workspaceId={workspaceId} projectId={projectId} />}
             {activeTab === "connectors" && (
               <ComposioCatalog serviceDashboardId={dashboardId!} scope={sub === "personal" ? "personal" : "dashboard"} />
+            )}
+            {/* The list pads itself; the canvas must be FULL-BLEED — a dotted
+                infinite surface inside a padded box reads as a widget, not as a
+                workspace. `sub` is the workflow id. */}
+            {activeTab === "workflows" && !sub && (
+              <WorkflowsList
+                dashboardId={dashboardId!} workspaceId={workspaceId} projectId={projectId}
+                onOpen={(id) => navigate(`${base}/workflows/${id}`)}
+              />
             )}
             {activeTab === "settings" && (
               <DashboardSettingsTab
@@ -435,7 +497,10 @@ interface PanelAgent {
   is_orchestrator: boolean; folder_id: string | null;
 }
 
-function AgentsPanel({ base, dashboardId, activeAgent }: { base: string; dashboardId: string; activeAgent?: string }) {
+function AgentsPanel({ base, dashboardId, activeAgent, activePublicAgent }: {
+  base: string; dashboardId: string; activeAgent?: string; activePublicAgent?: string;
+}) {
+  const navigate = useNavigate();
   const { data: agents } = useQuery({
     queryKey: ["sd_panel_agents", dashboardId],
     queryFn: async () => {
@@ -449,6 +514,18 @@ function AgentsPanel({ base, dashboardId, activeAgent }: { base: string; dashboa
   const { data: folders } = useQuery({
     queryKey: ["agent_folders", dashboardId],
     queryFn: () => fetchAgentFolders(dashboardId),
+  });
+  // Public (customer-facing) agents of this service — their own group, since
+  // they answer to your customers rather than to the team, and their pages are
+  // a different set (Playground / Knowledge / Widget / …).
+  const { data: publics } = useQuery({
+    queryKey: ["sd_panel_public_agents", dashboardId],
+    queryFn: async () => {
+      const { data } = await supabase.from("rag_agents")
+        .select("id, name, accent_color, enabled")
+        .eq("service_dashboard_id", dashboardId).order("created_at", { ascending: true });
+      return (data ?? []) as { id: string; name: string; accent_color: string | null; enabled: boolean }[];
+    },
   });
 
   const list = (agents ?? []).filter((a) => !a.is_orchestrator);
@@ -471,6 +548,28 @@ function AgentsPanel({ base, dashboardId, activeAgent }: { base: string; dashboa
           agents={unfiled}
           base={base} activeAgent={activeAgent}
         />
+      )}
+      {(publics ?? []).length > 0 && (
+        <>
+          <div className="px-4 pb-1 pt-3 text-[13px] text-muted-foreground">Agents publics</div>
+          <div className="mb-1 space-y-0.5 px-2.5">
+            {(publics ?? []).map((a) => (
+              <PanelItem
+                key={a.id} active={activePublicAgent === a.id}
+                onClick={() => navigate(`${base}/public/${a.id}`)}
+                leading={
+                  <span className="relative flex h-[18px] w-[18px] items-center justify-center rounded-md"
+                    style={{ background: `${a.accent_color || "#001BB7"}26` }}>
+                    <GlobeIcon weight="duotone" className="h-3 w-3" style={{ color: a.accent_color || "#001BB7" }} />
+                    <span className={cn("absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-sidebar",
+                      a.enabled ? "bg-emerald-500" : "bg-muted-foreground/50")} />
+                  </span>
+                }
+                label={a.name}
+              />
+            ))}
+          </div>
+        </>
       )}
     </>
   );
@@ -525,34 +624,31 @@ function AgentFolderGroup({ id, label, dot, agents, base, activeAgent }: {
   );
 }
 
-function MemoryPanel({ base, active }: { base: string; active: string }) {
+/** Memory, connections and workflows under one rail entry, grouped so the three
+ *  subjects stay legible instead of becoming one flat list of six links. */
+function ResourcesPanel({ base, activeTab, activeSub }: {
+  base: string; activeTab: string; activeSub: string;
+}) {
   const navigate = useNavigate();
   return (
-    <nav className="space-y-0.5 px-2.5">
-      {MEMORY_VIEWS.map((v) => (
-        <PanelItem
-          key={v.key} active={active === v.key} onClick={() => navigate(`${base}/memory/${v.key}`)}
-          leading={<v.icon className="h-4 w-4" />} label={v.label}
-        />
+    <div className="space-y-3">
+      {RESOURCE_GROUPS.map((g) => (
+        <div key={g.label}>
+          <div className="px-4 pb-1 text-[12px] text-muted-foreground">{g.label}</div>
+          <nav className="space-y-0.5 px-2.5">
+            {g.items.map((v) => (
+              <PanelItem
+                key={`${v.tab}/${v.key}`}
+                active={activeTab === v.tab && (v.tab === "workflows" || activeSub === v.key)}
+                onClick={() => navigate(v.tab === "workflows" ? `${base}/workflows` : `${base}/${v.tab}/${v.key}`)}
+                leading={<v.icon className="h-4 w-4" />}
+                label={v.label}
+              />
+            ))}
+          </nav>
+        </div>
       ))}
-    </nav>
-  );
-}
-
-// Connections of this space, split by who owns them. The separation is the
-// whole point, so it lives in the navigation rather than in a chip row: a
-// shared account and someone's own mailbox are not two filters of one list.
-function ConnectorsPanel({ base, active }: { base: string; active: "space" | "personal" }) {
-  const navigate = useNavigate();
-  return (
-    <nav className="space-y-0.5 px-2.5">
-      {CONNECTOR_VIEWS.map((v) => (
-        <PanelItem
-          key={v.key} active={active === v.key} onClick={() => navigate(`${base}/connectors/${v.key}`)}
-          leading={<v.icon className="h-4 w-4" />} label={v.label}
-        />
-      ))}
-    </nav>
+    </div>
   );
 }
 

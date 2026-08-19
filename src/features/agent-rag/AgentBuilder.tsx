@@ -1,69 +1,67 @@
-import { useState, useRef, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useState, useRef, useEffect, forwardRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Bot, BarChart3,
   Plus, Trash2, Send, FileText, Link2, LayoutGrid, Check, Copy, Sparkles, BookOpen, Search,
-  Globe, FileUp, Type, RotateCcw,
+  Globe, FileUp, Type, RotateCcw, Store, RefreshCw, Package, Plug,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  SoftField, SoftInput, SoftTextarea, SoftSelect, SoftToggle, SoftRange,
+  SoftColor, SoftNumber, SoftCheckbox, SoftComposerInput,
+} from "@/components/ui/soft-form";
 import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { cn } from "@/lib/utils";
-import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { motion, AnimatePresence } from "framer-motion";
+import { GrainOverlay, CardLoaderDots } from "@/components/ui/card-9";
 import { GoalsStudioPage } from "@/features/agent-rag/onboarding/GoalsStudio";
 import { ActivationCockpitPage } from "@/features/agent-rag/onboarding/ActivationCockpit";
 
-type Tab = "knowledge" | "playground" | "widget" | "analytics" | "onboarding" | "settings";
+// This file used to BE a page (/agent/builder/:id/:tab) with its own sidebar.
+// A public agent now lives in the service dashboard that owns it, exactly like
+// an internal one, so what is left here are the six tabs themselves — the
+// chrome around them belongs to the dashboard (PublicAgentInDashboard).
+export type PublicAgentTab = "knowledge" | "playground" | "widget" | "analytics" | "onboarding" | "ecommerce" | "settings";
 
-interface Agent {
+export interface Agent {
   id: string; project_id: string; name: string; description: string | null; persona: string | null;
   instructions: string | null; model: string; temperature: number;
   welcome_message: string | null; widget_config: any; public_key: string;
   enabled: boolean; onboarding_enabled: boolean; onboarding_copilot_enabled: boolean;
   onboarding_voice_enabled: boolean; onboarding_voice_model: string | null; accent_color: string | null;
+  // Tool use via MCP (0201) — see the E-commerce tab.
+  tool_use_enabled: boolean; max_tool_calls: number; storefront_url: string | null;
 }
 interface Source { id: string; type: string; title: string; status: string; chunk_count: number; byte_size?: number; error_message: string | null; created_at: string; }
 
 // Onboarding is a conditional tab — only surfaced when the agent has the
 // onboarding feature toggled on (see SettingsTab). The base builder is
 // otherwise identical for every public agent.
-const VALID_TABS: Tab[] = ["knowledge", "playground", "widget", "analytics", "onboarding", "settings"];
+export const VALID_PUBLIC_AGENT_TABS: PublicAgentTab[] = ["knowledge", "playground", "widget", "analytics", "onboarding", "ecommerce", "settings"];
 
-export function AgentBuilderPage() {
-  const { agentId, tab: tabParam } = useParams();
-  const { workspaceId, projectId } = useCurrentContext();
-  const tab: Tab = VALID_TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "playground";
-
-  const { data: agent, isLoading } = useQuery({
-    queryKey: ["rag_agent", agentId],
-    enabled: !!agentId,
-    queryFn: async () => {
-      const { data } = await supabase.from("rag_agents").select("*").eq("id", agentId!).maybeSingle();
-      return data as Agent | null;
-    },
-  });
-
-  if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
-  if (!agent) return <EmptyState icon={Bot} title="Agent not found" />;
-
+/** The tab bodies, dispatched by slug. Fetching the agent and drawing the tab
+ *  strip is the host's job. */
+export function PublicAgentTabBody({ agent, tab, workspaceId, projectId }: {
+  agent: Agent; tab: PublicAgentTab; workspaceId: string | null; projectId: string | null;
+}) {
   // The onboarding tab only exists while the feature is on — a stale/direct
   // link falls back to the playground.
-  const effectiveTab: Tab = tab === "onboarding" && !agent.onboarding_enabled ? "playground" : tab;
+  const effectiveTab: PublicAgentTab = tab === "onboarding" && !agent.onboarding_enabled ? "playground" : tab;
 
   return (
     <div>
       {effectiveTab === "knowledge" && <KnowledgeTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {effectiveTab === "playground" && <PlaygroundTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {effectiveTab === "widget" && <WidgetTab agent={agent} />}
-      {effectiveTab === "analytics" && <AnalyticsTab agent={agent} />}
+      {effectiveTab === "analytics" && <PublicAnalyticsTab agent={agent} />}
       {effectiveTab === "onboarding" && <OnboardingTab agent={agent} />}
-      {effectiveTab === "settings" && <SettingsTab agent={agent} />}
+      {effectiveTab === "ecommerce" && <EcommerceTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {effectiveTab === "settings" && <PublicSettingsTab agent={agent} />}
     </div>
   );
 }
@@ -219,8 +217,8 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
 
       {/* Search */}
       <div className="relative mb-3">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search Knowledge Base…" className="pl-9" />
+        <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <SoftInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" className="pl-10" />
       </div>
 
       {/* Type filter chips */}
@@ -255,43 +253,13 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
           <Button className="mt-4" onClick={() => openDialog("text")}><Plus className="h-4 w-4" /> Add document</Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((s) => {
-            const Icon = sourceIcon(s.type);
-            return (
-              <Card key={s.id} className="group">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-                      <Icon className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                      onClick={() => removeSource(s.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                  <div className="mt-3 truncate font-medium" title={s.title}>{s.title}</div>
-                  {s.error_message && (
-                    <div className="mt-0.5 line-clamp-2 text-xs text-destructive" title={s.error_message}>
-                      {s.error_message}
-                    </div>
-                  )}
-                  <div className="mt-3 flex items-center justify-between">
-                    <Badge variant="outline" className="capitalize">{s.type.replace("_", " ")}</Badge>
-                    <Badge variant={s.status === "ready" ? "success" : s.status === "failed" ? "destructive" : "secondary"}>
-                      {s.status === "ready" ? `${s.chunk_count} chunks` : s.status}
-                      {(s.status === "processing" || s.status === "pending") && <Loader2 className="ml-1 inline h-3 w-3 animate-spin" />}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        <motion.div layout className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <AnimatePresence mode="popLayout">
+            {filtered.map((src) => (
+              <KnowledgeCard key={src.id} source={src} onRemove={() => removeSource(src.id)} />
+            ))}
+          </AnimatePresence>
+        </motion.div>
       )}
 
       <AddDocumentDialog
@@ -306,6 +274,84 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
     </div>
   );
 }
+
+/**
+ * A knowledge source, in the card-9 visual language: matte grain, soft 2xl
+ * corners, a motion entrance, and the delete affordance top-right.
+ *
+ * It borrows PromoCard's LOOK, not its markup — PromoCard is a single promo
+ * panel declaring role="dialog" aria-modal="true", which on a grid of twenty
+ * documents would announce twenty modal dialogs to a screen reader. This is an
+ * article in a list, so that is what it says it is.
+ */
+const KnowledgeCard = forwardRef<HTMLElement, { source: Source; onRemove: () => void }>(function KnowledgeCard({ source, onRemove }, ref) {
+  const Icon = sourceIcon(source.type);
+  const pending = source.status === "processing" || source.status === "pending";
+  const failed = source.status === "failed";
+
+  return (
+    <motion.article
+      ref={ref}
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20, transition: { duration: 0.2 } }}
+      transition={{ duration: 0.35, ease: "easeInOut" }}
+      className={cn(
+        "group relative overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm transition-shadow hover:shadow-lg",
+        failed && "border-destructive/40",
+      )}
+    >
+      <GrainOverlay />
+
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={`Supprimer ${source.title}`}
+        onClick={onRemove}
+        className="absolute right-3 top-3 z-20 h-8 w-8 rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+
+      <div className="relative z-10 flex h-full flex-col p-5">
+        {/* While a source is being vectorised the card runs the family's loader
+            dots, so a grid mid-ingest reads as working rather than stalled. */}
+        {pending ? (
+          <CardLoaderDots />
+        ) : (
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted/70">
+            <Icon className="h-4 w-4 text-muted-foreground" />
+          </span>
+        )}
+
+        <div className="mt-4 flex-grow">
+          <p className="mb-1 text-xs font-medium capitalize text-muted-foreground">
+            {source.type.replace("_", " ")}
+          </p>
+          <h3 className="line-clamp-2 text-base font-semibold leading-snug tracking-tight" title={source.title}>
+            {source.title}
+          </h3>
+          {source.error_message && (
+            <p className="mt-1.5 line-clamp-2 text-xs text-destructive" title={source.error_message}>
+              {source.error_message}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-5 flex flex-shrink-0 items-center gap-2">
+          <Badge variant={source.status === "ready" ? "success" : failed ? "destructive" : "secondary"}>
+            {source.status === "ready" ? `${source.chunk_count} chunks` : source.status}
+          </Badge>
+          {source.byte_size ? (
+            <span className="text-xs text-muted-foreground">{fmtBytes(source.byte_size)}</span>
+          ) : null}
+        </div>
+      </div>
+    </motion.article>
+  );
+});
+
 
 function AddDocumentDialog({
   open, defaultType, onClose, onAdded, agent, workspaceId, projectId,
@@ -339,31 +385,28 @@ function AddDocumentDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Add document</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Ajouter un document</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div className="flex gap-1.5">
-            {SOURCE_TYPES.map((t) => (
-              <Button key={t.value} size="sm" variant={type === t.value ? "default" : "outline"} onClick={() => setType(t.value)}>
-                {t.label}
-              </Button>
-            ))}
-          </div>
-          {type !== "saas_structure" && <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />}
+          <SoftSegmented
+            value={type}
+            onChange={(v) => setType(v)}
+            options={SOURCE_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+          />
+          {type !== "saas_structure" && <SoftInput placeholder="Titre" value={title} onChange={(e) => setTitle(e.target.value)} />}
           {type === "text" && (
-            <textarea placeholder="Paste text / FAQ / docs…" value={content} onChange={(e) => setContent(e.target.value)} rows={6}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <SoftTextarea placeholder="Collez du texte, une FAQ, une doc…" value={content} onChange={(e) => setContent(e.target.value)} rows={6} />
           )}
-          {type === "url" && <Input placeholder="https://docs.example.com/page" value={url} onChange={(e) => setUrl(e.target.value)} />}
+          {type === "url" && <SoftInput placeholder="https://docs.exemple.com/page" value={url} onChange={(e) => setUrl(e.target.value)} />}
           {type === "saas_structure" && (
-            <p className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
-              Imports your app's pages & interactive elements from the latest code scan, so the agent can guide users (onboarding). Run a code scan first.
+            <p className="rounded-xl bg-muted/50 p-3.5 text-xs text-muted-foreground">
+              Importe les pages de votre app depuis le dernier scan de code. Lancez un scan d'abord.
             </p>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button onClick={ingest} disabled={busy || (type === "text" && !content) || (type === "url" && !url)}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Ingest & vectorize
+            <Button variant="ghost" onClick={onClose}>Annuler</Button>
+            <Button className="rounded-full" onClick={ingest} disabled={busy || (type === "text" && !content) || (type === "url" && !url)}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Vectoriser
             </Button>
           </div>
         </div>
@@ -434,46 +477,47 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
   }
 
   return (
+    // The dotted ground reads as a canvas. It is a panel of its own rather than
+    // a full-bleed layer, so it doesn't depend on the padding of whatever hosts
+    // this tab (the host's floating tab bar changes it).
     <div
-      className="-mx-6 -my-6 grid grid-cols-1 gap-4 px-6 py-6 lg:-mx-12 lg:grid-cols-[320px_1fr] lg:px-12 xl:-mx-20 xl:px-20"
+      className="grid grid-cols-1 gap-4 rounded-2xl border border-border/60 p-5 lg:grid-cols-[320px_1fr]"
       style={{ backgroundImage: "radial-gradient(hsl(var(--muted-foreground)/0.18) 1px, transparent 1px)", backgroundSize: "16px 16px" }}
     >
       {/* Left config panel */}
       <div className="space-y-4">
-        <h2 className="text-xl font-bold">Playground</h2>
-        <Card>
-          <CardContent className="p-4">
-            <div className={`flex items-center gap-2 text-sm font-medium ${trained ? "text-emerald-400" : "text-muted-foreground"}`}>
-              <span className={`h-2 w-2 rounded-full ${trained ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
-              {trained ? "Trained" : "Not trained yet"}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {stats ? `${stats.ready}/${stats.total} sources · ${stats.chunks} chunks · ${fmtBytes(stats.bytes)}` : "—"}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">Model</label>
-          <select value={model} onChange={(e) => setModel(e.target.value)} className="h-10 w-full rounded-md bg-secondary/60 px-3 text-sm outline-none">
-            <option value="groq">Groq — Llama 3.3 70B (fast)</option>
-            <option value="deepseek">DeepSeek Chat (deep)</option>
-          </select>
+        <div className="rounded-2xl bg-muted/50 p-3.5">
+          <div className={`flex items-center gap-2 text-sm font-medium ${trained ? "text-emerald-500" : "text-muted-foreground"}`}>
+            <span className={`h-2 w-2 rounded-full ${trained ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+            {trained ? "Entraîné" : "Pas encore entraîné"}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {stats ? `${stats.ready}/${stats.total} sources · ${stats.chunks} chunks · ${fmtBytes(stats.bytes)}` : "—"}
+          </div>
         </div>
 
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">Instructions (System prompt)</label>
-          <textarea
+        <SoftField label="Modèle">
+          <SoftSelect
+            value={model}
+            onChange={setModel}
+            options={[
+              { value: "groq", label: "Groq — Llama 3.3 70B" },
+              { value: "deepseek", label: "DeepSeek" },
+            ]}
+          />
+        </SoftField>
+
+        <SoftField label="Instructions">
+          <SoftTextarea
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
-            rows={8}
-            placeholder="### Role&#10;- You are a helpful assistant for…"
-            className="w-full rounded-md bg-secondary/60 px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            rows={10}
+            placeholder="## Rôle&#10;- Tu es…"
           />
-        </div>
+        </SoftField>
 
-        <Button onClick={saveCfg} disabled={savingCfg} className="w-full">
-          {savingCfg ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save changes
+        <Button onClick={saveCfg} disabled={savingCfg} className="w-full rounded-full">
+          {savingCfg ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Enregistrer
         </Button>
       </div>
 
@@ -517,12 +561,11 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
           {/* Branding + input */}
           <div className="px-4 pb-1 text-center text-[10px] text-muted-foreground">Powered by Anduran</div>
           <div className="flex items-center gap-2 border-t border-border p-3">
-            <input
+            <SoftComposerInput
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send()}
               placeholder="Message…"
-              className="h-9 flex-1 rounded-full bg-secondary/60 px-4 text-sm outline-none placeholder:text-muted-foreground"
             />
             <button
               onClick={send}
@@ -541,6 +584,8 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
 
 // --- Widget -------------------------------------------------------------
 // Default widget config (text-chat adaptation of the ElevenLabs widget layout).
+// Mirrored by DEFAULTS in public/widget.js — the embed reads exactly these keys,
+// so a knob added here needs the matching read there or it does nothing.
 const WIDGET_DEFAULTS = {
   title: "Need help?",
   variant: "full",            // tiny | compact | full
@@ -577,14 +622,12 @@ const WIDGET_DEFAULTS = {
   text_placeholder: "Type a message…",
 };
 
-// Section row: label/description on the left, controls on the right (ElevenLabs style).
-function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
+// Section row: its name on the left, its controls on the right. No description
+// line — the control labels already say what each one does.
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-1 gap-4 border-b border-border/40 py-6 lg:grid-cols-[260px_1fr]">
-      <div>
-        <h3 className="font-semibold">{title}</h3>
-        {desc && <p className="mt-1 text-sm text-muted-foreground">{desc}</p>}
-      </div>
+    <div className="grid grid-cols-1 gap-4 border-b border-border/40 py-6 lg:grid-cols-[200px_1fr]">
+      <h3 className="text-sm font-semibold">{title}</h3>
       <div className="space-y-3">{children}</div>
     </div>
   );
@@ -593,11 +636,8 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-3">
-      <label className="text-sm">{label}</label>
-      <div className="flex items-center gap-2 rounded-md bg-secondary/60 px-2.5 py-1.5">
-        <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-5 w-5 shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0" />
-        <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-transparent font-mono text-sm outline-none" />
-      </div>
+      <label className="text-sm text-muted-foreground">{label}</label>
+      <SoftColor value={value} onChange={onChange} />
     </div>
   );
 }
@@ -605,35 +645,9 @@ function ColorRow({ label, value, onChange }: { label: string; value: string; on
 function RadiusRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-3">
-      <label className="text-sm">{label}</label>
-      <div className="flex items-center rounded-md bg-secondary/60 pr-3">
-        <input
-          type="number"
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="h-9 w-full bg-transparent px-2.5 text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-        />
-        <span className="text-xs text-muted-foreground">px</span>
-      </div>
+      <label className="text-sm text-muted-foreground">{label}</label>
+      <SoftNumber value={value} onChange={onChange} unit="px" min={0} max={64} />
     </div>
-  );
-}
-
-function Toggle({ label, desc, checked, onChange }: { label: string; desc?: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex cursor-pointer items-start gap-3">
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={`mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors ${checked ? "bg-primary" : "bg-secondary"}`}
-      >
-        <span className={`h-4 w-4 rounded-full bg-white transition-transform ${checked ? "translate-x-4" : ""}`} />
-      </button>
-      <div>
-        <div className="text-sm font-medium">{label}</div>
-        {desc && <div className="text-xs text-muted-foreground">{desc}</div>}
-      </div>
-    </label>
   );
 }
 
@@ -641,19 +655,46 @@ function TextRow({ label, value, placeholder, onChange }: { label: string; value
   return (
     <div className="grid grid-cols-[160px_1fr] items-center gap-3">
       <label className="font-mono text-xs text-muted-foreground">{label}</label>
-      <input
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-full rounded-md bg-secondary/60 px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
-      />
+      <SoftInput value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+/** Segmented picker — the pill row used for variant / placement / avatar type. */
+function SoftSegmented<T extends string>({ value, options, onChange }: {
+  value: T; options: { value: T; label: string }[]; onChange: (v: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-full bg-muted/50 p-1">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "rounded-full px-4 py-1.5 text-sm capitalize transition-colors",
+            value === o.value ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
 
 function WidgetTab({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
-  const [cfg, setCfg] = useState<Record<string, any>>({ ...WIDGET_DEFAULTS, ...(agent.widget_config ?? {}) });
+  // The agent's brand colour (Settings tab) seeds the accent and the avatar orb,
+  // so an agent that was never opened here still embeds in its own colour
+  // instead of the generic default — which is what widget.js falls back to too.
+  const [cfg, setCfg] = useState<Record<string, any>>({
+    ...WIDGET_DEFAULTS,
+    accent: agent.accent_color ?? WIDGET_DEFAULTS.accent,
+    avatar_first: agent.accent_color ?? WIDGET_DEFAULTS.avatar_first,
+    avatar_second: agent.accent_color ?? WIDGET_DEFAULTS.avatar_second,
+    ...(agent.widget_config ?? {}),
+  });
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -729,9 +770,6 @@ add_action("wp_footer", function () {
     WordPress: wpSnippet,
   };
   const FRAMEWORKS = Object.keys(SNIPPETS);
-  // Use cfg to keep the existing save flow working (currently unused for embed
-  // since the widget now auto-fetches its config from the server).
-  void cfg;
 
   async function save() {
     setSaving(true); setSaved(false);
@@ -743,30 +781,24 @@ add_action("wp_footer", function () {
   }
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Widget</h2>
-        <Button onClick={save} disabled={saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {saved ? "Saved" : "Save"}
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
+      <div className="min-w-0">
+      {/* No "Widget" title — the tab you clicked already said it. */}
+      <div className="mb-2 flex items-center justify-end">
+        <Button onClick={save} disabled={saving} className="rounded-full">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {saved ? "Enregistré" : "Enregistrer"}
         </Button>
       </div>
 
       {/* Setup / Embed */}
-      <Section title="Setup" desc="Attach the widget on your website.">
-        <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">
-          Drop a single tag in your site. The widget will fetch its config from
-          the server and start the conversation. Onboarding is included
-          automatically when enabled on this agent.
-        </div>
-
-        {/* One-liner — the headline */}
+      <Section title="Intégration">
         <div>
-          <div className="mb-1.5 text-sm font-medium">One-line embed (HTML)</div>
-          <pre className="overflow-x-auto whitespace-pre rounded-md bg-secondary/50 p-3 font-mono text-xs leading-relaxed text-foreground/90">{oneLiner}</pre>
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">Balise à coller</div>
+          <pre className="overflow-x-auto whitespace-pre rounded-xl bg-muted/50 p-3.5 font-mono text-xs leading-relaxed text-foreground/90">{oneLiner}</pre>
           <Button
             variant="outline"
             size="sm"
-            className="mt-2"
+            className="mt-2 rounded-full"
             onClick={() => {
               navigator.clipboard.writeText(oneLiner);
               setCopied(true);
@@ -774,61 +806,60 @@ add_action("wp_footer", function () {
             }}
           >
             {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-            {copied ? "Copied" : "Copy embed"}
+            {copied ? "Copié" : "Copier"}
           </Button>
         </div>
 
         {/* Framework-specific variants */}
         <FrameworkSnippets snippets={SNIPPETS} frameworks={FRAMEWORKS} />
 
-        <p className="text-xs text-muted-foreground">
-          Public key:{" "}
-          <code className="rounded bg-secondary/60 px-1.5 py-0.5 text-foreground">{agent.public_key}</code>
-        </p>
-        <Toggle label="Feedback collection" desc="Visitors can rate their satisfaction from 1 to 5 after the conversation." checked={cfg.feedback} onChange={(v) => set("feedback", v)} />
+        <SoftField label="Clé publique">
+          <code className="block truncate rounded-xl bg-muted/50 px-3.5 py-2.5 font-mono text-xs">{agent.public_key}</code>
+        </SoftField>
+        <SoftToggle label="Collecte des avis" checked={cfg.feedback} onChange={(v) => set("feedback", v)} />
       </Section>
 
       {/* Interface */}
-      <Section title="Interface" desc="Configure the parts of the widget interface.">
-        <Toggle label="Collapsible" desc="Visitors can collapse the chat back to the bubble." checked={cfg.collapsible} onChange={(v) => set("collapsible", v)} />
-        <Toggle label="Show branding" desc="Display a small 'Powered by Anduran' line at the bottom." checked={cfg.show_branding} onChange={(v) => set("show_branding", v)} />
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">Variant</label>
-          <div className="inline-flex rounded-md bg-secondary/60 p-0.5">
-            {["tiny", "compact", "full"].map((v) => (
-              <button key={v} onClick={() => set("variant", v)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.variant === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>{v}</button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">Launcher icon</label>
-          <div className="inline-flex rounded-md bg-secondary/60 p-0.5">
-            {["chat", "help", "sparkle"].map((v) => (
-              <button key={v} onClick={() => set("launcher_icon", v)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.launcher_icon === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>{v}</button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">Placement</label>
-          <select value={cfg.placement} onChange={(e) => set("placement", e.target.value)} className="h-9 w-full max-w-xs rounded-md bg-secondary/60 px-2.5 text-sm outline-none">
-            <option value="bottom-right">Bottom-right</option>
-            <option value="bottom-left">Bottom-left</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">Suggested questions</label>
-          <textarea
+      <Section title="Interface">
+        <SoftToggle label="Repliable" checked={cfg.collapsible} onChange={(v) => set("collapsible", v)} />
+        <SoftToggle label="Afficher le branding" checked={cfg.show_branding} onChange={(v) => set("show_branding", v)} />
+        <SoftField label="Variante">
+          <SoftSegmented
+            value={cfg.variant}
+            onChange={(v) => set("variant", v)}
+            options={[{ value: "tiny", label: "tiny" }, { value: "compact", label: "compact" }, { value: "full", label: "full" }]}
+          />
+        </SoftField>
+        <SoftField label="Icône du lanceur">
+          <SoftSegmented
+            value={cfg.launcher_icon}
+            onChange={(v) => set("launcher_icon", v)}
+            options={[{ value: "chat", label: "chat" }, { value: "help", label: "help" }, { value: "sparkle", label: "sparkle" }]}
+          />
+        </SoftField>
+        <SoftField label="Position">
+          <SoftSelect
+            className="max-w-xs"
+            value={cfg.placement}
+            onChange={(v) => set("placement", v)}
+            options={[
+              { value: "bottom-right", label: "En bas à droite" },
+              { value: "bottom-left", label: "En bas à gauche" },
+            ]}
+          />
+        </SoftField>
+        <SoftField label="Questions suggérées">
+          <SoftTextarea
             value={cfg.suggested_questions}
             onChange={(e) => set("suggested_questions", e.target.value)}
             rows={3}
-            placeholder={"One per line, shown as quick replies\nHow do I get started?\nWhat are your pricing plans?"}
-            className="w-full rounded-md bg-secondary/60 px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            placeholder={"Une par ligne\nComment démarrer ?\nQuels sont vos tarifs ?"}
           />
-        </div>
+        </SoftField>
       </Section>
 
       {/* Styling */}
-      <Section title="Styling" desc="Customize the colors and shape of the widget to best fit your website.">
+      <Section title="Style">
         <ColorRow label="Base" value={cfg.base} onChange={(v) => set("base", v)} />
         <ColorRow label="Base Border" value={cfg.base_border} onChange={(v) => set("base_border", v)} />
         <ColorRow label="Base Subtle" value={cfg.base_subtle} onChange={(v) => set("base_subtle", v)} />
@@ -841,40 +872,104 @@ add_action("wp_footer", function () {
       </Section>
 
       {/* Avatar */}
-      <Section title="Avatar" desc="Configure the chat orb or provide your own avatar image.">
-        <div className="inline-flex rounded-md bg-secondary/60 p-0.5">
-          {["orb", "image"].map((t) => (
-            <button key={t} onClick={() => set("avatar_type", t)} className={`rounded px-4 py-1.5 text-sm capitalize transition-colors ${cfg.avatar_type === t ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>{t}</button>
-          ))}
-        </div>
+      <Section title="Avatar">
+        <SoftSegmented
+          value={cfg.avatar_type}
+          onChange={(v) => set("avatar_type", v)}
+          options={[{ value: "orb", label: "orb" }, { value: "image", label: "image" }]}
+        />
         {cfg.avatar_type === "orb" ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <ColorRow label="First color" value={cfg.avatar_first} onChange={(v) => set("avatar_first", v)} />
-            <ColorRow label="Second color" value={cfg.avatar_second} onChange={(v) => set("avatar_second", v)} />
+            <ColorRow label="Couleur 1" value={cfg.avatar_first} onChange={(v) => set("avatar_first", v)} />
+            <ColorRow label="Couleur 2" value={cfg.avatar_second} onChange={(v) => set("avatar_second", v)} />
           </div>
         ) : (
-          <input placeholder="Avatar image URL" value={cfg.avatar_url} onChange={(e) => set("avatar_url", e.target.value)} className="h-9 w-full rounded-md bg-secondary/60 px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring" />
+          <SoftInput placeholder="URL de l'image" value={cfg.avatar_url} onChange={(e) => set("avatar_url", e.target.value)} />
         )}
       </Section>
 
       {/* Terms & Conditions */}
-      <Section title="Terms & Conditions" desc="Require the visitor to accept your terms before chatting.">
-        <Toggle label="Enable terms & conditions" checked={cfg.terms_enabled} onChange={(v) => set("terms_enabled", v)} />
+      <Section title="Conditions">
+        <SoftToggle label="Accepter les conditions avant de discuter" checked={cfg.terms_enabled} onChange={(v) => set("terms_enabled", v)} />
         {cfg.terms_enabled && (
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">Terms content <span className="text-xs text-muted-foreground">(Markdown)</span></label>
-            <textarea value={cfg.terms_content} onChange={(e) => set("terms_content", e.target.value)} rows={5} className="w-full rounded-md bg-secondary/60 px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring" />
-          </div>
+          <SoftField label="Texte (Markdown)">
+            <SoftTextarea value={cfg.terms_content} onChange={(e) => set("terms_content", e.target.value)} rows={5} />
+          </SoftField>
         )}
       </Section>
 
       {/* Text contents */}
-      <Section title="Text contents" desc="Modify the text shown in the widget interface.">
-        <TextRow label="main_label" value={cfg.text_main_label} placeholder="Need help?" onChange={(v) => set("text_main_label", v)} />
-        <TextRow label="start_chat" value={cfg.text_start_chat} placeholder="Start a chat" onChange={(v) => set("text_start_chat", v)} />
-        <TextRow label="send" value={cfg.text_send} placeholder="Send" onChange={(v) => set("text_send", v)} />
-        <TextRow label="placeholder" value={cfg.text_placeholder} placeholder="Type a message…" onChange={(v) => set("text_placeholder", v)} />
+      <Section title="Libellés">
+        <TextRow label="main_label" value={cfg.text_main_label} placeholder="Besoin d'aide ?" onChange={(v) => set("text_main_label", v)} />
+        <TextRow label="start_chat" value={cfg.text_start_chat} placeholder="Démarrer" onChange={(v) => set("text_start_chat", v)} />
+        <TextRow label="send" value={cfg.text_send} placeholder="Envoyer" onChange={(v) => set("text_send", v)} />
+        <TextRow label="placeholder" value={cfg.text_placeholder} placeholder="Votre message…" onChange={(v) => set("text_placeholder", v)} />
       </Section>
+      </div>
+
+      <WidgetPreview agent={agent} cfg={cfg} />
+    </div>
+  );
+}
+
+/** Live preview of the embed. It runs the *real* public/widget.js in an iframe
+ *  rather than re-implementing the chat in React: a second implementation is
+ *  exactly how the embed drifted away from what this panel promised. The unsaved
+ *  form state is pushed over postMessage, so the preview reacts without
+ *  remounting (and without re-fetching the agent config) on every edit. */
+function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: Record<string, any> }) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [ready, setReady] = useState(false);
+
+  // Same file the customer's site loads. In dev it is served by Vite from
+  // public/, in prod by the deploy — either way it is same-origin here.
+  const src = `${window.location.origin}/widget.js`;
+
+  const srcDoc =
+    `<!doctype html><html><head><meta charset="utf-8">` +
+    `<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}</style>` +
+    `</head><body>` +
+    `<script src="${src}" data-agent="${agent.public_key}" data-preview="1" data-onboarding="off"><\/script>` +
+    `</body></html>`;
+
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.data?.type === "founderos:preview-ready") setReady(true);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    frameRef.current?.contentWindow?.postMessage({ type: "founderos:preview-config", config: cfg }, "*");
+  }, [cfg, ready]);
+
+  // Keep the frame tall enough for the chosen variant (see VARIANT_SIZE in
+  // widget.js) plus a little breathing room.
+  const height = cfg.variant === "tiny" ? 470 : cfg.variant === "compact" ? 550 : 650;
+
+  return (
+    <div className="xl:sticky xl:top-4 xl:self-start">
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <Sparkles className="h-3.5 w-3.5" />
+        Aperçu en direct
+      </div>
+      <div
+        className="flex items-center justify-center rounded-2xl border border-border/60 p-4"
+        style={{ backgroundImage: "radial-gradient(hsl(var(--muted-foreground)/0.18) 1px, transparent 1px)", backgroundSize: "16px 16px" }}
+      >
+        <iframe
+          ref={frameRef}
+          title="Aperçu du widget"
+          srcDoc={srcDoc}
+          className="w-full rounded-xl border-0"
+          style={{ height, colorScheme: "light" }}
+        />
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+        Le vrai widget, branché sur l'agent : les messages envoyés ici comptent comme des conversations réelles.
+      </p>
     </div>
   );
 }
@@ -925,7 +1020,7 @@ function StatCard({ title, value, hint }: { title: string; value: string; hint?:
   );
 }
 
-function AnalyticsTab({ agent }: { agent: Agent }) {
+function PublicAnalyticsTab({ agent }: { agent: Agent }) {
   const [tab, setTab] = useState<AnalyticsTab>("general");
   const [days, setDays] = useState(7);
 
@@ -999,14 +1094,13 @@ function AnalyticsTab({ agent }: { agent: Agent }) {
       </div>
 
       {/* Filter bar */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5 rounded-md bg-secondary/60 px-2.5 py-1.5 text-sm">
-          <span className="text-xs text-muted-foreground">Date Range</span>
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="bg-transparent text-sm outline-none">
-            {RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </div>
-        <span className="rounded-md bg-secondary/60 px-2.5 py-1.5 text-sm">Agent · {agent.name}</span>
+      <div className="mb-4">
+        <SoftSelect
+          className="max-w-[13rem]"
+          value={String(days)}
+          onChange={(v) => setDays(Number(v))}
+          options={RANGES.map((r) => ({ value: String(r.value), label: r.label }))}
+        />
       </div>
 
       {tab === "general" && (
@@ -1210,73 +1304,592 @@ function OnboardingSettings({ agent }: { agent: Agent }) {
   }
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       {/* Agent onboarding switches */}
-      <Card>
-        <CardContent className="space-y-3 p-5">
-          <h2 className="text-sm font-semibold">Guide d'onboarding</h2>
-          <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={copilot} onChange={(e) => setCopilot(e.target.checked)} />
-            <span>Co-pilote agentique <span className="text-muted-foreground">— pilote l'UI en direct (clique/remplit) via page-agent. Actions destructives toujours confirmées.</span></span>
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4 accent-primary" checked={voice} onChange={(e) => setVoice(e.target.checked)} />
-            Voix — guide parlé (Deepgram Aura)
-          </label>
-          <div className={cn(!voice && "opacity-50")}>
-            <label className="mb-1 block text-xs text-muted-foreground">Voix de synthèse</label>
-            <select value={voiceModel} disabled={!voice} onChange={(e) => setVoiceModel(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:cursor-not-allowed">
-              {AURA_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-            </select>
-          </div>
-          <Button onClick={saveAgent} disabled={savingAgent}>{savingAgent ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savedAgent ? "Enregistré" : "Enregistrer"}</Button>
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold">Guide</h2>
+        <SoftToggle label="Co-pilote agentique" checked={copilot} onChange={setCopilot} />
+        <SoftToggle label="Guide parlé" checked={voice} onChange={setVoice} />
+        <SoftField label="Voix de synthèse" className={cn(!voice && "opacity-50")}>
+          <SoftSelect
+            value={voiceModel}
+            onChange={setVoiceModel}
+            disabled={!voice}
+            options={AURA_VOICES.map((v) => ({ value: v.value, label: v.label }))}
+          />
+        </SoftField>
+        <Button onClick={saveAgent} disabled={savingAgent} className="rounded-full">
+          {savingAgent ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savedAgent ? "Enregistré" : "Enregistrer"}
+        </Button>
+      </section>
 
       {/* Guardrails on the active goal's constraints */}
-      <Card>
-        <CardContent className="space-y-3 p-5">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold">Garde-fous</h2>
-            {(goals ?? []).length > 1 && (
-              <select value={goalId} onChange={(e) => setGoalId(e.target.value)} className="h-8 max-w-[12rem] rounded-md border border-input bg-background px-2 text-xs">
-                {(goals ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            )}
-          </div>
-          {!activeGoal ? (
-            <p className="text-xs text-muted-foreground">Créez un objectif dans l'onglet « Objectifs » pour définir ses garde-fous.</p>
-          ) : (
-            <>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Ton</label>
-                <Input value={tone} onChange={(e) => setTone(e.target.value)} placeholder="chaleureux, concis, tutoiement…" />
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" className="h-4 w-4 accent-primary" checked={noBlock} onChange={(e) => setNoBlock(e.target.checked)} />
-                Ne pas bloquer l'écran (rester discret)
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Locale</label>
-                  <Input value={locale} onChange={(e) => setLocale(e.target.value)} placeholder="fr-FR" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Relances max / session</label>
-                  <Input type="number" min={0} value={maxNudges} onChange={(e) => setMaxNudges(e.target.value === "" ? "" : Number(e.target.value))} placeholder="3" />
-                </div>
-              </div>
-              <p className="text-[11px] leading-relaxed text-muted-foreground">Le ton et « ne pas bloquer l'écran » sont appliqués par le guide en direct. Locale et relances max sont conservés pour l'orchestration du parcours.</p>
-              <Button onClick={saveGuardrails} disabled={savingGuard}>{savingGuard ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savedGuard ? "Enregistré" : "Enregistrer les garde-fous"}</Button>
-            </>
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Garde-fous</h2>
+          {(goals ?? []).length > 1 && (
+            <SoftSelect
+              className="max-w-[14rem]"
+              align="end"
+              value={goalId}
+              onChange={setGoalId}
+              options={(goals ?? []).map((g) => ({ value: g.id, label: g.name }))}
+            />
           )}
-        </CardContent>
-      </Card>
+        </div>
+        {!activeGoal ? (
+          <p className="text-xs text-muted-foreground">Créez un objectif pour définir ses garde-fous.</p>
+        ) : (
+          <>
+            <SoftField label="Ton">
+              <SoftInput value={tone} onChange={(e) => setTone(e.target.value)} placeholder="chaleureux, concis…" />
+            </SoftField>
+            <SoftToggle label="Ne pas bloquer l'écran" checked={noBlock} onChange={setNoBlock} />
+            <div className="grid grid-cols-2 gap-4">
+              <SoftField label="Locale">
+                <SoftInput value={locale} onChange={(e) => setLocale(e.target.value)} placeholder="fr-FR" />
+              </SoftField>
+              <SoftField label="Relances max / session">
+                <SoftInput type="number" min={0} value={maxNudges} onChange={(e) => setMaxNudges(e.target.value === "" ? "" : Number(e.target.value))} placeholder="3" />
+              </SoftField>
+            </div>
+            <Button onClick={saveGuardrails} disabled={savingGuard} className="rounded-full">
+              {savingGuard ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savedGuard ? "Enregistré" : "Enregistrer"}
+            </Button>
+          </>
+        )}
+      </section>
     </div>
   );
 }
 
-function SettingsTab({ agent }: { agent: Agent }) {
+// --- E-commerce (MCP-backed) --------------------------------------------
+// A public agent reaches a catalogue — and gets ACTIONS — through MCP servers,
+// not a bespoke REST integration per platform. Shopify's Storefront MCP is the
+// reference case: one unauthenticated endpoint per store
+// (https://{shop}/api/mcp) exposing catalogue search and cart operations.
+//
+// The workspace MCP registry (mcp_servers) is shared with the internal agents;
+// what this tab owns is the attach side (rag_agent_mcp_servers) and, above all,
+// the per-tool allowlist — a public agent is driven by anonymous traffic, so
+// "the server exposes it" is not the same as "the agent may call it".
+const MCP_STORE_PRESETS = [
+  {
+    key: "shopify",
+    label: "Shopify — Storefront MCP",
+    /** Per-store endpoint; only the shop domain varies. */
+    url: (domain: string) => `https://${domain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/api/mcp`,
+    domainPlaceholder: "ma-boutique.myshopify.com",
+    auth: "none" as const,
+    help: "Endpoint public de votre boutique — aucune clé à fournir. Il expose la recherche catalogue et les opérations de panier.",
+  },
+  {
+    key: "custom",
+    label: "Autre serveur MCP",
+    url: (raw: string) => raw.trim(),
+    domainPlaceholder: "https://mon-serveur/mcp",
+    auth: "header" as const,
+    help: "Collez l'URL complète du serveur MCP (Streamable HTTP ou SSE). Ajoutez un en-tête d'authentification si le serveur en exige un.",
+  },
+];
+
+interface McpServerRow {
+  id: string; name: string; url: string; enabled: boolean;
+  status: string | null; last_error: string | null;
+  cached_tools: { name: string; description?: string }[] | null;
+}
+interface AttachRow { server_id: string; allowed_tools: string[] }
+
+/** The tables and columns this tab writes to arrive with migration 0201. Until
+ *  it is applied every toggle fails, and Postgres says so precisely — surfacing
+ *  that beats a switch that silently refuses to move. */
+function schemaMissing(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | null;
+  if (!e) return false;
+  return e.code === "42703" || e.code === "PGRST205" || e.code === "42P01"
+    || /does not exist|schema cache/i.test(e.message ?? "");
+}
+function writeError(err: unknown): string {
+  if (schemaMissing(err)) {
+    return "La migration 0201 n'est pas encore appliquée sur cette base — lancez `supabase db push`, puis rechargez la page.";
+  }
+  const e = err as { message?: string } | null;
+  return e?.message || "Échec de l'enregistrement.";
+}
+
+/** Compact switch for a list row, where a full-width SoftToggle would render as
+ *  a large empty block (its label carries the width). */
+function MiniSwitch({ checked, onChange, title }: {
+  checked: boolean; onChange: (v: boolean) => void; title?: string;
+}) {
+  return (
+    <button
+      type="button" role="switch" aria-checked={checked} title={title}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+        checked ? "bg-primary" : "bg-border hover:bg-muted-foreground/30",
+      )}
+    >
+      <span className={cn(
+        "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
+        checked && "translate-x-4",
+      )} />
+    </button>
+  );
+}
+
+const ECOM_SUBTABS = [
+  { value: "servers", label: "Boutique" },
+  { value: "tools", label: "Outils" },
+  { value: "activity", label: "Activité" },
+] as const;
+type EcomSubtab = (typeof ECOM_SUBTABS)[number]["value"];
+
+function EcommerceTab({ agent, workspaceId }: {
+  agent: Agent; workspaceId: string | null; projectId: string | null;
+}) {
+  const [sub, setSub] = useState<EcomSubtab>("servers");
+
+  const { data: servers, refetch: refetchServers } = useQuery({
+    queryKey: ["pa_mcp_servers", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("mcp_servers").select("id, name, url, enabled, status, last_error, cached_tools")
+        .eq("workspace_id", workspaceId!).order("created_at");
+      return (data ?? []) as McpServerRow[];
+    },
+  });
+
+  const { data: attached, refetch: refetchAttached, error: attachError } = useQuery({
+    queryKey: ["pa_mcp_attached", agent.id],
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("rag_agent_mcp_servers").select("server_id, allowed_tools").eq("agent_id", agent.id);
+      if (error) throw error;
+      return (data ?? []) as AttachRow[];
+    },
+  });
+
+  const refetchAll = () => { refetchServers(); refetchAttached(); };
+
+  // Without the migration nothing on this tab can save. Say so once, at the top,
+  // instead of letting three sets of controls fail quietly.
+  const needsMigration = schemaMissing(attachError);
+
+  // Attaching a server is only two thirds of the job: tool use must be on AND at
+  // least one tool ticked. Miss either and the agent silently stays a plain RAG
+  // answerer — it will say "je n'ai pas d'information sur les produits" with
+  // full confidence, which reads like a bug rather than a missing switch.
+  const grantedCount = (attached ?? []).reduce((n, a) => n + (a.allowed_tools?.length ?? 0), 0);
+  const inertReason = !needsMigration && (attached ?? []).length > 0
+    ? (!agent.tool_use_enabled
+        ? "« Autoriser cet agent à appeler des outils » est désactivé (onglet Boutique)."
+        : grantedCount === 0
+          ? "Aucun outil n'est coché (onglet Outils) — une liste vide n'autorise rien."
+          : null)
+    : null;
+
+  return (
+    <div className="mx-auto w-full max-w-3xl">
+      {needsMigration && (
+        <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs leading-relaxed">
+          <div className="font-semibold text-amber-600 dark:text-amber-400">Schéma manquant</div>
+          <p className="mt-1 text-muted-foreground">
+            Les tables de cet onglet (<code className="font-mono">rag_agent_mcp_servers</code>,{" "}
+            <code className="font-mono">rag_agents.tool_use_enabled</code>) n'existent pas encore sur
+            cette base : les interrupteurs ci-dessous ne pourront rien enregistrer. Appliquez la
+            migration <code className="font-mono">0201_public_agent_mcp.sql</code> avec{" "}
+            <code className="font-mono">supabase db push</code>, puis rechargez la page.
+          </p>
+        </div>
+      )}
+      {inertReason && (
+        <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs leading-relaxed">
+          <div className="font-semibold text-amber-600 dark:text-amber-400">
+            Serveur connecté, mais l'agent n'appellera aucun outil
+          </div>
+          <p className="mt-1 text-muted-foreground">
+            {inertReason} Tant que c'est le cas, l'agent répond uniquement depuis sa base de
+            connaissances et dira qu'il n'a pas d'information sur vos produits.
+          </p>
+        </div>
+      )}
+      <div className="mb-4 flex flex-wrap gap-4 border-b border-border/40">
+        {ECOM_SUBTABS.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => setSub(t.value)}
+            className={`-mb-px border-b-2 pb-2 text-sm transition-colors ${sub === t.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {sub === "servers" && (
+        <McpStoreServers
+          agent={agent} workspaceId={workspaceId}
+          servers={servers ?? []} attached={attached ?? []} onChanged={refetchAll}
+        />
+      )}
+      {sub === "tools" && (
+        <McpToolGrants
+          agent={agent} servers={servers ?? []} attached={attached ?? []} onChanged={refetchAll}
+        />
+      )}
+      {sub === "activity" && <McpToolActivity agent={agent} />}
+    </div>
+  );
+}
+
+function McpStoreServers({ agent, workspaceId, servers, attached, onChanged }: {
+  agent: Agent; workspaceId: string | null;
+  servers: McpServerRow[]; attached: AttachRow[]; onChanged: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [presetKey, setPresetKey] = useState("shopify");
+  const [input, setInput] = useState("");
+  const [name, setName] = useState("");
+  const [authHeader, setAuthHeader] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+
+  const preset = MCP_STORE_PRESETS.find((p) => p.key === presetKey)!;
+  const attachedIds = new Set(attached.map((a) => a.server_id));
+
+  // Create the server in the workspace registry, discover its tools, attach it.
+  async function connect() {
+    if (!workspaceId || !input.trim()) return;
+    setBusy(true); setError(null); setOkMsg(null);
+    try {
+      const url = preset.url(input);
+      if (!/^https?:\/\//i.test(url)) throw new Error("L'URL doit être absolue (http/https).");
+
+      const headers = presetKey === "custom" && authHeader.trim()
+        ? { Authorization: authHeader.trim() }
+        : {};
+
+      // Validate before persisting — an unreachable endpoint should not leave a
+      // broken server sitting in the registry.
+      const test = await callEdge<{ ok: boolean; error?: string; count?: number }>("mcp-gateway", {
+        action: "test", url, headers, transport: "http",
+      });
+      if (!test.ok) throw new Error(test.error || "Le serveur MCP n'a pas répondu.");
+
+      const { data: created, error: insErr } = await supabase
+        .from("mcp_servers")
+        .insert({
+          workspace_id: workspaceId,
+          name: name.trim() || defaultName(presetKey, input),
+          url, headers, transport: "http",
+          auth_mode: Object.keys(headers).length ? "header" : preset.auth,
+        })
+        .select("id").single();
+      if (insErr) throw new Error(insErr.message);
+
+      // Cache the tool list on the row so rag-chat doesn't re-handshake per message.
+      await callEdge("mcp-gateway", { action: "discover", server_id: created.id }).catch(() => {});
+      const { error: attErr } = await supabase.from("rag_agent_mcp_servers")
+        .upsert({ agent_id: agent.id, server_id: created.id, allowed_tools: [] }, { onConflict: "agent_id,server_id" });
+      // The server is registered either way; failing to attach it is what would
+      // otherwise leave a server visible in the list that nothing can enable.
+      if (attErr) throw attErr;
+
+      setInput(""); setName(""); setAuthHeader("");
+      setOkMsg(`${test.count ?? 0} outil(s) détecté(s). Choisissez ceux que l'agent peut utiliser dans l'onglet Outils.`);
+      onChanged();
+    } catch (e) {
+      setError(writeError(e));
+    } finally { setBusy(false); }
+  }
+
+  async function toggleAttach(server: McpServerRow, on: boolean) {
+    setError(null);
+    const { error: err } = on
+      ? await supabase.from("rag_agent_mcp_servers")
+          .upsert({ agent_id: agent.id, server_id: server.id, allowed_tools: [] }, { onConflict: "agent_id,server_id" })
+      : await supabase.from("rag_agent_mcp_servers")
+          .delete().eq("agent_id", agent.id).eq("server_id", server.id);
+    if (err) { setError(writeError(err)); return; }
+    onChanged();
+  }
+
+  async function rediscover(server: McpServerRow) {
+    setBusy(true);
+    try { await callEdge("mcp-gateway", { action: "discover", server_id: server.id }); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); onChanged(); }
+  }
+
+  async function saveAgent(patch: Record<string, unknown>) {
+    setError(null);
+    const { error: err } = await supabase.from("rag_agents").update(patch).eq("id", agent.id);
+    if (err) { setError(writeError(err)); return; }
+    queryClient.invalidateQueries({ queryKey: ["rag_agent", agent.id] });
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-8">
+      {/* One error line for the whole panel: the toggles further down write too,
+          and an error rendered only next to the connect button would be off
+          screen exactly when they fail. */}
+      {error && (
+        <p className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
+      )}
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold">Connecter une boutique</h2>
+        <SoftSegmented
+          value={presetKey}
+          onChange={(v) => { setPresetKey(v); setInput(""); setError(null); setOkMsg(null); }}
+          options={MCP_STORE_PRESETS.map((p) => ({ value: p.key, label: p.label }))}
+        />
+        <SoftField label={presetKey === "shopify" ? "Domaine de la boutique" : "URL du serveur MCP"}>
+          <SoftInput
+            value={input}
+            placeholder={preset.domainPlaceholder}
+            onChange={(e) => setInput(e.target.value)}
+          />
+        </SoftField>
+        {presetKey === "shopify" && input.trim() && (
+          <p className="font-mono text-xs text-muted-foreground">→ {preset.url(input)}</p>
+        )}
+        <SoftField label="Nom (facultatif)">
+          <SoftInput value={name} placeholder={defaultName(presetKey, input)} onChange={(e) => setName(e.target.value)} />
+        </SoftField>
+        {presetKey === "custom" && (
+          <SoftField label="En-tête d'authentification (facultatif)">
+            <SoftInput
+              value={authHeader} placeholder="Bearer sk_…" autoComplete="off"
+              onChange={(e) => setAuthHeader(e.target.value)}
+            />
+          </SoftField>
+        )}
+        <p className="rounded-xl bg-muted/50 p-3.5 text-xs leading-relaxed text-muted-foreground">{preset.help}</p>
+        <Button onClick={connect} disabled={busy || !input.trim()} className="rounded-full">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
+          Tester et connecter
+        </Button>
+        {okMsg && <p className="text-sm text-emerald-500">{okMsg}</p>}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold">Serveurs MCP de l'espace</h2>
+        {servers.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Aucun serveur enregistré pour le moment.</p>
+        ) : (
+          <div className="space-y-2">
+            {servers.map((s) => {
+              const on = attachedIds.has(s.id);
+              const toolCount = (s.cached_tools ?? []).length;
+              return (
+                <div key={s.id} className="flex items-start gap-3 rounded-2xl border border-border/60 p-3.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                    <Store className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-medium">{s.name}</span>
+                      <Badge variant={s.status === "ok" ? "success" : s.status === "error" ? "destructive" : "secondary"}>
+                        {s.status === "ok" ? `${toolCount} outil(s)` : s.status === "error" ? "erreur" : "jamais testé"}
+                      </Badge>
+                    </div>
+                    <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{s.url}</div>
+                    {s.last_error && <div className="mt-1 line-clamp-2 text-xs text-destructive">{s.last_error}</div>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" title="Redécouvrir les outils"
+                      onClick={() => rediscover(s)} disabled={busy}>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    </Button>
+                    <MiniSwitch
+                      checked={on} onChange={(v) => toggleAttach(s, v)}
+                      title={on ? "Détacher de cet agent" : "Attacher à cet agent"}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Le registre MCP est partagé avec les agents internes. Activer un serveur ici l'attache
+          à cet agent public uniquement.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold">Utilisation des outils</h2>
+        <SoftToggle
+          label="Autoriser cet agent à appeler des outils"
+          checked={agent.tool_use_enabled}
+          onChange={(v) => saveAgent({ tool_use_enabled: v })}
+        />
+        <SoftField label={`Appels d'outils max par message · ${agent.max_tool_calls ?? 4}`}>
+          <SoftRange
+            min={1} max={10} step={1}
+            value={agent.max_tool_calls ?? 4}
+            onChange={(e) => saveAgent({ max_tool_calls: Number(e.target.value) })}
+            className="mt-2.5"
+          />
+        </SoftField>
+        <SoftField label="URL de la vitrine (si les liens produits pointent ailleurs)">
+          <SoftInput
+            placeholder="https://boutique.mondomaine.com"
+            defaultValue={agent.storefront_url ?? ""}
+            onBlur={(e) => saveAgent({ storefront_url: e.target.value || null })}
+          />
+        </SoftField>
+        <p className="rounded-xl bg-muted/50 p-3.5 text-xs leading-relaxed text-muted-foreground">
+          Chaque appel d'outil est une requête vers la boutique et un aller-retour de plus avec le
+          modèle : la limite protège le temps de réponse du widget autant que votre facture.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+function defaultName(presetKey: string, input: string) {
+  if (presetKey === "shopify") {
+    const d = input.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+    return d ? `Shopify · ${d}` : "Shopify Storefront";
+  }
+  return "Serveur MCP";
+}
+
+function McpToolGrants({ agent, servers, attached, onChanged }: {
+  agent: Agent; servers: McpServerRow[]; attached: AttachRow[]; onChanged: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const byId = new Map(servers.map((s) => [s.id, s]));
+  const rows = attached
+    .map((a) => ({ attach: a, server: byId.get(a.server_id) }))
+    .filter((r): r is { attach: AttachRow; server: McpServerRow } => !!r.server);
+
+  async function setAllowed(serverId: string, tools: string[]) {
+    setError(null);
+    const { error: err } = await supabase.from("rag_agent_mcp_servers")
+      .update({ allowed_tools: tools }).eq("agent_id", agent.id).eq("server_id", serverId);
+    if (err) { setError(writeError(err)); return; }
+    onChanged();
+  }
+
+  if (rows.length === 0) {
+    return <EmptyState icon={Plug} title="Aucun serveur attaché" description="Connectez une boutique dans l'onglet Boutique pour voir ses outils." />;
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-6">
+      {error && (
+        <p className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
+      )}
+      <p className="rounded-xl bg-muted/50 p-3.5 text-xs leading-relaxed text-muted-foreground">
+        Cochez les outils que l'agent peut appeler. Rien n'est autorisé par défaut : ce widget est
+        exposé à tout internet, et un serveur boutique publie les opérations de panier à côté de la
+        simple recherche catalogue.
+      </p>
+      {rows.map(({ attach, server }) => {
+        const tools = server.cached_tools ?? [];
+        const allowed = new Set(attach.allowed_tools ?? []);
+        return (
+          <section key={server.id} className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="truncate text-sm font-semibold">{server.name}</h2>
+              <div className="flex shrink-0 gap-1.5">
+                <button
+                  onClick={() => setAllowed(server.id, tools.map((t) => t.name))}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-secondary"
+                >
+                  Tout
+                </button>
+                <button
+                  onClick={() => setAllowed(server.id, [])}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-secondary"
+                >
+                  Aucun
+                </button>
+              </div>
+            </div>
+            {tools.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Aucun outil en cache — lancez une redécouverte depuis l'onglet Boutique.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border/40 rounded-xl border border-border/60">
+                {tools.map((t) => (
+                  <li key={t.name} className="px-2.5 py-2">
+                    <SoftCheckbox
+                      checked={allowed.has(t.name)}
+                      onChange={(on) => {
+                        const next = new Set(allowed);
+                        if (on) next.add(t.name); else next.delete(t.name);
+                        setAllowed(server.id, [...next]);
+                      }}
+                      label={<span className="font-mono text-xs font-medium">{t.name}</span>}
+                      hint={t.description}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function McpToolActivity({ agent }: { agent: Agent }) {
+  const { data: calls } = useQuery({
+    queryKey: ["pa_tool_calls", agent.id],
+    refetchInterval: 10000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("rag_agent_tool_calls")
+        .select("id, tool_name, args, ok, error, duration_ms, visitor_id, created_at")
+        .eq("agent_id", agent.id).order("created_at", { ascending: false }).limit(50);
+      return (data ?? []) as {
+        id: string; tool_name: string; args: Record<string, unknown>; ok: boolean;
+        error: string | null; duration_ms: number | null; visitor_id: string | null; created_at: string;
+      }[];
+    },
+  });
+
+  if ((calls ?? []).length === 0) {
+    return <EmptyState icon={Package} title="Aucun appel d'outil" description="Les appels faits par l'agent pour vos visiteurs apparaîtront ici." />;
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-2">
+      <p className="mb-3 text-xs text-muted-foreground">
+        Chaque appel déclenché par un visiteur anonyme, avec ses arguments — utile pour comprendre
+        une réponse étrange autant que pour répondre à une demande RGPD.
+      </p>
+      {(calls ?? []).map((c) => (
+        <div key={c.id} className="rounded-xl border border-border/60 px-3.5 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs font-medium">{c.tool_name}</span>
+            <Badge variant={c.ok ? "success" : "destructive"}>{c.ok ? "ok" : "échec"}</Badge>
+            {c.duration_ms != null && <span className="text-[11px] text-muted-foreground">{c.duration_ms} ms</span>}
+            <span className="ml-auto text-[11px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
+          </div>
+          {c.error && <div className="mt-1 line-clamp-2 text-xs text-destructive">{c.error}</div>}
+          {c.args && Object.keys(c.args).length > 0 && (
+            <pre className="mt-1.5 overflow-x-auto rounded-lg bg-muted/50 p-2 font-mono text-[11px] text-muted-foreground">
+              {JSON.stringify(c.args)}
+            </pre>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PublicSettingsTab({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     name: agent.name, description: agent.description ?? "", persona: agent.persona ?? "",
@@ -1303,53 +1916,54 @@ function SettingsTab({ agent }: { agent: Agent }) {
   function upd<K extends keyof typeof form>(k: K, v: (typeof form)[K]) { setForm((f) => ({ ...f, [k]: v })); }
 
   return (
-    <Card className="max-w-2xl">
-      <CardContent className="space-y-3 p-5">
-        <div className="flex items-end gap-3">
-          <div className="flex-1"><label className="mb-1 block text-xs text-muted-foreground">Name</label><Input value={form.name} onChange={(e) => upd("name", e.target.value)} /></div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Accent color</label>
-            <input type="color" value={form.accent_color} onChange={(e) => upd("accent_color", e.target.value)} className="h-10 w-12 cursor-pointer rounded-md border border-border bg-transparent p-0.5" title="Card accent color" />
-          </div>
-        </div>
-        <div><label className="mb-1 block text-xs text-muted-foreground">Description</label><Input value={form.description} onChange={(e) => upd("description", e.target.value)} /></div>
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Persona</label>
-          <Input value={form.persona} onChange={(e) => upd("persona", e.target.value)} placeholder="You are a friendly support agent for…" />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Extra instructions</label>
-          <textarea value={form.instructions} onChange={(e) => upd("instructions", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Welcome message</label>
-          <Input value={form.welcome_message} onChange={(e) => upd("welcome_message", e.target.value)} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Model</label>
-            <select value={form.model} onChange={(e) => upd("model", e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
-              <option value="groq">Groq (fast)</option>
-              <option value="deepseek">DeepSeek (deep)</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Temperature ({form.temperature})</label>
-            <input type="range" min={0} max={1} step={0.1} value={form.temperature} onChange={(e) => upd("temperature", Number(e.target.value))} className="mt-2 w-full accent-primary" />
-          </div>
-        </div>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={form.onboarding_enabled} onChange={(e) => upd("onboarding_enabled", e.target.checked)} />
-          <span>Enable onboarding mode (guide users through the SaaS UI) <span className="text-muted-foreground">— fait apparaître l'onglet <b>Onboarding</b> (objectifs, réglages du guide, activation).</span></span>
-        </label>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={form.onboarding_copilot_enabled} onChange={(e) => upd("onboarding_copilot_enabled", e.target.checked)} disabled={!form.onboarding_enabled} />
-          <span>Co-pilote agentique <span className="text-muted-foreground">— pilote l'UI en direct (clique/remplit pour l'utilisateur) via page-agent, au lieu de seulement pointer. Actions destructives toujours confirmées.</span></span>
-        </label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-primary" checked={form.enabled} onChange={(e) => upd("enabled", e.target.checked)} /> Agent enabled (widget active)</label>
-        <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : <Check className="h-4 w-4" />} {saved ? "Saved" : "Save settings"}</Button>
-      </CardContent>
-    </Card>
+    <div className="mx-auto w-full max-w-2xl space-y-4">
+      <div className="flex items-end gap-3">
+        <SoftField label="Nom" className="flex-1">
+          <SoftInput value={form.name} onChange={(e) => upd("name", e.target.value)} />
+        </SoftField>
+        <SoftField label="Couleur">
+          <SoftColor value={form.accent_color} onChange={(v) => upd("accent_color", v)} className="w-40" />
+        </SoftField>
+      </div>
+      <SoftField label="Description">
+        <SoftInput value={form.description} onChange={(e) => upd("description", e.target.value)} />
+      </SoftField>
+      <SoftField label="Persona">
+        <SoftInput value={form.persona} onChange={(e) => upd("persona", e.target.value)} placeholder="Tu es un agent de support…" />
+      </SoftField>
+      <SoftField label="Instructions">
+        <SoftTextarea value={form.instructions} onChange={(e) => upd("instructions", e.target.value)} rows={4} />
+      </SoftField>
+      <SoftField label="Message d'accueil">
+        <SoftInput value={form.welcome_message} onChange={(e) => upd("welcome_message", e.target.value)} />
+      </SoftField>
+      <div className="grid grid-cols-2 gap-4">
+        <SoftField label="Modèle">
+          <SoftSelect
+            value={form.model}
+            onChange={(v) => upd("model", v)}
+            options={[
+              { value: "groq", label: "Groq — Llama 3.3 70B" },
+              { value: "deepseek", label: "DeepSeek" },
+            ]}
+          />
+        </SoftField>
+        <SoftField label={`Température · ${form.temperature}`}>
+          <SoftRange min={0} max={1} step={0.1} value={form.temperature} onChange={(e) => upd("temperature", Number(e.target.value))} className="mt-2.5" />
+        </SoftField>
+      </div>
+      <div className="space-y-2">
+        <SoftToggle label="Widget actif" checked={form.enabled} onChange={(v) => upd("enabled", v)} />
+        <SoftToggle label="Mode onboarding" checked={form.onboarding_enabled} onChange={(v) => upd("onboarding_enabled", v)} />
+        <SoftToggle
+          label="Co-pilote agentique" checked={form.onboarding_copilot_enabled}
+          onChange={(v) => upd("onboarding_copilot_enabled", v)} disabled={!form.onboarding_enabled}
+        />
+      </div>
+      <Button onClick={save} disabled={saving} className="rounded-full">
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {saved ? "Enregistré" : "Enregistrer"}
+      </Button>
+    </div>
   );
 }
 

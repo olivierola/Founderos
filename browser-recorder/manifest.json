@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "FounderOS Skill Recorder",
+  "version": "0.1.0",
+  "description": "Enregistre une démonstration dans VOS onglets — vos sessions, votre navigateur — et la transforme en compétence d'agent.",
+  "permissions": ["storage", "tabs", "scripting", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "FounderOS Skill Recorder",
+    "default_popup": "src/popup.html"
+  }
+}

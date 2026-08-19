@@ -19,6 +19,17 @@ import { TimelineContent } from "@/components/ui/timeline-animation";
  * Écart assumé avec la maquette d'origine : l'accent est l'orange de la marque
  * (#FF4D00) et non le bleu. La page vit sous la navbar du site, dont toute la
  * palette est orange/graphite — un bleu y jurerait.
+ *
+ * Les boutons passent par `/subscribe/:plan`, qui décide selon la session :
+ * inscription pour un visiteur anonyme (avec l'offre mémorisée), paiement
+ * Stripe pour un membre connecté. Avant ça ils pointaient vers
+ * `/signup?plan=…`, où le paramètre était ignoré : tout le monde atterrissait
+ * sur la page Organisations sans jamais voir Stripe.
+ *
+ * Les libellés ne promettent PAS d'essai gratuit : le produit n'en a pas
+ * (aucun `trial_period_days` n'est envoyé à Stripe, aucune offre ne porte de
+ * durée d'essai). Annoncer un essai puis débiter à la souscription est le
+ * genre de promesse qui se règle en litige.
  */
 
 const ACCENT = "#ff4d00";
@@ -42,8 +53,8 @@ const plans: Plan[] = [
     description: "One operator, their agents, one service.",
     price: 29,
     yearlyPrice: 290,
-    href: "/signup?plan=individual",
-    buttonText: "Start free trial",
+    href: "/subscribe/individual",
+    buttonText: "Get started",
     features: [
       { text: "12,000 AI credits / month", icon: <Sparkles size={20} /> },
       { text: "3 agents · 1 service", icon: <Bot size={20} /> },
@@ -61,8 +72,8 @@ const plans: Plan[] = [
     description: "A team running a supervised fleet of agents.",
     price: 99,
     yearlyPrice: 990,
-    href: "/signup?plan=pro",
-    buttonText: "Start free trial",
+    href: "/subscribe/pro",
+    buttonText: "Get started",
     popular: true,
     features: [
       { text: "60,000 AI credits / month", icon: <Sparkles size={20} /> },
@@ -81,8 +92,8 @@ const plans: Plan[] = [
     description: "Several clients, several services, defensible governance.",
     price: 349,
     yearlyPrice: 3490,
-    href: "/signup?plan=agencies",
-    buttonText: "Start free trial",
+    href: "/subscribe/agencies",
+    buttonText: "Get started",
     features: [
       { text: "220,000 AI credits / month", icon: <Sparkles size={20} /> },
       { text: "50 agents · 15 services", icon: <Bot size={20} /> },

@@ -1,17 +1,15 @@
-import { Fragment, useEffect } from "react";
-import { Check, Lock, Minus, Rocket, ShieldCheck } from "lucide-react";
-import { GrainGradient } from "@paper-design/shaders-react";
+import { Fragment } from "react";
+import { Link } from "react-router-dom";
+import { ArrowRight, Check, Lock, Minus, Rocket, ShieldCheck } from "lucide-react";
 import { LandingNav } from "./LandingNav";
 import { LandingFooter } from "./LandingFooter";
-import { HERO_BG } from "./LandingHero";
+import { PageHero, useLandingSkin } from "./PageHero";
 import PricingSection from "@/components/ui/pricing-section";
 
 /* ===================== Pricing Page =====================
-   Même chrome que la landing : sa navbar, sa typo, son orange. Le hero reprend
-   le champ animé de la page de connexion (GrainGradient), RE-ÉCLAIRÉ pour une
-   toile claire : la navbar de la landing est écrite en noir, la version sombre
-   du shader la rendrait illisible. Même shader, mêmes couleurs de marque, fond
-   inversé — c'est le même objet, posé sur du blanc.
+   Même chrome que la landing : sa navbar, sa typo, son orange, et le hero
+   partagé des pages intérieures (voir PageHero) — Solutions, Blog et FAQ
+   ouvrent sur exactement le même champ animé.
 
    Le reste de la page est blanc, et les cartes remontent sur le hero (marge
    négative) pour que la grille tarifaire soit la première chose qu'on lise. */
@@ -53,10 +51,10 @@ const COMPARE_GROUPS = [
 ];
 
 const PRICING_FAQ = [
-  { q: "What is an AI credit?", a: "One unit of AI work. Credits cover what your agents actually spend at the AI providers — language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5." },
-  { q: "What happens when I run out?", a: "Agents stop cleanly and keep whatever they already produced — nothing is lost mid-run. You can buy a credit pack (it never expires) or move up a plan; either restores service immediately." },
+  { q: "What is an AI credit?", a: "One unit of AI work. Credits cover what your agents actually spend at the AI providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5." },
+  { q: "What happens when I run out?", a: "Agents stop cleanly and keep whatever they already produced, so nothing is lost mid-run. You can buy a credit pack (it never expires) or move up a plan; either restores service immediately." },
   { q: "Can I change plans later?", a: "Yes, anytime. Upgrading is instant and restarts your billing period with the new allowance; downgrading applies at the end of the current period." },
-  { q: "How does annual billing work?", a: "Annual plans are billed once a year for the price of ten months — about 17% off versus monthly." },
+  { q: "How does annual billing work?", a: "Annual plans are billed once a year for the price of ten months, about 17% off versus monthly." },
   { q: "What counts as a 'service'?", a: "One agent-centred workspace: its own agents, rooms, schedules and knowledge base. Agencies typically run one service per client." },
   { q: "What payment methods?", a: "Card via Stripe. Wire transfer + PO available on Enterprise." },
 ];
@@ -74,50 +72,24 @@ function MatrixCell({ value, highlight }: { value: string; highlight?: boolean }
 }
 
 export function PricingPage() {
-  useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
-  }, []);
+  useLandingSkin();
 
   return (
     <div className="amplify amp-light min-h-screen overflow-x-hidden bg-white">
       <LandingNav />
 
-      {/* ══ Hero — le champ animé de la page de connexion, sur toile claire ══
-          Le padding bas est volontairement excessif : c'est lui qui laisse la
-          place aux cartes qui remontent par-dessus. */}
-      <section className="relative overflow-hidden pt-[104px] pb-[260px]">
-        <GrainGradient
-          speed={1}
-          scale={1}
-          rotation={0}
-          offsetX={0}
-          offsetY={0}
-          softness={0.5}
-          intensity={0.5}
-          noise={0.25}
-          shape="corners"
-          frame={2854.5}
-          colors={["#FFFFFF", "#FF4D00", "#FC7819", "#FFFFFF"]}
-          /* HERO_BG et non blanc pur : c'est la teinte que la navbar utilise
-             pour son encoche, elles se rejoignent donc sans couture. */
-          colorBack={HERO_BG}
-          className="absolute inset-0"
-        />
-        {/* Fondu vers le blanc de la page — sans ça la bordure du shader coupe
-            net juste derrière les cartes. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-b from-transparent to-white" />
-
-        <div className="relative mx-auto max-w-3xl px-4 pt-10 text-center sm:px-6">
-          <h1 className="text-balance text-[40px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#000007] sm:text-[56px] lg:text-[64px]">
-            Pricing that follows the work
-          </h1>
-          <p className="mx-auto mt-6 max-w-xl text-[17px] leading-[1.6] text-black/65">
-            One subscription per team, and credits that cover exactly what your agents
-            spend at the AI providers. No per-seat tax on the work itself.
-          </p>
-        </div>
-      </section>
+      {/* Le padding bas est volontairement excessif : c'est lui qui laisse la
+          place aux cartes qui remontent par-dessus — et c'est aussi pour ça que
+          cette page garde l'orange de marque quand les autres ont leur teinte :
+          les cartes mordent de 230px sur le hero et sont elles-mêmes en
+          #ff4d00. */}
+      <PageHero
+        eyebrow="Pricing"
+        title="Pricing that follows the work"
+        lead="One subscription per team, and credits that cover exactly what your agents spend at the AI providers. No per-seat tax on the work itself."
+        hue="orange"
+        padBottom={260}
+      />
 
       {/* ══ Cartes — elles mordent sur le hero ══════════════════════════════ */}
       <PricingSection className="z-10 -mt-[230px] pb-20" />
@@ -202,6 +174,18 @@ export function PricingPage() {
                 <p className="mt-3 text-sm leading-relaxed text-black/65">{f.a}</p>
               </details>
             ))}
+          </div>
+
+          {/* Ces six questions ne couvrent que la facturation — le reste (sécu,
+              gouvernance, plateforme) vit sur la page FAQ. */}
+          <div className="mt-10 text-center">
+            <Link
+              to="/faq"
+              className="inline-flex items-center gap-2 text-sm font-medium text-[#000007] underline-offset-4 hover:underline"
+            >
+              All questions, not just pricing
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </section>

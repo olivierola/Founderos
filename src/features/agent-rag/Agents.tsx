@@ -8,14 +8,10 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/EmptyState";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
-import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { AgentIdentity } from "@/components/AgentIdentity";
-import { PUBLIC_AGENT_PRESETS, type PublicAgentPreset } from "./publicAgentPresets";
 import { CatalogCard } from "@/features/service-dashboards/CatalogCard";
 import { fetchServiceDashboards } from "@/features/service-dashboards/model";
 import {
@@ -28,9 +24,9 @@ import {
 // the difference before they could find anyone. They are listed together here
 // and told apart by a badge; the filter is there when you do care.
 //
-// The cards stay READ-and-open: an internal agent is still worked with inside
-// its dashboard, a public one inside its builder. This page is the directory,
-// not a third place to configure them.
+// The cards stay READ-and-open: BOTH kinds are worked with inside the service
+// dashboard that owns them (0195 moved the public builder there too). This page
+// is the directory, not a second place to configure or create them.
 
 type Scope = "all" | "internal" | "public";
 
@@ -40,6 +36,7 @@ interface PublicAgent {
   description: string | null;
   enabled: boolean;
   accent_color: string | null;
+  service_dashboard_id: string | null;
   created_at: string;
 }
 
@@ -59,60 +56,11 @@ interface InternalAgent {
 
 export function AgentsPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { workspaceSlug, projectSlug } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [scope, setScope] = useState<Scope>("all");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [preset, setPreset] = useState<PublicAgentPreset>(PUBLIC_AGENT_PRESETS[0]);
-  const [newName, setNewName] = useState(PUBLIC_AGENT_PRESETS[0].defaultName);
-  const [creating, setCreating] = useState(false);
   const base = `/app/${workspaceSlug}/${projectSlug}`;
-
-  function openCreate() {
-    const first = PUBLIC_AGENT_PRESETS[0];
-    setPreset(first);
-    setNewName(first.defaultName);
-    setCreateOpen(true);
-  }
-
-  function choosePreset(p: PublicAgentPreset) {
-    setPreset(p);
-    // Only overwrite the name when the user hasn't typed a custom one.
-    setNewName((cur) => (PUBLIC_AGENT_PRESETS.some((x) => x.defaultName === cur) ? p.defaultName : cur));
-  }
-
-  async function createAgent() {
-    if (!workspaceId || !projectId || !newName.trim()) return;
-    setCreating(true);
-    try {
-      const { seed } = preset;
-      const { data } = await supabase
-        .from("rag_agents")
-        .insert({
-          workspace_id: workspaceId,
-          project_id: projectId,
-          created_by: user?.id ?? null,
-          name: newName.trim(),
-          description: seed.description || null,
-          persona: seed.persona || null,
-          instructions: seed.instructions || null,
-          welcome_message: seed.welcome_message,
-          onboarding_enabled: seed.onboarding_enabled,
-          widget_config: seed.widget_config,
-          accent_color: preset.accent,
-        })
-        .select("id")
-        .single();
-      queryClient.invalidateQueries({ queryKey: ["rag_agents", projectId] });
-      setCreateOpen(false);
-      // Land on Knowledge — a fresh public agent is only useful once it's fed.
-      if (data) navigate(`${base}/agent/builder/${data.id}/knowledge`);
-    } finally {
-      setCreating(false);
-    }
-  }
 
   const { data: publicAgents, isLoading: loadingPublic } = useQuery({
     queryKey: ["rag_agents", projectId],
@@ -120,7 +68,7 @@ export function AgentsPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("rag_agents")
-        .select("id, name, description, enabled, accent_color, created_at")
+        .select("id, name, description, enabled, accent_color, service_dashboard_id, created_at")
         .eq("project_id", projectId!)
         .order("created_at", { ascending: false });
       return (data ?? []) as PublicAgent[];
@@ -215,6 +163,14 @@ export function AgentsPage() {
       : `${base}/agent/internal/${a.id}`);
   }
 
+  /** Same rule for a public agent: its builder tabs live in its dashboard, and
+   *  the /agent/builder resolver handles the orphaned ones. */
+  function openPublic(a: PublicAgent) {
+    navigate(a.service_dashboard_id
+      ? `${base}/service/${a.service_dashboard_id}/public/${a.id}`
+      : `${base}/agent/builder/${a.id}/playground`);
+  }
+
   const isLoading = loadingPublic || loadingInternal;
   const internals = internalAgents ?? [];
   const publics = publicAgents ?? [];
@@ -254,11 +210,18 @@ export function AgentsPage() {
                   </span>
                 </span>
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => openCreate()}>
+              {/* Both kinds are created in a service dashboard now — this menu
+                  only points there. */}
+              <DropdownMenuItem
+                disabled={!firstDashboardId}
+                onSelect={() => firstDashboardId && navigate(`${base}/service/${firstDashboardId}/agents/new?type=public`)}
+              >
                 <Bot className="h-4 w-4" />
                 <span className="min-w-0">
                   <span className="block text-sm">Agent public</span>
-                  <span className="block text-[11px] text-muted-foreground">Face client, nourri par une base de connaissances.</span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {firstDashboardId ? "Face client, nourri par une base de connaissances." : "Créez d'abord un dashboard de service."}
+                  </span>
                 </span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -292,8 +255,10 @@ export function AgentsPage() {
         <EmptyState
           icon={Bot}
           title="Aucun agent pour l'instant"
-          description="Créez un agent interne (il travaille pour votre équipe depuis un dashboard de service) ou un agent public (face client, nourri par votre base de connaissances)."
-          action={<Button onClick={openCreate}><Plus className="h-4 w-4" /> Nouvel agent public</Button>}
+          description="Les agents — internes (ils travaillent pour votre équipe) comme publics (face client, nourris par votre base de connaissances) — se créent dans un dashboard de service."
+          action={firstDashboardId
+            ? <Button onClick={() => navigate(`${base}/service/${firstDashboardId}/agents/new`)}><Plus className="h-4 w-4" /> Créer un agent</Button>
+            : undefined}
         />
       ) : visible === 0 ? (
         <EmptyState
@@ -301,8 +266,10 @@ export function AgentsPage() {
           title={scope === "internal" ? "Aucun agent interne" : "Aucun agent public"}
           description={scope === "internal"
             ? "Les agents internes se créent dans un dashboard de service."
-            : "Créez un agent orienté client (SAV, e-commerce, guide, onboarding), ajoutez des sources de connaissance, puis intégrez-le en widget sur votre site."}
-          action={scope === "public" ? <Button onClick={openCreate}><Plus className="h-4 w-4" /> Nouvel agent public</Button> : undefined}
+            : "Créez un agent orienté client (SAV, e-commerce, guide, onboarding) depuis un dashboard de service, ajoutez des sources de connaissance, puis intégrez-le en widget sur votre site."}
+          action={scope === "public" && firstDashboardId
+            ? <Button onClick={() => navigate(`${base}/service/${firstDashboardId}/agents/new?type=public`)}><Plus className="h-4 w-4" /> Nouvel agent public</Button>
+            : undefined}
         />
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -333,7 +300,7 @@ export function AgentsPage() {
             return (
               <CatalogCard
                 key={a.id}
-                onClick={() => navigate(`${base}/agent/builder/${a.id}/playground`)}
+                onClick={() => openPublic(a)}
                 glyph={
                   <span
                     className="flex h-14 w-14 items-center justify-center rounded-xl"
@@ -376,72 +343,6 @@ export function AgentsPage() {
         </div>
       )}
 
-      <Dialog open={createOpen} onOpenChange={(o) => { if (!o) setCreateOpen(false); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Nouvel agent public</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium">Partir d'un cas d'usage</label>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {PUBLIC_AGENT_PRESETS.map((p) => {
-                  const active = p.key === preset.key;
-                  return (
-                    <button
-                      key={p.key}
-                      type="button"
-                      onClick={() => choosePreset(p)}
-                      className={cn(
-                        "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors",
-                        active ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/40 hover:bg-secondary/40",
-                      )}
-                    >
-                      <span
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-base"
-                        style={{ background: `${p.accent}26` }}
-                      >
-                        {p.emoji}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">{p.label}</span>
-                        <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{p.tagline}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium">Nom de l'agent</label>
-              <Input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && createAgent()}
-                placeholder={preset.defaultName}
-                autoFocus
-              />
-            </div>
-
-            {/* Live preview */}
-            <div className="overflow-hidden rounded-lg border border-border">
-              <div className="h-1" style={{ background: preset.accent }} />
-              <div className="flex items-center gap-2 p-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-md text-base" style={{ background: `${preset.accent}26` }}>
-                  {preset.emoji}
-                </div>
-                <span className="text-sm font-medium">{newName.trim() || preset.defaultName}</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setCreateOpen(false)}>Annuler</Button>
-              <Button onClick={createAgent} disabled={creating || !newName.trim()}>
-                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Créer
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -10,8 +10,10 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import {
   useEntitlements, usePlans, useCreditPacks, useInvalidateEntitlements,
 } from "@/hooks/useEntitlements";
-import { formatCredits, formatPrice, formatLimit, CREDITS_PER_EUR } from "@/lib/billing";
-import { CreditsSummary, CreditsExplainer } from "@/features/admin/billing/parts";
+import {
+  formatCredits, formatPrice, formatLimit, consumePlanIntent, CREDITS_PER_EUR,
+} from "@/lib/billing";
+import { CreditsSummary, CreditsExplainer, SubscriptionNotice } from "@/features/admin/billing/parts";
 import { cn } from "@/lib/utils";
 
 const DETAIL_LIMITS: Array<[string, string]> = [
@@ -35,9 +37,11 @@ export function SettingsBillingPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
 
-  // Retour de Stripe : c'est ici que l'achat est appliqué. Tant qu'il n'y a pas
-  // de webhook signé, cette confirmation est le seul moment où le paiement est
-  // rapproché du workspace — d'où le message explicite en cas d'échec.
+  // Retour de Stripe. Le webhook signé (migration 0200) applique le même achat
+  // côté serveur ; cette confirmation reste utile pour que la page soit juste
+  // tout de suite, sans attendre la livraison du webhook. Le premier des deux
+  // qui arrive applique, l'autre repart avec `already_applied` — c'est le verrou
+  // `billing_checkout_sessions` qui arbitre, pas le hasard de l'ordre.
   const sessionId = params.get("session_id");
   useEffect(() => {
     if (!sessionId || !workspaceId) return;
@@ -45,12 +49,14 @@ export function SettingsBillingPage() {
     (async () => {
       setBusy("confirm");
       try {
-        const res = await callEdge<{ applied?: string }>("create-checkout", {
+        const res = await callEdge<{ applied?: string; already_applied?: boolean }>("create-checkout", {
           workspace_id: workspaceId, action: "confirm", session_id: sessionId,
         });
         if (cancelled) return;
         setNotice(
-          res.applied === "topup" ? "Crédits ajoutés à votre réserve." : "Votre nouvelle offre est active.",
+          res.applied === "topup" ? "Crédits ajoutés à votre réserve."
+            : res.already_applied ? "Paiement déjà pris en compte."
+            : "Votre nouvelle offre est active.",
         );
         invalidate(workspaceId);
       } catch (e) {
@@ -67,13 +73,73 @@ export function SettingsBillingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, workspaceId]);
 
+  // Offre choisie sur la grille publique (`/subscribe/:plan`), ou mémorisée
+  // avant l'inscription. On la reprend au premier affichage : le visiteur a déjà
+  // choisi une fois, lui redemander est le meilleur moyen de le perdre.
+  //
+  // Le paiement n'est PAS lancé tout seul — l'offre est mise en avant et le
+  // bouton attend un clic. Rediriger quelqu'un vers un écran de carte bancaire
+  // sans qu'il l'ait demandé sur cette page-ci n'est pas acceptable.
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+  const planParam = params.get("plan");
+  const changedParam = params.get("changed");
+  useEffect(() => {
+    // `changed` : renvoyé par `/subscribe/:plan` quand le client était déjà
+    // abonné — l'offre a été modifiée en place, sans passer par Stripe Checkout
+    // (le moyen de paiement était déjà enregistré). Sans ce mot, le client
+    // atterrit ici sans savoir si son achat a eu lieu.
+    if (changedParam) {
+      setNotice(changedParam === "1"
+        ? "Votre offre a été mise à jour."
+        : "Vous êtes déjà sur cette offre.");
+    }
+    const wanted = planParam ?? consumePlanIntent();
+    if (wanted) setHighlighted(wanted);
+    if (planParam || changedParam) {
+      params.delete("plan");
+      params.delete("changed");
+      setParams(params, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planParam, changedParam]);
+
+  /** Portail Stripe : carte, factures, résiliation. Ce qu'on y change nous
+   *  revient par webhook — inutile de rafraîchir à l'aveugle au retour. */
+  async function openPortal() {
+    if (!workspaceId) return;
+    setBusy("portal");
+    setError(null);
+    try {
+      const res = await callEdge<{ url: string }>("create-checkout", {
+        workspace_id: workspaceId, action: "portal",
+        return_path: window.location.pathname,
+      });
+      window.location.href = res.url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(null);
+    }
+  }
+
   async function checkout(body: Record<string, unknown>, key: string) {
     if (!workspaceId) return;
     setBusy(key);
     setError(null);
     setNotice(null);
     try {
-      const res = await callEdge<{ url: string }>("create-checkout", { workspace_id: workspaceId, ...body });
+      const res = await callEdge<{ url?: string; updated?: boolean; unchanged?: boolean }>(
+        "create-checkout", { workspace_id: workspaceId, ...body },
+      );
+      // Un client déjà abonné ne repasse pas par Stripe Checkout : son
+      // abonnement est modifié en place (moyen de paiement déjà enregistré),
+      // donc pas d'URL à suivre — on reste sur la page.
+      if (res.updated || res.unchanged) {
+        setNotice(res.updated ? "Votre offre a été mise à jour." : "Vous êtes déjà sur cette offre.");
+        invalidate(workspaceId);
+        setBusy(null);
+        return;
+      }
+      if (!res.url) throw new Error("Stripe n'a pas renvoyé d'URL de paiement.");
       window.location.href = res.url;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -98,6 +164,8 @@ export function SettingsBillingPage() {
         </p>
       )}
 
+      {ent && <SubscriptionNotice ent={ent} onManage={openPortal} busy={busy !== null} />}
+
       {ent && (
         <Card className="mb-6">
           <CardContent className="p-5">
@@ -107,16 +175,33 @@ export function SettingsBillingPage() {
         </Card>
       )}
 
-      <div className="mb-2 text-sm font-medium">Offres</div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-sm font-medium">Offres</span>
+        {ent?.subscription.has_stripe_customer && (
+          <Button size="sm" variant="ghost" disabled={busy !== null} onClick={openPortal}>
+            {busy === "portal" && <Loader2 className="h-4 w-4 animate-spin" />}
+            Gérer l'abonnement et les factures
+          </Button>
+        )}
+      </div>
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {plans.map((p) => {
           const current = p.code === currentCode;
+          const wanted = !current && p.code === highlighted;
           return (
-            <Card key={p.code} className={cn("h-full", current && "ring-1 ring-primary")}>
+            <Card
+              key={p.code}
+              className={cn(
+                "h-full",
+                current && "ring-1 ring-primary",
+                wanted && "ring-2 ring-primary shadow-lg",
+              )}
+            >
               <CardContent className="flex h-full flex-col p-5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium">{p.name}</span>
                   {current && <Badge>Actuelle</Badge>}
+                  {wanted && <Badge variant="secondary">Votre choix</Badge>}
                 </div>
                 <div className="font-stat-number mt-2 text-2xl font-semibold">
                   {p.is_quote ? "Sur devis" : formatPrice(p.price_cents_eur)}

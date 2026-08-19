@@ -10,23 +10,14 @@ import { LandingProof } from "./LandingProof";
 import { LandingStats } from "./LandingStats";
 import { LandingTestimonials } from "./LandingTestimonials";
 import { CountUp, CtaGhost, CtaPrimary, Eyebrow, Reveal, SectionHead } from "./LandingKit";
+import { ClosingCta } from "./PageHero";
 import {
-  AdoptionGrid,
-  FoundationFlow,
-  GovernanceCloud,
-  ManagedRun,
   NoFoundationArt,
   NoGovernanceArt,
-  ReadinessScan,
-  SecuredAgents,
   SecurityShield,
   ShadowAiArt,
 } from "./LandingVisuals";
-
-/* The wash is reused verbatim as the mask for its vertical-band layer, so
-   the bands fade out exactly where the colour does — never over bare black. */
-const CTA_WASH = `radial-gradient(ellipse 50% 120% at 8% 50%, rgba(255,77,0,0.26), transparent 62%),
-                  radial-gradient(ellipse 55% 120% at 92% 50%, rgba(161,161,170,0.30), transparent 62%)`;
+import { SOLUTIONS } from "./solutions";
 
 /* Orange is the brand default; graphite and a warm ember break up the grid so
    six identical-looking diagrams stop reading as one block. */
@@ -83,38 +74,32 @@ const CHALLENGES = [
   },
 ];
 
-const SOLUTIONS = [
-  {
-    visual: ReadinessScan,
-    title: "AI Readiness & Maturity Assessment",
-    body: "Before we build anything, we look at where you are. Our module-level maturity framework (L1 to L5) shows you which processes are ready for AI today, which need a foundation first, and which should wait. You get a clear, prioritised roadmap, not a generic AI strategy slide.",
-  },
-  {
-    visual: SecuredAgents,
-    title: "Secured AI Agents",
-    body: "Your teams want agents that answer questions, draft documents, and handle requests. Your CISO wants to know where the data goes. Both are right. We build agents that run inside your tenant, behind your identity controls, on your data residency, so the answer to the security question is documented, not hoped for.",
-  },
-  {
-    visual: FoundationFlow,
-    title: "Foundation & Process Automation",
-    body: "An assistant on top of a broken process gives you faster chaos. Before intelligence can amplify anything, the work underneath has to be structured: approvals that follow rules, documents that live in one place, data that means the same thing in every system. We build that foundation so AI has something solid to stand on.",
-  },
-  {
-    visual: AdoptionGrid,
-    title: "Adoption & Change Enablement",
-    body: "The median assistant usage rate we see is eight percent. That is a licence paid for twelve months and used for one. The technology was never the hard part. The hard part is changing how a few hundred people work, and that does not happen in a training session. We design adoption as a journey with measurement that tells you whether the investment is landing.",
-  },
-  {
-    visual: GovernanceCloud,
-    title: "AI Governance",
-    body: "Somewhere in your organisation right now, someone is building an AI flow you do not know about. Governance is not about stopping them. It is about knowing who builds, what data they touch, and where it runs, so innovation happens inside guardrails instead of arriving as a surprise. We set up the policies, environments and review workflows that make agents safe at scale.",
-  },
-  {
-    visual: ManagedRun,
-    title: "Managed Support & Continuous Evolution",
-    body: "The go-live is not the finish line. It is the starting gun. Models update, agents drift, regulations tighten, and new capabilities ship every month. Our retainer gives you an architect, a functional consultant, and a developer who already know your environment, keeping the platform healthy, the governance current, and the roadmap moving.",
-  },
-];
+/* The home page pitches each offer at more length than the nav dropdown's one
+   line, so the paragraph lives here — but the title, the diagram and the
+   destination come from solutions.ts. The cards used to point at
+   `/solutions#anchor`, which was correct while the six shared one scroll and
+   has not been since each one got its own page. */
+const HOME_PITCH: Record<string, string> = {
+  readiness:
+    "Before we build anything, we look at where you are. Our module-level maturity framework (L1 to L5) shows you which processes are ready for AI today, which need a foundation first, and which should wait. You get a clear, prioritised roadmap, not a generic AI strategy slide.",
+  agents:
+    "Your teams want agents that answer questions, draft documents, and handle requests. Your CISO wants to know where the data goes. Both are right. We build agents that run inside your tenant, behind your identity controls, on your data residency, so the answer to the security question is documented, not hoped for.",
+  foundation:
+    "An assistant on top of a broken process gives you faster chaos. Before intelligence can amplify anything, the work underneath has to be structured: approvals that follow rules, documents that live in one place, data that means the same thing in every system. We build that foundation so AI has something solid to stand on.",
+  adoption:
+    "The median assistant usage rate we see is eight percent. That is a licence paid for twelve months and used for one. The technology was never the hard part. The hard part is changing how a few hundred people work, and that does not happen in a training session. We design adoption as a journey with measurement that tells you whether the investment is landing.",
+  governance:
+    "Somewhere in your organisation right now, someone is building an AI flow you do not know about. Governance is not about stopping them. It is about knowing who builds, what data they touch, and where it runs, so innovation happens inside guardrails instead of arriving as a surprise. We set up the policies, environments and review workflows that make agents safe at scale.",
+  managed:
+    "The go-live is not the finish line. It is the starting gun. Models update, agents drift, regulations tighten, and new capabilities ship every month. Our retainer gives you an architect, a functional consultant, and a developer who already know your environment, keeping the platform healthy, the governance current, and the roadmap moving.",
+};
+
+const HOME_SOLUTIONS = SOLUTIONS.map((s) => ({
+  visual: s.visual,
+  title: s.title,
+  body: HOME_PITCH[s.slug],
+  to: `/solutions/${s.slug}`,
+}));
 
 const FAQ = [
   {
@@ -262,7 +247,7 @@ export function HomePage() {
             />
 
             <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {SOLUTIONS.map((s, i) => {
+              {HOME_SOLUTIONS.map((s, i) => {
                 const Visual = s.visual;
                 return (
                   <Reveal key={s.title} delay={i * 80}>
@@ -276,7 +261,7 @@ export function HomePage() {
                         </h3>
                         <p className="mt-4 text-[15px] leading-[1.6] text-[var(--amp-muted)]">{s.body}</p>
                         <Link
-                          to="/features"
+                          to={s.to}
                           className="mt-6 inline-block text-[15px] font-medium text-white underline-offset-4 hover:underline"
                         >
                           Learn More
@@ -316,6 +301,13 @@ export function HomePage() {
               <Link to="/contact" className="mt-5 inline-block">
                 <CtaPrimary>Contact Us</CtaPrimary>
               </Link>
+              {/* Five questions here, the full set on its own page. */}
+              <Link
+                to="/faq"
+                className="mt-6 block text-[15px] text-[var(--amp-muted)] underline-offset-4 transition-colors hover:text-[#000007] hover:underline"
+              >
+                Read all the questions →
+              </Link>
             </Reveal>
 
             <Reveal delay={100} className="space-y-4">
@@ -334,44 +326,21 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* ══ 7. Closing CTA — floating dark card, wash + bands ══════════════
-          It shares the footer's grey canvas and gutter, so the page ends on one
-          light field carrying two floating slabs. */}
-      <div className="relative px-3 py-3 sm:px-5 sm:py-5" style={{ background: "#e4e4e4" }}>
-        <section className="relative overflow-hidden rounded-[28px] bg-[#08080a] sm:rounded-[36px]">
-          <div
-            aria-hidden
-            className="amp-grain amp-wash-drift pointer-events-none absolute inset-0"
-            style={{ background: CTA_WASH }}
-          />
-          {/* Vertical bands, masked by the wash so they only read inside it. */}
-          <div
-            aria-hidden
-            className="amp-bands pointer-events-none absolute inset-0"
-            style={{ WebkitMaskImage: CTA_WASH, maskImage: CTA_WASH }}
-          />
-          <div className="relative mx-auto max-w-[1280px] px-4 sm:px-8">
-            <div className="amp-rails relative flex flex-col items-center py-28 text-center">
-              <Eyebrow>Get Started</Eyebrow>
-              <h2 className="mt-7 max-w-3xl text-balance text-[34px] font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[48px]">
-                Ready to make AI work for your company?
-              </h2>
-              <p className="mt-6 max-w-2xl text-[16.5px] leading-[1.6] text-[var(--amp-muted)]">
-                A 30-minute conversation is usually enough to know whether we are a fit. Or start with the
-                maturity assessment, it tells you where you stand before starting.
-              </p>
-              <div className="mt-10 flex flex-col items-center gap-3.5 sm:flex-row">
-                <Link to="/contact">
-                  <CtaPrimary>Book a Consultation</CtaPrimary>
-                </Link>
-                <Link to="/signup">
-                  <CtaGhost>Start free</CtaGhost>
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
+      {/* ══ 7. Closing CTA — the floating dark slab every page ends on ═════ */}
+      <ClosingCta
+        title="Ready to make AI work for your company?"
+        lead="A 30-minute conversation is usually enough to know whether we are a fit. Or start with the maturity assessment, it tells you where you stand before starting."
+        actions={
+          <>
+            <Link to="/contact">
+              <CtaPrimary>Book a Consultation</CtaPrimary>
+            </Link>
+            <Link to="/signup">
+              <CtaGhost>Start free</CtaGhost>
+            </Link>
+          </>
+        }
+      />
 
       <LandingFooter />
     </div>

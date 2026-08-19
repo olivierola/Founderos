@@ -18,6 +18,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 
 const SKILL_MD = "SKILL.md";
 
@@ -280,18 +281,19 @@ export function SkillEditorPage() {
           </div>
         </div>
 
-        {/* File editor */}
+        {/* File editor — the shared surface, also used by workflow playbooks
+            and written procedures, so all three behave identically. */}
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="border-b border-border px-5 py-2.5 text-sm font-medium text-foreground">{active}</div>
-          <textarea
+          <MarkdownEditor
+            variant="flush"
+            className="flex-1"
             value={activeContent}
-            onChange={(e) => setActiveContent(e.target.value)}
-            disabled={readOnly}
+            onChange={setActiveContent}
+            readOnly={readOnly}
             placeholder={active === SKILL_MD
               ? "# " + (name || "Skill") + "\n\nDécrivez ici la méthodologie / le playbook de ce skill…"
               : "Écrivez ici le contenu de votre fichier."}
-            className="min-h-0 flex-1 resize-none bg-transparent px-5 py-4 font-mono text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none disabled:opacity-70"
-            spellCheck={false}
           />
         </div>
       </div>

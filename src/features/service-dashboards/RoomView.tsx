@@ -2,8 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Users, Loader2, Activity, X, Target, MessageSquare,
-  FileText, Presentation, Table as TableIcon, Image as ImageIcon, Type,
+  ArrowLeft, Users, Loader2, Activity, X, Target, MessageSquare, FileText,
 } from "lucide-react";
 import { CodeArtifactContext } from "@/components/AgentMarkdown";
 import { ChatInput } from "@/components/ui/chat-input";
@@ -15,22 +14,15 @@ import { SubAgentInstances } from "@/features/internal-agents/SubAgentInstances"
 import { RunTimeline } from "@/features/internal-agents/RunTimeline";
 import { cn } from "@/lib/utils";
 import {
-  fetchRoomMessages, fetchRoomParticipants, addRoomAgent, removeRoomAgent, postRoomMessage,
+  fetchRoomMessages, fetchRoomParticipants, addRoomAgent, removeRoomAgent,
   fetchRoomMissions, MISSION_STATUS_META,
   type RoomMessage, type RoomMission,
 } from "./model";
+import { SLASH_COMMANDS, sendToRoom } from "./roomCompose";
 import { RoomPanel } from "./RoomPanel";
 import { MissionsBoard, MissionDetail } from "./RoomMissions";
 
 type RoomParticipant = { id: string; name: string; avatar_url: string | null; is_orchestrator: boolean; accent_color: string | null };
-
-const SLASH_COMMANDS: { key: string; label: string; icon: typeof FileText; prefill: string; color: string }[] = [
-  { key: "document", label: "Document", icon: FileText, prefill: "Crée un document : ", color: "#3b82f6" },
-  { key: "presentation", label: "Presentation", icon: Presentation, prefill: "Crée une présentation : ", color: "#f59e0b" },
-  { key: "spreadsheet", label: "Spreadsheet", icon: TableIcon, prefill: "Crée une feuille de calcul : ", color: "#10b981" },
-  { key: "image", label: "Image", icon: ImageIcon, prefill: "Génère une image : ", color: "#ec4899" },
-  { key: "text", label: "Texte", icon: Type, prefill: "Note : ", color: "#8b5cf6" },
-];
 
 // Split a message into plain-text/@mention segments so a tagged agent's name
 // renders in that agent's own accent color (falls back to plain text when the
@@ -161,39 +153,16 @@ export function RoomView({ dashboardId, roomId, workspaceId }: {
 
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [messages?.length]);
 
-  async function uploadRoomMedia(file: File): Promise<string | null> {
-    if (!room) return null;
-    const path = `${roomId}/${crypto.randomUUID()}-${file.name}`;
-    const { error: upErr } = await supabase.storage.from("office-media").upload(path, file);
-    if (upErr) return null;
-    const { data: pub } = supabase.storage.from("office-media").getPublicUrl(path);
-    const { data: media } = await supabase.from("office_media").insert({
-      workspace_id: workspaceId, project_id: room.project_id, service_room_id: roomId,
-      kind: file.type.startsWith("image/") ? "image" : "file", prompt: file.name, provider: "upload",
-      status: "ready", url: pub.publicUrl, storage_path: path, created_by: user?.id ?? null,
-    }).select("id").single();
-    return (media as { id: string } | null)?.id ?? null;
-  }
-
-  // Submit from the PromptInput composer: expand a leading /Label token, upload
-  // any attachments, then post with the tagged agent ids.
+  // Submit from the composer — shared with the Home tab's "start a conversation"
+  // input (roomCompose.ts): / expansion, attachments, then the post itself.
   async function sendFrom(raw: string, mentionedIds: string[], files: File[]) {
-    const trimmed = raw.trim();
-    if ((!trimmed && files.length === 0) || sending || !user) return;
+    if ((!raw.trim() && files.length === 0) || sending || !user || !room) return;
     setSending(true);
     try {
-      const sc = SLASH_COMMANDS.find((c) => trimmed === `/${c.label}` || trimmed.startsWith(`/${c.label} `));
-      const content = sc ? (sc.prefill + trimmed.slice(`/${sc.label}`.length).trimStart()).trim() : trimmed;
-      let firstMediaId: string | null = null;
-      for (const f of files) {
-        const id = await uploadRoomMedia(f);
-        if (!id) continue;
-        if (!firstMediaId) firstMediaId = id;
-        else await postRoomMessage(roomId, "📎 " + f.name, [], id);
-      }
-      // No mention → service-room-post routes the turn to the dashboard's
-      // configured default responder (Settings → Rooms), then the orchestrator.
-      await postRoomMessage(roomId, content || (firstMediaId ? "📎 Image" : ""), mentionedIds, firstMediaId ?? undefined);
+      await sendToRoom(
+        { roomId, workspaceId, projectId: room.project_id, userId: user.id },
+        raw, mentionedIds, files,
+      );
       queryClient.invalidateQueries({ queryKey: ["service_room_messages", roomId] });
     } finally { setSending(false); }
   }
@@ -214,7 +183,7 @@ export function RoomView({ dashboardId, roomId, workspaceId }: {
           <button onClick={() => navigate(`${base}/home`)} className="rounded-md p-1 text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /></button>
           <span className="text-muted-foreground">#</span>
           <span className="min-w-0 flex-1 truncate text-sm font-semibold">{room?.title ?? "Room"}</span>
-          <div className="flex items-center rounded-lg bg-muted/60 p-0.5">
+          <div className="flex items-center rounded-full bg-muted/60 p-1">
             <ViewTab active={view === "thread"} onClick={() => { setView("thread"); setOpenMission(null); }} icon={MessageSquare} label="Fil" />
             <ViewTab active={view === "missions"} onClick={() => setView("missions")} icon={Target} label="Missions" badge={liveMissions || undefined} />
           </div>
@@ -384,7 +353,7 @@ function ViewTab({ active, onClick, icon: Icon, label, badge }: {
     <button
       type="button" onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+        "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
         active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
       )}
     >

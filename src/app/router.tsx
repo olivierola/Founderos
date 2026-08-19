@@ -18,7 +18,7 @@ import { AlertsPage } from "@/features/overview/Alerts";
 import { CustomDashboardsPage } from "@/features/overview/dashboards/CustomDashboards";
 import { DashboardBuilderPage } from "@/features/overview/dashboards/DashboardBuilder";
 
-import { AgentBuilderPage } from "@/features/agent-rag/AgentBuilder";
+import { PublicAgentRedirect } from "@/features/agent-rag/PublicAgentRedirect";
 import { AgentsPage } from "@/features/agent-rag/Agents";
 // The "Agentic Onboarding" module was removed — onboarding is now a public
 // agent with a conditional Onboarding tab in the RAG builder. Old /onboarding/*
@@ -30,6 +30,7 @@ import {
   InternalAgentRedirect, InternalAgentsIndexRedirect,
 } from "@/features/internal-agents/AgentRouteRedirects";
 import { SkillEditorPage } from "@/features/internal-agents/SkillEditor";
+import { SkillRecorderPage } from "@/features/internal-agents/SkillRecorder";
 import { McpServersPage, McpOAuthCallbackPage } from "@/features/internal-agents/McpServers";
 import { AgentEcosystemPage } from "@/features/internal-agents/AgentEcosystem";
 import { AgentTasksPage } from "@/features/internal-agents/TasksPage";
@@ -102,6 +103,7 @@ import { SettingsProjectsPage } from "@/features/settings/Extra";
 import { MembersPage } from "@/features/settings/MembersPage";
 import { SettingsRolesPage } from "@/features/settings/Roles";
 import { SettingsBillingPage } from "@/features/settings/Billing";
+import { SubscribeRedirectPage } from "@/features/settings/SubscribeRedirect";
 import { SettingsSecurityPage } from "@/features/settings/Security2FA";
 
 // Admin dashboard (single-sidebar) — new page(s) + the mapping of its tabs to
@@ -157,15 +159,19 @@ import { GovFtSettingsPage } from "@/features/governance/aiops/FtSettings";
 // Marketing site
 import { HomePage } from "@/features/marketing-site/HomePage";
 import {
-  FeaturesPage,
   IntegrationsPage,
   ChangelogPage,
   DocsPage,
   ContactPage,
 } from "@/features/marketing-site/OtherPages";
-// La page tarifs a son propre chrome (navbar de la landing, hero animé) au lieu
-// du MarketingShell partagé — d'où son fichier séparé.
+// Ces pages partagent le chrome de la landing (sa navbar, son hero animé, son
+// footer sombre) au lieu du MarketingShell hérité — d'où leurs fichiers séparés.
 import { PricingPage } from "@/features/marketing-site/PricingPage";
+import { SolutionsPage } from "@/features/marketing-site/SolutionsPage";
+import { SolutionPage } from "@/features/marketing-site/SolutionPage";
+import { BlogPage } from "@/features/marketing-site/BlogPage";
+import { BlogPostPage } from "@/features/marketing-site/BlogPostPage";
+import { FaqPage } from "@/features/marketing-site/FaqPage";
 
 type PageEl = import("react").ReactElement;
 
@@ -360,8 +366,15 @@ function buildModuleRoutes() {
 export const router = createBrowserRouter([
   // Public marketing site
   { path: "/", element: <HomePage /> },
-  { path: "/features", element: <FeaturesPage /> },
+  { path: "/solutions", element: <SolutionsPage /> },
+  { path: "/solutions/:slug", element: <SolutionPage /> },
+  // Ancienne URL de la page Solutions — gardée vivante, les liens externes et
+  // les anciennes signatures d'email pointent encore dessus.
+  { path: "/features", element: <Navigate to="/solutions" replace /> },
   { path: "/pricing", element: <PricingPage /> },
+  { path: "/blog", element: <BlogPage /> },
+  { path: "/blog/:slug", element: <BlogPostPage /> },
+  { path: "/faq", element: <FaqPage /> },
   { path: "/integrations", element: <IntegrationsPage /> },
   { path: "/changelog", element: <ChangelogPage /> },
   { path: "/docs", element: <DocsPage /> },
@@ -373,6 +386,10 @@ export const router = createBrowserRouter([
   { path: "/signup", element: <SignupPage /> },
   { path: "/onboarding", element: <AuthOnboardingPage /> },
   { path: "/accept-invite", element: <AcceptInvitePage /> },
+  // Entrée en paiement depuis la grille publique. Volontairement hors
+  // ProtectedRoute : la page doit voir le visiteur anonyme pour mémoriser
+  // l'offre choisie avant de l'envoyer s'inscrire.
+  { path: "/subscribe/:plan", element: <SubscribeRedirectPage /> },
   // Retour de Stripe Checkout : Stripe ne connaît que l'uuid du workspace, cette
   // page résout les slugs et renvoie vers l'onglet Facturation.
   {
@@ -466,10 +483,12 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        // The public-agent builder became a page of the service dashboard that
+        // owns the agent (0195) — this resolves the dashboard and bounces there.
         path: "agent/builder/:agentId/:tab?",
         element: (
           <ErrorBoundary>
-            <AgentBuilderPage />
+            <PublicAgentRedirect />
           </ErrorBoundary>
         ),
       },
@@ -504,6 +523,15 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <InternalAgentRedirect />
+          </ErrorBoundary>
+        ),
+      },
+      {
+        // Enregistrement d'une démonstration → skill (voir skill-recorder/).
+        path: "agent/skills/record",
+        element: (
+          <ErrorBoundary>
+            <SkillRecorderPage />
           </ErrorBoundary>
         ),
       },

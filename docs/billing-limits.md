@@ -153,14 +153,134 @@ pour le monitoring. Facturer les deux doublerait la note.
 
 ---
 
-## 6. Dette assumée
+## 6. Paiement : du clic au renouvellement
 
-- **Pas de webhook Stripe.** L'achat est appliqué au retour navigateur
-  (`create-checkout` action `confirm`), rendu idempotent par
-  `billing_checkout_sessions`. Les renouvellements et les échecs de paiement
-  demandent un webhook signé — il prendra un slot de fonction Edge dès qu'il y en
-  aura un de libre (le projet est à 99/100).
+Migration `0200_stripe_webhook.sql` + fonction Edge `stripe-webhook`.
+
+Stripe est la source de vérité de **l'état de paiement** ; nous restons celle de
+**l'allocation** (crédits, limites). Le webhook traduit l'un en l'autre.
+
+| Événement Stripe | Effet |
+|---|---|
+| `checkout.session.completed` / `async_payment_succeeded` | Offre activée ou crédits ajoutés (`billing_apply_plan` / `billing_apply_topup`) |
+| `invoice.paid` | **Renouvellement** : période alignée sur Stripe, allocation remise à neuf, impayé levé (`billing_apply_renewal`) |
+| `invoice.payment_failed` | `past_due` + bandeau ; suspension seulement à la dernière relance Stripe (`next_payment_attempt = null`) |
+| `customer.subscription.updated` | Statut, offre et résiliation programmée recopiés (portail Stripe, pause de prélèvement) |
+| `customer.subscription.deleted` | Retour à l'offre Découverte — pas un blocage : les packs prépayés et les données restent |
+| `charge.refunded` | Crédits du pack repris (au prorata si remboursement partiel) |
+| `charge.dispute.created` | Suspension immédiate (`hard_blocked`) |
+
+### Idempotence — trois verrous à trois niveaux
+
+Une seule couche laisserait toujours passer un cas :
+
+1. `billing_webhook_events` — un `event_id` n'est traité qu'une fois (Stripe
+   redélivre après un 500, un timeout, ou sans raison) ;
+2. `billing_checkout_sessions` — une session d'achat n'est appliquée qu'une
+   fois, que ce soit par le webhook **ou** par le retour navigateur, qui courent
+   en parallèle ;
+3. `billing_apply_renewal` — une période n'est allouée qu'une fois (Stripe émet
+   `invoice.paid` *et* `invoice.payment_succeeded` pour la même facture).
+
+Les deux chemins d'application passent par la même fonction
+(`_shared/billing-stripe.ts` → `applyCheckoutSession`). Dupliquer cette logique,
+c'est la laisser diverger, et le jour où elle diverge un client est crédité deux
+fois ou pas du tout.
+
+### Contrat de réponse
+
+| Code | Cas | Conséquence côté Stripe |
+|---|---|---|
+| 200 | traité, ignoré, déjà vu | passe à la suite |
+| 400 | signature invalide / corps illisible | rejeté, aucune relance utile |
+| 500 | erreur de traitement | **relance** jusqu'à 3 jours |
+
+Renvoyer 200 sur une erreur perdrait l'événement définitivement : un
+renouvellement raté deviendrait un client sans crédits, sans trace.
+
+### Le chemin d'achat
+
+`/pricing` (grille publique) → `/subscribe/:plan` → selon la session :
+inscription avec l'offre mémorisée (localStorage, 24 h), ou onglet Facturation
+avec l'offre mise en avant et le paiement à un clic. Le relais existe parce que
+la grille est publique et le paiement ne peut pas l'être : facturer suppose un
+espace de travail et un propriétaire.
+
+Le paiement n'est jamais déclenché automatiquement à l'arrivée sur la page :
+l'offre est présélectionnée, le clic reste au client.
+
+**Pas d'essai gratuit.** L'offre Découverte (2 000 crédits, sans carte) tient ce
+rôle. Aucun `trial_period_days` n'est envoyé à Stripe — un libellé « free
+trial » sur la grille serait donc une promesse fausse.
+
+### Mise en service
+
+Le catalogue Stripe (Products/Prices) se crée depuis la base, pas à la main :
+
+```bash
+$env:STRIPE_SECRET_KEY = "sk_test_…"
+node scripts/stripe-setup-prices.mjs --dry-run   # aperçu
+node scripts/stripe-setup-prices.mjs             # crée + renseigne stripe_price_id
+```
+
+Idempotent (produits retrouvés par `metadata.founderos_code`, tarifs par
+`lookup_key`), refuse une clé `sk_live_` sans `--live`. Sans
+`SUPABASE_SERVICE_ROLE_KEY`, il imprime le SQL au lieu d'écrire.
+
+Un plan sans `stripe_price_id` renvoie **503 avec un message explicite** — c'est
+volontaire : une offre affichée mais impossible à acheter doit se voir tout de
+suite, pas échouer silencieusement.
+
+Puis le webhook :
+
+```bash
+supabase secrets set FOUNDEROS_STRIPE_WEBHOOK_SECRET=whsec_…
+supabase functions deploy stripe-webhook --no-verify-jwt
+```
+
+Endpoint à déclarer dans Stripe (Developers → Webhooks) :
+`https://<projet>.supabase.co/functions/v1/stripe-webhook`, abonné aux huit
+événements du tableau ci-dessus. Test local :
+`stripe listen --forward-to localhost:54321/functions/v1/stripe-webhook`.
+
+Sans le secret, la fonction refuse tout (400) : elle ne dégrade pas en mode non
+signé — un endpoint de paiement ouvert accepterait des faux renouvellements.
+
+### Pièges déjà payés
+
+- **Un événement `customer.subscription.*` ne porte pas les métadonnées de la
+  session de checkout.** D'où la recopie sur l'abonnement lui-même
+  (`subscription_data[metadata]`) à la création, et un repli de résolution par
+  `stripe_subscription_id` puis `stripe_customer_id`. Sans ça : zéro
+  renouvellement rattaché.
+- **Un client déjà abonné qui choisit une autre offre** ne repasse pas par
+  Checkout : ça créerait un **second** abonnement facturé en parallèle.
+  `create-checkout` modifie l'abonnement existant (`always_invoice`, pour que
+  l'allocation suive tout de suite).
+- **Un paiement régularisé doit débloquer même si l'allocation a déjà eu lieu.**
+  La bascule automatique de période peut passer avant le webhook : les effets
+  « paiement réussi » (déblocage, `status = active`) sont donc appliqués
+  inconditionnellement, séparément de l'allocation.
+- **`block_reason` est affiché à l'utilisateur** (`billing_check_quota` le
+  renvoie tel quel). La cause machine vit dans `block_code` — sans quoi
+  l'interface annonce « payment_failed » au client.
+- Stripe déplace des champs entre versions d'API (`invoice.subscription` →
+  `invoice.parent.subscription_details`, `subscription.current_period_*` → sur
+  les items). Le webhook lit les deux emplacements.
+
+Le portail client Stripe (`create-checkout` action `portal`) gère carte,
+factures et résiliation : le reconstruire demanderait de manipuler des données
+de carte.
+
+---
+
+## 7. Dette assumée
+
 - **`storage_mb` est un scan** de `storage.objects` filtré par projet, mis en
   cache une heure. À revoir si le volume d'objets devient important.
-- **Pas de proratisation** au changement d'offre : la période redémarre avec la
-  nouvelle allocation.
+- **Pas de proratisation dans notre allocation** : au changement d'offre la
+  période redémarre avec la nouvelle allocation (Stripe, lui, proratise bien le
+  montant facturé).
+- **Le dépassement (`overage`) est mesuré, pas facturé** : les crédits en
+  dépassement sont comptés dans `credits.overage` mais aucun élément de facture
+  Stripe n'est créé. À brancher sur un usage record quand un client l'atteindra.

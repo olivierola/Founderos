@@ -2,24 +2,20 @@ import { Link } from "react-router-dom";
 import { ArrowUpRight, Github, Linkedin, Twitter } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { BRAND_FONT } from "./LandingKit";
+import { SOLUTIONS } from "./solutions";
 
 const COLUMNS: { title: string; links: { label: string; to: string }[] }[] = [
   {
     title: "Solutions",
-    links: [
-      { label: "AI Readiness & Maturity", to: "/features" },
-      { label: "Secured AI Agents", to: "/features" },
-      { label: "Foundation & Automation", to: "/features" },
-      { label: "AI Governance", to: "/features" },
-      { label: "Adoption & Enablement", to: "/features" },
-      { label: "Managed Run", to: "/features" },
-    ],
+    // Read from the set rather than listed again, so the footer cannot end up
+    // naming a solution differently from the nav or from its own page.
+    links: SOLUTIONS.map((s) => ({ label: s.menu.label, to: `/solutions/${s.slug}` })),
   },
   {
     title: "Product",
     links: [
-      { label: "Integrations", to: "/integrations" },
       { label: "Pricing", to: "/pricing" },
+      { label: "Integrations", to: "/integrations" },
       { label: "Docs", to: "/docs" },
       { label: "Changelog", to: "/changelog" },
     ],
@@ -27,10 +23,10 @@ const COLUMNS: { title: string; links: { label: string; to: string }[] }[] = [
   {
     title: "Company",
     links: [
+      { label: "Blog", to: "/blog" },
+      { label: "FAQ", to: "/faq" },
       { label: "Contact", to: "/contact" },
-      { label: "Blog", to: "/changelog" },
       { label: "Sign in", to: "/login" },
-      { label: "Get started", to: "/signup" },
     ],
   },
 ];
@@ -82,7 +78,7 @@ export function LandingFooter() {
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={s.label}
-                      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-white/[0.04] text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] text-white/70 transition-colors hover:bg-white/10 hover:text-white"
                     >
                       <Icon className="h-3.5 w-3.5" />
                     </a>

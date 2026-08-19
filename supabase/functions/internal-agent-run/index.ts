@@ -54,6 +54,7 @@ import {
   type SectionInput, type PromptBudget,
 } from "../_shared/prompt-compiler.ts";
 import { completeMissionTask, advanceRoomMission } from "../_shared/room-orchestrator.ts";
+import { completeWorkflowRun } from "../_shared/workflow-engine.ts";
 import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
 import {
   PROACTIVITY_DOCTRINE, ORCHESTRATOR_PROACTIVITY, reflectAndPropose, proposalsFooter,
@@ -2193,11 +2194,22 @@ async function runMissionTick(runId: string, msgId: number | null) {
   // below (success, failure, cancellation) must report back — a task whose run
   // ends silently would stall the whole mission.
   const missionTask = ((state.meta as { mission_task?: { mission_id: string; task_id: string } } | undefined)?.mission_task) ?? null;
+  // A workflow run is this same run, wearing another hat: the assistant was
+  // handed a playbook and owns it end to end, so there is nothing to report per
+  // step — only the outcome, which closes the workflow run alongside this one.
+  // Folded into the mission reporter so a new terminal path can never remember
+  // one and forget the other.
+  const workflowRun = ((state.meta as { workflow_run?: { id: string } } | undefined)?.workflow_run) ?? null;
   const reportMissionTask = async (ok: boolean, output: string) => {
-    if (!missionTask?.task_id || !missionTask.mission_id) return;
-    await completeMissionTask(admin, {
-      missionId: missionTask.mission_id, taskId: missionTask.task_id, ok, output,
-    }).catch(() => {});
+    if (missionTask?.task_id && missionTask.mission_id) {
+      await completeMissionTask(admin, {
+        missionId: missionTask.mission_id, taskId: missionTask.task_id, ok, output,
+      }).catch(() => {});
+    }
+    if (workflowRun?.id) {
+      await completeWorkflowRun(admin, { workflowRunId: workflowRun.id, ok, error: ok ? undefined : output })
+        .catch(() => {});
+    }
   };
 
   // Run no longer active? clean up.

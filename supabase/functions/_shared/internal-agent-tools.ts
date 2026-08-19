@@ -2377,6 +2377,79 @@ export function buildInternalToolset(
   });
   summaryLines.push("- create_agent: spin up a new teammate agent on request (passive until used; always available).");
 
+  // Draft a reusable PROCEDURE from a plain-language request. The workflow is
+  // created as a DRAFT, never active: turning a sentence into something that
+  // fires on its own, unattended, is the user's decision — the agent's job is
+  // to have written it well enough that the decision is easy.
+  let workflowsThisRun = 0;
+  tools.set("create_workflow", {
+    incompressible: true,
+    family: "TEAM",
+    def: {
+      name: "create_workflow",
+      description:
+        "Turn a repeatable procedure the user describes (\"chaque lundi, analyse les tickets puis fais-moi valider avant l'envoi\") into a WORKFLOW: a written playbook the assistant replays on every trigger. " +
+        "Write it as MARKDOWN with these sections, in this order, omitting any that do not apply: " +
+        "'## Entrées' (bullets `- \\`param\\` — what it is`, what the run needs before it can start) · " +
+        "'## Objectif' (what it achieves and how you know it is done) · '## Règles' (bullets, constraints that hold throughout) · " +
+        "'## Contexte' (knowledge to load) · '## Ressources à utiliser' (bullets) · " +
+        "'## Outils à utiliser' (bullets `- \\`web_search\\` — why`, tools whose use is IMPOSED here) · " +
+        "'## Procédure' with '### 1. Titre' per step · " +
+        "'### Décision — …' for a branch · '### 🔁 Boucle — …' to repeat · " +
+        "'### ➜ Passation — …' to hand a chunk of work to other agents · " +
+        "'### ⏸ Validation humaine — …' for a human checkpoint · " +
+        "'## Livrables attendus' (bullets) · '## À mémoriser' (bullets, what must outlive the run) · '## Exemples'. " +
+        "Inside a step you may add '> **Confier à :** <nom exact d'un agent>' to delegate it; inside a Passation, add " +
+        "'> **Confier à :** …', '> **Mode :** en parallèle|l'un après l'autre' and '> **Ce qui doit revenir :** …'. " +
+        "Be SPECIFIC: a vague playbook produces a vague run. Created as a draft — tell the user to open it and activate it.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Short name, e.g. 'Revue hebdomadaire des tickets'." },
+          description: { type: "string", description: "One line: what it is for." },
+          document: { type: "string", description: "The full playbook in markdown, per the format above." },
+          schedule: { type: "string", description: "Cron expression if it should run on a clock, e.g. '0 9 * * 1'. Omit for manual." },
+        },
+        required: ["name", "document"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      if (!ctx.serviceDashboardId) return "ERROR: workflows belong to a service dashboard; this agent has none.";
+      if (workflowsThisRun >= 3) return "ERROR: workflow-creation limit reached for this run (3).";
+      const name = str(args.name).trim().slice(0, 120);
+      const document = str(args.document).trim();
+      if (!name || !document) return "ERROR: name and document are required.";
+
+      const schedule = str(args.schedule).trim();
+      // The blocks are derived from the document by the EDITOR (the round-trip
+      // parser lives there). Here we seed only the trigger, so the canvas opens
+      // with a coherent graph and re-parses the body on first load.
+      const blocks = {
+        nodes: [{
+          id: "trigger-1", type: "trigger", position: { x: 260, y: 80 },
+          data: { label: "Déclencheur", mode: schedule ? "schedule" : "manual", schedule: schedule || "0 9 * * 1" },
+        }],
+        edges: [] as unknown[],
+      };
+      const { data, error } = await ctx.admin.from("agent_workflows").insert({
+        workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+        service_dashboard_id: ctx.serviceDashboardId,
+        name, description: str(args.description).slice(0, 2000) || null,
+        status: "draft", blocks, document,
+        schedule: schedule || null,
+        created_by: ctx.userId ?? null,
+      }).select("id").single();
+      if (error) return `ERROR creating workflow: ${error.message}`;
+      workflowsThisRun++;
+      await ctx.logEvent("status", { message: `⚙️ Workflow « ${name} » rédigé (brouillon).` }).catch(() => {});
+      return `Workflow "${name}" created as a DRAFT (id ${(data as { id: string }).id}). ` +
+        `Tell the user it is in Ressources → Workflows: they open it to review the blocks and ACTIVATE it — ` +
+        `it will not run until they do.`;
+    },
+  });
+  summaryLines.push("- create_workflow: write a repeatable procedure as a reusable workflow (draft; the user activates it).");
+
   // Always-on: PROPOSE work you noticed would add value, WITHOUT executing it.
   // Files a paused mission in the kanban backlog — the human reviews and starts
   // it. This is the safe channel for agent initiative (unlike create_mission it
@@ -2542,6 +2615,106 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- send_email: send a real email via Resend (needs the email integration connected).");
+
+  // ── Pilotage du navigateur DE L'UTILISATEUR ───────────────────────────────
+  //
+  // Complémentaire de sandbox_browser, pas redondant : le Chromium du sandbox
+  // n'a AUCUNE session, il faudrait s'y reconnecter partout. Ici l'agent agit
+  // dans le navigateur de la personne, avec ses accès déjà ouverts — donc
+  // exactement là où la procédure a été démontrée.
+  //
+  // Le consentement n'est pas géré ici mais par l'ARMEMENT, décidé dans
+  // l'extension pour une durée et un périmètre bornés. Une approbation par
+  // action serait inutilisable (une procédure = vingt clics) et pousserait à
+  // tout approuver sans lire. Quand le pilotage n'est pas armé, l'outil ne
+  // demande rien : il explique à l'agent qu'il doit le faire demander.
+  tools.set("user_browser", {
+    def: {
+      name: "user_browser",
+      description:
+        "Agir dans le navigateur de l'utilisateur — ses onglets ouverts, ses sessions déjà connectées — via l'extension FounderOS. " +
+        "ONGLETS : tabs (lister tous les onglets ouverts avec leur tab_id), switch (mettre un onglet au premier plan), " +
+        "open (ouvrir une url dans un NOUVEL onglet), close, navigate (aller sur une url). " +
+        "navigate RÉUTILISE automatiquement un onglet déjà ouvert sur le même site s'il en existe un, sinon il en ouvre un nouveau : " +
+        "il n'écrase jamais la page que l'utilisateur est en train de lire. Force un nouvel onglet avec new_tab=true, ou vise un onglet précis avec tab_id. " +
+        "DANS UNE PAGE : elements (lister ce qui est cliquable — À FAIRE EN PREMIER sur une page inconnue), read (texte de la page), " +
+        "find (chercher un texte), click, fill (target+value), select, check, press (value=touche), scroll. " +
+        "Chaque action accepte tab_id pour viser un onglet précis (obtenu via 'tabs') ; sans lui, l'onglet actif est utilisé — " +
+        "tu peux donc travailler sur plusieurs onglets en parallèle sans changer le focus de l'utilisateur. " +
+        "Les cibles se décrivent par {label, role, testid, css, name, placeholder} — le même vocabulaire que les skills apprises par démonstration. " +
+        "Nécessite que l'utilisateur ait autorisé le pilotage depuis l'extension.",
+      parameters: { type: "object", properties: {
+        action: { type: "string", description: "tabs | switch | open | close | navigate | elements | read | find | click | fill | select | check | press | scroll" },
+        target: { type: "object", description: "Cible : {label?, role?, testid?, css?, name?, placeholder?}. Le label est le texte visible." },
+        value: { type: "string", description: "Valeur à saisir/choisir, touche à presser, ou texte à chercher." },
+        url: { type: "string", description: "URL pour navigate / open." },
+        tab_id: { type: "number", description: "Onglet visé (voir l'action 'tabs'). Omis = onglet actif, ou onglet déjà ouvert sur le site pour navigate." },
+        new_tab: { type: "boolean", description: "navigate : forcer l'ouverture d'un nouvel onglet au lieu de réutiliser un onglet existant." },
+      }, required: ["action"], additionalProperties: false },
+    },
+    run: async (args) => {
+      const action = str(args.action);
+      const known = [
+        "tabs", "switch", "open", "close", "navigate",
+        "elements", "read", "find", "click", "fill", "select", "check", "press", "scroll",
+      ];
+      if (!known.includes(action)) return `ERROR: action inconnue « ${action} ». Disponibles : ${known.join(", ")}.`;
+
+      // L'appareil éligible : appairé, armé, et vu récemment. Plusieurs postes
+      // peuvent exister dans un workspace — on prend celui qui est réellement
+      // devant quelqu'un.
+      const nowIso = new Date().toISOString();
+      const { data: devices } = await ctx.admin.from("recorder_devices")
+        .select("id, name, control_until, last_seen_at")
+        .eq("workspace_id", ctx.workspaceId).is("revoked_at", null)
+        .gt("control_until", nowIso)
+        .order("last_seen_at", { ascending: false }).limit(1);
+      const device = (devices ?? [])[0] as { id: string; name: string; control_until: string } | undefined;
+
+      if (!device) {
+        return "Le pilotage du navigateur n'est pas autorisé en ce moment. "
+          + "Demande à l'utilisateur d'ouvrir l'extension FounderOS dans sa barre d'outils "
+          + "et de cliquer « Autoriser 15 minutes ». N'essaie pas de contourner : "
+          + "sans cette autorisation aucun ordre ne lui sera transmis.";
+      }
+
+      const params: Record<string, unknown> = {};
+      if (args.target && typeof args.target === "object") params.target = args.target;
+      if (args.value != null) params.value = str(args.value);
+      if (args.url != null) params.url = str(args.url);
+      if (args.tab_id != null && Number.isFinite(Number(args.tab_id))) params.tab_id = Number(args.tab_id);
+      if (args.new_tab === true) params.new_tab = true;
+
+      const { data: cmd, error } = await ctx.admin.from("browser_commands").insert({
+        workspace_id: ctx.workspaceId, device_id: device.id,
+        agent_id: ctx.agentId, run_id: ctx.runId,
+        action, params,
+      }).select("id").single();
+      if (error || !cmd) return `ERROR: commande non enregistrée (${error?.message ?? "inconnu"})`;
+
+      if (ctx.logEvent) await ctx.logEvent("browser_action", { action, target: args.target, url: args.url });
+
+      // Attente du compte rendu. L'extension interroge toutes les ~1,5 s ; au
+      // pire elle dormait et son alarme la réveille sous 30 s. Au-delà, c'est
+      // que le navigateur est fermé — le dire vaut mieux que bloquer le run.
+      const deadline = Date.now() + 45_000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1200));
+        const { data: row } = await ctx.admin.from("browser_commands")
+          .select("status, result, error").eq("id", cmd.id).maybeSingle();
+        const st = (row as { status?: string; result?: unknown; error?: string } | null);
+        if (!st || st.status === "pending" || st.status === "running") continue;
+        if (st.status === "done") return JSON.stringify(st.result ?? {}).slice(0, 8000);
+        return `ERROR: ${st.error ?? "échec de l'action dans le navigateur"}`;
+      }
+
+      await ctx.admin.from("browser_commands")
+        .update({ status: "expired", error: "aucune réponse du navigateur" }).eq("id", cmd.id);
+      return "ERROR: le navigateur n'a pas répondu (fermé, ou en veille). "
+        + "Demande à l'utilisateur de vérifier que son navigateur est ouvert et le pilotage toujours autorisé.";
+    },
+  });
+  summaryLines.push("- user_browser: act in the user's own browser (their tabs and sessions), when they have armed control in the extension.");
 
   // Always-on: persistent memory. The agent reads its memory from the system
   // prompt and writes back through these tools.
@@ -4809,7 +4982,7 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
   create_artifact: "DELIVER", list_artifacts: "DELIVER", read_artifact: "DELIVER", update_artifact: "DELIVER",
   save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY", search_past_work: "MEMORY",
   create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
-  create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM", propose_mission: "TEAM", create_agent: "TEAM",
+  create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM", propose_mission: "TEAM", create_agent: "TEAM", create_workflow: "TEAM",
   send_email: "INTEGRATIONS", security_scan: "INTEGRATIONS",
 };
 

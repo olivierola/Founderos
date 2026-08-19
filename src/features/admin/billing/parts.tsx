@@ -103,6 +103,103 @@ export function CreditsSummary({ ent }: { ent: Entitlements }) {
   );
 }
 
+/**
+ * L'état de l'abonnement quand il n'est pas « tout va bien ».
+ *
+ * Ces états viennent du webhook Stripe (migration 0200) : ils se produisent
+ * pendant que personne ne regarde l'application — un prélèvement échoue la nuit,
+ * une résiliation est faite au portail. Les taire, c'est laisser un client
+ * découvrir la coupure au moment où son agent s'arrête.
+ *
+ * Rien n'est affiché sur le chemin nominal : une bannière permanente ne se lit
+ * plus au bout de trois jours.
+ */
+export function SubscriptionNotice({
+  ent, onManage, busy,
+}: {
+  ent: Entitlements;
+  onManage?: () => void;
+  busy?: boolean;
+}) {
+  const s = ent.subscription;
+  const until = new Date(s.period_end).toLocaleDateString("fr-FR");
+
+  const notice = s.hard_blocked
+    ? {
+        tone: "destructive" as const,
+        title: "Espace suspendu",
+        body: "Les agents ne peuvent plus s'exécuter. Régularisez le paiement ou contactez le support.",
+      }
+    : s.status === "past_due"
+    ? {
+        tone: "warn" as const,
+        title: "Paiement en échec",
+        body: `Votre moyen de paiement a été refusé. Sans régularisation, l'espace sera suspendu à l'issue des relances (accès maintenu jusque-là).`,
+      }
+    : s.cancel_at_period_end
+    ? {
+        tone: "warn" as const,
+        title: "Abonnement résilié",
+        body: `Votre offre reste active jusqu'au ${until}. Ensuite, l'espace repasse sur l'offre Découverte — vos données et vos crédits prépayés sont conservés.`,
+      }
+    : s.status === "paused"
+    ? {
+        tone: "warn" as const,
+        title: "Abonnement en pause",
+        body: "Les prélèvements sont suspendus. Reprenez l'abonnement pour restaurer votre allocation mensuelle.",
+      }
+    : null;
+
+  if (!notice) return null;
+
+  return (
+    <div
+      className={cn(
+        "mb-4 rounded-lg border p-4",
+        notice.tone === "destructive"
+          ? "border-destructive/30 bg-destructive/5"
+          : "border-amber-500/30 bg-amber-500/5",
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div
+            className={cn(
+              "text-sm font-medium",
+              notice.tone === "destructive" ? "text-destructive" : "text-amber-700 dark:text-amber-500",
+            )}
+          >
+            {notice.title}
+          </div>
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">{notice.body}</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {s.payment_action_url && (
+            <a
+              href={s.payment_action_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90"
+            >
+              Régler la facture
+            </a>
+          )}
+          {onManage && s.has_stripe_customer && (
+            <button
+              type="button"
+              onClick={onManage}
+              disabled={busy}
+              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            >
+              Gérer l'abonnement
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Ce qu'un crédit représente concrètement — sans repère, un solde de 12 000 ne
  *  veut rien dire pour un utilisateur. */
 export function CreditsExplainer({ className }: { className?: string }) {

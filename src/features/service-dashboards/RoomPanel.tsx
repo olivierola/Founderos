@@ -1,32 +1,45 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Users, ListChecks, Package, X, Plus } from "lucide-react";
+import { Users, Route, Package, X, Plus, MonitorPlay, SquareTerminal } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 import { AgentIdentity } from "@/components/AgentIdentity";
-import { cn } from "@/lib/utils";
 import { useResizableWidth } from "@/hooks/useResizableWidth";
 import { type ArtifactOpenTarget } from "@/features/internal-agents/UiBlocks";
+import { AgentTerminalPanel } from "@/features/internal-agents/AgentTerminalPanel";
+import { AppTestPanel } from "@/features/ops/AppTestPanel";
 import { FloatingTabBar } from "./FloatingTabBar";
 import { RoomGraph } from "./RoomGraph";
 import { RoomArtifacts } from "./RoomArtifacts";
-import { MissionsList } from "./ServiceDashboardTabs";
+import { MissionFlow } from "./MissionFlow";
+import { sendToRoom } from "./roomCompose";
 
 type RoomAgent = { id: string; name: string; avatar_url: string | null; is_orchestrator: boolean; accent_color?: string | null };
-type PanelTab = "general" | "task" | "artifacts";
+type PanelTab = "general" | "flow" | "artifacts" | "test" | "terminal";
 
 const PANEL_TABS: { key: PanelTab; label: string; icon: typeof Users }[] = [
   { key: "general", label: "General", icon: Users },
-  { key: "task", label: "Task", icon: ListChecks },
+  { key: "flow", label: "Flow", icon: Route },
   { key: "artifacts", label: "Artifacts", icon: Package },
+  { key: "test", label: "Test app", icon: MonitorPlay },
+  { key: "terminal", label: "Terminal", icon: SquareTerminal },
 ];
 
 /**
  * Room's right panel — General (who's in it, as a graph, + pending-input
- * status) / Task (their missions) / Artifacts (a rich-document gallery,
- * scoped to this room's participants/creations, not the whole dashboard).
+ * status) / Flow (how the room's missions are routed and what the agents are
+ * producing, live) / Artifacts (a rich-document gallery, scoped to this room).
+ *
+ * "Flow" replaced a list of the participants' background missions: that was
+ * agent-level scheduling, already shown by the dashboard's Schedules tab, and
+ * it answered none of the questions you have while watching a room work.
+ *
+ * "Test app" and "Terminal" are the two windows into the agents' machines: the
+ * live browser session while they test an app, and the shell commands they run
+ * on the runner / in the sandbox.
  */
 export function RoomPanel({
   roomId, workspaceId, projectId, participants, addable, openArtifact, onOpenArtifactHandled, onAdd, onRemove, onClose,
@@ -43,11 +56,18 @@ export function RoomPanel({
   onRemove: (agentId: string) => void;
   onClose: () => void;
 }) {
+  const { user } = useAuth();
   const [tab, setTab] = useState<PanelTab>("general");
   const [viewingArtifact, setViewingArtifact] = useState(false);
+  // Five tabs wrap to a second line in a narrow panel, so the content's top
+  // clearance is measured, not a constant.
+  const [barH, setBarH] = useState(56);
   const { width, startResize } = useResizableWidth("room_panel_width", 320, 260, 1000);
   const participantIds = participants.map((a) => a.id);
   const nameOf = new Map(participants.map((a) => [a.id, a.name]));
+  // A command typed in the terminal is a request to the room's lead agent — the
+  // browser has no machine of its own, the agents do.
+  const lead = participants.find((a) => a.is_orchestrator) ?? participants[0] ?? null;
 
   useEffect(() => {
     if (openArtifact) setTab("artifacts");
@@ -78,6 +98,7 @@ export function RoomPanel({
           sections={PANEL_TABS}
           active={tab}
           onSelect={setTab}
+          onHeight={setBarH}
           trailing={
             <button onClick={onClose} className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
           }
@@ -134,13 +155,38 @@ export function RoomPanel({
             </div>
           </div>
         )}
-        {tab === "task" && <div className="pt-14"><MissionsList agentIds={participantIds} nameOf={nameOf} /></div>}
+        {tab === "flow" && (
+          <div style={{ paddingTop: barH + 8 }}>
+            <MissionFlow roomId={roomId} participants={participants} />
+          </div>
+        )}
         {tab === "artifacts" && (
-          <div className={cn(!viewingArtifact && "pt-14", "h-full")}>
+          <div className="h-full" style={viewingArtifact ? undefined : { paddingTop: barH + 8 }}>
             <RoomArtifacts
               roomId={roomId} workspaceId={workspaceId} projectId={projectId}
               openArtifact={openArtifact} onOpenArtifactHandled={onOpenArtifactHandled}
               onViewingChange={setViewingArtifact}
+            />
+          </div>
+        )}
+        {tab === "test" && (
+          <div className="h-full" style={{ paddingTop: barH + 8 }}>
+            <AppTestPanel workspaceId={workspaceId} projectId={projectId} />
+          </div>
+        )}
+        {tab === "terminal" && (
+          <div className="h-full p-3" style={{ paddingTop: barH + 8 }}>
+            <AgentTerminalPanel
+              agents={participants.map((a) => ({ id: a.id, name: a.name }))}
+              onCommand={async (command) => {
+                if (!lead || !projectId) return "Aucun agent dans cette room.";
+                await sendToRoom(
+                  { roomId, workspaceId, projectId, userId: user?.id ?? null },
+                  `Exécute cette commande et rends-moi sa sortie : \`${command}\``,
+                  [lead.id], [],
+                );
+                return `→ demandé à ${lead.name} dans le fil.`;
+              }}
             />
           </div>
         )}

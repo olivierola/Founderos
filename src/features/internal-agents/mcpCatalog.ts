@@ -244,7 +244,13 @@ export const MCP_CATALOG: McpCatalogCategory[] = [
   {
     label: "E-commerce",
     servers: [
-      { name: "Shopify", note: MANUAL },
+      // Storefront MCP is per-store, so there is no single URL to prefill — but
+      // the pattern is fixed and needs no credentials, which is why the public
+      // agent's E-commerce tab builds it from the shop domain.
+      {
+        name: "Shopify (Storefront)", transport: "http", auth: "none",
+        note: "Endpoint public par boutique : https://{votre-boutique}/api/mcp — catalogue + panier, sans authentification.",
+      },
       { name: "WooCommerce", local: true, note: LOCAL },
       { name: "BigCommerce", note: MANUAL },
       { name: "Magento", note: MANUAL },

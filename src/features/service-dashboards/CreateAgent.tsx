@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import {
   GlobeIcon, LaptopIcon, PlusIcon, MagnifyingGlassIcon, SquaresFourIcon, XIcon, CheckIcon, SlidersIcon,
 } from "@phosphor-icons/react";
+import { PUBLIC_AGENT_PRESETS, type PublicAgentPreset } from "@/features/agent-rag/publicAgentPresets";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { AgentIdentity } from "@/components/AgentIdentity";
@@ -48,17 +49,30 @@ const TEMPLATE_TABS: { key: string; label: string; match?: string[] }[] = [
   { key: "engineering", label: "Engineering", match: ["QA", "R&D", "Cybersecurity", "Data"] },
 ];
 
+/** Internal agent, from scratch or from a template — or a public one, the
+ *  customer-facing kind that answers from a knowledge base (0195). */
+type CreateMode = "custom" | "templates" | "public";
+
 export function CreateAgentPage({ dashboardId, workspaceId, projectId }: {
   dashboardId: string; workspaceId: string; projectId: string;
 }) {
   const { workspaceSlug, projectSlug } = useParams();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const base = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
-  const [mode, setMode] = useState<"custom" | "templates">("custom");
+  // ?type=public lands straight on the public form — that's how the roster's
+  // "Agent public" entry gets here.
+  const [mode, setMode] = useState<CreateMode>(params.get("type") === "public" ? "public" : "custom");
+
+  const MODES: { key: CreateMode; label: string; icon?: typeof SquaresFourIcon }[] = [
+    { key: "custom", label: "Build Your Own" },
+    { key: "templates", label: "Templates", icon: SquaresFourIcon },
+    { key: "public", label: "Agent public", icon: GlobeIcon },
+  ];
 
   return (
     <div className="min-h-full px-10 py-6">
-      {/* Breadcrumb + the Build/Templates switch, as in the mockup. */}
+      {/* Breadcrumb + the Build/Templates/Public switch, as in the mockup. */}
       <div className="relative flex items-center">
         <nav className="flex items-center gap-2 text-sm">
           <button onClick={() => navigate(`${base}/agents`)} className="text-muted-foreground transition-colors hover:text-foreground">Agents</button>
@@ -67,27 +81,151 @@ export function CreateAgentPage({ dashboardId, workspaceId, projectId }: {
         </nav>
         <div className="absolute left-1/2 -translate-x-1/2">
           <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card/60 p-1">
-            <button
-              onClick={() => setMode("custom")}
-              className={cn("rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                mode === "custom" ? "bg-sidebar-accent text-foreground" : "text-muted-foreground hover:text-foreground")}
-            >
-              Build Your Own
-            </button>
-            <button
-              onClick={() => setMode("templates")}
-              className={cn("flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                mode === "templates" ? "bg-sidebar-accent text-foreground" : "text-muted-foreground hover:text-foreground")}
-            >
-              <SquaresFourIcon className="h-3.5 w-3.5" /> Templates
-            </button>
+            {MODES.map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setMode(m.key)}
+                className={cn("flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                  mode === m.key ? "bg-sidebar-accent text-foreground" : "text-muted-foreground hover:text-foreground")}
+              >
+                {m.icon && <m.icon className="h-3.5 w-3.5" />} {m.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {mode === "custom"
-        ? <BuildYourOwn dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} base={base} />
-        : <TemplateGallery dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} base={base} />}
+      {mode === "custom" && <BuildYourOwn dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} base={base} />}
+      {mode === "templates" && <TemplateGallery dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} base={base} />}
+      {mode === "public" && <BuildPublicAgent dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} base={base} />}
+    </div>
+  );
+}
+
+// ── Public agent ─────────────────────────────────────────────────────────────
+// A customer-facing agent: pick the use case (its preset seeds persona,
+// instructions, welcome message and widget), name it, and it opens on its
+// Knowledge tab — a public agent is only useful once it is fed.
+function BuildPublicAgent({ dashboardId, workspaceId, projectId, base }: {
+  dashboardId: string; workspaceId: string; projectId: string; base: string;
+}) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [preset, setPreset] = useState<PublicAgentPreset>(PUBLIC_AGENT_PRESETS[0]);
+  const [name, setName] = useState(PUBLIC_AGENT_PRESETS[0].defaultName);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function choose(p: PublicAgentPreset) {
+    setPreset(p);
+    // Only overwrite the name when the user hasn't typed one of their own.
+    setName((cur) => (PUBLIC_AGENT_PRESETS.some((x) => x.defaultName === cur) ? p.defaultName : cur));
+  }
+
+  async function create() {
+    if (!name.trim() || creating) return;
+    setCreating(true); setError(null);
+    try {
+      const { seed } = preset;
+      const { data, error: err } = await supabase
+        .from("rag_agents")
+        .insert({
+          workspace_id: workspaceId,
+          project_id: projectId,
+          service_dashboard_id: dashboardId,
+          created_by: user?.id ?? null,
+          name: name.trim(),
+          description: seed.description || null,
+          persona: seed.persona || null,
+          instructions: seed.instructions || null,
+          welcome_message: seed.welcome_message,
+          onboarding_enabled: seed.onboarding_enabled,
+          widget_config: seed.widget_config,
+          accent_color: preset.accent,
+        })
+        .select("id")
+        .single();
+      if (err) throw new Error(err.message);
+      queryClient.invalidateQueries({ queryKey: ["sd_public_agents", dashboardId] });
+      queryClient.invalidateQueries({ queryKey: ["sd_panel_public_agents", dashboardId] });
+      queryClient.invalidateQueries({ queryKey: ["rag_agents", projectId] });
+      if (data) navigate(`${base}/public/${data.id}?t=knowledge`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto mt-8 max-w-3xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Nouvel agent public</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Il répond à vos clients depuis sa base de connaissances, et s'intègre en widget sur votre site.
+          Il vit dans ce service, avec les agents internes de l'équipe.
+        </p>
+      </div>
+
+      <div>
+        <label className="mb-2 block text-sm font-medium">Partir d'un cas d'usage</label>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {PUBLIC_AGENT_PRESETS.map((p) => {
+            const active = p.key === preset.key;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => choose(p)}
+                className={cn(
+                  "flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors",
+                  active ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/40 hover:bg-secondary/40",
+                )}
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-base" style={{ background: `${p.accent}26` }}>
+                  {p.emoji}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">{p.label}</span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{p.tagline}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-sm font-medium">Nom de l'agent</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && create()}
+          placeholder={preset.defaultName}
+          className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      </div>
+
+      {/* Live preview of the card it will become. */}
+      <div className="overflow-hidden rounded-xl border border-border">
+        <div className="h-1" style={{ background: preset.accent }} />
+        <div className="flex items-center gap-2 p-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md text-base" style={{ background: `${preset.accent}26` }}>
+            {preset.emoji}
+          </div>
+          <span className="text-sm font-medium">{name.trim() || preset.defaultName}</span>
+        </div>
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={() => navigate(`${base}/agents`)}>Annuler</Button>
+        <Button onClick={create} disabled={creating || !name.trim()}>
+          {creating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <PlusIcon className="mr-1.5 h-4 w-4" />} Créer l'agent
+        </Button>
+      </div>
     </div>
   );
 }

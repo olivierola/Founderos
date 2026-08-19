@@ -61,6 +61,13 @@ export interface Entitlements {
     overage_enabled: boolean;
     overage_cap_credits: number;
     trial_ends_at: string | null;
+    /** Résilié mais payé jusqu'à `period_end` (migration 0200). */
+    cancel_at_period_end: boolean;
+    past_due_since: string | null;
+    /** Facture impayée à régler (hosted_invoice_url Stripe). */
+    payment_action_url: string | null;
+    has_stripe_subscription: boolean;
+    has_stripe_customer: boolean;
   };
   credits: {
     included: number;
@@ -164,6 +171,37 @@ export const FEATURE_LABELS: Record<string, string> = {
   priority_support: "Support prioritaire",
   dedicated_support: "Support dédié",
 };
+
+// ── Intention d'achat ────────────────────────────────────────────────────────
+// Un visiteur qui clique « Pro » sur la grille publique n'a ni compte ni espace
+// de travail : il ne peut pas payer tout de suite. Son choix est donc mémorisé
+// pour être repris à l'arrivée sur la page Facturation. Sans ça, il traverse
+// inscription puis onboarding et se retrouve devant quatre offres à choisir de
+// nouveau — c'est là qu'on perd la vente.
+const PLAN_INTENT_KEY = "founderos.plan_intent";
+
+export function rememberPlanIntent(code: string) {
+  try {
+    localStorage.setItem(PLAN_INTENT_KEY, JSON.stringify({ code, at: Date.now() }));
+  } catch {
+    /* navigation privée : l'intention est perdue, pas le parcours */
+  }
+}
+
+/** Lit et efface l'intention. Périmée au-delà de 24 h : une offre choisie la
+ *  semaine dernière ne doit pas déclencher un paiement surprise aujourd'hui. */
+export function consumePlanIntent(): string | null {
+  try {
+    const raw = localStorage.getItem(PLAN_INTENT_KEY);
+    if (!raw) return null;
+    localStorage.removeItem(PLAN_INTENT_KEY);
+    const { code, at } = JSON.parse(raw) as { code?: string; at?: number };
+    if (!code || !at || Date.now() - at > 86_400_000) return null;
+    return code;
+  } catch {
+    return null;
+  }
+}
 
 /** Ordre d'affichage des ressources : ce que le client regarde en premier. */
 export const RESOURCE_ORDER = [

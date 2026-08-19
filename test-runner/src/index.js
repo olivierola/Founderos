@@ -52,16 +52,42 @@ if (!SUPABASE_URL || !RUNNER_TOKEN) {
   console.error("SUPABASE_URL and RUNNER_TOKEN are required.");
   process.exit(1);
 }
-const storage = SERVICE_KEY ? createClient(SUPABASE_URL, SERVICE_KEY) : null;
+// Storage calls are bounded too (a stalled frame upload must cost us that frame,
+// not the run): supabase-js has no per-call timeout, so the timeout lives in the
+// fetch it is given.
+const storage = SERVICE_KEY
+  ? createClient(SUPABASE_URL, SERVICE_KEY, {
+    global: {
+      fetch: (url, init = {}) => fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(30000) }),
+    },
+  })
+  : null;
 
 const ts = () => new Date().toISOString();
 
+// Every call is bounded. A request that never answers used to wedge the whole
+// runner: the loop is sequential, so one hung fetch stopped ops, tests and scans
+// alike, and left the claimed run sitting in `running` with no frame and no
+// error — the live view spun forever with nothing to show. `observe` gets a long
+// budget because it makes the agent think; the bookkeeping modes get a short one.
+const RPC_TIMEOUT_MS = { observe: 180000, claim: 45000, poll: 45000, complete: 45000 };
+
 async function rpc(body) {
-  const res = await fetch(POLL_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Runner-Token": RUNNER_TOKEN },
-    body: JSON.stringify(body),
-  });
+  const timeout = RPC_TIMEOUT_MS[body?.mode] ?? 45000;
+  let res;
+  try {
+    res = await fetch(POLL_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Runner-Token": RUNNER_TOKEN },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeout),
+    });
+  } catch (e) {
+    if (e.name === "TimeoutError" || e.name === "AbortError") {
+      throw new Error(`${body?.mode ?? "rpc"} timed out after ${Math.round(timeout / 1000)}s`);
+    }
+    throw e;
+  }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`);
   return json;
@@ -379,11 +405,25 @@ async function runOne(claimed) {
   }
   const { id: runId, app_url } = claimed;
   console.log(`[${ts()}] Run ${String(runId).slice(0, 8)} — ${app_url}`);
-  const browser = await chromium.launch({ headless: true });
-  // Wide viewport (16:10) so the captured frame matches the preview area and
-  // fills its width without letterboxing.
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const page = await context.newPage();
+
+  // Bringing up the browser is part of the run, not a precondition of it: when
+  // this threw (no Chromium installed, a launch that never returns) the claimed
+  // run was left in `running` forever with no frame and no error, and the live
+  // view had nothing to say about it. Any failure here now ends the run visibly.
+  let browser;
+  let page;
+  try {
+    browser = await chromium.launch({ headless: true, timeout: 60000 });
+    // Wide viewport (16:10) so the captured frame matches the preview area and
+    // fills its width without letterboxing.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    page = await context.newPage();
+  } catch (e) {
+    console.error(`  browser launch failed: ${e.message}`);
+    await rpc({ mode: "complete", run_id: runId, status: "error", error_message: `Runner could not start a browser: ${e.message}` }).catch(() => {});
+    await browser?.close().catch(() => {});
+    return;
+  }
   let idx = 0;
 
   // ── Perf telemetry: request count + console errors over the whole run. ──

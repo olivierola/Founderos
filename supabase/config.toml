@@ -110,6 +110,12 @@ verify_jwt = false
 [functions.create-checkout]
 verify_jwt = false
 
+# Webhook Stripe : l'appelant est Stripe, pas un navigateur — aucun JWT
+# Supabase. L'authentification se fait sur la signature HMAC de la requête
+# (FOUNDEROS_STRIPE_WEBHOOK_SECRET), vérifiée dans la fonction.
+[functions.stripe-webhook]
+verify_jwt = false
+
 [functions.automation-receiver]
 verify_jwt = false
 
@@ -123,6 +129,19 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.rag-activation-feedback]
+verify_jwt = false
+
+# The three endpoints the embedded widget actually talks to. rag-chat serves both
+# the widget (public_key, anonymous) and the builder playground (JWT); it checks
+# the Authorization header itself on the authenticated branch, so gating it at
+# the gateway would only break the public one.
+[functions.rag-agent-public-config]
+verify_jwt = false
+
+[functions.rag-chat]
+verify_jwt = false
+
+[functions.rag-onboarding-orchestrate]
 verify_jwt = false
 
 # The external Ops Runner authenticates with X-Runner-Token (hashed against

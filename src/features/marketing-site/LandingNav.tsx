@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ArrowUpRight, ChevronDown, Menu, X } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { BRAND_FONT } from "./LandingKit";
 import { HERO_BG } from "./LandingHero";
+import { SOLUTIONS } from "./solutions";
 
 /* The tab is one flat ink so the shoulders match it exactly; the depth comes
    from the inset highlights, not from a gradient. */
@@ -33,20 +34,24 @@ function NotchShoulder({ side }: { side: "left" | "right" }) {
 }
 
 const NAV = [
-  { label: "Solutions", to: "/features", menu: true },
+  { label: "Solutions", to: "/solutions", menu: true },
   { label: "Pricing", to: "/pricing" },
-  { label: "Blog", to: "/changelog" },
-  { label: "FAQ", to: "/#faq" },
+  { label: "Blog", to: "/blog" },
+  { label: "FAQ", to: "/faq" },
 ];
 
-const SOLUTIONS = [
-  { label: "Workforce Readiness", body: "Map which processes are ready for agents today.", to: "/features" },
-  { label: "Secured AI Agents", body: "Agents that run inside your tenant, behind your identity.", to: "/features" },
-  { label: "Foundation & Automation", body: "Structured data and workflows agents can stand on.", to: "/features" },
-  { label: "AI Governance", body: "Policies, approvals and an audit trail on every action.", to: "/features" },
-  { label: "Adoption & Enablement", body: "Champions, use cases, and usage you can measure.", to: "/features" },
-  { label: "Managed Run", body: "An architect and a developer who know your environment.", to: "/features" },
-];
+/* Each entry goes to its own page under /solutions/:slug. They used to be
+   anchors on one long page, which meant six distinct promises in this menu all
+   landed on the same scroll.
+
+   The set comes from solutions.ts rather than being written out again here, so
+   the menu keeps the 01–06 order the pages themselves number, and a label can
+   no longer disagree with the page it opens. */
+const MENU = SOLUTIONS.map((s) => ({
+  ...s.menu,
+  hue: s.key,
+  to: `/solutions/${s.slug}`,
+}));
 
 // Flat top bar over the black canvas — wordmark left, links centred, a single
 // bordered CTA right. It only gains a background once the page scrolls.
@@ -54,6 +59,7 @@ export function LandingNav() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
+  const { pathname } = useLocation();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -61,6 +67,12 @@ export function LandingNav() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  // An article is still "Blog", so the match is on the section, not the path.
+  const isCurrent = (to: string) => {
+    const root = "/" + to.split("#")[0].split("/")[1];
+    return pathname === root || pathname.startsWith(root + "/");
+  };
 
   return (
     <>
@@ -129,25 +141,75 @@ export function LandingNav() {
                   onMouseEnter={() => setMenu(true)}
                   onMouseLeave={() => setMenu(false)}
                 >
-                  <Link to={l.to} className="flex items-center gap-1.5 py-2 text-[15px] text-black/75 hover:text-black">
+                  <Link
+                    to={l.to}
+                    aria-current={isCurrent(l.to) ? "page" : undefined}
+                    className={`flex items-center gap-1.5 py-2 text-[15px] transition-colors hover:text-black ${
+                      isCurrent(l.to) ? "font-medium text-black" : "text-black/75"
+                    }`}
+                  >
                     {l.label}
                     <ChevronDown className={`h-4 w-4 transition-transform ${menu ? "rotate-180" : ""}`} />
                   </Link>
                   {menu && (
                     <div className="absolute left-1/2 top-full w-[540px] -translate-x-1/2 pt-3">
                       <div className="grid grid-cols-2 gap-1 rounded-2xl border border-black/10 bg-white p-2 shadow-xl">
-                        {SOLUTIONS.map((s) => (
-                          <Link key={s.label} to={s.to} className="rounded-xl p-3 transition-colors hover:bg-black/[0.04]">
-                            <div className="text-[13px] font-medium text-black">{s.label}</div>
-                            <div className="mt-0.5 text-[11.5px] leading-snug text-black/50">{s.body}</div>
-                          </Link>
-                        ))}
+                        {MENU.map((s) => {
+                          const here = pathname === s.to;
+                          return (
+                            <Link
+                              key={s.to}
+                              to={s.to}
+                              aria-current={here ? "page" : undefined}
+                              /* Closed on click as well as on mouseleave: a
+                                 same-nav navigation scrolls the page under a
+                                 pointer that never leaves the panel, so the
+                                 hover state alone would keep it open. */
+                              onClick={() => setMenu(false)}
+                              className={`rounded-xl p-3 transition-colors ${
+                                here ? "bg-black/[0.05]" : "hover:bg-black/[0.04]"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                {/* Same hue dot the pages use for each other, so
+                                    a solution keeps one colour everywhere. */}
+                                <span
+                                  aria-hidden
+                                  className="h-[7px] w-[7px] shrink-0 rounded-full"
+                                  style={{ background: s.hue }}
+                                />
+                                <span className="text-[13px] font-medium text-black">{s.label}</span>
+                              </div>
+                              <div className="mt-0.5 pl-[17px] text-[11.5px] leading-snug text-black/50">
+                                {s.blurb}
+                              </div>
+                            </Link>
+                          );
+                        })}
+                        {/* The parent label already goes to the index, but a
+                            hovered label does not look clickable, so the panel
+                            carries the way in explicitly. */}
+                        <Link
+                          to="/solutions"
+                          onClick={() => setMenu(false)}
+                          className="col-span-2 mt-1 flex items-center justify-between gap-2 border-t border-black/[0.07] px-3 pb-1 pt-3 text-[12.5px] text-black/55 transition-colors hover:text-black"
+                        >
+                          All six, and the order they happen in
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </Link>
                       </div>
                     </div>
                   )}
                 </div>
               ) : (
-                <Link key={l.label} to={l.to} className="py-2 text-[15px] text-black/75 hover:text-black">
+                <Link
+                  key={l.label}
+                  to={l.to}
+                  aria-current={isCurrent(l.to) ? "page" : undefined}
+                  className={`py-2 text-[15px] transition-colors hover:text-black ${
+                    isCurrent(l.to) ? "font-medium text-black" : "text-black/75"
+                  }`}
+                >
                   {l.label}
                 </Link>
               ),
@@ -173,7 +235,10 @@ export function LandingNav() {
       </header>
 
       {open && (
-        <div className="fixed inset-0 z-[60] bg-[#000007] p-6 md:hidden">
+        /* The drawer is always the dark panel, whatever the page under it is —
+            so its rules and inks are written literally rather than read from the
+            amp tokens, which flip to their light values on the interior pages. */
+        <div className="fixed inset-0 z-[60] overflow-y-auto bg-[#000007] p-6 text-white md:hidden">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2.5">
               <Logo size={24} />
@@ -191,25 +256,55 @@ export function LandingNav() {
                 key={l.label}
                 to={l.to}
                 onClick={() => setOpen(false)}
-                className="border-b border-[var(--amp-line-soft)] py-4 text-lg"
+                aria-current={isCurrent(l.to) ? "page" : undefined}
+                className={`border-b border-white/10 py-4 text-lg ${
+                  isCurrent(l.to) ? "text-white" : "text-white/70"
+                }`}
               >
                 {l.label}
               </Link>
             ))}
           </nav>
-          <div className="mt-8 flex flex-col gap-3">
+
+          {/* The solutions sit one level down rather than behind a nested
+              accordion — six links is shorter than the gesture to reveal them. */}
+          <div className="mt-8">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-white/35">Solutions</div>
+            <div className="mt-4 flex flex-col">
+              {MENU.map((s) => (
+                <Link
+                  key={s.to}
+                  to={s.to}
+                  onClick={() => setOpen(false)}
+                  aria-current={pathname === s.to ? "page" : undefined}
+                  className={`flex items-center gap-3 border-b border-white/[0.06] py-3 text-[15px] ${
+                    pathname === s.to ? "text-white" : "text-white/60"
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className="h-[7px] w-[7px] shrink-0 rounded-full"
+                    style={{ background: s.hue }}
+                  />
+                  {s.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-8 flex flex-col gap-3 pb-6">
             <Link
               to="/contact"
               onClick={() => setOpen(false)}
               className="rounded-xl px-6 py-3.5 text-center text-[15px] font-medium"
-              style={{ background: "var(--amp-accent)", color: "var(--amp-on-accent)" }}
+              style={{ background: "#ff4d00", color: "#fff" }}
             >
               Book a Consultation
             </Link>
             <Link
               to="/login"
               onClick={() => setOpen(false)}
-              className="amp-panel rounded-xl px-6 py-3.5 text-center text-[15px]"
+              className="rounded-xl border border-white/[0.12] bg-white/[0.04] px-6 py-3.5 text-center text-[15px]"
             >
               Sign in
             </Link>

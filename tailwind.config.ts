@@ -95,13 +95,26 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       keyframes: {
+        // Pulsing dots on the card-9 family (see components/ui/card-9.tsx).
+        // Defined here rather than in a per-instance <style> tag so N cards
+        // don't inject N identical stylesheets.
+        "promo-card-loader-pulse": {
+          "0%, 100%": { opacity: "0.3" },
+          "50%": { opacity: "1" },
+        },
         "fade-scale": {
           "0%": { opacity: "0", transform: "translateY(-50%) scale(0.95)" },
           "100%": { opacity: "1", transform: "translateY(-50%) scale(1)" },
         },
+        // Sweeping highlight used while a routing decision is in flight.
+        shimmer: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(100%)" },
+        },
       },
       animation: {
         "fade-scale": "fade-scale 0.2s ease-out",
+        shimmer: "shimmer 1.8s ease-in-out infinite",
       },
     },
   },

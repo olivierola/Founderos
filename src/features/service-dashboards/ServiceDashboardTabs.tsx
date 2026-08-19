@@ -1,14 +1,14 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import {
   RobotIcon, PlusIcon, ChatsCircleIcon, CalendarDotsIcon, CaretRightIcon,
   CheckCircleIcon, XCircleIcon, TargetIcon, PencilSimpleIcon, ArrowLeftIcon,
-  GearSixIcon, LightningIcon, HardDrivesIcon, FileTextIcon, BrainIcon, FlowArrowIcon,
+  GearSixIcon, LightningIcon, FileTextIcon, BrainIcon, FlowArrowIcon,
   ChartBarIcon, PlugsConnectedIcon, PlayIcon, PauseIcon, TrashIcon, ClockCountdownIcon,
-  WarningIcon, CalendarBlankIcon, CalendarCheckIcon, ArrowsClockwiseIcon, TimerIcon, XIcon,
-  FolderPlusIcon, DotsThreeIcon, SparkleIcon,
+  WarningIcon, CalendarBlankIcon, CalendarCheckIcon, ArrowsClockwiseIcon, TimerIcon,
+  FolderPlusIcon, DotsThreeIcon, SparkleIcon, GlobeIcon, MonitorPlayIcon, TerminalWindowIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -32,14 +32,18 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 import { useAssistant } from "@/lib/assistant-context";
 import {
-  ChatTab, AgentMcpTab, MissionTab, MemoryTab, AnalyticsTab, SettingsTab, SkillsTab, AgentConnectorsTab,
+  ChatTab, AgentMcpTab, SettingsTab, SkillsTab, AgentConnectorsTab, ToolsTab,
 } from "@/features/internal-agents/InternalAgentDetail";
 import { FloatingTabBar } from "./FloatingTabBar";
 import { InstructionsEditor } from "@/features/internal-agents/InstructionsEditor";
 import { AgentAutomationsTab } from "@/features/internal-agents/AgentAutomationsTab";
+import { AgentTerminalPanel } from "@/features/internal-agents/AgentTerminalPanel";
+import { AppTestPanel } from "@/features/ops/AppTestPanel";
 import { type InternalAgent } from "@/features/internal-agents/shared";
 import { type StudioKind } from "@/features/internal-agents/agentTemplates";
-import { createRoom } from "./model";
+import { createRoom, addRoomAgent } from "./model";
+import { SLASH_COMMANDS, expandSlash, sendToRoom } from "./roomCompose";
+import { ChatInput } from "@/components/ui/chat-input";
 import { AssetsHub } from "./AssetsHub";
 import { MemoryGraph } from "./MemoryGraph";
 import { CatalogCard } from "./CatalogCard";
@@ -89,6 +93,27 @@ function useDashboardAgents(dashboardId: string) {
   });
 }
 
+/** A customer-facing agent (rag_agents) filed under this service dashboard. */
+export interface DashboardPublicAgent {
+  id: string; name: string; description: string | null; enabled: boolean;
+  accent_color: string | null; onboarding_enabled: boolean; created_at: string;
+}
+
+export function useDashboardPublicAgents(dashboardId: string) {
+  return useQuery({
+    queryKey: ["sd_public_agents", dashboardId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("rag_agents")
+        .select("id, name, description, enabled, accent_color, onboarding_enabled, created_at")
+        .eq("service_dashboard_id", dashboardId)
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as DashboardPublicAgent[];
+    },
+  });
+}
+
 const fmt = (s: string | null) => (s ? new Date(s).toLocaleString() : "—");
 function Centered() { return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>; }
 function Empty({ icon: Icon, title, hint }: { icon: PhosphorIcon; title: string; hint?: string }) {
@@ -115,6 +140,9 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
   // Agent pages live INSIDE the dashboard — a card opens the agent's tabs
   // (chat / missions / customize / …) here, not in the AI Workforce module.
   const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
+  // Public (customer-facing) agents of this service — same roster page, own
+  // section: they are configured here too (0195), through their builder tabs.
+  const { data: publicAgents } = useDashboardPublicAgents(dashboardId);
 
   // Tool + skill counts for the whole roster in two queries, grouped client-side.
   const ids = (agents ?? []).map((a) => a.id);
@@ -171,11 +199,32 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
             <Button variant="outline" onClick={() => setCreatingFolder(true)} className="rounded-full">
               <FolderPlusIcon className="mr-1.5 h-3.5 w-3.5" /> Dossier
             </Button>
-            {/* One entry point: the create page carries the Build / Templates
-                switch itself, so two buttons led to the same screen. */}
-            <Button onClick={() => navigate(`${sbase}/agents/new`)} className="rounded-full bg-foreground px-5 text-background hover:bg-foreground/90">
-              Create agent
-            </Button>
+            {/* One entry point, two kinds of worker: the create page carries the
+                Build / Templates / Public switch itself. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="rounded-full bg-foreground px-5 text-background hover:bg-foreground/90">
+                  Create agent
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 rounded-xl">
+                <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">Type d'agent</DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => navigate(`${sbase}/agents/new`)}>
+                  <RobotIcon className="mr-2 h-4 w-4" />
+                  <span className="min-w-0">
+                    <span className="block text-sm">Agent interne</span>
+                    <span className="block text-[11px] text-muted-foreground">Travaille pour l'équipe de ce service.</span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => navigate(`${sbase}/agents/new?type=public`)}>
+                  <GlobeIcon className="mr-2 h-4 w-4" />
+                  <span className="min-w-0">
+                    <span className="block text-sm">Agent public</span>
+                    <span className="block text-[11px] text-muted-foreground">Face client, nourri par une base de connaissances.</span>
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -202,14 +251,19 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
               <div className="mt-1 text-xs text-muted-foreground">{error instanceof Error ? error.message : "Erreur inconnue"}</div>
             </div>
           )
-          : (agents ?? []).length === 0 ? (
+          : (agents ?? []).length === 0 && (publicAgents ?? []).length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border p-10 text-center">
               <RobotIcon className="mx-auto mb-2 h-7 w-7 text-muted-foreground/60" />
               <div className="text-sm font-medium">Aucun agent dans ce service</div>
               <div className="mt-1 text-xs text-muted-foreground">Créez-en un ou partez d'un template.</div>
-              <Button size="sm" className="mt-4 rounded-full" onClick={() => navigate(`${sbase}/agents/new`)}>
-                <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> Create agent
-              </Button>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <Button size="sm" className="rounded-full" onClick={() => navigate(`${sbase}/agents/new`)}>
+                  <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> Agent interne
+                </Button>
+                <Button size="sm" variant="outline" className="rounded-full" onClick={() => navigate(`${sbase}/agents/new?type=public`)}>
+                  <GlobeIcon className="mr-1.5 h-3.5 w-3.5" /> Agent public
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-12">
@@ -241,6 +295,13 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
                   connStatus={connStatus}
                   onOpen={(id) => navigate(`${sbase}/agent/${id}`)}
                   onMove={move}
+                />
+              )}
+              {(publicAgents ?? []).length > 0 && (
+                <PublicAgentGallery
+                  agents={publicAgents ?? []}
+                  dashboardId={dashboardId}
+                  onOpen={(id) => navigate(`${sbase}/public/${id}`)}
                 />
               )}
             </div>
@@ -338,6 +399,94 @@ function AgentGallery({ title, dot, agents, counts, folders, toolkits, connStatu
   );
 }
 
+// The service's customer-facing agents. Their numbers are knowledge sources
+// and conversations held (not tools/skills), so they get their own gallery
+// rather than being squeezed into the internal cards' vocabulary.
+function PublicAgentGallery({ agents, dashboardId, onOpen }: {
+  agents: DashboardPublicAgent[];
+  dashboardId: string;
+  onOpen: (id: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const ids = agents.map((a) => a.id);
+  const { data: counts } = useQuery({
+    queryKey: ["sd_public_agent_counts", ids.join(",")],
+    enabled: ids.length > 0,
+    queryFn: async () => {
+      const out: Record<string, { sources: number; convos: number }> = {};
+      await Promise.all(agents.map(async (a) => {
+        const [s, c] = await Promise.all([
+          supabase.from("rag_sources").select("id", { count: "exact", head: true }).eq("agent_id", a.id),
+          supabase.from("rag_conversations").select("id", { count: "exact", head: true }).eq("agent_id", a.id),
+        ]);
+        out[a.id] = { sources: s.count ?? 0, convos: c.count ?? 0 };
+      }));
+      return out;
+    },
+  });
+
+  // Deleting cascades to its sources, chunks and conversations (0016 FKs), so
+  // it is confirmed by name rather than by a bare "are you sure".
+  async function remove(a: DashboardPublicAgent) {
+    if (!confirm(`Supprimer l'agent public « ${a.name} » ? Sa base de connaissances et ses conversations partent avec lui.`)) return;
+    await supabase.from("rag_agents").delete().eq("id", a.id);
+    queryClient.invalidateQueries({ queryKey: ["sd_public_agents", dashboardId] });
+    queryClient.invalidateQueries({ queryKey: ["sd_panel_public_agents", dashboardId] });
+  }
+
+  return (
+    <section>
+      <h2 className="mb-5 flex items-center gap-2 text-[19px] font-semibold tracking-tight">
+        Agents publics
+        <span className="text-[15px] font-normal text-muted-foreground">{agents.length}</span>
+        <CaretRightIcon className="h-4 w-4 text-muted-foreground" />
+      </h2>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        {agents.map((a) => {
+          const color = a.accent_color || "#001BB7";
+          const c = counts?.[a.id];
+          return (
+            <CatalogCard
+              key={a.id}
+              onClick={() => onOpen(a.id)}
+              action={
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      title="Actions"
+                      className="rounded-lg border border-border/70 bg-background/90 p-1 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
+                    >
+                      <DotsThreeIcon className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="rounded-xl">
+                    <DropdownMenuItem destructive onSelect={() => remove(a)}>
+                      <TrashIcon className="mr-2 h-4 w-4" /> Supprimer
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              }
+              glyph={
+                <span className="flex h-14 w-14 items-center justify-center rounded-xl" style={{ background: `${color}26` }}>
+                  <GlobeIcon weight="duotone" className="h-7 w-7" style={{ color }} />
+                </span>
+              }
+              name={a.name}
+              tools={c?.sources ?? null}
+              extras={c?.convos ?? null}
+              badges={[
+                { label: "public", tone: "auth", title: "Agent public — face client" },
+                { label: a.enabled ? "live" : "disabled", tone: "key", title: "État de publication" },
+              ]}
+              meta={new Date(a.created_at).toISOString().slice(0, 10)}
+            />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 // Create / rename / delete a folder. Deleting keeps its agents — they simply
 // become unfiled (the FK is `on delete set null`).
 function FolderDialog({ open, folder, onClose, onSave, onDelete }: {
@@ -401,57 +550,102 @@ function FolderDialog({ open, folder, onClose, onSave, onDelete }: {
 }
 
 // ── Agent detail, rendered INSIDE the dashboard ───────────────────────────────
-// Clicking an agent card lands here: chat as the persistent main pane (1:1,
-// no @mentions — unlike a Room) + a right panel with the agent's config,
-// flattened to 8 tabs. This is the ONE dashboard-embedded entry point that
-// gets this layout — the standalone AI Workforce page (/agent/internal/:id)
-// keeps its full original tab set (Workspace/Collaboration/Channels + hubs)
-// untouched. The leaf components below (SettingsTab, SkillsTab, …) are the
-// exact same ones that page uses — just reused directly instead of through
-// the Customize/Missions hub wrappers, so no nested sub-tab bar duplicates
-// this panel's own tab strip.
-type AgentDetailTab = "settings" | "skills" | "mcp" | "instructions" | "missions" | "memory" | "automations" | "connectors" | "analytics";
+// Clicking an agent card lands on its CHAT, which owns the whole area — nothing
+// else shares this page. Configuration is a page of its own (AgentConfigInDashboard,
+// …/agent-config/:id), reached from the gear here: the forms are a different kind
+// of work from talking to the agent, and they need the room to breathe.
+// This is the ONE dashboard-embedded entry point that gets this layout — the
+// standalone AI Workforce page (/agent/internal/:id) keeps its full original tab
+// set (Workspace/Collaboration/Channels + hubs) untouched.
+// Five tabs, down from nine. The four that left were either not configuration
+// (the Missions board — it belongs to the dashboard, not to a settings page —
+// and Analytics) or a second door onto the same subject (MCP is a tool provider,
+// so it lives with the tools; Memory is now a section of Général).
+type AgentDetailTab = "settings" | "instructions" | "skills" | "connectors" | "automations";
 
+// The leaf components behind these (SettingsTab, SkillsTab, …) are the exact
+// same ones the standalone page uses — reused directly instead of through the
+// Customize/Missions hub wrappers, so no nested sub-tab bar duplicates this
+// page's own tab strip.
 const AGENT_DETAIL_TABS: { key: AgentDetailTab; label: string; icon: any }[] = [
-  { key: "settings", label: "Settings", icon: GearSixIcon },
-  { key: "skills", label: "Skills", icon: LightningIcon },
-  { key: "mcp", label: "MCP", icon: HardDrivesIcon },
+  { key: "settings", label: "Général", icon: GearSixIcon },
   { key: "instructions", label: "Instructions", icon: FileTextIcon },
-  { key: "missions", label: "Missions", icon: TargetIcon },
-  { key: "memory", label: "Memory", icon: BrainIcon },
-  { key: "automations", label: "Automations", icon: FlowArrowIcon },
-  { key: "connectors", label: "Connecteurs", icon: PlugsConnectedIcon },
-  { key: "analytics", label: "Analytics", icon: ChartBarIcon },
+  { key: "skills", label: "Compétences", icon: LightningIcon },
+  { key: "connectors", label: "Outils", icon: PlugsConnectedIcon },
+  { key: "automations", label: "Automatisations", icon: FlowArrowIcon },
 ];
 
-export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: string; agentId: string }) {
-  const { workspaceSlug, projectSlug } = useParams();
-  const { workspaceId, projectId } = useCurrentContext();
-  const navigate = useNavigate();
-  const assistant = useAssistant();
-  const [params, setParams] = useSearchParams();
-  const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
-  const rawTab = params.get("t") || "settings";
-  const tab = (AGENT_DETAIL_TABS.some((t) => t.key === rawTab) ? rawTab : "settings") as AgentDetailTab;
-  // The right zone (agent panel) starts closed — opened on demand.
-  const [panelOpen, setPanelOpen] = useState(false);
-  // 380px was too tight for what this panel holds (9 tabs, automation recipe
-  // cards with connector chips) — titles truncated to "Résumé q…". Raising the
-  // MINIMUM as well as the default also upgrades anyone whose persisted width
-  // is below it: the hook discards a saved value outside [min, max].
-  const { width: panelWidth, startResize } = useResizableWidth("agent_panel_width", 620, 460, 1100);
+// Links written when this page had nine tabs (?t=missions, ?t=mcp, …) — each old
+// slug resolves onto the tab that absorbed it, with the settings sub-section to
+// open where there is one, so no bookmark lands on a tab that no longer exists.
+const LEGACY_AGENT_TABS: Record<string, { tab: AgentDetailTab; section?: string }> = {
+  missions: { tab: "settings" },
+  mcp: { tab: "connectors" },
+  tools: { tab: "connectors" },
+  memory: { tab: "settings", section: "memory" },
+  analytics: { tab: "settings", section: "usage" },
+};
 
-  const { data: agent, isLoading } = useQuery({
+function resolveAgentTab(raw: string | null): { tab: AgentDetailTab; section?: string } | null {
+  if (!raw) return null;
+  if (AGENT_DETAIL_TABS.some((t) => t.key === raw)) return { tab: raw as AgentDetailTab };
+  return LEGACY_AGENT_TABS[raw] ?? null;
+}
+
+function useDashboardAgent(agentId: string) {
+  return useQuery({
     queryKey: ["sd_agent_full", agentId],
     queryFn: async () => {
       const { data } = await supabase.from("internal_agents").select("*").eq("id", agentId).maybeSingle();
       return data as InternalAgent | null;
     },
   });
+}
+
+export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: string; agentId: string }) {
+  const { workspaceSlug, projectSlug } = useParams();
+  const { workspaceId, projectId } = useCurrentContext();
+  const navigate = useNavigate();
+  const assistant = useAssistant();
+  const qc = useQueryClient();
+  const [params] = useSearchParams();
+  const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
+  const { data: agent, isLoading } = useDashboardAgent(agentId);
+  // Two windows into the agent's machine, beside the conversation: the live
+  // browser session while it tests an app, and its shell.
+  const [side, setSide] = useState<"test" | "terminal" | null>(null);
+  const [convoId, setConvoId] = useState<string | null>(null);
+  const { width, startResize } = useResizableWidth("sd_agent_panel_width", 400, 300, 900);
+
+  /** A command typed in the terminal is a message to the agent: it owns the
+   *  runner, the browser doesn't. Same path as the composer (message + run). */
+  async function askAgentToRun(command: string): Promise<string> {
+    if (!convoId) return "Ouvre d'abord une session dans le chat.";
+    const { error } = await supabase.from("internal_agent_messages").insert({
+      conversation_id: convoId, agent_id: agentId, role: "user",
+      content: `Exécute cette commande et rends-moi sa sortie : \`${command}\``,
+    });
+    if (error) throw error;
+    await callEdge("internal-agent-run", { agent_id: agentId, mode: "chat", conversation_id: convoId });
+    qc.invalidateQueries({ queryKey: ["internal_agent_messages", convoId] });
+    return "→ demandé à l'agent dans la conversation.";
+  }
+
+  // Links written when the config lived here (…/agent/:id?t=skills) land on the
+  // configuration page instead of silently showing the chat.
+  const legacyTab = params.get("t");
+  useEffect(() => {
+    const target = resolveAgentTab(legacyTab);
+    if (!target) return;
+    navigate(
+      `${sbase}/agent-config/${agentId}?t=${target.tab}${target.section ? `&s=${target.section}` : ""}`,
+      { replace: true },
+    );
+  }, [legacyTab, agentId, sbase, navigate]);
 
   return (
     <div className="sd-agent-canvas relative flex h-full min-h-0">
-      {/* No solid header — the agent identity (left) and the panel toggle
+      {/* No solid header — the agent identity (left) and the config entry
           (right) float over the chat via ChatTab's top row. */}
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         {isLoading || !agent ? (
@@ -461,6 +655,7 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
             agent={agent}
             workspaceId={workspaceId}
             projectId={projectId}
+            onConversationChange={setConvoId}
             headerLeading={
               <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2 py-1 shadow-sm backdrop-blur">
                 <button onClick={() => navigate(`${sbase}/agents`)} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground" title="Retour aux agents"><ArrowLeftIcon className="h-3.5 w-3.5" /></button>
@@ -470,9 +665,18 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
             }
             headerTrailing={
               <div className="flex items-center gap-1.5">
+                {/* Watch the machine: the app it's testing, and its shell. */}
+                <SidePanelToggle
+                  icon={MonitorPlayIcon} title="Tester une app"
+                  active={side === "test"} onClick={() => setSide((s) => (s === "test" ? null : "test"))}
+                />
+                <SidePanelToggle
+                  icon={TerminalWindowIcon} title="Terminal de l'agent"
+                  active={side === "terminal"} onClick={() => setSide((s) => (s === "terminal" ? null : "terminal"))}
+                />
                 {/* Conversational configuration: opens the assistant on this
-                    agent's setup cards. The gear next to it stays the manual
-                    path (the forms) for anyone who prefers it. */}
+                    agent's setup cards. The gear next to it is the manual path
+                    — the configuration page and its forms. */}
                 <button
                   onClick={() => assistant.ask({ agent: { id: agent.id, name: agent.name } })}
                   title="Configurer avec l'assistant"
@@ -481,12 +685,9 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
                   <SparkleIcon weight="duotone" className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => setPanelOpen((v) => !v)}
-                  title="Réglages manuels"
-                  className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur transition-colors",
-                    panelOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
+                  onClick={() => navigate(`${sbase}/agent-config/${agent.id}`)}
+                  title="Configuration de l'agent"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
                 >
                   <GearSixIcon className="h-4 w-4" />
                 </button>
@@ -496,45 +697,180 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
         )}
       </div>
 
-      {!isLoading && agent && panelOpen && (
-            <aside
-              // The width cap keeps the panel from swallowing the chat pane on
-              // a narrow window, whatever width was dragged/persisted.
-              className="absolute right-3 top-3 bottom-3 z-30 hidden max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl lg:flex"
-              style={{ width: panelWidth }}
+      {/* Right zone: the agent's machine. Resizable, and it never covers the
+          conversation — the two are watched together. */}
+      {side && agent && (
+        <aside className="relative hidden shrink-0 flex-col border-l border-border bg-card/40 lg:flex" style={{ width }}>
+          <div
+            onMouseDown={startResize}
+            className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
+            title="Glisser pour redimensionner"
+          />
+          <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1.5">
+            <SideTab active={side === "test"} onClick={() => setSide("test")} icon={MonitorPlayIcon} label="Test app" />
+            <SideTab active={side === "terminal"} onClick={() => setSide("terminal")} icon={TerminalWindowIcon} label="Terminal" />
+            <button
+              onClick={() => setSide(null)} title="Fermer le panneau"
+              className="ml-auto rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              <div
-                onMouseDown={startResize}
-                className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
-                title="Glisser pour redimensionner"
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            {side === "test" ? (
+              <AppTestPanel
+                workspaceId={workspaceId}
+                projectId={projectId}
+                onOpenInModule={(runId) => navigate(`/app/${workspaceSlug}/${projectSlug}/test-runs/live?run=${runId}`)}
               />
-              {/* Close — the header toggle is hidden behind this floating panel. */}
-              <button
-                onClick={() => setPanelOpen(false)}
-                title="Fermer le panneau"
-                className="absolute right-2.5 top-2.5 z-40 flex h-8 w-8 items-center justify-center rounded-full bg-muted/80 text-muted-foreground backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <XIcon className="h-4 w-4" />
-              </button>
-              <FloatingTabBar
-                sections={AGENT_DETAIL_TABS}
-                active={tab}
-                iconOnly
-                onSelect={(k) => setParams((p) => { const n = new URLSearchParams(p); n.set("t", k); return n; }, { replace: true })}
-              />
-              <div className="min-h-0 flex-1 overflow-y-auto p-4 pt-16">
-                {tab === "settings" && <SettingsTab agent={agent} embedded />}
-                {tab === "skills" && <SkillsTab agentId={agent.id} />}
-                {tab === "mcp" && <AgentMcpTab agent={agent} />}
-                {tab === "instructions" && <InstructionsEditor agent={agent} />}
-                {tab === "missions" && <MissionTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-                {tab === "memory" && <MemoryTab agent={agent} />}
-                {tab === "automations" && <AgentAutomationsTab agent={agent} />}
-                {tab === "connectors" && <AgentConnectorsTab agent={agent} />}
-                {tab === "analytics" && <AnalyticsTab agent={agent} />}
+            ) : (
+              <div className="h-full p-2">
+                <AgentTerminalPanel agents={[{ id: agent.id, name: agent.name }]} onCommand={askAgentToRun} />
               </div>
-            </aside>
+            )}
+          </div>
+        </aside>
       )}
+    </div>
+  );
+}
+
+/** Round toggle in the chat's floating top row, lit while its panel is open. */
+function SidePanelToggle({
+  icon: Icon, title, active, onClick,
+}: { icon: PhosphorIcon; title: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick} title={title}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-full border shadow-sm backdrop-blur transition-colors",
+        active
+          ? "border-primary/40 bg-primary/15 text-primary"
+          : "border-border/60 bg-background/70 text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+}
+
+function SideTab({
+  active, onClick, icon: Icon, label,
+}: { active: boolean; onClick: () => void; icon: PhosphorIcon; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] transition-colors",
+        active ? "bg-sidebar-accent font-medium text-foreground" : "text-muted-foreground hover:bg-muted",
+      )}
+    >
+      <Icon className="h-4 w-4" /> {label}
+    </button>
+  );
+}
+
+// ── Agent configuration — its own page ───────────────────────────────────────
+// Everything you set up about an agent, in a page that owns the whole tab. No
+// solid header: the identity (left), the tab bar (centre) and the assistant
+// (right) FLOAT over the form, which runs full height behind them — the same
+// language as the chat page next door. It used to be a floating side panel laid
+// over the chat, a ~620px column that hid the conversation behind it.
+export function AgentConfigInDashboard({ dashboardId, agentId }: { dashboardId: string; agentId: string }) {
+  const { workspaceSlug, projectSlug } = useParams();
+  const navigate = useNavigate();
+  const assistant = useAssistant();
+  const [params, setParams] = useSearchParams();
+  const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
+  const rawTab = params.get("t");
+  const resolved = resolveAgentTab(rawTab);
+  const tab = resolved?.tab ?? "settings";
+  const [barHeight, setBarHeight] = useState(48);
+  const { data: agent, isLoading } = useDashboardAgent(agentId);
+
+  // A legacy slug (?t=memory, ?t=mcp…) is rewritten to its canonical tab — and to
+  // the settings sub-section it became, which SettingsTab reads from ?s=.
+  useEffect(() => {
+    if (!rawTab || rawTab === tab) return;
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      n.set("t", tab);
+      if (resolved?.section) n.set("s", resolved.section);
+      return n;
+    }, { replace: true });
+  }, [rawTab, tab, resolved?.section, setParams]);
+
+  if (isLoading || !agent) {
+    return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  }
+
+  return (
+    <div className="relative flex h-full min-h-0 flex-col">
+      {/* Floating identity (left) + assistant (right). The tab bar sits between
+          them, centred — five labelled tabs fit in that gap, which nine never
+          did (they used to be icon-only for exactly that reason). */}
+      <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-start gap-2">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2 py-1 shadow-sm backdrop-blur">
+          <button
+            onClick={() => navigate(`${sbase}/agent/${agent.id}`)}
+            title="Retour à la conversation"
+            className="rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeftIcon className="h-3.5 w-3.5" />
+          </button>
+          <AgentIdentity style={agent.avatar_style ?? "orb"} url={agent.avatar_url} seed={agent.name} size={20} rounded="rounded-full" />
+          <span className="max-w-[160px] truncate text-xs font-semibold leading-tight">{agent.name}</span>
+        </div>
+        <button
+          onClick={() => assistant.ask({ agent: { id: agent.id, name: agent.name } })}
+          title="Configurer avec l'assistant"
+          className="pointer-events-auto ml-auto flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+        >
+          <SparkleIcon weight="duotone" className="h-4 w-4" />
+        </button>
+      </div>
+
+      <FloatingTabBar
+        // Kept clear of the two floating pills it sits between (identity on the
+        // left, assistant on the right) — past that width the bar wraps.
+        className="max-w-[calc(100%-21rem)]"
+        sections={AGENT_DETAIL_TABS}
+        active={tab}
+        onHeight={setBarHeight}
+        onSelect={(k) => setParams((p) => {
+          const n = new URLSearchParams(p);
+          n.set("t", k);
+          // A section pinned by a deep-link belongs to the tab that link opened.
+          n.delete("s");
+          return n;
+        }, { replace: true })}
+      />
+
+      {/* The form scrolls under the floating bar, in a readable column rather
+          than the full width of a wide screen. Its first row is offset by the
+          bar's measured height — the bar wraps to two lines when narrow, so a
+          fixed padding would either overlap it or leave a hole. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-5xl px-6 pb-10" style={{ paddingTop: barHeight + 28 }}>
+          {tab === "settings" && <SettingsTab agent={agent} embedded />}
+          {tab === "instructions" && <InstructionsEditor agent={agent} />}
+          {tab === "skills" && <SkillsTab agentId={agent.id} />}
+          {/* One tab for everything the agent can reach: the apps connected to
+              the project, its generic capabilities, and the MCP servers that
+              bring their own tools. They were three separate doors onto the
+              same question ("que sait-il faire ?"). */}
+          {tab === "connectors" && (
+            <div className="space-y-10">
+              <AgentConnectorsTab agent={agent} />
+              <div className="mx-auto max-w-5xl border-t border-border/60" />
+              <ToolsTab agent={agent} variant="tools" />
+              <div className="mx-auto max-w-5xl border-t border-border/60" />
+              <AgentMcpTab agent={agent} />
+            </div>
+          )}
+          {tab === "automations" && <AgentAutomationsTab agent={agent} />}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1197,7 +1533,6 @@ function HomeActionCard({ icon: Icon, title, desc, busy, onClick }: {
 export function HomeTab({ dashboardId, dashboardName, workspaceId, projectId }: {
   dashboardId: string; dashboardName: string; workspaceId: string; projectId: string;
 }) {
-  void workspaceId;
   const { user } = useAuth();
   const { workspaceSlug, projectSlug } = useParams();
   const navigate = useNavigate();
@@ -1207,14 +1542,53 @@ export function HomeTab({ dashboardId, dashboardName, workspaceId, projectId }: 
   const { data: agents } = useDashboardAgents(dashboardId);
   const lead = (agents ?? []).find((a) => (a as { is_orchestrator?: boolean }).is_orchestrator) ?? (agents ?? [])[0];
   const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  /** A submission that failed to send, kept so it can be retried. */
+  const [pending, setPending] = useState<{ roomId: string | null; raw: string; files: File[]; mentionedIds: string[] } | null>(null);
 
-  async function startRoom() {
+  async function startRoom(title = "Nouvelle room"): Promise<string | null> {
+    const roomId = await createRoom({ id: dashboardId, name: dashboardName }, workspaceId, projectId, user!.id, title);
+    queryClient.invalidateQueries({ queryKey: ["service_rooms", dashboardId] });
+    return roomId;
+  }
+
+  async function startEmptyRoom() {
     if (starting || !user) return;
     setStarting(true);
     try {
-      const roomId = await createRoom({ id: dashboardId, name: dashboardName }, workspaceId, projectId, user.id, "Nouvelle room");
-      queryClient.invalidateQueries({ queryKey: ["service_rooms", dashboardId] });
+      const roomId = await startRoom();
       if (roomId) navigate(`${base}/room/${roomId}`);
+    } finally { setStarting(false); }
+  }
+
+  // Type here and the conversation exists: a room is created, titled from what
+  // you wrote, the agents you tagged are added to it, the message is sent — and
+  // only then do we open the room, so a failed send is reported HERE instead of
+  // dropping you in an empty room. Same composer and same send path as inside a
+  // room (roomCompose.ts); the turn itself runs in the background server-side,
+  // so this is one short round trip, not the agent's answer.
+  async function startRoomWith(raw: string, files: File[], mentionedIds: string[], reuseRoomId?: string | null) {
+    if ((!raw.trim() && files.length === 0) || starting || !user) return;
+    setStarting(true);
+    setStartError(null);
+    let roomId = reuseRoomId ?? null;
+    try {
+      if (!roomId) {
+        const title = expandSlash(raw).split("\n")[0]!.slice(0, 60) || (files[0]?.name ?? "Nouvelle room");
+        roomId = await startRoom(title);
+      }
+      if (!roomId) throw new Error("La room n'a pas pu être créée.");
+      // A tagged agent has to be IN the room to be able to answer it.
+      for (const id of mentionedIds) await addRoomAgent(roomId, id);
+      await sendToRoom({ roomId, workspaceId, projectId, userId: user.id }, raw, mentionedIds, files);
+      queryClient.invalidateQueries({ queryKey: ["service_room_messages", roomId] });
+      setPending(null);
+      navigate(`${base}/room/${roomId}`);
+    } catch (e) {
+      // The composer clears on submit, so what was typed is held here — retrying
+      // reuses the room already created rather than leaving an empty one behind.
+      setPending({ roomId, raw, files, mentionedIds });
+      setStartError(e instanceof Error ? e.message : String(e));
     } finally { setStarting(false); }
   }
 
@@ -1230,10 +1604,40 @@ export function HomeTab({ dashboardId, dashboardName, workspaceId, projectId }: 
       <AgentOrb size={76} accentColor={(lead as { accent_color?: string | null } | undefined)?.accent_color} />
       <h1 className="mt-7 text-[26px] font-semibold tracking-tight">Welcome, {firstName}</h1>
 
+      {/* The way in: write, and the room is created around what you wrote. */}
+      <div className="mt-8 w-full max-w-[720px]">
+        <ChatInput
+          busy={starting}
+          placeholder="Demandez quelque chose à votre équipe… @ pour taguer un agent, / pour un livrable"
+          mentionAgents={(agents ?? []).map((a) => ({ id: a.id, name: a.name, accentColor: a.accent_color }))}
+          slashCommands={SLASH_COMMANDS.map((c) => ({ key: c.key, label: c.label, color: c.color, icon: c.icon }))}
+          onSendMessage={(msg, files, mentionedIds) => { void startRoomWith(msg, files, mentionedIds); }}
+        />
+        <p className="mt-2 text-center text-xs text-muted-foreground">
+          {starting ? "Création de la room…" : "Une nouvelle room est créée pour cette conversation."}
+        </p>
+        {startError && (
+          <div className="mt-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+            <div className="text-destructive">Envoi impossible : {startError}</div>
+            {pending && (
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-muted-foreground" title={pending.raw}>« {pending.raw} »</span>
+                <button
+                  onClick={() => void startRoomWith(pending.raw, pending.files, pending.mentionedIds, pending.roomId)}
+                  className="shrink-0 font-medium text-foreground underline"
+                >
+                  Réessayer
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Three entry points, as in the mockup. */}
-      <div className="mt-14 grid w-full max-w-[860px] gap-6 sm:grid-cols-3">
+      <div className="mt-12 grid w-full max-w-[860px] gap-6 sm:grid-cols-3">
         <HomeActionCard icon={RobotIcon} title="Create an agent" desc="A new AI teammate" onClick={() => navigate(`${base}/agents/new`)} />
-        <HomeActionCard icon={ChatsCircleIcon} title="Create a room" desc="Start a conversation" busy={starting} onClick={startRoom} />
+        <HomeActionCard icon={ChatsCircleIcon} title="Create a room" desc="Start an empty conversation" busy={starting} onClick={startEmptyRoom} />
         <HomeActionCard icon={CalendarDotsIcon} title="Automate a task" desc="Schedule recurring work" onClick={() => navigate(`${base}/schedules`)} />
       </div>
 

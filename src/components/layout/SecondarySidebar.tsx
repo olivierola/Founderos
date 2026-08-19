@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, FolderKanban, Loader2 } from "lucide-react";
-import { ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, ChartBarIcon, GearSixIcon, GlobeIcon, CompassIcon } from "@phosphor-icons/react";
+import { Plus, FolderKanban, Loader2 } from "lucide-react";
+import { BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, RobotIcon } from "@phosphor-icons/react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
@@ -16,15 +16,6 @@ import {
 import { MODULE_PROJECT_CONFIGS, type ModuleProjectConfig } from "@/lib/module-project-config";
 import { fetchModuleProjects, type ModuleProject } from "@/features/module-projects/moduleProjectModel";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-
-// Agent builder sub-tabs, shown in the secondary sidebar once an agent is opened.
-const AGENT_TABS = [
-  { slug: "playground", label: "Playground", icon: ChatCircleIcon },
-  { slug: "knowledge", label: "Knowledge", icon: BookOpenIcon },
-  { slug: "widget", label: "Widget", icon: PuzzlePieceIcon },
-  { slug: "analytics", label: "Analytics", icon: ChartBarIcon },
-  { slug: "settings", label: "Settings", icon: GearSixIcon },
-];
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -64,19 +55,17 @@ export function SecondarySidebar() {
     return <ProjectsSidebar config={moduleProjectConfig} base={base} moduleSlug={moduleSlug!} />;
   }
 
-  // AI Workforce module → show hired agents in sidebar.
+  // AI Workforce module → show hired agents in sidebar. /agent/builder/* is a
+  // bare redirect now, so it gets no sidebar of its own.
   if (moduleSlug === "agent" && segments[appIdx + 4] !== "builder") {
     return <AgentWorkforceSidebar base={base} />;
   }
-
-  // Special case: agent builder → show the agent's own tabs in this sidebar.
-  // Path: /app/:ws/:proj/agent/builder/:agentId/:tab?
-  if (moduleSlug === "agent" && segments[appIdx + 4] === "builder") {
-    return <AgentBuilderSidebar base={base} agentId={segments[appIdx + 5] ?? ""} />;
-  }
+  if (moduleSlug === "agent" && segments[appIdx + 4] === "builder") return null;
 
   // (The internal-agent detail sidebar lived here — removed with the pages it
-  // navigated: /agent/internal/:id now redirects to the service dashboard.)
+  // navigated: /agent/internal/:id now redirects to the service dashboard. The
+  // public-agent builder sidebar followed in 0195: its tabs are drawn by the
+  // service dashboard that now hosts them.)
 
   // Vibe Code → onglets + persisted chat sessions.
   if (moduleSlug === "vibe-code") {
@@ -285,47 +274,6 @@ function ProjectsSidebar({ config, base, moduleSlug }: { config: ModuleProjectCo
 // Both parts live in this one sidebar as labelled sections.
 
 
-function AgentBuilderSidebar({ base, agentId }: { base: string; agentId: string }) {
-  // The onboarding tab is conditional — only listed when this agent has the
-  // onboarding feature toggled on (AgentBuilder → Settings). The rest of the
-  // builder is identical for every public agent.
-  const { data: onboardingOn } = useQuery({
-    queryKey: ["rag_agent_onb_flag", agentId],
-    enabled: !!agentId,
-    queryFn: async () => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data } = await supabase.from("rag_agents").select("onboarding_enabled").eq("id", agentId).maybeSingle();
-      return !!(data as { onboarding_enabled?: boolean } | null)?.onboarding_enabled;
-    },
-  });
-
-  const tabs = onboardingOn
-    ? [
-        ...AGENT_TABS.slice(0, -1),
-        { slug: "onboarding", label: "Onboarding", icon: CompassIcon },
-        AGENT_TABS[AGENT_TABS.length - 1]!,
-      ]
-    : AGENT_TABS;
-
-  return (
-    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
-      <div className="flex h-14 items-center border-b border-border px-4">
-        <NavLink to={`${base}/agent/agents`} className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Agents
-        </NavLink>
-      </div>
-      <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
-        {tabs.map((t) => (
-          <NavLink key={t.slug} end to={`${base}/agent/builder/${agentId}/${t.slug}`} className={linkClass}>
-            <t.icon weight="duotone" className="h-4 w-4 shrink-0" />
-            <span className="truncate">{t.label}</span>
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
-  );
-}
-
 function AgentWorkforceSidebar({ base }: { base: string }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -335,14 +283,15 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
     const idx = segs.indexOf("agent");
     return idx >= 0 ? segs[idx + 1] : undefined;
   })();
-  const onPublicList = agentSeg === "public-agents";
+  const onRoster = agentSeg === "agents" || agentSeg === "public-agents";
   const onCollections = agentSeg === "collections";
   const onSkills = agentSeg === "skills";
   const onMcp = agentSeg === "mcp";
 
-  // Internal agents are NOT listed here: they belong to their service dashboard.
-  // What's left in this module is what the whole workforce shares — public
-  // agents, knowledge collections, skills, MCP servers.
+  // No agent is configured here any more — internal ones (0133) and public ones
+  // (0195) both live in their service dashboard. This module keeps the roster
+  // (a directory of the whole workforce) and what it shares: knowledge
+  // collections, skills, MCP servers.
   return (
     <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
@@ -350,16 +299,16 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
       </div>
 
       <div className="scrollbar-slim flex-1 overflow-y-auto p-2">
-        {/* ── Public agents ── */}
-        <SectionLabel>Agents publics</SectionLabel>
+        {/* ── The roster (internal + public, opened in their dashboard) ── */}
+        <SectionLabel>Main-d'œuvre</SectionLabel>
         <button
-          onClick={() => navigate(`${base}/agent/public-agents`)}
+          onClick={() => navigate(`${base}/agent/agents`)}
           className={cn(
             "mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
-            onPublicList ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+            onRoster ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
           )}
         >
-          <GlobeIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Agents publics
+          <RobotIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Agents
         </button>
 
         {/* ── Knowledge base ── */}
