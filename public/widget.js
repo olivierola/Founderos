@@ -170,6 +170,7 @@
     sound_enabled: false,
     persist_conversation: true,   // la conversation survit au changement de page
     custom_css: "",
+    public_stats: false,          // page /stats/<clé> (lue côté serveur, pas par ce script)
   };
 
   var VARIANT_SIZE = {

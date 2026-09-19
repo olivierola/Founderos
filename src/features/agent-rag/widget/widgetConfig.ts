@@ -109,6 +109,10 @@ export const WIDGET_DEFAULTS = {
   sound_enabled: false,
   persist_conversation: true,
   custom_css: "",
+
+  // Page publique /stats/<clé> (agrégats seulement, migration 0253). Opt-in :
+  // ce sont les chiffres du client.
+  public_stats: false,
 };
 
 export type WidgetConfig = typeof WIDGET_DEFAULTS & Record<string, unknown>;

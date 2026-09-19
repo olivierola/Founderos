@@ -62,6 +62,7 @@ import { RecordViewPage } from "@/features/crm/RecordView";
 // Support module deleted (2026-07-17) — only the public help-center portal
 // survives; tickets live on as CRM records.
 import { HelpCenterPage } from "@/features/support/HelpCenter";
+import { PublicAgentStatsPage } from "@/features/agent-rag/PublicAgentStats";
 import { PmSimulationsPage } from "@/features/pm/PmSimulations";
 
 // Agent artifacts — the Office (Bureautique) module was deleted (2026-08-10):
@@ -398,6 +399,8 @@ export const router = createBrowserRouter([
   { path: "/contact", element: <ContactPage /> },
   // Public help center portal
   { path: "/help/:publicKey", element: <HelpCenterPage /> },
+  // Public, opt-in stats of a public agent (aggregates only — migration 0253).
+  { path: "/stats/:publicKey", element: <PublicAgentStatsPage /> },
   // Auth
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },

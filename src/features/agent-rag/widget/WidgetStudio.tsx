@@ -133,6 +133,8 @@ export function WidgetStudio({ agent, tab = "modele" }: { agent: Agent; tab?: St
   const [baseline, setBaseline] = useState(() => JSON.stringify(cfg));
   const dirty = JSON.stringify(cfg) !== baseline;
   const [copied, setCopied] = useState(false);
+  const [statsCopied, setStatsCopied] = useState(false);
+  const statsUrl = `${window.location.origin}/stats/${agent.public_key}`;
 
   function set(k: string, v: unknown) { setCfg((c) => ({ ...c, [k]: v })); }
   function applyPreset(values: Partial<WidgetConfig>) { setCfg((c) => ({ ...c, ...values })); }
@@ -792,6 +794,41 @@ add_action("wp_footer", function () {
 
             <Group title="Selon votre framework">
               <FrameworkSnippets snippets={SNIPPETS} />
+            </Group>
+
+            <Group
+              title="Statistiques publiques"
+              hint="Une page à partager qui montre les performances de votre agent : conversations, taux de résolution, temps de réponse, note moyenne. Uniquement des totaux — aucune conversation, aucun visiteur n'y apparaît."
+            >
+              <SoftToggle
+                label="Publier la page de statistiques"
+                checked={cfg.public_stats === true}
+                onChange={(v) => set("public_stats", v)}
+              />
+              {cfg.public_stats === true && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-xl bg-muted/50 px-3.5 py-2.5 font-mono text-xs">{statsUrl}</code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      navigator.clipboard.writeText(statsUrl);
+                      setStatsCopied(true);
+                      setTimeout(() => setStatsCopied(false), 1500);
+                    }}
+                  >
+                    {statsCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                    {statsCopied ? "Copié" : "Copier le lien"}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="rounded-full" asChild>
+                    <a href={statsUrl} target="_blank" rel="noopener">Ouvrir</a>
+                  </Button>
+                </div>
+              )}
+              {dirty && cfg.public_stats === true && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">Enregistrez pour que la page soit accessible.</p>
+              )}
             </Group>
 
             <Group title="Clé publique">
