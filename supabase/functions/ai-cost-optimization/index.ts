@@ -4,6 +4,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireProjectMember } from "../_shared/authz.ts";
 import { callAi, safeParseJson } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 
@@ -32,9 +33,15 @@ Deno.serve(async (req) => {
 
   try {
     const { workspace_id, project_id } = await req.json();
+
     if (!workspace_id || !project_id) {
       return jsonResponse({ error: "workspace_id and project_id required" }, { status: 400 });
     }
+    // FOS-10 : cette fonction expose les depenses et l'usage LLM du projet.
+    // Elle n'a jamais lu l'en-tete Authorization et travaillait en cle service
+    // role : un project_id suffisait. Ce n'est pas une surface publique.
+    const auth = await requireProjectMember(req, project_id);
+    if (!auth.ok) return auth.response;
 
     const admin = createServiceClient();
     const thirtyAgo = new Date(Date.now() - 30 * 86400_000).toISOString();

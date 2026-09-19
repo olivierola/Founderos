@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Workflow, Plus, Play, Trash2, Loader2 } from "lucide-react";
+import {
+  FlowArrowIcon as Workflow,
+  PlusIcon as Plus,
+  PlayIcon as Play,
+  TrashIcon as Trash2,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Dialog,

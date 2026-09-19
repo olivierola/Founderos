@@ -42,6 +42,8 @@ export interface EmittedArtifact {
   language?: string;
 }
 
+import { workflowToolDefs } from "./workflow-authoring.ts";
+
 export interface ToolContext {
   admin: SupabaseClient;
   workspaceId: string;
@@ -2171,6 +2173,87 @@ const setAgentSkills: AssistantTool = {
   },
 };
 
+
+// ── Workflows ────────────────────────────────────────────────────────────────
+//
+// The assistant asked to automate something used to answer with a DESCRIPTION —
+// a tidy summary of the steps, sometimes an artifact, and "all that's left is to
+// activate it". Nothing existed: no workflow row, no blocks, no button to press.
+// The user was told the work was done when it had not started.
+//
+// These five build the real thing. They are the SAME implementations the
+// internal agents use (workflow-authoring.ts), wrapped in this toolbox's shape —
+// one copy of the logic, so a procedure built from the panel is exactly what the
+// canvas opens and the engine runs.
+//
+// The only thing this side has to work out is WHERE the workflow lives: a
+// workflow belongs to a service dashboard, and the panel is project-scoped.
+
+/** Resolve the service the workflow belongs to. Named services win; otherwise
+ *  the only one there is. Ambiguity is answered by ASKING, never by picking —
+ *  a workflow filed under the wrong service is invisible where it was expected. */
+async function resolveDashboard(ctx: ToolContext, named: string): Promise<{ id: string } | string> {
+  const { data } = await ctx.admin.from("service_dashboards")
+    .select("id, name").eq("project_id", ctx.projectId).order("created_at");
+  const rows = (data ?? []) as Array<{ id: string; name: string }>;
+  if (rows.length === 0) return "ERROR: aucun service dans ce projet — un workflow appartient à un service, créez-en un d'abord.";
+  const want = named.trim().toLowerCase();
+  if (want) {
+    const hit = rows.find((r) => r.id === named.trim() || r.name.toLowerCase() === want)
+      ?? rows.find((r) => r.name.toLowerCase().includes(want));
+    if (!hit) return "ERROR: service « " + named + " » introuvable. Services : " + rows.map((r) => r.name).join(", ") + ".";
+    return { id: hit.id };
+  }
+  if (rows.length === 1) return { id: rows[0].id };
+  return "ERROR: plusieurs services dans ce projet (" + rows.map((r) => r.name).join(", ")
+    + ") — précise lequel avec le paramètre « service ».";
+}
+
+/** The five workflow tools, in this toolbox's shape. Writing a procedure is a
+ *  write: a viewer may read the workspace, not automate it. */
+const workflowTools: AssistantTool[] = workflowToolDefs().map((t) => ({
+  name: t.name,
+  minRole: "member" as WorkspaceRole,
+  scope: "Construire une procédure réutilisable (workflow) dans un service : blocs, liens, cadrage, activation.",
+  def: {
+    name: t.name,
+    description: t.description
+      + (t.name === "workflow_create" || t.name === "workflow_list"
+        ? " Le paramètre « service » désigne le service concerné (inutile s'il n'y en a qu'un)." : ""),
+    parameters: t.name === "workflow_create" || t.name === "workflow_list"
+      ? {
+        ...t.parameters,
+        properties: {
+          ...(t.parameters as { properties: Record<string, unknown> }).properties,
+          service: { type: "string", description: "Nom du service concerné. Facultatif s'il n'y en a qu'un." },
+        },
+      }
+      : t.parameters,
+  },
+  run: async (args, ctx) => {
+    // create and list have no workflow to read the service from, so it is
+    // resolved from the project; every other call reads it back from the row it
+    // acts on, which is also what keeps them scoped to that service.
+    let dashboardId: string;
+    if (t.name === "workflow_create" || t.name === "workflow_list") {
+      const resolved = await resolveDashboard(ctx, str(args.service));
+      if (typeof resolved === "string") return resolved;
+      dashboardId = resolved.id;
+    } else {
+      const { data } = await ctx.admin.from("agent_workflows")
+        .select("service_dashboard_id, project_id").eq("id", str(args.workflow_id)).maybeSingle();
+      const row = data as { service_dashboard_id: string | null; project_id: string } | null;
+      if (!row || row.project_id !== ctx.projectId) return "ERROR: workflow introuvable dans ce projet.";
+      if (!row.service_dashboard_id) return "ERROR: ce workflow n'est rattaché à aucun service.";
+      dashboardId = row.service_dashboard_id;
+    }
+    return await t.run({
+      admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId,
+      dashboardId, userId: ctx.userId,
+    }, args);
+  },
+}));
+
 const ALL_TOOLS: AssistantTool[] = [
   getMetrics,
   supplyOverview,
@@ -2211,6 +2294,9 @@ const ALL_TOOLS: AssistantTool[] = [
   searchAgentSkills,
   setAgentSkills,
   proposeConnectors,
+  // Building a procedure, not describing one — same implementations the
+  // internal agents use.
+  ...workflowTools,
 ];
 
 /** Tools the given role is allowed to use. */

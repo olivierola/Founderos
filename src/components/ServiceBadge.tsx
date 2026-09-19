@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { Settings2 } from "lucide-react";
+import { SlidersHorizontalIcon as Settings2 } from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/badge";
 import { findProvider } from "@/lib/providers";
 import { cn } from "@/lib/utils";

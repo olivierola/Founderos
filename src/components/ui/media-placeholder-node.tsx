@@ -10,7 +10,13 @@ import {
   PlaceholderProvider,
   updateUploadHistory,
 } from '@platejs/media/react';
-import { AudioLines, FileUp, Film, ImageIcon, Loader2Icon } from 'lucide-react';
+import {
+  WaveformIcon as AudioLines,
+  FileArrowUpIcon as FileUp,
+  FilmStripIcon as Film,
+  ImageIcon,
+  CircleNotchIcon as Loader2Icon,
+} from "@phosphor-icons/react";
 import { KEYS } from 'platejs';
 import { PlateElement, useEditorPlugin, withHOC } from 'platejs/react';
 import { useFilePicker } from 'use-file-picker';

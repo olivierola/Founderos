@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { NavLink, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, MoreHorizontal, EyeOff, Trash2, Eye } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  DotsThreeIcon as MoreHorizontal,
+  EyeSlashIcon as EyeOff,
+  TrashIcon as Trash2,
+  EyeIcon as Eye,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";

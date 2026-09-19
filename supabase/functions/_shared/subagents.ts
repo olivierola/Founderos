@@ -51,12 +51,29 @@ export interface SubagentDeps {
    *  (so it can't fan out again). The caller decides the world (sandbox vs
    *  cloud), skills, mcp, etc. */
   makeChildContext: (childRunId: string) => InternalToolContext;
-  /** Build the child's system prompt from its capability summary. */
-  buildChildSystem: (capabilitySummary: string, childCtx: InternalToolContext) => string;
+  /** Build the child's system prompt from its capability summary. Peut être
+   *  asynchrone : le parent charge parfois du contexte partagé (le profil
+   *  d'entreprise) au PREMIER enfant seulement, pas à chaque tick. */
+  buildChildSystem: (capabilitySummary: string, childCtx: InternalToolContext) => string | Promise<string>;
   /** Owner-configured wave size (how many run at once). Clamped to [2, SUBAGENT_MAX].
    *  Omitted → SUBAGENT_MAX. */
   maxConcurrency?: number;
+  /** Epoch ms by which the whole fan-out must have returned. Children run
+   *  IN-PROCESS: past the worker's wall clock the platform kills them all, and
+   *  every token they spent is lost with the unreturned results. Omitted →
+   *  now + SUBAGENT_BUDGET_MS. */
+  deadlineAt?: number;
 }
+
+/** Default time budget of one fan-out, from its start. Children stop starting
+ *  new rounds at the deadline, then spend one short call writing their result. */
+export const SUBAGENT_BUDGET_MS = 75_000;
+/** Kept free at the end of the budget for the children's closing summary and
+ *  the parent's own bookkeeping. */
+const SUBAGENT_CLOSE_MS = 20_000;
+/** A wave is not started with less than this left: it would be cut after one
+ *  round, and its subtasks are better relaunched on the next tick. */
+const WAVE_MIN_MS = 30_000;
 
 function compactEventArgs(a: unknown): unknown {
   if (!a || typeof a !== "object") return a;
@@ -98,7 +115,7 @@ async function runOne(deps: SubagentDeps, subtask: Subtask): Promise<{ label: st
     return r;
   };
 
-  const system = deps.buildChildSystem(capabilitySummary, childCtx);
+  const system = await deps.buildChildSystem(capabilitySummary, childCtx);
   const messages: ChatMessage[] = [
     { role: "system", content: system },
     {
@@ -114,6 +131,7 @@ async function runOne(deps: SubagentDeps, subtask: Subtask): Promise<{ label: st
       provider: deps.provider, model: deps.model, endpoint: deps.endpoint,
       messages, tools: defs, executor: loggingExecutor,
       temperature: deps.temperature, maxTokens: 4000, maxRounds: SUBAGENT_ROUNDS,
+      deadlineAt: deps.deadlineAt != null ? deps.deadlineAt - SUBAGENT_CLOSE_MS : undefined,
       onNotice: async (n) => { await logChild("tool_error", { message: n.message, detail: n.detail }); },
     });
     const output = (result.content ?? "").trim() || "(sub-agent produced no textual result)";
@@ -135,15 +153,23 @@ async function runOne(deps: SubagentDeps, subtask: Subtask): Promise<{ label: st
  *  digest of every result for the parent to synthesise. */
 export async function runParallelSubagents(deps: SubagentDeps, subtasks: Subtask[]): Promise<string> {
   const capped = subtasks.slice(0, SUBAGENT_TOTAL_CAP);
+  deps = { ...deps, deadlineAt: deps.deadlineAt ?? Date.now() + SUBAGENT_BUDGET_MS };
+  const deadline = deps.deadlineAt!;
   // Wave size = the owner's swarm_max_concurrency, never above the engine cap.
   const waveSize = Math.min(Math.max(deps.maxConcurrency ?? SUBAGENT_MAX, 2), SUBAGENT_MAX);
   if (deps.parentLogEvent) {
     await deps.parentLogEvent({ message: `🧩 ${capped.length} sous-agents lancés en parallèle : ${capped.map((s) => s.label).join(" · ")}` }).catch(() => {});
   }
 
+  /** Subtasks never started for lack of time — handed back to the parent. */
+  const deferred: Subtask[] = [];
   const runWaves = async (tasks: Subtask[]): Promise<Array<{ label: string; output: string; ok: boolean }>> => {
     const acc: Array<{ label: string; output: string; ok: boolean }> = [];
     for (let i = 0; i < tasks.length; i += waveSize) {
+      if (deadline - Date.now() < WAVE_MIN_MS) {
+        deferred.push(...tasks.slice(i));
+        break;
+      }
       const wave = tasks.slice(i, i + waveSize);
       const settled = await Promise.allSettled(wave.map((st) => runOne(deps, st)));
       settled.forEach((s, j) => {
@@ -160,7 +186,7 @@ export async function runParallelSubagents(deps: SubagentDeps, subtasks: Subtask
   // stuck — so a momentary rate-limit doesn't force the parent to re-spawn the
   // whole batch (which is what produced duplicate fan-outs).
   const failedTasks = results.filter((r) => !r.ok).map((r) => capped.find((c) => c.label.slice(0, 120) === r.label)).filter(Boolean) as Subtask[];
-  if (failedTasks.length > 0) {
+  if (failedTasks.length > 0 && deadline - Date.now() >= WAVE_MIN_MS) {
     if (deps.parentLogEvent) await deps.parentLogEvent({ message: `↻ ${failedTasks.length} sous-agent(s) en échec — nouvelle tentative unique.` }).catch(() => {});
     await new Promise((r) => setTimeout(r, 1500));
     const retried = await runWaves(failedTasks);
@@ -170,5 +196,40 @@ export async function runParallelSubagents(deps: SubagentDeps, subtasks: Subtask
 
   const okCount = results.filter((r) => r.ok).length;
   const digest = results.map((r) => `### ${r.ok ? "✓" : "✗"} ${r.label}\n${r.output}`).join("\n\n");
-  return `Parallel sub-agents finished — ${okCount}/${results.length} succeeded. Synthesise their results into a single coherent answer for the user (don't just paste them verbatim):\n\n${digest}`;
+  let tail = "";
+  if (deferred.length > 0) {
+    // spawn_parallel_agents marked these as « already spawned » BEFORE running
+    // them; left marked, a relaunch would be refused as a duplicate of work
+    // that never happened.
+    await releaseSpawnMarks(deps.admin, deps.parentRunId, deferred.map((s) => s.label)).catch(() => {});
+    if (deps.parentLogEvent) {
+      await deps.parentLogEvent({ message: `⏳ ${deferred.length} sous-tâche(s) reportée(s) faute de temps dans ce tour — à relancer.` }).catch(() => {});
+    }
+    tail = `\n\n## ⏳ NON LANCÉES faute de temps dans ce tour (${deferred.length})\n`
+      + deferred.map((s) => `- ${s.label}`).join("\n")
+      + `\nRelance-les avec spawn_parallel_agents (mêmes libellés) : elles ne sont PAS faites.`;
+  }
+  return `Parallel sub-agents finished — ${okCount}/${results.length} succeeded. Synthesise their results into a single coherent answer for the user (don't just paste them verbatim):\n\n${digest}${tail}`;
+}
+
+/** Undo spawn_parallel_agents' pre-marking for subtasks that never ran. The
+ *  label and topic lists are appended together, so they are filtered by the
+ *  same index; the batch counter gives the deferred batch its slot back. */
+async function releaseSpawnMarks(admin: SupabaseClient, runId: string, labels: string[]): Promise<void> {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const drop = new Set(labels.map(norm));
+  const { data } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
+  const meta = ((data as { meta?: Record<string, unknown> } | null)?.meta ?? null);
+  if (!meta || !Array.isArray(meta.spawned_subtasks)) return;
+  const spawned = meta.spawned_subtasks as string[];
+  const topics = Array.isArray(meta.spawned_topics) ? (meta.spawned_topics as string[][]) : [];
+  const keep = spawned.map((l) => !drop.has(l));
+  await admin.from("internal_agent_run_state").update({
+    meta: {
+      ...meta,
+      spawned_subtasks: spawned.filter((_, i) => keep[i]),
+      spawned_topics: topics.length === spawned.length ? topics.filter((_, i) => keep[i]) : topics,
+      fanout_count: Math.max(0, (Number(meta.fanout_count) || 0) - 1),
+    },
+  }).eq("run_id", runId);
 }

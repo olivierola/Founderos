@@ -1,11 +1,37 @@
+/* ── LES @import D'ABORD, SANS EXCEPTION ────────────────────────────────────
+ *
+ * CSS exige que toute règle @import précède les autres instructions. Le lien
+ * Google Fonts était placé APRÈS les directives @tailwind : le navigateur le
+ * rejetait purement et simplement, et l'application tournait depuis lors sur la
+ * fonte de secours du système — sans que rien d'autre ne casse, ce qui explique
+ * que le défaut ait pu passer inaperçu.
+ *
+ * Il est en tête, et AVANT l'import local : postcss-import recopie apple.css sur
+ * place à la compilation, ce qui poserait des règles devant l'import distant et
+ * reproduirait exactement la même erreur.
+ *
+ * Typographie reprise de Plane : Inter pour le texte, IBM Plex Mono pour le
+ * code et les références (PROJ-42). Inter est chargée en VARIABLE (un seul
+ * fichier, 100→900) parce que Plane s'appuie sur un « regular » à 450 et non à
+ * 400 — un demi-cran plus dense, qui tient la lecture d'une liste sans passer
+ * pour du gras. Ce poids n'existe pas dans une fonte statique.
+ *
+ * `display=swap` : le texte s'affiche immédiatement dans la fonte de secours
+ * puis bascule, plutôt que de laisser une page blanche le temps du
+ * téléchargement. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* La peau Apple (HIG). Entièrement sous `:root[data-skin="apple"]` : tant que
+ * l'attribut n'est pas posé sur <html>, ce fichier ne change rien. Il s'ajoute
+ * au système Plane au lieu de le remplacer. */
+@import "./apple.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Elms Sans — primary application typeface. Not a Google font, so the files
-   aren't bundled: drop ElmsSans-Regular/Medium/SemiBold/Bold (.woff2, .woff) into
-   public/fonts/ and they load automatically. Until then (or if Elms Sans is
-   installed as a system font) the stack falls back to Vend Sans. */
+/* Elms Sans — ancienne fonte applicative, conservée comme secours pour les
+   installations où elle est déjà présente localement. */
 @font-face {
   font-family: 'Elms Sans'; font-style: normal; font-weight: 400; font-display: swap;
   src: url('/fonts/ElmsSans-Regular.woff2') format('woff2'), url('/fonts/ElmsSans-Regular.woff') format('woff');
@@ -29,50 +55,116 @@
      Accent info     #BBE0EF (sky)     -> 200 58% 84%
      Deep surface    #161E54 (navy)    -> 232 59% 21%
      Base is a zinc-950-ish neutral kept slightly warm-neutral, never #000. */
+  /* ── The accent ─────────────────────────────────────────────────────────
+     #C6F91F — hsl(74 95% 55%). One fact governs every use of it: its relative
+     luminance is 0.80, brighter than most "light" greys. That means:
+
+       · dark ink on it, never white (white sits at 1.2:1 — invisible);
+       · as TYPE or as a hairline it only works on a dark ground, where it
+         reaches 15:1. On white it is 1.2:1, so light surfaces use the deepened
+         cut (--primary-soft) for anything drawn in the colour, and keep the
+         bright one for fills that carry dark text on top.
+
+     Both cuts share the hue, so the two read as one colour used two ways
+     rather than as two colours.                                             */
+
   :root,
   .dark {
-    --background: 30 5% 9%;            /* #171615 — odin-dark-100 (content) */
-    --foreground: 240 5% 96%;          /* ~zinc-100 */
+    /* Darker than the previous skin by about five points of lightness across
+       every plane. The old base (#171615) was a grey that happened to be dim;
+       against it the accent had to fight, and the card/page/border ramp was
+       compressed into four points of lightness so nothing read as raised. The
+       ramp below keeps the same ordering with room between the steps. */
+    /* ── Palette Plane ────────────────────────────────────────────────────
+       Reprise de @makeplane/propel (variables.css), convertie d'oklch en HSL
+       parce que c'est le format que consomment déjà tous les tokens ici.
 
-    --card: 30 3% 11%;                 /* #1e1d1c — odin-dark-200 (cards/inputs) */
-    --card-foreground: 240 5% 96%;
+       Ce qui la caractérise, et qu'il ne faut pas « corriger » : les gris ne
+       sont pas neutres. Ils portent tous une teinte froide de 201°, très
+       faiblement saturée (4 %). C'est ce qui empêche une interface aussi
+       sombre de virer au brun sur les dalles chaudes, et ce qui fait que le
+       bleu de marque s'y pose sans jurer — il partage leur teinte.
 
-    --popover: 30 3% 13%;              /* #242322 — odin-dark-300 */
-    --popover-foreground: 240 5% 96%;
+       L'échelle sombre : canvas 5,9 % → surface 8 % → élevé 10-12 % →
+       bordure 14 %. Quatre plans en huit points de luminosité, ce qui suffit
+       parce que la teinte commune les fait lire comme une famille. */
+    --background: 201 5% 6%;           /* neutral-black — la page */
+    --foreground: 201 4% 90%;          /* neutral-1200 */
 
-    /* ── Three-accent system ──────────────────────────────────────────────
-       Aqua  #AFE9F0 → 187 68% 81%  (soft light — info surfaces / badges)
-       Coral #F86134 → 14 93% 59%   (warm pop — primary CTA, focus, active)
+    /* ── Hiérarchie de texte de Plane ─────────────────────────────────────
+       Quatre crans, pas deux. C'est ce qui donne à leur interface son aspect
+       DOUX : le texte principal n'est jamais blanc pur (90 % et non 100 %),
+       et chaque cran suivant descend de dix points. Sur un fond à 6 %, du
+       blanc pur produit un contraste de 19:1 — techniquement excellent,
+       visuellement dur, et fatigant sur une liste qu'on lit toute la journée.
+       À 90 %, on est encore à 15:1, très au-delà du seuil.
+
+       `secondary` sert aux libellés qui accompagnent une valeur, `tertiary`
+       aux métadonnées (dates, compteurs), `placeholder` au texte qui n'est
+       pas encore saisi. */
+    --text-secondary: 201 4% 80%;
+    --text-tertiary: 201 4% 70%;
+    --text-placeholder: 201 4% 60%;
+
+    --card: 201 4% 8%;                 /* neutral-100 — cartes, champs */
+    --card-foreground: 201 4% 90%;
+
+    /* Catalogue card stage — the plate the agent portrait sits on. Deliberately
+       darker than the card AND than the page: the 3D template icons are gold
+       objects lit against a dark set, so the tile is their backdrop, not just
+       another surface tint. Kept dark in both themes so an icon looks the same
+       wherever it is shown. */
+    --catalog-stage: 30 4% 3%;         /* #080807 — still the darkest plane */
+
+    --popover: 201 4% 12%;             /* neutral-300 — flotte au-dessus de la carte */
+    --popover-foreground: 201 4% 90%;
+
+    /* ── Accent system ────────────────────────────────────────────────────
+       Lime  #C6F91F → 74 95% 55%   (the accent — CTAs, focus, active states)
        Teal  #378F98 → 186 47% 41%  (cool anchor — secondary accent, links)
-       Two cyans + a complementary coral = one cohesive teal/coral identity.
-       The marketing site keeps its own sky accent — app and landing page do
-       NOT share a hue. */
-    --accent-coral: 14 93% 59%;
-    --accent-coral-foreground: 20 40% 98%;
-    --accent-teal: 186 47% 41%;
-    --accent-teal-foreground: 186 40% 96%;
-    --accent-aqua: 187 68% 81%;
-    --accent-aqua-foreground: 187 60% 15%;
+       Aqua  #AFE9F0 → 187 68% 81%  (soft light — info surfaces / badges)
 
-    /* Coral is the PRIMARY accent — buttons, CTAs, active states, links, focus.
-       Teal is the secondary anchor (the primary rail); aqua the soft info tint. */
-    --primary: 14 93% 59%;              /* #F86134 coral */
-    --primary-foreground: 20 40% 98%;   /* near-white on coral */
+       `--accent-coral` keeps its name and points at the lime: it is referenced
+       across the app as "the warm pop" slot, and repointing one value is safer
+       than renaming a token in every component that reads it. */
+    /* `--accent-coral` garde son nom (il est lu dans toute l'app comme « le
+       créneau accent ») mais pointe désormais sur le bleu de marque : Plane est
+       une interface quasi monochrome avec UN accent, et faire cohabiter deux
+       accents distincts reviendrait à en avoir aucun. */
+    --accent-coral: 201 67% 48%;
+    --accent-coral-foreground: 0 0% 100%;
+    --accent-teal: 201 67% 40%;
+    --accent-teal-foreground: 0 0% 100%;
+    --accent-aqua: 201 67% 82%;
+    --accent-aqua-foreground: 201 67% 18%;
 
-    /* Soft accent for inline text/icons/links — a brighter coral, legible on dark. */
-    --primary-soft: 16 92% 67%;
+    /* Lime is the PRIMARY accent — buttons, CTAs, active states, links, focus.
+       Teal is the secondary anchor; aqua the soft info tint. */
+    /* Le bleu de marque de Plane. Il partage la teinte des gris (201°), d'où
+       une interface qui se lit comme un seul matériau plutôt que comme un gris
+       plus un accent rapporté. */
+    --primary: 201 67% 48%;             /* brand-default */
+    /* Blanc dessus, et non un bleu très sombre : à 48 % de luminosité le fond
+       est assez foncé pour porter du blanc (4,6:1), ce que ne permettrait pas
+       un accent clair. */
+    --primary-foreground: 0 0% 100%;
+
+    /* Le même bleu, ouvert, pour le texte et les icônes DESSINÉS dans l'accent
+       sur le fond sombre : à 48 % il tomberait à 3,2:1 sur la page, sous le
+       seuil. À 64 % il passe à 7,1:1. */
+    --primary-soft: 201 67% 64%;        /* brand-700 (sombre) */
     /* Secondary accent — soft sage green (success badges). */
     --accent-2: 140 40% 65%;
     --accent-2-foreground: 140 35% 18%;
 
-    --secondary: 30 3% 14%;            /* #242322 — odin-dark-300 */
-    --secondary-foreground: 240 5% 96%;
+    --secondary: 201 4% 10%;           /* neutral-200 */
+    --secondary-foreground: 201 4% 90%;
 
-    --muted: 30 3% 14%;
-    --muted-foreground: 30 4% 64%;     /* warm muted text */
+    --muted: 201 4% 10%;
+    --muted-foreground: 201 4% 70%;    /* = --text-tertiary */
 
-    --accent: 30 3% 14%;
-    --accent-foreground: 240 5% 96%;
+    --accent: 201 4% 12%;
+    --accent-foreground: 201 4% 90%;
 
     /* Info accent — pale aqua #AFE9F0 for highlights, links, info badges */
     --info: 187 68% 81%;
@@ -84,58 +176,159 @@
     --destructive: 0 72% 51%;          /* red-500 */
     --destructive-foreground: 240 5% 96%;
 
-    --border: 30 2% 16%;               /* #2a2928 — odin-dark-400 */
-    --input: 30 2% 16%;
-    --ring: 30 4% 48%;                 /* neutral grey focus ring for fields */
+    --border: 201 4% 14%;              /* neutral-400 — le filet reste lisible sur la carte */
+    --input: 201 4% 14%;
+    /* Focus dans l'accent plutôt qu'en gris : sur un fond aussi sombre, c'est
+       le seul anneau qu'on voie réellement. */
+    --ring: 201 67% 48%;
 
-    --sidebar: 30 3% 11%;              /* #1e1d1c — odin-dark-200 */
-    --sidebar-foreground: 30 3% 65%;
-    --sidebar-accent: 30 2% 16%;       /* #2a2928 — odin-dark-400 (active item) */
+    --sidebar: 201 4% 8%;              /* neutral-100 — s'efface derrière le contenu */
+    --sidebar-foreground: 201 4% 70%;
+    --sidebar-accent: 201 4% 14%;      /* élément actif */
 
     /* Service-dashboard shell: three planes that get LIGHTER left to right —
        the ground under the icon rail (darkest), the contextual panel, then the
        content (--background, lightest). Every skin keeps that ordering. */
-    --sd-ground: 30 6% 5%;
-    --sd-panel: 30 4% 7%;
+    --sd-ground: 201 5% 4%;
+    --sd-panel: 201 4% 6%;
 
-    --radius: 0.3rem;                  /* tighter corners, sharper/sober */
+    /* Le rayon de TOUTE l'app. Il valait 0,3 rem — des angles presque droits,
+       choisis « sobres », qui donnaient surtout des boîtes coupées au carré.
+       Rien dans l'interface n'a d'angle vif : ni les cartes, ni les champs, ni
+       les menus. Un seul jeton suffit à le dire, parce que l'échelle Tailwind
+       (`sm`/`md`/`lg`/`xl`/`2xl`) en dérive entièrement — voir tailwind.config.ts. */
+    /* 0,5 rem, valeur de Plane. Le jeton valait 0,75 rem, ce qui donnait des
+       boutons en pilule et des cartes très rondes ; à cette échelle un rayon
+       marqué attire l'œil sur les CONTENANTS alors que l'information est dans
+       ce qu'ils contiennent. L'échelle Tailwind en dérive entièrement
+       (sm/md/lg/xl/2xl — voir tailwind.config.ts), donc une seule ligne suffit
+       à resserrer toute l'interface. */
+    --radius: 0.5rem;
+
+    /* ── Échelle typographique de Plane ───────────────────────────────────
+       Elle est nommée par la TAILLE en pixels, pas par un rang abstrait
+       (sm/md/lg). C'est un choix qui se défend : dans une interface dense, on
+       raisonne en « ce libellé fait 11, cette ligne fait 13 », et un nom
+       relatif oblige à retenir une table de correspondance pour arbitrer entre
+       deux valeurs voisines.
+
+       Les crans serrés du bas — 9, 10, 11, 12, 13 — sont le cœur du système.
+       C'est là que se joue la densité : une liste de work items empile un
+       libellé de 10, une référence de 11 et un titre de 13, et un demi-cran
+       d'écart suffit à hiérarchiser sans changer de graisse. */
+    --text-9: 0.5625rem;
+    --text-10: 0.625rem;
+    --text-11: 0.6875rem;
+    --text-12: 0.75rem;
+    --text-13: 0.8125rem;
+    --text-14: 0.875rem;
+    --text-16: 1rem;
+    --text-18: 1.125rem;
+    --text-20: 1.25rem;
+    --text-24: 1.5rem;
+    --text-28: 1.75rem;
+    --text-32: 2rem;
+    --text-40: 2.5rem;
+
+    /* Graisses : le « regular » à 450 est la signature de Plane. */
+    --font-weight-light: 300;
+    --font-weight-regular: 450;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Interlettrage : quatre crans, tous minuscules. À ces tailles un écart
+       plus marqué se voit comme un défaut plutôt que comme un réglage. */
+    --tracking-extra-tight: -0.004em;
+    --tracking-tight: -0.002em;
+    --tracking-default: 0em;
+    --tracking-wide: 0.002em;
+
+    /* ── Ombres ───────────────────────────────────────────────────────────
+       Deux familles, et la distinction porte le sens : `raised` pour ce qui
+       est POSÉ sur la page (carte, ligne active), `overlay` pour ce qui
+       FLOTTE au-dessus (menu, dialogue). Les premières sont presque
+       invisibles — 3 à 6 % d'opacité — parce qu'une carte n'a pas à décoller ;
+       les secondes portent loin, parce qu'un menu doit se détacher de ce qu'il
+       recouvre.
+
+       La teinte 41/47/61 n'est pas un gris neutre : c'est un bleu-gris, assorti
+       aux surfaces. Une ombre noire pure sur ces fonds paraît sale. */
+    --shadow-raised-100: 0px 1px 6px -1px rgb(41 47 61 / 0.03), 0px 1px 4px 0px rgb(41 47 61 / 0.04);
+    --shadow-raised-200: 0px 1px 2px -1px rgb(41 47 61 / 0.06), 0px 1px 3px 0px rgb(41 47 61 / 0.05);
+    --shadow-raised-300: 0px 2px 4px -1px rgb(41 47 61 / 0.04), 0px 4px 6px -1px rgb(41 47 61 / 0.05);
+    --shadow-overlay-100: 0px 10px 10px -5px rgb(41 47 61 / 0.04), 0px 10px 40px -5px rgb(41 47 61 / 0.04);
+    --shadow-overlay-200: 0px 10px 10px -10px rgb(41 47 61 / 0.04), 0px 30px 60px -12px rgb(41 47 61 / 0.1);
+
+    /* Épaisseurs de filet et gabarits. */
+    --border-width-sm: 1px;
+    --border-width-md: 1.5px;
+    --border-width-lg: 2px;
+    --height-header: 3.25rem;
+    --padding-page: 1.35rem;
   }
 
   /* Light mode — soft warm-neutral surfaces, keep deep-blue accent for brand continuity. */
   .light {
-    --background: 0 0% 100%;           /* pure white for content area */
-    --foreground: 240 8% 20%;          /* softer than near-black */
+    /* Palette Plane, versant clair. Même principe : des gris légèrement froids
+       (201-210°) plutôt que neutres, pour que le bleu de marque appartienne à
+       la même famille que les surfaces.
 
-    --card: 0 0% 100%;                 /* cards on white */
-    --card-foreground: 240 8% 20%;
+       Le contenu est blanc pur et les plans secondaires descendent à peine —
+       95 % pour le fond de barre, 92 % pour le filet. Un écart plus large
+       donnerait des zones grises qui se disputent l'attention du contenu. */
+    --background: 0 0% 100%;           /* neutral-white — la zone de contenu */
+    --foreground: 195 4% 20%;          /* neutral-1100, pas neutral-1200 */
+
+    /* Le texte principal est le cran SECONDARY et non le plus sombre : sur
+       blanc, un quasi-noir donne un contraste dur et un gris de lecture à
+       20 % reste à 12,6:1. Le cran le plus sombre est réservé aux titres, où
+       la densité de texte est faible. */
+    --text-secondary: 206 5% 30%;
+    --text-tertiary: 202 4% 38%;
+    --text-placeholder: 200 4% 46%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 3% 6%;
+
+    /* Same dark stage on white cards — lifted a touch so it reads as a tile
+       rather than a hole punched through the card. */
+    --catalog-stage: 30 4% 11%;        /* #1d1b19 */
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 8% 20%;
+    --popover-foreground: 240 3% 6%;
 
-    /* Three-accent system — deepened for legibility on white surfaces. */
-    --accent-coral: 12 84% 53%;
+    /* Accent system on white. The fill stays the true #C6F91F — a lime slab
+       with near-black text on it is 15:1 and is the point of the colour. What
+       changes is anything DRAWN in the accent: see --primary-soft. */
+    --accent-coral: 201 100% 30%;
     --accent-coral-foreground: 0 0% 100%;
-    --accent-teal: 186 47% 37%;
+    --accent-teal: 201 100% 26%;
     --accent-teal-foreground: 0 0% 100%;
-    --accent-aqua: 187 66% 84%;
-    --accent-aqua-foreground: 187 55% 22%;
+    --accent-aqua: 201 100% 92%;
+    --accent-aqua-foreground: 201 100% 22%;
 
-    --primary: 12 84% 53%;              /* #F86134 coral, deepened for white bg */
+    /* Le bleu de marque, version claire : plus sombre que sur fond noir
+       (30 % contre 48 %), ce qui lui donne 8,6:1 sur blanc et permet du blanc
+       dessus à 8,4:1. Un même bleu pour les deux thèmes tomberait forcément
+       sous le seuil d'un des deux côtés. */
+    --primary: 201 100% 30%;            /* brand-default (clair) */
     --primary-foreground: 0 0% 100%;
 
-    /* Soft accent for inline text/icons in light mode — darker coral, readable on white. */
-    --primary-soft: 12 78% 46%;
+    /* Assez sombre pour être écrit tel quel : pas de cut séparé nécessaire ici,
+       le remplissage et le tracé partagent la même valeur. */
+    --primary-soft: 201 100% 30%;
     --accent-2: 140 40% 42%;            /* sage green (success) */
     --accent-2-foreground: 0 0% 100%;
 
-    --secondary: 240 8% 96%;           /* very light grey */
-    --secondary-foreground: 240 8% 20%;
+    --secondary: 240 4% 95%;           /* neutral-300 */
+    --secondary-foreground: 240 3% 6%;
 
-    --muted: 240 8% 96%;
-    --muted-foreground: 240 5% 45%;
+    --muted: 240 4% 95%;
+    --muted-foreground: 206 5% 30%;    /* = --text-secondary */
 
-    --accent: 240 8% 96%;
-    --accent-foreground: 240 8% 20%;
+    --accent: 210 5% 92%;              /* neutral-400 */
+    --accent-foreground: 240 3% 6%;
 
     --info: 187 66% 84%;               /* aqua */
     --info-foreground: 187 55% 22%;
@@ -145,16 +338,19 @@
     --destructive: 0 65% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 6% 92%;              /* very soft border */
-    --input: 240 6% 92%;
-    --ring: 240 5% 70%;                /* neutral grey focus ring for fields */
+    --border: 210 5% 92%;              /* neutral-400 */
+    --input: 210 5% 92%;
+    --ring: 201 100% 30%;
 
-    --sidebar: 40 33% 97%;             /* warm cream, lifts off content */
-    --sidebar-foreground: 240 5% 45%;
-    --sidebar-accent: 40 18% 92%;      /* warm light-grey active/hover pill */
+    /* Le canvas de Plane : la barre latérale est le gris, le contenu est le
+       blanc. C'est l'inverse de beaucoup d'interfaces, et c'est ce qui fait que
+       le contenu paraît posé DEVANT plutôt que creusé dedans. */
+    --sidebar: 240 4% 95%;             /* neutral-300 */
+    --sidebar-foreground: 206 5% 30%;
+    --sidebar-accent: 210 5% 92%;      /* neutral-400 — élément actif */
 
-    --sd-ground: 40 24% 92%;
-    --sd-panel: 40 30% 96%;
+    --sd-ground: 210 3% 89%;
+    --sd-panel: 240 4% 95%;
   }
 
   * {
@@ -227,8 +423,35 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
   --border: 240 6% 14%;
   --muted-foreground: 240 5% 60%;
   color-scheme: dark;
-  /* Roboto is the dashboard face only — keep the marketing site on its own stack. */
-  font-family: 'Elms Sans', 'Vend Sans', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Inter', 'Elms Sans', 'Vend Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Le rendu de texte de Plane, repris tel quel.
+ *
+ * `font-variant-ligatures: none` n'est pas cosmétique ici : les ligatures
+ * d'Inter soudent « ti », « fi » ou « ff », ce qui est agréable dans un
+ * paragraphe et nuisible dans une liste de titres techniques qu'on balaie.
+ * L'antialiasing en niveaux de gris évite le liseré coloré des petits corps
+ * clairs sur fond sombre. */
+/* Le verrou des coques applicatives — voir useLockDocumentScroll. Le document
+ * ne défile pas tant qu'une coque est montée : seule sa zone de contenu le
+ * fait. Sans lui, le moindre débordement hors de la coque ajoutait une seconde
+ * barre de défilement qui faisait glisser toute l'application vers le haut. */
+html.app-shell-lock,
+html.app-shell-lock body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  font-variant-ligatures: none;
+  -webkit-font-variant-ligatures: none;
+  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  /* Le « regular » de Plane pèse 450, pas 400. */
+  font-weight: 450;
 }
 
 /* ── Service-dashboard skins ──────────────────────────────────────────────────
@@ -724,16 +947,24 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
   --amp-line-soft: rgba(255, 255, 255, 0.06);
   --amp-muted: rgba(255, 255, 255, 0.75);
   --amp-faint: rgba(255, 255, 255, 0.36);
-  /* Brand accent: the hero orange, with graphite as the only companion — no
-     blue, no cyan, no lime anywhere on this page. */
-  --amp-accent: #ff4d00;
-  --amp-orange: #ff4d00;
-  /* White ink on the accent, per the brand call. Note it sits at 3.3:1 on this
-     orange — fine for the large/bold uses, under AA for anything small. */
-  --amp-on-accent: #ffffff;
-  /* Warm tint for decorative marks on the dark canvas. */
-  --amp-accent-bright: #ff8a4c;
-  --amp-cyan: #ff8a4c;
+  /* The lime, exactly as the product runs it (--primary). The marketing page is
+     a moving ground — paper at the hero, near-black three sections down — so it
+     needs both cuts of it, and which one a component takes depends on the tone
+     it is sitting on, not on what it is.
+
+     Bright: fills, and type on the dark canvas.
+     Deep:   type, hairlines and marks on paper, where the bright cut is 1.2:1
+             and effectively invisible. */
+  --amp-accent: #176995;
+  --amp-orange: #176995;
+  /* Near-black ink on the accent. White on this lime is 1.2:1 — the slab would
+     read as an empty green rectangle. */
+  --amp-on-accent: #FFFFFF;
+  --amp-accent-bright: #2893CC;
+  /* The paper cut. 6.2:1 on white and 4.7:1 on the deepest light tone (sand),
+     so it clears AA as body text on every light ground the site uses. */
+  --amp-accent-deep: #176995;
+  --amp-cyan: #2893CC;
   /* Graphite — the second half of the palette. */
   --amp-graphite: #a1a1aa;
   background-color: var(--amp-bg);
@@ -754,6 +985,21 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
   --amp-faint: rgba(0, 0, 7, 0.45);
   background-color: #fff;
   color: #000007;
+}
+
+/* Dark bands dropped inside a light page (the `.amp-light` roots: solutions,
+   blog, FAQ). Without re-pointing the tokens the band inherits the light ink
+   and the light panel, which is how a heading ends up black-on-black and a
+   card white-on-white. No background here on purpose: these bands paint their
+   own (#000007 full-bleed, #08080a for the floating slabs). */
+.amp-dark {
+  --amp-panel: rgba(255, 255, 255, 0.02);
+  --amp-panel-hi: rgba(255, 255, 255, 0.045);
+  --amp-line: rgba(255, 255, 255, 0.1);
+  --amp-line-soft: rgba(255, 255, 255, 0.06);
+  --amp-muted: rgba(255, 255, 255, 0.75);
+  --amp-faint: rgba(255, 255, 255, 0.36);
+  color: #fff;
 }
 
 /* Hairline panel used for every card / table cell on the landing page. */
@@ -871,17 +1117,16 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 
 /* ── Diagram accents ────────────────────────────────────────────────────────
    Each solution/challenge visual reads its colours from these vars, so a single
-   class on the card re-tints the whole diagram. The palette is orange + grey:
-   brand orange is the default, graphite and a warm ember break the monotony
-   across the grid without introducing a third hue. */
+   class on the card re-tints the whole diagram. The palette is achromatic:
+   three values of grey, so the diagrams differ in weight rather than in hue. */
 .amp-viz {
-  --vz-accent: #ff4d00;
-  --vz-neon: #ff8a4c;
-  --vz-line: rgba(255, 77, 0, 0.5);
-  --vz-fill: rgba(255, 77, 0, 0.08);
-  --vz-tile: rgba(255, 77, 0, 0.16);
-  --vz-glow: rgba(255, 77, 0, 0.75);
-  --vz-ink: #2b0d00;
+  --vz-accent: #E6E6E6;
+  --vz-neon: #B4B4B4;
+  --vz-line: rgba(230, 230, 230, 0.45);
+  --vz-fill: rgba(230, 230, 230, 0.07);
+  --vz-tile: rgba(230, 230, 230, 0.14);
+  --vz-glow: rgba(230, 230, 230, 0.6);
+  --vz-ink: #141414;
 }
 .amp-viz-grey {
   --vz-accent: #a1a1aa;
@@ -893,26 +1138,26 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
   --vz-ink: #17171a;
 }
 .amp-viz-ember {
-  --vz-accent: #ff8a4c;
-  --vz-neon: #ffb489;
-  --vz-line: rgba(255, 138, 76, 0.45);
-  --vz-fill: rgba(255, 138, 76, 0.08);
-  --vz-tile: rgba(255, 138, 76, 0.14);
-  --vz-glow: rgba(255, 138, 76, 0.65);
-  --vz-ink: #331200;
+  --vz-accent: #B4B4B4;
+  --vz-neon: #8f8f96;
+  --vz-line: rgba(180, 180, 180, 0.42);
+  --vz-fill: rgba(180, 180, 180, 0.07);
+  --vz-tile: rgba(180, 180, 180, 0.13);
+  --vz-glow: rgba(180, 180, 180, 0.55);
+  --vz-ink: #1b1b1e;
 }
 /* ── Same three, deepened for LIGHT bands ───────────────────────────────────
-   The bright orange sits at 2.9:1 on the #f2f2f2 panels of the challenge cards
-   — under the 3:1 floor for graphics — so filled shapes and hairlines there
-   read from the deepened set instead. */
+   A light grey sits well under the 3:1 floor for graphics on the #f2f2f2 panels
+   of the challenge cards, so filled shapes and hairlines there read from the
+   deepened set instead. */
 .amp-viz-deep {
-  --vz-accent: #d63f00;
-  --vz-neon: #ff5c14;
-  --vz-line: rgba(214, 63, 0, 0.5);
-  --vz-fill: rgba(214, 63, 0, 0.08);
-  --vz-tile: rgba(214, 63, 0, 0.16);
-  --vz-glow: rgba(214, 63, 0, 0.6);
-  --vz-ink: #fff2ec;
+  --vz-accent: #3a3a40;
+  --vz-neon: #5c5c64;
+  --vz-line: rgba(58, 58, 64, 0.5);
+  --vz-fill: rgba(58, 58, 64, 0.08);
+  --vz-tile: rgba(58, 58, 64, 0.16);
+  --vz-glow: rgba(58, 58, 64, 0.55);
+  --vz-ink: #f4f4f5;
 }
 .amp-viz-grey-deep {
   --vz-accent: #55555c;
@@ -951,18 +1196,11 @@ textarea, input, [contenteditable="true"] { caret-color: hsl(var(--accent-coral)
 @media (min-width: 640px) {
   .amp-rails { padding-left: 2.75rem; padding-right: 2.75rem; }
 }
-.amp-rails::before,
-.amp-rails::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--amp-line-soft);
-  pointer-events: none;
-}
-.amp-rails::before { left: 0; }
-.amp-rails::after { right: 0; }
+/* The two vertical hairlines this used to draw down the sides are gone. They
+   were framing every band on every page, and a frame repeated that many times
+   stops reading as structure and starts reading as a border the content is
+   trapped in. The class stays for its padding, which the sections are laid out
+   against. */
 .amp-panel-hover { transition: background-color 300ms ease, border-color 300ms ease; }
 .amp-panel-hover:hover { background-color: var(--amp-panel-hi); border-color: rgba(255, 255, 255, 0.2); }
 
@@ -1002,9 +1240,14 @@ html.amp-root, html.amp-root body { background-color: #000007; }
 }
 .amp-reveal.is-in { opacity: 1; transform: none; }
 
-/* Vertical ticker used in the "secured agents" visual. */
+/* Vertical ticker — the "secured agents" visual, and the connector columns.
+   The reverse exists so adjacent columns can travel against each other: three
+   columns all drifting the same way read as one tall block sliding past, which
+   is a distraction; opposed, they read as a field and the eye settles. */
 @keyframes amp-ticker { from { transform: translateY(0); } to { transform: translateY(-50%); } }
 .amp-ticker { animation: amp-ticker 22s linear infinite; }
+@keyframes amp-ticker-reverse { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+.amp-ticker-reverse { animation: amp-ticker-reverse 26s linear infinite; }
 
 @keyframes amp-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
 .amp-float { animation: amp-float 6s ease-in-out infinite; }
@@ -1013,7 +1256,7 @@ html.amp-root, html.amp-root body { background-color: #000007; }
 .amp-halo { animation: amp-halo 4.5s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .amp-char, .amp-in, .amp-caret, .amp-ticker, .amp-float, .amp-halo, .amp-scan, .amp-ring,
+  .amp-char, .amp-in, .amp-caret, .amp-ticker, .amp-ticker-reverse, .amp-float, .amp-halo, .amp-scan, .amp-ring,
   .amp-bands, .amp-wash-drift, .amp-seq, .amp-crawl { animation: none !important; }
   .amp-lift, .amp-zoom img, .amp-zoom svg { transition: none; }
   .amp-lift:hover { transform: none; }
@@ -1086,6 +1329,28 @@ html.amp-root, html.amp-root body { background-color: #000007; }
 
 /* Hide the window scrollbar while a marketing/landing page is mounted (the
    MarketingShell toggles this class on <html>). Scrolling still works. */
+/* ── Keyboard focus, marketing pages ────────────────────────────────────────
+   The marketing pages draw their own buttons, links and fields, which means
+   they had also quietly opted out of a visible focus ring: a tab through the
+   nav, the pricing switch or the contact form landed on whatever the browser
+   defaults to over a white ground, which is usually nothing you can see.
+
+   One ring for everything, in the bright cut of the accent. #2893CC is 3.4:1 on
+   white and 5.8:1 on the darkest tone — as a non-text graphic both clear the
+   3:1 the rule asks for, so a single value works on every ground the canvas
+   passes through. Offset so it never sits on the element's own border. */
+.amplify a:focus-visible,
+.amplify button:focus-visible,
+.amplify input:focus-visible,
+.amplify textarea:focus-visible,
+.amplify select:focus-visible,
+.amplify summary:focus-visible,
+.amplify [tabindex]:focus-visible {
+  outline: 2px solid #2893cc;
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 html.mkt-no-scrollbar {
   scrollbar-width: none;      /* Firefox */
   -ms-overflow-style: none;   /* legacy Edge/IE */
@@ -1556,3 +1821,169 @@ html.mkt-no-scrollbar::-webkit-scrollbar {
 .soft-range:focus-visible { outline: none; }
 .soft-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px hsl(var(--primary) / 0.25); }
 .soft-range:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Agent terminal ──────────────────────────────────────────────────────────
+   The terminal wears the app's skin instead of a fixed black-and-cyan one:
+   every colour below is derived from the theme tokens, so it follows Light,
+   Dark and each named skin (Ocean, Sand, Crimson…) with no per-theme rule.
+
+   Only the ground is computed rather than taken as-is — pushed a little darker
+   than `--card` so the session reads as recessed (a soft grey under a light
+   skin, a deeper black under a dark one) — and the chrome is lifted off it. */
+.agent-terminal {
+  --term-bg: color-mix(in srgb, hsl(var(--card)) 95%, #000);
+  --term-chrome: color-mix(in srgb, var(--term-bg) 94%, hsl(var(--foreground)));
+  --term-border: hsl(var(--border));
+
+  --term-fg: hsl(var(--foreground));          /* the command line itself */
+  --term-out: hsl(var(--muted-foreground));   /* its output */
+  --term-dim: hsl(var(--muted-foreground) / 0.75);
+  --term-note: hsl(var(--muted-foreground) / 0.6);
+
+  --term-prompt: hsl(var(--primary));
+  --term-caret: hsl(var(--accent-2));
+  --term-ok: hsl(var(--accent-2));
+  --term-danger: hsl(var(--destructive));
+  --term-link: hsl(var(--accent-teal));
+  --term-run: hsl(var(--accent-teal));         /* ran on the runner */
+  --term-sbx: hsl(var(--accent-2));            /* ran in the sandbox */
+  --term-run-bg: color-mix(in srgb, var(--term-run) 18%, transparent);
+  --term-sbx-bg: color-mix(in srgb, var(--term-sbx) 18%, transparent);
+  --term-chip-bg: color-mix(in srgb, var(--term-fg) 12%, transparent);
+}
+.dark .agent-terminal {
+  /* A dark skin takes a deeper ground before the terminal stops looking like
+     part of the app, and the teal accents have to be lifted to read on it —
+     the aqua token is the same hue, brighter. */
+  --term-bg: color-mix(in srgb, hsl(var(--card)) 86%, #000);
+  --term-link: hsl(var(--accent-aqua));
+  --term-run: hsl(var(--accent-aqua));
+}
+
+/* ── Agent live activity — the one line that says what the agent is doing ────
+   The live run block has no card, no border and no spinner: the only thing on
+   screen is the sentence, so the sentence has to carry the liveness. Each new
+   activity fades up into place while the previous one fades out above it, and
+   a slow sheen crosses the text so a run that pauses on one step still reads
+   as running rather than as finished. */
+@keyframes agent-activity-in {
+  from { opacity: 0; transform: translateY(5px); filter: blur(2px); }
+  to   { opacity: 1; transform: none;            filter: blur(0); }
+}
+@keyframes agent-activity-out {
+  from { opacity: 1; transform: none;             filter: blur(0); }
+  to   { opacity: 0; transform: translateY(-5px); filter: blur(2px); }
+}
+.agent-activity-in  { animation: agent-activity-in  260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.agent-activity-out { animation: agent-activity-out 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes agent-activity-sheen {
+  0%   { background-position: 140% 0; }
+  100% { background-position: -40% 0; }
+}
+.agent-activity-live {
+  background-image: linear-gradient(
+    100deg,
+    hsl(var(--muted-foreground)) 0%,
+    hsl(var(--muted-foreground)) 36%,
+    hsl(var(--foreground)) 50%,
+    hsl(var(--muted-foreground)) 64%,
+    hsl(var(--muted-foreground)) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: agent-activity-sheen 2.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-activity-in,
+  .agent-activity-out { animation-duration: 1ms; }
+  .agent-activity-live {
+    animation: none;
+    background-image: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    color: hsl(var(--foreground));
+  }
+}
+
+
+/* ── Éditeur de procédure (workflows) ────────────────────────────────────────
+   Une procédure s'écrit comme un document : des lignes numérotées, et des BLOCS
+   posés à l'intérieur des phrases. La ligne est un contenteditable
+   (RichLine.tsx) et ces règles ne concernent que ce qui vit dedans — un élément
+   inséré dans un innerHTML ne passe pas par le moteur de classes.
+
+   Les pastilles sont alignées sur la LIGNE DE BASE du texte, pas centrées :
+   centrée verticalement, une pastille décale la ligne qui la contient, et une
+   phrase dont l'interligne saute au moment où on y pose un outil se lit comme
+   un bug de rendu. */
+.wf-richline {
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.75;
+  min-height: 1.75em;
+}
+.wf-richline:focus-visible { outline: none; }
+
+.wf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  vertical-align: baseline;
+  margin: 0 0.125rem;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 0.375rem;
+  background: hsl(var(--muted));
+  font-size: 0.9375em;
+  line-height: 1.5;
+  /* Une pastille est un atome : la sélection ne doit pas pouvoir s'arrêter au
+     milieu de son libellé. */
+  user-select: none;
+  cursor: default;
+  transition: background-color 120ms ease;
+}
+.wf-chip:hover { background: hsl(var(--muted) / 0.7); }
+.wf-chip b { font-weight: 600; }
+.wf-chip-label { color: hsl(var(--muted-foreground)); }
+.wf-chip-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+.wf-chip-menu {
+  margin-left: 0.0625rem;
+  padding: 0 0.0625rem;
+  color: hsl(var(--muted-foreground) / 0.7);
+  cursor: pointer;
+  border-radius: 0.25rem;
+  line-height: 1;
+}
+.wf-chip-menu:hover { color: hsl(var(--foreground)); }
+
+/* L'invite qui défile sur une ligne de procédure vide (RichLine → CyclingHint).
+   Une simple apparition : la phrase entre par le bas et se pose. Assez pour
+   qu'on remarque le changement, assez court pour ne pas retenir le regard de
+   quelqu'un qui est en train d'écrire. */
+@keyframes wf-hint-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wf-hint { animation: wf-hint-in 260ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-hint { animation: none; }
+}
+
+/* Les étiquettes d'axe vertical des graphes d'analytics. `vertical-lr` plutôt
+   qu'une rotation : la rotation garde la boîte horizontale et casse la mise en
+   page autour, alors que le mode d'écriture vertical réserve la bonne place. */
+.vertical-text {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}

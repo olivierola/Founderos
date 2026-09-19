@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { Search, Plus, ArrowRight, Link2 } from "lucide-react";
+import {
+  MagnifyingGlassIcon as Search,
+  PlusIcon as Plus,
+  ArrowRightIcon as ArrowRight,
+  LinkSimpleIcon as Link2,
+} from "@phosphor-icons/react";
 import {
   Dialog,
   DialogContent,

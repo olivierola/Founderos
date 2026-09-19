@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Globe, Loader2, Eye, XCircle, Send, MonitorPlay, Play, ChevronRight,
-  Bot, User as UserIcon, CircleDot,
-} from "lucide-react";
+  GlobeIcon as Globe,
+  CircleNotchIcon as Loader2,
+  EyeIcon as Eye,
+  XCircleIcon as XCircle,
+  PaperPlaneRightIcon as Send,
+  MonitorPlayIcon as MonitorPlay,
+  PlayIcon as Play,
+  CaretRightIcon as ChevronRight,
+  RobotIcon as Bot,
+  UserIcon,
+  RadioButtonIcon as CircleDot,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AIInput } from "@/components/ui/ai-input";

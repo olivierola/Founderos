@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ShieldCheck, AlertOctagon, ShieldAlert } from "lucide-react";
+import {
+  ShieldCheckIcon as ShieldCheck,
+  WarningOctagonIcon as AlertOctagon,
+  ShieldWarningIcon as ShieldAlert,
+} from "@phosphor-icons/react";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";

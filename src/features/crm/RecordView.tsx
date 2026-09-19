@@ -2,8 +2,15 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Clock, CheckSquare, StickyNote, Zap, MessageSquare, Trash2, ChevronUp,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  ClockIcon as Clock,
+  CheckSquareIcon as CheckSquare,
+  NoteIcon as StickyNote,
+  LightningIcon as Zap,
+  ChatIcon as MessageSquare,
+  TrashIcon as Trash2,
+  CaretUpIcon as ChevronUp,
+} from "@phosphor-icons/react";
 import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
 import { useCurrentContext } from "@/hooks/useCurrentContext";

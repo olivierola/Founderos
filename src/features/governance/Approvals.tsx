@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, XCircle, Plus, Clock, GitPullRequestArrow, Trash2 } from "lucide-react";
+import {
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  PlusIcon as Plus,
+  ClockIcon as Clock,
+  GitPullRequestIcon as GitPullRequestArrow,
+  TrashIcon as Trash2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

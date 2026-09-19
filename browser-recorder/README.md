@@ -70,6 +70,46 @@ L'agent voit et manipule **tous vos onglets** (lister, ouvrir, basculer, fermer,
 agir dans un onglet précis sans en voler le focus) — mais seulement ceux qui
 entrent dans le périmètre autorisé : la liste masque les autres.
 
+## Se faire former : l'agent montre, vous faites
+
+Le troisième canal est le seul qui ne travaille pas à votre place. Un agent
+formateur entoure le bon bouton dans votre page, écrit la phrase — et la dit à
+voix haute si vous le voulez —, puis **attend que vous cliquiez**. Ni sa main ni
+son curseur n'entrent dans la page.
+
+Vous l'ouvrez depuis la popup, « Mode formation », pour **1 heure ou 4 heures**.
+La durée est plus longue que celle du pilotage précisément parce que ce mode
+peut moins : apprendre un outil prend une matinée, et un consentement qu'il faut
+redonner tous les quarts d'heure finit par se donner sans lire.
+
+Le badge passe à 🎓. Pendant une formation, une petite carte reste en bas à
+droite : le parcours, l'étape en cours, le son, et « Quitter » — qui coupe tout,
+immédiatement.
+
+Ce que le canal `coach` accepte est **fermé par liste blanche**, dans
+[background.js](src/background.js) comme côté serveur : afficher un repère,
+poser une question, lire la page, lister les onglets. Aucune commande qui clique,
+saisit ou valide n'y est servie. La retenue du formateur n'est donc pas une
+consigne dans son prompt, qu'on pourrait lui faire oublier en insistant : c'est
+une absence de code, comme pour l'enregistrement.
+
+Deux détails qui font la différence entre une démonstration et une vraie
+formation :
+
+- **le geste est détecté**, pas déclaré. Le coach écoute le clic sur l'élément
+  visé, la saisie du champ, le changement de page — vous n'avez pas à confirmer
+  chaque étape. Le bouton « C'est fait » reste là pour ce qui ne se détecte pas
+  (glisser-déposer, canvas, iframe d'un autre domaine) ;
+- **l'étape survit à la navigation**. Cliquer « Se connecter » recharge la page
+  et emporte le repère avec elle : le service worker le replante dans la page
+  suivante, ou conclut l'étape quand le changement de page ÉTAIT le geste
+  attendu.
+
+« Je suis bloqué » n'est pas un abandon : il remonte à l'agent, qui doit
+reformuler autrement — et la trace en reste dans FounderOS. Une étape sur
+laquelle quatre personnes sur cinq trébuchent y apparaît comme ce qu'elle est :
+une consigne à réécrire, pas une série de nouveaux arrivants distraits.
+
 ## Vie privée
 
 Le caviardage a lieu **dans la page**, avant tout envoi : mots de passe, CVV,

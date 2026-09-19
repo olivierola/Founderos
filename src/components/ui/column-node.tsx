@@ -10,8 +10,8 @@ import { setColumns } from '@platejs/layout';
 import { ResizableProvider } from '@platejs/resizable';
 import { BlockSelectionPlugin } from '@platejs/selection/react';
 import { useComposedRef } from '@udecode/cn';
-import { type LucideProps, Trash2Icon } from 'lucide-react';
-import { GripHorizontal } from 'lucide-react';
+import { type IconProps as LucideProps, TrashIcon as Trash2Icon } from "@phosphor-icons/react";
+import { DotsSixIcon as GripHorizontal } from "@phosphor-icons/react";
 import { PathApi } from 'platejs';
 import {
   PlateElement,

@@ -2,10 +2,23 @@ import { useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Loader2, RefreshCw, Network, FileText, Layers,
-  CheckCircle2, XCircle, Clock, AlertTriangle, Play, ShieldAlert, Download,
-  Camera, History, RotateCcw,
-} from "lucide-react";
+  ArrowLeftIcon as ArrowLeft,
+  CircleNotchIcon as Loader2,
+  ArrowsClockwiseIcon as RefreshCw,
+  GraphIcon as Network,
+  FileTextIcon as FileText,
+  StackIcon as Layers,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  ClockIcon as Clock,
+  WarningIcon as AlertTriangle,
+  PlayIcon as Play,
+  ShieldWarningIcon as ShieldAlert,
+  DownloadSimpleIcon as Download,
+  CameraIcon as Camera,
+  ClockCounterClockwiseIcon as History,
+  ArrowCounterClockwiseIcon as RotateCcw,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

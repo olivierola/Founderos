@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Plus, Trash2, Bot, Send, Loader2, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  RobotIcon as Bot,
+  PaperPlaneRightIcon as Send,
+  CircleNotchIcon as Loader2,
+  ChatIcon as MessageSquare,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

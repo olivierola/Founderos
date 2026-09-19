@@ -2,9 +2,18 @@ import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 
 import { useQuery } from "@tanstack/react-query";
 import { Responsive, WidthProvider, type Layout } from "react-grid-layout";
 import {
-  CalendarDays, GripVertical, LayoutGrid, Loader2, Eye, RotateCcw, Check,
-  GripHorizontal, BarChart3, LineChart as LineChartIcon, AreaChart,
-} from "lucide-react";
+  CalendarIcon as CalendarDays,
+  DotsSixVerticalIcon as GripVertical,
+  GridFourIcon as LayoutGrid,
+  CircleNotchIcon as Loader2,
+  EyeIcon as Eye,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  CheckIcon as Check,
+  DotsSixIcon as GripHorizontal,
+  ChartBarIcon as BarChart3,
+  ChartLineIcon as LineChartIcon,
+  ChartLineUpIcon as AreaChart,
+} from "@phosphor-icons/react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ExportMenu } from "@/components/ExportMenu";

@@ -17,6 +17,12 @@ export interface InternalAgent {
   accent_color: string | null;
   persona: string | null;
   instructions: string | null;
+  /** Les deux autres fichiers (0210) : qui il est, et ce que son utilisateur préfère.
+   *  `preferences` est écrit par l'humain ET par l'agent (remember_preference). */
+  soul: string | null;
+  preferences: string | null;
+  preferences_updated_at: string | null;
+  preferences_updated_by: string | null;
   instruction_blocks: InstructionBlock[];
   model: string;
   temperature: number;
@@ -28,6 +34,10 @@ export interface InternalAgent {
   role: string | null;
   skills: string[];
   collaboration_enabled: boolean;
+  /** L'organigramme (0213) : l'agent à qui celui-ci rend compte. null = rattaché
+   *  directement à son service. Persisté, donc lisible par la carte
+   *  d'entreprise et par les agents eux-mêmes. */
+  parent_agent_id: string | null;
   sandbox_mode: "cloud" | "runner" | "sandbox" | "hybrid";
   sandbox_url: string | null;
   /** "Essaim" — may the agent fan out to parallel sub-agents, and how many at

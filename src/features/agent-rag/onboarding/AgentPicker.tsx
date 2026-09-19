@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, ChevronDown } from "lucide-react";
+import { RobotIcon as Bot, CaretDownIcon as ChevronDown } from "@phosphor-icons/react";
 import { useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/EmptyState";

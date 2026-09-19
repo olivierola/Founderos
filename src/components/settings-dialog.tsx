@@ -6,14 +6,14 @@ import * as React from 'react';
 
 import { CopilotPlugin } from '@platejs/ai/react';
 import {
-  Check,
-  ChevronsUpDown,
-  ExternalLinkIcon,
-  Eye,
-  EyeOff,
-  Settings,
-  Wand2Icon,
-} from 'lucide-react';
+  CheckIcon as Check,
+  CaretUpDownIcon as ChevronsUpDown,
+  ArrowSquareOutIcon as ExternalLinkIcon,
+  EyeIcon as Eye,
+  EyeSlashIcon as EyeOff,
+  GearSixIcon as Settings,
+  MagicWandIcon as Wand2Icon,
+} from "@phosphor-icons/react";
 import { useEditorRef } from 'platejs/react';
 
 import { Button } from '@/components/ui/button';

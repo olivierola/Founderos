@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useDictation } from "@/lib/useDictation";
+import { VoiceComposer } from "@/components/ui/composer-voice-glow";
 
 // Dictation runs through the shared streaming hook (useDictation): live Deepgram
 // transcription over a WebSocket, with the text appearing in the composer as you
@@ -943,7 +944,9 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             </div>
           )}
 
-          {/* Main Input Card */}
+          {/* Main Input Card — framed by voice-glow (VoiceComposer): breathing at
+              rest, following the dictated voice, sweeping while the agent runs. */}
+          <VoiceComposer stream={dictation.stream} processing={busy || isConnecting} radius={24}>
           <div
             onMouseDown={(e) => {
               const isTextarea = e.target === textareaRef.current;
@@ -961,7 +964,6 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             className={cn(
               "relative w-full border border-border bg-card shadow-sm focus-within:border-ring/40 focus-within:ring-1 focus-within:ring-ring/20 hover:border-border/80 z-10",
               isOpen ? "cursor-text" : "cursor-default",
-              busy && "prompt-run-border"
             )}
           >
             <style dangerouslySetInnerHTML={{ __html: `
@@ -1268,6 +1270,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               </span>
             </button>
           </div>
+          </VoiceComposer>
         </div>
 
         {activeAttachment && (

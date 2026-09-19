@@ -28,198 +28,86 @@ enable_manual_linking = false
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
-enable_confirmations = false
-secure_password_change = false
+# FOS-14 — la vérification d'e-mail était désactivée. Deux conséquences :
+#   1. « utilisateur authentifié » désignait le public d'Internet, ce qui rendait
+#      exploitables à distance tous les défauts d'autorisation des fonctions edge ;
+#   2. accept-invite valide une invitation en comparant inv.email à user.email —
+#      une adresse jamais vérifiée. Un lien d'invitation qui fuite valait alors
+#      entrée dans le workspace.
+enable_confirmations = true
+secure_password_change = true
 
-# All Edge Functions deployed with --no-verify-jwt per user request.
-[functions.public-feature-flags]
-verify_jwt = false
+# ── Vérification du JWT à la passerelle ──────────────────────────────────────
+#
+# FOS-16 — l'ancienne consigne était : « All Edge Functions deployed with
+# --no-verify-jwt per user request », et 54 fonctions portaient l'exception.
+# C'était la cause commune de la plupart des failles trouvées à l'audit de
+# septembre 2026 : sans filet à la passerelle, chaque oubli d'autorisation dans
+# une fonction devenait directement exploitable depuis Internet.
+#
+# LE MALENTENDU QUI A COÛTÉ CHER
+# `verify_jwt = true` n'exige pas une session utilisateur : il exige un JWT
+# Supabase VALIDE — et la clé anon en est un. Le widget public, le SDK
+# analytics et le copilote d'onboarding envoient tous cette clé
+# (public/widget.js:72 : `apikey` + `Authorization: Bearer <anon>`). Ils
+# continuent donc de fonctionner avec la vérification active. L'exception
+# n'était nécessaire que pour les appelants qui n'ont AUCUN JWT Supabase.
+#
+# La valeur par défaut est désormais `true`. Chaque exception ci-dessous nomme
+# l'appelant et le mécanisme d'authentification qui remplace le JWT. Une
+# exception sans cette justification ne doit pas être ajoutée.
 
-[functions.connect-github]
-verify_jwt = false
+# ── Webhooks tiers : signés, pas de JWT Supabase ─────────────────────────────
 
-[functions.github-list-repos]
-verify_jwt = false
-
-[functions.deepgram-transcribe]
-verify_jwt = false
-
-[functions.deepgram-stream]
-verify_jwt = false
-
-[functions.connect-provider]
-verify_jwt = false
-
-[functions.aiops-infra]
-verify_jwt = false
-
-[functions.service-room-post]
-verify_jwt = false
-
-[functions.disconnect-provider]
-verify_jwt = false
-
-[functions.sync-stripe-data]
-verify_jwt = false
-
-[functions.ai-cost-optimization]
-verify_jwt = false
-
-[functions.ai-agent-chat]
-verify_jwt = false
-
-[functions.execute-admin-action]
-verify_jwt = false
-
-[functions.daily-briefing]
-verify_jwt = false
-
-[functions.send-notification]
-verify_jwt = false
-
-[functions.dashboard-data]
-verify_jwt = false
-
-[functions.track-event]
-verify_jwt = false
-
-[functions.report-error]
-verify_jwt = false
-
-[functions.run-workflow]
-verify_jwt = false
-
-[functions.dispatch-webhook]
-verify_jwt = false
-
-[functions.issue-api-key]
-verify_jwt = false
-
-[functions.invite-member]
-verify_jwt = false
-
-[functions.accept-invite]
-verify_jwt = false
-
-[functions.send-email]
-verify_jwt = false
-
-[functions.delete-workspace]
-verify_jwt = false
-
-[functions.create-checkout]
-verify_jwt = false
-
-# Webhook Stripe : l'appelant est Stripe, pas un navigateur — aucun JWT
-# Supabase. L'authentification se fait sur la signature HMAC de la requête
-# (FOUNDEROS_STRIPE_WEBHOOK_SECRET), vérifiée dans la fonction.
+# Stripe signe en HMAC sur le corps brut ; vérifié par verifyStripeSignature
+# (_shared/billing-stripe.ts:182), fenêtre de 5 min et comparaison à temps
+# constant.
 [functions.stripe-webhook]
 verify_jwt = false
 
-[functions.automation-receiver]
-verify_jwt = false
-
-# Activation Engine + embeddable widget — public surfaces. The widget is loaded
-# via a plain <script> tag (no auth header), and the activation endpoints are
-# identified by the agent public_key, like the other rag-* public functions.
-[functions.rag-widget]
-verify_jwt = false
-
-[functions.rag-activation-tick]
-verify_jwt = false
-
-[functions.rag-activation-feedback]
-verify_jwt = false
-
-# The three endpoints the embedded widget actually talks to. rag-chat serves both
-# the widget (public_key, anonymous) and the builder playground (JWT); it checks
-# the Authorization header itself on the authenticated branch, so gating it at
-# the gateway would only break the public one.
-[functions.rag-agent-public-config]
-verify_jwt = false
-
-[functions.rag-chat]
-verify_jwt = false
-
-[functions.rag-onboarding-orchestrate]
-verify_jwt = false
-
-# The external Ops Runner authenticates with X-Runner-Token (hashed against
-# ops_settings.runner_token_hash) — it has no Supabase JWT.
-[functions.ops-runner-poll]
-verify_jwt = false
-
-# E2E testing: the orchestrator verifies the user session manually; the runner
-# poll authenticates with X-Runner-Token (no JWT), like ops-runner-poll.
-[functions.test-run-orchestrate]
-verify_jwt = false
-
-[functions.test-runner-poll]
-verify_jwt = false
-
-# Armada: scan a GitHub repo and generate an E2E suite (manual user-session check).
-[functions.armada-generate-tests]
-verify_jwt = false
-
-# Connector actions: agents call CRM/HR APIs server-side (service role or member).
-[functions.connector-action]
-verify_jwt = false
-
-# Project inbox: post a channel message + dispatch @mentioned agents.
-[functions.project-inbox-post]
-verify_jwt = false
-
-# Slack gateway: OAuth callback + Events API webhook. Public (Slack sends no
-# Supabase JWT); the function does its own auth (Slack request-signature HMAC).
+# Slack : Events API signés en HMAC (v0:{ts}:{body}) + callback OAuth en GET,
+# que le navigateur suit sans en-tête. Vérifié dans la fonction.
 [functions.slack-gateway]
 verify_jwt = false
 
-# Teams Bot Framework webhook: the caller sends a Bot Framework JWT (not a
-# Supabase one); teams-gateway verifies it itself against the Bot Framework JWKS.
+# Microsoft Teams : l'appelant présente un JWT Bot Framework, pas un JWT
+# Supabase. Vérifié contre le JWKS de login.botframework.com.
 [functions.teams-gateway]
 verify_jwt = false
 
-# Simulations (MiroFish-inspired): single endpoint dispatching by `action`
-# (prepare / claim / round / complete / chat).
-[functions.simulation-prepare]
+# Reçoit les webhooks des automatisations avec une clé d'API FounderOS
+# (`Authorization: Bearer fos_…`), qui n'est pas un JWT.
+[functions.automation-receiver]
 verify_jwt = false
 
-# Security scanning: passive checks inline + active scans queued (consent-gated).
-[functions.security-scan]
-verify_jwt = false
+# ── Callbacks OAuth : redirection navigateur, aucun en-tête ──────────────────
 
-# Security scan runner endpoint (X-Runner-Token, no JWT).
-[functions.security-scan-poll]
-verify_jwt = false
-
-# PostHog import + connector test re-validation (manual user-session checks).
-[functions.sync-posthog]
-verify_jwt = false
-
-[functions.test-connection]
-verify_jwt = false
-
-# Composio-backed connector system (new default; in-house path above is
-# untouched and still deployed, just no longer linked from the default UI).
-[functions.composio-catalog]
+[functions.mcp-oauth]
 verify_jwt = false
 
 [functions.composio-connect]
 verify_jwt = false
 
-[functions.composio-connection-status]
+# ── Runners externes : X-Runner-Token, jamais de JWT ─────────────────────────
+# Le jeton est comparé à son empreinte SHA-256 en base (ops_settings.
+# runner_token_hash) ou au jeton de plateforme, à temps constant.
+
+[functions.ops-runner-poll]
 verify_jwt = false
 
-[functions.composio-disconnect]
+[functions.test-runner-poll]
 verify_jwt = false
 
-[functions.composio-action]
+[functions.security-scan-poll]
 verify_jwt = false
 
-# In-house CRM read/write for agents (service-role worker or member session).
-[functions.crm-action]
+# ── WebSocket : le navigateur ne peut pas poser d'en-tête au handshake ───────
+# Le JWT voyage dans la query string et la fonction le vérifie elle-même
+# (deepgram-stream/index.ts:26).
+[functions.deepgram-stream]
 verify_jwt = false
 
-# Live GUI onboarding co-pilot (page-agent): public brief/llm/progress dispatch.
-[functions.onboarding-agent]
+# Telegram, Discord et WhatsApp : chacun signe ses appels à sa façon, vérifiée
+# par la fonction elle-même — aucun n'envoie de JWT Supabase.
+[functions.messaging-gateway]
 verify_jwt = false

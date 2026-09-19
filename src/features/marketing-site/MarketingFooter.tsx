@@ -1,5 +1,10 @@
 import { Link } from "react-router-dom";
-import { Github, Linkedin, MessageCircle, Twitter } from "lucide-react";
+import {
+  GithubLogoIcon as Github,
+  LinkedinLogoIcon as Linkedin,
+  ChatCircleIcon as MessageCircle,
+  TwitterLogoIcon as Twitter,
+} from "@phosphor-icons/react";
 import { Logo } from "@/components/Logo";
 import { NeatBackground, FOOTER_NEAT_CONFIG } from "./NeatBackground";
 

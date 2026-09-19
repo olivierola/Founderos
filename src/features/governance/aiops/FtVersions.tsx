@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { aiopsTabPath } from "@/lib/navigation";
-import { Package, Rocket, Archive, History, Copy } from "lucide-react";
+import {
+  PackageIcon as Package,
+  RocketLaunchIcon as Rocket,
+  ArchiveIcon as Archive,
+  ClockCounterClockwiseIcon as History,
+  CopyIcon as Copy,
+} from "@phosphor-icons/react";
 import { CubeIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";

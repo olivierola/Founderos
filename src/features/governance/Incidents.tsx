@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { Siren, Plus, Pencil, Trash2, AlertOctagon, CheckCircle2 } from "lucide-react";
+import {
+  SirenIcon as Siren,
+  PlusIcon as Plus,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  WarningOctagonIcon as AlertOctagon,
+  CheckCircleIcon as CheckCircle2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

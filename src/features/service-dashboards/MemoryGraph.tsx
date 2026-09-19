@@ -4,7 +4,14 @@ import {
   forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY,
   type Simulation, type SimulationNodeDatum, type SimulationLinkDatum,
 } from "d3-force";
-import { X, Search, Star, Plus, Minus, Maximize2 } from "lucide-react";
+import {
+  XIcon as X,
+  MagnifyingGlassIcon as Search,
+  StarIcon as Star,
+  PlusIcon as Plus,
+  MinusIcon as Minus,
+  ArrowsOutSimpleIcon as Maximize2,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 // Workspace memory as a LIVE force-directed graph (d3-force): memory dots are
@@ -295,7 +302,7 @@ export function MemoryGraph({ mems, agents }: { mems: MemoryRow[]; agents: Graph
             ))}
           </div>
           <button onClick={() => setPinnedOnly((v) => !v)} title="Épinglés" className={cn("flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors", pinnedOnly ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "text-muted-foreground hover:text-foreground")}>
-            <Star className={cn("h-3.5 w-3.5", pinnedOnly && "fill-current")} />
+            <Star weight={pinnedOnly ? "fill" : "regular"} className="h-3.5 w-3.5" />
           </button>
           {(activeFilters > 0 || search) && (
             <button onClick={() => { setSearch(""); setKindFilter(new Set()); setSourceFilter("all"); setPinnedOnly(false); }} className="rounded-full px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">Réinitialiser</button>

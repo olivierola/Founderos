@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { Plus, Trash2, Target, CheckCircle, Clock, Play, Pause } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  TargetIcon as Target,
+  CheckCircleIcon as CheckCircle,
+  ClockIcon as Clock,
+  PlayIcon as Play,
+  PauseIcon as Pause,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ModuleProject } from "../moduleProjectModel";

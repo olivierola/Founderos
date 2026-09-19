@@ -1,8 +1,16 @@
 ﻿import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  FlaskConical, Plus, Play, Loader2, Trash2, Globe, Clock, Github, Sparkles,
-} from "lucide-react";
+  FlaskIcon as FlaskConical,
+  PlusIcon as Plus,
+  PlayIcon as Play,
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  GlobeIcon as Globe,
+  ClockIcon as Clock,
+  GithubLogoIcon as Github,
+  SparkleIcon as Sparkles,
+} from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

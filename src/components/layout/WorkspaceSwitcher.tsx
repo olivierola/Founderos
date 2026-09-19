@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Search, Plus, Settings, ChevronsUpDown } from "lucide-react";
+import {
+  MagnifyingGlassIcon as Search,
+  PlusIcon as Plus,
+  GearSixIcon as Settings,
+  CaretUpDownIcon as ChevronsUpDown,
+} from "@phosphor-icons/react";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useWorkspaces, useProjects } from "@/hooks/useWorkspace";

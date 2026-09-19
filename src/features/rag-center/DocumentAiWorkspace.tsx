@@ -3,10 +3,23 @@ import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Plus, Code2, RotateCcw, Play, ChevronLeft, ChevronRight, Minus, ArrowLeft,
-  ImageIcon, LayoutPanelTop, PanelBottom, Loader2, CheckCircle2, ExternalLink,
-  HelpCircle, Sparkles,
-} from "lucide-react";
+  PlusIcon as Plus,
+  CodeIcon as Code2,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  PlayIcon as Play,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  MinusIcon as Minus,
+  ArrowLeftIcon as ArrowLeft,
+  ImageIcon,
+  LayoutIcon as LayoutPanelTop,
+  LayoutIcon as PanelBottom,
+  CircleNotchIcon as Loader2,
+  CheckCircleIcon as CheckCircle2,
+  ArrowSquareOutIcon as ExternalLink,
+  QuestionIcon as HelpCircle,
+  SparkleIcon as Sparkles,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";

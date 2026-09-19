@@ -13,7 +13,28 @@ export interface ServiceDashboard {
   created_at: string;
   /** Per-dashboard preferences (migration 0158). Always normalised — never null. */
   settings: DashboardSettings;
+  /** À quoi sert ce service, en une phrase (0213). Envoyée à ses agents, et
+   *  lue par ceux des autres services dans l'annuaire. */
+  mission: string | null;
+  /** Qui peut déléguer du travail ICI (0213) — voir COLLABORATION_POLICIES. */
+  collaboration: CollaborationPolicy;
 }
+
+// ── Frontière de service (migration 0213) ────────────────────────────────────
+// L'isolation des dashboards était jusqu'ici une isolation d'UI : au runtime,
+// n'importe quel agent du projet pouvait déléguer à n'importe quel autre. Ce
+// réglage rend la frontière réelle — et surtout, il la rend VISIBLE : un agent
+// voit dans l'annuaire si un service accepte du travail venu d'ailleurs avant
+// de lui en envoyer.
+export type CollaborationPolicy = "open" | "on_request" | "closed";
+
+export const COLLABORATION_POLICIES: Array<{
+  id: CollaborationPolicy; label: string; hint: string;
+}> = [
+  { id: "open", label: "Ouvert", hint: "N'importe quel agent de l'entreprise peut confier du travail à ce service." },
+  { id: "on_request", label: "Sur demande", hint: "Le travail venu d'un autre service arrive dans le backlog et attend un humain d'ici." },
+  { id: "closed", label: "Fermé", hint: "Ce service n'exécute que ce qui vient de lui. Les autres peuvent encore lui poser des questions." },
+];
 
 // ── Per-dashboard settings ────────────────────────────────────────────────────
 // Everything a service dashboard can configure about ITSELF (its nav, its
@@ -21,7 +42,12 @@ export interface ServiceDashboard {
 // members) stay in the Admin area — this is deliberately dashboard-scoped.
 // Connectors moved IN (migration 0177): a connection belongs to one dashboard,
 // or to one person inside it, never to the whole org by default.
-export type DashboardTabSlug = "home" | "agents" | "schedules" | "memory" | "artifacts" | "connectors";
+export type DashboardTabSlug =
+  | "home" | "agents" | "schedules" | "memory" | "artifacts" | "connectors"
+  // Le suivi de travail (features/tracker) : projets, work items, cycles,
+  // modules. Masquable comme les autres — tous les services ne pilotent pas
+  // leur travail sous forme de tickets.
+  | "projects";
 
 export interface AgentDefaults {
   model: string;
@@ -62,7 +88,14 @@ export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
 };
 
 export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
-  landing: "home",
+  // Le SUIVI DE TRAVAIL est la destination d'ouverture.
+  //
+  // C'est le module principal du service : c'est là que se trouve ce qu'il y a
+  // à faire, et son accueil répond déjà à « qu'est-ce que je fais maintenant »
+  // — la question qu'on se pose en ouvrant l'outil. L'ancienne page Home,
+  // centrée sur l'assistant et les rooms, répond à « à qui je parle », qui
+  // vient après. Elle reste accessible, elle n'est plus le point d'entrée.
+  landing: "projects",
   hidden_tabs: [],
   sidebar_collapsed: false,
   theme: "system",
@@ -94,6 +127,11 @@ function toDashboard(row: Record<string, unknown>): ServiceDashboard {
     created_by: (row.created_by as string | null) ?? null,
     created_at: row.created_at as string,
     settings: normalizeSettings(row.settings),
+    mission: (row.mission as string | null) ?? null,
+    // Défaut "open" partout où 0213 n'est pas encore poussée : c'est le
+    // comportement historique, et une frontière qui se ferme toute seule à la
+    // faveur d'une migration manquante serait pire que pas de frontière.
+    collaboration: ((row.collaboration as CollaborationPolicy) || "open"),
   };
 }
 
@@ -164,6 +202,11 @@ export interface UpdateDashboardInput {
   icon?: string;
   color?: string;
   settings?: DashboardSettings;
+  /** 0213 — comme `description`/`settings`, absents tant que la migration
+   *  n'est pas poussée : le repli ci-dessous les laisse tomber sans casser
+   *  l'enregistrement du reste. */
+  mission?: string | null;
+  collaboration?: CollaborationPolicy;
 }
 export async function updateServiceDashboard(
   id: string, patch: UpdateDashboardInput,

@@ -13,6 +13,7 @@ import { PermissionsProvider } from "@/lib/permissions";
 import { AssistantProvider } from "@/lib/assistant-context";
 import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
 import { cn } from "@/lib/utils";
+import { useLockDocumentScroll } from "@/hooks/useLockDocumentScroll";
 
 interface ShellNavCtx {
   mobileOpen: boolean;
@@ -31,6 +32,7 @@ export function useShellNav() {
 }
 
 export function AppShell() {
+  useLockDocumentScroll();
   const { loading, notFound } = useCurrentContext();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [primaryExpanded, setPrimaryExpanded] = useState(false);
@@ -61,7 +63,7 @@ export function AppShell() {
       {/* Soft-black chrome. The assistant is NOT part of this row: it floats
           above the app as a full-height right-hand modal, so opening it never
           reflows the page it is talking about. */}
-      <div className="flex h-screen w-screen overflow-hidden bg-[#060608]">
+      <div className="flex h-screen w-full overflow-hidden bg-[#060608]">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopbarTabsProvider>
         <TopbarBreadcrumbProvider>
@@ -119,7 +121,7 @@ export function AppShell() {
                   </main>
                 ) : (
                   <main className="flex-1 overflow-y-auto bg-white px-3 py-4 dark:bg-background sm:px-4 sm:py-6 lg:px-6">
-                    <div className="mx-auto w-full max-w-6xl">
+                    <div className={cn("mx-auto w-full", isWideRoute(pathname) ? "max-w-[1600px]" : "max-w-6xl")}>
                       {/* SaaS Analytics renders its in-group pages as compact tabs,
                           aligned with the page content; null for other modules. */}
                       <SubTabBar />
@@ -173,6 +175,18 @@ function ContentSubTabs() {
       })}
     </div>
   );
+}
+
+/**
+ * Les pages de tableau de bord, qui ont besoin de place pour leurs tables.
+ *
+ * Elles gardent le cadre commun — padding, défilement — mais pas le plafond de
+ * largeur : 1152 px conviennent à un texte qu'on lit, pas à six tuiles, un
+ * radar et des tables de huit colonnes, qui s'y retrouvent comprimées entre
+ * deux marges vides.
+ */
+function isWideRoute(pathname: string): boolean {
+  return /\/app\/[^/]+\/[^/]+\/hq(\/|$)/.test(pathname);
 }
 
 /** Pages that should render edge-to-edge inside the content area, without the

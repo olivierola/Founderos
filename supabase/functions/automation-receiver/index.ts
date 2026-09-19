@@ -4,6 +4,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { timingSafeEqual } from "../_shared/authz.ts";
 import { routeWorkflowEvent } from "../_shared/workflow-engine.ts";
 
 async function sha256(text: string) {
@@ -31,7 +32,8 @@ Deno.serve(async (req) => {
     if (url0.pathname.endsWith("/events") || url0.searchParams.get("source") === "composio") {
       const secret = Deno.env.get("WORKFLOW_EVENT_SECRET");
       const given = req.headers.get("x-webhook-secret") ?? url0.searchParams.get("secret") ?? "";
-      if (!secret || given !== secret) {
+      // Comparaison a temps constant (FOS-19).
+      if (!secret || !timingSafeEqual(given, secret)) {
         return jsonResponse({ error: "Invalid webhook secret" }, { status: 401 });
       }
       const body = await req.json().catch(() => ({} as Record<string, unknown>));

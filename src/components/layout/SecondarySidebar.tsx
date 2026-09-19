@@ -1,5 +1,9 @@
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
-import { Plus, FolderKanban, Loader2 } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  KanbanIcon as FolderKanban,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, RobotIcon } from "@phosphor-icons/react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";

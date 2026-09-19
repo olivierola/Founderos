@@ -19,7 +19,8 @@
 // linked, so the Ops Overview can show the unified deployment timeline.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireResourceAccess } from "../_shared/authz.ts";
 import { getConnectorCredential } from "../_shared/credentials.ts";
 
 interface ServerRow {
@@ -43,12 +44,11 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, message: "server_id and action are required" }, { status: 400 });
     }
 
-    const userClient = createUserClient(req);
-    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !userInfo?.user) {
-      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
-    }
-    const userId = userInfo.user.id;
+    // Autorisation (FOS-02) : un déploiement PaaS agit sur la cible du client, donc le garde porte sur le
+    // projet propriétaire — résolu en base, jamais pris dans le corps de la requête.
+    const auth = await requireResourceAccess(req, "ops_servers", server_id, "editor");
+    if (!auth.ok) return auth.response;
+    const userId = auth.userId;
 
     const admin = createServiceClient();
     const { data: server } = await admin

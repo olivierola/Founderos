@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { CaretRightIcon as ChevronRight } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 export interface SparkPoint {

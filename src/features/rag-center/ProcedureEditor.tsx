@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { ArrowLeft, Loader2, Trash2, FileText, Check } from "lucide-react";
+import {
+  ArrowLeftIcon as ArrowLeft,
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  FileTextIcon as FileText,
+  CheckIcon as Check,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MarkdownEditor } from "@/components/MarkdownEditor";

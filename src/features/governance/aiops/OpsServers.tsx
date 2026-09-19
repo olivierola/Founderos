@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { Server, Cpu, Activity, Rocket, Cloud, Play, Square, Trash2, RefreshCw, Zap } from "lucide-react";
+import {
+  HardDrivesIcon as Server,
+  CpuIcon as Cpu,
+  PulseIcon as Activity,
+  RocketLaunchIcon as Rocket,
+  CloudIcon as Cloud,
+  PlayIcon as Play,
+  SquareIcon as Square,
+  TrashIcon as Trash2,
+  ArrowsClockwiseIcon as RefreshCw,
+  LightningIcon as Zap,
+} from "@phosphor-icons/react";
 import { HardDrivesIcon, CircuitryIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";

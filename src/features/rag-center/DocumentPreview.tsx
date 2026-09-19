@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Download, FileText } from "lucide-react";
+import {
+  CircleNotchIcon as Loader2,
+  DownloadSimpleIcon as Download,
+  FileTextIcon as FileText,
+} from "@phosphor-icons/react";
 import type { FormatFileProps } from "./FileCard";
 
 // Load the file bytes: directly from a local File (new upload) or by fetching a

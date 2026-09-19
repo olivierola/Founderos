@@ -69,13 +69,18 @@ export function resolveNeeds(
   toolkits: ComposioToolkit[] | undefined,
   status: Map<string, string> | undefined,
 ): ToolNeed[] {
-  return slugs.map((slug) => {
-    const t = (toolkits ?? []).find((x) => x.slug === slug);
-    return {
-      slug,
-      name: t?.name ?? slug,
-      logo: t?.logo ?? null,
-      connected: status?.get(slug) === "connected",
-    };
-  });
+  return slugs
+    .map((slug) => {
+      const t = (toolkits ?? []).find((x) => x.slug === slug);
+      return {
+        slug,
+        name: t?.name ?? slug,
+        logo: t?.logo ?? null,
+        connected: status?.get(slug) === "connected",
+      };
+    })
+    // Templates ship the alternatives of their trade (five CRMs, four ATS), so
+    // the head of this list has to be what the project actually runs — callers
+    // truncate it, and truncating to five unconnected logos tells you nothing.
+    .sort((a, b) => Number(b.connected) - Number(a.connected));
 }

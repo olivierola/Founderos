@@ -2,18 +2,75 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Bot, Plus, Trash2, Save, Check, FileText, Target,
-  Wrench, Users as UsersIcon, BarChart3, Settings as SettingsIcon,
-  MessageSquare, Globe, Database, Zap, KeyRound, Play, Clock,
-  CheckCircle2, XCircle, AlertCircle, Download, Package, Pencil,
-  CalendarClock, Repeat, UserCircle2, ShieldCheck, Ban, BookOpen,
-  ListTree, Brain, Pin, PinOff, ArrowLeft, ChevronDown, ChevronUp, History,
-  Network, MessagesSquare, Send, ArrowRight, Plug, AlertTriangle, Search, Slack, Workflow, ExternalLink,
-  X, FileCode, TerminalSquare, BrainCircuit, Copy, ThumbsUp, ThumbsDown, RotateCcw,
-  SlidersHorizontal, MoreVertical, LayoutGrid, Columns3, Smartphone, Server,
-  GitPullRequest, FlaskConical, Atom, Clapperboard,
-  type LucideIcon,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  RobotIcon as Bot,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  FloppyDiskIcon as Save,
+  CheckIcon as Check,
+  FileTextIcon as FileText,
+  TargetIcon as Target,
+  WrenchIcon as Wrench,
+  UsersIcon,
+  ChartBarIcon as BarChart3,
+  GearSixIcon as SettingsIcon,
+  ChatIcon as MessageSquare,
+  GlobeIcon as Globe,
+  DatabaseIcon as Database,
+  LightningIcon as Zap,
+  KeyIcon as KeyRound,
+  PlayIcon as Play,
+  ClockIcon as Clock,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  WarningCircleIcon as AlertCircle,
+  DownloadSimpleIcon as Download,
+  PackageIcon as Package,
+  PencilSimpleIcon as Pencil,
+  CalendarDotsIcon as CalendarClock,
+  RepeatIcon as Repeat,
+  UserCircleIcon as UserCircle2,
+  ShieldCheckIcon as ShieldCheck,
+  ProhibitIcon as Ban,
+  BookOpenIcon as BookOpen,
+  TreeViewIcon as ListTree,
+  BrainIcon as Brain,
+  PushPinIcon as Pin,
+  PushPinSlashIcon as PinOff,
+  ArrowLeftIcon as ArrowLeft,
+  CaretDownIcon as ChevronDown,
+  CaretUpIcon as ChevronUp,
+  ClockCounterClockwiseIcon as History,
+  GraphIcon as Network,
+  ChatsIcon as MessagesSquare,
+  PaperPlaneRightIcon as Send,
+  ArrowRightIcon as ArrowRight,
+  PlugIcon as Plug,
+  WarningIcon as AlertTriangle,
+  MagnifyingGlassIcon as Search,
+  SlackLogoIcon as Slack,
+  FlowArrowIcon as Workflow,
+  ArrowSquareOutIcon as ExternalLink,
+  XIcon as X,
+  FileCodeIcon as FileCode,
+  TerminalWindowIcon as TerminalSquare,
+  BrainIcon as BrainCircuit,
+  CopyIcon as Copy,
+  ThumbsUpIcon as ThumbsUp,
+  ThumbsDownIcon as ThumbsDown,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  DotsThreeVerticalIcon as MoreVertical,
+  GridFourIcon as LayoutGrid,
+  ColumnsIcon as Columns3,
+  DeviceMobileIcon as Smartphone,
+  HardDrivesIcon as Server,
+  GitPullRequestIcon as GitPullRequest,
+  FlaskIcon as FlaskConical,
+  AtomIcon as Atom,
+  FilmSlateIcon as Clapperboard,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import {
   ChatCircleIcon, TargetIcon, SlidersHorizontalIcon, ShareNetworkIcon,
   SlackLogoIcon, ChartBarIcon, GearSixIcon, SquaresFourIcon,
@@ -47,13 +104,14 @@ import { AgentChannelsTab } from "./AgentChannelsTab";
 import { AgentHostedModelCard } from "./AgentHostedModel";
 import { AgentAutomationsTab } from "./AgentAutomationsTab";
 import { RunTimeline } from "./RunTimeline";
+import { AgentActivityOrb } from "./AgentActivityOrb";
 import { SubAgentInstances } from "./SubAgentInstances";
 import { InterleavedMessage, type UiBlock, type ArtifactOpenTarget } from "./UiBlocks";
 import { WorkspaceTab } from "./WorkspaceTab";
 import { chatUserBubble } from "@/lib/chatStyles";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { BrandLogo } from "@/components/BrandLogo";
-import { toolSummary } from "./runEventMeta";
+import { toolSummary, orbStateForRun } from "./runEventMeta";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
 import { pendingSetup, toolSetupIssue, type ConfigurableTool } from "./toolSetup";
 import { useAssistant } from "@/lib/assistant-context";
@@ -66,7 +124,7 @@ import {
   siNotion, siLinear, siAirtable, siGithub, siPosthog, siPlausibleanalytics,
   siSentry, siFigma, siGooglecalendar, siGooglebigquery, siGooglecloud,
 } from "simple-icons";
-import { Settings2 } from "lucide-react";
+import { SlidersHorizontalIcon as Settings2 } from "@phosphor-icons/react";
 import { DeliverablesHub } from "./DeliverablesHub";
 import { AgentPlanning, type PlanStep, type PlanStepStatus } from "@/components/ui/ai-planning";
 import { MissionWizard, type MissionDraft } from "./MissionWizard";
@@ -174,7 +232,7 @@ export function InlineSubTabs<T extends string>({
 type CustomizeSection = "instructions" | "skills" | "memory" | "connectors" | "mcp" | "automation";
 
 const CUSTOMIZE_SECTIONS: { key: CustomizeSection; label: string; icon: any }[] = [
-  { key: "instructions", label: "Instructions", icon: FileText },
+  { key: "instructions", label: "Fichiers", icon: FileText },
   { key: "skills", label: "Skills", icon: Zap },
   { key: "memory", label: "Memory", icon: Brain },
   { key: "connectors", label: "Connectors", icon: Plug },
@@ -728,6 +786,29 @@ function ToolSetupReminder({
   );
 }
 
+/** Wheel over the floating composer must still scroll the conversation.
+ *  The composer is a SIBLING of the message list, not a child, so a wheel event
+ *  landing on it finds no scrollable ancestor and nothing moves — the bottom
+ *  strip of the screen becomes a dead zone, which is exactly where the pointer
+ *  sits while an agent is running. We hand the delta to the list ourselves,
+ *  unless the pointer is over something that can still absorb it (a long draft
+ *  inside the textarea). */
+function forwardWheel(e: React.WheelEvent, scroller: HTMLDivElement | null) {
+  if (!scroller) return;
+  for (let el = e.target as HTMLElement | null; el && el !== e.currentTarget; el = el.parentElement) {
+    if (!/(auto|scroll)/.test(getComputedStyle(el).overflowY)) continue;
+    if (el.scrollHeight <= el.clientHeight) continue;
+    const room = e.deltaY < 0
+      ? el.scrollTop > 0
+      : el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    if (room) return;
+  }
+  // deltaY is in pixels for a trackpad, in LINES for a good many Windows mice
+  // (deltaMode 1) and in pages for the rest — a raw += would barely move.
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? scroller.clientHeight : 1;
+  scroller.scrollTop += e.deltaY * unit;
+}
+
 export function ChatTab({
   agent,
   workspaceId,
@@ -777,6 +858,16 @@ export function ChatTab({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  // Stick-to-bottom. `stick` is a ref because the scroll handler and the
+  // ResizeObserver read it outside React's cycle; `atBottom` is its rendered
+  // mirror, used only to offer the "follow again" pill.
+  const stick = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
+  // Measured height of the floating composer: the conversation ends just above
+  // it instead of behind it (it grows with the model row and the error line).
+  const [composerH, setComposerH] = useState(180);
 
   const { data: conversations } = useQuery({
     queryKey: ["internal_agent_conversations", agent.id],
@@ -929,6 +1020,10 @@ export function ChatTab({
   const { data: convoDeliverables } = useQuery({
     queryKey: ["internal_agent_convo_deliverables", convoId, threadRunIds.join(",")],
     enabled: !!convoId,
+    // A run saves its artifacts as it goes. Without this poll the cards only
+    // appeared once the run was over, which is precisely when watching them
+    // arrive stops being interesting.
+    refetchInterval: isBusy ? 4000 : false,
     queryFn: async () => {
       type D = { id: string; kind: string; name: string; summary: string | null; created_at: string; run_id: string | null };
       const sel = "id, kind, name, summary, created_at, run_id";
@@ -948,9 +1043,48 @@ export function ChatTab({
     },
   });
 
+  function jumpToBottom(smooth = false) {
+    const sc = scrollerRef.current;
+    if (!sc) return;
+    stick.current = true;
+    setAtBottom(true);
+    sc.scrollTo({ top: sc.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  }
+
+  // A new message pulls the view down — but only if the reader is already at
+  // the tail, so scrolling up to re-read something is never yanked back.
   useEffect(() => {
-    if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
+    if (stick.current) requestAnimationFrame(() => jumpToBottom());
   }, [messages?.length]);
+
+  // While a run is in flight the conversation grows CONTINUOUSLY: every tool
+  // call appends to the live run block, and none of that changes the message
+  // count. Watching `messages.length` alone left the page frozen while the
+  // agent kept writing — it reads as "the chat won't scroll", and whatever the
+  // run produced at the end stayed out of reach — so during a run we follow the
+  // content box itself resizing. Outside a run we don't, or opening a tool call
+  // would throw the reader to the bottom.
+  useEffect(() => {
+    const sc = scrollerRef.current;
+    const content = contentRef.current;
+    if (!isBusy || !sc || !content) return;
+    const ro = new ResizeObserver(() => {
+      if (stick.current) sc.scrollTop = sc.scrollHeight;
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [isBusy, !!messages?.length]);
+
+  // The composer floats over the scroller, so measuring it is what keeps the
+  // last message reachable whatever its height.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setComposerH(el.offsetHeight));
+    ro.observe(el);
+    setComposerH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [!!messages?.length]);
 
   async function handleSend(text: string, model?: string) {
     if (!user || !workspaceId || !projectId || !text.trim() || sending) return;
@@ -959,6 +1093,8 @@ export function ChatTab({
     if (!agent?.id) { setError("Agent is still loading — please retry in a moment."); return; }
     setSending(true);
     setError(null);
+    // Sending is a deliberate "I'm back at the live edge" gesture.
+    jumpToBottom();
     try {
       let cid = convoId;
       if (!cid) {
@@ -1033,11 +1169,16 @@ export function ChatTab({
       {/* Floating top row — overlays the chat, no full-width navbar. Optional
           leading (agent identity) and trailing (panel toggle) come from the
           embedded dashboard view; the session switcher sits in the middle. */}
-      <div className="absolute inset-x-2 top-2 z-20 flex items-center gap-2">
+      {/* Same dead-zone fix as the composer: this row floats over the
+          conversation, so a wheel landing on it has to be handed down too. */}
+      <div
+        onWheel={(e) => forwardWheel(e, scrollerRef.current)}
+        className="absolute inset-x-2 top-2 z-20 flex items-center gap-2"
+      >
         {headerLeading}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="ghost" className="h-7 max-w-[240px] gap-1 rounded-full border border-border/60 bg-background/70 px-2.5 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground">
+            <Button size="sm" variant="ghost" className="h-9 max-w-[240px] gap-1 rounded-full border border-border/60 bg-background/70 px-3 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground">
               <History className="mr-1 h-3.5 w-3.5 shrink-0" />
               <span className="truncate text-xs">
                 {currentConvo ? (currentConvo.title || "Untitled session") : "New session"}
@@ -1174,10 +1315,21 @@ export function ChatTab({
         </div>
       ) : (
         <>
-          <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
-            {/* pb leaves room for the floating composer so the last message
-                isn't hidden; content scrolls BEHIND the input. */}
-            <div className="mx-auto max-w-4xl space-y-8 px-6 pb-40 pt-14">
+          <div
+            ref={scrollerRef}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              // 80px of slack: "at the bottom" has to survive a line being
+              // appended and the rounding of a fractional layout.
+              const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+              stick.current = near;
+              setAtBottom((v) => (v === near ? v : near));
+            }}
+            className="min-h-0 flex-1 overflow-y-auto"
+          >
+            {/* The bottom padding IS the measured composer height: content
+                scrolls behind the input and still ends above it. */}
+            <div ref={contentRef} className="mx-auto max-w-4xl space-y-8 px-6 pt-14" style={{ paddingBottom: composerH + 24 }}>
               {messages!.map((m, i) => {
                 const isLastAssistant =
                   m.role === "assistant" &&
@@ -1235,14 +1387,30 @@ export function ChatTab({
               {activeRun && <SubAgentInstances parentRunId={activeRun.id} />}
               {sending && !activeRun && (
                 <div className="flex items-center gap-2 rounded-xl border border-blue-500/30 bg-card px-3.5 py-2.5 text-sm text-blue-400">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Démarrage du run…
+                  <AgentActivityOrb state="breathing" /> Démarrage du run…
                 </div>
               )}
             </div>
           </div>
           {/* Floating composer — overlays the scroll area so text passes behind
               it; a gradient fade blends the messages into it. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 pb-7">
+          <div
+            ref={composerRef}
+            onWheel={(e) => forwardWheel(e, scrollerRef.current)}
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 pb-7"
+          >
+            {/* Sits above the composer without taking part in its height —
+                the padding under the conversation is measured from this box. */}
+            {!atBottom && (
+              <div className="absolute inset-x-0 bottom-full mb-1 flex justify-center">
+                <button
+                  onClick={() => jumpToBottom(true)}
+                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors hover:text-foreground"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" /> {isBusy ? "Suivre l'agent" : "Revenir en bas"}
+                </button>
+              </div>
+            )}
             <div className="pointer-events-auto mx-auto w-full max-w-4xl px-6">
               <ChatComposer
                 value={input}
@@ -1750,7 +1918,7 @@ function MissionCard({
         <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", pr.dot)} title={pr.label} />
         <span className="line-clamp-2 flex-1 text-sm font-medium leading-tight">{m.title}</span>
         {m.board_column === "in_progress" && (
-          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-amber-500" />
+          <AgentActivityOrb state="working" label="Mission en cours" />
         )}
       </div>
       {m.brief && <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{m.brief}</p>}
@@ -2123,9 +2291,18 @@ function RunCard({ run }: { run: MissionRun }) {
     queryClient.invalidateQueries({ queryKey: ["internal_agent_runs", run.mission_id] });
   }
 
+  // Orb follows the latest significant event of this run.
+  const liveOrbState = (() => {
+    const evs = events ?? [];
+    for (let i = evs.length - 1; i >= 0; i--) {
+      if (["tool_call", "question", "loop", "todos"].includes(evs[i].kind)) return orbStateForRun(run.status, evs[i]);
+    }
+    return orbStateForRun(run.status, null);
+  })();
+
   const statusIcon = {
     queued: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
-    running: <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />,
+    running: <AgentActivityOrb state={liveOrbState} />,
     succeeded: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />,
     failed: <XCircle className="h-3.5 w-3.5 text-destructive" />,
     cancelled: <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />,
@@ -3410,12 +3587,45 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   const [role, setRole] = useState(agent.role ?? "");
   const [skills, setSkills] = useState<string[]>(agent.skills ?? []);
   const [collabEnabled, setCollabEnabled] = useState(agent.collaboration_enabled ?? true);
+  // L'organigramme (0213) : à qui cet agent rend compte. Jusqu'ici la
+  // hiérarchie n'existait que le temps d'une room ; persistée, elle devient une
+  // arête du graphe d'entreprise et une ligne du contexte de l'agent.
+  const [parentAgentId, setParentAgentId] = useState<string | null>(agent.parent_agent_id ?? null);
   const [sandboxMode, setSandboxMode] = useState<"cloud" | "runner" | "sandbox" | "hybrid">(agent.sandbox_mode ?? "cloud");
   // Essaim (swarm): may the agent fan out to parallel sub-agents, and how many.
   const [swarmEnabled, setSwarmEnabled] = useState(agent.swarm_enabled ?? true);
   const [swarmMax, setSwarmMax] = useState(agent.swarm_max_concurrency ?? 8);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // Les responsables possibles : tout le monde sauf soi-même et sa propre
+  // descendance. Sans ce filtre, deux clics suffisent à fabriquer un cycle
+  // (A rend compte à B, B rend compte à A) — et un cycle rend l'organigramme
+  // infini à parcourir, côté carte comme côté agent.
+  const { data: managerCandidates } = useQuery({
+    queryKey: ["agent_manager_candidates", agent.id, agent.project_id],
+    enabled: !!agent.project_id,
+    queryFn: async () => {
+      const { data } = await supabase.from("internal_agents")
+        .select("id, name, role, parent_agent_id")
+        .eq("project_id", agent.project_id!)
+        .eq("is_archived", false)
+        .order("name");
+      const rows = (data ?? []) as Array<{ id: string; name: string; role: string | null; parent_agent_id: string | null }>;
+      const descendants = new Set([agent.id]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const r of rows) {
+          if (r.parent_agent_id && descendants.has(r.parent_agent_id) && !descendants.has(r.id)) {
+            descendants.add(r.id); grew = true;
+          }
+        }
+      }
+      return rows.filter((r) => !descendants.has(r.id));
+    },
+  });
+
   // Deep-link to a section via ?s=<key>; legacy keys resolve to the section that
   // absorbed them (see settingsSectionFor).
   const [settingsParams] = useSearchParams();
@@ -3473,6 +3683,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
           role: role.trim() || null,
           skills,
           collaboration_enabled: collabEnabled,
+          parent_agent_id: parentAgentId,
           sandbox_mode: sandboxMode,
           swarm_enabled: swarmEnabled,
           swarm_max_concurrency: Math.min(Math.max(Math.round(swarmMax) || 6, 2), 6),
@@ -3667,6 +3878,22 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
               <SoftTags values={skills} onChange={setSkills} disabled={!isOwner} placeholder="ajouter…" />
             </SoftField>
           </div>
+          <SoftField label="Rend compte à">
+            <select
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-50"
+              value={parentAgentId ?? ""}
+              disabled={!isOwner}
+              onChange={(e) => setParentAgentId(e.target.value || null)}
+            >
+              <option value="">— Personne (rattaché au service)</option>
+              {(managerCandidates ?? []).map((m) => (
+                <option key={m.id} value={m.id}>{m.name}{m.role ? ` · ${m.role}` : ""}</option>
+              ))}
+            </select>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              L'organigramme : qui supervise cet agent. Apparaît sur la carte de l'entreprise et oriente la décomposition des objectifs.
+            </p>
+          </SoftField>
 
           <AgentHostedModelCard agent={agent} disabled={!isOwner} />
         </SettingsSection>

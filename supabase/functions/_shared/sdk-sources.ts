@@ -402,31 +402,32 @@ export interface InstallSdkParams {
  * plus a small init module wired to the caller's config. The LLM never provides
  * the SDK body — only the config that feeds this generator.
  */
+/** Origine qui sert le widget canonique (public/widget.js du déploiement web). */
+const WIDGET_HOST = Deno.env.get("WIDGET_HOST") || "https://founderos-peach.vercel.app";
+
 export function buildSdkInstall(p: InstallSdkParams): { files: SdkFileChange[]; notes: string } {
   const dir = (p.libDir || "src/lib").replace(/\/+$/, "");
 
   if (p.sdk === "rag") {
     // The RAG agent ships as a hosted widget script, not a copied SDK file.
-    // The edge-served widget reads window.FounderOSAgent (key + endpoint) —
-    // a bare script tag with data-* attributes would NOT boot it.
+    // This hands out the CANONICAL widget (public/widget.js): one script tag,
+    // one data-agent attribute, and everything the merchant set in the Widget
+    // studio — theme, launcher, teaser, proactivity, suggested questions — is
+    // read from the agent's saved widget_config, so the snippet never has to
+    // change again. The older edge build (/functions/v1/rag-widget) stays
+    // online for embeds already pointing at it, but new integrations must not
+    // be sent there: it has none of the studio's options.
     const key = p.agentPublicKey || "<AGENT_PUBLIC_KEY — copy it from RAG Agent → Agents → Widget>";
-    const welcome = (p.agentWelcome || "Hi! How can I help?").replace(/"/g, '\\"');
     const notes =
       "The RAG agent is embedded via the hosted widget script (no SDK file is copied). " +
-      "Paste the snippet below into the app shell (e.g. index.html before </body>). " +
-      "window.FounderOSAgent MUST be set before the script loads — key is the agent's public key, " +
-      "endpoint targets the public rag-chat function. config.proactive enables the activation engine " +
-      "(idle / rage-click / route-change interventions).";
-    const snippet = `<!-- Anduran RAG agent widget -->
-<script>
-  window.FounderOSAgent = {
-    key: "${key}",
-    endpoint: "${p.host}/functions/v1/rag-chat",
-    welcome: "${welcome}",
-    config: { proactive: true }
-  };
-</script>
-<script src="${p.host}/functions/v1/rag-widget" defer></script>`;
+      "Paste the one-liner below into the app shell (e.g. index.html before </body>). " +
+      "Colours, launcher, teaser, proactivity and suggested questions all come from the agent's " +
+      "widget configuration and can be changed without touching this snippet. Optional attributes: " +
+      'data-user="<your user id>" binds the visitor to a signed-in user, ' +
+      'data-position="bottom-left" overrides the saved placement, ' +
+      'data-onboarding="off" keeps the widget from driving the host page.';
+    const snippet = `<!-- Anduran agent widget -->
+<script src="${WIDGET_HOST}/widget.js" data-agent="${key}" defer></script>`;
     return {
       files: [{ path: `${dir}/founderos-rag-widget.html`, content: snippet + "\n" }],
       notes,

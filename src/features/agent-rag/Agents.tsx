@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Plus, Loader2, MoreVertical, Trash2, Users } from "lucide-react";
+import {
+  RobotIcon as Bot,
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  DotsThreeVerticalIcon as MoreVertical,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import {

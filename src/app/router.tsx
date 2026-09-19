@@ -5,7 +5,12 @@ import { MODULE_PROJECT_CONFIGS } from "@/lib/module-project-config";
 import { ModuleProjectList } from "@/features/module-projects/ModuleProjectList";
 import { ModuleProjectDetail } from "@/features/module-projects/ModuleProjectDetail";
 import { AiHqDashboard } from "@/features/dashboard/AiHqDashboard";
+import { CompanyContextPage } from "@/features/company/CompanyContextPage";
+import { CompanyObjectivesPage } from "@/features/company/CompanyObjectivesPage";
+import { CompanyGraphPage } from "@/features/company/CompanyGraphPage";
+import { CompanyRoiPage } from "@/features/company/CompanyRoiPage";
 import { ProtectedRoute } from "./ProtectedRoute";
+import { PlaneLanding } from "./PlaneLanding";
 import { LoginPage } from "@/features/auth/Login";
 import { SignupPage } from "@/features/auth/Signup";
 import { OnboardingPage as AuthOnboardingPage } from "@/features/auth/Onboarding";
@@ -31,6 +36,7 @@ import {
 } from "@/features/internal-agents/AgentRouteRedirects";
 import { SkillEditorPage } from "@/features/internal-agents/SkillEditor";
 import { SkillRecorderPage } from "@/features/internal-agents/SkillRecorder";
+import { TrainingPage } from "@/features/training/TrainingPage";
 import { McpServersPage, McpOAuthCallbackPage } from "@/features/internal-agents/McpServers";
 import { AgentEcosystemPage } from "@/features/internal-agents/AgentEcosystem";
 import { AgentTasksPage } from "@/features/internal-agents/TasksPage";
@@ -162,8 +168,8 @@ import {
   IntegrationsPage,
   ChangelogPage,
   DocsPage,
-  ContactPage,
 } from "@/features/marketing-site/OtherPages";
+import { ContactPage } from "@/features/marketing-site/ContactPage";
 // Ces pages partagent le chrome de la landing (sa navbar, son hero animé, son
 // footer sombre) au lieu du MarketingShell hérité — d'où leurs fichiers séparés.
 import { PricingPage } from "@/features/marketing-site/PricingPage";
@@ -179,6 +185,14 @@ const PAGES: Record<string, PageEl> = {
   // AI HQ dashboard
   "hq/dashboard": <AiHqDashboard />,
 
+  // La couche Entreprise (0212 → 0215) : ce que l'entreprise EST, ce qu'elle
+  // doit accomplir, sa carte, et ce que la workforce lui rapporte. Le même
+  // contexte alimente le prompt système de chaque agent.
+  "company/context": <CompanyContextPage />,
+  "company/objectives": <CompanyObjectivesPage />,
+  "company/graph": <CompanyGraphPage />,
+  "company/roi": <CompanyRoiPage />,
+
   // The internal-agent list & detail pages are gone from the main dashboard —
   // agents are worked with in their service dashboard. Old URLs resolve there.
   "agent/internal-agents": <InternalAgentsIndexRedirect />,
@@ -188,6 +202,9 @@ const PAGES: Record<string, PageEl> = {
   "agent/knowledge": <RagCenterPage />,
   "agent/collections": <KnowledgeCollectionsPage />,
   "agent/skills": <SkillsLibraryPage />,
+  // Les parcours qui apprennent un outil à un nouvel arrivant — guidés dans
+  // l'outil par l'extension (migration 0218), à partir des skills démontrées.
+  "agent/training": <TrainingPage />,
   "agent/mcp": <McpServersPage />,
   // Connecteurs is a TAB OF A SERVICE DASHBOARD (see ServiceDashboardShell) —
   // a connection belongs to one dashboard, or to one person inside it (0177).
@@ -425,7 +442,10 @@ export const router = createBrowserRouter([
   // Service dashboards render OUTSIDE the AppShell chrome (no top navbar) — a
   // clean single-sidebar workspace. Top-level sibling so it bypasses AppShell.
   {
-    path: "/app/:workspaceSlug/:projectSlug/service/:dashboardId/:tab?/:sub?",
+    // `:leaf` est le troisième niveau : la section d'un projet de suivi
+    // (/projects/:projectId/issues). Optionnel, donc toutes les URLs à deux
+    // segments continuent de résoudre exactement comme avant.
+    path: "/app/:workspaceSlug/:projectSlug/service/:dashboardId/:tab?/:sub?/:leaf?",
     element: (
       <ProtectedRoute>
         <ServiceDashboardPage />
@@ -443,7 +463,9 @@ export const router = createBrowserRouter([
       // Landing = AI HQ. Redirect to the canonical hq route (not render inline)
       // so the module resolves to "hq" — primary sidebar highlights it and the
       // secondary sidebar hides.
-      { index: true, element: <Navigate to="hq" replace /> },
+      // Le module de travail (Plane) est la page d’arrivée : c’est là qu’on passe
+      // la journée. Sans tableau de service, PlaneLanding retombe sur hq.
+      { index: true, element: <PlaneLanding /> },
       // The Admin panel was merged into CRM — old /actions/* cockpit links
       // redirect (absolute, slug-based) to the new crm/* locations. The
       // crm/admin-dashboard tab was retired, so its former targets land on the

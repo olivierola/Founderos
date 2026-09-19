@@ -1,6 +1,6 @@
 'use client';
 
-import type { LucideProps } from 'lucide-react';
+import type { IconProps as LucideProps } from "@phosphor-icons/react";
 
 export function BorderAllIcon(props: LucideProps) {
   return (

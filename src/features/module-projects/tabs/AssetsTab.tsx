@@ -5,8 +5,14 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import {
-  Plus, X, Search, ExternalLink, Globe, Loader2, ChevronRight,
-} from "lucide-react";
+  PlusIcon as Plus,
+  XIcon as X,
+  MagnifyingGlassIcon as Search,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  CircleNotchIcon as Loader2,
+  CaretRightIcon as ChevronRight,
+} from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

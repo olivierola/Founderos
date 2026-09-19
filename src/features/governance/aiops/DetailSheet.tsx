@@ -5,7 +5,7 @@
 // double-click resets it). Escape or the backdrop closes it.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { XIcon as X } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 

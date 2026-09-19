@@ -1,7 +1,15 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Slack, Plus, Trash2, CheckCircle2, MessagesSquare, Copy, Check } from "lucide-react";
+import {
+  SlackLogoIcon as Slack,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  CheckCircleIcon as CheckCircle2,
+  ChatsIcon as MessagesSquare,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
@@ -10,6 +18,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import type { InternalAgent } from "./shared";
+import { MESSAGING_BRANDS, MessagingBadge, MessagingConnectCards } from "./MessagingConnectCards";
 
 interface ChannelRow {
   id: string;
@@ -24,6 +33,7 @@ interface ChannelRow {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 function ProviderBadge({ provider, size = "md" }: { provider: string; size?: "sm" | "md" }) {
+  if (MESSAGING_BRANDS[provider]) return <MessagingBadge provider={provider} size={size} />;
   const cls = size === "sm" ? "h-9 w-9" : "h-10 w-10";
   const icon = size === "sm" ? "h-4 w-4" : "h-5 w-5";
   if (provider === "teams") {
@@ -117,8 +127,10 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
       <div>
         <h3 className="text-lg font-semibold">Channels</h3>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Connectez <span className="font-medium text-foreground">{agent.name}</span> à Slack ou Microsoft Teams — votre équipe le @mentionne
-          dans un canal et reçoit la réponse dans le fil, avec le contexte des échanges.
+          Connectez <span className="font-medium text-foreground">{agent.name}</span> à Slack, Microsoft Teams, Telegram, Discord ou WhatsApp —
+          votre équipe lui écrit là où elle travaille et reçoit la réponse sur place, avec le contexte des échanges. Il peut y
+          faire avancer le travail : quand il veut modifier un work item, il demande l'autorisation dans la conversation, et
+          seule la personne qui lui a écrit peut la donner.
         </p>
       </div>
 
@@ -186,11 +198,14 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
         </div>
       </div>
 
+      {/* Telegram, Discord, WhatsApp — via messaging-gateway */}
+      <MessagingConnectCards agentId={agent.id} onConnected={invalidate} />
+
       {/* Connected channels */}
       {isLoading ? (
         <div className="h-20 animate-pulse rounded-lg bg-muted/40" />
       ) : !channels || channels.length === 0 ? (
-        <EmptyState icon={Slack} title="Aucun canal connecté" description="Connectez Slack (en un clic) ou Teams (via votre bot Azure)." />
+        <EmptyState icon={Slack} title="Aucun canal connecté" description="Connectez Slack en un clic, ou une autre messagerie avec les identifiants de votre bot." />
       ) : (
         <div className="space-y-2">
           {channels.map((c) => (
@@ -198,10 +213,10 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
               <ProviderBadge provider={c.provider} size="sm" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">
-                  {c.team_name ?? c.external_team_id ?? (c.provider === "teams" ? "Teams tenant" : "Slack workspace")}
+                  {c.team_name ?? c.external_team_id ?? (c.provider === "teams" ? "Teams tenant" : MESSAGING_BRANDS[c.provider]?.label ?? "Slack workspace")}
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  {c.provider === "teams" ? "Teams" : "Slack"} · répond sur : {c.trigger === "all" ? "chaque message" : "@mention"}
+                  {c.provider === "teams" ? "Teams" : MESSAGING_BRANDS[c.provider]?.label ?? "Slack"} · répond sur : {c.trigger === "all" ? "chaque message" : "@mention"}
                 </div>
               </div>
               <select

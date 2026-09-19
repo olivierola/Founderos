@@ -18,8 +18,13 @@
 
 import { api, rpc, getSettings, pollPairing, forgetDevice } from "./api.js";
 import { runCommand } from "./executor.js";
+import { runCoach } from "./coach.js";
 
 const STATE_KEY = "rec:state";
+// L'étape de formation en cours attend un HUMAIN : elle survivra donc presque
+// toujours à la mort du service worker. Elle vit en storage, comme le reste.
+const COACH_KEY = "rec:coach";
+const COACH_TAB_KEY = "rec:coachTab";
 const FLUSH_MS = 1500;
 const CONTROL_POLL_MS = 1500;
 // L'app considère le recorder mort après 90 s de silence. L'alarme de secours
@@ -441,6 +446,130 @@ async function runOneCommand(cmd, state, origins) {
   }
 }
 
+// ── FORMATION ───────────────────────────────────────────────────────────────
+//
+// Le canal `coach` est l'inverse du pilotage : l'agent pose un repère, écrit
+// une phrase, et c'est la PERSONNE qui agit. D'où trois différences de
+// traitement qui justifient un chemin séparé plutôt qu'une action de plus dans
+// runOneCommand :
+//
+//   1. le compte rendu est DIFFÉRÉ — il vient d'un geste humain, pas d'un
+//      retour de fonction. On garde l'étape en suspens (COACH_KEY) et c'est le
+//      message `coach:outcome` qui la referme ;
+//   2. rien ne mute — la liste blanche ci-dessous est la garantie technique de
+//      ce que promet l'armement « mode formation » ;
+//   3. une navigation ne casse pas l'étape : on la ré-injecte dans la nouvelle
+//      page, ou on la conclut, selon le geste attendu.
+
+const COACH_ACTIONS = new Set(["guide_step", "guide_say", "guide_ask", "guide_end", "look", "tabs"]);
+
+async function loadCoach() {
+  const got = await api.storage.session.get(COACH_KEY);
+  return got[COACH_KEY] ?? null;
+}
+async function saveCoach(pending) {
+  if (pending) await api.storage.session.set({ [COACH_KEY]: pending });
+  else await api.storage.session.remove(COACH_KEY);
+}
+
+// L'onglet où un repère est AFFICHÉ — distinct de l'étape en attente, qui n'est
+// vraie que tant qu'on attend un geste. Sans lui, « Arrêter la formation »
+// couperait le canal mais laisserait la bulle à l'écran : l'utilisateur verrait
+// un bouton sans effet, ce qui est pire que pas de bouton du tout.
+async function saveCoachTab(tabId) {
+  if (tabId == null) await api.storage.session.remove(COACH_TAB_KEY);
+  else await api.storage.session.set({ [COACH_TAB_KEY]: tabId });
+}
+async function loadCoachTab() {
+  const got = await api.storage.session.get(COACH_TAB_KEY);
+  return got[COACH_TAB_KEY] ?? null;
+}
+async function teardownCoachUi() {
+  const tabId = await loadCoachTab();
+  await saveCoachTab(null);
+  if (tabId == null) return;
+  await api.tabs.sendMessage(tabId, { type: "coach:teardown" }).catch(() => {});
+}
+
+/** Referme l'étape en suspens, une seule fois, quelle qu'en soit la cause. */
+async function settleCoach(outcome, extra) {
+  const pending = await loadCoach();
+  if (!pending) return;
+  await saveCoach(null);
+  try {
+    await rpc({ mode: "rec_control_result", command_id: pending.command_id, result: { ok: true, outcome, ...(extra || {}) } });
+  } catch { /* le serveur périmera l'ordre */ }
+}
+
+async function runCoachCommand(cmd, state, origins) {
+  const params = cmd.params ?? {};
+
+  if (!COACH_ACTIONS.has(cmd.action)) {
+    // Ce refus n'est pas une politesse : c'est la promesse du mode formation.
+    // Un agent qui tente de cliquer pendant qu'il forme doit se heurter à un mur
+    // ici, et pas seulement à une consigne dans son prompt.
+    return { error: `Action « ${cmd.action} » interdite en mode formation : le coach montre, il n'agit pas. Demandez l'armement du pilotage si vous voulez agir.` };
+  }
+
+  if (cmd.action === "tabs") return runOneCommand({ ...cmd, action: "tabs" }, state, origins);
+
+  const tab = await targetTab(state, params);
+  if (!tab) return { error: "Aucun onglet exploitable (demandez à la personne d'ouvrir l'outil)" };
+  if (!originAllowed(tab.url, origins)) {
+    return { error: `Onglet hors du périmètre de formation autorisé (${tab.url ?? "?"})` };
+  }
+
+  // `look` est la lecture de la page, empruntée telle quelle à l'exécuteur :
+  // c'est ce qui permet à l'agent de re-viser quand l'outil a changé depuis la
+  // démonstration. Lire ne mute rien.
+  if (cmd.action === "look") {
+    return runOneCommand({ ...cmd, action: params.text === true ? "read" : "elements" }, state, origins);
+  }
+
+  const kind = cmd.action === "guide_step" ? "step"
+    : cmd.action === "guide_ask" ? "ask"
+      : cmd.action === "guide_end" ? "end" : "say";
+  const payload = {
+    kind,
+    command_id: cmd.id,
+    step: params.step ?? {},
+    session: params.session ?? {},
+  };
+
+  let value;
+  try {
+    const [res] = await api.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: runCoach,
+      args: [payload],
+    });
+    value = res?.result;
+  } catch (e) {
+    return { error: `Le repère n'a pas pu être affiché : ${e.message}` };
+  }
+  if (!value) return { error: "Aucune réponse de la page" };
+  if (value.ok === false) return { error: value.reason ?? "affichage impossible", result: value };
+
+  if (kind === "end") await saveCoachTab(null);
+  else await saveCoachTab(tab.id);
+
+  // L'étape attend un humain : on ne rend PAS compte maintenant. Elle est mise
+  // en suspens avec sa propre échéance — plus longue que celle de l'agent, pour
+  // que ce soit toujours lui qui renonce le premier et puisse revenir attendre.
+  if (value.waiting) {
+    await saveCoach({
+      command_id: cmd.id,
+      tab_id: tab.id,
+      gesture: payload.step.gesture || (payload.step.target ? "click" : "none"),
+      deadline: Date.now() + (Number(params.wait_s) || 240) * 1000 + 30_000,
+      payload,
+      url: tab.url ?? null,
+    });
+    return null; // pas de compte rendu : voir settleCoach
+  }
+  return { result: value };
+}
+
 async function pumpControl() {
   const { token } = await getSettings();
   if (!token) return;
@@ -452,12 +581,39 @@ async function pumpControl() {
     return; // réseau : on réessaiera au tour suivant
   }
 
-  await setControlBadge(res.armed, res.control_until);
-  if (!res.armed || !res.commands?.length) return;
+  await setControlBadge(res.armed, res.control_until, res.coach_armed, res.coach_until);
+
+  // « Arrêter la formation » doit se voir : le canal se referme côté serveur,
+  // mais c'est ici qu'on retire le repère de la page. Un consentement qu'on
+  // retire sans que rien ne change à l'écran n'a pas l'air d'avoir été retiré.
+  // Le pilotage emporte le guidage (qui peut le plus peut le moins) : tant
+  // qu'il est armé, un repère affiché a toujours un mandat.
+  if (!res.coach_armed && !res.armed) {
+    await settleCoach("quit", { note: "mode formation désactivé" });
+    await teardownCoachUi();
+  }
+
+  // Une étape restée sans réponse doit mourir, sinon l'agent attendrait un
+  // geste que personne ne fera plus — la personne a fermé l'onglet, ou est
+  // partie déjeuner.
+  const pending = await loadCoach();
+  if (pending && Date.now() > pending.deadline) {
+    await settleCoach("timeout", { note: "aucune réaction dans le temps imparti" });
+  }
+
+  if (!res.commands?.length) return;
 
   const state = await loadState();
+  // Le périmètre suit l'armement qui autorise réellement l'ordre. Sans cette
+  // distinction, quelqu'un qui n'a armé QUE le pilotage « ce site uniquement »
+  // se ferait guider partout : le périmètre du mode formation vaut `[]` tant
+  // qu'il n'a jamais été armé, et `[]` veut dire « tous les sites ».
+  const coachOrigins = res.coach_armed ? (res.coach_origins ?? []) : (res.origins ?? []);
   for (const cmd of res.commands) {
-    const outcome = await runOneCommand(cmd, state, res.origins);
+    const outcome = cmd.channel === "coach"
+      ? await runCoachCommand(cmd, state, coachOrigins)
+      : await runOneCommand(cmd, state, res.origins);
+    if (!outcome) continue; // étape de formation en attente d'un geste humain
     try {
       await rpc({ mode: "rec_control_result", command_id: cmd.id, ...outcome });
     } catch { /* le serveur périmera l'ordre */ }
@@ -465,13 +621,18 @@ async function pumpControl() {
 }
 
 /** Le badge dit ce qui est vrai : REC pendant un enregistrement, ⚡ quand un
- *  agent peut piloter. L'utilisateur ne doit jamais avoir à deviner. */
-async function setControlBadge(armed, until) {
+ *  agent peut piloter, 🎓 quand il ne peut que former. L'utilisateur ne doit
+ *  jamais avoir à deviner — et surtout pas confondre les deux pouvoirs. */
+async function setControlBadge(armed, until, coachArmed, coachUntil) {
   const state = await loadState();
   if (state?.recordingId) return; // REC prime
+  const hhmm = (v) => (v ? new Date(v).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "?");
   if (armed) {
     await setBadge("⚡", "#f59e0b");
-    await api.action.setTitle({ title: `Pilotage autorisé jusqu'à ${until ? new Date(until).toLocaleTimeString("fr-FR") : "?"}` }).catch(() => {});
+    await api.action.setTitle({ title: `Pilotage autorisé jusqu'à ${hhmm(until)}` }).catch(() => {});
+  } else if (coachArmed) {
+    await setBadge("🎓", "#7C5CFF");
+    await api.action.setTitle({ title: `Mode formation jusqu'à ${hhmm(coachUntil)} — l'agent affiche des repères, il ne clique pas` }).catch(() => {});
   } else {
     await setBadge("");
     await api.action.setTitle({ title: "FounderOS Skill Recorder" }).catch(() => {});
@@ -536,6 +697,40 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
+      // Le geste attendu vient d'avoir lieu — ou la personne a dit qu'elle
+      // bloquait. C'est LE compte rendu d'une étape de formation ; il arrive
+      // par ce chemin plutôt que par le retour de l'injection, parce qu'entre
+      // les deux le service worker a eu tout le temps de mourir (et de
+      // ressusciter : recevoir ce message suffit à le réveiller).
+      case "coach:outcome": {
+        const pending = await loadCoach();
+        if (!pending || pending.command_id !== msg.command_id) {
+          // Étape déjà close (périmée, ou remplacée par la suivante). On ne
+          // rouvre rien : le premier verdict rendu fait foi.
+          sendResponse({ ok: false, stale: true });
+          return;
+        }
+        await saveCoach(null);
+        try {
+          await rpc({
+            mode: "rec_control_result",
+            command_id: msg.command_id,
+            result: {
+              ok: true,
+              outcome: msg.outcome,
+              url: msg.url ?? null,
+              duration_ms: msg.duration_ms ?? null,
+              hints: msg.hints ?? 0,
+              ...(msg.answer != null ? { answer: msg.answer } : {}),
+              ...(msg.note ? { note: msg.note } : {}),
+              ...(msg.typed ? { typed: msg.typed } : {}),
+            },
+          });
+        } catch { /* le serveur périmera l'ordre */ }
+        sendResponse({ ok: true });
+        return;
+      }
+
       // « Démarrer » vient d'être pressé dans l'app : inutile d'attendre le
       // prochain battement d'alarme.
       case "rec:nudge":
@@ -569,6 +764,23 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // lui aussi — une démonstration passe presque toujours par plusieurs pages.
 api.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   if (info.status !== "complete") return;
+
+  // Une formation traverse les pages : cliquer « Se connecter » recharge tout,
+  // et le repère meurt avec la page. Selon le geste attendu, ce changement est
+  // soit LA preuve que la personne a fait ce qu'on lui demandait, soit
+  // simplement le décor qui bouge — auquel cas on replante le repère.
+  const pending = await loadCoach();
+  if (pending && pending.tab_id === tabId) {
+    const sameUrl = pending.url && tab.url && pending.url.split("#")[0] === tab.url.split("#")[0];
+    if (!sameUrl && (pending.gesture === "navigate" || pending.gesture === "click")) {
+      await settleCoach("done", { note: "la page a changé — le geste a produit son effet", url: tab.url ?? null });
+    } else if (/^https?:/.test(tab.url ?? "")) {
+      try {
+        await api.scripting.executeScript({ target: { tabId }, func: runCoach, args: [pending.payload] });
+      } catch { /* page interne ou onglet fermé : l'échéance tranchera */ }
+    }
+  }
+
   const state = await loadState();
   if (!state?.recordingId) return;
   if ((state.appTabIds ?? []).includes(tabId)) return;
@@ -577,6 +789,14 @@ api.tabs.onUpdated.addListener(async (tabId, info, tab) => {
 });
 
 api.tabs.onRemoved.addListener(async (tabId) => {
+  // L'onglet où se déroulait la formation vient d'être fermé : personne ne fera
+  // plus le geste attendu. Le dire tout de suite vaut mieux que laisser l'agent
+  // attendre quatre minutes dans le vide.
+  const pending = await loadCoach();
+  if (pending?.tab_id === tabId) {
+    await settleCoach("quit", { note: "l'onglet de formation a été fermé" });
+  }
+
   const state = await loadState();
   if (!state?.appTabIds?.includes(tabId)) return;
   state.appTabIds = state.appTabIds.filter((id) => id !== tabId);

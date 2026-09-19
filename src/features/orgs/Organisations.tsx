@@ -2,16 +2,16 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Boxes,
-  Plus,
-  Loader2,
-  LogOut,
-  MoreVertical,
-  Pencil,
-  Trash2,
-  FolderGit2,
-  Users,
-} from "lucide-react";
+  CubeIcon as Boxes,
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  SignOutIcon as LogOut,
+  DotsThreeVerticalIcon as MoreVertical,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  FolderIcon as FolderGit2,
+  UsersIcon as Users,
+} from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

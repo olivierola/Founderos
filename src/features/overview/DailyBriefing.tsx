@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Sparkles, Loader2, TrendingUp, AlertTriangle, ListChecks } from "lucide-react";
+import {
+  SparkleIcon as Sparkles,
+  CircleNotchIcon as Loader2,
+  TrendUpIcon as TrendingUp,
+  WarningIcon as AlertTriangle,
+  ListChecksIcon as ListChecks,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

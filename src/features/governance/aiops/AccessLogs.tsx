@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Fingerprint, Wrench, DatabaseZap, PenLine, Globe } from "lucide-react";
+import {
+  FingerprintIcon as Fingerprint,
+  WrenchIcon as Wrench,
+  DatabaseIcon as DatabaseZap,
+  PencilLineIcon as PenLine,
+  GlobeIcon as Globe,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

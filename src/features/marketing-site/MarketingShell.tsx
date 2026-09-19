@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { Menu, X, ArrowRight } from "lucide-react";
+import { ListIcon as Menu, XIcon as X, ArrowRightIcon as ArrowRight } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/Logo";
 import { MarketingFooter } from "./MarketingFooter";

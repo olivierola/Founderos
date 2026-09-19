@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Columns3, Maximize2 } from "lucide-react";
+import { ColumnsIcon as Columns3, ArrowsOutSimpleIcon as Maximize2 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
 import type { CrmObject, CrmProperty, CrmRecord, SelectOption } from "./objectModel";

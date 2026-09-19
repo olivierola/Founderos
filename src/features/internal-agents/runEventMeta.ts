@@ -4,9 +4,20 @@
 import type React from "react";
 import { createElement } from "react";
 import {
-  Globe, Search, FileText, TerminalSquare, Package, Brain, Target,
-  MessagesSquare, ListTree, Mail, Cpu, Download, FolderCog,
-} from "lucide-react";
+  GlobeIcon as Globe,
+  MagnifyingGlassIcon as Search,
+  FileTextIcon as FileText,
+  TerminalWindowIcon as TerminalSquare,
+  PackageIcon as Package,
+  BrainIcon as Brain,
+  TargetIcon as Target,
+  ChatsIcon as MessagesSquare,
+  TreeViewIcon as ListTree,
+  EnvelopeSimpleIcon as Mail,
+  CpuIcon as Cpu,
+  DownloadSimpleIcon as Download,
+  FolderIcon as FolderCog,
+} from "@phosphor-icons/react";
 
 // Hybrid namespaces execution tools (runner_* / sandbox_*). The world a call ran
 // in, or null for un-namespaced tools (single-world agents / non-execution tools).
@@ -109,4 +120,126 @@ export interface RunEventRow {
   kind: string;
   payload: any;
   created_at: string;
+}
+
+// ── Tool → category, for the ToolCallsSection rows ──────────────────────────
+// The category drives the icon, so it has to name the thing a human would
+// recognise: for an integration that is the connector slug (→ its real logo),
+// for everything else the capability family. The runtime encodes the first
+// case in the tool name — `use_<slug>` for connectors and Composio toolkits,
+// `mcp_<server>_<tool>` for MCP servers (see slugToToolName /
+// buildInternalToolset in _shared/internal-agent-tools.ts).
+const FAMILY_BY_TOOL: Array<[RegExp, string]> = [
+  [/^(browse_web|http_get|http_request|read_url|user_browser|sandbox_browser)$/, "web"],
+  [/^(web_search|deep_research|search_knowledge|search_context|search_history|search_past_work|recall_findings)$/, "search"],
+  [/^(file_|list_files|manage_files|download_file)/, "files"],
+  [/^(shell_exec|python_exec|nodejs_exec|jupyter_exec|run_background|list_processes|process_|machine_info|sandbox_env)/, "execution"],
+  [/^(create_deliverable|create_artifact|update_artifact|read_artifact|list_artifacts|publish_artifact|add_block|report_section)$/, "artifacts"],
+  [/memory$/, "memory"],
+  [/^(create_mission|list_missions|move_mission|delegate_mission|propose_mission|create_task)$/, "missions"],
+  [/^(spawn_parallel_agents|create_agent|list_team_agents|send_message_to_agent)$/, "handoff"],
+  [/^(ask_user|say)$/, "messaging"],
+  // Guider quelqu'un dans SON écran n'est ni du web ni de la messagerie : la
+  // timeline doit distinguer « l'agent a cliqué » de « l'agent a montré ».
+  [/^(guide_user|training)$/, "training"],
+  [/^(update_todos|update_plan_step|use_skill|read_skill_file|load_toolset|need_tools)$/, "planning"],
+  [/^send_email$/, "email"],
+  [/^(query_table|crm|list_connectors|list_assets)$/, "data"],
+  [/^(security_scan|pentest_scope)$/, "security"],
+  [/^(testing|simulation)$/, "testing"],
+  [/^(render_ui|vibe_code|create_workflow)$/, "generation"],
+];
+
+/** Category for one tool call: a connector slug when there is one, else the
+ *  capability family. Falls back to "general" rather than to the tool name,
+ *  so unknown tools group instead of each claiming their own icon. */
+export function toolCategory(toolName: string): string {
+  if (toolName.startsWith("mcp_")) {
+    // mcp_<server>_<tool> — the server is the integration worth showing.
+    return toolName.slice(4).split("_")[0] || "integration";
+  }
+  const t = baseTool(toolName);
+  if (t.startsWith("use_")) {
+    // Tool names normalise every separator to "_", but connector slugs are
+    // kebab-case ("google-calendar", "linkedin-talent"), which is what the
+    // logo lookup keys on — so try the hyphenated form first.
+    const raw = t.slice(4);
+    return raw.replace(/_/g, "-");
+  }
+  for (const [re, family] of FAMILY_BY_TOOL) if (re.test(t)) return family;
+  return "general";
+}
+
+// ── Tool → thinking-orb state ───────────────────────────────────────────────
+// The live orb (thinking-orbs) shows *what kind* of work the agent is doing,
+// so it keys on the same families as the tool rows. Each family picks the
+// animation whose metaphor matches: a scanning globe for search, a wiring
+// constellation for integrations, plaited strands for multi-agent work…
+export type AgentOrbState =
+  | "working" | "searching" | "solving" | "listening" | "connecting"
+  | "weaving" | "composing" | "breathing" | "shaping";
+
+const ORB_BY_FAMILY: Record<string, AgentOrbState> = {
+  search: "searching",
+  web: "searching",
+  execution: "solving",
+  security: "solving",
+  testing: "solving",
+  files: "working",
+  artifacts: "composing",
+  generation: "composing",
+  email: "composing",
+  planning: "shaping",
+  missions: "shaping",
+  handoff: "weaving",
+  memory: "weaving",
+  messaging: "listening",
+  training: "listening",
+  data: "connecting",
+  general: "working",
+};
+
+/** Orb animation for one tool call. Connector / MCP calls (anything that isn't
+ *  a known capability family) are the agent reaching out to another system. */
+export function orbStateForTool(toolName: string): AgentOrbState {
+  const cat = toolCategory(toolName);
+  return ORB_BY_FAMILY[cat] ?? "connecting";
+}
+
+/** Orb animation for a run, from its status and the latest meaningful event. */
+export function orbStateForRun(
+  status: string | null | undefined,
+  last: { kind: string; payload: any } | null | undefined,
+): AgentOrbState {
+  if (status === "awaiting_input") return "listening";
+  if (status === "queued" || !last) return "breathing";
+  if (last.kind === "question") return "listening";
+  // A controller iteration that isn't business-as-usual = the agent is
+  // re-checking its work or replanning.
+  if (last.kind === "loop") return last.payload?.action && last.payload.action !== "continue" ? "solving" : "shaping";
+  if (last.kind === "todos") return "shaping";
+  if (last.kind === "tool_call") return orbStateForTool(String(last.payload?.tool ?? last.payload?.name ?? ""));
+  return "working";
+}
+
+/** Short French verb for the state, for the one-word "agent is …" labels. */
+export const ORB_STATE_LABEL: Record<AgentOrbState, string> = {
+  working: "travaille…",
+  searching: "recherche…",
+  solving: "résout…",
+  listening: "attend votre réponse…",
+  connecting: "se connecte…",
+  weaving: "coordonne…",
+  composing: "rédige…",
+  breathing: "réfléchit…",
+  shaping: "planifie…",
+};
+
+/** Execution-world tools carry no brand; label them by the world they ran in
+ *  so the row still says something true. */
+export function toolIntegrationName(toolName: string): string | undefined {
+  const env = toolEnv(toolName);
+  if (env) return env === "runner" ? "Runner" : "Bac à sable";
+  if (toolName.startsWith("mcp_")) return `MCP · ${toolName.slice(4).split("_")[0]}`;
+  return undefined;
 }

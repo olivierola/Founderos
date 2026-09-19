@@ -4,6 +4,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { isServiceCaller, requireWorkspaceMember } from "../_shared/authz.ts";
 
 async function hmacSha256(secret: string, body: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -30,6 +31,15 @@ Deno.serve(async (req) => {
     const admin = createServiceClient();
     const { data: wh } = await admin.from("outgoing_webhooks").select("*").eq("id", webhook_id).maybeSingle();
     if (!wh || !wh.enabled) return jsonResponse({ error: "Webhook not found or disabled" }, { status: 404 });
+
+    // FOS-10 : sans ce garde, n'importe qui declenchait le webhook sortant de
+    // n'importe quel client sur simple webhook_id — et recevait en retour
+    // 2 000 caracteres de la reponse du serveur distant. Les autres fonctions
+    // edge appellent celle-ci avec la cle service role et gardent leur chemin.
+    if (!isServiceCaller(req)) {
+      const auth = await requireWorkspaceMember(req, wh.workspace_id, "editor");
+      if (!auth.ok) return auth.response;
+    }
 
     const body = JSON.stringify({ event: event_type, payload });
     const headers: Record<string, string> = { "Content-Type": "application/json" };

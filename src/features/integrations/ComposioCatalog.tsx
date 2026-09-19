@@ -1,7 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock3, Plug, Loader2, Search as SearchIcon, ShieldCheck, Ban, Wrench, Zap, KeyRound, Copy, ExternalLink } from "lucide-react";
+import {
+  CheckCircleIcon as CheckCircle2,
+  ClockIcon as Clock3,
+  PlugIcon as Plug,
+  CircleNotchIcon as Loader2,
+  MagnifyingGlassIcon as SearchIcon,
+  ShieldCheckIcon as ShieldCheck,
+  ProhibitIcon as Ban,
+  WrenchIcon as Wrench,
+  LightningIcon as Zap,
+  KeyIcon as KeyRound,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

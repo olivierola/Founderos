@@ -4,7 +4,7 @@ import type { RenderStaticNodeWrapper, TListElement } from 'platejs';
 import type { SlateRenderElementProps } from 'platejs/static';
 
 import { isOrderedList } from '@platejs/list';
-import { CheckIcon } from 'lucide-react';
+import { CheckIcon } from "@phosphor-icons/react";
 
 import { cn } from '@/lib/utils';
 

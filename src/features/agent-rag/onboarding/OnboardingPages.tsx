@@ -2,17 +2,17 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ListChecks,
-  Route,
-  Workflow,
-  BarChart3,
-  Layers,
-  Check,
-  Code2,
-  Loader2,
-  Sparkles,
-  Network,
-} from "lucide-react";
+  ListChecksIcon as ListChecks,
+  PathIcon as Route,
+  FlowArrowIcon as Workflow,
+  ChartBarIcon as BarChart3,
+  StackIcon as Layers,
+  CheckIcon as Check,
+  CodeIcon as Code2,
+  CircleNotchIcon as Loader2,
+  SparkleIcon as Sparkles,
+  GraphIcon as Network,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

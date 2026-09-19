@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  Loader2, ArrowLeft, Check, Sparkles, Download, Table as TableIcon,
-  Plus, Rows3, Columns3, Trash2,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  ArrowLeftIcon as ArrowLeft,
+  CheckIcon as Check,
+  SparkleIcon as Sparkles,
+  DownloadSimpleIcon as Download,
+  TableIcon,
+  PlusIcon as Plus,
+  RowsIcon as Rows3,
+  ColumnsIcon as Columns3,
+  TrashIcon as Trash2,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";

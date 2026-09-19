@@ -2,9 +2,19 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Github, Loader2, RefreshCw, ScanLine, KeyRound, ExternalLink,
-  CheckSquare, Square, MoreVertical, Trash2, FileSearch, CheckCircle2,
-} from "lucide-react";
+  GithubLogoIcon as Github,
+  CircleNotchIcon as Loader2,
+  ArrowsClockwiseIcon as RefreshCw,
+  ScanIcon as ScanLine,
+  KeyIcon as KeyRound,
+  ArrowSquareOutIcon as ExternalLink,
+  CheckSquareIcon as CheckSquare,
+  SquareIcon as Square,
+  DotsThreeVerticalIcon as MoreVertical,
+  TrashIcon as Trash2,
+  FileMagnifyingGlassIcon as FileSearch,
+  CheckCircleIcon as CheckCircle2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

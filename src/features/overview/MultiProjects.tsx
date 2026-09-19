@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Boxes, Loader2 } from "lucide-react";
+import { CubeIcon as Boxes, CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

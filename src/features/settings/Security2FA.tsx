@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { Loader2, Shield, CheckCircle2 } from "lucide-react";
+import {
+  CircleNotchIcon as Loader2,
+  ShieldIcon as Shield,
+  CheckCircleIcon as CheckCircle2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

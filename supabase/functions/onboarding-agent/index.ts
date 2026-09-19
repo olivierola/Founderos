@@ -13,6 +13,7 @@
 //     → { ok } (records progress + marks the run; emits the activation event)
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
+import { callerIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
@@ -53,6 +54,18 @@ Deno.serve(async (req) => {
     const agent = await resolveAgent(admin, public_key);
     if (!agent) return jsonResponse({ error: "Unknown agent" }, { status: 404 });
     if (!agent.onboarding_enabled) return jsonResponse({ error: "Onboarding disabled" }, { status: 403 });
+
+    // FOS-15 — surface publique et anonyme dont l'action "llm" relaie chaque
+    // tour du copilote vers DeepSeek, aux frais du proprietaire de l'agent.
+    // La cle publique borne le cout total, l'IP borne un visiteur isole.
+    const agentLimited = await enforceRateLimit(
+      { scope: "onboardingagent:agent", identity: String(public_key), limit: 200, windowSeconds: 60 },
+    );
+    if (agentLimited) return agentLimited;
+    const visitorLimited = await enforceRateLimit(
+      { scope: "onboardingagent:ip", identity: `${public_key}:${callerIp(req)}`, limit: 40, windowSeconds: 60 },
+    );
+    if (visitorLimited) return visitorLimited;
 
     // ── brief ────────────────────────────────────────────────────────────
     if (action === "brief") {

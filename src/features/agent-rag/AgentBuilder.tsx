@@ -1,10 +1,29 @@
 import { useState, useRef, useEffect, forwardRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Bot, BarChart3,
-  Plus, Trash2, Send, FileText, Link2, LayoutGrid, Check, Copy, Sparkles, BookOpen, Search,
-  Globe, FileUp, Type, RotateCcw, Store, RefreshCw, Package, Plug,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  RobotIcon as Bot,
+  ChartBarIcon as BarChart3,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  PaperPlaneRightIcon as Send,
+  FileTextIcon as FileText,
+  LinkSimpleIcon as Link2,
+  GridFourIcon as LayoutGrid,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  SparkleIcon as Sparkles,
+  BookOpenIcon as BookOpen,
+  MagnifyingGlassIcon as Search,
+  GlobeIcon as Globe,
+  FileArrowUpIcon as FileUp,
+  TextTIcon as Type,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  StorefrontIcon as Store,
+  ArrowsClockwiseIcon as RefreshCw,
+  PackageIcon as Package,
+  PlugIcon as Plug,
+} from "@phosphor-icons/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -21,6 +40,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GrainOverlay, CardLoaderDots } from "@/components/ui/card-9";
 import { GoalsStudioPage } from "@/features/agent-rag/onboarding/GoalsStudio";
 import { ActivationCockpitPage } from "@/features/agent-rag/onboarding/ActivationCockpit";
+import { AgentAnalytics, type Page as AnalyticsPage } from "@/features/agent-rag/analytics/AgentAnalytics";
+import { WidgetStudio, type StudioTab } from "@/features/agent-rag/widget/WidgetStudio";
 
 // This file used to BE a page (/agent/builder/:id/:tab) with its own sidebar.
 // A public agent now lives in the service dashboard that owns it, exactly like
@@ -44,10 +65,12 @@ interface Source { id: string; type: string; title: string; status: string; chun
 // otherwise identical for every public agent.
 export const VALID_PUBLIC_AGENT_TABS: PublicAgentTab[] = ["knowledge", "playground", "widget", "analytics", "onboarding", "ecommerce", "settings"];
 
-/** The tab bodies, dispatched by slug. Fetching the agent and drawing the tab
- *  strip is the host's job. */
-export function PublicAgentTabBody({ agent, tab, workspaceId, projectId }: {
-  agent: Agent; tab: PublicAgentTab; workspaceId: string | null; projectId: string | null;
+/** The tab bodies, dispatched by slug. Fetching the agent and drawing BOTH tab
+ *  bars is the host's job — `sub` is the sub-tab it has resolved (see
+ *  publicAgentSubtabs.ts), so no tab draws a navigation of its own. */
+export function PublicAgentTabBody({ agent, tab, sub, workspaceId, projectId }: {
+  agent: Agent; tab: PublicAgentTab; sub?: string | null;
+  workspaceId: string | null; projectId: string | null;
 }) {
   // The onboarding tab only exists while the feature is on — a stale/direct
   // link falls back to the playground.
@@ -57,10 +80,12 @@ export function PublicAgentTabBody({ agent, tab, workspaceId, projectId }: {
     <div>
       {effectiveTab === "knowledge" && <KnowledgeTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {effectiveTab === "playground" && <PlaygroundTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
-      {effectiveTab === "widget" && <WidgetTab agent={agent} />}
-      {effectiveTab === "analytics" && <PublicAnalyticsTab agent={agent} />}
-      {effectiveTab === "onboarding" && <OnboardingTab agent={agent} />}
-      {effectiveTab === "ecommerce" && <EcommerceTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
+      {effectiveTab === "widget" && <WidgetStudio agent={agent} tab={(sub ?? "modele") as StudioTab} />}
+      {effectiveTab === "analytics" && <PublicAnalyticsTab agent={agent} page={(sub ?? "performance") as AnalyticsPage} />}
+      {effectiveTab === "onboarding" && <OnboardingTab agent={agent} sub={(sub ?? "goals") as OnbSubtab} />}
+      {effectiveTab === "ecommerce" && (
+        <EcommerceTab agent={agent} sub={(sub ?? "servers") as EcomSubtab} workspaceId={workspaceId} projectId={projectId} />
+      )}
       {effectiveTab === "settings" && <PublicSettingsTab agent={agent} />}
     </div>
   );
@@ -583,84 +608,11 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
 }
 
 // --- Widget -------------------------------------------------------------
-// Default widget config (text-chat adaptation of the ElevenLabs widget layout).
-// Mirrored by DEFAULTS in public/widget.js — the embed reads exactly these keys,
-// so a knob added here needs the matching read there or it does nothing.
-const WIDGET_DEFAULTS = {
-  title: "Need help?",
-  variant: "full",            // tiny | compact | full
-  placement: "bottom-right",  // bottom-right | bottom-left
-  collapsible: true,
-  feedback: true,
-  // colors
-  base: "#ffffff",
-  base_border: "#e5e7eb",
-  base_subtle: "#6b7280",
-  base_primary: "#18181b",
-  accent: "#001BB7",
-  accent_primary: "#ffffff",
-  // radii (px)
-  button_radius: 12,
-  input_radius: 12,
-  bubble_radius: 14,
-  // avatar
-  avatar_type: "orb",         // orb | image
-  avatar_first: "#2792dc",
-  avatar_second: "#9ce6e6",
-  avatar_url: "",
-  // terms
-  terms_enabled: false,
-  terms_content: "",
-  // behavior
-  launcher_icon: "chat",         // chat | help | sparkle
-  suggested_questions: "",       // newline-separated quick replies
-  show_branding: true,
-  // text contents
-  text_main_label: "Need help?",
-  text_start_chat: "Start a chat",
-  text_send: "Send",
-  text_placeholder: "Type a message…",
-};
+// La configuration du widget vit dans features/agent-rag/widget/ : les défauts
+// (miroir de public/widget.js), les thèmes prêts à poser, le studio et son
+// aperçu. Ce fichier ne garde que ce que les autres onglets utilisent.
 
-// Section row: its name on the left, its controls on the right. No description
-// line — the control labels already say what each one does.
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 gap-4 border-b border-border/40 py-6 lg:grid-cols-[200px_1fr]">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <div className="space-y-3">{children}</div>
-    </div>
-  );
-}
-
-function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="grid grid-cols-[140px_1fr] items-center gap-3">
-      <label className="text-sm text-muted-foreground">{label}</label>
-      <SoftColor value={value} onChange={onChange} />
-    </div>
-  );
-}
-
-function RadiusRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="grid grid-cols-[140px_1fr] items-center gap-3">
-      <label className="text-sm text-muted-foreground">{label}</label>
-      <SoftNumber value={value} onChange={onChange} unit="px" min={0} max={64} />
-    </div>
-  );
-}
-
-function TextRow({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (v: string) => void }) {
-  return (
-    <div className="grid grid-cols-[160px_1fr] items-center gap-3">
-      <label className="font-mono text-xs text-muted-foreground">{label}</label>
-      <SoftInput value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
-    </div>
-  );
-}
-
-/** Segmented picker — the pill row used for variant / placement / avatar type. */
+/** Segmented picker — the pill row used across the builder's tabs. */
 function SoftSegmented<T extends string>({ value, options, onChange }: {
   value: T; options: { value: T; label: string }[]; onChange: (v: T) => void;
 }) {
@@ -683,496 +635,13 @@ function SoftSegmented<T extends string>({ value, options, onChange }: {
   );
 }
 
-function WidgetTab({ agent }: { agent: Agent }) {
-  const queryClient = useQueryClient();
-  // The agent's brand colour (Settings tab) seeds the accent and the avatar orb,
-  // so an agent that was never opened here still embeds in its own colour
-  // instead of the generic default — which is what widget.js falls back to too.
-  const [cfg, setCfg] = useState<Record<string, any>>({
-    ...WIDGET_DEFAULTS,
-    accent: agent.accent_color ?? WIDGET_DEFAULTS.accent,
-    avatar_first: agent.accent_color ?? WIDGET_DEFAULTS.avatar_first,
-    avatar_second: agent.accent_color ?? WIDGET_DEFAULTS.avatar_second,
-    ...(agent.widget_config ?? {}),
-  });
-  const [copied, setCopied] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  function set<K extends string>(k: K, v: any) { setCfg((c) => ({ ...c, [k]: v })); }
-
-  // The widget is served as a single script tag with attributes — works in
-  // every framework. Build the embed snippets per framework.
-  const WIDGET_URL = "https://founderos-peach.vercel.app/widget.js";
-  const oneLiner = `<script src="${WIDGET_URL}" data-agent="${agent.public_key}" defer></script>`;
-  const reactSnippet = `import { useEffect } from "react";
-
-export function FounderOSAgent() {
-  useEffect(() => {
-    const s = document.createElement("script");
-    s.src = "${WIDGET_URL}";
-    s.dataset.agent = "${agent.public_key}";
-    s.defer = true;
-    document.body.appendChild(s);
-    return () => { s.remove(); };
-  }, []);
-  return null;
-}`;
-  const vueSnippet = `<!-- App.vue -->
-<script setup>
-import { onMounted } from "vue";
-onMounted(() => {
-  const s = document.createElement("script");
-  s.src = "${WIDGET_URL}";
-  s.dataset.agent = "${agent.public_key}";
-  s.defer = true;
-  document.body.appendChild(s);
-});
-</script>`;
-  const angularSnippet = `// app.component.ts
-ngOnInit() {
-  const s = document.createElement("script");
-  s.src = "${WIDGET_URL}";
-  s.dataset["agent"] = "${agent.public_key}";
-  s.defer = true;
-  document.body.appendChild(s);
-}`;
-  const nextSnippet = `// app/layout.tsx (Next.js 13+ App Router)
-import Script from "next/script";
-
-export default function RootLayout({ children }) {
-  return (
-    <html>
-      <body>
-        {children}
-        <Script
-          src="${WIDGET_URL}"
-          data-agent="${agent.public_key}"
-          strategy="afterInteractive"
-        />
-      </body>
-    </html>
-  );
-}`;
-  const phpSnippet = `<!-- footer.php (WordPress / Laravel / any PHP template) -->
-<script src="${WIDGET_URL}" data-agent="${agent.public_key}" defer></script>`;
-  const wpSnippet = `// functions.php — enqueue the widget on every page
-add_action("wp_footer", function () {
-  echo '<script src="${WIDGET_URL}" data-agent="${agent.public_key}" defer></script>';
-});`;
-  const SNIPPETS: Record<string, string> = {
-    HTML: oneLiner,
-    React: reactSnippet,
-    "Next.js": nextSnippet,
-    Vue: vueSnippet,
-    Angular: angularSnippet,
-    PHP: phpSnippet,
-    WordPress: wpSnippet,
-  };
-  const FRAMEWORKS = Object.keys(SNIPPETS);
-
-  async function save() {
-    setSaving(true); setSaved(false);
-    try {
-      await supabase.from("rag_agents").update({ widget_config: cfg }).eq("id", agent.id);
-      queryClient.invalidateQueries({ queryKey: ["rag_agent", agent.id] });
-      setSaved(true); setTimeout(() => setSaved(false), 1500);
-    } finally { setSaving(false); }
-  }
-
-  return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
-      <div className="min-w-0">
-      {/* No "Widget" title — the tab you clicked already said it. */}
-      <div className="mb-2 flex items-center justify-end">
-        <Button onClick={save} disabled={saving} className="rounded-full">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {saved ? "Enregistré" : "Enregistrer"}
-        </Button>
-      </div>
-
-      {/* Setup / Embed */}
-      <Section title="Intégration">
-        <div>
-          <div className="mb-1.5 text-xs font-medium text-muted-foreground">Balise à coller</div>
-          <pre className="overflow-x-auto whitespace-pre rounded-xl bg-muted/50 p-3.5 font-mono text-xs leading-relaxed text-foreground/90">{oneLiner}</pre>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-2 rounded-full"
-            onClick={() => {
-              navigator.clipboard.writeText(oneLiner);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }}
-          >
-            {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-            {copied ? "Copié" : "Copier"}
-          </Button>
-        </div>
-
-        {/* Framework-specific variants */}
-        <FrameworkSnippets snippets={SNIPPETS} frameworks={FRAMEWORKS} />
-
-        <SoftField label="Clé publique">
-          <code className="block truncate rounded-xl bg-muted/50 px-3.5 py-2.5 font-mono text-xs">{agent.public_key}</code>
-        </SoftField>
-        <SoftToggle label="Collecte des avis" checked={cfg.feedback} onChange={(v) => set("feedback", v)} />
-      </Section>
-
-      {/* Interface */}
-      <Section title="Interface">
-        <SoftToggle label="Repliable" checked={cfg.collapsible} onChange={(v) => set("collapsible", v)} />
-        <SoftToggle label="Afficher le branding" checked={cfg.show_branding} onChange={(v) => set("show_branding", v)} />
-        <SoftField label="Variante">
-          <SoftSegmented
-            value={cfg.variant}
-            onChange={(v) => set("variant", v)}
-            options={[{ value: "tiny", label: "tiny" }, { value: "compact", label: "compact" }, { value: "full", label: "full" }]}
-          />
-        </SoftField>
-        <SoftField label="Icône du lanceur">
-          <SoftSegmented
-            value={cfg.launcher_icon}
-            onChange={(v) => set("launcher_icon", v)}
-            options={[{ value: "chat", label: "chat" }, { value: "help", label: "help" }, { value: "sparkle", label: "sparkle" }]}
-          />
-        </SoftField>
-        <SoftField label="Position">
-          <SoftSelect
-            className="max-w-xs"
-            value={cfg.placement}
-            onChange={(v) => set("placement", v)}
-            options={[
-              { value: "bottom-right", label: "En bas à droite" },
-              { value: "bottom-left", label: "En bas à gauche" },
-            ]}
-          />
-        </SoftField>
-        <SoftField label="Questions suggérées">
-          <SoftTextarea
-            value={cfg.suggested_questions}
-            onChange={(e) => set("suggested_questions", e.target.value)}
-            rows={3}
-            placeholder={"Une par ligne\nComment démarrer ?\nQuels sont vos tarifs ?"}
-          />
-        </SoftField>
-      </Section>
-
-      {/* Styling */}
-      <Section title="Style">
-        <ColorRow label="Base" value={cfg.base} onChange={(v) => set("base", v)} />
-        <ColorRow label="Base Border" value={cfg.base_border} onChange={(v) => set("base_border", v)} />
-        <ColorRow label="Base Subtle" value={cfg.base_subtle} onChange={(v) => set("base_subtle", v)} />
-        <ColorRow label="Base Primary" value={cfg.base_primary} onChange={(v) => set("base_primary", v)} />
-        <ColorRow label="Accent" value={cfg.accent} onChange={(v) => set("accent", v)} />
-        <ColorRow label="Accent Primary" value={cfg.accent_primary} onChange={(v) => set("accent_primary", v)} />
-        <RadiusRow label="Button Radius" value={cfg.button_radius} onChange={(v) => set("button_radius", v)} />
-        <RadiusRow label="Input Radius" value={cfg.input_radius} onChange={(v) => set("input_radius", v)} />
-        <RadiusRow label="Bubble Radius" value={cfg.bubble_radius} onChange={(v) => set("bubble_radius", v)} />
-      </Section>
-
-      {/* Avatar */}
-      <Section title="Avatar">
-        <SoftSegmented
-          value={cfg.avatar_type}
-          onChange={(v) => set("avatar_type", v)}
-          options={[{ value: "orb", label: "orb" }, { value: "image", label: "image" }]}
-        />
-        {cfg.avatar_type === "orb" ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <ColorRow label="Couleur 1" value={cfg.avatar_first} onChange={(v) => set("avatar_first", v)} />
-            <ColorRow label="Couleur 2" value={cfg.avatar_second} onChange={(v) => set("avatar_second", v)} />
-          </div>
-        ) : (
-          <SoftInput placeholder="URL de l'image" value={cfg.avatar_url} onChange={(e) => set("avatar_url", e.target.value)} />
-        )}
-      </Section>
-
-      {/* Terms & Conditions */}
-      <Section title="Conditions">
-        <SoftToggle label="Accepter les conditions avant de discuter" checked={cfg.terms_enabled} onChange={(v) => set("terms_enabled", v)} />
-        {cfg.terms_enabled && (
-          <SoftField label="Texte (Markdown)">
-            <SoftTextarea value={cfg.terms_content} onChange={(e) => set("terms_content", e.target.value)} rows={5} />
-          </SoftField>
-        )}
-      </Section>
-
-      {/* Text contents */}
-      <Section title="Libellés">
-        <TextRow label="main_label" value={cfg.text_main_label} placeholder="Besoin d'aide ?" onChange={(v) => set("text_main_label", v)} />
-        <TextRow label="start_chat" value={cfg.text_start_chat} placeholder="Démarrer" onChange={(v) => set("text_start_chat", v)} />
-        <TextRow label="send" value={cfg.text_send} placeholder="Envoyer" onChange={(v) => set("text_send", v)} />
-        <TextRow label="placeholder" value={cfg.text_placeholder} placeholder="Votre message…" onChange={(v) => set("text_placeholder", v)} />
-      </Section>
-      </div>
-
-      <WidgetPreview agent={agent} cfg={cfg} />
-    </div>
-  );
-}
-
-/** Live preview of the embed. It runs the *real* public/widget.js in an iframe
- *  rather than re-implementing the chat in React: a second implementation is
- *  exactly how the embed drifted away from what this panel promised. The unsaved
- *  form state is pushed over postMessage, so the preview reacts without
- *  remounting (and without re-fetching the agent config) on every edit. */
-function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: Record<string, any> }) {
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const [ready, setReady] = useState(false);
-
-  // Same file the customer's site loads. In dev it is served by Vite from
-  // public/, in prod by the deploy — either way it is same-origin here.
-  const src = `${window.location.origin}/widget.js`;
-
-  const srcDoc =
-    `<!doctype html><html><head><meta charset="utf-8">` +
-    `<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}</style>` +
-    `</head><body>` +
-    `<script src="${src}" data-agent="${agent.public_key}" data-preview="1" data-onboarding="off"><\/script>` +
-    `</body></html>`;
-
-  useEffect(() => {
-    function onMessage(e: MessageEvent) {
-      if (e.data?.type === "founderos:preview-ready") setReady(true);
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, []);
-
-  useEffect(() => {
-    if (!ready) return;
-    frameRef.current?.contentWindow?.postMessage({ type: "founderos:preview-config", config: cfg }, "*");
-  }, [cfg, ready]);
-
-  // Keep the frame tall enough for the chosen variant (see VARIANT_SIZE in
-  // widget.js) plus a little breathing room.
-  const height = cfg.variant === "tiny" ? 470 : cfg.variant === "compact" ? 550 : 650;
-
-  return (
-    <div className="xl:sticky xl:top-4 xl:self-start">
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <Sparkles className="h-3.5 w-3.5" />
-        Aperçu en direct
-      </div>
-      <div
-        className="flex items-center justify-center rounded-2xl border border-border/60 p-4"
-        style={{ backgroundImage: "radial-gradient(hsl(var(--muted-foreground)/0.18) 1px, transparent 1px)", backgroundSize: "16px 16px" }}
-      >
-        <iframe
-          ref={frameRef}
-          title="Aperçu du widget"
-          srcDoc={srcDoc}
-          className="w-full rounded-xl border-0"
-          style={{ height, colorScheme: "light" }}
-        />
-      </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-        Le vrai widget, branché sur l'agent : les messages envoyés ici comptent comme des conversations réelles.
-      </p>
-    </div>
-  );
-}
-
 // --- Analytics ----------------------------------------------------------
-type AnalyticsTab = "general" | "tools" | "llms" | "knowledge";
-const RANGES = [
-  { value: 7, label: "Last week" },
-  { value: 30, label: "Last 30 days" },
-  { value: 90, label: "Last 90 days" },
-];
-
-// A KPI cell used in the General top band.
-function Kpi({ label, value, active }: { label: string; value: string; active?: boolean }) {
-  return (
-    <div className={`min-w-0 px-4 py-3 ${active ? "border-b-2 border-primary" : ""}`}>
-      <div className="truncate text-xs text-muted-foreground">{label}</div>
-      <div className="font-stat-number mt-1 text-lg font-semibold tabular-nums">{value}</div>
-    </div>
-  );
-}
-
-// Card body placeholder when there's nothing to chart yet.
-function NoData({ title }: { title: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="mt-1 text-lg text-muted-foreground">—</div>
-        <div className="flex h-40 flex-col items-center justify-center text-sm text-muted-foreground">
-          <BarChart3 className="mb-2 h-7 w-7 opacity-30" />
-          No data has been collected
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="font-stat-number mt-1 text-2xl font-semibold tabular-nums">{value}</div>
-        {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PublicAnalyticsTab({ agent }: { agent: Agent }) {
-  const [tab, setTab] = useState<AnalyticsTab>("general");
-  const [days, setDays] = useState(7);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["rag_analytics", agent.id, days],
-    enabled: !!agent.id,
-    queryFn: async () => {
-      const since = new Date(Date.now() - days * 86400_000).toISOString();
-      const [convos, msgs, llm, sources] = await Promise.all([
-        supabase.from("rag_conversations").select("id, source, created_at, rating").eq("agent_id", agent.id).gte("created_at", since).limit(2000),
-        supabase.from("rag_messages").select("role, content, sources, created_at").eq("agent_id", agent.id).gte("created_at", since).limit(3000),
-        supabase.from("llm_usage").select("total_tokens, estimated_cost_cents, created_at").eq("project_id", agent.project_id).eq("feature", "rag-agent").gte("created_at", since).limit(3000),
-        supabase.from("rag_sources").select("id, chunk_count, status").eq("agent_id", agent.id),
-      ]);
-      return {
-        convos: convos.data ?? [],
-        msgs: (msgs.data ?? []) as { role: string; content: string; sources: any[]; created_at: string }[],
-        llm: (llm.data ?? []) as { total_tokens: number; estimated_cost_cents: number }[],
-        sources: (sources.data ?? []) as { chunk_count: number; status: string }[],
-      };
-    },
-  });
-
-  const TABS: { value: AnalyticsTab; label: string }[] = [
-    { value: "general", label: "General" },
-    { value: "tools", label: "Tools" },
-    { value: "llms", label: "LLMs" },
-    { value: "knowledge", label: "Knowledge Base" },
-  ];
-
-  if (isLoading) return <EmptyState icon={Loader2} title="Loading…" />;
-  const convos = data?.convos ?? [];
-  const msgs = data?.msgs ?? [];
-  const userMsgs = msgs.filter((m) => m.role === "user");
-  const asstMsgs = msgs.filter((m) => m.role === "assistant");
-  const llm = data?.llm ?? [];
-  const sources = data?.sources ?? [];
-
-  const totalConvos = convos.length;
-  const widgetConvos = convos.filter((c: any) => c.source === "widget").length;
-  const ratings = convos.map((c: any) => c.rating).filter((r: any) => r != null);
-  const avgRating = ratings.length ? (ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length).toFixed(1) : "—";
-  const totalTokens = llm.reduce((s, x) => s + (x.total_tokens ?? 0), 0);
-  const totalCost = llm.reduce((s, x) => s + (x.estimated_cost_cents ?? 0), 0) / 100;
-  const llmRequests = llm.length;
-  const docRefs = asstMsgs.reduce((s, m) => s + (Array.isArray(m.sources) ? m.sources.length : 0), 0);
-  const answeredWithSources = asstMsgs.filter((m) => Array.isArray(m.sources) && m.sources.length > 0).length;
-  const successRate = asstMsgs.length ? Math.round((answeredWithSources / asstMsgs.length) * 100) : null;
-  const chunks = sources.reduce((s, x) => s + (x.chunk_count ?? 0), 0);
-
-  // Top questions for the General view.
-  const freq = new Map<string, number>();
-  userMsgs.forEach((q) => freq.set(q.content.slice(0, 60), (freq.get(q.content.slice(0, 60)) ?? 0) + 1));
-  const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
-
-  const fmt = (n: number) => (n === 0 ? "—" : n.toLocaleString());
-
-  return (
-    <div>
-      {/* Sub-tabs */}
-      <div className="mb-4 flex flex-wrap gap-4 border-b border-border/40">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setTab(t.value)}
-            className={`-mb-px border-b-2 pb-2 text-sm transition-colors ${tab === t.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Filter bar */}
-      <div className="mb-4">
-        <SoftSelect
-          className="max-w-[13rem]"
-          value={String(days)}
-          onChange={(v) => setDays(Number(v))}
-          options={RANGES.map((r) => ({ value: String(r.value), label: r.label }))}
-        />
-      </div>
-
-      {tab === "general" && (
-        <div className="space-y-4">
-          {/* KPI band */}
-          <Card>
-            <CardContent className="grid grid-cols-2 divide-x divide-border/40 p-0 sm:grid-cols-3 lg:grid-cols-6">
-              <Kpi label="Conversations" value={fmt(totalConvos)} active />
-              <Kpi label="From widget" value={fmt(widgetConvos)} />
-              <Kpi label="Messages" value={fmt(msgs.length)} />
-              <Kpi label="Avg CSAT" value={avgRating} />
-              <Kpi label="Total LLM cost" value={totalCost ? `€${totalCost.toFixed(2)}` : "—"} />
-              <Kpi label="LLM requests" value={fmt(llmRequests)} />
-            </CardContent>
-          </Card>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <StatCard title="Overall success rate" value={successRate != null ? `${successRate}%` : "—"} hint="Answers grounded in a source" />
-            <StatCard title="Average CSAT rating" value={ratings.length ? `${avgRating} / 5` : "—"} hint={`${ratings.length} rating(s)`} />
-          </div>
-          <Card>
-            <CardHeader><CardTitle>Top questions</CardTitle></CardHeader>
-            <CardContent>
-              {top.length === 0 ? (
-                <div className="flex h-32 flex-col items-center justify-center text-sm text-muted-foreground">
-                  <BarChart3 className="mb-2 h-7 w-7 opacity-30" /> No data has been collected
-                </div>
-              ) : (
-                <ul className="space-y-1.5 text-sm">
-                  {top.map(([q, n]) => (
-                    <li key={q} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{q}</span>
-                      <Badge variant="secondary">{n}</Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {tab === "tools" && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <NoData title="Total tool calls" />
-          <NoData title="Average tool latency" />
-          <NoData title="Total tool errors" />
-          <NoData title="Average error rate" />
-          <div className="lg:col-span-2 rounded-md bg-secondary/40 p-3 text-xs text-muted-foreground">
-            This agent answers from its knowledge base and doesn't call external tools yet. Tool analytics will appear here once tool use is enabled.
-          </div>
-        </div>
-      )}
-
-      {tab === "llms" && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <StatCard title="Total LLM requests" value={fmt(llmRequests)} />
-          <StatCard title="Total tokens" value={fmt(totalTokens)} />
-          <StatCard title="Total LLM cost" value={totalCost ? `€${totalCost.toFixed(2)}` : "—"} />
-          <StatCard title="Avg cost / request" value={llmRequests ? `€${(totalCost / llmRequests).toFixed(4)}` : "—"} />
-        </div>
-      )}
-
-      {tab === "knowledge" && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <StatCard title="Total document references" value={fmt(docRefs)} hint="Chunks cited across answers" />
-          <StatCard title="Answers with sources" value={asstMsgs.length ? `${answeredWithSources} / ${asstMsgs.length}` : "—"} />
-          <StatCard title="Indexed chunks" value={fmt(chunks)} />
-          <StatCard title="Ready sources" value={fmt(sources.filter((s) => s.status === "ready").length)} />
-        </div>
-      )}
-    </div>
-  );
+// Les cinq pages de stats vivent dans features/agent-rag/analytics/ : ce
+// fichier ne fait plus que les monter. Elles lisent la RPC d'agrégation
+// `rag_agent_analytics` (migration 0217) au lieu de recompter des milliers de
+// lignes dans le navigateur.
+function PublicAnalyticsTab({ agent, page }: { agent: Agent; page: AnalyticsPage }) {
+  return <AgentAnalytics agentId={agent.id} agentName={agent.name} page={page} />;
 }
 
 // --- Settings -----------------------------------------------------------
@@ -1181,12 +650,8 @@ function PublicAnalyticsTab({ agent }: { agent: Agent }) {
 // agent's controls: natural-language objectives, agent-level réglages
 // (co-pilot / voice / voice model + per-goal guardrails) and activation
 // analytics — all scoped to THIS agent.
-const ONB_SUBTABS = [
-  { value: "goals", label: "Objectifs" },
-  { value: "settings", label: "Réglages" },
-  { value: "activation", label: "Activation" },
-] as const;
-type OnbSubtab = (typeof ONB_SUBTABS)[number]["value"];
+// Les sous-onglets sont dessinés par la coque (publicAgentSubtabs.ts).
+type OnbSubtab = "goals" | "settings" | "activation";
 
 // Deepgram Aura voices offered for the spoken onboarding guide.
 const AURA_VOICES = [
@@ -1202,23 +667,9 @@ const AURA_VOICES = [
   { value: "aura-zeus-en", label: "Zeus (m · en)" },
 ];
 
-function OnboardingTab({ agent }: { agent: Agent }) {
-  const [sub, setSub] = useState<OnbSubtab>("goals");
+function OnboardingTab({ agent, sub }: { agent: Agent; sub: OnbSubtab }) {
   return (
     <div>
-      {/* Sub-tabs */}
-      <div className="mb-4 flex flex-wrap gap-4 border-b border-border/40">
-        {ONB_SUBTABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setSub(t.value)}
-            className={`-mb-px border-b-2 pb-2 text-sm transition-colors ${sub === t.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {sub === "goals" && <GoalsStudioPage agentId={agent.id} />}
       {sub === "settings" && <OnboardingSettings agent={agent} />}
       {sub === "activation" && <ActivationCockpitPage agentId={agent.id} />}
@@ -1439,17 +890,12 @@ function MiniSwitch({ checked, onChange, title }: {
   );
 }
 
-const ECOM_SUBTABS = [
-  { value: "servers", label: "Boutique" },
-  { value: "tools", label: "Outils" },
-  { value: "activity", label: "Activité" },
-] as const;
-type EcomSubtab = (typeof ECOM_SUBTABS)[number]["value"];
+// Les sous-onglets sont dessinés par la coque (publicAgentSubtabs.ts).
+type EcomSubtab = "servers" | "tools" | "activity";
 
-function EcommerceTab({ agent, workspaceId }: {
-  agent: Agent; workspaceId: string | null; projectId: string | null;
+function EcommerceTab({ agent, sub, workspaceId }: {
+  agent: Agent; sub: EcomSubtab; workspaceId: string | null; projectId: string | null;
 }) {
-  const [sub, setSub] = useState<EcomSubtab>("servers");
 
   const { data: servers, refetch: refetchServers } = useQuery({
     queryKey: ["pa_mcp_servers", workspaceId],
@@ -1517,18 +963,6 @@ function EcommerceTab({ agent, workspaceId }: {
           </p>
         </div>
       )}
-      <div className="mb-4 flex flex-wrap gap-4 border-b border-border/40">
-        {ECOM_SUBTABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setSub(t.value)}
-            className={`-mb-px border-b-2 pb-2 text-sm transition-colors ${sub === t.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {sub === "servers" && (
         <McpStoreServers
           agent={agent} workspaceId={workspaceId}
@@ -1967,46 +1401,3 @@ function PublicSettingsTab({ agent }: { agent: Agent }) {
   );
 }
 
-function FrameworkSnippets({ snippets, frameworks }: { snippets: Record<string, string>; frameworks: string[] }) {
-  const [active, setActive] = useState<string>(frameworks[1] ?? frameworks[0]);
-  const [copied, setCopied] = useState(false);
-  const code = snippets[active] ?? "";
-  return (
-    <div>
-      <div className="mb-1.5 text-sm font-medium">For your framework</div>
-      <div className="mb-2 flex flex-wrap gap-1.5">
-        {frameworks.map((fw) => (
-          <button
-            key={fw}
-            type="button"
-            onClick={() => setActive(fw)}
-            className={
-              "rounded-md border px-2.5 py-1 text-xs transition-colors " +
-              (active === fw
-                ? "border-primary/40 bg-primary/15 text-primary"
-                : "border-border text-muted-foreground hover:bg-secondary")
-            }
-          >
-            {fw}
-          </button>
-        ))}
-      </div>
-      <pre className="max-h-72 overflow-y-auto whitespace-pre rounded-md bg-secondary/50 p-3 font-mono text-xs leading-relaxed text-foreground/90">
-        {code}
-      </pre>
-      <Button
-        variant="outline"
-        size="sm"
-        className="mt-2"
-        onClick={() => {
-          navigator.clipboard.writeText(code);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-      >
-        {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-        {copied ? "Copied" : `Copy ${active}`}
-      </Button>
-    </div>
-  );
-}

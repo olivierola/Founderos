@@ -1,17 +1,17 @@
 import type { ReactNode } from "react";
 import {
-  Bot,
-  Check,
-  Clock,
-  CreditCard,
-  Database,
-  FileText,
-  GitBranch,
-  Layers,
-  Loader2,
-  Server,
-  ShieldCheck,
-} from "lucide-react";
+  RobotIcon as Bot,
+  CheckIcon as Check,
+  ClockIcon as Clock,
+  CreditCardIcon as CreditCard,
+  DatabaseIcon as Database,
+  FileTextIcon as FileText,
+  GitBranchIcon as GitBranch,
+  StackIcon as Layers,
+  CircleNotchIcon as Loader2,
+  HardDrivesIcon as Server,
+  ShieldCheckIcon as ShieldCheck,
+} from "@phosphor-icons/react";
 
 const ORANGE = "#68bbfb";
 

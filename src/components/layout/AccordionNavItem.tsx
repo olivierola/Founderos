@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import { CaretDownIcon as ChevronDown } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import type { SubNavItem } from "@/lib/navigation";
 

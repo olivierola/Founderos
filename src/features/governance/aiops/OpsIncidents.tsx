@@ -1,5 +1,9 @@
 import { useMemo, useState } from "react";
-import { Siren, Clock, CircleX } from "lucide-react";
+import {
+  SirenIcon as Siren,
+  ClockIcon as Clock,
+  XCircleIcon as CircleX,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

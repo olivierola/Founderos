@@ -1,5 +1,16 @@
-import { useState } from "react";
-import { Sparkles, Loader2, X, BookOpen, WandSparkles, ArrowRight } from "lucide-react";
+import { useRef, useState } from "react";
+import {
+  SparkleIcon as Sparkles,
+  CircleNotchIcon as Loader2,
+  XIcon as X,
+  BookOpenIcon as BookOpen,
+  MagicWandIcon as WandSparkles,
+  ArrowRightIcon as ArrowRight,
+  MicrophoneIcon as Mic,
+  SquareIcon as Square,
+} from "@phosphor-icons/react";
+import { VoiceComposer } from "@/components/ui/composer-voice-glow";
+import { useDictation } from "@/lib/useDictation";
 import { Button } from "@/components/ui/button";
 import { callEdge } from "@/lib/edge";
 import { cn } from "@/lib/utils";
@@ -49,6 +60,18 @@ export function ArtifactAiPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [answer, setAnswer] = useState<string | null>(null);
+  // Streaming dictation (Deepgram): the live transcript is appended to what
+  // was already typed when the mic opened.
+  const dictBase = useRef("");
+  const dictation = useDictation((d) => {
+    const base = dictBase.current;
+    setPrompt(base + (base && d ? " " : "") + d);
+  });
+  const toggleDictation = () => {
+    if (dictation.recording || dictation.connecting) { dictation.stop(); return; }
+    dictBase.current = prompt.trimEnd();
+    void dictation.start();
+  };
 
   async function run(p?: string) {
     const instruction = (p ?? prompt).trim();
@@ -122,14 +145,34 @@ export function ArtifactAiPanel({
         >
           <BookOpen className="h-3 w-3" /> Knowledge base {useKnowledge ? "on" : "off"}
         </button>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run(); }}
-          rows={3}
-          placeholder={`Ask the assistant to write, generate or edit this ${kind}…`}
-          className="w-full resize-none rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-        />
+        {/* Framed by voice-glow (VoiceComposer): breathing at rest, following
+            the dictated voice, sweeping while the assistant works. */}
+        <VoiceComposer stream={dictation.stream} processing={loading || dictation.connecting} radius={12}>
+          <div className="relative rounded-xl border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run(); }}
+              rows={3}
+              placeholder={`Ask the assistant to write, generate or edit this ${kind}…`}
+              className="block w-full resize-none rounded-xl bg-transparent px-2.5 py-2 pr-10 text-sm focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={toggleDictation}
+              title={dictation.recording ? "Arrêter la dictée" : "Dictée vocale"}
+              className={cn(
+                "absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full transition-colors",
+                dictation.recording ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {dictation.connecting
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : dictation.recording ? <Square weight="fill" className="h-3.5 w-3.5" /> : <Mic className="h-4 w-4" />}
+            </button>
+          </div>
+        </VoiceComposer>
+        {dictation.error && <p className="mt-1 text-[11px] text-destructive">{dictation.error}</p>}
         <Button className="mt-2 w-full" onClick={() => run()} disabled={loading || !prompt.trim()}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           Generate

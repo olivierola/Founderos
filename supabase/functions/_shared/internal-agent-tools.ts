@@ -28,15 +28,23 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { TOOL_RESULT_CAP } from "./ai.ts";
+import { blockKey, blockSubstanceKey, REPEATABLE_BLOCKS } from "./report-artisan.ts";
+import { removePreference, upsertPreference } from "./agent-context.ts";
+import { MEMORY_CAP, pickEvictions, planMemoryWrite, RELEVANCE_FLOOR, type MemoryRow } from "./agent-memory.ts";
+import { inferProvider, isSafeUrl } from "./external-artifacts.ts";
+import { workflowToolDefs } from "./workflow-authoring.ts";
 import {
   DOC_KINDS, isDocKind, contentForKind, renderContent, CONTENT_FORMAT_HELP,
 } from "./artifact-content.ts";
 import type { ToolDef, ToolExecutor } from "./ai.ts";
 import type { ToolTier } from "./model-router.ts";
 import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
+import { defaultTimezone, parseRunAt, parseSchedule } from "./clock.ts";
 import { embedTexts, toVectorLiteral } from "./jina.ts";
 import { mcpCallTool, type McpTool } from "./mcp-client.ts";
 import { executeApprovalAction, approvalScope, approvalScopePrefix, approvalScopeLabel } from "./approval-exec.ts";
+import { runTrackerAction, trackerScope } from "./tracker-actions.ts";
+import { postApprovalToBoundChannel } from "./channel-approval.ts";
 
 export interface AgentToolRow {
   id: string;
@@ -50,6 +58,7 @@ export interface AgentToolRow {
     | "connector_action"
     | "composio_toolkit"
     | "crm"
+    | "tracker"
     | "security_scan"
     | "vibe_code"
     | "testing"
@@ -78,7 +87,7 @@ export interface ArtifactDraft {
 
 export interface ApprovalRequest {
   tool_name: string;
-  action_kind: "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write";
+  action_kind: "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write" | "tracker_write";
   payload: Record<string, unknown>;
   reason: string | null;
 }
@@ -150,6 +159,9 @@ export interface InternalToolContext {
   /** The service dashboard this agent belongs to — new agents created via
    *  create_agent inherit it so the orchestrator builds its own team. */
   serviceDashboardId?: string | null;
+  /** The room this turn happens in, when there is one. Stamped on the artifacts
+   *  the agent registers so the wall can filter them by room like the rest. */
+  serviceRoomId?: string | null;
   /** The user who owns/created the agent — stamped on resources it creates. */
   userId?: string | null;
   /** True when THIS context is an ephemeral parallel sub-agent — disables
@@ -171,9 +183,23 @@ export interface InternalToolContext {
   /** Called when load_toolset / need_tools widens the toolbox, so the run engine
    *  can persist it. "*" = the whole toolbox was loaded. */
   onToolsetLoaded?: (family: string) => Promise<void>;
+  /** Hand raw matter to Le Rédacteur and get back a published report.
+   *  Injected by the run engine (see _shared/reporter.ts). Its PRESENCE is what
+   *  tells the toolset that reports are written elsewhere: where it is injected,
+   *  add_block/publish_artifact stop accepting target="report". */
+  requestReport?: (brief: {
+    subject: string; material: string; angle?: string; audience?: string; accent?: string;
+  }) => Promise<string>;
 }
 
 export const MAX_DELEGATION_DEPTH = 3;
+/** Tag marking a one-off mission (create_mission run_at): the scheduler runs it
+ *  once at next_run_at, then clears next_run_at. */
+export const RUN_ONCE_TAG = "run_once";
+
+/** Reports a single run may publish. One is the answer; two is the ceiling for a
+ *  mission that genuinely covered two subjects. Enforced in request_report. */
+export const REPORT_BUDGET = 2;
 
 // Fork-bomb guards shared by create_mission / delegate_mission: a per-run
 // creation budget (2) and a per-agent hourly flood cap (10). Returns an error
@@ -319,6 +345,14 @@ async function awaitInlineApproval(
   }).then(() => {}, () => {});
   await ctx.admin.from("internal_agent_conversations")
     .update({ updated_at: new Date().toISOString() }).eq("id", ctx.conversationId).then(() => {}, () => {});
+  // Et dans le fil Slack / Teams quand la conversation vient de là : sans cela,
+  // la personne qui a écrit à l'agent depuis sa messagerie ne voyait jamais la
+  // demande, et l'exécution expirait en attendant.
+  await postApprovalToBoundChannel(ctx.admin, {
+    conversationId: ctx.conversationId, approvalId: id, summary,
+    scopeLabel: approvalScopeLabel(req.action_kind, req.payload, req.tool_name),
+    actionKind: req.action_kind,
+  });
   // Extend the tick lease so a duplicate delivery can't fire while we wait.
   if (ctx.runId) {
     await ctx.admin.from("internal_agent_run_state")
@@ -449,6 +483,116 @@ export async function embedMemoryVector(content: string): Promise<string | null>
   } catch { return null; }
 }
 
+export interface MemoryWriteInput {
+  agent_id: string;
+  workspace_id: string;
+  project_id: string | null;
+  kind: string;
+  content: string;
+  importance?: number;
+  source?: "agent" | "user";
+  source_run_id?: string | null;
+  source_conversation_id?: string | null;
+}
+
+export type MemoryWriteResult =
+  | { status: "inserted"; id: string | null; evicted: number }
+  | { status: "merged" | "duplicate"; id: string }
+  | { status: "full" | "failed"; error: string };
+
+/**
+ * The ONE way the runtime writes a memory (see agent-memory.ts for the rules).
+ *
+ * Embeds once, looks up the nearest existing memory, then inserts, merges or
+ * skips. When the store is at its cap, the least valuable agent-written rows
+ * are evicted instead of the write being refused. Never throws.
+ */
+export async function writeAgentMemory(
+  admin: SupabaseClient,
+  input: MemoryWriteInput,
+): Promise<MemoryWriteResult> {
+  try {
+    const content = String(input.content ?? "").trim();
+    if (!content) return { status: "failed", error: "content is required" };
+    const importance = Math.min(Math.max(Math.round(Number(input.importance ?? 3)) || 3, 1), 5);
+    const embedding = await embedMemoryVector(content);
+
+    let nearest: (MemoryRow & { id: string; similarity: number }) | null = null;
+    if (embedding) {
+      const { data } = await admin.rpc("match_agent_memories", {
+        p_agent_id: input.agent_id, p_query_embedding: embedding, p_match_count: 1,
+      });
+      const top = Array.isArray(data) ? data[0] : null;
+      if (top?.id) nearest = { ...top, similarity: Number(top.similarity ?? 0) };
+    } else {
+      // No embeddings: exact-text duplicates are still caught.
+      const { data } = await admin.from("internal_agent_memories")
+        .select("id, kind, content, importance, is_pinned, source")
+        .eq("agent_id", input.agent_id).eq("content", content).limit(1);
+      if (data?.[0]) nearest = { ...(data[0] as MemoryRow & { id: string }), similarity: 1 };
+    }
+
+    const plan = planMemoryWrite({ content, importance }, nearest);
+    if (plan.action === "skip") return { status: "duplicate", id: plan.id };
+    if (plan.action === "merge") {
+      const changed = plan.content !== nearest?.content;
+      await admin.from("internal_agent_memories").update({
+        content: plan.content,
+        importance: plan.importance,
+        updated_at: new Date().toISOString(),
+        ...(changed && embedding ? { embedding } : {}),
+        ...(input.source_run_id ? { source_run_id: input.source_run_id } : {}),
+      }).eq("id", plan.id);
+      return { status: "merged", id: plan.id };
+    }
+
+    const { count } = await admin.from("internal_agent_memories")
+      .select("id", { count: "exact", head: true }).eq("agent_id", input.agent_id);
+    let evicted = 0;
+    if ((count ?? 0) >= MEMORY_CAP) {
+      const candidates = (cols: string) => admin.from("internal_agent_memories")
+        .select(cols)
+        .eq("agent_id", input.agent_id).eq("is_pinned", false).neq("source", "user")
+        .order("importance", { ascending: true }).order("updated_at", { ascending: true })
+        .limit(80);
+      let { data: pool, error: poolErr } = await candidates(
+        "id, kind, content, importance, is_pinned, source, recall_count, last_recalled_at, updated_at, created_at");
+      // Pre-0249 schema: rank on importance and age alone.
+      if (poolErr) ({ data: pool } = await candidates("id, kind, content, importance, is_pinned, source, updated_at, created_at"));
+      const ids = pickEvictions((pool ?? []) as MemoryRow[], (count ?? 0) - MEMORY_CAP + 1);
+      if (ids.length === 0) {
+        return { status: "full", error: `memory store is full (${MEMORY_CAP}) and every entry is pinned or human-written` };
+      }
+      await admin.from("internal_agent_memories").delete().in("id", ids);
+      evicted = ids.length;
+    }
+
+    const { data: row, error } = await admin.from("internal_agent_memories").insert({
+      agent_id: input.agent_id,
+      workspace_id: input.workspace_id,
+      project_id: input.project_id,
+      kind: input.kind,
+      content,
+      importance,
+      source: input.source ?? "agent",
+      source_run_id: input.source_run_id ?? null,
+      source_conversation_id: input.source_conversation_id ?? null,
+      ...(embedding ? { embedding } : {}),
+    }).select("id").maybeSingle();
+    if (error) return { status: "failed", error: error.message };
+    return { status: "inserted", id: (row as { id?: string } | null)?.id ?? null, evicted };
+  } catch (e) {
+    return { status: "failed", error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Mark memories as recalled (injected or returned). Fire-and-forget. */
+export function touchAgentMemories(admin: SupabaseClient, ids: string[]): void {
+  const list = [...new Set(ids.filter(Boolean))];
+  if (list.length === 0) return;
+  admin.rpc("touch_agent_memories", { p_ids: list }).then(() => {}, () => {});
+}
+
 // Best-effort: when a sandbox command installs packages or fetches a
 // dataset/repo, record it in the agent's persistent memory so it doesn't lose
 // track of its environment (and won't re-install needlessly) across sessions.
@@ -474,17 +618,10 @@ async function rememberSandboxAction(ctx: InternalToolContext, command: string):
       if (dl) content = `Fetched into sandbox: ${dl[1].slice(0, 200)}`;
     }
     if (!content) return;
-    // Skip exact duplicates so re-runs don't pile up the same line.
-    const { data: dup } = await ctx.admin
-      .from("internal_agent_memories").select("id").eq("agent_id", ctx.agentId).eq("content", content).limit(1);
-    if (dup && dup.length) return;
-    const { count } = await ctx.admin
-      .from("internal_agent_memories").select("id", { count: "exact", head: true }).eq("agent_id", ctx.agentId);
-    if ((count ?? 0) >= 300) return;
-    await ctx.admin.from("internal_agent_memories").insert({
+    // Re-runs re-install the same packages: writeAgentMemory dedupes them.
+    await writeAgentMemory(ctx.admin, {
       agent_id: ctx.agentId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
-      kind: "context", content, importance: 2, source: "agent", source_run_id: ctx.runId ?? null,
-      embedding: await embedMemoryVector(content),
+      kind: "context", content, importance: 2, source_run_id: ctx.runId ?? null,
     });
   } catch { /* best-effort */ }
 }
@@ -526,6 +663,45 @@ function hostInScope(rawUrl: string, scope: PentestScopeEntry[]): { ok: boolean;
     if (host === bare || host.endsWith(`.${bare}`)) return { ok: true, host };
   }
   return { ok: false, host };
+}
+
+/** Outils de reconnaissance réseau : leur seul emploi est de sonder un tiers. */
+const SCANNER_BINARIES =
+  /\b(nmap|masscan|zmap|ffuf|gobuster|dirb|dirbuster|feroxbuster|sqlmap|nuclei|nikto|whatweb|wpscan|hydra|medusa|patator|amass|subfinder|httpx|naabu|katana|testssl|sslscan|metasploit|msfconsole|msfvenom|responder|crackmapexec|enum4linux)\b/i;
+
+/**
+ * Une commande shell lance-t-elle un scanner, et si oui, le périmètre autorisé
+ * existe-t-il ? — correctif FOS-21.
+ *
+ * CE QUI N'ALLAIT PAS
+ * `http_request` refusait bien toute cible hors périmètre attesté, mais la
+ * consigne donnée au modèle juste en dessous disait : « les scanners passent par
+ * shell_exec (nmap, ffuf, sqlmap, nuclei, whatweb…) » — et shell_exec n'avait
+ * aucun contrôle. Le garde-fou se contournait donc en une ligne. Un agent
+ * détourné par injection de prompt scannait des tiers depuis l'infrastructure de
+ * la plateforme, ce qui engage sa responsabilité.
+ *
+ * CE QUE CE CONTRÔLE VAUT, ET CE QU'IL NE VAUT PAS
+ * Il exige qu'un humain (owner ou admin — c'est la politique RLS de
+ * `agent_pentest_scope`) ait déclaré et attesté un périmètre avant qu'un
+ * scanner puisse seulement démarrer. Il n'empêche pas un `curl` en boucle : le
+ * seul contrôle qui ne se contourne pas par le choix d'un autre outil est un
+ * pare-feu sortant en refus par défaut sur le réseau du bac à sable, ouvert aux
+ * seuls hôtes du périmètre. Ceci réduit la friction à zéro pour l'usage
+ * légitime et la rend infranchissable pour l'usage accidentel.
+ */
+async function scannerGuard(ctx: InternalToolContext, command: string): Promise<string | null> {
+  if (!SCANNER_BINARIES.test(command)) return null;
+  const scope = await loadPentestScope(ctx);
+  if (scope.length) return null;
+  return (
+    "ERROR: cette commande lance un outil de test d'intrusion, et aucun périmètre " +
+    "autorisé n'est déclaré pour ce projet. Scanner un système sans autorisation " +
+    "écrite est illégal dans la plupart des juridictions, et l'infrastructure qui " +
+    "émet le scan est celle de la plateforme. Un owner ou un admin doit déclarer " +
+    "et attester le périmètre dans l'application (Admin → Gouvernance → Périmètre " +
+    "pentest) avant tout test actif. Voir aussi l'outil pentest_scope."
+  );
 }
 
 function slugToToolName(prefix: string, slug: string): string {
@@ -1316,19 +1492,93 @@ export function buildInternalToolset(
 
   const draftKey = (target: string) => (target === "presentation" ? "deck_draft" : "report_draft_v2");
 
+  // Reports left this toolbox with the Rédacteur (0206). Where the delegation is
+  // wired, a rapport written here would be a second, worse format living beside
+  // the real one — so the target is refused, with the address of the agent that
+  // owns it. Presentations stayed: a deck is not a report.
+  const reportsDelegated = typeof ctx.requestReport === "function";
+
+  // ── Was a PRESENTATION actually asked for? ────────────────────────────────
+  // A deck is a format the reader has to sit through; nobody wants one they did
+  // not ask for. Since reports left this toolbox, "presentation" became the only
+  // writing target left — and an agent with something to write reaches for the
+  // tool it still has. So the ask is verified against the run's own origin (the
+  // mission brief, or the conversation) rather than trusted to the prompt.
+  //
+  // Read lazily and once: most runs never touch a deck and pay nothing.
+  const DECK_ASKED = /\b(pr[ée]sentation|slides?|deck|powerpoint|keynote|diapo\w*|pitch)\b/i;
+
+  /** Where this run comes from: its mission (if any) and the text of the ask.
+   *  One read, reused by the deck gate and the report budget. */
+  interface RunOrigin { missionId: string | null; delegated: boolean; text: string }
+  let origin: RunOrigin | null = null;
+  const runOrigin = async (): Promise<RunOrigin> => {
+    if (origin) return origin;
+    const parts: string[] = [];
+    let missionId: string | null = null;
+    let delegated = false;
+    try {
+      if (ctx.runId) {
+        const { data: run } = await ctx.admin.from("internal_agent_runs")
+          .select("mission_id, label").eq("id", ctx.runId).maybeSingle();
+        missionId = (run as { mission_id?: string } | null)?.mission_id ?? null;
+        parts.push(str((run as { label?: string } | null)?.label));
+      }
+      if (missionId) {
+        const { data: m } = await ctx.admin.from("internal_agent_missions")
+          .select("title, description, expected_deliverables, delegation_depth, delegated_by_agent")
+          .eq("id", missionId).maybeSingle();
+        const mm = (m ?? {}) as {
+          title?: string; description?: string; expected_deliverables?: unknown;
+          delegation_depth?: number; delegated_by_agent?: string | null;
+        };
+        parts.push(str(mm.title), str(mm.description), JSON.stringify(mm.expected_deliverables ?? ""));
+        delegated = (mm.delegation_depth ?? 0) > 0 || !!mm.delegated_by_agent;
+      }
+      if (ctx.conversationId) {
+        const { data: msgs } = await ctx.admin.from("internal_agent_messages")
+          .select("content").eq("conversation_id", ctx.conversationId).eq("role", "user")
+          .order("created_at", { ascending: false }).limit(6);
+        for (const m of (msgs ?? []) as Array<{ content?: string }>) parts.push(str(m.content));
+      }
+    } catch { /* unreadable origin → the callers fall back to permissive defaults */ }
+    origin = { missionId, delegated, text: parts.filter(Boolean).join(" \n ") };
+    return origin;
+  };
+
+  const deckRequested = async (): Promise<boolean> => {
+    const { text } = await runOrigin();
+    // Nothing legible to check (a room turn, an odd entry point): allow, rather
+    // than silently withdraw a format that used to work.
+    return text.trim() ? DECK_ASKED.test(text) : true;
+  };
+  const DECK_NOT_ASKED =
+    "ERROR: personne n'a demandé de présentation. Une présentation ne se produit QUE si l'utilisateur l'a demandée explicitement, "
+    + "dans sa requête ou dans l'ordre de mission. "
+    + (reportsDelegated
+      ? "Ce que tu as à livrer ici est un rapport : passe ta matière au Rédacteur avec request_report(subject, material)."
+      : 'Écris un rapport à la place : add_block(target="report", …) puis publish_artifact(target="report", …).');
+  const REPORT_MOVED =
+    'ERROR: tu n\'écris plus les rapports. Le Rédacteur les écrit tous — passe-lui ta matière avec '
+    + 'request_report(subject, material, angle?) et il publie le document. '
+    + '(add_block/publish_artifact ne servent plus qu\'aux présentations, target="presentation".)';
+  const artifactTargets = reportsDelegated ? ["presentation"] : ["report", "presentation"];
+
   tools.set("add_block", {
     incompressible: true,
     family: "DELIVER",
     def: {
       name: "add_block",
       description:
-        "Ajoute UN bloc au document en cours de construction. C'est ainsi que tu écris : un appel par bloc, dans l'ordre de lecture. "
+        (reportsDelegated
+          ? "Ajoute UN bloc à la PRÉSENTATION en cours de construction (les rapports passent par request_report). "
+          : "Ajoute UN bloc au document en cours de construction. C'est ainsi que tu écris : un appel par bloc, dans l'ordre de lecture. ")
         + "Appelle-le dès que tu as les faits d'une partie — le fil de conversation est compacté au fil du run, un chiffre non écrit dans un bloc est un chiffre perdu. "
         + "Quand le document est complet, appelle publish_artifact. " + BLOCK_CATALOGUE,
       parameters: {
         type: "object",
         properties: {
-          target: { type: "string", enum: ["report", "presentation"], description: "Le document auquel ce bloc appartient." },
+          target: { type: "string", enum: artifactTargets, description: "Le document auquel ce bloc appartient." },
           block: { type: "object", description: 'Un bloc : { "type": "...", "data": { ... } }. Voir le catalogue ci-dessus.' },
         },
         required: ["target", "block"],
@@ -1337,6 +1587,8 @@ export function buildInternalToolset(
     },
     run: async (args) => {
       const target = str(args.target) === "presentation" ? "presentation" : "report";
+      if (target === "report" && reportsDelegated) return REPORT_MOVED;
+      if (target === "presentation" && !(await deckRequested())) return DECK_NOT_ASKED;
       const raw = args.block;
       const block = (raw && typeof raw === "object" ? raw : safeJson(str(raw))) as { type?: string; data?: unknown } | null;
       if (!block?.type) {
@@ -1354,6 +1606,41 @@ export function buildInternalToolset(
       const meta = await readRunMeta(ctx);
       const key = draftKey(target);
       const draft = (Array.isArray(meta[key]) ? meta[key] : []) as unknown[];
+      // Already written: refuse the copy, not the run. A model that cannot see
+      // its own effect repeats the call, and the reader gets the same slide (or
+      // the same KPI row) several times over.
+      if (!REPEATABLE_BLOCKS.has(String(block.type))) {
+        const candidate = { type: String(block.type), data };
+        const rows = draft as Array<{ type: string; data: Record<string, unknown> }>;
+        const sig = blockKey(candidate);
+        const at = rows.findIndex((b) => blockKey(b) === sig);
+        if (at >= 0) {
+          return `Ce bloc « ${block.type} » est DÉJÀ dans le ${target} (position ${at + 1}, à l'identique) — il n'a pas été ajouté une seconde fois. `
+            + `Continue la suite, ou publie avec publish_artifact (${draft.length} blocs).`;
+        }
+        // Same figures, reworded: a correction, not a second block. There is no
+        // way to edit a block already added, so take the newer version in place.
+        const substance = blockSubstanceKey(candidate);
+        const sameAt = substance ? rows.findIndex((b) => blockSubstanceKey(b) === substance) : -1;
+        if (sameAt >= 0) {
+          rows[sameAt] = candidate;
+          await writeRunMeta(ctx, { ...meta, [key]: draft });
+          return `Ce bloc « ${block.type} » reprend des données DÉJÀ présentes (position ${sameAt + 1}) : cette version REMPLACE l'ancienne sur place, `
+            + `elle n'a pas été ajoutée en double (${draft.length} blocs). Continue la suite.`;
+        }
+      }
+      // A deck whose first block is not a slide has no pages: everything piles
+      // into one, and the reader gets a single endless card where a presentation
+      // was promised. Since reports left this toolbox, "presentation" is the only
+      // target left — which is exactly when an agent reaches for it to write a
+      // document. Refuse at the first block, while there is nothing to redo.
+      if (target === "presentation" && draft.length === 0 && block.type !== "slide") {
+        return 'ERROR: une présentation COMMENCE par un bloc slide : add_block(target="presentation", block={type:"slide", data:{title:"…"}}) ouvre la page, '
+          + "les blocs suivants la remplissent, et le slide suivant ouvre la page d'après. "
+          + (reportsDelegated
+            ? "Si ce que tu écris est un rapport et non une présentation, ce n'est pas ici : passe la matière au Rédacteur avec request_report."
+            : "Si ce que tu écris est un document défilant, utilise target=\"report\".");
+      }
       draft.push({ type: block.type, data });
       await writeRunMeta(ctx, { ...meta, [key]: draft });
       return `Bloc « ${block.type} » ajouté (${draft.length} bloc(s) dans le ${target}). Continue, puis publish_artifact(target="${target}", title="…") pour publier.`;
@@ -1366,12 +1653,14 @@ export function buildInternalToolset(
     def: {
       name: "publish_artifact",
       description:
-        "Publie le document construit avec add_block. C'est le SEUL moyen de livrer quelque chose de rédigé — rapport d'analyse, veille, audit, compte rendu, présentation. "
+        (reportsDelegated
+          ? "Publie la présentation construite avec add_block. Un RAPPORT ne se publie pas ici : passe la matière à request_report. "
+          : "Publie le document construit avec add_block. C'est le SEUL moyen de livrer quelque chose de rédigé — rapport d'analyse, veille, audit, compte rendu, présentation. ")
         + "Le contenu est le JSON des blocs, rendu par l'application. Il n'existe aucun autre format : ni markdown, ni tableur, ni document texte.",
       parameters: {
         type: "object",
         properties: {
-          target: { type: "string", enum: ["report", "presentation"], description: "report = document défilant ; presentation = slides." },
+          target: { type: "string", enum: artifactTargets, description: "report = document défilant ; presentation = slides." },
           title: { type: "string", description: "Titre court et lisible." },
         },
         required: ["target", "title"],
@@ -1380,12 +1669,20 @@ export function buildInternalToolset(
     },
     run: async (args) => {
       const target = str(args.target) === "presentation" ? "presentation" : "report";
+      if (target === "report" && reportsDelegated) return REPORT_MOVED;
+      if (target === "presentation" && !(await deckRequested())) return DECK_NOT_ASKED;
       const title = str(args.title, target === "presentation" ? "Présentation" : "Rapport").slice(0, 120);
       const meta = await readRunMeta(ctx);
       const key = draftKey(target);
       const blocks = (Array.isArray(meta[key]) ? meta[key] : []) as Array<{ type: string; data: unknown }>;
       if (blocks.length === 0) {
         return `ERROR: aucun bloc n'a été construit pour ce ${target}. Appelle d'abord add_block(target="${target}", block={type, data}) une fois par bloc. ${BLOCK_CATALOGUE}`;
+      }
+      // Second gate, for a draft started before the first one existed: without a
+      // single slide block the viewer has one page to show, and shows a wall.
+      if (target === "presentation" && !blocks.some((b) => b.type === "slide")) {
+        return `ERROR: cette présentation n'a AUCUN bloc slide — elle s'ouvrirait comme une seule page interminable. `
+          + `Découpe-la : add_block(target="presentation", block={type:"slide", data:{title:"…"}}) avant chaque groupe de blocs (une idée par page, deux ou trois blocs au plus), puis republie.`;
       }
       const content = JSON.stringify({ time: Date.now(), version: "2.30.0", blocks });
       const summary = blocks
@@ -1406,7 +1703,110 @@ export function buildInternalToolset(
     },
   });
 
-  summaryLines.push('- add_block / publish_artifact: écrire un rapport ou une présentation, un bloc à la fois, en JSON rendu par l\'app (le SEUL format de livrable).');
+  if (reportsDelegated) {
+    // ══════════════════════════════════════════════════════════════════════
+    // REPORTS — you gather, Le Rédacteur writes
+    // ══════════════════════════════════════════════════════════════════════
+    // The old arrangement asked every agent to be a writer too: each carried the
+    // whole reporting doctrine in its prompt, and each produced a slightly
+    // different document. One agent owns it now. What arrives here is MATTER,
+    // not a draft — the moment an agent starts writing prose for the report, the
+    // report gets written twice and neither half is good.
+    tools.set("request_report", {
+      incompressible: true,
+      family: "DELIVER",
+      def: {
+        name: "request_report",
+        description:
+          "Confie la rédaction d'un rapport au Rédacteur, l'agent qui écrit TOUS les rapports (bilan de mission, analyse, veille, audit, compte rendu, synthèse, livrable client). "
+          + "UNIQUEMENT SUR DEMANDE : n'appelle cet outil que si l'utilisateur (ou la mission) demande EXPLICITEMENT un rapport, un document ou un livrable écrit. Une question, une analyse ou une recherche demandée en conversation se répond dans le chat, sans rapport. "
+          + "Tu ne rédiges pas : tu lui passes la MATIÈRE — chiffres avec leur source et leur date, citations, constats, ce qui reste incertain — et il publie le document. "
+          + "Passe TOUT ce que tu as recueilli : il n'a aucun outil pour aller chercher ce qui manque, et ce qu'il n'a pas, il l'écrira « non publié ». "
+          + "À LA FIN, PAS À CHAQUE ÉTAPE : le rapport se demande une fois la mission terminée, quand toute la matière est là — pas au bout de chaque sous-tâche. "
+          + "UN SEUL rapport répond à une mission : rassemble TOUT et fais-le écrire en une fois, plutôt que d'en demander un par sujet. Deux au maximum, et seulement si les sujets ne tiennent vraiment pas dans un même document. "
+          + "L'appel rend la main quand le rapport est publié ; résume-le ensuite en une phrase, ne le recopie pas.",
+        parameters: {
+          type: "object",
+          properties: {
+            subject: { type: "string", description: "De quoi parle le rapport, en une ligne." },
+            material: {
+              type: "string",
+              description:
+                "La matière brute, aussi complète que possible : les chiffres AVEC leur source et leur date, les citations, "
+                + "les constats, les contradictions entre sources, ce qui n'a pas pu être vérifié. Du texte structuré, pas un rapport rédigé.",
+            },
+            angle: { type: "string", description: "La question à laquelle le rapport doit répondre, ou ce qu'il doit démontrer." },
+            audience: { type: "string", description: "Qui le lit (un client, l'équipe, un comité) — ça règle le registre." },
+            accent: { type: "string", description: "Couleur d'accent, si le client en a une : blue, indigo, teal, green, amber, rose, plum, slate." },
+          },
+          required: ["subject", "material"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const subject = str(args.subject).trim();
+        const material = str(args.material).trim();
+        if (!subject) return "ERROR: `subject` est requis — dis en une ligne de quoi parle le rapport.";
+        if (material.length < 120) {
+          return "ERROR: `material` fait moins de 120 caractères. Le Rédacteur n'enquête pas : sans matière il ne peut écrire que des généralités. "
+            + "Rassemble d'abord tes résultats (recall_findings, tes appels d'outils), puis rappelle request_report.";
+        }
+        // ── A SUB-TASK DOES NOT WRITE THE REPORT ──────────────────────────
+        // A mission is split across parallel sub-agents and delegated missions,
+        // each finishing on its own run. Letting every one of them publish gave
+        // a mission with six sub-tasks six reports, none of which was the report
+        // anyone asked for. A sub-task hands its matter UP; the run that closes
+        // the mission is the one that writes.
+        if (ctx.isSubagent) {
+          return "ERROR: tu es un sous-agent — tu n'écris pas de rapport. Termine par un compte rendu TEXTUEL complet de ta sous-tâche "
+            + "(les chiffres avec leur source et leur date, les constats, ce qui reste incertain) : il remonte à l'agent principal, "
+            + "qui rassemble tout et fait écrire UN rapport à la fin de la mission.";
+        }
+        const { missionId, delegated } = await runOrigin();
+        if (delegated || (ctx.delegationDepth ?? 0) > 0) {
+          return "ERROR: cette mission t'a été déléguée — le rapport final revient à l'agent qui a délégué, pas à toi. "
+            + "Termine par un compte rendu TEXTUEL complet (chiffres, sources, constats, incertitudes) : il lui est transmis et il en fera UN rapport.";
+        }
+
+        // ONE report answers a mission. A second is sometimes legitimate (two
+        // subjects that genuinely do not belong in one document); a third never
+        // is — past that, the reader is handed a pile instead of an answer, and
+        // each one costs a full authoring pass.
+        //
+        // Counted over the MISSION, not the run: a mission re-ticks, retries and
+        // resumes across several runs, and a per-run budget resets each time.
+        let written = 0;
+        const scope = missionId
+          ? { col: "mission_id", id: missionId }
+          : (ctx.runId ? { col: "run_id", id: ctx.runId } : null);
+        if (scope) {
+          const { count } = await ctx.admin
+            .from("internal_agent_deliverables")
+            .select("id", { count: "exact", head: true })
+            .eq(scope.col, scope.id).eq("kind", "report");
+          written = count ?? 0;
+        }
+        if (written >= REPORT_BUDGET) {
+          return `ERROR: ${written} rapports ont déjà été publiés pour ${missionId ? "cette mission" : "ce travail"} — c'est le maximum. `
+            + "N'en écris pas un troisième : ce qui reste à dire complète l'un des deux existants. "
+            + "Termine en résumant ce qui a été produit.";
+        }
+        const out = await ctx.requestReport!({
+          subject, material,
+          angle: str(args.angle) || undefined,
+          audience: str(args.audience) || undefined,
+          accent: str(args.accent) || undefined,
+        });
+        return written === REPORT_BUDGET - 1
+          ? `${out}\n\nC'était le second et dernier rapport de ce travail — tout ce qui reste à dire complète l'un des deux.`
+          : out;
+      },
+    });
+    summaryLines.push('- request_report: confier un rapport au Rédacteur (tu rassembles la matière, il écrit et publie). Tu n\'écris JAMAIS de rapport toi-même, et UN SEUL rapport répond à un travail.');
+    summaryLines.push('- add_block / publish_artifact: construire une PRÉSENTATION, un bloc à la fois (target="presentation") — UNIQUEMENT si l\'utilisateur en a demandé une.');
+  } else {
+    summaryLines.push('- add_block / publish_artifact: écrire un rapport ou une présentation, un bloc à la fois, en JSON rendu par l\'app (le SEUL format de livrable).');
+  }
 
 
   tools.set("create_deliverable", {
@@ -1430,6 +1830,7 @@ export function buildInternalToolset(
     },
     run: async () => {
       // Retired: the artifact system is add_block + publish_artifact now.
+      if (reportsDelegated) return "ERROR: create_deliverable n'existe plus, et tu n'écris plus les rapports. Un rapport se demande au Rédacteur avec request_report(subject, material, angle?) ; une présentation se construit avec add_block(target=\"presentation\") puis publish_artifact.";
       return "ERROR: create_deliverable n'existe plus. Tout ce que tu rédiges est un document JSON rendu par l'app : construis-le avec add_block(target=\"report\"|\"presentation\", block={type,data}) une fois par bloc, puis publie avec publish_artifact(target, title). Il n'y a plus de markdown, plus de kind à choisir.";
     },
   });
@@ -1514,6 +1915,7 @@ export function buildInternalToolset(
     },
     run: async () => {
       // Retired: the artifact system is add_block + publish_artifact now.
+      if (reportsDelegated) return REPORT_MOVED;
       return "ERROR: report_section n'existe plus. Un rapport se construit bloc par bloc : add_block(target=\"report\", block={type:\"header\"|\"paragraph\"|\"kpi\"|\"chart\"|\"table\"|\"comparison\"|\"matrix\"|\"callout\"|..., data:{...}}), puis publish_artifact(target=\"report\", title=\"…\").";
     },
   });
@@ -1697,6 +2099,7 @@ export function buildInternalToolset(
     },
     run: async () => {
       // Retired: the artifact system is add_block + publish_artifact now.
+      if (reportsDelegated) return "ERROR: create_artifact n'existe plus. Un rapport se demande au Rédacteur avec request_report(subject, material) ; une présentation se construit avec add_block(target=\"presentation\", block={type,data}) — les mêmes blocs, séparés par des blocs {type:\"slide\"} — puis publish_artifact. Il n'existe ni document markdown, ni tableur, ni artifact texte.";
       return "ERROR: create_artifact n'existe plus. Un rapport ou une présentation se construit avec add_block puis publish_artifact. Une présentation = les mêmes blocs, séparés par des blocs {type:\"slide\"}. Il n'existe ni document markdown, ni tableur, ni artifact texte.";
     },
   });
@@ -2061,8 +2464,29 @@ export function buildInternalToolset(
         return cap(parts.join("\n"), 6000);
       },
     });
+    // The prompt no longer lists every activated skill — it lists the ones this
+    // TASK plausibly needs. That trade only works if the full roster stays one
+    // call away, otherwise a trimmed index becomes a capability the agent
+    // believes it doesn't have.
+    tools.set("list_skills", {
+      def: {
+        name: "list_skills",
+        description:
+          "Liste TOUTES tes skills activées (nom, slug, description). Ton prompt n'en montre qu'une sélection, celle qui colle à la tâche en cours : appelle-la quand tu cherches une expertise que tu n'y vois pas, avant de conclure que tu ne l'as pas.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      },
+      run: () => {
+        const lines = (ctx.skills ?? []).map((s) =>
+          `- ${s.name} (${s.slug})${s.category ? ` [${s.category}]` : ""}${s.description ? `: ${s.description}` : ""}`);
+        return Promise.resolve(
+          lines.length
+            ? `Skills activées (${lines.length}) :\n${lines.join("\n")}\n\nCharge celle qu'il te faut avec use_skill(slug).`
+            : "Aucune skill activée.",
+        );
+      },
+    });
     const skillIndex = ctx.skills.map((s) => `${s.name} (${s.slug})`).join(", ");
-    summaryLines.push(`- use_skill: load the full playbook of an activated skill on demand. Activated: ${skillIndex}.`);
+    summaryLines.push(`- use_skill / list_skills: charge le playbook d'une skill activée à la demande (le prompt n'en liste qu'une sélection). Activées : ${skillIndex}.`);
 
     // read_skill_file — progressive disclosure for a skill's bundled resource
     // files. Registered only when at least one activated skill has files.
@@ -2154,8 +2578,9 @@ export function buildInternalToolset(
           brief: { type: "string", description: "Detailed instructions: what to do, context, constraints." },
           acceptance_criteria: { type: "string", description: "Optional: what counts as done." },
           assignee_agent: { type: "string", description: "Optional teammate agent name to run it; defaults to this agent." },
-          schedule: { type: "string", description: "Optional cron expression to run it on a RECURRING schedule, e.g. '0 6 * * *' = daily at 06:00, '0 9 * * 1' = Mondays 09:00. When set, the mission recurs (it does NOT fire immediately)." },
-          start_now: { type: "boolean", description: "If true, activate immediately (default true; ignored when a schedule is set)." },
+          schedule: { type: "string", description: "Optional cron expression, in the USER'S local time, to run it on a RECURRING schedule: '30 7 * * *' = every day at 07:30, '0 9 * * 1' = Mondays 09:00, '0 9 1 * *' = the 1st of each month (days 1-28), '15 * * * *' = hourly. Only these four shapes are supported (no steps, lists or ranges). When set, the mission recurs (it does NOT fire immediately)." },
+          run_at: { type: "string", description: "Optional ONE-OFF date for a reminder or a task to do later, in the user's local time: 'YYYY-MM-DDTHH:mm' (e.g. '2026-09-18T14:00'). Compute it from the current date given in your prompt. The mission runs once at that moment. Do not combine with schedule." },
+          start_now: { type: "boolean", description: "If true, activate immediately (default true; ignored when a schedule or run_at is set)." },
         },
         required: ["title", "brief"],
         additionalProperties: false,
@@ -2166,6 +2591,20 @@ export function buildInternalToolset(
       const brief = str(args.brief);
       if (!title || !brief) return "ERROR: title and brief are required.";
       const schedule = str(args.schedule).trim() || null;
+      const runAtRaw = str(args.run_at).trim() || null;
+      if (schedule && runAtRaw) return "ERROR: pass either schedule (recurring) or run_at (one-off), not both.";
+      // The column only holds a cadence (0146) — the raw cron used to be written
+      // as is and every recurring mission was refused by the database.
+      const tz = defaultTimezone();
+      const parsed = schedule ? parseSchedule(schedule, tz) : null;
+      if (schedule && !parsed) {
+        return `ERROR: unsupported schedule "${schedule}". Use one of: 'M * * * *' (hourly), 'M H * * *' (daily), 'M H * * D' (weekly, D=0-6, 0=Sunday), 'M H DOM * *' (monthly, DOM=1-28). No steps, lists or ranges.`;
+      }
+      const runAt = runAtRaw ? parseRunAt(runAtRaw, tz) : null;
+      if (runAtRaw && !runAt) return `ERROR: run_at "${runAtRaw}" is not a date. Use 'YYYY-MM-DDTHH:mm' in the user's local time.`;
+      if (runAt && runAt.getTime() < Date.now() - 60_000) {
+        return `ERROR: run_at ${runAtRaw} is in the past (now: ${new Date().toISOString()}). Recompute it from the current date in your prompt.`;
+      }
       // Resolve assignee (default = self).
       let agentId = ctx.agentId ?? null;
       const who = str(args.assignee_agent);
@@ -2193,15 +2632,30 @@ export function buildInternalToolset(
       if (guard) return guard;
       // A scheduled mission recurs on its cron; it does NOT fire now (the
       // scheduler picks it up at next_run_at, then bumps next_run_at each run).
-      const startNow = args.start_now !== false && !schedule;
+      const startNow = args.start_now !== false && !schedule && !runAt;
       const row: Record<string, unknown> = {
         agent_id: agentId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
         title, brief, acceptance_criteria: str(args.acceptance_criteria) || null,
-        status: schedule || startNow ? "active" : "draft",
+        status: schedule || runAt || startNow ? "active" : "draft",
         delegation_depth: childDepth,
         delegated_by_agent: ctx.agentId,
       };
-      if (schedule) { row.schedule = schedule; row.next_run_at = new Date(Date.now() + 60_000).toISOString(); }
+      if (parsed) {
+        row.schedule = parsed.cadence;
+        row.next_run_at = parsed.next_run_at;
+        row.schedule_minute = parsed.schedule_minute;
+        row.schedule_hour = parsed.schedule_hour;
+        row.schedule_dow = parsed.schedule_dow;
+        row.schedule_dom = parsed.schedule_dom;
+      }
+      // A one-off has no cadence; the RUN_ONCE_TAG is what tells the scheduler
+      // this row is due once — a bare next_run_at on an unscheduled row could be
+      // a leftover from a schedule someone removed.
+      if (runAt) {
+        row.next_run_at = runAt.toISOString();
+        row.tags = [RUN_ONCE_TAG];
+        row.board_column = "todo";
+      }
       const { data: mission, error } = await ctx.admin.from("internal_agent_missions").insert(row).select("id").single();
       if (error) return `ERROR creating mission: ${error.message}`;
       // Kick it off now via the run function (best-effort, fire-and-forget).
@@ -2214,12 +2668,19 @@ export function buildInternalToolset(
           }).catch(() => {});
         }
       }
-      return schedule
-        ? `Mission "${title}" scheduled (cron ${schedule}) — it will run automatically (id ${mission.id}).`
-        : `Mission "${title}" created${startNow ? " and started" : " as a draft"} (id ${mission.id}).`;
+      const localWhen = (iso: string) => new Intl.DateTimeFormat("fr-FR", {
+        timeZone: tz, weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+      }).format(new Date(iso));
+      if (parsed) {
+        return `Mission "${title}" scheduled (${parsed.cadence}) — first run ${localWhen(parsed.next_run_at)} (${tz}), then automatically (id ${mission.id}). Tell the user the first date in words.`;
+      }
+      if (runAt) {
+        return `Mission "${title}" will run once on ${localWhen(runAt.toISOString())} (${tz}) (id ${mission.id}). Confirm that date to the user in words.`;
+      }
+      return `Mission "${title}" created${startNow ? " and started" : " as a draft"} (id ${mission.id}).`;
     },
   });
-  summaryLines.push("- create_mission: assign a full background mission to yourself or a teammate, optionally on a recurring cron schedule (always available).");
+  summaryLines.push("- create_mission: assign a full background mission to yourself or a teammate — now, once at a later date (run_at, e.g. a reminder), or on a recurring schedule (always available).");
 
   // Parallel multitasking: fan INDEPENDENT subtasks out to ephemeral sub-agents
   // that run at the same time. Offered on any PRIMARY run so it shows up in the
@@ -2542,6 +3003,313 @@ export function buildInternalToolset(
   });
   summaryLines.push("- search_past_work: search your own past deliverables & reports before redoing anything (always available).");
 
+  // ---------------------------------------------------------------------------
+  // Les procédures du service
+  //
+  // Une procédure n'est PAS déclenchée : personne ne la lance. C'est un mode
+  // opératoire écrit une fois, que l'agent consulte quand il tombe sur la
+  // situation qu'elle décrit. Sans cet outil, elles n'existaient que pour
+  // l'écran qui les édite — écrites, activées, et jamais lues par personne.
+  //
+  // Divulgation progressive, comme les skills : l'INDEX (nom + quand s'en
+  // servir) tient dans la description de l'outil, le texte complet ne part que
+  // quand l'agent le demande. Charger douze procédures entières dans chaque
+  // prompt serait exactement le fichier d'instructions monolithique que les
+  // workflows existent pour remplacer.
+  // ---------------------------------------------------------------------------
+  if (ctx.serviceDashboardId) {
+    tools.set("use_procedure", {
+      family: "PLAN",
+      def: {
+        name: "use_procedure",
+        description:
+          "Les modes opératoires écrits par ton service. Sans argument, liste ceux qui existent avec la situation que chacun couvre. " +
+          "Avec un `id`, rend la procédure complète, étape par étape — et tu la SUIS toi-même, dans ce run : c'est le cas normal. " +
+          "mode=\"run\" est réservé au cas où le travail doit se dérouler À CÔTÉ du tien (long, indépendant, avec son propre compte rendu) : " +
+          "il ouvre un run séparé confié à l'assistant du service, et tu n'attends pas son résultat. " +
+          "RÉFLEXE : avant de traiter une demande qui ressemble à un cas récurrent (une réclamation, une relance, une clôture, un incident), regarde s'il en existe une — la suivre vaut mieux que réinventer une façon de faire qui devra être corrigée ensuite.",
+        parameters: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "L'id de la procédure. Omets-le pour lister ce qui existe." },
+            mode: {
+              type: "string", enum: ["read", "run"],
+              description: "read (défaut) : tu la lis et tu la suis ici. run : elle part dans son propre run, tu n'attends pas.",
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const id = str(args.id).trim();
+        const mode = str(args.mode) === "run" ? "run" : "read";
+        if (!id) {
+          const { data } = await ctx.admin.from("agent_workflows")
+            .select("id, name, description")
+            .eq("service_dashboard_id", ctx.serviceDashboardId!)
+            .eq("kind", "procedure").eq("status", "active")
+            .order("updated_at", { ascending: false }).limit(30);
+          const rows = (data ?? []) as Array<{ id: string; name: string; description: string | null }>;
+          if (rows.length === 0) {
+            return "Aucune procédure écrite pour ce service. Traite la demande à ta façon, et si le cas se répète, propose d'en écrire une (propose_mission).";
+          }
+          return JSON.stringify(rows.map((r) => ({
+            id: r.id, nom: r.name, quand_s_en_servir: r.description ?? "(non précisé)",
+          })));
+        }
+        const { data } = await ctx.admin.from("agent_workflows")
+          .select("name, description, document, status, kind, service_dashboard_id")
+          .eq("id", id).maybeSingle();
+        const wf = data as {
+          name: string; description: string | null; document: string;
+          status: string; kind: string; service_dashboard_id: string | null;
+        } | null;
+        // On vérifie le service ET la nature : une automatisation n'est pas un
+        // texte à suivre, et rendre son playbook ferait exécuter à la main ce
+        // que le moteur exécute déjà tout seul.
+        if (!wf || wf.service_dashboard_id !== ctx.serviceDashboardId) return "ERROR: procédure introuvable dans ce service.";
+        if (wf.kind !== "procedure") return "ERROR: ceci est une automatisation — elle s'exécute toute seule, il n'y a rien à suivre.";
+        if (wf.status !== "active") return `La procédure « ${wf.name} » n'est pas active : ne t'en sers pas.`;
+        if (!wf.document.trim()) return `La procédure « ${wf.name} » est vide.`;
+
+        if (mode === "run") {
+          // Garde-fou : une procédure déjà en cours ne se relance pas. Sans ça,
+          // l'assistant qui exécute une procédure et y rencontre son propre nom
+          // la relancerait indéfiniment, chaque run en ouvrant un nouveau.
+          const { data: live } = await ctx.admin.from("agent_workflow_runs")
+            .select("id").eq("workflow_id", id).eq("status", "running").limit(1).maybeSingle();
+          if (live) {
+            return `La procédure « ${wf.name} » a déjà un run en cours (${(live as { id: string }).id}). N'en relance pas un second — suis-la ici si tu en as besoin maintenant.`;
+          }
+          const base = Deno.env.get("SUPABASE_URL");
+          const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+          if (!base || !key) return "ERROR: runtime non configuré.";
+          const res = await fetch(`${base}/functions/v1/run-workflow`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              workflow_id: id,
+              trigger_payload: { trigger: "agent", agent_id: ctx.agentId },
+            }),
+          });
+          const json = await res.json().catch(() => null) as Record<string, unknown> | null;
+          if (!res.ok || !json?.run_id) return `ERROR: lancement impossible — ${str(json?.error) || res.status}.`;
+          return `Procédure « ${wf.name} » lancée dans son propre run (${str(json.run_id)}), confiée à l'assistant du service. `
+            + `N'attends pas son résultat ici : signale-le et poursuis ce que tu peux faire toi-même.`;
+        }
+
+        return cap([
+          `# Procédure : ${wf.name}`,
+          wf.description ? `_Quand s'en servir : ${wf.description}_` : "",
+          "",
+          wf.document.trim(),
+          "",
+          "_Suis ces étapes. Si le cas s'en écarte vraiment, dis-le dans ton rapport plutôt que d'improviser en silence._",
+        ].filter(Boolean).join("\n"), 14000);
+      },
+    });
+    summaryLines.push("- use_procedure: les modes opératoires écrits par ton service — liste-les, puis lis celui qui couvre la situation, AVANT d'inventer ta façon de faire.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // L'entreprise : ses objectifs, et sa carte (0212 / 0214)
+  //
+  // Le prompt système porte déjà le profil et les objectifs qui concernent CET
+  // agent. Ces deux outils servent au reste : le pourquoi qu'il n'a pas reçu,
+  // et les gens qu'il ne connaît pas encore.
+  // ---------------------------------------------------------------------------
+  tools.set("company_objectives", {
+    def: {
+      name: "company_objectives",
+      description:
+        "Les objectifs de l'entreprise — au-delà de ceux déjà dans ton contexte. " +
+        "'list' pour voir l'arbre complet (y compris ceux des autres services) ; " +
+        "'why' pour REMONTER la chaîne au-dessus d'un objectif et comprendre ce qu'il sert vraiment — à utiliser quand une demande te semble arbitraire ; " +
+        "'measure' pour mettre à jour la valeur courante d'une métrique dont tu viens d'obtenir le vrai chiffre. " +
+        "Ne 'measure' que des chiffres que tu as réellement constatés, jamais une estimation.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["list", "why", "measure"], description: "list · why · measure" },
+          objective_id: { type: "string", description: "L'objectif visé (pour 'why' et 'measure')." },
+          value: { type: "number", description: "La valeur courante constatée (pour 'measure')." },
+          note: { type: "string", description: "D'où vient ce chiffre (pour 'measure') — la source, pas le commentaire." },
+        },
+        required: ["action"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const action = str(args.action) || "list";
+      const cols = "id, parent_id, title, detail, metric, unit, baseline_value, target_value, current_value, direction, period_end, status, priority, owner_dashboard_id, owner_agent_id";
+
+      if (action === "measure") {
+        const id = str(args.objective_id);
+        const value = Number(args.value);
+        if (!id || !Number.isFinite(value)) return "ERROR: objective_id et value (numérique) sont requis.";
+        const { data: before } = await ctx.admin.from("company_objectives")
+          .select("title, metric, unit, target_value").eq("id", id).eq("project_id", ctx.projectId).maybeSingle();
+        if (!before) return "ERROR: cet objectif n'existe pas dans cette entreprise.";
+        const { error } = await ctx.admin.from("company_objectives").update({
+          current_value: value,
+          measured_at: new Date().toISOString(),
+          measured_by: "agent",
+          measured_note: str(args.note).slice(0, 600) || null,
+          updated_at: new Date().toISOString(),
+        }).eq("id", id).eq("project_id", ctx.projectId);
+        if (error) return `ERROR: ${error.message}`;
+        const b = before as { title: string; metric: string | null; unit: string | null; target_value: number | null };
+        return `Mesure enregistrée : « ${b.title} » — ${b.metric ?? "valeur"} = ${value}${b.unit ? ` ${b.unit}` : ""}` +
+          `${b.target_value != null ? ` (cible ${b.target_value}${b.unit ? ` ${b.unit}` : ""})` : ""}. ` +
+          `Elle est datée et attribuée à toi : le tableau de bord montrera qui l'a mise à jour.`;
+      }
+
+      const { data } = await ctx.admin.from("company_objectives")
+        .select(cols).eq("project_id", ctx.projectId)
+        .in("status", ["active", "at_risk", "draft", "done"])
+        .order("priority", { ascending: true }).limit(80);
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      if (rows.length === 0) {
+        return "Aucun objectif n'est défini pour cette entreprise. " +
+          "Si la demande en cours en suppose un, dis-le plutôt que de le deviner — c'est à un humain de le poser.";
+      }
+
+      if (action === "why") {
+        const id = str(args.objective_id);
+        if (!id) return "ERROR: objective_id est requis pour 'why'.";
+        const byId = new Map(rows.map((r) => [String(r.id), r]));
+        const chain: Array<Record<string, unknown>> = [];
+        // Le type est ANNOTÉ. Sans lui, `cur` est inféré depuis `byId.get` puis
+        // réaffecté depuis lui-même dans la boucle : TypeScript n'a pas de
+        // point de départ pour résoudre la circularité et abandonne (TS7022).
+        let cur: Record<string, unknown> | undefined = byId.get(id);
+        if (!cur) return "ERROR: cet objectif n'existe pas dans cette entreprise.";
+        // Garde-fou sur la profondeur : un arbre mal saisi peut contenir un
+        // cycle, et une remontée infinie est un run mort.
+        while (cur && chain.length < 8) {
+          chain.push(cur);
+          const p: Record<string, unknown> | undefined = cur.parent_id
+            ? byId.get(String(cur.parent_id))
+            : undefined;
+          if (!p || p === cur) break;
+          cur = p;
+        }
+        return JSON.stringify({
+          chaine_du_plus_precis_au_plus_general: chain.map((o) => ({
+            id: o.id, titre: o.title, metrique: o.metric,
+            cible: o.target_value, valeur_actuelle: o.current_value, unite: o.unit,
+            echeance: o.period_end, statut: o.status,
+          })),
+          lecture: "Le dernier élément est ce que l'entreprise cherche vraiment. Si ton travail ne le sert pas, dis-le.",
+        });
+      }
+
+      return JSON.stringify(rows.map((o) => ({
+        id: o.id, parent_id: o.parent_id, titre: o.title, detail: o.detail,
+        metrique: o.metric, unite: o.unit, cible: o.target_value, valeur_actuelle: o.current_value,
+        sens: o.direction, echeance: o.period_end, statut: o.status, priorite: o.priority,
+        a_toi: o.owner_agent_id === ctx.agentId,
+        a_ton_service: !!ctx.serviceDashboardId && o.owner_dashboard_id === ctx.serviceDashboardId,
+      })));
+    },
+  });
+  summaryLines.push("- company_objectives: lire l'arbre des objectifs de l'entreprise, remonter le POURQUOI d'une demande, ou enregistrer une mesure constatée (toujours disponible).");
+
+  tools.set("explore_company_graph", {
+    def: {
+      name: "explore_company_graph",
+      description:
+        "La carte de l'entreprise : services, agents, rooms, missions, livrables, outils connectés, collections et ressources — et ce qui les relie. " +
+        "Sert à répondre à « qui s'occupe de ça ? », « quel service a déjà cet outil connecté ? », « qu'a produit ce service récemment ? » " +
+        "SANS demander à un humain ni deviner. " +
+        "'search' cherche par mot-clé, 'neighbors' déplie ce qui entoure un nœud, 'overview' donne la structure d'ensemble. " +
+        "Les ids sont de la forme \"<type>:<uuid>\" ; un id d'agent s'utilise tel quel avec send_message_to_agent en retirant le préfixe.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["overview", "search", "neighbors"], description: "overview · search · neighbors" },
+          query: { type: "string", description: "Mot-clé (pour 'search')." },
+          node_id: { type: "string", description: "Nœud de départ, ex. \"service:<uuid>\" (pour 'neighbors')." },
+          kind: {
+            type: "string",
+            description: "Filtre de type : company · objective · service · agent · room · mission · deliverable · connector · collection · asset.",
+          },
+          limit: { type: "number", description: "Max résultats (défaut 25, max 60)." },
+        },
+        required: ["action"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const action = str(args.action) || "overview";
+      const limit = Math.min(Math.max(Number(args.limit) || 25, 1), 60);
+
+      if (action === "overview") {
+        const { data } = await ctx.admin
+          .from("company_graph_nodes").select("kind, label, sublabel, status, dashboard_id")
+          .eq("project_id", ctx.projectId).limit(600);
+        const rows = (data ?? []) as Array<{ kind: string; label: string; sublabel: string | null; status: string | null; dashboard_id: string | null }>;
+        if (rows.length === 0) return "La carte de l'entreprise est vide.";
+        const counts: Record<string, number> = {};
+        for (const r of rows) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
+        const services = rows.filter((r) => r.kind === "service")
+          .map((s) => ({ service: s.label, mission: s.sublabel, collaboration: s.status }));
+        return JSON.stringify({
+          entreprise: rows.find((r) => r.kind === "company")?.label ?? null,
+          effectifs: counts,
+          services,
+          note: "Utilise action=\"search\" pour trouver quelqu'un ou quelque chose, action=\"neighbors\" pour déplier un nœud.",
+        });
+      }
+
+      if (action === "search") {
+        const query = str(args.query).trim();
+        if (!query) return "ERROR: query est requis pour 'search'.";
+        const like = `%${query.slice(0, 60).replace(/[%_]/g, (m) => `\\${m}`)}%`;
+        const found = ctx.admin
+          .from("company_graph_nodes").select("id, kind, label, sublabel, status")
+          .eq("project_id", ctx.projectId)
+          .or(`label.ilike.${like},sublabel.ilike.${like}`);
+        const typed = str(args.kind) ? found.eq("kind", str(args.kind)) : found;
+        const { data } = await typed.limit(limit);
+        const rows = (data ?? []) as Array<Record<string, unknown>>;
+        if (rows.length === 0) return `Rien dans la carte ne correspond à « ${query} ».`;
+        return JSON.stringify(rows);
+      }
+
+      // neighbors
+      const nodeId = str(args.node_id).trim();
+      if (!nodeId) return "ERROR: node_id est requis pour 'neighbors' (ex. \"service:<uuid>\").";
+      const [{ data: outEdges }, { data: inEdges }] = await Promise.all([
+        ctx.admin.from("company_graph_edges").select("target_id, relation")
+          .eq("project_id", ctx.projectId).eq("source_id", nodeId).limit(120),
+        ctx.admin.from("company_graph_edges").select("source_id, relation")
+          .eq("project_id", ctx.projectId).eq("target_id", nodeId).limit(60),
+      ]);
+      const ids = [
+        ...((outEdges ?? []) as Array<{ target_id: string }>).map((e) => e.target_id),
+        ...((inEdges ?? []) as Array<{ source_id: string }>).map((e) => e.source_id),
+      ];
+      if (ids.length === 0) return `Le nœud ${nodeId} n'a aucun voisin (ou n'existe pas).`;
+      const { data: nodes } = await ctx.admin
+        .from("company_graph_nodes").select("id, kind, label, sublabel, status")
+        .eq("project_id", ctx.projectId).in("id", [...new Set(ids)].slice(0, 150));
+      const byId = new Map(((nodes ?? []) as Array<{ id: string }>).map((n) => [n.id, n]));
+      const decorate = (id: string, relation: string, dir: "sortant" | "entrant") => {
+        const n = byId.get(id) as Record<string, unknown> | undefined;
+        return n ? { ...n, relation, sens: dir } : null;
+      };
+      const out = [
+        ...((outEdges ?? []) as Array<{ target_id: string; relation: string }>)
+          .map((e) => decorate(e.target_id, e.relation, "sortant")),
+        ...((inEdges ?? []) as Array<{ source_id: string; relation: string }>)
+          .map((e) => decorate(e.source_id, e.relation, "entrant")),
+      ].filter(Boolean).slice(0, limit);
+      return JSON.stringify(out);
+    },
+  });
+  summaryLines.push("- explore_company_graph: la carte de l'entreprise (qui fait quoi, quel service a quel outil, ce qui a été produit) — cherche ici avant de demander à un humain (toujours disponible).");
+
   // Always-on: read-only HTTP GET to any public API/URL returning JSON/text.
   tools.set("http_get", {
     def: {
@@ -2716,13 +3484,595 @@ export function buildInternalToolset(
   });
   summaryLines.push("- user_browser: act in the user's own browser (their tabs and sessions), when they have armed control in the extension.");
 
+
+  // ── FORMER QUELQU'UN, DANS SON PROPRE NAVIGATEUR ──────────────────────────
+  //
+  // user_browser fait le travail À LA PLACE de la personne. guide_user fait
+  // exactement l'inverse, et c'est ce que demandait l'onboarding : l'agent
+  // connaît la procédure, mais c'est le nouvel arrivant qui doit apprendre à la
+  // faire — dans le vrai outil, avec son propre compte.
+  //
+  // Techniquement, la différence tient en un mot : ATTENDRE. L'outil pose un
+  // repère sur l'élément, écrit la phrase, et rend la main seulement quand la
+  // personne a agi (ou renoncé). Un agent qui « montre » sans attendre ne forme
+  // personne — il fait défiler des bulles.
+  //
+  // Le canal `coach` (migration 0218) garantit le reste : aucune commande
+  // mutante n'y est servie, ni par le serveur ni par l'extension. Ce n'est donc
+  // pas une consigne de prompt que l'agent pourrait contourner en insistant.
+
+  /** L'appareil devant lequel se tient quelqu'un. Le mode formation suffit ; un
+   *  appareil armé pour le pilotage convient aussi — qui peut le plus peut le
+   *  moins, et exiger deux armements pour être guidé serait absurde. */
+  const coachDevice = async (): Promise<{ id: string; name: string } | undefined> => {
+    const nowIso = new Date().toISOString();
+    const { data } = await ctx.admin.from("recorder_devices")
+      .select("id, name, coach_until, control_until, last_seen_at")
+      .eq("workspace_id", ctx.workspaceId).is("revoked_at", null)
+      .or(`coach_until.gt.${nowIso},control_until.gt.${nowIso}`)
+      .order("last_seen_at", { ascending: false }).limit(1);
+    return (data ?? [])[0] as { id: string; name: string } | undefined;
+  };
+
+  /** Attend le verdict d'un ordre de guidage. Rend `null` si l'échéance de
+   *  l'agent tombe avant celle de la personne : l'ordre reste alors vivant, et
+   *  `guide_user action="wait"` permet de revenir l'attendre. */
+  const awaitCommand = async (id: string, deadlineMs: number): Promise<{ status: string; result?: Record<string, unknown>; error?: string } | null> => {
+    while (Date.now() < deadlineMs) {
+      await new Promise((r) => setTimeout(r, 1200));
+      const { data: row } = await ctx.admin.from("browser_commands")
+        .select("status, result, error").eq("id", id).maybeSingle();
+      const st = row as { status?: string; result?: Record<string, unknown>; error?: string } | null;
+      if (!st || st.status === "pending" || st.status === "running") continue;
+      return { status: st.status!, result: st.result ?? undefined, error: st.error ?? undefined };
+    }
+    return null;
+  };
+
+  /**
+   * Journaliser n'est pas une politesse administrative : une étape sur laquelle
+   * trois personnes sur quatre bloquent est une procédure à réécrire, et
+   * personne ne s'en apercevra si la trace dépend du bon vouloir de l'agent en
+   * fin de session. Le journal est donc un SOUS-PRODUIT du guidage, écrit ici,
+   * qu'on y pense ou non.
+   */
+  const logTrainingStep = async (
+    stepPayload: Record<string, unknown>,
+    outcome: string,
+    extra: { url?: string | null; duration_ms?: number | null; hints?: number; note?: string | null },
+  ): Promise<void> => {
+    const meta = await readRunMeta(ctx);
+    const sessionId = typeof meta.training_session_id === "string" ? meta.training_session_id : null;
+    if (!sessionId) return;
+    const seq = Number(meta.training_step_seq ?? 0) + 1;
+    await ctx.admin.from("training_step_logs").insert({
+      session_id: sessionId,
+      seq,
+      title: str(stepPayload.title) || null,
+      instruction: str(stepPayload.instruction) || null,
+      target: stepPayload.target ?? {},
+      url: extra.url ?? null,
+      outcome: ["done", "stuck", "skipped", "timeout", "not_found", "answered"].includes(outcome) ? outcome : "done",
+      hints: extra.hints ?? 0,
+      duration_ms: extra.duration_ms ?? null,
+      note: extra.note ?? null,
+    }).then(() => {}, () => {});
+    await writeRunMeta(ctx, { ...meta, training_step_seq: seq });
+    // Le compteur de blocages vit sur la session : c'est lui qu'on lit pour
+    // savoir si un parcours se passe mal AVANT qu'il ne se termine.
+    const patch: Record<string, unknown> = { current_step: seq };
+    if (outcome === "stuck") {
+      const { data: s } = await ctx.admin.from("training_sessions").select("stuck_count").eq("id", sessionId).maybeSingle();
+      patch.stuck_count = Number((s as { stuck_count?: number } | null)?.stuck_count ?? 0) + 1;
+    }
+    await ctx.admin.from("training_sessions").update(patch).eq("id", sessionId).then(() => {}, () => {});
+  };
+
+  tools.set("guide_user", {
+    def: {
+      name: "guide_user",
+      description:
+        "FORMER une personne dans son navigateur : entourer le bon élément, écrire (et dire à voix haute) quoi faire, puis ATTENDRE qu'elle le fasse. " +
+        "Tu ne cliques jamais à sa place — c'est elle qui apprend. " +
+        "ACTIONS : step (poser un repère sur une cible + instruction, et attendre le geste — l'action principale), " +
+        "say (un message sans cible : introduction, explication, encouragement ; ack=true pour attendre un « compris »), " +
+        "ask (une question avec des choix cliquables, rend la réponse), " +
+        "look (lire ce qui est réellement à l'écran — À FAIRE quand un repère n'a pas pu être posé, ou pour vérifier où en est la personne), " +
+        "end (retirer l'overlay et clore la formation), " +
+        "wait (revenir attendre une étape déjà affichée, avec son command_id). " +
+        "Le résultat d'un step dit ce qui s'est passé : done (fait), stuck (elle demande de l'aide), skipped (passée), timeout (aucune réaction), quit (elle a arrêté). " +
+        "Nécessite que la personne ait activé « Mode formation » dans l'extension FounderOS.",
+      parameters: { type: "object", properties: {
+        action: { type: "string", description: "step | say | ask | look | end | wait" },
+        instruction: { type: "string", description: "Ce qu'elle doit faire, à l'impératif, 15 mots maximum. « Clique sur Nouveau contact », pas « il faudrait maintenant que vous cliquiez… »." },
+        title: { type: "string", description: "Titre court de l'étape (2-4 mots), affiché au-dessus de l'instruction." },
+        tip: { type: "string", description: "Le pourquoi, le raccourci, le piège classique. Une étape sur deux environ, pas à chaque fois." },
+        target: { type: "object", description: "L'élément à entourer : {label?, role?, testid?, css?, name?, placeholder?}. Le label est le texte visible. Sans cible, la bulle s'affiche en coin." },
+        gesture: { type: "string", description: "Le geste attendu, qui détermine comment la réussite est détectée : click | fill | select | check | keypress | navigate | none. Défaut : click si une cible est donnée." },
+        value: { type: "string", description: "Pour fill/select : la valeur attendue (montrée à la personne, jamais saisie par toi). Pour keypress : la touche." },
+        choices: { type: "array", items: { type: "string" }, description: "Pour ask : les réponses proposées (5 maximum)." },
+        ack: { type: "boolean", description: "Pour say : attendre qu'elle clique « Compris » avant de continuer." },
+        step: { type: "number", description: "Numéro de l'étape en cours, affiché dans la carte de formation." },
+        total: { type: "number", description: "Nombre total d'étapes du parcours." },
+        program: { type: "string", description: "Titre du parcours, affiché dans la carte de session." },
+        text: { type: "boolean", description: "Pour look : rendre le TEXTE de la page au lieu de la liste des éléments cliquables." },
+        wait_s: { type: "number", description: "Combien de temps attendre le geste (défaut 240 s). Au-delà, tu peux revenir avec action=wait." },
+        command_id: { type: "string", description: "Pour wait : l'identifiant rendu par le step qui attend encore." },
+        tab_id: { type: "number", description: "Onglet visé. Omis = celui que la personne a sous les yeux." },
+      }, required: ["action"], additionalProperties: false },
+    },
+    run: async (args) => {
+      const action = str(args.action) || "step";
+      const known = ["step", "say", "ask", "look", "end", "wait"];
+      if (!known.includes(action)) return `ERROR: action inconnue « ${action} ». Disponibles : ${known.join(", ")}.`;
+
+      const stepPayload: Record<string, unknown> = {
+        title: str(args.title) || undefined,
+        instruction: str(args.instruction) || undefined,
+        tip: str(args.tip) || undefined,
+        target: (args.target && typeof args.target === "object") ? args.target : undefined,
+        gesture: str(args.gesture) || undefined,
+        value: args.value != null ? str(args.value) : undefined,
+        choices: Array.isArray(args.choices) ? args.choices.map((c) => str(c)).slice(0, 5) : undefined,
+        ack: args.ack === true ? true : undefined,
+        step: Number.isFinite(Number(args.step)) ? Number(args.step) : undefined,
+        total: Number.isFinite(Number(args.total)) ? Number(args.total) : undefined,
+      };
+
+      // Rendre compte de ce qu'a fait la personne, dans les mots dont l'agent a
+      // besoin pour décider de la suite. Un « ok » ne suffirait pas : « elle
+      // bloque » et « elle a fait » n'appellent pas le même geste suivant.
+      const speak = async (res: Record<string, unknown> | undefined): Promise<string> => {
+        const outcome = str(res?.outcome);
+        const url = str(res?.url);
+        const note = str(res?.note);
+        await logTrainingStep(stepPayload, outcome || "done", {
+          url: url || null,
+          duration_ms: Number.isFinite(Number(res?.duration_ms)) ? Number(res?.duration_ms) : null,
+          hints: Number(res?.hints ?? 0),
+          note: note || null,
+        });
+        const secs = Math.round(Number(res?.duration_ms ?? 0) / 1000);
+        switch (outcome) {
+          case "done":
+            return `FAIT en ${secs}s${note ? ` (${note})` : ""}${url ? ` — page : ${url}` : ""}. Enchaîne sur l'étape suivante.`;
+          case "stuck":
+            return "ELLE BLOQUE sur cette étape. Ne répète pas la même phrase : décris ce qu'elle doit CHERCHER DES YEUX (couleur, position, libellé voisin), ou appelle guide_user action=\"look\" pour voir ce qui est à l'écran avant de reformuler.";
+          case "skipped":
+            return "ÉTAPE PASSÉE à sa demande. Note ce qui reste à revoir et continue ; propose d'y revenir à la fin.";
+          case "answered":
+            return `RÉPONSE : « ${str(res?.answer)} ».`;
+          case "timeout":
+            return "AUCUNE RÉACTION dans le temps imparti. Demande-lui si elle est toujours là avant de poursuivre — n'invente pas que l'étape est faite.";
+          case "quit":
+            return "ELLE A QUITTÉ la formation (onglet fermé ou bouton Quitter). Clos la session avec training action=\"finish\" status=\"abandoned\".";
+          case "superseded":
+            return "Étape remplacée par la suivante avant d'avoir été faite.";
+          default:
+            return JSON.stringify(res ?? {}).slice(0, 4000);
+        }
+      };
+
+      if (action === "wait") {
+        const id = str(args.command_id);
+        if (!id) return "ERROR: command_id requis pour action=\"wait\" (il est rendu par le step qui attend encore).";
+        const done = await awaitCommand(id, Date.now() + Math.min(300, Math.max(10, Number(args.wait_s ?? 240))) * 1000);
+        if (!done) return `Toujours rien. L'étape reste affichée à l'écran ; reviens attendre avec guide_user action="wait" command_id="${id}", ou parle-lui.`;
+        if (done.status !== "done") return `ERROR: ${done.error ?? "l'étape a échoué"}`;
+        return await speak(done.result);
+      }
+
+      const device = await coachDevice();
+      if (!device) {
+        return "Le mode formation n'est pas actif sur le poste de la personne. "
+          + "Demande-lui d'ouvrir l'extension FounderOS dans sa barre d'outils et de cliquer « Activer 1 heure » sous « Mode formation ». "
+          + "Précise-lui ce que ça autorise : tu affiches des repères et tu lis la page, tu ne cliques jamais à sa place. "
+          + "N'essaie pas de contourner — sans cette autorisation aucun repère ne lui sera transmis.";
+      }
+
+      const waiting = action === "step" || action === "ask" || (action === "say" && args.ack === true);
+      const waitS = Math.min(600, Math.max(10, Number(args.wait_s ?? (waiting ? 240 : 25))));
+      const cmdAction = action === "step" ? "guide_step"
+        : action === "ask" ? "guide_ask"
+          : action === "end" ? "guide_end"
+            : action === "look" ? "look" : "guide_say";
+
+      const params: Record<string, unknown> = {
+        step: stepPayload,
+        session: { agent: ctx.agentName ?? "Formateur", program: str(args.program) || undefined },
+        wait_s: waitS,
+      };
+      if (action === "look" && args.text === true) params.text = true;
+      if (args.tab_id != null && Number.isFinite(Number(args.tab_id))) params.tab_id = Number(args.tab_id);
+
+      const { data: cmd, error } = await ctx.admin.from("browser_commands").insert({
+        workspace_id: ctx.workspaceId, device_id: device.id,
+        agent_id: ctx.agentId, run_id: ctx.runId,
+        channel: "coach", action: cmdAction, params,
+        // L'ordre doit survivre à l'attente d'un humain : sans ce délai, le
+        // balayage d'expiration tuerait le repère pendant qu'on le lit.
+        expires_at: new Date(Date.now() + (waitS + 90) * 1000).toISOString(),
+      }).select("id").single();
+      if (error || !cmd) return `ERROR: repère non enregistré (${error?.message ?? "inconnu"})`;
+
+      if (ctx.logEvent) {
+        await ctx.logEvent("browser_action", {
+          action: cmdAction, guiding: true,
+          instruction: stepPayload.instruction, target: stepPayload.target,
+        });
+      }
+
+      const done = await awaitCommand(cmd.id, Date.now() + waitS * 1000);
+      if (!done) {
+        return `L'étape est affichée, mais la personne n'a pas encore agi (${waitS}s). `
+          + `Elle voit toujours le repère. Reviens attendre avec guide_user action="wait" command_id="${cmd.id}", `
+          + "ou dis-lui quelque chose avec action=\"say\".";
+      }
+      if (done.status !== "done") {
+        const err = done.error ?? "échec";
+        if (/target_not_found/.test(err)) {
+          await logTrainingStep(stepPayload, "not_found", { note: "repère impossible à poser" });
+          return "REPÈRE IMPOSSIBLE À POSER : l'élément visé n'est pas sur la page. "
+            + "N'insiste pas avec la même cible — appelle guide_user action=\"look\" pour lire ce qui est réellement à l'écran, "
+            + "puis re-vise avec un libellé que tu y auras trouvé. Si l'outil a changé depuis la démonstration, dis-le à la personne et note-le.";
+        }
+        return `ERROR: ${err}`;
+      }
+
+      const res = done.result ?? {};
+      if (!waiting) {
+        // say / look / end : c'est délivré, il n'y a personne à attendre.
+        return JSON.stringify(res).slice(0, 8000);
+      }
+      return await speak(res);
+    },
+  });
+  summaryLines.push("- guide_user: coach a person step by step INSIDE a real web tool (highlight + instruction + wait for their gesture). Never acts for them.");
+
+
+  // ── LE PARCOURS, ET CE QU'IL APPREND SUR LUI-MÊME ─────────────────────────
+  //
+  // Une formation qui ne laisse pas de trace se redonne à l'identique la fois
+  // suivante, avec les mêmes trébuchements au même endroit. Ces tables-là
+  // existent pour que la troisième personne formée profite des deux premières.
+  tools.set("training", {
+    def: {
+      name: "training",
+      description:
+        "Les parcours de formation aux outils et leur mémoire. " +
+        "ACTIONS : list_programs (les parcours existants), get_program (un parcours + les procédures démontrées qu'il référence — lis ensuite leurs gestes avec read_skill_file(slug, \"steps.json\")), " +
+        "start (ouvrir une session pour la personne formée — À FAIRE avant de guider : chaque étape guidée s'y journalise toute seule), " +
+        "note (consigner une observation hors étape), finish (clore la session avec un résumé honnête), " +
+        "blockers (où les gens ont trébuché sur ce parcours — la donnée qui dit quelle étape réécrire).",
+      parameters: { type: "object", properties: {
+        action: { type: "string", description: "list_programs | get_program | start | note | finish | blockers" },
+        program_id: { type: "string", description: "Le parcours (get_program, start, blockers)." },
+        session_id: { type: "string", description: "La session (note, finish). Omis = celle ouverte dans ce run." },
+        trainee_name: { type: "string", description: "Qui est formé (start)." },
+        trainee_email: { type: "string", description: "Son email, si connu (start)." },
+        total_steps: { type: "number", description: "Nombre d'étapes prévues (start), pour la barre de progression." },
+        status: { type: "string", description: "finish : done | abandoned | paused. Défaut done." },
+        summary: { type: "string", description: "finish : ce qui est acquis, ce qui a bloqué, ce qu'il faut revoir." },
+        note: { type: "string", description: "note : l'observation à consigner." },
+      }, required: ["action"], additionalProperties: false },
+    },
+    run: async (args) => {
+      const action = str(args.action);
+
+      if (action === "list_programs") {
+        const { data } = await ctx.admin.from("training_programs")
+          .select("id, title, tool_name, audience, est_minutes, is_published, skill_ids")
+          .eq("workspace_id", ctx.workspaceId).order("created_at", { ascending: false }).limit(50);
+        if (!data?.length) return "Aucun parcours de formation n'existe encore. Tu peux quand même former quelqu'un à partir d'une skill apprise par démonstration : cherche-la avec search_skills.";
+        return JSON.stringify(data);
+      }
+
+      if (action === "get_program") {
+        const id = str(args.program_id);
+        if (!id) return "ERROR: program_id requis.";
+        const { data: prog } = await ctx.admin.from("training_programs")
+          .select("*").eq("id", id).eq("workspace_id", ctx.workspaceId).maybeSingle();
+        if (!prog) return "ERROR: parcours introuvable dans cet espace de travail.";
+        const skillIds = (prog as { skill_ids?: string[] }).skill_ids ?? [];
+        let skills: unknown[] = [];
+        if (skillIds.length) {
+          const { data } = await ctx.admin.from("agent_skills")
+            .select("id, slug, name, description").in("id", skillIds);
+          // L'ordre du parcours est pédagogique : la base le rendrait par date.
+          skills = skillIds.map((sid) => (data ?? []).find((s: { id: string }) => s.id === sid)).filter(Boolean);
+        }
+        return JSON.stringify({ ...prog, skills }).slice(0, 12000);
+      }
+
+      if (action === "start") {
+        const programId = str(args.program_id) || null;
+        const { data: session, error } = await ctx.admin.from("training_sessions").insert({
+          workspace_id: ctx.workspaceId,
+          program_id: programId,
+          agent_id: ctx.agentId,
+          run_id: ctx.runId,
+          trainee_name: str(args.trainee_name) || null,
+          trainee_email: str(args.trainee_email) || null,
+          total_steps: Number.isFinite(Number(args.total_steps)) ? Number(args.total_steps) : null,
+        }).select("id").single();
+        if (error || !session) return `ERROR: session non ouverte (${error?.message ?? "inconnu"})`;
+        // C'est ce numéro qui fait que guide_user journalise sans qu'on le lui
+        // demande — voir logTrainingStep.
+        const meta = await readRunMeta(ctx);
+        await writeRunMeta(ctx, { ...meta, training_session_id: session.id, training_step_seq: 0 });
+        return `Session ouverte (${session.id}). Chaque étape guidée y sera journalisée automatiquement. Clos-la avec training action="finish".`;
+      }
+
+      const currentSession = async (): Promise<string | null> => {
+        const explicit = str(args.session_id);
+        if (explicit) return explicit;
+        const meta = await readRunMeta(ctx);
+        return typeof meta.training_session_id === "string" ? meta.training_session_id : null;
+      };
+
+      if (action === "note") {
+        const sid = await currentSession();
+        if (!sid) return "ERROR: aucune session ouverte (training action=\"start\" d'abord).";
+        const meta = await readRunMeta(ctx);
+        const seq = Number(meta.training_step_seq ?? 0) + 1;
+        await ctx.admin.from("training_step_logs").insert({
+          session_id: sid, seq, title: "Observation",
+          instruction: null, outcome: "done", note: str(args.note).slice(0, 2000),
+        });
+        await writeRunMeta(ctx, { ...meta, training_step_seq: seq });
+        return "Observation consignée.";
+      }
+
+      if (action === "finish") {
+        const sid = await currentSession();
+        if (!sid) return "ERROR: aucune session ouverte.";
+        const { data: s } = await ctx.admin.from("training_sessions")
+          .select("started_at").eq("id", sid).maybeSingle();
+        const startedAt = (s as { started_at?: string } | null)?.started_at;
+        const status = ["done", "abandoned", "paused"].includes(str(args.status)) ? str(args.status) : "done";
+        await ctx.admin.from("training_sessions").update({
+          status,
+          summary: str(args.summary).slice(0, 4000) || null,
+          finished_at: new Date().toISOString(),
+          duration_ms: startedAt ? Date.now() - Date.parse(startedAt) : null,
+        }).eq("id", sid);
+        const meta = await readRunMeta(ctx);
+        delete meta.training_session_id;
+        await writeRunMeta(ctx, meta);
+        return "Session close. Si des étapes ont bloqué, regarde training action=\"blockers\" et dis au responsable ce qu'il faut réécrire.";
+      }
+
+      if (action === "blockers") {
+        const programId = str(args.program_id);
+        if (!programId) return "ERROR: program_id requis.";
+        const { data: sessions } = await ctx.admin.from("training_sessions")
+          .select("id").eq("workspace_id", ctx.workspaceId).eq("program_id", programId).limit(200);
+        const ids = (sessions ?? []).map((s: { id: string }) => s.id);
+        if (!ids.length) return "Personne n'a encore suivi ce parcours.";
+        const { data: logs } = await ctx.admin.from("training_step_logs")
+          .select("seq, title, instruction, outcome, duration_ms").in("session_id", ids).limit(2000);
+        // L'agrégation se fait ici plutôt qu'en SQL : quelques centaines de
+        // lignes, et une vue de plus à maintenir pour un seul appel.
+        const byStep = new Map<string, { title: string; seen: number; stuck: number; timeout: number; not_found: number; skipped: number }>();
+        for (const l of (logs ?? []) as Array<{ seq: number; title?: string; instruction?: string; outcome: string }>) {
+          const key = `${l.seq}·${l.title ?? l.instruction ?? ""}`;
+          const row = byStep.get(key) ?? { title: l.title || l.instruction || `étape ${l.seq}`, seen: 0, stuck: 0, timeout: 0, not_found: 0, skipped: 0 };
+          row.seen += 1;
+          if (l.outcome === "stuck") row.stuck += 1;
+          if (l.outcome === "timeout") row.timeout += 1;
+          if (l.outcome === "not_found") row.not_found += 1;
+          if (l.outcome === "skipped") row.skipped += 1;
+          byStep.set(key, row);
+        }
+        const rough = [...byStep.values()]
+          .filter((r) => r.stuck + r.timeout + r.not_found + r.skipped > 0)
+          .sort((a, b) => (b.stuck + b.timeout + b.not_found) - (a.stuck + a.timeout + a.not_found))
+          .slice(0, 15);
+        if (!rough.length) return `${ids.length} session(s) suivie(s), aucune étape problématique.`;
+        return `${ids.length} session(s). Étapes qui font trébucher :\n${JSON.stringify(rough)}`;
+      }
+
+      return `ERROR: action inconnue « ${action} ».`;
+    },
+  });
+  summaryLines.push("- training: training programs, live sessions and where trainees get stuck.");
+
+
+  // ── Workflow authoring ────────────────────────────────────────────────────
+  //
+  // An assistant asked for a procedure used to have one move: write a markdown
+  // document. The canvas then parsed it into a stack of unlinked blocks — no
+  // branches, no attachments, nothing wired — and a human had to redraw it.
+  // These five build the REAL graph, with the rules of the canvas enforced, and
+  // keep the compiled playbook in sync on every call (the runtime refuses to
+  // launch a workflow whose document is empty).
+  //
+  // The implementations are shared with the SaaS assistant's toolbox — same
+  // module, same behaviour, one copy. Registered only where a workflow has
+  // somewhere to live: a service dashboard.
+  if (ctx.serviceDashboardId) {
+    const wfScope = {
+      admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId,
+      dashboardId: ctx.serviceDashboardId, userId: ctx.userId ?? null,
+    };
+    for (const t of workflowToolDefs()) {
+      tools.set(t.name, {
+        def: { name: t.name, description: t.description, parameters: t.parameters },
+        run: (args) => t.run(wfScope, args),
+      });
+    }
+    summaryLines.push(
+      "- workflow_create / workflow_add_block / workflow_link / workflow_configure / workflow_activate: construis une PROCÉDURE réutilisable "
+      + "(blocs posés, reliés, cadrés) quand on te demande d'automatiser un travail récurrent plutôt que de le faire une fois.",
+    );
+  }
+
+  // Always-on: register work produced OUTSIDE the product (0211).
+  //
+  // An agent with connectors and MCP servers does most of its visible work
+  // elsewhere — a Notion page, a Linear issue, a Drive file. That work existed
+  // nowhere in the product: you had to remember an agent had done something,
+  // then go and find it in the other tool. One call puts a card on the wall,
+  // with the tool's logo, that opens the real thing.
+  tools.set("link_artifact", {
+    def: {
+      name: "link_artifact",
+      description:
+        "Épingle sur le mur d'artifacts un contenu que tu viens de créer ou de modifier DANS UN OUTIL EXTERNE (connecteur ou serveur MCP) : page Notion, issue Linear, document Drive, fichier Figma, pull request… "
+        + "Appelle-la juste après l'action qui l'a produit, avec l'URL rendue par l'outil. "
+        + "Sans ça, ton travail reste invisible ici : personne ne saura qu'il existe, ni où le trouver. "
+        + "Ne l'utilise PAS pour une page que tu as seulement consultée — uniquement pour ce que TU as produit ou modifié.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Le nom du contenu, tel qu'il apparaît dans l'outil." },
+          url: { type: "string", description: "L'URL exacte rendue par l'outil (https://…)." },
+          summary: { type: "string", description: "Une phrase : ce que c'est, et ce que tu y as fait." },
+          provider: { type: "string", description: "Optionnel — l'outil, s'il n'est pas devinable depuis l'URL (instance auto-hébergée)." },
+          kind: { type: "string", description: "Optionnel — page, issue, document, design, fichier…" },
+        },
+        required: ["title", "url"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const url = str(args.url).trim();
+      const title = str(args.title).trim().slice(0, 200);
+      if (!title) return "ERROR: `title` est requis.";
+      if (!isSafeUrl(url)) return "ERROR: `url` doit être un lien http(s) complet, tel que l'outil te l'a rendu.";
+
+      const guess = inferProvider(url);
+      const provider = (str(args.provider).trim().toLowerCase() || guess.provider).slice(0, 40);
+      const kind = (str(args.kind).trim().toLowerCase() || guess.kind).slice(0, 40);
+      const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const mcpServer = (ctx.mcpServers ?? [])
+        .find((s) => norm(s.name).includes(norm(provider)) || norm(provider).includes(norm(s.name)))?.name ?? null;
+
+      // On conflict = the same page registered twice: refresh the card rather
+      // than stack a second one. An agent that edits a document over three runs
+      // should leave one artifact, not three.
+      const { error } = await ctx.admin.from("external_artifacts").upsert({
+        workspace_id: ctx.workspaceId,
+        project_id: ctx.projectId,
+        service_room_id: ctx.serviceRoomId ?? null,
+        agent_id: ctx.agentId,
+        run_id: ctx.runId ?? null,
+        // Connector or MCP: worked out here rather than asked of the model,
+        // which would guess. If one of the agent's attached MCP servers is
+        // named after this provider, that is where the link came from.
+        source: mcpServer ? "mcp" : "connector",
+        provider,
+        tool: mcpServer,
+        kind,
+        title,
+        url,
+        summary: str(args.summary).trim().slice(0, 500) || null,
+        created_by: ctx.userId ?? null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "project_id,url" });
+      if (error) return `ERROR: ${error.message}`;
+
+      await ctx.logEvent("status", { message: `Artifact épinglé : ${title} (${provider})` }).catch(() => {});
+      return `« ${title} » est épinglé sur le mur d'artifacts, avec le logo ${provider} — un clic ouvre le contenu. Inutile de recoller l'URL dans ta réponse.`;
+    },
+  });
+  summaryLines.push("- link_artifact: épingle sur le mur un contenu créé dans un outil externe (Notion, Linear, Drive, Figma…) — à appeler juste après l'avoir produit.");
+
+  // Always-on: the preferences FILE (0210). Distinct from save_memory on
+  // purpose — memory is what the agent knows, preferences are how its user
+  // wants things done. They are a short, curated, human-editable file that
+  // rides in every prompt (selected against the task), where a memory is one
+  // row among hundreds behind a search. Mixing the two is how "réponds en
+  // français" ends up ranked 47th and never read again.
+  tools.set("remember_preference", {
+    def: {
+      name: "remember_preference",
+      description:
+        "Enregistre (ou corrige) une PRÉFÉRENCE DURABLE de ton utilisateur dans ton fichier de préférences — tu la reverras à chaque session. "
+        + "Appelle-la dès qu'il exprime une habitude ou te reprend sur la forme : langue, ton, format des livrables, canal à utiliser, horaires, ce qu'il ne veut jamais. "
+        + "Une préférence = une phrase impérative, réutilisable hors de cette conversation (« Répondre en français », pas « il a demandé le français ce matin »). "
+        + "Ne l'utilise PAS pour un fait ponctuel (→ save_memory), ni pour une consigne valable seulement cette fois. "
+        + "Si l'utilisateur change d'avis, rappelle-la avec `replaces` (ou op=\"remove\") : le fichier doit rester à jour, pas s'empiler.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "La préférence, une phrase impérative et autoportante (max ~400 caractères)." },
+          topic: { type: "string", description: "Sujet court pour la regrouper : langue, ton, format, outils, horaires, sécurité…" },
+          always: { type: "boolean", description: "true seulement si elle vaut pour TOUTES les tâches sans exception (elle échappe alors à la sélection). Rare — n'en abuse pas." },
+          replaces: { type: "string", description: "Le texte exact d'une préférence existante que celle-ci remplace (changement d'avis, formulation plus précise)." },
+          op: { type: "string", enum: ["add", "remove"], description: "add (défaut) ou remove pour retirer la préférence dont le texte est donné." },
+        },
+        required: ["text"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const text = str(args.text).trim();
+      if (!text) return "ERROR: `text` est requis.";
+      const remove = str(args.op) === "remove";
+      // Compare-and-swap, retried: two parallel sub-agents can each learn
+      // something in the same second, and a plain read-modify-write would let
+      // the slower one silently erase the faster one's line.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data: row, error: readErr } = await ctx.admin
+          .from("internal_agents").select("preferences").eq("id", ctx.agentId).maybeSingle();
+        if (readErr) return `ERROR: ${readErr.message}`;
+        const current = (row as { preferences: string | null } | null)?.preferences ?? null;
+
+        let next: string;
+        let message: string;
+        if (remove) {
+          const res = removePreference(current, text);
+          if (!res.removed) return `Aucune préférence ne correspond à « ${text.slice(0, 80)} » — rien retiré. Reformule avec le texte exact.`;
+          next = res.file;
+          message = `Préférence retirée : « ${res.removed.text} ».`;
+        } else {
+          const res = upsertPreference(current, {
+            text,
+            topic: str(args.topic) || null,
+            always: args.always === true,
+            replaces: str(args.replaces) || null,
+          });
+          if (res.status === "full") {
+            return `ERROR: ${res.reason}. Retire d'abord une préférence devenue fausse (op="remove") ou remplace-en une avec \`replaces\`.`;
+          }
+          if (res.status === "unchanged") return `Déjà enregistrée à l'identique : « ${res.entry.text} ». Rien à faire.`;
+          next = res.file;
+          message = res.status === "updated"
+            ? `Préférence mise à jour : « ${res.previous?.text ?? ""} » → « ${res.entry.text} ».`
+            : `Préférence enregistrée : « ${res.entry.text} »${res.entry.topic ? ` [${res.entry.topic}]` : ""}.`;
+        }
+
+        const guard = ctx.admin.from("internal_agents")
+          .update({
+            preferences: next,
+            preferences_updated_at: new Date().toISOString(),
+            preferences_updated_by: "agent",
+          })
+          .eq("id", ctx.agentId);
+        const { data: written, error: writeErr } = await (current === null
+          ? guard.is("preferences", null)
+          : guard.eq("preferences", current)).select("id");
+        if (writeErr) return `ERROR: ${writeErr.message}`;
+        if (written && written.length > 0) {
+          await ctx.logEvent("status", { message }).catch(() => {});
+          return `${message} Elle s'appliquera à toutes tes prochaines sessions — inutile de la redemander.`;
+        }
+        // Someone else wrote between the read and the write: re-read and redo
+        // the merge on top of THEIR version rather than over it.
+      }
+      return "ERROR: le fichier de préférences a été modifié en même temps que toi, trois fois de suite. Réessaie dans un instant.";
+    },
+  });
+  summaryLines.push("- remember_preference: enregistre une préférence durable de l'utilisateur (langue, ton, format, canal) dans ton fichier de préférences — à chaque fois qu'il en exprime une ou te reprend sur la forme.");
+
   // Always-on: persistent memory. The agent reads its memory from the system
   // prompt and writes back through these tools.
   tools.set("save_memory", {
     def: {
       name: "save_memory",
       description:
-        "Persist a durable memory you will see in every future session: a stable fact, a team preference, a lesson learned, or background context. Use it when you discover something worth remembering beyond this session. Don't save transient details or duplicates of what's already in your memory.",
+        "Persist a durable memory you will see in every future session: a stable fact, a team preference, a lesson learned, or background context. Use it when you discover something worth remembering beyond this session. Don't save transient details. Restating a known memory merges into it, so saving a sharper version of something you already know is fine; when the store is full the least useful entry is evicted.",
       parameters: {
         type: "object",
         properties: {
@@ -2739,35 +4089,29 @@ export function buildInternalToolset(
       if (!content) return "ERROR: content is required.";
       const kind = ["fact", "preference", "learning", "context"].includes(str(args.kind)) ? str(args.kind) : "fact";
       const importance = Math.min(Math.max(Math.round(Number(args.importance ?? 3)) || 3, 1), 5);
-      // Bound the store: beyond the cap the agent must consolidate, not hoard.
-      const { count } = await ctx.admin
-        .from("internal_agent_memories")
-        .select("id", { count: "exact", head: true })
-        .eq("agent_id", ctx.agentId);
-      if ((count ?? 0) >= 300) {
-        return "ERROR: memory store is full (300 entries). Ask the team to prune the Memory tab before saving more.";
-      }
-      const { error } = await ctx.admin.from("internal_agent_memories").insert({
+      // Dedup + eviction live in writeAgentMemory: a restated memory merges into
+      // the one it restates, and a full store drops its least useful entry.
+      const res = await writeAgentMemory(ctx.admin, {
         agent_id: ctx.agentId,
         workspace_id: ctx.workspaceId,
         project_id: ctx.projectId,
         kind,
         content,
         importance,
-        source: "agent",
         source_run_id: ctx.runId,
         source_conversation_id: ctx.conversationId ?? null,
-        embedding: await embedMemoryVector(content),
       });
-      if (error) return `ERROR: ${error.message}`;
-      return `Memory saved (${kind}, importance ${importance}).`;
+      if (res.status === "duplicate") return "Already in memory — nothing saved (no need to save it again).";
+      if (res.status === "merged") return `Merged into an existing memory that said nearly the same thing (${kind}, importance ${importance}).`;
+      if (res.status === "full" || res.status === "failed") return `ERROR: ${res.error}`;
+      return `Memory saved (${kind}, importance ${importance})${res.evicted ? ` — ${res.evicted} stale memory evicted to make room` : ""}.`;
     },
   });
   tools.set("search_memory", {
     def: {
       name: "search_memory",
       description:
-        "Search your full persistent memory by keyword. Your system prompt only shows the top memories — use this when you need older or less prominent ones.",
+        "Search your full persistent memory by meaning (keyword fallback). Your system prompt only shows the memories selected for this task, shortened — use this for older ones or the full text of a line ending in « (suite : search_memory) ».",
       parameters: {
         type: "object",
         properties: {
@@ -2794,10 +4138,16 @@ export function buildInternalToolset(
               p_query_embedding: toVectorLiteral(qvec),
               p_match_count: 10,
             });
-            if (Array.isArray(sem) && sem.length > 0) {
-              return JSON.stringify(sem.map((m: any) => ({
+            // A vector search always returns its top-N, relevant or not; below
+            // the floor it is noise the model would then try to use.
+            const hits = (Array.isArray(sem) ? sem : [])
+              .filter((m: any) => Number(m.similarity ?? 0) >= RELEVANCE_FLOOR);
+            if (hits.length > 0) {
+              touchAgentMemories(ctx.admin, hits.map((m: any) => m.id));
+              return JSON.stringify(hits.map((m: any) => ({
                 kind: m.kind, content: m.content, importance: m.importance,
                 similarity: Number(m.similarity ?? 0).toFixed(2),
+                date: String(m.updated_at ?? m.created_at ?? "").slice(0, 10) || undefined,
               })));
             }
           }
@@ -2805,14 +4155,15 @@ export function buildInternalToolset(
       } catch { /* fall back to keyword */ }
       const { data } = await ctx.admin
         .from("internal_agent_memories")
-        .select("kind, content, importance, created_at")
+        .select("id, kind, content, importance, created_at")
         .eq("agent_id", ctx.agentId)
-        .ilike("content", `%${query.slice(0, 60)}%`)
+        .ilike("content", `%${query.slice(0, 60).replace(/[%_]/g, (c) => `\\${c}`)}%`)
         .order("importance", { ascending: false })
         .order("updated_at", { ascending: false })
         .limit(10);
       if (!data || data.length === 0) return "No matching memories.";
-      return JSON.stringify(data);
+      touchAgentMemories(ctx.admin, data.map((m: { id: string }) => m.id));
+      return JSON.stringify(data.map(({ id: _id, ...m }: Record<string, unknown>) => m));
     },
   });
   summaryLines.push("- save_memory / search_memory: your persistent cross-session memory (always available).");
@@ -3004,6 +4355,10 @@ export function buildInternalToolset(
         }, required: ["command"], additionalProperties: false },
       },
       run: async (args) => {
+        // Même garde qu'en mode sandbox (FOS-21) — et il compte davantage ici,
+        // puisque le scan partirait de la machine et de l'IP de l'opérateur.
+        const refus = await scannerGuard(ctx, str(args.command));
+        if (refus) return refus;
         const d = await rn("/api/exec", {
           command: str(args.command),
           shell: str(args.shell) || undefined,
@@ -3254,11 +4609,36 @@ export function buildInternalToolset(
   const beforeSandbox = new Set(tools.keys());
   if (ctx.sandboxUrl) {
     const sbUrl = ctx.sandboxUrl.replace(/\/$/, "");
-    const sbHeaders = {
+    // FOS-06 — ces en-tetes ne portaient AUCUNE authentification. L'URL est un
+    // tunnel public : quiconque la decouvrait obtenait POST /v1/bash/exec, donc
+    // l'execution de commandes arbitraires, sans compte. Le secret doit etre
+    // exige cote sandbox (variable d'environnement du conteneur AIO).
+    const sbToken = Deno.env.get("SANDBOX_TOKEN") ?? "";
+    const sbHeaders: Record<string, string> = {
       "Content-Type": "application/json",
       // Bypass ngrok free-tier interstitial warning page (returns HTML otherwise).
       "ngrok-skip-browser-warning": "true",
       "User-Agent": "Anduran-Agent/1.0",
+      ...(sbToken ? { "X-Sandbox-Token": sbToken } : {}),
+    };
+
+    // Cloisonnement par client (FOS-06, second volet). Le mode runner isole deja
+    // les espaces de travail par session_id ; le mode sandbox n'avait rien, et
+    // exec_dir valait /home/gem pour TOUT LE MONDE — les fichiers qu'un agent y
+    // ecrit pour un client (exports, jeux de donnees, identifiants recuperes en
+    // mission) etaient lisibles par l'agent du client suivant. Chaque workspace
+    // recoit desormais sa racine.
+    const sbHome = "/home/gem/ws-" + String(ctx.workspaceId ?? "shared").replace(/[^a-zA-Z0-9_-]/g, "");
+    let sbHomeReady = false;
+    const ensureSbHome = async () => {
+      if (sbHomeReady) return;
+      sbHomeReady = true;
+      try {
+        await fetch(sbUrl + "/v1/bash/exec", {
+          method: "POST", headers: sbHeaders,
+          body: JSON.stringify({ command: "mkdir -p " + sbHome, timeout: 10 }),
+        });
+      } catch { /* le premier appel reel signalera le probleme */ }
     };
 
     async function sb(path: string, body?: Record<string, unknown>): Promise<any> {
@@ -3288,11 +4668,16 @@ export function buildInternalToolset(
         parameters: { type: "object", properties: {
           command: { type: "string", description: "The shell command to run." },
           timeout: { type: "number", description: "Timeout in seconds (default 60, max 300)." },
-          exec_dir: { type: "string", description: "Working directory (default /home/gem)." },
+          exec_dir: { type: "string", description: "Working directory (default: your workspace's private directory)." },
         }, required: ["command"], additionalProperties: false },
       },
       run: async (args) => {
-        const d = await sb("v1/bash/exec", { command: str(args.command), timeout: Math.min(Number(args.timeout) || 60, 300), exec_dir: str(args.exec_dir) || undefined });
+        // FOS-21 : le périmètre pentest ne gardait que http_request, alors que la
+        // consigne système envoyait explicitement les scanners par ici.
+        const refus = await scannerGuard(ctx, str(args.command));
+        if (refus) return refus;
+        await ensureSbHome();
+        const d = await sb("v1/bash/exec", { command: str(args.command), timeout: Math.min(Number(args.timeout) || 60, 300), exec_dir: str(args.exec_dir) || sbHome });
         // Auto-remember installs / dataset fetches when the command succeeded.
         if ((d.exit_code ?? 1) === 0) await rememberSandboxAction(ctx, str(args.command));
         return `$ ${str(args.command)}\n[status: ${d.status ?? "?"} | exit: ${d.exit_code ?? "?"}]\n\n${(d.stdout ?? "").slice(0, 250000)}${d.stderr ? `\n--- stderr ---\n${d.stderr.slice(0, 250000)}` : ""}`;
@@ -3672,20 +5057,90 @@ export function buildInternalToolset(
       def: {
         name: "list_team_agents",
         description:
-          "List the other autonomous agents on your team (project), with their role and skills, so you know who to ask for help or delegate to. Returns agent ids you can use with send_message_to_agent and delegate_mission.",
-        parameters: { type: "object", properties: {}, additionalProperties: false },
+          "L'annuaire des autres agents de l'entreprise : leur rôle, leurs compétences, LEUR SERVICE, et s'ils acceptent du travail venu du tien. " +
+          "Par défaut tu vois d'abord ton propre service (ce sont tes collègues directs), puis les autres. " +
+          "Retourne les ids à utiliser avec send_message_to_agent et delegate_mission.",
+        parameters: {
+          type: "object",
+          properties: {
+            scope: {
+              type: "string", enum: ["service", "company"],
+              description: "'service' = seulement ton équipe · 'company' = toute l'entreprise (défaut).",
+            },
+            query: { type: "string", description: "Filtre optionnel sur le nom, le rôle ou les compétences." },
+          },
+          additionalProperties: false,
+        },
       },
-      run: async () => {
-        const { data } = await ctx.admin
+      run: async (args) => {
+        const scope = str(args.scope) === "service" ? "service" : "company";
+        const all = ctx.admin
           .from("internal_agents")
-          .select("id, name, role, skills, description")
+          .select("id, name, role, skills, description, service_dashboard_id, parent_agent_id")
           .eq("project_id", ctx.projectId)
           .eq("is_archived", false)
           .eq("collaboration_enabled", true)
-          .neq("id", ctx.agentId)
-          .limit(30);
-        if (!data || data.length === 0) return "No other collaborating agents on this team yet.";
-        return JSON.stringify(data);
+          .neq("id", ctx.agentId);
+        // Le filtre de portée s'applique avant `.limit()` : passé la limite, le
+        // builder Supabase n'expose plus `.eq()` / `.is()`.
+        const scoped = scope !== "service" ? all
+          : ctx.serviceDashboardId ? all.eq("service_dashboard_id", ctx.serviceDashboardId)
+          : all.is("service_dashboard_id", null);
+        const { data } = await scoped.limit(40);
+        const rows = (data ?? []) as Array<{
+          id: string; name: string; role: string | null; skills: string[] | null;
+          description: string | null; service_dashboard_id: string | null; parent_agent_id: string | null;
+        }>;
+        if (rows.length === 0) {
+          return scope === "service"
+            ? "Aucun autre agent dans ton service. Rappelle list_team_agents avec scope=\"company\" pour voir le reste de l'entreprise."
+            : "Aucun autre agent collaboratif dans cette entreprise pour l'instant.";
+        }
+
+        // Le service de chacun, et sa politique de collaboration (0213) : un
+        // agent qui découvre un pair sans savoir si son service accepte du
+        // travail extérieur délègue à l'aveugle et se prend un refus.
+        const { data: dashes } = await ctx.admin
+          .from("service_dashboards")
+          .select("id, name, mission, collaboration")
+          .eq("project_id", ctx.projectId);
+        const byId = new Map(
+          ((dashes ?? []) as Array<{ id: string; name: string; mission: string | null; collaboration: string }>)
+            .map((d) => [d.id, d]),
+        );
+
+        const needle = str(args.query).trim().toLowerCase();
+        const described = rows
+          .map((a) => {
+            const d = a.service_dashboard_id ? byId.get(a.service_dashboard_id) : null;
+            const same = !!ctx.serviceDashboardId && a.service_dashboard_id === ctx.serviceDashboardId;
+            return {
+              id: a.id,
+              name: a.name,
+              role: a.role,
+              skills: a.skills ?? [],
+              description: a.description,
+              service: d?.name ?? "(hors service)",
+              service_mission: d?.mission ?? null,
+              same_service: same,
+              // Ce que ça CHANGE pour l'appelant, pas le code brut de la
+              // politique : "open" ne dit rien à un modèle, "tu peux déléguer"
+              // se comprend sans commentaire.
+              can_delegate: same ? "oui (même service)"
+                : d?.collaboration === "closed" ? "non — ce service ne prend que du travail interne"
+                : d?.collaboration === "on_request" ? "oui, mais la délégation passera en approbation humaine"
+                : "oui",
+            };
+          })
+          .filter((a) => !needle ||
+            `${a.name} ${a.role ?? ""} ${a.skills.join(" ")} ${a.description ?? ""} ${a.service}`
+              .toLowerCase().includes(needle))
+          // Ses collègues d'abord : c'est vers eux qu'un agent doit se tourner
+          // en premier, et une liste qui commence par un autre service invite
+          // à traverser une frontière sans raison.
+          .sort((a, b) => Number(b.same_service) - Number(a.same_service));
+
+        return JSON.stringify(described);
       },
     });
 
@@ -3713,13 +5168,19 @@ export function buildInternalToolset(
         // Recipient must be a collaborating agent in the same project.
         const { data: peer } = await ctx.admin
           .from("internal_agents")
-          .select("id, name, collaboration_enabled, is_archived")
+          .select("id, name, collaboration_enabled, is_archived, service_dashboard_id")
           .eq("id", to)
           .eq("project_id", ctx.projectId)
           .maybeSingle();
         if (!peer || (peer as any).is_archived || (peer as any).collaboration_enabled === false) {
           return "ERROR: recipient is not a collaborating agent on this project.";
         }
+        // Poser une QUESTION à un autre service reste libre — c'est déléguer du
+        // travail qui se gouverne (voir delegate_mission). On se contente donc
+        // de tracer la frontière franchie, pour que l'échange inter-services
+        // soit relisible (0213).
+        const peerDash = (peer as { service_dashboard_id?: string | null }).service_dashboard_id ?? null;
+        const crossService = !!ctx.serviceDashboardId && peerDash !== ctx.serviceDashboardId;
         const threadId = await getOrCreateThread(ctx, to);
         if (str(args.topic)) {
           await ctx.admin.from("internal_agent_a2a_threads")
@@ -3735,12 +5196,15 @@ export function buildInternalToolset(
             from_agent: ctx.agentId,
             to_agent: to,
             content: content.slice(0, 4000),
+            from_dashboard_id: ctx.serviceDashboardId ?? null,
+            to_dashboard_id: peerDash,
+            cross_service: crossService,
           })
           .select("id")
           .single();
         if (error) return `ERROR: ${error.message}`;
         await triggerA2A((msg as { id: string }).id);
-        return `Message sent to ${(peer as { name: string }).name}. They will react autonomously; their reply will appear in your A2A thread.`;
+        return `Message envoyé à ${(peer as { name: string }).name}${crossService ? " (autre service — l'échange est tracé)" : ""}. Il réagira de lui-même ; sa réponse arrivera dans ton fil A2A.`;
       },
     });
 
@@ -3769,12 +5233,32 @@ export function buildInternalToolset(
         if (to === ctx.agentId) return "ERROR: you cannot delegate to yourself.";
         const { data: peer } = await ctx.admin
           .from("internal_agents")
-          .select("id, name, collaboration_enabled, is_archived, project_id, workspace_id")
+          .select("id, name, collaboration_enabled, is_archived, project_id, workspace_id, service_dashboard_id")
           .eq("id", to)
           .eq("project_id", ctx.projectId)
           .maybeSingle();
         if (!peer || (peer as any).is_archived || (peer as any).collaboration_enabled === false) {
           return "ERROR: recipient is not a collaborating agent on this project.";
+        }
+
+        // ── La frontière de service (0213) ────────────────────────────────
+        // Déléguer DANS son service est une affaire d'équipe. Déléguer À un
+        // autre service engage une équipe qui n'a pas choisi ce travail : c'est
+        // le service destinataire qui décide s'il l'accepte, pas l'agent
+        // émetteur. Trois positions, et pas une de plus (voir 0213).
+        const peerDash = (peer as { service_dashboard_id?: string | null }).service_dashboard_id ?? null;
+        const crossService = !!ctx.serviceDashboardId && peerDash !== ctx.serviceDashboardId;
+        let needsHuman = false;
+        if (crossService && peerDash) {
+          const { data: dash } = await ctx.admin
+            .from("service_dashboards").select("name, collaboration").eq("id", peerDash).maybeSingle();
+          const policy = (dash as { collaboration?: string } | null)?.collaboration ?? "open";
+          const dashName = (dash as { name?: string } | null)?.name ?? "cet autre service";
+          if (policy === "closed") {
+            return `ERROR: le service « ${dashName} » ne prend que du travail interne. ` +
+              `Tu peux lui POSER une question avec send_message_to_agent, ou déposer l'idée avec propose_mission — mais pas lui imposer une mission.`;
+          }
+          needsHuman = policy === "on_request";
         }
         // Anti-loop: delegation steps down the chain (was previously NOT
         // propagated — a delegated agent could delegate forever) + shared
@@ -3794,8 +5278,11 @@ export function buildInternalToolset(
             project_id: ctx.projectId,
             title,
             brief,
-            status: "active",
-            board_column: "todo",
+            // Un service en "on_request" reçoit la mission dans son backlog,
+            // pas dans son exécution : elle existe, elle est visible, elle ne
+            // démarre que quand un humain de CE service la lance.
+            status: needsHuman ? "paused" : "active",
+            board_column: needsHuman ? "backlog" : "todo",
             priority: "high",
             delegation_depth: childDepth,
             delegated_by_agent: ctx.agentId,
@@ -3804,6 +5291,14 @@ export function buildInternalToolset(
           .select("id")
           .single();
         if (error) return `ERROR: ${error.message}`;
+        if (needsHuman) {
+          await ctx.logEvent("status", {
+            message: `📨 Mission « ${title} » déposée chez ${(peer as { name: string }).name} (autre service) — en attente d'un feu vert humain.`,
+          }).catch(() => {});
+          return `Mission « ${title} » DÉPOSÉE dans le backlog de ${(peer as { name: string }).name}. ` +
+            `Son service demande une validation humaine pour le travail venu d'ailleurs : elle ne démarrera pas toute seule. ` +
+            `N'attends pas son résultat dans ce run — signale-le dans ton rapport et continue avec ce que tu peux faire toi-même.`;
+        }
         // Launch the delegated mission immediately (fire-and-forget run).
         const { data: run } = await ctx.admin
           .from("internal_agent_runs")
@@ -3828,7 +5323,7 @@ export function buildInternalToolset(
             }).catch(() => {});
           }
         }
-        return `Mission "${title}" delegated to ${(peer as { name: string }).name} and started.${reportBack ? " They will report back to you." : ""}`;
+        return `Mission « ${title} » déléguée à ${(peer as { name: string }).name}${crossService ? " (autre service)" : ""} et démarrée.${reportBack ? " Il te fera son retour." : ""}`;
       },
     });
 
@@ -3836,11 +5331,21 @@ export function buildInternalToolset(
       def: {
         name: "team_memory",
         description:
-          "Read or write the shared TEAM knowledge pool — facts, decisions and lessons every agent on the project can see. Use 'search' to look something up before asking a peer, and 'add' to record a shared decision or finding others should know.",
+          "La connaissance partagée, à DEUX portées (0213). " +
+          "'service' = ce qui vaut pour ton équipe (ses conventions, ses interlocuteurs, ses pièges). " +
+          "'company' = ce qui vaut pour TOUTE l'entreprise (une décision, un positionnement, une règle qu'aucun service ne peut ignorer). " +
+          "Cherche AVANT de demander à un pair ; écris quand tu apprends quelque chose que d'autres re-découvriraient sinon. " +
+          "Choisis la portée honnêtement : une note de ton service publiée en 'company' encombre le contexte de tous les autres agents, et une décision d'entreprise rangée en 'service' ne sera jamais lue par ceux qu'elle engage.",
         parameters: {
           type: "object",
           properties: {
             action: { type: "string", enum: ["search", "add"], description: "search the pool or add to it." },
+            scope: {
+              type: "string", enum: ["service", "company", "all"],
+              description:
+                "Pour 'add' : où ranger (défaut 'service' si tu appartiens à un service, sinon 'company'). " +
+                "Pour 'search' : où chercher — 'all' inclut la mémoire des AUTRES services (défaut : entreprise + ton service).",
+            },
             query: { type: "string", description: "Search keywords (for action=search)." },
             content: { type: "string", description: "The knowledge to record (for action=add)." },
             kind: { type: "string", enum: ["fact", "preference", "learning", "context", "decision"], description: "Type (for add; default fact)." },
@@ -3851,40 +5356,81 @@ export function buildInternalToolset(
       },
       run: async (args) => {
         const action = str(args.action);
+        const askedScope = str(args.scope);
+        const mine = ctx.serviceDashboardId ?? null;
+
         if (action === "add") {
           const content = str(args.content).trim().slice(0, 600);
           if (!content) return "ERROR: content is required to add team memory.";
           const kind = ["fact", "preference", "learning", "context", "decision"].includes(str(args.kind)) ? str(args.kind) : "fact";
+          // Défaut prudent : ce qu'on apprend appartient à son équipe jusqu'à
+          // preuve du contraire. Publier vers toute l'entreprise est un choix
+          // qu'on fait, pas un défaut qu'on subit.
+          const toCompany = askedScope === "company" || !mine;
           const { error } = await ctx.admin.from("internal_agent_team_memories").insert({
             workspace_id: ctx.workspaceId,
             project_id: ctx.projectId,
+            service_dashboard_id: toCompany ? null : mine,
             kind,
             content,
             author_agent: ctx.agentId,
             source: "agent",
           });
           if (error) return `ERROR: ${error.message}`;
-          return `Team memory recorded (${kind}). All project agents can now see it.`;
+          return toCompany
+            ? `Enregistré en mémoire d'ENTREPRISE (${kind}) — tous les agents, tous services confondus, le verront.`
+            : `Enregistré en mémoire de SERVICE (${kind}) — les agents de ton service le verront. Repasse en scope="company" si ça engage toute l'entreprise.`;
         }
-        // search (default)
+
+        // search — les filtres AVANT les tris et la limite : passé `.limit()`,
+        // le builder Supabase n'expose plus `.eq()` / `.is()`.
         const query = str(args.query).trim();
-        let q = ctx.admin
-          .from("internal_agent_team_memories")
-          .select("kind, content, importance, created_at")
-          .eq("project_id", ctx.projectId)
-          .order("is_pinned", { ascending: false })
-          .order("importance", { ascending: false })
-          .limit(12);
-        if (query) q = q.ilike("content", `%${query.slice(0, 60)}%`);
-        const { data } = await q;
-        if (!data || data.length === 0) return query ? "No matching team memory." : "Team memory is empty.";
-        return JSON.stringify(data);
+        type Row = { kind: string; content: string; importance: number; created_at: string; service_dashboard_id: string | null };
+        const pick = (where: "company" | "service" | "any", limit: number) => {
+          const filtered = ctx.admin
+            .from("internal_agent_team_memories")
+            .select("kind, content, importance, created_at, service_dashboard_id")
+            .eq("project_id", ctx.projectId);
+          const scoped = where === "company" ? filtered.is("service_dashboard_id", null)
+            : where === "service" ? filtered.eq("service_dashboard_id", mine!)
+            : filtered;
+          const searched = query ? scoped.ilike("content", `%${query.slice(0, 60)}%`) : scoped;
+          return searched
+            .order("is_pinned", { ascending: false })
+            .order("importance", { ascending: false })
+            .limit(limit);
+        };
+
+        let rows: Row[];
+        if (askedScope === "all") {
+          const { data } = await pick("any", 20);
+          rows = (data ?? []) as Row[];
+        } else if (askedScope === "company" || !mine) {
+          const { data } = await pick("company", 12);
+          rows = (data ?? []) as Row[];
+        } else if (askedScope === "service") {
+          const { data } = await pick("service", 12);
+          rows = (data ?? []) as Row[];
+        } else {
+          // Défaut : ce qui te concerne — l'entreprise et ton service.
+          const [a, b] = await Promise.all([pick("company", 8), pick("service", 8)]);
+          rows = [...((a.data ?? []) as Row[]), ...((b.data ?? []) as Row[])];
+        }
+        if (rows.length === 0) {
+          return query
+            ? `Rien en mémoire partagée sur « ${query} »${askedScope === "all" ? "" : " dans ta portée — réessaie avec scope=\"all\" pour inclure les autres services"}.`
+            : "La mémoire partagée est vide.";
+        }
+        return JSON.stringify(rows.map((m) => ({
+          scope: m.service_dashboard_id ? (m.service_dashboard_id === mine ? "service" : "autre service") : "entreprise",
+          kind: m.kind, content: m.content, importance: m.importance, created_at: m.created_at,
+        })));
       },
     });
 
     summaryLines.push(
-      "- list_team_agents / send_message_to_agent / delegate_mission: collaborate with your teammate agents.",
-      "- team_memory: read & contribute to the shared team knowledge pool.",
+      "- list_team_agents / send_message_to_agent / delegate_mission : collaborer, dans ton service comme avec les autres — l'annuaire dit qui accepte du travail venu d'ailleurs.",
+      "- team_memory : la connaissance partagée, à deux portées (service / entreprise). Cherche avant de demander ; écris avec la bonne portée.",
     );
   }
 
@@ -4248,6 +5794,194 @@ export function buildInternalToolset(
       },
     });
     summaryLines.push("- crm: read/write the in-house CRM (contacts, deals, …) and link related records.");
+  }
+
+  // ── Suivi de travail ──────────────────────────────────────────────────
+  //
+  // C'est ce qui fait passer un agent de « quelqu'un à qui on parle » à
+  // « quelqu'un qui travaille dans l'outil » : il voit le board, s'y assigne
+  // du travail, avance les états et rend compte au même endroit que tout le
+  // monde. Sans cet outil, tout ce qu'un agent produit reste dans un fil de
+  // conversation que personne ne relit.
+  //
+  // Deux garde-fous, et ils ne sont pas négociables.
+  //
+  //  · LE PÉRIMÈTRE. L'agent ne voit que les projets où on l'a mis
+  //    (`pj_project_agents`). Une table vide veut dire « aucun projet » et non
+  //    « tous » : le défaut le plus fermé, parce qu'un agent de support n'a
+  //    rien à faire dans le backlog de l'infrastructure.
+  //  · L'APPROBATION. Les lectures sont libres, les écritures passent par la
+  //    file d'approbation tant que l'autopilote n'est pas armé. Le découpage
+  //    suit celui du reste du produit — lire ne change rien, écrire engage.
+  if (hasKind("tracker")) {
+    const READS = new Set([
+      "list_projects", "list_work_items", "get_work_item", "my_work",
+      "list_cycles", "list_modules", "list_states", "search",
+    ]);
+
+    /** Les projets où cet agent a le droit d'agir, et son rôle sur chacun. */
+    const scope = async (): Promise<Map<string, string>> => {
+      const { data } = await ctx.admin
+        .from("pj_project_agents")
+        .select("pj_project_id, role")
+        .eq("agent_id", ctx.agentId);
+      return new Map(
+        ((data ?? []) as Array<{ pj_project_id: string; role: string }>)
+          .map((r) => [r.pj_project_id, r.role]),
+      );
+    };
+
+    /**
+     * Le compte rendu d'avancement sur SON PROPRE work item passe sans
+     * approbation.
+     *
+     * Toute écriture du suivi attend normalement qu'une personne valide. C'est
+     * juste pour une action qu'un agent décide seul ; c'est absurde pour la
+     * seule chose qu'on attend de lui en fin de tâche. Un agent planifié qui
+     * travaille la nuit sur un item et doit attendre le matin qu'on approuve
+     * « passer en terminé » n'est pas autonome : il est suspendu.
+     *
+     * L'exception est ÉTROITE, et chaque borne compte :
+     *
+     *   · l'item doit être CELUI QUE SERT LA MISSION en cours (pj_issue_id).
+     *     La personne a déjà autorisé exactement ce périmètre en assignant
+     *     l'agent, en l'ouvrant en écriture sur le projet, puis en armant l'item
+     *     ou en lançant la mission. Un autre item, même du même projet, repasse
+     *     par l'approbation ;
+     *   · seuls l'ÉTAT et le COMMENTAIRE sont concernés. Renommer l'item, en
+     *     réécrire la description, changer sa priorité ou ses dates, c'est
+     *     modifier la commande, pas en rendre compte — ça reste validé ;
+     *   · hors mission (conversation, run manuel sans work item), rien ne
+     *     change : il n'y a pas d'item « à soi ».
+     *
+     * La résolution run → mission → item est mémorisée : l'agent appelle
+     * l'outil plusieurs fois par run, et la réponse ne change pas en cours de
+     * route.
+     */
+    let ownIssue: Promise<string | null> | null = null;
+    const missionIssueId = (): Promise<string | null> => {
+      ownIssue ??= (async () => {
+        if (!ctx.runId) return null;
+        const { data: run } = await ctx.admin.from("internal_agent_runs")
+          .select("mission_id").eq("id", ctx.runId).maybeSingle();
+        const missionId = (run as { mission_id?: string | null } | null)?.mission_id;
+        if (!missionId) return null;
+        const { data: m } = await ctx.admin.from("internal_agent_missions")
+          .select("pj_issue_id").eq("id", missionId).maybeSingle();
+        return (m as { pj_issue_id?: string | null } | null)?.pj_issue_id ?? null;
+      })();
+      return ownIssue;
+    };
+
+    const PROGRESS_FIELDS = new Set(["issue_id", "state_id", "state_group"]);
+    const isOwnProgressReport = async (
+      action: string, params: Record<string, unknown>,
+    ): Promise<boolean> => {
+      if (action !== "update_work_item" && action !== "comment") return false;
+      const target = str(params.issue_id);
+      if (!target) return false;
+      if (action === "update_work_item"
+        && Object.keys(params).some((k) => !PROGRESS_FIELDS.has(k))) {
+        return false;
+      }
+      const own = await missionIssueId();
+      return !!own && own === target;
+    };
+
+    tools.set("tracker", {
+      def: {
+        name: "tracker",
+        description:
+          "Le suivi de travail : projets, work items, cycles, modules. Commence TOUJOURS par " +
+          "action=list_projects pour savoir sur quoi tu as le droit d'agir — tu n'as accès qu'aux " +
+          "projets où on t'a explicitement mis. Puis my_work pour ce qui t'est assigné, " +
+          "list_work_items/get_work_item pour lire, create_work_item/update_work_item/comment/" +
+          "assign_self pour agir. Tu peux aussi ORGANISER le travail, pas seulement l'exécuter : " +
+          "break_down découpe un sujet en sous-tâches, plan_work_item le range dans un cycle, des " +
+          "modules, sous un parent et lui pose des dates, create_cycle et create_module ouvrent les " +
+          "cadres qui manquent." +
+          (!ctx.autopilot ? " Les écritures sont soumises à approbation humaine avant de partir." : ""),
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_projects", "my_work", "list_work_items", "get_work_item", "search",
+                "list_states", "list_cycles", "list_modules",
+                "create_work_item", "update_work_item", "comment", "assign_self", "unassign_self",
+                "break_down", "plan_work_item", "create_cycle", "create_module",
+              ],
+              description: "L'opération. Tout ce qui suit list_modules écrit.",
+            },
+            params: {
+              type: "object",
+              description:
+                "list_work_items: {project_id, state_group?, priority?, assigned_to_me?, limit?}. " +
+                "get_work_item: {issue_id}. search: {query, limit?}. " +
+                "list_states/list_cycles/list_modules: {project_id}. " +
+                "create_work_item: {project_id, name, description?, priority?, state_id?, target_date?}. " +
+                "update_work_item: {issue_id, name?, description?, priority?, state_id?, state_group?, start_date?, target_date?} — " +
+                "state_group vaut backlog|unstarted|started|completed|cancelled et évite de chercher l'identifiant de l'état. " +
+                "Faire avancer l'état ou commenter LE work item de ta mission ne demande pas d'approbation. " +
+                "comment: {issue_id, body}. assign_self/unassign_self: {issue_id}. " +
+                "break_down: {issue_id, titles: [string]} — crée les sous-items d'un coup. " +
+                "plan_work_item: {issue_id, cycle_id?, module_ids?: [string], parent_id?, start_date?, target_date?} " +
+                "(chaîne vide = retirer). create_cycle: {project_id, name, description?, start_date?, end_date?}. " +
+                "create_module: {project_id, name, description?, status?, start_date?, target_date?}.",
+            },
+            reason: {
+              type: "string",
+              description: "Une phrase qui dit POURQUOI. Montrée telle quelle à qui approuve.",
+            },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+        const params = (args.params && typeof args.params === "object")
+          ? args.params as Record<string, unknown>
+          : {};
+
+        const allowed = await trackerScope(ctx);
+        if (allowed.size === 0) {
+          return "Aucun projet ne t'est ouvert dans le suivi de travail. Demande qu'on t'ajoute "
+            + "à un projet (réglages du projet → agents) avant d'utiliser cet outil.";
+        }
+
+        // Le périmètre est vérifié AVANT l'approbation : faire approuver une
+        // action qui sera de toute façon refusée fait perdre son temps à la
+        // personne qui approuve, et lui apprend à approuver sans lire.
+        const pid = str(params.project_id);
+        if (pid && !allowed.has(pid)) {
+          return `ERREUR : le projet ${pid} n'est pas dans ton périmètre. Utilise list_projects.`;
+        }
+
+        if (!READS.has(action)) {
+          const role = pid ? allowed.get(pid) : null;
+          if (role === "observer") {
+            return "ERREUR : tu es observateur sur ce projet, tu peux lire mais pas écrire.";
+          }
+          if (!ctx.autopilot && !(await isOwnProgressReport(action, params))) {
+            return await awaitInlineApproval(ctx, {
+              tool_name: "tracker",
+              action_kind: "tracker_write",
+              payload: { action, params, agent_id: ctx.agentId },
+              reason: str(args.reason) || null,
+            }, `Suivi · ${action}`);
+          }
+        }
+
+        return await runTrackerAction(ctx, action, params, allowed);
+      },
+    });
+
+    summaryLines.push(
+      "- tracker: lire, faire avancer ET organiser le suivi de travail (projets, work items, cycles, modules) "
+      + "sur les seuls projets où tu es rattaché.",
+    );
   }
 
   // security_scan rows: defensive + consented active scanning.
@@ -4823,7 +6557,7 @@ export function buildInternalToolset(
   // Always present, whatever the tier: the agent must be able to plan, ask,
   // deliver, look things up and widen its own toolset.
   const CORE_TOOLS = new Set([
-    "ask_user", "update_todos", "create_deliverable", "report_section",
+    "ask_user", "update_todos", "create_deliverable", "report_section", "request_report",
     "search_context", "load_toolset", "need_tools", "say", "use_skill", "read_skill_file",
     // Initiative must never cost a load_toolset round. propose_mission is the
     // ONLY safe channel for an agent to act on something it noticed (it files a
@@ -4980,6 +6714,11 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
   // documented as "always available" needed a load_toolset round first, and
   // agents routinely concluded they couldn't produce a document at all.
   create_artifact: "DELIVER", list_artifacts: "DELIVER", read_artifact: "DELIVER", update_artifact: "DELIVER",
+  // Same reason as the line above: buildCapabilityTree classifies by this map
+  // alone, so the writing tools were being indexed under INTEGRATIONS — the one
+  // family that does not ship by default. request_report is now the ONLY route
+  // to a report, so an agent that cannot see it cannot produce one.
+  add_block: "DELIVER", publish_artifact: "DELIVER", request_report: "DELIVER",
   save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY", search_past_work: "MEMORY",
   create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
   create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM", propose_mission: "TEAM", create_agent: "TEAM", create_workflow: "TEAM",

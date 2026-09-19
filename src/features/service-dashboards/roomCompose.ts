@@ -3,7 +3,13 @@
 // all of it; the Home tab now starts a conversation the same way (it creates the
 // room first, then sends through here), so the two can't drift apart.
 
-import { FileText, Presentation, Table as TableIcon, Image as ImageIcon, Type } from "lucide-react";
+import {
+  FileTextIcon as FileText,
+  PresentationChartIcon as Presentation,
+  TableIcon,
+  ImageIcon,
+  TextTIcon as Type,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { postRoomMessage } from "./model";
 

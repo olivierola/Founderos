@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react";
+import { ClockIcon as Clock } from "@phosphor-icons/react";
 import type { ModuleProject } from "../moduleProjectModel";
 
 function fmtDate(iso: string) {

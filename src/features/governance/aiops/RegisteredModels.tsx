@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2, Check, AlertTriangle, Cloud, Server, ExternalLink } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  CircleNotchIcon as Loader2,
+  CheckIcon as Check,
+  WarningIcon as AlertTriangle,
+  CloudIcon as Cloud,
+  HardDrivesIcon as Server,
+  ArrowSquareOutIcon as ExternalLink,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";

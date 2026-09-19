@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Image as ImageIcon, FileText, FileSpreadsheet, Presentation, Globe,
-  Database, File as FileIcon, type LucideIcon,
-} from "lucide-react";
+  ImageIcon,
+  FileTextIcon as FileText,
+  FileXlsIcon as FileSpreadsheet,
+  PresentationChartIcon as Presentation,
+  GlobeIcon as Globe,
+  DatabaseIcon as Database,
+  FileIcon,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 // ── File kind → icon + gradient ──────────────────────────────────────────────

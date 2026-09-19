@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Check, Plus, Boxes, Loader2 } from "lucide-react";
+import {
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+  PlusIcon as Plus,
+  CubeIcon as Boxes,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { GearSixIcon } from "@phosphor-icons/react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,

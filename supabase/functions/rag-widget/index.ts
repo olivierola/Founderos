@@ -61,7 +61,7 @@ const WIDGET_JS = `(function(){
     var thinking = bubble("…", "bot");
     fetch(A.endpoint, {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ public_key: A.key, message: q, conversation_id: convId, visitor_id: getVid() })
+      body: JSON.stringify({ public_key: A.key, message: q, conversation_id: convId, visitor_id: getVid(), client_context: clientCtx() })
     }).then(function(r){ return r.json(); }).then(function(d){
       convId = d.conversation_id || convId;
       thinking.textContent = d.answer || (d.error ? ("Error: "+d.error) : "Sorry, no answer.");
@@ -69,6 +69,23 @@ const WIDGET_JS = `(function(){
     }).catch(function(){ thinking.textContent = "Network error."; });
   }
   function getVid(){ try{ var k="fos_vid"; var v=localStorage.getItem(k); if(!v){ v=Math.random().toString(36).slice(2); localStorage.setItem(k,v);} return v; }catch(e){ return null; } }
+
+  // Contexte d'audience envoyé avec le premier message (migration 0217) : le
+  // fuseau sert de repli au pays quand aucun CDN ne pose d'en-tête géo, et
+  // l'URL est nettoyée côté serveur. Aucune IP, aucun cookie tiers, rien qui
+  // suive le visiteur d'un site à l'autre.
+  function clientCtx(){
+    try {
+      var w = window.innerWidth || 1024;
+      return {
+        timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null),
+        locale: (navigator.language || null),
+        device: w < 640 ? "mobile" : (w < 1024 ? "tablet" : "desktop"),
+        referrer: document.referrer || location.origin,
+        page_url: location.href
+      };
+    } catch(e){ return {}; }
+  }
 
   // Optional terms gate before the conversation.
   function showTermsOr(then){

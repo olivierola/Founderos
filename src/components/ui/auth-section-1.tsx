@@ -4,7 +4,10 @@ import { GrainGradient } from "@paper-design/shaders-react";
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Loader2 } from "lucide-react";
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { Logo } from "@/components/Logo";
 
 /* Split auth shell: form on the left, animated grain-gradient field on the
@@ -241,7 +244,7 @@ export function AuthSection({
             noise={0.25}
             shape="corners"
             frame={2854.5}
-            colors={["#FFFFFF", "#FF4D00", "#FC7819", "#FFFFFF"]}
+            colors={["#FFFFFF", "#4F6D7A", "#8FA3AD", "#FFFFFF"]}
             colorBack="#00000000"
             className="absolute inset-0 bg-black"
           />

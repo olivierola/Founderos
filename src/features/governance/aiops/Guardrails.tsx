@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import remarkGfm from "remark-gfm";
-import { Plus, Pencil, Trash2, ShieldCheck, Zap } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  ShieldCheckIcon as ShieldCheck,
+  LightningIcon as Zap,
+} from "@phosphor-icons/react";
 import { ShieldCheckIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";

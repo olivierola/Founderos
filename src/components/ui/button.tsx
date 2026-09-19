@@ -4,7 +4,13 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  // `rounded-md` et non `rounded-full` : la pilule est une forme de bouton
+  // ISOLÉ. Dès qu'un bouton s'aligne avec un champ, un menu ou une autre
+  // commande — ce qui est le cas partout dans une barre d'outils — ses bords
+  // arrondis ne suivent plus ceux de ses voisins et la rangée cesse de se lire
+  // comme un ensemble. Plane s'en tient à un rayon court sur toute l'interface,
+  // et c'est ce qui fait tenir ses barres.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {

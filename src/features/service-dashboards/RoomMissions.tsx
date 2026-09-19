@@ -2,10 +2,32 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Target, Loader2, Play, Pause, CheckCircle2, XCircle, AlertTriangle,
-  FileText, GitBranch, LayoutGrid, ListChecks, Activity, RefreshCw, Users, Plus, Trash2,
-  X, Hash, ChevronDown, Check, Sparkles, PencilLine, Calendar, GripVertical,
-} from "lucide-react";
+  ArrowLeftIcon as ArrowLeft,
+  TargetIcon as Target,
+  CircleNotchIcon as Loader2,
+  PlayIcon as Play,
+  PauseIcon as Pause,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  WarningIcon as AlertTriangle,
+  FileTextIcon as FileText,
+  GitBranchIcon as GitBranch,
+  GridFourIcon as LayoutGrid,
+  ListChecksIcon as ListChecks,
+  PulseIcon as Activity,
+  ArrowsClockwiseIcon as RefreshCw,
+  UsersIcon as Users,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  XIcon as X,
+  HashIcon as Hash,
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+  SparkleIcon as Sparkles,
+  PencilLineIcon as PencilLine,
+  CalendarBlankIcon as Calendar,
+  DotsSixVerticalIcon as GripVertical,
+} from "@phosphor-icons/react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator,

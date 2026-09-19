@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Search, Sparkles, Loader2, ChevronLeft, BookOpen } from "lucide-react";
+import {
+  MagnifyingGlassIcon as Search,
+  SparkleIcon as Sparkles,
+  CircleNotchIcon as Loader2,
+  CaretLeftIcon as ChevronLeft,
+  BookOpenIcon as BookOpen,
+} from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 

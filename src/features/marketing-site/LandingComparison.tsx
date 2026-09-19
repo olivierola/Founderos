@@ -1,4 +1,4 @@
-import { Check, X } from "lucide-react";
+import { CheckIcon as Check, XIcon as X } from "@phosphor-icons/react";
 import { ACCENT, ON_ACCENT, Reveal, SectionHead } from "./LandingKit";
 
 const COMPARISON = [
@@ -70,7 +70,7 @@ export function LandingComparison() {
             {/* The "us" card, floating over the table */}
             <div
               className="mt-6 rounded-2xl p-6 lg:absolute lg:right-0 lg:top-1/2 lg:mt-0 lg:w-[420px] lg:-translate-y-1/2 lg:p-7"
-              style={{ background: ACCENT, color: ON_ACCENT, boxShadow: "0 24px 60px -20px rgba(255,77,0,0.45)" }}
+              style={{ background: ACCENT, color: ON_ACCENT, boxShadow: "0 24px 60px -20px rgba(198,249,31,0.40)" }}
             >
               {/* Everything inherits the white ink set on the card. */}
               <div className="text-[16px] font-bold uppercase tracking-[0.02em]">Anduran</div>

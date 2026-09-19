@@ -2,10 +2,22 @@ import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, ArrowLeft, ShieldCheck, HardDrive, Cpu, Globe, KeyRound,
-  Activity, FileText, AlertTriangle, CheckCircle2,
-  RefreshCw, Trash2, Play, Plus,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  ArrowLeftIcon as ArrowLeft,
+  ShieldCheckIcon as ShieldCheck,
+  HardDriveIcon as HardDrive,
+  CpuIcon as Cpu,
+  GlobeIcon as Globe,
+  KeyIcon as KeyRound,
+  PulseIcon as Activity,
+  FileTextIcon as FileText,
+  WarningIcon as AlertTriangle,
+  CheckCircleIcon as CheckCircle2,
+  ArrowsClockwiseIcon as RefreshCw,
+  TrashIcon as Trash2,
+  PlayIcon as Play,
+  PlusIcon as Plus,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

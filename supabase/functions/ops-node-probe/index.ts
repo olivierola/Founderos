@@ -16,7 +16,8 @@
 //   2. Poll ops_node_metrics for (topology_id, node_key) every 2s for ~30s.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireResourceAccess } from "../_shared/authz.ts";
 
 const CACHE_TTL_MS = 15_000;
 
@@ -77,12 +78,11 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, message: "topology_id, node_key and server_id are required" }, { status: 400 });
     }
 
-    const userClient = createUserClient(req);
-    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !userInfo?.user) {
-      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
-    }
-    const userId = userInfo.user.id;
+    // Autorisation (FOS-02) : la sonde révèle les métriques des nœuds, donc le garde porte sur le
+    // projet propriétaire — résolu en base, jamais pris dans le corps de la requête.
+    const auth = await requireResourceAccess(req, "ops_topologies", topology_id, "viewer");
+    if (!auth.ok) return auth.response;
+    const userId = auth.userId;
 
     const admin = createServiceClient();
 

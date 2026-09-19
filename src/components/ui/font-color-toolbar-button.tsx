@@ -9,7 +9,7 @@ import type {
 
 import { useComposedRef } from '@udecode/cn';
 import debounce from 'lodash/debounce.js';
-import { CheckIcon, EraserIcon, PlusIcon } from 'lucide-react';
+import { CheckIcon, EraserIcon, PlusIcon } from "@phosphor-icons/react";
 import {
   type PlateEditor,
   useEditorRef,
@@ -492,7 +492,7 @@ function ColorDropdownMenuItem({
       }}
       {...props}
     >
-      {isSelected ? <CheckIcon className="!size-3" strokeWidth={3} /> : null}
+      {isSelected ? <CheckIcon className="!size-3" weight="bold" /> : null}
     </DropdownMenuItem>
   );
 

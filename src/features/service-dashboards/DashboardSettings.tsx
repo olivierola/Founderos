@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import {
   SlidersIcon, SquaresFourIcon, RobotIcon, ChatsCircleIcon, WarningIcon, CheckIcon,
   CalendarDotsIcon, BrainIcon, FilesIcon, TrashIcon, FloppyDiskIcon, SparkleIcon,
-  GaugeIcon, ShareNetworkIcon, EyeIcon, PlugIcon, type Icon as PhosphorIcon,
+  GaugeIcon, ShareNetworkIcon, EyeIcon, PlugIcon, KanbanIcon,
+  type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,9 @@ import { AvatarPicker } from "@/features/internal-agents/AvatarPicker";
 import { cn } from "@/lib/utils";
 import {
   updateServiceDashboard, deleteServiceDashboard, ensureOrchestrator, fetchRooms, deleteEmptyRooms,
+  COLLABORATION_POLICIES,
   type ServiceDashboard, type DashboardSettings as Settings, type DashboardTabSlug,
+  type CollaborationPolicy,
 } from "./model";
 import { DASHBOARD_ICONS, DASHBOARD_COLORS, DashboardTile } from "./dashboardIcons";
 import { THEMES } from "@/lib/themes";
@@ -41,6 +44,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: PhosphorIcon }[] = [
 // Nav items that can be hidden (Home and Settings always stay reachable).
 const HIDEABLE: { slug: DashboardTabSlug; label: string; icon: PhosphorIcon }[] = [
   { slug: "agents", label: "Agents", icon: RobotIcon },
+  { slug: "projects", label: "Projets", icon: KanbanIcon },
   { slug: "schedules", label: "Schedules", icon: CalendarDotsIcon },
   { slug: "memory", label: "Workspace memory", icon: BrainIcon },
   { slug: "artifacts", label: "Artifacts", icon: FilesIcon },
@@ -84,6 +88,8 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
   const [icon, setIcon] = useState(dashboard.icon);
   const [color, setColor] = useState(dashboard.color);
   const [settings, setSettings] = useState<Settings>(dashboard.settings);
+  const [mission, setMission] = useState(dashboard.mission ?? "");
+  const [collaboration, setCollaboration] = useState<CollaborationPolicy>(dashboard.collaboration);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +102,8 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
     setIcon(dashboard.icon);
     setColor(dashboard.color);
     setSettings(dashboard.settings);
+    setMission(dashboard.mission ?? "");
+    setCollaboration(dashboard.collaboration);
   }, [dashboard.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p }));
@@ -135,9 +143,11 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
         name: name.trim() || dashboard.name,
         description: description.trim() || null,
         icon, color, settings,
+        mission: mission.trim() || null,
+        collaboration,
       });
       if (res.ok === false) {
-        setWarning("Nom, icône et couleur sont enregistrés. La description et les préférences nécessitent la migration 0158 (supabase db push).");
+        setWarning("Nom, icône et couleur sont enregistrés. La description et les préférences nécessitent la migration 0158, la mission et la politique de collaboration la 0213 (supabase db push).");
       }
       if (assistant && orchestrator) {
         const { error: aErr } = await supabase.from("internal_agents").update({
@@ -287,6 +297,45 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold">{name || "Sans nom"}</span>
                 </div>
               </div>
+
+              {/* La frontière du service (0213). Elle vit ici, dans « Général »,
+                  et pas dans une page de gouvernance : c'est un choix
+                  d'organisation que fait le responsable du service, pas une
+                  politique d'entreprise imposée d'en haut. */}
+              <Field
+                label="Mission du service"
+                hint="Une phrase. Elle est envoyée aux agents d'ici, et lue par ceux des autres services dans l'annuaire."
+              >
+                <Input
+                  value={mission} onChange={(e) => setMission(e.target.value)}
+                  placeholder="ex. Faire connaître le produit et générer de la demande qualifiée"
+                />
+              </Field>
+              <Field
+                label="Travail venu des autres services"
+                hint="Vos agents restent libres de parler à tout le monde : ce réglage ne porte que sur le travail qu'on peut vous imposer."
+              >
+                <div className="space-y-1.5">
+                  {COLLABORATION_POLICIES.map((p) => (
+                    <button
+                      key={p.id} type="button" onClick={() => setCollaboration(p.id)}
+                      className={cn(
+                        "flex w-full items-start gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors",
+                        collaboration === p.id ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:border-primary/40",
+                      )}
+                    >
+                      <span className={cn(
+                        "mt-1 h-2 w-2 shrink-0 rounded-full",
+                        collaboration === p.id ? "bg-primary" : "bg-muted-foreground/40",
+                      )} />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">{p.label}</span>
+                        <span className="block text-[11px] leading-snug text-muted-foreground">{p.hint}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </Field>
             </Card>
           )}
 

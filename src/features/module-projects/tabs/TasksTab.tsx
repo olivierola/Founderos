@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Plus, Check, Circle, Trash2, Bot, User } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  CheckIcon as Check,
+  CircleIcon as Circle,
+  TrashIcon as Trash2,
+  RobotIcon as Bot,
+  UserIcon as User,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

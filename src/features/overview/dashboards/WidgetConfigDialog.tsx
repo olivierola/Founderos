@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Link as LinkIcon, AlignLeft, AlignCenter, AlignRight, Type } from "lucide-react";
+import {
+  TextBIcon as Bold,
+  TextItalicIcon as Italic,
+  TextHOneIcon as Heading1,
+  TextHTwoIcon as Heading2,
+  TextHThreeIcon as Heading3,
+  ListIcon as List,
+  ListNumbersIcon as ListOrdered,
+  QuotesIcon as Quote,
+  LinkIcon,
+  TextAlignLeftIcon as AlignLeft,
+  TextAlignCenterIcon as AlignCenter,
+  TextAlignRightIcon as AlignRight,
+  TextTIcon as Type,
+} from "@phosphor-icons/react";
 import {
   Dialog,
   DialogContent,

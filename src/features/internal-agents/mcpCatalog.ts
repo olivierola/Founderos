@@ -314,6 +314,15 @@ export const MCP_CATALOG: McpCatalogCategory[] = [
   },
 ];
 
+/** Look a server up by its catalogue name — the key templates reference. */
+export function findMcpCatalogEntry(name: string): McpCatalogEntry | undefined {
+  for (const c of MCP_CATALOG) {
+    const hit = c.servers.find((s) => s.name === name);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 /** Flat count of servers that are one-click ready (have a remote URL). */
 export function catalogReadyCount(): number {
   return MCP_CATALOG.reduce((n, c) => n + c.servers.filter((s) => s.url).length, 0);

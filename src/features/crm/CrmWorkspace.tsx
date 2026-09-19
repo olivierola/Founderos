@@ -2,9 +2,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Plus, Search, Settings2, Trash2, X, Database, Maximize2, Copy, Check,
-  Clock, Zap, ChevronRight, ExternalLink,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  SlidersHorizontalIcon as Settings2,
+  TrashIcon as Trash2,
+  XIcon as X,
+  DatabaseIcon as Database,
+  ArrowsOutSimpleIcon as Maximize2,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  ClockIcon as Clock,
+  LightningIcon as Zap,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";

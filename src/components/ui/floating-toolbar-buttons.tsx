@@ -3,15 +3,15 @@
 import * as React from 'react';
 
 import {
-  BaselineIcon,
-  BoldIcon,
-  Code2Icon,
-  HighlighterIcon,
-  ItalicIcon,
-  StrikethroughIcon,
-  UnderlineIcon,
-  WandSparklesIcon,
-} from 'lucide-react';
+  TextAaIcon as BaselineIcon,
+  TextBIcon as BoldIcon,
+  CodeIcon as Code2Icon,
+  HighlighterCircleIcon as HighlighterIcon,
+  TextItalicIcon as ItalicIcon,
+  TextStrikethroughIcon as StrikethroughIcon,
+  TextUnderlineIcon as UnderlineIcon,
+  MagicWandIcon as WandSparklesIcon,
+} from "@phosphor-icons/react";
 import { KEYS } from 'platejs';
 import { useEditorReadOnly } from 'platejs/react';
 

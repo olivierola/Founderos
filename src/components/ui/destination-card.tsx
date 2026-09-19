@@ -1,6 +1,6 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { Heart } from "lucide-react";
+import { HeartIcon as Heart } from "@phosphor-icons/react";
 
 import { cn } from "@/lib/utils";
 
@@ -72,7 +72,7 @@ const DestinationCard = React.forwardRef<HTMLDivElement, DestinationCardProps>(
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           )}
         >
-          <Heart className={cn("h-6 w-6 text-white transition-all", isLiked && "fill-red-500 text-red-500")} />
+          <Heart weight={isLiked ? "fill" : "regular"} className={cn("h-6 w-6 text-white transition-all", isLiked && "text-red-500")} />
         </button>
 
         <div className="relative z-10 flex h-full flex-col justify-end p-6 text-white transition-transform duration-500 ease-in-out group-hover:-translate-y-2">

@@ -7,7 +7,8 @@
 // in the X-Runner-Token header, the runner-poll edge function compares hashes.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireProjectMember } from "../_shared/authz.ts";
 
 async function sha256Hex(s: string): Promise<string> {
   const data = new TextEncoder().encode(s);
@@ -29,11 +30,12 @@ Deno.serve(async (req) => {
     const { project_id } = await req.json();
     if (!project_id) return jsonResponse({ ok: false, message: "project_id required" }, { status: 400 });
 
-    const userClient = createUserClient(req);
-    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !userInfo?.user) {
-      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
-    }
+    // Ce jeton est la SEULE authentification de ops-runner-poll, dont le mode
+    // « credential » rend une clé SSH privée déchiffrée. Le délivrer sur simple
+    // session valide revenait à offrir l'accès SSH aux serveurs de n'importe
+    // quel projet (FOS-01). Réservé aux owners/admins du workspace propriétaire.
+    const auth = await requireProjectMember(req, project_id, "admin");
+    if (!auth.ok) return auth.response;
 
     const admin = createServiceClient();
 

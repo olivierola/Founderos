@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowRight,
-  ArrowUpRight,
-  Bot,
-  Cpu,
-  Github,
-  Menu,
-  Mic,
-  Pause,
-  Play,
-  ShieldCheck,
-  Volume2,
-  VolumeX,
-  X,
-} from "lucide-react";
+  ArrowRightIcon as ArrowRight,
+  ArrowUpRightIcon as ArrowUpRight,
+  RobotIcon as Bot,
+  CpuIcon as Cpu,
+  GithubLogoIcon as Github,
+  ListIcon as Menu,
+  MicrophoneIcon as Mic,
+  PauseIcon as Pause,
+  PlayIcon as Play,
+  ShieldCheckIcon as ShieldCheck,
+  SpeakerHighIcon as Volume2,
+  SpeakerXIcon as VolumeX,
+  XIcon as X,
+} from "@phosphor-icons/react";
 import { Logo } from "@/components/Logo";
 
 const ORANGE = "#68bbfb";
@@ -178,8 +178,8 @@ export function MarketingHero() {
                 body="Every agent action is logged, attributed and reversible."
                 visual={
                   <div className="flex h-full items-center justify-center gap-3 text-neutral-700">
-                    <Cpu className="h-7 w-7" strokeWidth={1.4} />
-                    <ShieldCheck className="h-6 w-6" strokeWidth={1.4} style={{ color: ORANGE }} />
+                    <Cpu className="h-7 w-7" weight="light" />
+                    <ShieldCheck className="h-6 w-6" weight="light" style={{ color: ORANGE }} />
                   </div>
                 }
               />

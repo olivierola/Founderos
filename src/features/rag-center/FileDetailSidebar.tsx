@@ -3,9 +3,20 @@ import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  X, Play, Loader2, Download, ExternalLink, ImageIcon, LayoutPanelTop, PanelBottom,
-  FileText, Sparkles, RotateCcw, CheckCircle2, AlertTriangle,
-} from "lucide-react";
+  XIcon as X,
+  PlayIcon as Play,
+  CircleNotchIcon as Loader2,
+  DownloadSimpleIcon as Download,
+  ArrowSquareOutIcon as ExternalLink,
+  ImageIcon,
+  LayoutIcon as LayoutPanelTop,
+  LayoutIcon as PanelBottom,
+  FileTextIcon as FileText,
+  SparkleIcon as Sparkles,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  CheckCircleIcon as CheckCircle2,
+  WarningIcon as AlertTriangle,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";

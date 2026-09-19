@@ -1,8 +1,16 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Handshake, Loader2, Plus, Trash2, Search, Mail, Phone, Building2, CheckCircle2,
-} from "lucide-react";
+  HandshakeIcon as Handshake,
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  MagnifyingGlassIcon as Search,
+  EnvelopeSimpleIcon as Mail,
+  PhoneIcon as Phone,
+  BuildingsIcon as Building2,
+  CheckCircleIcon as CheckCircle2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

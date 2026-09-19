@@ -10,7 +10,10 @@ import type { PlateElementProps } from 'platejs/react';
 
 import { useEquationElement, useEquationInput } from '@platejs/math/react';
 import { BlockSelectionPlugin } from '@platejs/selection/react';
-import { CornerDownLeftIcon, RadicalIcon } from 'lucide-react';
+import {
+  ArrowElbowDownLeftIcon as CornerDownLeftIcon,
+  FunctionIcon as RadicalIcon,
+} from "@phosphor-icons/react";
 import {
   createPrimitiveComponent,
   PlateElement,

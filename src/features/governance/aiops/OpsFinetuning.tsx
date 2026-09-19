@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { GraduationCap, Plus, Timer, Coins, Zap, XCircle, RefreshCw } from "lucide-react";
+import {
+  GraduationCapIcon as GraduationCap,
+  PlusIcon as Plus,
+  TimerIcon as Timer,
+  CoinsIcon as Coins,
+  LightningIcon as Zap,
+  XCircleIcon as XCircle,
+  ArrowsClockwiseIcon as RefreshCw,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { MetricCard } from "@/components/MetricCard";

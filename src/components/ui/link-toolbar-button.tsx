@@ -6,7 +6,7 @@ import {
   useLinkToolbarButton,
   useLinkToolbarButtonState,
 } from '@platejs/link/react';
-import { Link } from 'lucide-react';
+import { LinkIcon as Link } from "@phosphor-icons/react";
 
 import { ToolbarButton } from './toolbar';
 

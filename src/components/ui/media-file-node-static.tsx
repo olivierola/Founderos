@@ -4,7 +4,7 @@ import type { TFileElement } from 'platejs';
 import type { TSuggestionData } from 'platejs';
 import type { SlateElementProps } from 'platejs/static';
 
-import { FileUp } from 'lucide-react';
+import { FileArrowUpIcon as FileUp } from "@phosphor-icons/react";
 import { SlateElement } from 'platejs/static';
 
 import { cn } from '@/lib/utils';

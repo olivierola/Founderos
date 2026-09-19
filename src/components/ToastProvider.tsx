@@ -8,7 +8,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { CheckCircle2, AlertCircle, Info, X, Loader2 } from "lucide-react";
+import {
+  CheckCircleIcon as CheckCircle2,
+  WarningCircleIcon as AlertCircle,
+  InfoIcon as Info,
+  XIcon as X,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 export type ToastKind = "success" | "error" | "info" | "loading";

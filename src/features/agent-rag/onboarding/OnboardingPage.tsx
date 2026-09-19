@@ -1,5 +1,12 @@
 import { useSearchParams } from "react-router-dom";
-import { LayoutDashboard, Workflow, Route, ListChecks, BarChart3, FolderTree } from "lucide-react";
+import {
+  SquaresFourIcon as LayoutDashboard,
+  FlowArrowIcon as Workflow,
+  PathIcon as Route,
+  ListChecksIcon as ListChecks,
+  ChartBarIcon as BarChart3,
+  TreeStructureIcon as FolderTree,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import {
   OnboardingOverviewPage,

@@ -4,7 +4,14 @@
 // approve (→ executes via admin-action-approve) or reject them.
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, XCircle, Clock, Loader2, Zap, ShieldAlert } from "lucide-react";
+import {
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  ClockIcon as Clock,
+  CircleNotchIcon as Loader2,
+  LightningIcon as Zap,
+  ShieldWarningIcon as ShieldAlert,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

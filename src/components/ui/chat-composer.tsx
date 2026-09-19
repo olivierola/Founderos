@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { PromptInput } from "./prompt-input";
+import { AgentChatInput } from "./agent-chat-input";
 import { CHAT_MODELS, type ChatModel as Model } from "@/lib/models";
 
 export interface ChatComposerSubmit {
@@ -12,7 +12,7 @@ interface ChatComposerProps {
   onSubmit: (data: ChatComposerSubmit) => void;
   disabled?: boolean;
   loading?: boolean;
-  /** A run is already active: spins an accent border and keeps the input open. */
+  /** A run is already active: the voice beam sweeps and send becomes stop. */
   running?: boolean;
   /** Cancel the active run from the composer itself. */
   onStop?: () => void;
@@ -26,10 +26,9 @@ interface ChatComposerProps {
 }
 
 /**
- * ChatComposer is a thin adapter over {@link PromptInput} so every agent chat and
- * the internal SaaS assistant share the same rich prompt input (expand-on-focus,
- * model/effort pickers, image attachments, voice-to-text). The public API is kept
- * stable for existing call sites.
+ * ChatComposer is the thin adapter every agent chat and the internal SaaS
+ * assistant go through. It renders {@link AgentChatInput} — the voice-glow
+ * chat input — and keeps its public API stable for existing call sites.
  */
 export function ChatComposer({
   onSubmit,
@@ -40,29 +39,24 @@ export function ChatComposer({
   value,
   onValueChange,
   placeholder = "How can I help you today?",
-  // Default to the real list: PromptInput's own fallback is a demo list of
-  // models we don't run, and a picker that lies is worse than no picker.
+  // The real list: a picker offering models we don't run is worse than none.
   models = CHAT_MODELS,
   footerHint,
   className,
 }: ChatComposerProps) {
   return (
     <div className={cn("mx-auto flex w-full max-w-2xl flex-col items-center", className)}>
-      <PromptInput
+      <AgentChatInput
         value={value}
         onChange={onValueChange}
         placeholder={placeholder}
         busy={running ?? loading}
         onStop={onStop}
-        models={models?.map((m) => m.name)}
-        onSubmit={(message, meta) => {
-          // Preserve ChatComposer semantics: don't emit while busy/disabled.
-          if (disabled || loading) return;
+        disabled={disabled || loading}
+        models={models}
+        onSubmit={(message, model) => {
           if (message.trim() === "") return;
-          // PromptInput only knows display names; callers need the model ID they
-          // declared, which is what the backend routes on.
-          const picked = models?.find((m) => m.name === meta.model);
-          onSubmit({ message, model: picked?.id ?? meta.model, thinking: meta.effort !== "Low" });
+          onSubmit({ message, model, thinking: true });
         }}
       />
       {footerHint && <p className="mt-3 text-center text-xs text-muted-foreground">{footerHint}</p>}

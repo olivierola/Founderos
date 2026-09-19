@@ -18,18 +18,18 @@ import {
 } from '@platejs/emoji/react';
 import * as Popover from '@radix-ui/react-popover';
 import {
-  AppleIcon,
+  AppleLogoIcon as AppleIcon,
   ClockIcon,
   CompassIcon,
   FlagIcon,
   LeafIcon,
   LightbulbIcon,
-  MusicIcon,
-  SearchIcon,
-  SmileIcon,
+  MusicNoteIcon as MusicIcon,
+  MagnifyingGlassIcon as SearchIcon,
+  SmileyIcon as SmileIcon,
   StarIcon,
   XIcon,
-} from 'lucide-react';
+} from "@phosphor-icons/react";
 
 import { Button } from '@/components/ui/button';
 import {

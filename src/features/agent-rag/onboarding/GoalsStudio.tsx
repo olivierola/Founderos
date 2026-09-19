@@ -2,10 +2,27 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Target, Plus, Sparkles, Loader2, ArrowLeft, Rocket, Wand2, FlaskConical,
-  ListChecks, Route as RouteIcon, Workflow, CheckCircle2, Send, ChevronRight,
-  PlayCircle, Users, AlertTriangle, XCircle, Volume2, VolumeX,
-} from "lucide-react";
+  TargetIcon as Target,
+  PlusIcon as Plus,
+  SparkleIcon as Sparkles,
+  CircleNotchIcon as Loader2,
+  ArrowLeftIcon as ArrowLeft,
+  RocketLaunchIcon as Rocket,
+  MagicWandIcon as Wand2,
+  FlaskIcon as FlaskConical,
+  ListChecksIcon as ListChecks,
+  PathIcon as RouteIcon,
+  FlowArrowIcon as Workflow,
+  CheckCircleIcon as CheckCircle2,
+  PaperPlaneRightIcon as Send,
+  CaretRightIcon as ChevronRight,
+  PlayCircleIcon as PlayCircle,
+  UsersIcon as Users,
+  WarningIcon as AlertTriangle,
+  XCircleIcon as XCircle,
+  SpeakerHighIcon as Volume2,
+  SpeakerXIcon as VolumeX,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

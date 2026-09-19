@@ -25,7 +25,7 @@ export function LandingStats() {
             </h2>
             <p className="mt-6 text-[17px] leading-[1.6] text-[var(--amp-muted)]">
               Licences are easy to buy and easy to waste. What we measure is whether people actually use the
-              thing twelve weeks later — here is where our rollouts land against the alternatives.
+              thing twelve weeks later. Here is where our rollouts land against the alternatives.
             </p>
           </div>
 
@@ -83,7 +83,7 @@ function Bar({
             "absolute bottom-0 w-full rounded-[40px] p-2 text-white sm:p-3",
             // Fills stay translucent so the candy stripes read through them,
             // exactly as in the reference.
-            highlight ? "bg-[#ff4d00]/80" : "bg-[#f5f5f5]/80",
+            highlight ? "bg-[#F5F5F5]/80" : "bg-[#f5f5f5]/80",
           )}
         >
           <div className="flex h-11 w-full items-center justify-center rounded-full bg-black/20 text-[15px] font-medium tracking-tighter sm:h-14 sm:text-[17px]">
@@ -105,11 +105,11 @@ function Bar({
             initial={{ opacity: 0, y: 40 }}
             animate={on ? { opacity: 1, y: 0 } : undefined}
             transition={{ duration: 0.5, type: "spring", damping: 15, delay: delay + 0.35 }}
-            className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-xl bg-[#ff4d00] px-2.5 py-1.5 text-[12px] font-medium text-white"
+            className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-xl bg-[#F5F5F5] px-2.5 py-1.5 text-[12px] font-medium text-white"
           >
             {tooltip}
             <svg
-              className="absolute -bottom-[7px] left-1/2 -translate-x-1/2 text-[#ff4d00]"
+              className="absolute -bottom-[7px] left-1/2 -translate-x-1/2 text-[#F5F5F5]"
               width="10"
               height="10"
               viewBox="0 0 10 10"
@@ -121,7 +121,7 @@ function Bar({
                 fill="currentColor"
               />
             </svg>
-            <span className="absolute -bottom-[26px] left-1/2 size-3.5 -translate-x-1/2 rounded-full border-2 border-white bg-[#ff4d00]" />
+            <span className="absolute -bottom-[26px] left-1/2 size-3.5 -translate-x-1/2 rounded-full border-2 border-white bg-[#F5F5F5]" />
           </motion.div>
         </motion.div>
       )}

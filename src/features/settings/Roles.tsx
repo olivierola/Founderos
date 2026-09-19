@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Shield, Plus, Trash2, Lock, Pencil, Loader2, Search } from "lucide-react";
+import {
+  ShieldIcon as Shield,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  LockIcon as Lock,
+  PencilSimpleIcon as Pencil,
+  CircleNotchIcon as Loader2,
+  MagnifyingGlassIcon as Search,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

@@ -55,7 +55,7 @@ export const POSTS: Post[] = [
     date: "2026-08-04",
     readMinutes: 7,
     author: OLIVIER,
-    cover: ["#ff4d00", "#1e1e22"],
+    cover: ["#4F6D7A", "#1e1e22"],
     body: [
       {
         type: "p",
@@ -104,7 +104,7 @@ export const POSTS: Post[] = [
     date: "2026-07-22",
     readMinutes: 9,
     author: OLIVIER,
-    cover: ["#ff8a4c", "#2b0d00"],
+    cover: ["#8E8577", "#1a1a1a"],
     body: [
       {
         type: "quote",
@@ -230,7 +230,7 @@ export const POSTS: Post[] = [
     date: "2026-06-11",
     readMinutes: 7,
     author: OLIVIER,
-    cover: ["#e8b423", "#2a2109"],
+    cover: ["#9AA0A6", "#1f1f22"],
     body: [
       {
         type: "p",

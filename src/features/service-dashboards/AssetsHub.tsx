@@ -2,9 +2,22 @@ import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  User, Bot, Github, Link as LinkIcon, FileText, KeyRound, Plug, StickyNote,
-  Plus, Trash2, Loader2, Boxes, UploadCloud, Sparkles, Check,
-} from "lucide-react";
+  UserIcon as User,
+  RobotIcon as Bot,
+  GithubLogoIcon as Github,
+  LinkIcon,
+  FileTextIcon as FileText,
+  KeyIcon as KeyRound,
+  PlugIcon as Plug,
+  NoteIcon as StickyNote,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  CircleNotchIcon as Loader2,
+  CubeIcon as Boxes,
+  CloudArrowUpIcon as UploadCloud,
+  SparkleIcon as Sparkles,
+  CheckIcon as Check,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";

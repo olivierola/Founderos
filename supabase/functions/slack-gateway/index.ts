@@ -13,6 +13,7 @@
 
 import { jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { decideApprovalFromChannel } from "../_shared/channel-approval.ts";
 
 const SLACK_CLIENT_ID = Deno.env.get("SLACK_CLIENT_ID") ?? "";
 const SLACK_CLIENT_SECRET = Deno.env.get("SLACK_CLIENT_SECRET") ?? "";
@@ -159,6 +160,57 @@ async function handleOAuthCallback(url: URL): Promise<Response> {
 }
 
 // ── Events API ────────────────────────────────────────────────────────────────
+/**
+ * Un clic sur un bouton d'autorisation (Interactivity de Slack).
+ *
+ * Slack l'envoie en `application/x-www-form-urlencoded`, champ `payload`, sur
+ * la même URL que les événements — la signature a déjà été vérifiée. La valeur
+ * du bouton porte l'identifiant de la demande ; l'identité de qui clique vient
+ * de Slack (`payload.user.id`), jamais du bouton.
+ */
+async function handleInteraction(raw: string): Promise<Response> {
+  let p: any;
+  try {
+    p = JSON.parse(new URLSearchParams(raw).get("payload") ?? "{}");
+  } catch {
+    return jsonResponse({ ok: false }, { status: 400 });
+  }
+  if (p?.type !== "block_actions") return new Response("", { status: 200 });
+
+  const action = Array.isArray(p.actions) ? p.actions[0] : null;
+  if (!action || !String(action.action_id ?? "").startsWith("fos_")) return new Response("", { status: 200 });
+
+  let v: { a?: string; d?: string } = {};
+  try { v = JSON.parse(String(action.value ?? "{}")); } catch { /* valeur illisible */ }
+  const decision = v.d === "approve" || v.d === "approve_all" || v.d === "reject" ? v.d : null;
+  if (!v.a || !decision) return new Response("", { status: 200 });
+
+  const admin = createServiceClient();
+  const outcome = await decideApprovalFromChannel(admin, {
+    approvalId: v.a, decision, provider: "slack", clickerRef: String(p.user?.id ?? ""),
+  });
+
+  // Le message d'origine est remplacé par le verdict : les boutons disparaissent,
+  // pour qu'on ne puisse pas cliquer deux fois — ni qu'un tiers croie la
+  // demande encore ouverte. Un refus d'autorisation (mauvaise personne) ne
+  // remplace rien : il répond en éphémère, à la seule personne qui a cliqué.
+  const responseUrl = String(p.response_url ?? "");
+  if (responseUrl) {
+    const denied = !outcome.ok && /Seule la personne|déjà été traitée|n'appartient pas|se valide dans/.test(outcome.message);
+    await fetch(responseUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(denied
+        ? { response_type: "ephemeral", replace_original: false, text: outcome.message }
+        : {
+          replace_original: true,
+          text: `${outcome.message} — par <@${String(p.user?.id ?? "")}>`,
+        }),
+    }).catch(() => {});
+  }
+  return new Response("", { status: 200 });
+}
+
 async function handleEvents(raw: string): Promise<Response> {
   let body: any;
   try { body = JSON.parse(raw); } catch { return jsonResponse({ ok: false }, { status: 400 }); }
@@ -223,12 +275,18 @@ async function handleEvents(raw: string): Promise<Response> {
     conversationId = existing.id;
     // Keep the binding current (e.g. if the channel/thread ref shifted).
     await admin.from("internal_agent_conversations")
-      .update({ channel_id: channel.id, external_channel_ref: slackChannel, external_thread_ref: threadTs })
+      .update({
+        channel_id: channel.id, external_channel_ref: slackChannel, external_thread_ref: threadTs,
+        // L'auteur du DERNIER message : c'est lui, et lui seul, qui pourra
+        // valider depuis Slack ce que l'agent demandera pendant ce tour.
+        external_user_ref: ev.user ? String(ev.user) : null,
+      })
       .eq("id", conversationId);
   } else {
     const { data: created } = await admin.from("internal_agent_conversations").insert({
       agent_id: channel.agent_id, workspace_id: channel.workspace_id, project_id: channel.project_id,
       title, channel_id: channel.id, external_channel_ref: slackChannel, external_thread_ref: threadTs,
+      external_user_ref: ev.user ? String(ev.user) : null,
     }).select("id").single();
     conversationId = created?.id ?? null;
   }
@@ -272,6 +330,9 @@ Deno.serve(async (req) => {
         raw, req.headers.get("x-slack-request-timestamp"), req.headers.get("x-slack-signature"),
       );
       if (!ok) return jsonResponse({ error: "bad signature" }, { status: 401 });
+      // Les clics sur les boutons arrivent sur la même URL, encodés en
+      // formulaire (payload=…) et non en JSON.
+      if (raw.startsWith("payload=")) return await handleInteraction(raw);
       return await handleEvents(raw);
     }
     return jsonResponse({ error: "method not allowed" }, { status: 405 });

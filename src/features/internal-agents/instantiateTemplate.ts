@@ -8,26 +8,86 @@ export interface TemplateOverrides {
   avatar?: string;
   accent?: string;
   instructions?: string;
+  soul?: string;
   autonomy?: AutonomyLevel;
   /** Subset of the template's tools to enable (defaults to all). */
   tools?: TemplateTool[];
 }
 
-// Instantiate a template into a real, runnable internal agent: the agent row
-// (persona/instructions/autonomy) + its preset tools. Returns the new agent id.
-/**
- * Turn the database's opaque RLS refusal into something actionable. The policy
- * has exactly two clauses, so a rejection means one of two things: the session
- * is gone (auth.uid() is null), or the account is not in that workspace.
- */
-export function explainAgentInsertError(message: string | undefined, hasSession: boolean): string {
-  if (!message) return "Création de l'agent impossible.";
-  if (!/row-level security/i.test(message)) return message;
-  return hasSession
-    ? "Création refusée : votre compte n'est pas membre de cet espace de travail."
-    : "Session expirée — reconnectez-vous puis réessayez.";
+/** The shape supabase-js returns; only the fields worth branching on. */
+export interface AgentInsertError {
+  message?: string;
+  code?: string;
+  hint?: string | null;
+  details?: string | null;
 }
 
+/**
+ * Explain why creating an agent was refused — by checking, not by guessing.
+ *
+ * The refusal arrives as one opaque line, and the previous version turned every
+ * RLS rejection into "your account is not a member of this workspace". That
+ * reads as a fact and is usually false: this screen cannot render until the
+ * client has already read the caller's own workspace_members row, so membership
+ * is the one thing we know holds. At least three other causes produce the same
+ * line — an expired token, the billing quota trigger, or an INSERT policy that
+ * predates 0163 — and each needs a different action from the user.
+ *
+ * So ask the database the membership question directly: is_workspace_member is
+ * SECURITY DEFINER and granted to the authenticated role, so it answers about
+ * auth.uid() rather than about what the caller happens to be allowed to read.
+ * Only then say something — and keep the raw error either way, because a
+ * confident wrong diagnosis costs more than a vague one that shows its source.
+ */
+export async function diagnoseAgentInsertError(
+  error: AgentInsertError | null | undefined,
+  workspaceId: string | null,
+): Promise<string> {
+  const message = error?.message;
+  if (!message) return "Création de l'agent impossible.";
+
+  // The billing trigger raises check_violation with hint 'billing_limit' and a
+  // message that already names the limit reached — pass it through untouched.
+  if (error?.hint === "billing_limit" || error?.code === "23514") return message;
+
+  if (!/row-level security/i.test(message)) return message;
+
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) return "Session expirée — reconnectez-vous puis réessayez.";
+
+  if (!workspaceId) {
+    return `Création refusée par la base, et aucun espace de travail n'est résolu côté client. Erreur : ${message}`;
+  }
+
+  const { data: isMember, error: rpcErr } = await supabase
+    .rpc("is_workspace_member", { p_workspace: workspaceId });
+
+  if (rpcErr) {
+    // Helper missing or not granted → the schema predates migration 0159.
+    return "Création refusée : la fonction is_workspace_member est introuvable côté base. "
+      + `Appliquez les migrations à partir de 0159. Erreur : ${rpcErr.message}`;
+  }
+  if (isMember === false) {
+    return "Création refusée : votre compte n'est pas membre de cet espace de travail.";
+  }
+
+  // Session valide et appartenance confirmée par la base : les deux conditions
+  // de la policy d'ÉCRITURE sont réunies. Ce qui reste est la policy de
+  // LECTURE, que PostgreSQL applique aussi à la ligne proposée parce que la
+  // création lit l'id qu'elle vient d'écrire (`.select("id")` → INSERT …
+  // RETURNING). Les deux vérifications rendent le même message, et c'est ce qui
+  // a fait accuser la policy d'insertion deux fois de suite (0163, puis 0219).
+  // Voir 0220, qui juge la lecture sur les colonnes de la ligne au lieu d'aller
+  // la relire dans une table où elle n'est pas encore.
+  return "Création refusée alors que la base confirme votre session ET votre appartenance à "
+    + "l'espace de travail — les deux conditions de la policy d'insertion. C'est donc la policy "
+    + "de LECTURE qui refuse la ligne : la création relit l'agent qu'elle écrit, et PostgreSQL "
+    + "lui applique aussi les policies SELECT, avec le même message. Appliquez la migration "
+    + `0220_agent_select_policy_on_insert.sql. Erreur : ${message}`;
+}
+
+// Instantiate a template into a real, runnable internal agent: the agent row
+// (persona/instructions/autonomy) + its preset tools. Returns the new agent id.
 export async function instantiateTemplate(
   template: AgentTemplate,
   ctx: { workspaceId: string; projectId: string; userId: string; serviceDashboardId?: string | null },
@@ -70,7 +130,7 @@ export async function instantiateTemplate(
     .insert(base)
     .select("id")
     .single();
-  if (error || !agent) throw new Error(explainAgentInsertError(error?.message, !!authData.user));
+  if (error || !agent) throw new Error(await diagnoseAgentInsertError(error, ctx.workspaceId));
 
   // Step budget + the execution world the template needs (security agents
   // require the sandbox).
@@ -80,6 +140,15 @@ export async function instantiateTemplate(
   // has no such column, and naming it made PostgREST reject the whole update,
   // silently dropping max_steps / sandbox_mode / studio with it.
   const upd: Record<string, unknown> = { max_steps: template.max_steps };
+  // L'âme part avec l'agent (0210) — mais dans l'update, pas dans l'insert de
+  // base : un cache PostgREST en retard sur la colonne ferait échouer toute la
+  // création, alors qu'ici il ne coûte qu'un agent sans caractère, réparable.
+  //
+  // Le fichier de préférences, lui, reste VIDE volontairement : ce sont les
+  // préférences de l'utilisateur, apprises en travaillant avec lui. En livrer
+  // de pré-écrites reviendrait à lui prêter des habitudes qu'il n'a jamais
+  // exprimées, et l'agent les respecterait comme si elles venaient de lui.
+  if (overrides.soul?.trim() || template.soul) upd.soul = overrides.soul?.trim() || template.soul;
   if (template.sandboxMode) upd.sandbox_mode = template.sandboxMode;
   // Studio agents (vibe code / testing / simulation) — drives the premium
   // border and which session artifact renderer their deliverables get.

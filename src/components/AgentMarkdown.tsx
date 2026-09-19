@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy, Code2 } from "lucide-react";
+import { CheckIcon as Check, CopyIcon as Copy, CodeIcon as Code2 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { CodeBlock as ShikiCodeBlock, CodeBlockCode, CodeBlockGroup } from "@/components/ui/code-block";
 

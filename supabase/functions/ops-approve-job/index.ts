@@ -10,7 +10,8 @@
 //             risk is high.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireResourceAccess } from "../_shared/authz.ts";
 
 const ROLLBACK_TYPE: Record<string, string> = {
   terraform_apply: "terraform_destroy",
@@ -30,16 +31,15 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, message: "job_id and decision required" }, { status: 400 });
     }
 
-    const userClient = createUserClient(req);
-    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !userInfo?.user) {
-      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
-    }
-    const userId = userInfo.user.id;
+    // Approuver, c'est lâcher l'exécution sur la machine du client : le garde
+    // porte donc sur le projet DU JOB, résolu depuis sa propre ligne. Sans lui,
+    // n'importe quel compte faisait passer n'importe quel job en file (FOS-02).
+    const auth = await requireResourceAccess(req, "ops_jobs", job_id, "editor");
+    if (!auth.ok) return auth.response;
+    const userId = auth.userId;
+    const job = auth.resource as Record<string, any>;
 
     const admin = createServiceClient();
-    const { data: job } = await admin.from("ops_jobs").select("*").eq("id", job_id).maybeSingle();
-    if (!job) return jsonResponse({ ok: false, message: "Job not found" }, { status: 404 });
 
     if (decision === "approve") {
       if (job.status !== "awaiting_approval") {

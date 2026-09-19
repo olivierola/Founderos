@@ -8,8 +8,15 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import dagre from "dagre";
 import {
-  Loader2, Network, MessagesSquare, Brain, ArrowRight, Pin, Bot, ChevronDown,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  GraphIcon as Network,
+  ChatsIcon as MessagesSquare,
+  BrainIcon as Brain,
+  ArrowRightIcon as ArrowRight,
+  PushPinIcon as Pin,
+  RobotIcon as Bot,
+  CaretDownIcon as ChevronDown,
+} from "@phosphor-icons/react";
 import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";

@@ -6,17 +6,17 @@ import type { DropdownMenuProps } from '@radix-ui/react-dropdown-menu';
 
 import { TablePlugin, useTableMergeState } from '@platejs/table/react';
 import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Combine,
-  Grid3x3Icon,
-  Table,
-  Trash2Icon,
-  Ungroup,
+  ArrowDownIcon as ArrowDown,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowUpIcon as ArrowUp,
+  StackSimpleIcon as Combine,
+  GridNineIcon as Grid3x3Icon,
+  TableIcon as Table,
+  TrashIcon as Trash2Icon,
+  SelectionSlashIcon as Ungroup,
   XIcon,
-} from 'lucide-react';
+} from "@phosphor-icons/react";
 import { KEYS } from 'platejs';
 import { useEditorPlugin, useEditorSelector } from 'platejs/react';
 

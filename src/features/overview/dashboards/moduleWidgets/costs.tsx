@@ -1,6 +1,11 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Wallet, Brain, Activity, Repeat } from "lucide-react";
+import {
+  WalletIcon as Wallet,
+  BrainIcon as Brain,
+  PulseIcon as Activity,
+  RepeatIcon as Repeat,
+} from "@phosphor-icons/react";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";

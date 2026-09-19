@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/auth-section-1";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { readAttribution } from "@/lib/attribution";
 
 export function SignupPage() {
   const navigate = useNavigate();
@@ -40,6 +41,8 @@ export function SignupPage() {
           last_name: lastName || null,
           full_name: fullName || null,
           marketing_opt_in: !marketingOptOut,
+          // Where this account came from (widget « Powered by », campaign).
+          acquisition: readAttribution(),
         },
       },
     });

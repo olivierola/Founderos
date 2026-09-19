@@ -2,17 +2,17 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  FolderGit2,
-  Plus,
-  Loader2,
-  ArrowLeft,
-  Boxes,
-  MoreVertical,
-  Pencil,
-  Trash2,
-  GitBranch,
-  ScanLine,
-} from "lucide-react";
+  FolderIcon as FolderGit2,
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  ArrowLeftIcon as ArrowLeft,
+  CubeIcon as Boxes,
+  DotsThreeVerticalIcon as MoreVertical,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  GitBranchIcon as GitBranch,
+  ScanIcon as ScanLine,
+} from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -136,7 +136,10 @@ export function ProjectsPage() {
                   <Card
                     key={p.id}
                     className="group cursor-pointer transition-colors hover:border-primary/40"
-                    onClick={() => navigate(`/app/${ws!.slug}/${p.slug}/hq`)}
+                    // La racine du projet choisit la page d'arrivée (PlaneLanding) :
+                    // le module de travail, ou le tableau de bord général faute de
+                    // tableau de service.
+                    onClick={() => navigate(`/app/${ws!.slug}/${p.slug}`)}
                   >
                     <CardContent className="p-5">
                       <div className="flex items-start justify-between">
@@ -202,7 +205,7 @@ export function ProjectsPage() {
           if (!ws) return;
           const p = await createProject(ws.id, name);
           refresh();
-          navigate(`/app/${ws.slug}/${p.slug}/hq`);
+          navigate(`/app/${ws.slug}/${p.slug}`);
         }}
       />
 

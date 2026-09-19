@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { cva } from 'class-variance-authority';
-import { CornerDownLeftIcon } from 'lucide-react';
+import { ArrowElbowDownLeftIcon as CornerDownLeftIcon } from "@phosphor-icons/react";
 import type {
   AnyPluginConfig,
   TElement,

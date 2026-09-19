@@ -1,5 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, GitBranch, KeyRound, Plug, RefreshCw, ScanLine, Sparkles, Wallet } from "lucide-react";
+import {
+  PulseIcon as Activity,
+  GitBranchIcon as GitBranch,
+  KeyIcon as KeyRound,
+  PlugIcon as Plug,
+  ArrowsClockwiseIcon as RefreshCw,
+  ScanIcon as ScanLine,
+  SparkleIcon as Sparkles,
+  WalletIcon as Wallet,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { ExportMenu } from "@/components/ExportMenu";
 import { Card, CardContent } from "@/components/ui/card";

@@ -1,5 +1,12 @@
 import { useMemo, useState, useEffect } from "react";
-import { Wallet, Cloud, Server, Cpu, Gauge, Receipt } from "lucide-react";
+import {
+  WalletIcon as Wallet,
+  CloudIcon as Cloud,
+  HardDrivesIcon as Server,
+  CpuIcon as Cpu,
+  GaugeIcon as Gauge,
+  ReceiptIcon as Receipt,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Card } from "@/components/ui/card";

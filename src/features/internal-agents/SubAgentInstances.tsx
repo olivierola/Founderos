@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, X, CheckCircle2, XCircle, GitBranchPlus, Boxes } from "lucide-react";
+import {
+  XIcon as X,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  GitBranchIcon as GitBranchPlus,
+  CubeIcon as Boxes,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { RunTimeline } from "./RunTimeline";
+import { AgentActivityOrb, useRunOrbState } from "./AgentActivityOrb";
 
 interface ChildRun {
   id: string;
@@ -69,7 +76,7 @@ export function SubAgentInstances({ parentRunId }: { parentRunId: string }) {
         <Boxes className="h-3.5 w-3.5" />
         Sous-agents en parallèle
         <span className="rounded bg-secondary/60 px-1.5 py-0.5 tabular-nums">{children.length}</span>
-        {anyActive && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+        {anyActive && <AgentActivityOrb state="weaving" label="Sous-agents en cours" />}
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {children.map((c) => {
@@ -89,7 +96,7 @@ export function SubAgentInstances({ parentRunId }: { parentRunId: string }) {
             >
               <div className="flex items-center gap-1.5">
                 {active ? (
-                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                  <ChildOrb runId={c.id} />
                 ) : ok ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                 ) : (
@@ -109,6 +116,10 @@ export function SubAgentInstances({ parentRunId }: { parentRunId: string }) {
       {openChild && <SubAgentFlowDrawer runId={openChild} onClose={() => setOpenChild(null)} />}
     </div>
   );
+}
+
+function ChildOrb({ runId }: { runId: string }) {
+  return <AgentActivityOrb state={useRunOrbState(runId)} />;
 }
 
 // Right-side drawer ("zone à droite") showing a single sub-agent's live flow.

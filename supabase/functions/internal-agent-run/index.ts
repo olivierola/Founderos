@@ -21,10 +21,12 @@
 //     scheduler authenticates with the service-role key.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
+import { timingSafeEqual } from "../_shared/authz.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { decryptSecret } from "../_shared/crypto.ts";
-import { callAi, runToolRounds, safeParseJson, PayloadTooLargeError, type ChatMessage } from "../_shared/ai.ts";
-import { runParallelSubagents } from "../_shared/subagents.ts";
+import { callAi, runToolRounds, safeParseJson, truncateMiddle, PayloadTooLargeError, ProviderExhaustedError, type ChatMessage } from "../_shared/ai.ts";
+import { runParallelSubagents, SUBAGENT_BUDGET_MS } from "../_shared/subagents.ts";
+import { writeReport } from "../_shared/reporter.ts";
 import {
   classifyTier, classifyRequest, modelForTier, resolveProvider, defaultProvider,
   availableProviders, modelMatchesProvider, cheapProvider, providerMismatchNote,
@@ -40,10 +42,12 @@ import { loadGuardrails, checkGuardrails, strongestEnforcement, type GuardrailVi
 import { recordRunIncident, recordGuardrailIncident } from "../_shared/governance-incidents.ts";
 import {
   buildInternalToolset, RunCancelledError, AwaitingInputError, embedMemoryVector,
+  writeAgentMemory, touchAgentMemories,
   type AgentToolRow, type InternalToolContext,
 } from "../_shared/internal-agent-tools.ts";
 import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
 import { teamsSendMessage } from "../_shared/teams.ts";
+import { isMessagingProvider, sendMessagingText } from "../_shared/messaging.ts";
 import {
   deriveContract, evaluateContract, fingerprintProgress, hasAdvanced, decideNext,
   resolveBudgets, loopEventPayload, evidenceSinceLastTodos,
@@ -53,8 +57,16 @@ import {
   compileSystemPrompt, selectRelevant, selectTools, currentTaskText, budgetEventPayload, stableHash, transcriptPrefixHash,
   type SectionInput, type PromptBudget,
 } from "../_shared/prompt-compiler.ts";
+import {
+  renderSoul, selectPreferences, selectSkills, type SkillLike,
+} from "../_shared/agent-context.ts";
+import { RELEVANCE_FLOOR, selectMemoriesForPrompt, type MemoryRow } from "../_shared/agent-memory.ts";
+import {
+  loadCompanyContext, renderCompanySection, type CompanyContext,
+} from "../_shared/company-context.ts";
 import { completeMissionTask, advanceRoomMission } from "../_shared/room-orchestrator.ts";
 import { completeWorkflowRun } from "../_shared/workflow-engine.ts";
+import { defaultTimezone, renderClock } from "../_shared/clock.ts";
 import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
 import {
   PROACTIVITY_DOCTRINE, ORCHESTRATOR_PROACTIVITY, reflectAndPropose, proposalsFooter,
@@ -65,6 +77,10 @@ interface AgentRow {
   name: string;
   persona: string | null;
   instructions: string | null;
+  /** The three files (0210): instructions above, plus who it IS and what its
+   *  user prefers. `preferences` is the one the agent writes to itself. */
+  soul?: string | null;
+  preferences?: string | null;
   created_by?: string | null;
   service_dashboard_id?: string | null;
   is_orchestrator?: boolean;
@@ -243,7 +259,7 @@ const ORCHESTRATOR_DOCTRINE = [
  *  against the CURRENT task on every build, so a tight budget costs relevance,
  *  not reach: everything omitted stays reachable via search_memory /
  *  search_context, which the operating rules tell the agent to use. */
-const SECTION_BUDGET = { memory: 2600, team: 1200, recent: 1200, skills: 2000 } as const;
+const SECTION_BUDGET = { memory: 2600, team: 1200, recent: 1200, skills: 1400, preferences: 1200, company: 1400 } as const;
 
 /** Keep only the lines of a pre-rendered "- …" block that matter for this task.
  *  Pinned memories (rendered as "[kind, pinned]") always survive. */
@@ -268,7 +284,10 @@ function buildSystemPrompt(
   mode: "chat" | "mission",
   memorySection: string,
   teamMemorySection: string,
-  skillPrompts: string = "",
+  /** The agent's ACTIVATED skills, unranked. They are selected against the
+   *  task below — never sent whole. A pre-rendered string is still accepted
+   *  (legacy call sites) and passed through untouched. */
+  skillPrompts: string | SkillLike[] = "",
   recentWorkSection: string = "",
   securityDoctrine: boolean = false,
   /** The turn's actual subject — drives which knowledge lines are worth sending.
@@ -278,6 +297,9 @@ function buildSystemPrompt(
   /** Spawned worker with ONE narrow subtask: it inherits no initiative — its
    *  job is to return its piece, not to have ideas about the whole engagement. */
   isSubAgent: boolean = false,
+  /** L'entreprise pour laquelle l'agent travaille (0212). Absent = projet sans
+   *  profil ni objectif : la section disparaît, tout le reste est identique. */
+  company: CompanyContext | null = null,
 ): { prompt: string; budget: PromptBudget } {
   const sections: SectionInput[] = [];
   const push = (id: SectionInput["id"], body: string, meta?: { dropped: number; offered: number }) => {
@@ -288,6 +310,16 @@ function buildSystemPrompt(
     `You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`,
     `You work as part of a TEAM of agents — you can discover, message and delegate to peers, and share knowledge through the team memory.`,
   ].join("\n"));
+  // L'employeur, avant le caractère : un agent doit savoir OÙ il travaille
+  // avant qu'on lui dise comment se comporter. Le profil part en entier (il
+  // tient en dix lignes) ; les objectifs sont sélectionnés contre la tâche,
+  // avec passe-droit pour ceux dont cet agent ou son service répond.
+  const comp = renderCompanySection(company, taskText, SECTION_BUDGET.company);
+  push("company", comp.body, { dropped: comp.dropped, offered: comp.offered });
+  // The three files. Soul and instructions go whole — they are what the agent
+  // IS and what it DOES, and neither means anything half-sent. Preferences are
+  // selected further down, against the task.
+  push("soul", renderSoul(agent.soul));
   if (agent.instructions) push("instructions", `Your detailed instructions:\n${agent.instructions}`);
 
   const lines: string[] = [];
@@ -312,8 +344,18 @@ function buildSystemPrompt(
   // Knowledge blocks are SELECTED against this turn's subject, not dumped
   // whole. Everything filtered out stays one search_memory / search_context
   // away — the operating rules below say so explicitly.
-  const skills = selectLines(skillPrompts, taskText, SECTION_BUDGET.skills);
-  push("skills", skills.body, { dropped: skills.dropped, offered: skills.offered });
+  // Skills: ranked against the task, trimmed to what it plausibly needs, and
+  // the one decisive match arrives already loaded. What isn't named is one
+  // list_skills() away — the heading says so.
+  if (Array.isArray(skillPrompts)) {
+    const sel = selectSkills(skillPrompts, taskText, { budget: SECTION_BUDGET.skills });
+    push("skills", sel.body, { dropped: sel.dropped, offered: skillPrompts.length });
+  } else {
+    const skills = selectLines(skillPrompts, taskText, SECTION_BUDGET.skills);
+    push("skills", skills.body, { dropped: skills.dropped, offered: skills.offered });
+  }
+  const prefs = selectPreferences(agent.preferences, taskText, SECTION_BUDGET.preferences);
+  push("preferences", prefs.body, { dropped: prefs.dropped, offered: prefs.offered });
   const mem = selectLines(memorySection, taskText, SECTION_BUDGET.memory);
   push("memory", mem.body, { dropped: mem.dropped, offered: mem.offered });
   const team = selectLines(teamMemorySection, taskText, SECTION_BUDGET.team);
@@ -333,19 +375,25 @@ function buildSystemPrompt(
     "- TOOLBOX ON DEMAND: families marked \"(à charger)\" in the toolbox below are listed but not yet callable — call load_toolset(\"FAMILY\") once and use them immediately. Never say you lack a capability that the toolbox lists.",
     "- ASK only when truly blocked (ambiguous ask, missing input you can't obtain, a real fork, or before an irreversible action) via ask_user; otherwise decide and act autonomously.",
     "- FINISH the whole job: not done until EVERY plan step is complete AND every expected deliverable is saved with create_deliverable. No partial hand-back.",
-    "- SAVE durable knowledge as you learn it (save_memory), one self-contained line each: stable facts, preferences, installed tools, produced files (with paths), key results. Skip transient details and anything already known.",
+    "- SAVE durable knowledge as you learn it (save_memory), one self-contained line each: stable facts, installed tools, produced files (with paths), key results. Skip transient details and anything already known.",
+    "- PRÉFÉRENCES : dès que l'utilisateur exprime une habitude durable ou te reprend sur la forme (langue, ton, format d'un livrable, canal, horaire, ce qu'il ne veut jamais), enregistre-la avec remember_preference — une phrase impérative, réutilisable hors de cette conversation. S'il change d'avis, corrige la préférence existante (`replaces`) au lieu d'en empiler une seconde. Ne redemande jamais ce qui est déjà dans tes préférences.",
     "- Approvals: a gated tool queues for review and your run KEEPS RUNNING — acknowledge and continue; never re-ask an approval already granted. If a tool errors, adapt or state the limitation.",
     // Initiative itself is covered by PROACTIVITY_DOCTRINE above; this line only
     // ties it back to the checklist discipline the rules are about.
     "- INITIATIVE : applique la doctrine d'initiative ci-dessus — ce qui découle de la demande fait partie du travail, ce qui en sort se dépose avec propose_mission. Jamais d'effet de bord hors périmètre.",
     "- ARTIFACTS : avant de créer un document/tableur/présentation, vérifie avec list_artifacts s'il existe déjà ; si oui, read_artifact puis update_artifact pour le corriger EN PLACE. Ne produis jamais une v2 à côté d'une v1 restée fausse.",
+    "- TRAVAIL FAIT AILLEURS : dès que tu crées ou modifies quelque chose dans un outil externe (page Notion, issue Linear, doc Drive, fichier Figma, PR…), épingle-le avec link_artifact en donnant l'URL rendue par l'outil. Sinon ce travail n'existe nulle part dans le produit et personne ne le retrouvera.",
   );
   if (mode === "chat") {
     rules.push("- RICH REPLIES: when a component communicates better than prose (metrics, trends, comparisons, tabular data), attach real UI blocks with render_ui (kpi_grid/chart/table/link_card) and place each [[ui:N]] tag on its own line; real data only. When a sentence is clearer, just write it.");
-    rules.push("- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : ne demande PAS quoi faire et ne réponds pas juste en prose — fais l'analyse avec tes outils MAINTENANT et PRODUIS-la avec create_deliverable(kind=\"report\") (sections/KPIs/tableaux/risques, via le skill report-designer ; gros rapport → report_section puis create_deliverable sans content). Une question de clarification UNIQUEMENT si c'est vraiment impossible d'avancer.");
+    rules.push("- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : ne demande PAS quoi faire et ne réponds pas juste en prose — fais l'analyse avec tes outils MAINTENANT, puis confie-la au Rédacteur avec request_report(subject, material, angle). Tu ne rédiges pas le rapport toi-même : tu lui passes les chiffres avec leurs sources, les constats et ce qui reste incertain, il publie le document. Une question de clarification UNIQUEMENT si c'est vraiment impossible d'avancer.");
   }
   if (agent.collaboration_enabled) {
     rules.push("- COLLABORATE: if a teammate's skills fit part of the work, message (send_message_to_agent) or delegate (delegate_mission) instead of doing it all; record team decisions with team_memory.");
+    rules.push(
+      "- L'ENTREPRISE A PLUSIEURS SERVICES, pas seulement le tien. Quand le travail touche un domaine qui n'est pas le tien (facturation, juridique, sécurité, recrutement…), CHERCHE d'abord qui s'en occupe — list_team_agents(scope=\"company\") ou explore_company_graph — au lieu de l'improviser ou de le laisser tomber. " +
+      "Chaque service dit dans l'annuaire s'il accepte du travail venu d'ailleurs : respecte-le. Une mission refusée ou mise en attente n'est pas un échec, c'est la réponse — signale-la et poursuis ce que tu peux faire toi-même.",
+    );
   }
   // Essaim (swarm): only present when the owner enabled it — the capability
   // summary carries the spawn_parallel_agents line in that case. Make the agent
@@ -371,11 +419,14 @@ function buildSystemPrompt(
       "- BE CONVERSATIONAL & THINK FIRST. If the request is ambiguous, under-specified, or could go several ways, ASK a brief clarifying question before acting (e.g. which target, which period, which audience). Don't guess on important details. A short back-and-forth is better than a wrong deliverable.",
       "- Confirm scope on big/irreversible actions before doing them.",
       "- You can turn work into a tracked task with create_task, or kick off a full background mission with create_mission (use it when the user asks you to 'do X' as ongoing/standalone work, or to schedule recurring work).",
-      "- When the user asks for an analysis, report, summary of data, or anything substantial, produce it with create_deliverable (prefer kind=\"report\" with KPIs/charts/tables). Then reply with a short summary — the full report opens as an artifact card in the chat.",
-      "- INTERDIT : n'affirme JAMAIS « rapport créé », « le rapport est en carte », « livrable créé » si tu n'as pas RÉELLEMENT appelé create_deliverable dans CE tour. Un résumé écrit dans le chat n'est PAS un livrable et n'affiche aucune carte. Si l'utilisateur demande un rapport, tu DOIS appeler create_deliverable(kind=\"report\") — sinon ne prétends pas l'avoir fait.",
+      "- When the user asks for an analysis, report or summary of data, do the work with your tools, then hand the MATTER to Le Rédacteur with request_report(subject, material) — he writes and publishes every report. Then reply with a short summary; the document opens as a card in the chat.",
+      "- INTERDIT : n'affirme JAMAIS « rapport créé », « le rapport est en carte », « livrable créé » si tu n'as pas RÉELLEMENT appelé request_report dans CE tour ET qu'il t'a répondu « publié ». Un résumé écrit dans le chat n'est PAS un livrable et n'affiche aucune carte.",
     );
   }
   push("rules", rules.join("\n"));
+  // Last section on purpose: the time changes every call, and anything after
+  // the first changed byte misses the provider prefix cache.
+  push("context", renderClock(defaultTimezone()));
 
   const compiled = compileSystemPrompt(sections, toolStats);
   return { prompt: compiled.system, budget: compiled.budget };
@@ -558,7 +609,7 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, created_by, service_dashboard_id, is_orchestrator")
+      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, created_by, service_dashboard_id, is_orchestrator")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -572,43 +623,54 @@ async function loadAgentAndTools(agentId: string) {
   return { agent: agent as AgentRow, tools: (tools ?? []) as AgentToolRow[] };
 }
 
-// Top-of-mind memory injected into every prompt: pinned first, then by
-// importance and recency, capped so it can't crowd out the context window.
-// The agent reaches older entries through search_memory.
+// Memory injected into the prompt, selected for THIS task (see agent-memory.ts).
+// Pool = pinned + the vector matches of the task + the critical facts; each
+// memory becomes ONE bounded line, ranked by relevance × importance × freshness
+// × proven usefulness, under the section budget. What is left out (or cut
+// short) is one search_memory away. The rows actually shown are marked as
+// recalled — that usage is what later protects them from eviction.
 async function loadMemorySection(
   admin: ReturnType<typeof createServiceClient>,
   agentId: string,
   taskText?: string,
 ): Promise<string> {
-  const { data } = await admin
-    .from("internal_agent_memories")
-    .select("id, kind, content, importance, is_pinned")
-    .eq("agent_id", agentId)
-    .order("is_pinned", { ascending: false })
-    .order("importance", { ascending: false })
-    .order("updated_at", { ascending: false })
-    .limit(25);
-  if (!data || data.length === 0) return "";
-  type Mem = { id?: string; kind: string; content: string; importance: number; is_pinned: boolean };
-  let rows = data as Mem[];
+  const fetchStatic = (cols: string) => Promise.all([
+    admin.from("internal_agent_memories").select(cols)
+      .eq("agent_id", agentId).eq("is_pinned", true)
+      .order("importance", { ascending: false }).limit(20),
+    admin.from("internal_agent_memories").select(cols)
+      .eq("agent_id", agentId).eq("is_pinned", false)
+      .order("importance", { ascending: false }).order("updated_at", { ascending: false }).limit(20),
+  ]);
+  let [{ data: pinned, error: e1 }, { data: top }] = await fetchStatic(
+    "id, kind, content, importance, is_pinned, source, recall_count, last_recalled_at, updated_at, created_at");
+  // Before migration 0249 the usage columns do not exist, and the select would
+  // fail — silently emptying every prompt's memory. Fall back to the old shape.
+  if (e1) [{ data: pinned }, { data: top }] = await fetchStatic("id, kind, content, importance, is_pinned, source, updated_at, created_at");
+  const staticRows = [...(pinned ?? []), ...(top ?? [])] as MemoryRow[];
+  if (staticRows.length === 0) return "";
+  let rows = staticRows;
 
-  // Semantic recall: when we know the current task, pull the memories most
-  // RELEVANT to it (not just the most important) and rank them first after the
-  // pinned ones. Best-effort — falls back to the static top-N.
-  if (taskText && Deno.env.get("JINA_API_KEY")) {
+  // Semantic recall against the task. Skipped for a greeting: an embedding
+  // call to decide which memories a « merci » needs is money for nothing.
+  const task = (taskText ?? "").trim();
+  if (task && classifyTier(task, { mode: "chat" }) !== "light" && Deno.env.get("JINA_API_KEY")) {
     try {
-      const [qvec] = await embedTexts([taskText.slice(0, 1500)], "retrieval.query");
+      const [qvec] = await embedTexts([task.slice(0, 1500)], "retrieval.query");
       if (qvec) {
         const { data: sem } = await admin.rpc("match_agent_memories", {
-          p_agent_id: agentId, p_query_embedding: toVectorLiteral(qvec), p_match_count: 8,
+          p_agent_id: agentId, p_query_embedding: toVectorLiteral(qvec), p_match_count: 12,
         });
         if (Array.isArray(sem) && sem.length) {
-          const pinned = rows.filter((m) => m.is_pinned);
-          const seen = new Set(pinned.map((m) => m.content));
-          const semantic = (sem as Mem[]).filter((m) => !seen.has(m.content));
-          for (const m of semantic) seen.add(m.content);
-          const rest = rows.filter((m) => !seen.has(m.content));
-          rows = [...pinned, ...semantic, ...rest];
+          // Once the task is known, a non-pinned memory earns its place by
+          // matching it — or by being critical (importance ≥ 4).
+          const semantic = sem as MemoryRow[];
+          const semIds = new Set(semantic.map((m) => m.id));
+          rows = [
+            ...staticRows.filter((m) => m.is_pinned && !semIds.has(m.id)),
+            ...semantic,
+            ...staticRows.filter((m) => !m.is_pinned && !semIds.has(m.id) && (m.importance ?? 3) >= 4),
+          ];
         }
       }
     } catch { /* static fallback */ }
@@ -628,15 +690,9 @@ async function loadMemorySection(
     })();
   }
 
-  const lines: string[] = [];
-  let budget = 3500;
-  for (const m of rows) {
-    const line = `- [${m.kind}${m.is_pinned ? ", pinned" : ""}] ${m.content}`;
-    if (line.length > budget) break;
-    budget -= line.length;
-    lines.push(line);
-  }
-  return lines.join("\n");
+  const sel = selectMemoriesForPrompt(rows, { budget: SECTION_BUDGET.memory });
+  touchAgentMemories(admin, sel.ids);
+  return sel.body;
 }
 
 // Shared team knowledge pool, injected so agents share context across the team.
@@ -672,22 +728,70 @@ async function loadRecentWorkSection(
   } catch { return ""; }
 }
 
+/**
+ * La mémoire partagée, sur DEUX des trois étages (0213).
+ *
+ * Avant : une seule requête sur project_id, quinze lignes, toutes équipes
+ * confondues. Le savoir Finance occupait le contexte d'un agent Marketing, et
+ * le savoir réellement transverse n'avait aucun rang particulier.
+ *
+ * Maintenant l'agent reçoit ce qui le concerne, étiqueté :
+ *   • ENTREPRISE — service_dashboard_id NULL : ça vaut pour tout le monde.
+ *   • SERVICE    — son dashboard : ça vaut pour son équipe.
+ * La mémoire des AUTRES services ne part plus d'office ; elle reste accessible
+ * via team_memory(scope="all"), ce que les règles d'opération disent.
+ *
+ * L'entreprise passe en premier et garde une part réservée du quota : c'est le
+ * cadre commun, il ne doit pas se faire évincer par quinze notes de service.
+ */
 async function loadTeamMemorySection(
   admin: ReturnType<typeof createServiceClient>,
   projectId: string,
+  dashboardId: string | null,
 ): Promise<string> {
-  const { data } = await admin
-    .from("internal_agent_team_memories")
-    .select("kind, content, is_pinned")
-    .eq("project_id", projectId)
-    .order("is_pinned", { ascending: false })
-    .order("importance", { ascending: false })
-    .order("updated_at", { ascending: false })
-    .limit(15);
-  if (!data || data.length === 0) return "";
-  return (data as Array<{ kind: string; content: string; is_pinned: boolean }>)
-    .map((m) => `- [${m.kind}${m.is_pinned ? ", pinned" : ""}] ${m.content}`)
-    .join("\n");
+  type Row = { kind: string; content: string; is_pinned: boolean };
+  // Les filtres AVANT les tris et la limite : passé `.limit()`, le builder
+  // Supabase n'expose plus `.eq()` / `.is()`.
+  const pick = (scope: "company" | "service", limit: number) => {
+    const base = admin
+      .from("internal_agent_team_memories")
+      .select("kind, content, is_pinned")
+      .eq("project_id", projectId);
+    const scoped = scope === "company"
+      ? base.is("service_dashboard_id", null)
+      : base.eq("service_dashboard_id", dashboardId!);
+    return scoped
+      .order("is_pinned", { ascending: false })
+      .order("importance", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+  };
+
+  const [{ data: company }, service] = await Promise.all([
+    pick("company", 8),
+    dashboardId ? pick("service", 10) : Promise.resolve({ data: [] as Row[] }),
+  ]);
+  const line = (m: Row, tier: string) =>
+    `- [${tier}·${m.kind}${m.is_pinned ? ", pinned" : ""}] ${m.content}`;
+  const out = [
+    ...((company ?? []) as Row[]).map((m) => line(m, "entreprise")),
+    ...(((service as { data: Row[] | null }).data ?? []) as Row[]).map((m) => line(m, "service")),
+  ];
+  return out.join("\n");
+}
+
+/** L'entreprise de cet agent, et sa place dedans (0212/0213). Le service est
+ *  résolu par le chargeur : c'est lui qui décide de ce qui sera marqué « à
+ *  toi » dans les objectifs. */
+function loadCompanySection(
+  admin: ReturnType<typeof createServiceClient>,
+  agent: AgentRow,
+): Promise<CompanyContext | null> {
+  if (!agent.project_id) return Promise.resolve(null);
+  return loadCompanyContext(admin, agent.project_id, {
+    agentId: agent.id,
+    dashboardId: agent.service_dashboard_id ?? null,
+  });
 }
 
 // Load the skills activated for this agent (full fields). Their playbooks are
@@ -744,14 +848,6 @@ async function loadActivatedMcpServers(
   return out;
 }
 
-// One-line-per-skill index for the system prompt (the agent's global view of
-// the skills it can pull in with use_skill).
-function skillsIndex(skills: Array<{ slug: string; name: string; description: string | null; category: string | null }>): string {
-  return skills
-    .map((s) => `- ${s.name} (${s.slug})${s.category ? ` [${s.category}]` : ""}${s.description ? `: ${s.description}` : ""}`)
-    .join("\n");
-}
-
 function nextRunAt(schedule: string, from: Date): string {
   const d = new Date(from);
   if (schedule === "daily") d.setDate(d.getDate() + 1);
@@ -792,7 +888,13 @@ async function probeSandbox(url: string): Promise<string | null> {
     const t = setTimeout(() => ctrl.abort(), 6000);
     const res = await fetch(`${url.replace(/\/$/, "")}/v1/bash/exec`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+        // Meme secret que les outils (FOS-06) : sans lui la sonde recevrait 401
+        // et marquerait a tort le bac a sable comme mort.
+        ...(Deno.env.get("SANDBOX_TOKEN") ? { "X-Sandbox-Token": Deno.env.get("SANDBOX_TOKEN")! } : {}),
+      },
       body: JSON.stringify({ command: "echo ok", timeout: 5 }),
       signal: ctrl.signal,
     });
@@ -921,6 +1023,26 @@ function makeToolContext(opts: {
     swarmEnabled: agent.swarm_enabled !== false,
     serviceDashboardId: agent.service_dashboard_id ?? null,
     userId: agent.created_by ?? null,
+    // Reports are written by Le Rédacteur (0206): this agent hands over the
+    // matter and gets back a published document. Injected HERE, in the one place
+    // every path builds a context, so the toolbox the system prompt advertises
+    // (built in initChatRun / runMission) and the toolbox the tick actually
+    // executes can never disagree about who writes reports.
+    //
+    // Also injected when this agent IS the Rédacteur: his authoring pass has no
+    // delegation tool of its own, so a self-request writes rather than recurses.
+    requestReport: async (brief) => (await writeReport({
+      admin,
+      workspaceId: agent.workspace_id,
+      projectId: agent.project_id,
+      parentRunId: runId,
+      missionId: missionId ?? null,
+      conversationId: opts.conversationId ?? null,
+      requesterAgentId: agent.id,
+      requesterName: agent.name,
+      createdBy: agent.created_by ?? null,
+      parentLogEvent: (kind, payload) => writeEvent(kind as "status" | "ui", payload),
+    }, brief)).message,
     createDeliverable: async (d) => {
       // The error was discarded here. A failed insert therefore looked exactly
       // like a successful one: publish_artifact answered "publié (17 blocs)",
@@ -1122,20 +1244,21 @@ async function initChatRun(
   }
   // Semantic memory recall keyed on the user's latest message.
   const lastUserText = String([...(history ?? [])].reverse().find((m) => m.role === "user")?.content ?? "");
-  const [memorySection, teamMemorySection, chatSkills, recentWorkSection] = await Promise.all([
+  const [memorySection, teamMemorySection, chatSkills, recentWorkSection, company] = await Promise.all([
     loadMemorySection(admin, agent.id, lastUserText || undefined),
-    loadTeamMemorySection(admin, agent.project_id),
+    loadTeamMemorySection(admin, agent.project_id, agent.service_dashboard_id ?? null),
     loadActivatedSkills(admin, agent.id),
     loadRecentWorkSection(admin, agent.id),
+    loadCompanySection(admin, agent),
   ]);
   ctx.skills = chatSkills;
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
-  const chatSkillIndex = skillsIndex(chatSkills);
 
   const chatPrompt = buildSystemPrompt(
     agent, capabilitySummary + sandboxDownNote, "chat", memorySection, teamMemorySection,
-    chatSkillIndex, recentWorkSection, isSecurityAgent(chatSkills), lastUserText,
+    chatSkills, recentWorkSection, isSecurityAgent(chatSkills), lastUserText,
+    undefined, false, company,
   );
   await ctx.logEvent("prompt", budgetEventPayload(chatPrompt.budget, null)).catch(() => {});
   const messages: ChatMessage[] = [
@@ -1176,6 +1299,19 @@ async function initChatRun(
   const lastUserMsg = String([...messages].reverse().find((m) => m.role === "user")?.content ?? "");
   // "continue"/"poursuis"/… are short but DO need a (resume-aware) plan.
   const isContinuation = /^\s*(continue|continu|poursuis|reprends?|resume|go on|keep going|next|suite|encore|vas[-\s]?y|ok\b)/i.test(lastUserMsg.trim());
+  // Small talk (« hey », « merci », « ça va ? ») is not a green light to resume
+  // the task left in the history — a bare « hey » used to relaunch an old
+  // sourcing job, question and all. Say hello; at most offer to continue.
+  const isSmallTalk = !isContinuation && lastUserMsg.trim().length <= 40
+    && /^\s*(hey|hello|hi|salut|coucou|bonjour|bonsoir|yo|ça va|ca va|merci|thanks|thank you|top|super|parfait|cool)\b/i.test(lastUserMsg.trim());
+  if (isSmallTalk) {
+    messages.push({
+      role: "user",
+      content: "[FOCUS] Le message ci-dessus n'est qu'une formule de politesse. Réponds brièvement et chaleureusement (1 à 2 phrases). "
+        + "Ne reprends, ne relance et ne poursuis AUCUNE tâche antérieure, et n'appelle aucun outil. "
+        + "Si un travail est resté inachevé dans cette conversation, mentionne-le en une seule phrase et demande si l'utilisateur veut le reprendre.",
+    });
+  }
   /** Success contract for this turn — derived alongside the plan (below). */
   let contract: SuccessContract | null = null;
   if ((lastUserMsg.trim().length >= 24 || isContinuation) && lastUserMsg !== "Greet the user.") {
@@ -1292,7 +1428,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
 
   const { data: mission } = await admin
     .from("internal_agent_missions")
-    .select("id, title, brief, acceptance_criteria, expected_deliverables, schedule, report_back_to_agent, delegation_depth")
+    .select("id, title, brief, acceptance_criteria, expected_deliverables, schedule, report_back_to_agent, delegation_depth, pj_issue_id, pj_project_id")
     .eq("id", run.mission_id)
     .maybeSingle();
   if (!mission) throw new Error("Mission not found");
@@ -1411,18 +1547,17 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
 
   // Semantic memory recall keyed on the mission itself (title + brief).
   const missionTaskText = `${mission.title ?? ""}\n${(mission as { brief?: string | null }).brief ?? ""}`.trim();
-  const [memorySection, teamMemorySection, missionSkills, recentWorkSection] = await Promise.all([
+  const [memorySection, teamMemorySection, missionSkills, recentWorkSection, company] = await Promise.all([
     loadMemorySection(admin, agent.id, missionTaskText || undefined),
-    loadTeamMemorySection(admin, agent.project_id),
+    loadTeamMemorySection(admin, agent.project_id, agent.service_dashboard_id ?? null),
     loadActivatedSkills(admin, agent.id),
     loadRecentWorkSection(admin, agent.id),
+    loadCompanySection(admin, agent),
   ]);
   ctx.skills = missionSkills;
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
   await ctx.logEvent("log", { message: `Run started (ticked) — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
-
-  const skillPrompts = skillsIndex(missionSkills);
 
   // Continuity for re-runs: the last runs of this mission — successes to build
   // on, failures so the agent doesn't retry an approach that already failed.
@@ -1450,13 +1585,80 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
       `- ${d.kind}: ${d.name}${d.description ? ` — ${d.description}` : ""}`)
     .join("\n");
 
+  // ── Le work item que sert cette mission (0235) ────────────────────────────
+  //
+  // Sans cette section, l'agent reçoit un brief hors-sol : il produit quelque
+  // chose de correct et personne ne peut le relier à la demande. Avec elle, il
+  // sait sur QUOI il travaille, peut relire l'état courant avec l'outil
+  // tracker, commenter sa progression, et refermer l'item quand il a fini —
+  // c'est cette boucle-là qui fait la différence entre un agent qui rend un
+  // fichier et un agent qui fait avancer le travail.
+  let workItemSection = "";
+  if ((mission as { pj_issue_id?: string | null }).pj_issue_id) {
+    const { data: issueRow } = await admin
+      .from("pj_issues")
+      .select("id, name, description_text, agent_brief, sequence_id, priority, target_date, pj_projects(identifier, name)")
+      .eq("id", (mission as { pj_issue_id: string }).pj_issue_id)
+      .maybeSingle();
+    if (issueRow) {
+      const i = issueRow as {
+        id: string; name: string; description_text: string | null;
+        agent_brief: string | null; sequence_id: number;
+        priority: string | null; target_date: string | null;
+        pj_projects?: { identifier?: string; name?: string } | null;
+      };
+      const ref = (i.pj_projects?.identifier ?? "ITEM") + "-" + i.sequence_id;
+      // Le travail à faire, s'il n'est pas DÉJÀ dans le brief de la mission.
+      // L'ordonnanceur l'y recopie en tête ; une mission lancée à la main depuis
+      // la fiche ne l'a pas. Le répéter dans le premier cas ferait lire deux
+      // fois la même commande, et le taire dans le second priverait l'agent de
+      // la seule partie qui lui est adressée.
+      const brief = (i.agent_brief ?? "").trim();
+      const briefAlreadyGiven = !!brief && (mission.brief ?? "").includes(brief);
+      workItemSection = [
+        "",
+        "## Work item served by this mission",
+        ref + " — " + i.name,
+        "Project: " + (i.pj_projects?.name ?? ""),
+        "Priority: " + (i.priority ?? "none") + (i.target_date ? " · due " + i.target_date : ""),
+        "Issue id (pass this to the tracker tool): " + i.id,
+        // TROIS champs, trois rôles : le nom dit de quoi il s'agit, la
+        // description dit le contexte que l'équipe s'est écrit, le travail à
+        // faire dit la commande. Un agent qui n'a que le titre invente sa
+        // tâche ; un agent qui n'a que la commande la mène hors sujet.
+        brief && !briefAlreadyGiven ? "\nWork to do (written for you):\n" + brief.slice(0, 4000) : "",
+        i.description_text ? "\nDescription (context for the team):\n" + i.description_text.slice(0, 2000) : "",
+        "",
+        "This mission exists to move " + ref + " forward. The WORK TO DO is your",
+        "instruction; the description is background. When they disagree, follow the",
+        "work to do.",
+        "",
+        // Les gestes exacts, et non « mets l'état à jour » : un agent à qui l'on
+        // dit quoi faire sans dire comment cherche l'identifiant de l'état,
+        // se trompe de ligne, ou attend une approbation qui n'est pas requise.
+        "Report progress on " + ref + " with the tracker tool — these writes on YOUR",
+        "work item need no approval:",
+        "  - when you reach a result: action=comment, params={issue_id, body} — say what",
+        "    you produced and where it is;",
+        "  - when the work to do is fully done: action=update_work_item,",
+        "    params={issue_id, state_group: \"completed\"};",
+        "  - if you are blocked and cannot finish: comment WHY and leave the state as it",
+        "    is. Never mark it completed without the result, and never cancel it yourself.",
+        "",
+        "Every deliverable you save is attached to " + ref + " — that link is what makes",
+        "your work verifiable, so do not answer a different question than the one above.",
+        "",
+      ].join("\n");
+    }
+  }
+
   const userPrompt = `# Mission: ${mission.title}
 
 ## Brief
 ${mission.brief ?? "(no brief provided)"}
 
 ${mission.acceptance_criteria ? `## Acceptance criteria\n${mission.acceptance_criteria}\n` : ""}
-${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}${previousRunSection}
+${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}${workItemSection}${previousRunSection}
 Execute this mission now. Use your tools to gather what you need, save each expected deliverable with create_deliverable, then write your final mission report.`;
 
   const provider = providerFor(agent);
@@ -1508,7 +1710,8 @@ Execute this mission now. Use your tools to gather what you need, save each expe
   // never bounded by the Edge wall-clock.
   const missionPrompt = buildSystemPrompt(
     agent, capabilitySummary, "mission", memorySection, teamMemorySection,
-    skillPrompts, recentWorkSection, isSecurityAgent(missionSkills), missionTaskText,
+    missionSkills, recentWorkSection, isSecurityAgent(missionSkills), missionTaskText,
+    undefined, false, company,
   );
   await ctx.logEvent("prompt", budgetEventPayload(missionPrompt.budget, null)).catch(() => {});
   const initialMessages: ChatMessage[] = [
@@ -1561,18 +1764,52 @@ async function autoSaveMemory(
       const esc = opts.dedupePrefix.replace(/[%_]/g, (m) => `\\${m}`);
       await admin.from("internal_agent_memories").delete().eq("agent_id", agent.id).ilike("content", `${esc}%`);
     }
-    const { count } = await admin
-      .from("internal_agent_memories")
-      .select("id", { count: "exact", head: true })
-      .eq("agent_id", agent.id);
-    if ((count ?? 0) >= 300) return; // respect the cap silently
-    await admin.from("internal_agent_memories").insert({
+    // Dedup (a recurring lesson merges into itself) and eviction at the cap
+    // are handled by the shared writer.
+    await writeAgentMemory(admin, {
       agent_id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id,
-      kind: opts.kind, content, importance: opts.importance ?? 3,
-      source: "agent", source_run_id: runId,
-      embedding: await embedMemoryVector(content),
+      kind: opts.kind, content, importance: opts.importance ?? 3, source_run_id: runId,
     });
   } catch { /* best-effort: never block finalization on memory */ }
+}
+
+/** A mission that was ASKED for something written. Routing every mission to the
+ *  Rédacteur would bill an authoring pass to hourly syncs and health checks —
+ *  which produce a line of output, not a document. */
+const WRITTEN_OUTPUT_RE =
+  /\b(rapport|report|analyse|analyser|audit|synth[eè]se|bilan|compte[- ]rendu|d[ée]brief|veille|[ée]tude|note d'analyse|restitution|livrable|executive summary)\b/i;
+
+/** The matter a mission actually gathered: what its tools returned, plus its
+ *  closing text. Le Rédacteur has no tools of its own — this is everything it
+ *  will ever know about the mission, so it is assembled generously and cut in
+ *  the middle rather than at the end (a run carries its findings at both ends).
+ */
+async function gatherRunMaterial(
+  admin: ReturnType<typeof createServiceClient>,
+  runId: string,
+  finalOutput: string,
+): Promise<string> {
+  const parts: string[] = [];
+  const { data: evts } = await admin
+    .from("internal_agent_run_events")
+    .select("kind, payload")
+    .eq("run_id", runId)
+    .in("kind", ["tool_result", "log"])
+    .order("created_at", { ascending: true })
+    .limit(400);
+  for (const e of (evts ?? []) as Array<{ kind: string; payload: Record<string, unknown> | null }>) {
+    const p = (e.payload ?? {}) as { tool?: string; preview?: string; message?: string; ok?: boolean };
+    if (p.ok === false) continue; // a failed call is not matter
+    const body = String(p.preview ?? p.message ?? "").trim();
+    if (body.length < 40) continue;
+    parts.push(`### ${p.tool ?? "note"}\n${body}`);
+  }
+  const gathered = parts.join("\n\n");
+  const closing = finalOutput.trim();
+  return [
+    closing ? `## Ce que l'agent a conclu\n${closing}` : "",
+    gathered ? `## Ce que ses outils ont rendu\n${truncateMiddle(gathered, 24_000)}` : "",
+  ].filter(Boolean).join("\n\n");
 }
 
 async function finalizeMissionSuccess(
@@ -1583,16 +1820,63 @@ async function finalizeMissionSuccess(
   finalOutput: string,
   stats: { tokIn: number; tokOut: number; cost: number; actions: number; provider: string; model: string; custom?: boolean },
 ) {
+  // Counted over the MISSION, not this run: a mission re-ticks and resumes, and
+  // a per-run count hands a second copy to every continuation.
   const { count } = await admin
     .from("internal_agent_deliverables")
     .select("id", { count: "exact", head: true })
-    .eq("run_id", runId);
-  if (!count) {
-    await admin.from("internal_agent_deliverables").insert({
-      run_id: runId, mission_id: mission.id, agent_id: agent.id, kind: "markdown",
-      name: "Mission output", content: finalOutput,
-      summary: finalOutput.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null,
-    });
+    .eq("mission_id", mission.id);
+  const { data: m } = await admin.from("internal_agent_missions")
+    .select("description, expected_deliverables, delegation_depth, delegated_by_agent")
+    .eq("id", mission.id).maybeSingle();
+  const mm = (m ?? {}) as {
+    description?: string; expected_deliverables?: unknown;
+    delegation_depth?: number; delegated_by_agent?: string | null;
+  };
+  // A DELEGATED mission is a sub-task. It closes by reporting back to the agent
+  // that delegated it, and that agent writes the one report at the end. Left to
+  // finish like a top-level mission, a five-task mission produced five documents
+  // and none of them was the one anyone asked for.
+  const isSubTask = (mm.delegation_depth ?? 0) > 0 || !!mm.delegated_by_agent;
+
+  if (!count && !isSubTask) {
+    // A mission that owed a document and finished without one: hand what it
+    // gathered to the Rédacteur rather than dumping the closing text into a
+    // markdown row nobody opens. Only when a document was actually expected —
+    // and never at the cost of the mission's own outcome, so any failure falls
+    // back to the row that has always been written here.
+    const expected = JSON.stringify(mm.expected_deliverables ?? "");
+    const wanted = [mission.title ?? "", mm.description ?? "", expected].join(" ");
+    let written = false;
+    if (WRITTEN_OUTPUT_RE.test(wanted) && finalOutput.trim().length > 200) {
+      const material = await gatherRunMaterial(admin, runId, finalOutput);
+      const res = await writeReport({
+        admin,
+        workspaceId: agent.workspace_id,
+        projectId: agent.project_id,
+        parentRunId: runId,
+        missionId: mission.id,
+        requesterAgentId: agent.id,
+        requesterName: agent.name,
+        createdBy: agent.created_by ?? null,
+        parentLogEvent: async (kind, payload) => {
+          await admin.from("internal_agent_run_events")
+            .insert({ run_id: runId, agent_id: agent.id, kind, payload }).then(() => {}, () => {});
+        },
+      }, {
+        subject: mission.title ?? "Bilan de mission",
+        material,
+        angle: mm.description || undefined,
+      }).catch(() => ({ ok: false } as { ok: boolean }));
+      written = res.ok === true;
+    }
+    if (!written) {
+      await admin.from("internal_agent_deliverables").insert({
+        run_id: runId, mission_id: mission.id, agent_id: agent.id, kind: "markdown",
+        name: "Mission output", content: finalOutput,
+        summary: finalOutput.replace(/[#*`>_\n]+/g, " ").trim().slice(0, 200) || null,
+      });
+    }
   }
   await admin.from("internal_agent_runs").update({
     status: "succeeded", finished_at: new Date().toISOString(), final_output: finalOutput,
@@ -1689,6 +1973,13 @@ async function postMissionReportToChannel(
         `✅ Mission **${m.title}** terminée.\n\n${body}\n\n_(Livrables complets dans l'onglet Deliverables.)_`);
       return;
     }
+    // Sans cette branche, un rapport de mission lancée depuis Telegram, Discord
+    // ou WhatsApp serait parti vers l'API Slack — et perdu en silence.
+    if (isMessagingProvider(ch?.provider)) {
+      await sendMessagingText(admin, m.channel_id, m.external_channel_ref, m.external_thread_ref ?? null,
+        `✅ Mission « ${m.title} » terminée.\n\n${body}\n\n(Livrables complets dans FounderOS.)`);
+      return;
+    }
     // Slack
     const { data: tok } = await admin
       .from("internal_agent_channel_tokens").select("access_token").eq("channel_id", m.channel_id).maybeSingle();
@@ -1736,6 +2027,9 @@ async function postReplyToBoundChannel(
         .from("internal_agent_channels").select("provider, service_url").eq("id", convo.channel_id).maybeSingle();
       if (ch?.provider === "teams") {
         await teamsSendMessage(ch.service_url, convo.external_channel_ref, text.slice(0, 12000));
+      } else if (isMessagingProvider(ch?.provider)) {
+        // Telegram, Discord, WhatsApp (messaging-gateway).
+        await sendMessagingText(admin, convo.channel_id, convo.external_channel_ref, convo.external_thread_ref ?? null, text);
       } else if (ch?.provider === "slack") {
         const { data: tok } = await admin
           .from("internal_agent_channel_tokens").select("access_token").eq("channel_id", convo.channel_id).maybeSingle();
@@ -2152,9 +2446,17 @@ const TICK_ROUNDS = 4;
  *  (~6 min) — well inside the 12-minute zombie cutoff. */
 const TICK_LEASE_MS = 4 * 60 * 1000;
 
+/** Wall-clock a tick may plan on. The edge runtime kills a worker at ~150 s
+ *  (observed: runs dying ~2 min into a tick, their in-process sub-agents with
+ *  them). Work that must return inside the tick — a parallel fan-out — is
+ *  budgeted against this, from the tick's start. Env-overridable for plans
+ *  with a longer limit. */
+const TICK_WALL_MS = Number(Deno.env.get("AGENT_TICK_WALL_MS")) || 125_000;
+
 // Process ONE tick of a mission: lease, run a few rounds against persisted
 // state, then finalize / re-enqueue. Invoked by the pg_cron drainer via pg_net.
 async function runMissionTick(runId: string, msgId: number | null) {
+  const tickStartedAt = Date.now();
   const admin = createServiceClient();
 
   // Lease the state so two deliveries can't process the same run at once.
@@ -2262,6 +2564,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
   // documentation-only rules are never evaluated. Best-effort: a load failure
   // means "no guardrails" rather than a broken run.
   const guardrails = await loadGuardrails(admin, agent.workspace_id, agent.project_id);
+  // Le contexte d'entreprise des enfants, mémoïsé : il n'est lu que si un
+  // fan-out a effectivement lieu, et une seule fois pour toute la vague.
+  let childCompany: Promise<CompanyContext | null> | null = null;
   // This is a PRIMARY run — let it fan independent subtasks out to ephemeral
   // parallel sub-agents (children run in-process and stream to their own runId).
   ctx.spawnParallel = (subtasks) => runParallelSubagents({
@@ -2274,8 +2579,18 @@ async function runMissionTick(runId: string, msgId: number | null) {
       c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.isSubagent = true;
       return c;
     },
-    buildChildSystem: (cap, c) => buildSystemPrompt(agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills), "", undefined, true).prompt,
+    // Un sous-agent n'hérite ni de la mémoire ni de l'initiative — mais il
+    // hérite de l'EMPLOYEUR : ce qu'il produit sort au nom de l'entreprise, au
+    // ton de l'entreprise, sous ses non-négociables. Chargé au premier enfant
+    // seulement, puis partagé : un fan-out de huit ne paie qu'une lecture.
+    buildChildSystem: async (cap, c) => buildSystemPrompt(
+      agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills), "", undefined, true,
+      await (childCompany ??= loadCompanySection(admin, agent)),
+    ).prompt,
     maxConcurrency: agent.swarm_max_concurrency ?? undefined,
+    // Whatever is left of THIS tick, capped by the engine's own budget: the
+    // fan-out must return before the worker is killed, or all of it is lost.
+    deadlineAt: Math.min(Date.now() + SUBAGENT_BUDGET_MS, tickStartedAt + TICK_WALL_MS),
   }, subtasks);
   // HYBRID: re-probe both worlds each tick and strip whichever is unreachable, so
   // the toolset rebuilt below exposes only healthy worlds (and recovers a world
@@ -2316,8 +2631,12 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const TOOL_SCHEMA_BUDGET = 55_000;      // ≈14k tokens of JSON schema per round
   const PINNED_TOOLS = new Set([
     "ask_user", "update_todos", "create_deliverable", "report_section", "render_ui",
-    "search_context", "load_toolset", "need_tools", "say", "use_skill", "read_skill_file",
-    "save_memory", "spawn_parallel_agents",
+    "search_context", "load_toolset", "need_tools", "say", "use_skill", "read_skill_file", "list_skills",
+    // remember_preference is pinned for the same reason ask_user is: the moment
+    // it is needed — the user says "toujours en français", "arrête les emoji" —
+    // is unpredictable and never lexically related to the task at hand. A round
+    // where its schema was ranked out is a preference lost for good.
+    "save_memory", "remember_preference", "link_artifact", "spawn_parallel_agents",
   ]);
   /** Tools called in the recent transcript — the agent is mid-pipeline with
    *  them, so their schemas stay whatever the ranking says. */
@@ -2421,29 +2740,84 @@ async function runMissionTick(runId: string, msgId: number | null) {
     }).then(() => {}, () => {});
   };
 
-  // Before the FIRST web search of a run, look in permanent memory. Done here
+  // Permanent memory is consulted around web searches — the whole point of
+  // remembering is that the second mission on a subject costs less.
+  let memoryProbes = 0;
+  const probedIds = new Set<string>();
+  // What the project already knows about a query. Semantic first, across the
+  // whole PROJECT (a teammate may already have paid for this research), keyword
+  // fallback. Memoised per query: the pre-check and the post-prefix of one
+  // search share a single embedding call.
+  type KnownHit = { id: string; content: string; created_at?: string | null; similarity: number | null };
+  const knownCache = new Map<string, Promise<KnownHit[]>>();
+  const recallKnown = (query: string): Promise<KnownHit[]> => {
+    const key = query.trim().toLowerCase();
+    if (!knownCache.has(key)) knownCache.set(key, (async () => {
+      try {
+        if (Deno.env.get("JINA_API_KEY") && agent.project_id) {
+          const [qvec] = await embedTexts([query.slice(0, 500)], "retrieval.query").catch(() => [null]);
+          if (qvec) {
+            const { data } = await admin.rpc("match_project_memories", {
+              p_project_id: agent.project_id, p_query_embedding: toVectorLiteral(qvec), p_match_count: 5,
+            });
+            const sem = ((data ?? []) as KnownHit[])
+              .map((m) => ({ ...m, similarity: Number(m.similarity ?? 0) }))
+              .filter((m) => m.similarity >= Math.max(RELEVANCE_FLOOR, 0.45));
+            if (sem.length) return sem;
+          }
+        }
+        const { data } = await admin.from("internal_agent_memories")
+          .select("id, content, created_at")
+          .eq("project_id", agent.project_id)
+          .in("kind", ["context", "learning", "fact"])
+          .order("created_at", { ascending: false }).limit(60);
+        const terms = query.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+        return ((data ?? []) as KnownHit[])
+          .filter((m) => terms.filter((t) => String(m.content ?? "").toLowerCase().includes(t)).length >= 2)
+          .map((m) => ({ ...m, similarity: null }));
+      } catch { return []; }
+    })());
+    return knownCache.get(key)!;
+  };
+  const knownLine = (h: KnownHit) =>
+    `- ${h.created_at ? `(${String(h.created_at).slice(0, 10)}) ` : ""}${String(h.content).slice(0, 700)}`;
+
+  // AFTER a search: prefix its results with what was already known. Done here
   // rather than trusted to the prompt: "check your memory first" is advice a
-  // model skips, a prepended hit is a fact it cannot miss — and it is the whole
-  // point of remembering, that the second mission on a subject costs less.
-  let memoryProbed = false;
+  // model skips, a prepended hit is a fact it cannot miss. The first few
+  // distinct searches are probed; a memory already shown is never shown twice.
   const probeMemory = async (query: string): Promise<string> => {
-    if (memoryProbed || !query.trim()) return "";
-    memoryProbed = true;
-    try {
-      const { data } = await admin.from("internal_agent_memories")
-        .select("content, created_at")
-        .eq("project_id", agent.project_id)
-        .in("kind", ["context", "learning", "fact"])
-        .order("created_at", { ascending: false }).limit(60);
-      const terms = query.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-      const hits = (data ?? [])
-        .map((m) => String((m as { content: string }).content ?? ""))
-        .filter((c) => terms.filter((t) => c.toLowerCase().includes(t)).length >= 2)
-        .slice(0, 3);
-      if (hits.length === 0) return "";
-      await ctx.logEvent("status", { message: `${hits.length} élément(s) déjà en mémoire sur ce sujet — réutilisés au lieu d'être recherchés.` }).catch(() => {});
-      return `⚡ DÉJÀ EN MÉMOIRE (travail antérieur sur ce sujet — vérifie la date, réutilise plutôt que de rechercher) :\n${hits.map((h) => `- ${h.slice(0, 700)}`).join("\n")}\n\n— Résultats web ci-dessous —\n`;
-    } catch { return ""; }
+    if (memoryProbes >= 3 || !query.trim()) return "";
+    memoryProbes++;
+    const hits = (await recallKnown(query)).filter((h) => !probedIds.has(h.id)).slice(0, 3);
+    if (hits.length === 0) return "";
+    for (const h of hits) probedIds.add(h.id);
+    touchAgentMemories(admin, hits.map((h) => h.id));
+    await ctx.logEvent("status", { message: `${hits.length} élément(s) déjà en mémoire sur ce sujet — joints aux résultats.` }).catch(() => {});
+    return `⚡ DÉJÀ EN MÉMOIRE (travail antérieur sur ce sujet — vérifie la date, réutilise plutôt que de rechercher) :\n${hits.map(knownLine).join("\n")}\n\n— Résultats web ci-dessous —\n`;
+  };
+
+  // BEFORE a search: when the project holds a strong, FRESH answer, serve it
+  // instead of paying the web (and the rounds spent reading it). Deliberately
+  // strict — high similarity, at most MEMORY_ANSWER_MAX_AGE_DAYS old — and
+  // reversible: re-issuing the exact same query goes to the web.
+  const MEMORY_ANSWER_MIN_SIM = 0.62;
+  const MEMORY_ANSWER_MAX_AGE_DAYS = 14;
+  // Served signatures ride in searchSigs (persisted across ticks) under a
+  // `mem:` key — a per-tick set would forget, and serve the retry from memory again.
+  const servedCount = () => Object.keys(searchSigs).filter((k) => k.startsWith("mem:")).length;
+  const answerFromMemory = async (sig: string, query: string): Promise<string> => {
+    if (!query.trim() || searchSigs[`mem:${sig}`] || servedCount() >= 3) return "";
+    const fresh = (await recallKnown(query)).filter((h) =>
+      h.similarity != null && h.similarity >= MEMORY_ANSWER_MIN_SIM &&
+      !probedIds.has(h.id) &&
+      (!h.created_at || Date.now() - Date.parse(h.created_at) <= MEMORY_ANSWER_MAX_AGE_DAYS * 86_400_000),
+    ).slice(0, 3);
+    if (fresh.length === 0) return "";
+    searchSigs[`mem:${sig}`] = 1;
+    for (const h of fresh) probedIds.add(h.id);
+    touchAgentMemories(admin, fresh.map((h) => h.id));
+    return `⚡ RÉPONDU DEPUIS LA MÉMOIRE (aucune recherche web lancée — ce sujet a déjà été recherché récemment dans ce projet) :\n${fresh.map(knownLine).join("\n")}\n\nSi c'est suffisant, utilise-le directement. Si c'est insuffisant ou périmé, relance EXACTEMENT la même requête : elle partira alors sur le web.`;
   };
 
   const loggingExecutor: typeof executor = async (name, args) => {
@@ -2454,13 +2828,25 @@ async function runMissionTick(runId: string, msgId: number | null) {
       const seen = (searchSigs[sig] ?? 0) + 1;
       searchSigs[sig] = seen;
       if (seen > 1) {
-        const distinct = Object.keys(searchSigs).length;
+        const distinct = Object.keys(searchSigs).filter((k) => !k.startsWith("mem:")).length;
         const msg = `ERROR: recherche déjà effectuée dans ce run (${seen}× « ${String(args?.query ?? "")} »). Ses résultats sont DÉJÀ dans ton contexte plus haut — les relancer ne donnera rien de neuf.\n`
           + `Tu as lancé ${distinct} recherches distinctes. Passe à l'exploitation : ouvre les URL les plus prometteuses avec read_url(url) pour en extraire les chiffres, puis écris tes sections avec report_section. `
           + `Si une donnée reste introuvable après lecture, écris « non publié » et avance — ne reformule pas la même requête.`;
         await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args), deduped: true });
         await ctx.logEvent("tool_result", { tool: name, preview: msg.slice(0, 400), ok: false, deduped: true });
         return msg;
+      }
+      if (name === "web_search" || name === "deep_research") {
+        const fromMemory = await answerFromMemory(sig, String(args?.query ?? ""));
+        if (fromMemory) {
+          // Un-count the signature: the promised « relance la même requête »
+          // must reach the web, not the duplicate guard above.
+          searchSigs[sig] = seen - 1;
+          await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args), from_memory: true });
+          await ctx.logEvent("tool_result", { tool: name, preview: fromMemory.slice(0, 1000), ok: true, from_memory: true });
+          await ctx.logEvent("status", { message: "Recherche servie depuis la mémoire du projet — appel web économisé." }).catch(() => {});
+          return fromMemory;
+        }
       }
     }
     await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args) });
@@ -3083,22 +3469,31 @@ async function runMissionTick(runId: string, msgId: number | null) {
       // point. One condensed row per run, not one per page: memory that grows
       // by the hundred stops being searchable, and the point is that the second
       // mission on a subject is cheaper, not that everything is hoarded.
-      if (findings.length >= 2 && (ctx.delegationDepth ?? 0) === 0) {
+      // A failed fetch taught nothing: it is not a finding worth remembering.
+      const useful = findings.filter((f) => f.text.trim() && !/^\s*ERROR\b/i.test(f.text));
+      if (useful.length >= 2 && (ctx.delegationDepth ?? 0) === 0) {
         try {
-          const subject = (findings[0]?.label ?? "").slice(0, 120);
-          const digest = findings.slice(0, 12)
+          // The header names every distinct subject searched: it is what the
+          // prompt line shows first and what the embedding weighs most, so the
+          // next mission on ANY of these subjects finds this row.
+          const subjects = [...new Set(useful.map((f) => f.label.trim()).filter(Boolean))];
+          const subject = subjects.slice(0, 4).join(" ; ").slice(0, 240) || (useful[0]?.label ?? "");
+          const digest = useful.slice(0, 12)
             .map((f) => `• [${f.label}] ${f.text.replace(/\s+/g, " ").slice(0, 320)}`)
             .join("\n");
           const content = `[Recherche — ${subject} · ${new Date().toISOString().slice(0, 10)}]\n${digest}`.slice(0, 4000);
-          const embedding = await embedMemoryVector(content).catch(() => null);
-          await admin.from("internal_agent_memories").insert({
+          // A recurring watch on the same subject MERGES into its previous
+          // digest (newest wins) instead of stacking one row per run.
+          const res = await writeAgentMemory(admin, {
             workspace_id: agent.workspace_id, project_id: agent.project_id,
-            agent_id: agent.id, source: "agent", kind: "context", importance: 3,
-            source_run_id: runId, content, ...(embedding ? { embedding } : {}),
-          }).then(() => {}, () => {});
-          await ctx.logEvent("status", {
-            message: `${findings.length} collecte(s) versées en mémoire permanente — une prochaine mission sur « ${subject} » les retrouvera sans rechercher.`,
-          }).catch(() => {});
+            agent_id: agent.id, kind: "context", importance: 3,
+            source_run_id: runId, content,
+          });
+          if (res.status === "inserted" || res.status === "merged") {
+            await ctx.logEvent("status", {
+              message: `${useful.length} collecte(s) ${res.status === "merged" ? "fusionnées avec la veille précédente" : "versées"} en mémoire permanente — une prochaine mission sur « ${subjects[0] ?? subject} » les retrouvera sans rechercher.`,
+            }).catch(() => {});
+          }
         } catch { /* memory is a bonus, never a blocker */ }
       }
 
@@ -3164,29 +3559,36 @@ async function runMissionTick(runId: string, msgId: number | null) {
       // the one whose draft would otherwise be lost.
       await salvageReportDraft(admin, agent, runId, state);
 
-      // ── Chat guard: agent CLAIMED a deliverable but never saved one ─────────
-      // The #1 confusing failure: the model writes "le rapport est en carte"
-      // without calling create_deliverable, so the user sees no card. If the
-      // final answer claims one and none exists for this run, force it — ONCE.
+      // ── Chat guard: the user ASKED for a report but none was saved ──────────
+      // Reports are produced on request only. This guard fires when the
+      // CURRENT turn explicitly asks for a written document and the run ended
+      // without one — never because the agent's own reply mentions "rapport" /
+      // "carte", and never because an older message of the conversation did
+      // (that made every later "hey" come back with a « Rapport » card holding
+      // the chat answer).
       if (isChat && result.finished && !(meta.deliverable_forced as boolean)) {
         const countRun = async () => (await admin
           .from("internal_agent_deliverables").select("id", { count: "exact", head: true }).eq("run_id", runId)).count ?? 0;
-        const claimsDeliverable = /\b(rapport|report|livrable|deliverable|carte|artifact)\b/i.test(finalOutput);
-        // Did the USER actually ask for a report/deliverable? (Scan real user
-        // messages, skipping auto-injected FOCUS / trim / compaction markers.)
-        const userText = messages
-          .filter((m) => m.role === "user" && !/^\[(FOCUS|Segment scell|Historique|CONTEXT)/.test(String(m.content ?? "")))
-          .map((m) => String(m.content ?? "")).join(" \n ");
-        const reportRequested = /\b(rapport|report|livrable|deliverable|analyse|analyser|audit|synth[eè]se|bilan|plan de|tableau de bord|dashboard)\b/i.test(userText);
-        // Fire when a deliverable is expected (the final text claims one OR the
-        // user requested one) but none was saved — even if the final answer is
-        // EMPTY (the model often ends silent after a failed create_deliverable).
-        if ((await countRun()) === 0 && (claimsDeliverable || reportRequested)) {
+        // The latest message the USER actually wrote, read from the stored
+        // conversation — `messages` also carries the runtime's own user-role
+        // nudges (plan "Proceed with this plan…", controller interventions,
+        // FOCUS headers), and reading those instead made an explicit
+        // « fais-moi un rapport » invisible as soon as a plan was drafted.
+        const { data: lastAsk } = await admin
+          .from("internal_agent_messages").select("content")
+          .eq("conversation_id", state.conversation_id).eq("role", "user")
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        const currentAsk = (lastAsk as { content?: string } | null)?.content ?? "";
+        const reportRequested = /\b(rapport|report|livrable|deliverable|compte[- ]rendu|document (écrit|pdf|word))\b/i
+          .test(String(currentAsk ?? ""));
+        // Fire even if the final answer is EMPTY (the model often ends silent
+        // after a failed request_report).
+        if ((await countRun()) === 0 && reportRequested) {
           meta.deliverable_forced = true; // guard against looping
           // Try once to make the agent create a PROPER report itself…
           messages.push({
             role: "user",
-            content: "L'utilisateur a EXPLICITEMENT demandé un rapport / livrable. NE pose PAS de question et ne demande PAS quoi faire — tu as déjà les informations (ou les outils pour les obtenir). Produis MAINTENANT le rapport COMPLET en appelant create_deliverable(kind=\"report\", name, content) : sections, KPIs, tableaux, risques (conçu avec ton skill report-designer — pas de prose), à partir de l'analyse que tu viens de faire. Si des données manquent, mets des hypothèses étiquetées plutôt que de t'arrêter. Puis termine par un court résumé.",
+            content: "L'utilisateur a EXPLICITEMENT demandé un rapport / livrable et AUCUN n'a été produit. NE pose PAS de question — tu as déjà les informations. Appelle MAINTENANT request_report(subject, material, angle) en passant au Rédacteur TOUTE la matière que tu viens de rassembler : les chiffres avec leur source et leur date, les constats, ce qui reste incertain. C'est lui qui rédige et publie. Puis termine par deux phrases de résumé.",
           });
           try {
             const fin = await runToolRounds({
@@ -3359,6 +3761,16 @@ async function runMissionTick(runId: string, msgId: number | null) {
       } else {
         await admin.from("internal_agent_missions").update({ board_column: "todo" }).eq("id", state.mission_id).eq("board_column", "in_progress");
       }
+      // A procedure run has no conversation: its question reached nobody, and
+      // the workflow run stayed « en cours » forever (two did, from 2026-08-29).
+      // Close it with the question as the reason — the editor's run history is
+      // where the person who launched it will look.
+      if (workflowRun?.id && !roomBinding) {
+        await completeWorkflowRun(admin, {
+          workflowRunId: workflowRun.id, ok: false,
+          error: `L'assistant s'est arrêté sur une question : ${q}`,
+        }).catch(() => {});
+      }
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
       return jsonResponse({ ok: true, awaiting_input: true });
@@ -3408,6 +3820,32 @@ async function runMissionTick(runId: string, msgId: number | null) {
         await closeRoomMessage(admin, agent, roomBinding, runId,
           `⚠️ Contexte trop volumineux pour le modèle configuré. ${detail}\n\nPistes : réduire la portée de la tâche, ou passer l'agent sur DeepSeek (fenêtre plus large).`,
           "failed");
+      }
+      await reportMissionTask(false, detail);
+      await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
+      if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+      return jsonResponse({ ok: false, error: detail }, { status: 200 });
+    }
+
+    // The provider account is out of credit, or its daily quota is spent. Not
+    // transient on the scale of a run: redelivering re-hit the same 402 every
+    // three minutes until the zombie reaper failed the run as « timed out »
+    // (2026-09-02) — hiding the one fact the owner needed: recharge the account.
+    if (e instanceof ProviderExhaustedError) {
+      await salvageReportDraft(admin, agent, runId, state);
+      const detail = e.kind === "unfunded"
+        ? msg
+        : `Quota du fournisseur ${e.provider} épuisé pour la période — réessayez plus tard ou changez de modèle. (${msg.slice(0, 200)})`;
+      await ctx.logEvent("error", { error: detail }).catch(() => {});
+      await admin.from("internal_agent_runs").update({
+        status: "failed", finished_at: new Date().toISOString(), error_message: detail.slice(0, 500),
+      }).eq("id", runId);
+      if (roomBinding) {
+        await closeRoomMessage(admin, agent, roomBinding, runId, `⚠️ ${detail}`, "failed");
+      } else if (isChat && state.conversation_id) {
+        await admin.from("internal_agent_messages").insert({
+          conversation_id: state.conversation_id, agent_id: agent.id, role: "assistant", content: `⚠️ ${detail}`, run_id: runId,
+        }).then(() => {}, () => {});
       }
       await reportMissionTask(false, detail);
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
@@ -3608,6 +4046,7 @@ Return STRICT JSON, no prose, with this shape:
   "category": "Support|Revenue|Growth|Ops|Leadership|Product|Cybersecurity|Data|HR|Supply chain|Design|QA|R&D|Finance|Legal|Marketing|Assistant",
   "studio": "vibe_code|testing|simulation|null",
   "persona": "2-3 sentences describing who this agent is and how it behaves",
+  "soul": "3-5 lines, second person ('Tu…'): its CHARACTER — its voice, what it cares about most, what it refuses to do even when pushed, the habit that makes it recognisable. NOT a procedure, NOT a repeat of the instructions: write what no numbered step can say.",
   "instructions": "the agent's operating procedure: numbered steps it follows for every task, plus explicit rules about what it must never do. Be specific to the request — no generic filler.",
   "autonomy": "advisor|assisted|autopilot",
   "max_steps": 8,
@@ -3679,6 +4118,7 @@ async function designAgent(request: string, projectId: string | null): Promise<R
       category: String(spec.category ?? "Assistant"),
       studio,
       persona: String(spec.persona ?? ""),
+      soul: String(spec.soul ?? "").slice(0, 2400),
       instructions: String(spec.instructions ?? ""),
       autonomy,
       max_steps: Number.isFinite(maxSteps) ? Math.min(Math.max(Math.round(maxSteps), 4), 24) : 10,
@@ -3706,7 +4146,9 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return jsonResponse({ error: "Missing Authorization header" }, { status: 401 });
     const token = authHeader.replace(/^Bearer\s+/i, "");
-    const isService = token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    // Comparaison a temps constant (FOS-19) : le code contenait deja l'outil,
+    // il n'etait employe que pour les signatures Stripe et Slack.
+    const isService = timingSafeEqual(token, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
 
     const body = await req.json();
     const { agent_id, mode, conversation_id, run_id, msg_id } = body as {
@@ -3723,7 +4165,7 @@ Deno.serve(async (req) => {
     if (mode === "tick") {
       const tickSecret = Deno.env.get("AGENT_TICK_SECRET");
       const provided = req.headers.get("x-tick-secret");
-      if (!isService && (!tickSecret || provided !== tickSecret)) {
+      if (!isService && (!tickSecret || !timingSafeEqual(provided ?? "", tickSecret))) {
         return jsonResponse({ error: "tick is internal-only" }, { status: 403 });
       }
       if (!run_id) return jsonResponse({ error: "run_id required for tick" }, { status: 400 });
@@ -3738,7 +4180,7 @@ Deno.serve(async (req) => {
     if (mode === "room_advance") {
       const tickSecret = Deno.env.get("AGENT_TICK_SECRET");
       const provided = req.headers.get("x-tick-secret");
-      if (!isService && (!tickSecret || provided !== tickSecret)) {
+      if (!isService && (!tickSecret || !timingSafeEqual(provided ?? "", tickSecret))) {
         return jsonResponse({ error: "room_advance is internal-only" }, { status: 403 });
       }
       const missionId = (body as { mission_id?: string }).mission_id;
@@ -3799,12 +4241,26 @@ Deno.serve(async (req) => {
       await assertQuota(agent.workspace_id, "concurrent_runs", 1, { fresh: true });
     }
 
+    // FOS-08 — l'accès à l'AGENT est vérifié plus haut, mais conversation_id et
+    // run_id arrivent eux aussi du client et n'étaient rattachés à rien. Il
+    // suffisait de posséder un agent (tout compte peut en créer un) et de
+    // connaître un identifiant de conversation pour que NOTRE agent charge les
+    // trente derniers messages d'un autre client et nous les restitue.
+    // On recoupe donc les deux avant d'entrer dans la boucle.
     if (mode === "chat") {
       if (!conversation_id) return jsonResponse({ error: "conversation_id required for chat mode" }, { status: 400 });
+      const { data: conv } = await createServiceClient()
+        .from("internal_agent_conversations")
+        .select("id").eq("id", conversation_id).eq("agent_id", agent.id).maybeSingle();
+      if (!conv) return jsonResponse({ error: "Conversation does not belong to this agent" }, { status: 403 });
       return await runChat(agent, tools, conversation_id, (body as { model?: string }).model ?? null);
     }
     if (mode === "mission") {
       if (!run_id) return jsonResponse({ error: "run_id required for mission mode" }, { status: 400 });
+      const { data: ownRun } = await createServiceClient()
+        .from("internal_agent_runs")
+        .select("id").eq("id", run_id).eq("agent_id", agent.id).maybeSingle();
+      if (!ownRun) return jsonResponse({ error: "Run does not belong to this agent" }, { status: 403 });
       return await runMission(agent, tools, run_id);
     }
     return jsonResponse({ error: "Unknown mode" }, { status: 400 });

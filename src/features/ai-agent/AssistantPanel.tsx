@@ -2,8 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatCircleDotsIcon } from "@phosphor-icons/react";
 import {
-  Loader2, Bot, X, Plus, History, ChevronDown, FileText, BarChart3, ArrowRight, Sparkles,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  RobotIcon as Bot,
+  XIcon as X,
+  PlusIcon as Plus,
+  ClockCounterClockwiseIcon as History,
+  CaretDownIcon as ChevronDown,
+  FileTextIcon as FileText,
+  ChartBarIcon as BarChart3,
+  ArrowRightIcon as ArrowRight,
+  SparkleIcon as Sparkles,
+} from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChatComposer } from "@/components/ui/chat-composer";
@@ -161,6 +170,13 @@ export function AssistantPanel() {
       // When the assistant actually reconfigured an agent, refresh the setup
       // cards and the page behind them, so what's shown is what was written.
       const called = res.assistant_message?.metadata?.tool_calls ?? [];
+      // The assistant now BUILDS workflows, into the very canvas that may be
+      // open behind this panel. Refresh it on the spot rather than leaving the
+      // user in front of a page that shows none of what was just written.
+      if (called.some((t) => t.startsWith("workflow_"))) {
+        await queryClient.invalidateQueries({ queryKey: ["workflow"] });
+        await queryClient.invalidateQueries({ queryKey: ["workflows"] });
+      }
       const AGENT_WRITES = ["configure_agent_tool", "add_agent_tool", "update_agent_profile", "set_agent_skills"];
       if (called.some((t) => AGENT_WRITES.includes(t))) {
         await Promise.all([

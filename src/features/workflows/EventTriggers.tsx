@@ -1,8 +1,17 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2, RefreshCw, Zap, AlertTriangle, Check, Clock } from "lucide-react";
+import {
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  ArrowsClockwiseIcon as RefreshCw,
+  LightningIcon as Zap,
+  WarningIcon as AlertTriangle,
+  CheckIcon as Check,
+  ClockIcon as Clock,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Field, Picker, TextField, TextArea } from "./inspector-ui";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import {
@@ -76,58 +85,53 @@ export function EventTriggers({ workflowId, workspaceId, projectId }: {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5">
-        <Zap className="h-3.5 w-3.5 text-amber-500" />
-        <span className="text-[11px] font-medium text-muted-foreground">Événements d'outils connectés</span>
-      </div>
-
-      {isLoading ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-      ) : (
+      {(triggers ?? []).length > 0 && (
         <div className="space-y-1.5">
           {(triggers ?? []).map((t) => (
             <TriggerRow key={t.id} trigger={t} onChanged={invalidate} />
           ))}
-
-          {adding ? (
-            <AddTrigger
-              connectors={connectors ?? []}
-              onCancel={() => setAdding(false)}
-              onAdd={async (provider, eventSlug, filter) => {
-                await addEventTrigger({ workflowId, workspaceId, projectId, provider, eventSlug, filter });
-                setAdding(false);
-                invalidate();
-              }}
-            />
-          ) : (
-            <button
-              type="button" onClick={() => setAdding(true)}
-              className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border/70 py-1.5 text-[11px] text-muted-foreground hover:border-primary/50 hover:text-foreground"
-            >
-              <Plus className="h-3 w-3" /> Écouter un événement
-            </button>
-          )}
         </div>
       )}
 
-      {/* The delivery log answers the only question that matters when a
-          workflow "didn't fire": did the event arrive, and what happened to it. */}
+      {isLoading ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+      ) : adding ? (
+        <AddTrigger
+          connectors={connectors ?? []}
+          onCancel={() => setAdding(false)}
+          onAdd={async (provider, eventSlug, filter) => {
+            await addEventTrigger({ workflowId, workspaceId, projectId, provider, eventSlug, filter });
+            setAdding(false);
+            invalidate();
+          }}
+        />
+      ) : (
+        <button
+          type="button" onClick={() => setAdding(true)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+        >
+          <Zap className="h-3 w-3" /> Sur un événement d'une app
+        </button>
+      )}
+
+      {/* Le journal répond à la seule question qui compte quand une procédure
+          « n'est pas partie » : l'événement est-il arrivé, et qu'en a-t-on fait ? */}
       {(deliveries ?? []).length > 0 && (
-        <div className="rounded-md border border-border/60 bg-muted/20 p-2">
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Derniers événements reçus
-          </p>
-          <ul className="space-y-0.5">
+        <details className="group/log">
+          <summary className="cursor-pointer list-none text-[11px] text-muted-foreground hover:text-foreground">
+            Derniers événements reçus ({(deliveries ?? []).length})
+          </summary>
+          <ul className="mt-1.5 space-y-1 border-l border-border pl-3">
             {(deliveries ?? []).map((d) => (
-              <li key={d.id} className="flex items-start gap-1.5 text-[10px]">
+              <li key={d.id} className="flex items-start gap-1.5 text-[11px]">
                 <span className={cn(
-                  "mt-1 h-1.5 w-1.5 shrink-0 rounded-full",
+                  "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
                   d.outcome === "started" ? "bg-emerald-500"
                     : d.outcome === "filtered" ? "bg-muted-foreground/60"
                     : d.outcome === "failed" ? "bg-red-500" : "bg-amber-500",
                 )} />
                 <span className="min-w-0 flex-1 text-muted-foreground">
-                  <span className="font-medium">{
+                  <span className="font-medium text-foreground">{
                     d.outcome === "started" ? "lancé"
                       : d.outcome === "filtered" ? "filtré"
                       : d.outcome === "skipped" ? "ignoré" : "échec"
@@ -141,7 +145,7 @@ export function EventTriggers({ workflowId, workspaceId, projectId }: {
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
     </div>
   );
@@ -153,14 +157,15 @@ function TriggerRow({ trigger, onChanged }: { trigger: EventTrigger; onChanged: 
   const known = (KNOWN_EVENTS[trigger.provider] ?? []).find((e) => e.slug === trigger.event_slug);
 
   return (
-    <div className="rounded-md border border-border/60 bg-background p-2">
-      <div className="flex items-start gap-1.5">
+    <div className="rounded-xl border border-border bg-muted/20 p-2.5">
+      <div className="flex items-start gap-2">
+        <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium">
+          <span className="block truncate text-[13px] font-medium">
             {trigger.provider} · {known?.label ?? trigger.event_slug}
           </span>
-          <span className={cn("mt-0.5 flex items-center gap-1 text-[10px]", meta.tone)}>
-            <meta.icon className="h-2.5 w-2.5" /> {meta.label}
+          <span className={cn("mt-0.5 flex items-center gap-1 text-[11px]", meta.tone)}>
+            <meta.icon className="h-3 w-3" /> {meta.label}
             {trigger.last_event_at && (
               <span className="text-muted-foreground">
                 · dernier {new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" }).format(new Date(trigger.last_event_at))}
@@ -173,27 +178,36 @@ function TriggerRow({ trigger, onChanged }: { trigger: EventTrigger; onChanged: 
             type="button" title="Réessayer l'abonnement" disabled={busy}
             onClick={async () => { setBusy(true); try { await retryEventTrigger(trigger.id); onChanged(); } finally { setBusy(false); } }}
             className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
-          >{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}</button>
+          >{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}</button>
         )}
         <button
           type="button" title="Supprimer" disabled={busy}
           onClick={async () => { setBusy(true); try { await removeEventTrigger(trigger.id); onChanged(); } finally { setBusy(false); } }}
           className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
-        ><Trash2 className="h-3 w-3" /></button>
+        ><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
 
       {trigger.status_detail && (
-        <p className="mt-1 text-[10px] leading-snug text-red-500">{trigger.status_detail}</p>
+        <p className="mt-1.5 text-[11px] leading-snug text-red-500">{trigger.status_detail}</p>
       )}
       {trigger.filter && (
-        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-          <span className="font-medium">Seulement si :</span> {trigger.filter}
+        <p className="mt-1.5 pl-5 text-[11px] leading-snug text-muted-foreground">
+          <span className="font-medium text-foreground">Seulement si</span> {trigger.filter}
         </p>
       )}
     </div>
   );
 }
 
+/**
+ * Souscrire à un événement, en trois décisions : quelle app, quel événement,
+ * et sous quelle condition.
+ *
+ * Les champs passent par les primitives du module (Field / Picker / TextField /
+ * TextArea) et non par des `<select>` bruts. Ce n'est pas cosmétique : un select
+ * natif hérite du thème du système, pas du nôtre — il apparaît blanc sur une
+ * interface sombre, et sa flèche ne ressemble à aucun autre contrôle de l'écran.
+ */
 function AddTrigger({ connectors, onAdd, onCancel }: {
   connectors: string[];
   onAdd: (provider: string, eventSlug: string, filter: string) => Promise<void>;
@@ -201,68 +215,78 @@ function AddTrigger({ connectors, onAdd, onCancel }: {
 }) {
   const [provider, setProvider] = useState(connectors[0] ?? "");
   const [slug, setSlug] = useState("");
+  const [custom, setCustom] = useState("");
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const known = KNOWN_EVENTS[provider] ?? [];
+  // Une app sans catalogue connu se saisit au slug : mieux vaut un champ libre
+  // qu'une liste vide qui laisse croire que rien n'est écoutable.
+  const freeform = known.length === 0 || slug === "__custom";
+  const eventSlug = freeform ? custom.trim() : slug;
 
   if (connectors.length === 0) {
     return (
-      <div className="rounded-md border border-border/60 bg-muted/20 p-2 text-[10px] text-muted-foreground">
-        Aucune app connectée via Composio dans ce projet. Connectez-en une dans
-        Ressources → Connexions pour écouter ses événements.
-        <button type="button" onClick={onCancel} className="ml-1 underline">Fermer</button>
+      <div className="rounded-xl border border-dashed border-border p-3 text-[12px] leading-relaxed text-muted-foreground">
+        Aucune app connectée dans ce projet.{" "}
+        <button type="button" onClick={onCancel} className="font-medium text-foreground underline">Fermer</button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-1.5 rounded-md border border-primary/40 bg-background p-2">
-      <select
-        value={provider}
-        onChange={(e) => { setProvider(e.target.value); setSlug(""); }}
-        className="h-7 w-full rounded border border-input bg-background px-1.5 text-[11px] outline-none focus:border-primary/60"
-      >
-        {connectors.map((c) => <option key={c} value={c}>{c}</option>)}
-      </select>
+    <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Application">
+          <Picker
+            value={provider}
+            onChange={(v) => { setProvider(v); setSlug(""); setCustom(""); }}
+            options={connectors.map((c) => ({ value: c, label: c }))}
+          />
+        </Field>
+        <Field label="Événement">
+          {known.length > 0 ? (
+            <Picker
+              value={slug}
+              onChange={setSlug}
+              placeholder="Choisir…"
+              options={[
+                ...known.map((e) => ({ value: e.slug, label: e.label, hint: e.slug })),
+                { value: "__custom", label: "Autre…", hint: "Saisir le slug exact" },
+              ]}
+            />
+          ) : (
+            <TextField mono value={custom} onChange={setCustom} placeholder="SLUG_DE_L_EVENEMENT" />
+          )}
+        </Field>
+      </div>
 
-      {known.length > 0 ? (
-        <select
-          value={slug} onChange={(e) => setSlug(e.target.value)}
-          className="h-7 w-full rounded border border-input bg-background px-1.5 text-[11px] outline-none focus:border-primary/60"
-        >
-          <option value="">— choisir un événement —</option>
-          {known.map((e) => <option key={e.slug} value={e.slug}>{e.label}</option>)}
-          <option value="__custom">Autre (saisir le slug)…</option>
-        </select>
-      ) : null}
-
-      {(known.length === 0 || slug === "__custom") && (
-        <Input
-          value={slug === "__custom" ? "" : slug}
-          onChange={(e) => setSlug(e.target.value)}
-          placeholder="SLUG_DE_L_EVENEMENT"
-          className="h-7 font-mono text-[11px]"
-        />
+      {known.length > 0 && slug === "__custom" && (
+        <Field label="Slug de l'événement">
+          <TextField mono value={custom} onChange={setCustom} placeholder="GMAIL_NEW_GMAIL_MESSAGE" />
+        </Field>
       )}
 
-      <textarea
-        value={filter} onChange={(e) => setFilter(e.target.value)} rows={2}
-        placeholder="Filtre (optionnel) : l'expéditeur est un client, le message mentionne une facture…"
-        className="w-full resize-none rounded border border-input bg-background px-1.5 py-1 text-[11px] outline-none focus:border-primary/60"
-      />
-      <p className="text-[10px] leading-snug text-muted-foreground">
-        Le filtre est évalué avant tout démarrage — inutile de lancer la procédure pour découvrir que
-        l'événement ne la concernait pas.
-      </p>
+      <Field
+        label="Seulement si"
+        hint="Évalué AVANT tout démarrage — la procédure ne se lance pas pour découvrir que l'événement ne la concernait pas."
+      >
+        <TextArea
+          value={filter} onChange={setFilter} minRows={2}
+          placeholder="l'expéditeur est un client, et le message mentionne une facture"
+        />
+      </Field>
 
-      <div className="flex justify-end gap-1.5">
-        <button type="button" onClick={onCancel} className="rounded px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">Annuler</button>
+      <div className="flex items-center justify-end gap-2">
+        <Button size="sm" variant="ghost" onClick={onCancel}>Annuler</Button>
         <Button
-          size="sm" className="h-6 text-[11px]"
-          disabled={busy || !provider || !slug || slug === "__custom"}
-          onClick={async () => { setBusy(true); try { await onAdd(provider, slug, filter); } finally { setBusy(false); } }}
+          size="sm"
+          disabled={busy || !provider || !eventSlug}
+          onClick={async () => {
+            setBusy(true);
+            try { await onAdd(provider, eventSlug, filter); } finally { setBusy(false); }
+          }}
         >
-          {busy && <Loader2 className="mr-1 h-3 w-3 animate-spin" />} Écouter
+          {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} Écouter
         </Button>
       </div>
     </div>

@@ -32,19 +32,19 @@ import {
   useTableValue,
 } from '@platejs/table/react';
 import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  CombineIcon,
+  ArrowDownIcon as ArrowDown,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowUpIcon as ArrowUp,
+  StackSimpleIcon as CombineIcon,
   EraserIcon,
-  Grid2X2Icon,
-  GripVertical,
+  GridFourIcon as Grid2X2Icon,
+  DotsSixVerticalIcon as GripVertical,
   PaintBucketIcon,
   SquareSplitHorizontalIcon,
-  Trash2Icon,
+  TrashIcon as Trash2Icon,
   XIcon,
-} from 'lucide-react';
+} from "@phosphor-icons/react";
 import {
   type TElement,
   type TTableCellElement,

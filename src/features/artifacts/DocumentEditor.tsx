@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  Loader2, ArrowLeft, Check, Sparkles, FileText, FileDown, FileJson, MoreHorizontal,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  ArrowLeftIcon as ArrowLeft,
+  CheckIcon as Check,
+  SparkleIcon as Sparkles,
+  FileTextIcon as FileText,
+  FileArrowDownIcon as FileDown,
+  FileCodeIcon as FileJson,
+  DotsThreeIcon as MoreHorizontal,
+} from "@phosphor-icons/react";
 import { Toolbar, ToolbarSeparator } from "@/components/ui/toolbar";
 import { UndoToolbarButton, RedoToolbarButton } from "@/components/ui/history-toolbar-button";
 import { InsertToolbarButton } from "@/components/ui/insert-toolbar-button";

@@ -2,10 +2,29 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  FlaskConical, Loader2, Plus, Trash2, ArrowLeft, Users, Play, Sparkles, Send,
-  TrendingUp, TrendingDown, Minus, MessageSquare, FileText, RefreshCw, Maximize2, Terminal,
-  Globe, Database, Palette, X, UserPlus,
-} from "lucide-react";
+  FlaskIcon as FlaskConical,
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  ArrowLeftIcon as ArrowLeft,
+  UsersIcon as Users,
+  PlayIcon as Play,
+  SparkleIcon as Sparkles,
+  PaperPlaneRightIcon as Send,
+  TrendUpIcon as TrendingUp,
+  TrendDownIcon as TrendingDown,
+  MinusIcon as Minus,
+  ChatIcon as MessageSquare,
+  FileTextIcon as FileText,
+  ArrowsClockwiseIcon as RefreshCw,
+  ArrowsOutSimpleIcon as Maximize2,
+  TerminalIcon as Terminal,
+  GlobeIcon as Globe,
+  DatabaseIcon as Database,
+  PaletteIcon as Palette,
+  XIcon as X,
+  UserPlusIcon as UserPlus,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

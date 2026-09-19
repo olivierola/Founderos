@@ -12,10 +12,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Globe, Loader2, Eye, XCircle, MonitorPlay, Play, ChevronRight, Send,
-  Bot, User as UserIcon, CircleDot, RotateCcw, ExternalLink, MousePointerClick,
-  Keyboard, ScrollText, CheckCircle2, AlertTriangle, HelpCircle, Camera,
-} from "lucide-react";
+  GlobeIcon as Globe,
+  CircleNotchIcon as Loader2,
+  EyeIcon as Eye,
+  XCircleIcon as XCircle,
+  MonitorPlayIcon as MonitorPlay,
+  PlayIcon as Play,
+  CaretRightIcon as ChevronRight,
+  PaperPlaneRightIcon as Send,
+  RobotIcon as Bot,
+  UserIcon,
+  RadioButtonIcon as CircleDot,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ArrowSquareOutIcon as ExternalLink,
+  CursorClickIcon as MousePointerClick,
+  KeyboardIcon as Keyboard,
+  ScrollIcon as ScrollText,
+  CheckCircleIcon as CheckCircle2,
+  WarningIcon as AlertTriangle,
+  QuestionIcon as HelpCircle,
+  CameraIcon as Camera,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -359,7 +376,7 @@ export function AppTestPanel({
 
       {/* What the agent is looking at */}
       <div className="shrink-0 p-3">
-        <div className="relative overflow-hidden rounded-xl border border-border bg-white" style={{ aspectRatio: "16 / 10" }}>
+        <div className="relative overflow-hidden rounded-xl border border-border bg-muted" style={{ aspectRatio: "16 / 10" }}>
           {run.last_screenshot_url ? (
             <a
               href={run.last_screenshot_url} target="_blank" rel="noopener noreferrer" title="Ouvrir la capture"

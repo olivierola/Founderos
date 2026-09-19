@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { Construction } from "lucide-react";
+import { BarricadeIcon as Construction } from "@phosphor-icons/react";
 import { findModule } from "@/lib/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";

@@ -14,6 +14,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { timingSafeEqual } from "../_shared/authz.ts";
 import { decryptSecret } from "../_shared/crypto.ts";
 
 async function sha256Hex(s: string): Promise<string> {
@@ -27,7 +28,8 @@ async function authenticate(req: Request): Promise<{ ok: true; projectId: string
   const token = req.headers.get("x-runner-token");
   if (!token) return { ok: false, reason: "Missing X-Runner-Token header" };
   const platform = Deno.env.get("PLATFORM_RUNNER_TOKEN");
-  if (platform && token === platform) return { ok: true, projectId: null };
+  // Comparaison a temps constant (FOS-19).
+  if (platform && timingSafeEqual(token, platform)) return { ok: true, projectId: null };
   const hash = await sha256Hex(token);
   const admin = createServiceClient();
   const { data: settings } = await admin

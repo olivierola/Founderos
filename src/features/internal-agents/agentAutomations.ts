@@ -6,9 +6,18 @@
 // using the granted connector actions. Provider slugs must exist in PROVIDERS and
 // the actions referenced must exist in the connector-actions catalog.
 import {
-  TrendingUp, LifeBuoy, Bug, ListChecks, BarChart3, Users, CalendarClock,
-  BookOpen, Receipt, Megaphone, type LucideIcon,
-} from "lucide-react";
+  TrendUpIcon as TrendingUp,
+  LifebuoyIcon as LifeBuoy,
+  BugIcon as Bug,
+  ListChecksIcon as ListChecks,
+  ChartBarIcon as BarChart3,
+  UsersIcon as Users,
+  CalendarDotsIcon as CalendarClock,
+  BookOpenIcon as BookOpen,
+  ReceiptIcon as Receipt,
+  MegaphoneIcon as Megaphone,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import type { MissionSchedule } from "./shared";
 
 export interface AgentAutomation {

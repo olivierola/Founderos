@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { Download, Loader2, AlertTriangle } from "lucide-react";
+import {
+  DownloadSimpleIcon as Download,
+  CircleNotchIcon as Loader2,
+  WarningIcon as AlertTriangle,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Plus,
-  Trash2,
-  GripVertical,
-  Loader2,
-  Save,
-  ExternalLink,
-  Code2,
-  ChevronDown,
-  ChevronRight,
-} from "lucide-react";
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  DotsSixVerticalIcon as GripVertical,
+  CircleNotchIcon as Loader2,
+  FloppyDiskIcon as Save,
+  ArrowSquareOutIcon as ExternalLink,
+  CodeIcon as Code2,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+} from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

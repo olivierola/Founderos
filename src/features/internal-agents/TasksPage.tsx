@@ -1,8 +1,16 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ListTodo, Plus, Loader2, Trash2, Clock, ChevronRight, ChevronLeft, Bot, User as UserIcon,
-} from "lucide-react";
+  ListChecksIcon as ListTodo,
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  ClockIcon as Clock,
+  CaretRightIcon as ChevronRight,
+  CaretLeftIcon as ChevronLeft,
+  RobotIcon as Bot,
+  UserIcon,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

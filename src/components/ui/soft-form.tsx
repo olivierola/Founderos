@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { CheckIcon as Check, CaretDownIcon as ChevronDown } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -353,7 +353,7 @@ export function SoftCheckbox({ checked, onChange, label, hint, disabled, classNa
           checked ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted/60",
         )}
       >
-        {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+        {checked && <Check className="h-3 w-3" weight="bold" />}
       </span>
       {(label || hint) && (
         <span className="min-w-0 flex-1">

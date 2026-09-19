@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { Filter, ArrowUpDown, Plus, X, Trash2, Table2, Columns3, ChevronDown, Check } from "lucide-react";
+import {
+  FunnelIcon as Filter,
+  ArrowsDownUpIcon as ArrowUpDown,
+  PlusIcon as Plus,
+  XIcon as X,
+  TrashIcon as Trash2,
+  TableIcon as Table2,
+  ColumnsIcon as Columns3,
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";

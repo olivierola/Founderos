@@ -5,9 +5,20 @@
 // the same role BlockRenderer plays for a report document.
 import { useMemo, useState } from "react";
 import {
-  GitPullRequest, ExternalLink, CheckCircle2, XCircle, MinusCircle, AlertTriangle,
-  FilePlus2, FileMinus2, FilePen, Terminal, ChevronRight, ArrowRight, Rocket,
-} from "lucide-react";
+  GitPullRequestIcon as GitPullRequest,
+  ArrowSquareOutIcon as ExternalLink,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  MinusCircleIcon as MinusCircle,
+  WarningIcon as AlertTriangle,
+  FilePlusIcon as FilePlus2,
+  FileMinusIcon as FileMinus2,
+  NotePencilIcon as FilePen,
+  TerminalIcon as Terminal,
+  CaretRightIcon as ChevronRight,
+  ArrowRightIcon as ArrowRight,
+  RocketLaunchIcon as Rocket,
+} from "@phosphor-icons/react";
 import { CodeBlock } from "@/components/AgentMarkdown";
 import { cn } from "@/lib/utils";
 

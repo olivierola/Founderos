@@ -6,7 +6,12 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Cpu, Loader2, Check, ExternalLink } from "lucide-react";
+import {
+  CpuIcon as Cpu,
+  CircleNotchIcon as Loader2,
+  CheckIcon as Check,
+  ArrowSquareOutIcon as ExternalLink,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { InternalAgent } from "./shared";

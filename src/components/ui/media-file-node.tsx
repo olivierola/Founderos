@@ -7,7 +7,7 @@ import type { PlateElementProps } from 'platejs/react';
 
 import { useMediaState } from '@platejs/media/react';
 import { ResizableProvider } from '@platejs/resizable';
-import { FileUp } from 'lucide-react';
+import { FileArrowUpIcon as FileUp } from "@phosphor-icons/react";
 import { PlateElement, useReadOnly, withHOC } from 'platejs/react';
 
 import { cn } from '@/lib/utils';

@@ -2,9 +2,21 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Trash2, ChevronDown, ChevronRight, Clock, Bot, UserPlus, X,
-  FolderKanban, Boxes, StickyNote, ListChecks, ExternalLink, Package,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ClockIcon as Clock,
+  RobotIcon as Bot,
+  UserPlusIcon as UserPlus,
+  XIcon as X,
+  KanbanIcon as FolderKanban,
+  CubeIcon as Boxes,
+  NoteIcon as StickyNote,
+  ListChecksIcon as ListChecks,
+  ArrowSquareOutIcon as ExternalLink,
+  PackageIcon as Package,
+} from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";

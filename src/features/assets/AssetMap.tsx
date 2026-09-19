@@ -7,9 +7,19 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import {
-  Loader2, Plus, Search, Square, StickyNote, Trash2, X, Save, Check,
-  Shapes, ChevronDown, ArrowLeftRight,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  SquareIcon as Square,
+  NoteIcon as StickyNote,
+  TrashIcon as Trash2,
+  XIcon as X,
+  FloppyDiskIcon as Save,
+  CheckIcon as Check,
+  ShapesIcon as Shapes,
+  CaretDownIcon as ChevronDown,
+  ArrowsLeftRightIcon as ArrowLeftRight,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";

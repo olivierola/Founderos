@@ -1,8 +1,19 @@
 import { useMemo, useEffect, useRef, useState } from "react";
 import {
-  Database, Upload, Eraser, ShieldCheck, CheckCircle2, Loader2, CircleAlert, Circle,
-  Eye, Pencil, GitMerge, Trash2, ArrowDown,
-} from "lucide-react";
+  DatabaseIcon as Database,
+  UploadSimpleIcon as Upload,
+  EraserIcon as Eraser,
+  ShieldCheckIcon as ShieldCheck,
+  CheckCircleIcon as CheckCircle2,
+  CircleNotchIcon as Loader2,
+  WarningCircleIcon as CircleAlert,
+  CircleIcon as Circle,
+  EyeIcon as Eye,
+  PencilSimpleIcon as Pencil,
+  GitMergeIcon as GitMerge,
+  TrashIcon as Trash2,
+  ArrowDownIcon as ArrowDown,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Button } from "@/components/ui/button";

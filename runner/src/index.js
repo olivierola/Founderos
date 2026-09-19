@@ -16,6 +16,7 @@ import { pollSecurity } from "./sources/security.js";
 import { pollSimulation } from "./sources/simulation.js";
 import { startVoiceServer } from "./voice.js";
 import { startBrowserServer } from "./browser.js";
+import { describePolicy } from "./policy.js";
 import net from "node:net";
 
 const SOURCES = [pollOps, pollTest, pollSecurity, pollSimulation];
@@ -37,6 +38,8 @@ async function main() {
   console.log(`  runner_id: ${RUNNER_ID}`);
   console.log(`  url:       ${SUPABASE_URL}`);
   console.log(`  sources:   ops · tests · security · simulations`);
+  // Dire ce qui protege reellement cette machine, et ce qui ne la protege pas.
+  describePolicy().forEach((l) => console.log(l));
   startVoiceServer(); // persistent voice WS bridge (only if configured)
   // Choose a free port for the browser server. Start at BROWSER_PORT or 3847
   const basePort = Number(process.env.BROWSER_PORT) || 3847;

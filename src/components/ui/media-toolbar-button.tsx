@@ -6,12 +6,12 @@ import type { DropdownMenuProps } from '@radix-ui/react-dropdown-menu';
 
 import { PlaceholderPlugin } from '@platejs/media/react';
 import {
-  AudioLinesIcon,
-  FileUpIcon,
-  FilmIcon,
+  WaveformIcon as AudioLinesIcon,
+  FileArrowUpIcon as FileUpIcon,
+  FilmStripIcon as FilmIcon,
   ImageIcon,
   LinkIcon,
-} from 'lucide-react';
+} from "@phosphor-icons/react";
 import { isUrl, KEYS } from 'platejs';
 import { useEditorRef } from 'platejs/react';
 import { toast } from 'sonner';

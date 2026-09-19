@@ -10,7 +10,7 @@
  * order and never cycled (a 9th series falls back to the de-emphasis grey rather
  * than inventing an unvalidated hue).
  */
-import { useId } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -18,8 +18,19 @@ import {
   ScatterChart, Scatter,
 } from "recharts";
 import {
-  TrendingUp, TrendingDown, Minus, Info, CheckCircle2, AlertTriangle, AlertOctagon, Check, X, Palette,
-} from "lucide-react";
+  TrendUpIcon as TrendingUp,
+  TrendDownIcon as TrendingDown,
+  MinusIcon as Minus,
+  InfoIcon as Info,
+  CheckCircleIcon as CheckCircle2,
+  WarningIcon as AlertTriangle,
+  WarningOctagonIcon as AlertOctagon,
+  CheckIcon as Check,
+  XIcon as X,
+  PaletteIcon as Palette,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { COVERS, resolveCover } from "./covers";
 import { useCategorical, useContextGreys, STATUS } from "@/features/crm/overview/vizPalette";
@@ -33,13 +44,76 @@ import {
 // Editor.js stores inline formatting as HTML fragments (<b>, <i>, <a>, <code>,
 // <mark>). Rendering them as text would show the tags; rendering them raw would
 // be an injection hole. Allow that closed list and drop everything else.
-const INLINE_ALLOWED = /<\/?(b|strong|i|em|u|s|code|mark|br|a)( [^>]*)?>/gi;
+//
+// FOS-12 — le filtre précédent était une paire d'expressions régulières, et il
+// se contournait de deux façons : la balise `a` était admise avec N'IMPORTE
+// quel attribut (`( [^>]*)?`), et le retrait des gestionnaires ne reconnaissait
+// que la forme entre guillemets doubles. `<a onmouseover=x()>` franchissait les
+// deux, et `href="javascript:…"` passait aussi. Ces blocs sont rédigés par les
+// agents — donc influençables par injection de prompt — et rendus dans
+// l'application authentifiée.
+//
+// On analyse donc réellement le fragment avec le parseur du navigateur, puis on
+// reconstruit à partir d'une liste blanche de balises ET d'attributs. Un filtre
+// par regex sur du HTML sera toujours contournable ; un parseur, non.
+const ALLOWED_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "S", "CODE", "MARK", "BR", "A"]);
+// Seul `a` porte un attribut, et seulement `href`.
+const ALLOWED_ATTRS: Record<string, Set<string>> = { A: new Set(["href"]) };
+// Les schémas d'URL qui ne peuvent pas exécuter de script. Tout le reste —
+// javascript:, data:, vbscript:, et les variantes encodées — est écarté.
+const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/(?!\/))/i;
+
+function sanitizeNode(node: Node, out: Node[], doc: Document): void {
+  if (node.nodeType === Node.TEXT_NODE) {
+    out.push(doc.createTextNode(node.nodeValue ?? ""));
+    return;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+  const el = node as Element;
+  const children: Node[] = [];
+  el.childNodes.forEach((child) => sanitizeNode(child, children, doc));
+
+  // Balise hors liste : on la retire mais on garde son texte, sinon un
+  // paragraphe entouré d'un <div> disparaîtrait.
+  if (!ALLOWED_TAGS.has(el.tagName)) {
+    children.forEach((c) => out.push(c));
+    return;
+  }
+
+  const clean = doc.createElement(el.tagName.toLowerCase());
+  const allowed = ALLOWED_ATTRS[el.tagName];
+  if (allowed) {
+    for (const attr of Array.from(el.attributes)) {
+      if (!allowed.has(attr.name.toLowerCase())) continue;
+      if (attr.name.toLowerCase() === "href") {
+        const href = attr.value.trim();
+        if (!SAFE_HREF.test(href)) continue;
+        clean.setAttribute("href", href);
+        clean.setAttribute("rel", "noopener noreferrer");
+        clean.setAttribute("target", "_blank");
+      } else {
+        clean.setAttribute(attr.name, attr.value);
+      }
+    }
+  }
+  children.forEach((c) => clean.appendChild(c));
+  out.push(clean);
+}
+
 function inlineHtml(text: string): { __html: string } {
-  const stripped = String(text ?? "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, (tag) => (tag.match(INLINE_ALLOWED) ? tag : ""))
-    .replace(/ on\w+="[^"]*"/gi, "");
-  return { __html: stripped };
+  const raw = String(text ?? "");
+  // Pas de balise : le cas courant, et on évite d'instancier un parseur.
+  if (!raw.includes("<")) return { __html: raw };
+
+  // `DOMParser` construit un document inerte : les <script> n'y sont pas
+  // exécutés, les <img onerror> ne se déclenchent pas, et rien n'est chargé.
+  const doc = new DOMParser().parseFromString(`<body>${raw}</body>`, "text/html");
+  const holder = doc.createElement("div");
+  const out: Node[] = [];
+  doc.body.childNodes.forEach((child) => sanitizeNode(child, out, doc));
+  out.forEach((n) => holder.appendChild(n));
+  return { __html: holder.innerHTML };
 }
 
 function useSeriesColor() {
@@ -505,23 +579,88 @@ export function ArtifactReport({ doc }: { doc: ArtifactDocument }) {
   );
 }
 
-/** A deck: the same blocks, cut on `slide` boundaries, one page per slide. */
-export function ArtifactDeck({ doc }: { doc: ArtifactDocument }) {
-  const slides = toSlides(doc);
-  if (slides.length === 0) {
+/**
+ * A deck: the same blocks, cut on `slide` boundaries — shown ONE PAGE AT A TIME.
+ *
+ * Stacking every slide vertically turned a presentation back into a scroll, and
+ * a deck that reads like a scroll is a deck nobody presents from. The page is
+ * the unit here: it takes the room it is given, keeps 16:9, and moves with the
+ * arrow keys or the two buttons.
+ */
+export function ArtifactDeck({ doc, fill = false, title, subtitle }: {
+  doc: ArtifactDocument;
+  fill?: boolean;
+  /** The document's name. Becomes the opening slide when the deck has none —
+   *  a presentation that starts mid-argument has lost its first page. */
+  title?: string;
+  subtitle?: string;
+}) {
+  const pages = useMemo(() => {
+    const s = toSlides(doc).map((p) => ({ ...p, cover: false }));
+    if (title && !s[0]?.slide.title) s.unshift({ slide: { title }, blocks: [], cover: true });
+    return s;
+  }, [doc, title]);
+
+  const [at, setAt] = useState(0);
+  const i = Math.min(at, Math.max(0, pages.length - 1));
+  const go = (d: number) => setAt((v) => Math.max(0, Math.min(pages.length - 1, v + d)));
+
+  if (pages.length === 0) {
     return <p className="py-16 text-center text-sm text-muted-foreground">Présentation vide.</p>;
   }
+  const s = pages[i];
   return (
-    <div className="mx-auto w-full max-w-[1000px] space-y-6 px-6 py-8">
-      {slides.map((s, i) => (
-        <section key={i} className="relative flex aspect-[16/9] flex-col gap-4 overflow-y-auto rounded-2xl border border-border bg-card p-8 shadow-sm">
-          {s.slide.title && <h2 className="text-xl font-bold tracking-tight">{s.slide.title}</h2>}
-          <div className="min-h-0 flex-1 space-y-4">
-            {s.blocks.map((b, bi) => <Block key={b.id ?? bi} block={b} />)}
-          </div>
-          <span className="absolute bottom-3 right-4 text-[10px] tabular-nums text-muted-foreground/60">{i + 1}/{slides.length}</span>
+    <div
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); go(1); }
+        if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(-1); }
+      }}
+      className={cn("flex flex-col gap-3 outline-none", fill ? "h-full min-h-0 p-6" : "p-2")}
+    >
+      <div className={cn("flex min-h-0 flex-1 items-center justify-center", !fill && "aspect-[16/9]")}>
+        {/* A slide is read from a distance, not filled to the edges: it keeps
+            16:9 and stops growing at a presentable size rather than stretching
+            to whatever width the panel happens to have. */}
+        <section
+          className={cn(
+            "relative flex aspect-[16/9] max-h-full w-full max-w-[940px] flex-col overflow-y-auto rounded-2xl border border-border bg-card shadow-sm",
+            s.cover ? "items-start justify-center gap-3 p-12" : "gap-4 p-8",
+          )}
+        >
+          {s.cover ? (
+            <>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Présentation</span>
+              <h2 className="text-4xl font-bold leading-[1.15] tracking-tight">{s.slide.title}</h2>
+              {subtitle && <p className="max-w-[70%] text-base text-muted-foreground">{subtitle}</p>}
+              <span className="mt-2 h-1 w-16 rounded-full bg-primary/70" />
+            </>
+          ) : (
+            <>
+              {s.slide.title && <h2 className="shrink-0 text-2xl font-bold tracking-tight">{s.slide.title}</h2>}
+              <div className="min-h-0 flex-1 space-y-4">
+                {s.blocks.map((b, bi) => <Block key={b.id ?? bi} block={b} />)}
+              </div>
+            </>
+          )}
         </section>
-      ))}
+      </div>
+
+      <div className="flex shrink-0 items-center justify-center gap-3 text-xs text-muted-foreground">
+        <button
+          type="button" onClick={() => go(-1)} disabled={i === 0} aria-label="Page précédente"
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-border hover:bg-muted disabled:opacity-30"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="tabular-nums">{i + 1} / {pages.length}</span>
+        <button
+          type="button" onClick={() => go(1)} disabled={i >= pages.length - 1} aria-label="Page suivante"
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-border hover:bg-muted disabled:opacity-30"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { Database, Plus, Pencil, Trash2, ShieldAlert, Lock } from "lucide-react";
+import {
+  DatabaseIcon as Database,
+  PlusIcon as Plus,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  ShieldWarningIcon as ShieldAlert,
+  LockIcon as Lock,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

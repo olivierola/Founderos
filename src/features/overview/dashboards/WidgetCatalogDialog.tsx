@@ -1,5 +1,15 @@
 import { useMemo, useState } from "react";
-import { Search, Plus, BarChart3, LineChart, PieChart, Hash, Table as TableIcon, FileText, LayoutGrid } from "lucide-react";
+import {
+  MagnifyingGlassIcon as Search,
+  PlusIcon as Plus,
+  ChartBarIcon as BarChart3,
+  ChartLineIcon as LineChart,
+  ChartPieIcon as PieChart,
+  HashIcon as Hash,
+  TableIcon,
+  FileTextIcon as FileText,
+  GridFourIcon as LayoutGrid,
+} from "@phosphor-icons/react";
 import {
   Dialog,
   DialogContent,

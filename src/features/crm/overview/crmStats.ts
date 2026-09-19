@@ -1,7 +1,13 @@
 // Derivations that turn raw CRM records into the overview's series & breakdowns.
 // Everything is computed client-side from one records fetch so the object /
 // property / range selectors re-render without new round-trips.
-import { PlusCircle, RefreshCw, Database, Gauge, type LucideIcon } from "lucide-react";
+import {
+  PlusCircleIcon as PlusCircle,
+  ArrowsClockwiseIcon as RefreshCw,
+  DatabaseIcon as Database,
+  GaugeIcon as Gauge,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import type { CrmObject, CrmProperty } from "../objectModel";
 

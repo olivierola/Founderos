@@ -15,7 +15,9 @@
 // }
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
+import { callerIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { assertProjectInWorkspace } from "../_shared/authz.ts";
 
 // rrweb event types we care about for timing. type 4 = Meta (new page).
 const RRWEB_INCREMENTAL = 3;
@@ -40,6 +42,23 @@ Deno.serve(async (req) => {
         { status: 400 },
       );
     }
+
+    // FOS-10 : ces points d'entree restent PUBLICS — le SDK analytics tourne
+    // dans le navigateur d'un visiteur non connecte. Ce qu'on ferme, c'est
+    // l'ecriture croisee : workspace_id et project_id arrivaient tous deux du
+    // client sans jamais etre recoupes, donc on inserait dans le projet d'un
+    // tiers en annoncant son propre workspace.
+    if (workspace_id && !(await assertProjectInWorkspace(project_id, workspace_id))) {
+      return jsonResponse({ error: "project_id does not belong to workspace_id" }, { status: 403 });
+    }
+
+    // FOS-15 — insertion anonyme, non bornee : un script pouvait remplir le
+    // stockage d'un projet a la vitesse du reseau. Le plafond est genereux, une
+    // session reelle envoie un lot toutes les quelques secondes.
+    const replayLimited = await enforceRateLimit(
+      { scope: "replay", identity: `${project_id}:${callerIp(req)}`, limit: 120, windowSeconds: 60 },
+    );
+    if (replayLimited) return replayLimited;
 
     const admin = createServiceClient();
 

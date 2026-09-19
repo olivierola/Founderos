@@ -1,0 +1,841 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   La peau Apple — traduction des Human Interface Guidelines
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Ce fichier traduit les HIG d'Apple en tokens CSS. Trois choses à savoir
+   avant d'y toucher.
+
+   1. C'EST UNE PEAU, PAS UN REMPLACEMENT.
+      Tout est sous `:root[data-skin="apple"]`. Sans cet attribut, rien de ce
+      fichier ne s'applique et l'interface garde la palette Plane sur laquelle
+      tout le module de suivi a été dessiné. Basculer d'un système visuel à
+      l'autre en écrasant les tokens laisserait des centaines d'écrans réglés
+      pour l'ancien — c'est le genre de refonte qui casse en silence pendant
+      des semaines.
+
+   2. CE QUI VIENT DES HIG, ET CE QUI EN EST DÉRIVÉ.
+      Les couleurs système, les rampes d'étiquettes, les quatre matériaux, la
+      grille typographique et les tailles de cible sont PUBLIÉS par Apple, en
+      tables, et sont repris ici au chiffre près (RVB, points, interlignes).
+      Les durées et les courbes ne le sont pas : les HIG parlent de motion en
+      principes, pas en millisecondes. Les valeurs de mouvement ci-dessous
+      reprennent donc les ressorts publics de SwiftUI (`smooth`, `snappy`,
+      `bouncy`), traduits en équivalents CSS. C'est une traduction fidèle, pas
+      une copie — et la distinction est signalée à chaque section.
+
+   3. CE QU'ON NE PEUT PAS EMBARQUER.
+      SF Pro et SF Symbols sont sous une licence qui les réserve aux
+      applications des plateformes Apple. On ne les livre donc pas. La pile de
+      fontes commence par `-apple-system` / `system-ui` : sur un Mac ou un
+      iPhone, c'est SF qui s'affiche — la vraie, celle du système — et ailleurs
+      on retombe sur la fonte du produit. C'est la seule façon correcte
+      d'obtenir la typographie d'Apple dans un navigateur.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+:root[data-skin="apple"] {
+  /* ── Couleurs système ────────────────────────────────────────────────────
+     Table publiée des HIG (« Color »), en clair. Chaque teinte a quatre cuts :
+     clair, sombre, et leurs variantes CONTRASTE ACCRU — Apple ne les traite
+     pas comme un ajustement facultatif mais comme une seconde palette à part
+     entière, servie quand le réglage d'accessibilité est actif. On les garde
+     toutes les quatre pour la même raison.                                  */
+  --sys-red: 255 56 60;
+  --sys-orange: 255 141 40;
+  --sys-yellow: 255 204 0;
+  --sys-green: 52 199 89;
+  --sys-mint: 0 200 179;
+  --sys-teal: 0 195 208;
+  --sys-cyan: 0 192 232;
+  --sys-blue: 0 136 255;
+  --sys-indigo: 97 85 245;
+  --sys-purple: 203 48 224;
+  --sys-pink: 255 45 85;
+  --sys-brown: 172 127 94;
+
+  /* ── Rampe des étiquettes ────────────────────────────────────────────────
+     Quatre niveaux, et ce ne sont PAS quatre gris : c'est le noir de
+     l'étiquette primaire, décliné en opacités. La différence compte — sur un
+     matériau translucide, un gris opaque se détache du fond alors qu'une
+     opacité laisse passer ce qu'il y a derrière, ce qui est tout l'intérêt.
+
+     Valeurs iOS : 100 %, 60 %, 30 %, 18 %. Le placeholder vaut le tertiaire.
+     Apple déconseille explicitement le quaternaire sur les matériaux `thin` et
+     `ultraThin` : le contraste y devient trop faible.                       */
+  --label: 0 0 0;
+  --label-1: 1;
+  --label-2: 0.6;
+  --label-3: 0.3;
+  --label-4: 0.18;
+  --placeholder: 0.3;
+
+  /* Les remplissages, eux, servent aux fonds de contrôles (le gris d'un champ
+     de recherche, d'un segment inactif). Plus discrets que les étiquettes,
+     parce qu'ils portent du texte par-dessus. */
+  --fill-1: 0.2;
+  --fill-2: 0.16;
+  --fill-3: 0.12;
+  --fill-4: 0.08;
+
+  /* Le séparateur laisse voir au travers ; sa version opaque ne le permet pas.
+     Apple les distingue parce qu'un filet sur un matériau doit se teinter de
+     ce qu'il recouvre, alors qu'un filet sur un fond plein ne le doit pas. */
+  --separator: 60 60 67;
+  --separator-opacity: 0.29;
+  --separator-opaque: 198 198 200;
+
+  /* ── Fonds ───────────────────────────────────────────────────────────────
+     Deux jeux, et confondre les deux est l'erreur classique. Le jeu `system`
+     sert aux écrans pleins ; le jeu `grouped` sert aux listes en groupes, où
+     le fond de la PAGE est plus sombre que celui des cartes. Inverser les deux
+     donne des cartes qui disparaissent dans leur page.                      */
+  --bg-1: 255 255 255;
+  --bg-2: 242 242 247;
+  --bg-3: 255 255 255;
+  --bg-grouped-1: 242 242 247;
+  --bg-grouped-2: 255 255 255;
+  --bg-grouped-3: 242 242 247;
+
+  /* ── Matériaux ───────────────────────────────────────────────────────────
+     Les quatre niveaux publiés (ultraThin → thick), traduits en flou + voile.
+     `backdrop-filter` fait le travail ; la saturation à 180 % reproduit la
+     VIBRANCE, cette façon qu'ont les couleurs de rester vives à travers le
+     flou au lieu de virer au gris. Sans elle, un flou CSS délave tout ce qu'il
+     couvre et le résultat ne ressemble à rien.                              */
+  --material-blur: 20px;
+  --material-saturate: 180%;
+  --material-ultra-thin: 0.55;
+  --material-thin: 0.7;
+  --material-regular: 0.82;
+  --material-thick: 0.94;
+
+  /* Le voile sombre de 35 % que les HIG prescrivent sous une commande en verre
+     posée sur une image claire. C'est la seule valeur numérique qu'Apple donne
+     pour Liquid Glass, et elle règle un vrai problème : du texte blanc sur une
+     photo surexposée devient illisible sans lui. */
+  --glass-dim: 0.35;
+
+  /* ── Rayons ──────────────────────────────────────────────────────────────
+     Apple dessine des coins CONTINUS (des « squircles »), pas des arcs de
+     cercle : la courbure y entre et sort progressivement, ce qui supprime la
+     cassure visible à la jonction du droit et du rond. `corner-shape` le fait
+     nativement là où il existe ; ailleurs le rayon simple sert de repli, et
+     c'est acceptable — la différence se voit surtout sur les grands rayons.
+
+     Les valeurs suivent la CONCENTRICITÉ : un élément posé dans un autre a un
+     rayon égal à celui du parent moins la marge qui les sépare. C'est ce qui
+     fait que deux coins imbriqués restent parallèles au lieu de se croiser. */
+  --radius: 0.625rem;      /* 10 pt — cartes et champs */
+  --radius-control: 0.5rem;  /* 8 pt — boutons et segments */
+  --radius-window: 1.25rem;  /* 20 pt — feuilles et fenêtres */
+
+  /* ── Cibles ──────────────────────────────────────────────────────────────
+     44 pt, la règle la plus ancienne et la plus enfreinte des HIG. Elle vaut
+     pour la zone CLIQUABLE, pas pour le dessin : un bouton de 28 px peut très
+     bien porter une cible de 44 px par du remplissage transparent.          */
+  --tap-target: 44px;
+
+  /* ── Mouvement ───────────────────────────────────────────────────────────
+     Les HIG ne donnent pas de durées ; elles donnent des règles. « Viser la
+     brièveté et la précision », « ne pas animer les interactions fréquentes »,
+     « laisser annuler une animation », « le mouvement doit être optionnel ».
+
+     Les valeurs ci-dessous sont donc traduites des ressorts publics de
+     SwiftUI. Trois seulement, et le choix entre eux se fait sur le REBOND :
+
+       · smooth — aucun rebond. Ce qui doit être lu à l'arrivée : un panneau
+         qui s'ouvre, une valeur qui change. Un rebond ferait relire.
+       · snappy — rebond léger (0,15). La réponse à un geste direct : une
+         bascule, une case cochée. Le rebond dit « c'est pris ».
+       · bouncy — rebond marqué (0,3). Réservé à ce qui apparaît de nulle part,
+         où l'élan explique d'où la chose vient.
+
+     Les courbes cubic-bezier approchent la réponse de ces ressorts ; un vrai
+     ressort a un dépassement que Bézier ne sait pas produire, donc `snappy` et
+     `bouncy` la rendent par un dépassement explicite dans la courbe.        */
+  --duration-instant: 100ms;
+  --duration-quick: 200ms;
+  --duration-standard: 350ms;
+  --duration-slow: 500ms;
+
+  --ease-smooth: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-snappy: cubic-bezier(0.34, 1.26, 0.64, 1);
+  --ease-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in: cubic-bezier(0.42, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.58, 1);
+
+  /* ── Ombres ──────────────────────────────────────────────────────────────
+     Trois crans seulement, tous très doux. Le système d'Apple hiérarchise par
+     le MATÉRIAU et la couleur, pas par l'ombre portée ; une ombre marquée y
+     fait tache. */
+  --shadow-raised-100: 0 0.5px 1px rgb(0 0 0 / 0.04), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-raised-200: 0 1px 2px rgb(0 0 0 / 0.05), 0 2px 8px rgb(0 0 0 / 0.05);
+  --shadow-raised-300: 0 2px 6px rgb(0 0 0 / 0.06), 0 6px 16px rgb(0 0 0 / 0.06);
+  --shadow-overlay-100: 0 4px 12px rgb(0 0 0 / 0.08), 0 12px 32px rgb(0 0 0 / 0.08);
+  --shadow-overlay-200: 0 8px 24px rgb(0 0 0 / 0.1), 0 24px 64px rgb(0 0 0 / 0.14);
+}
+
+/* ── Grille typographique ────────────────────────────────────────────────────
+   La table iOS « Large » (taille par défaut), au point près : corps, interligne
+   et graisse. Elle est plus GROSSE que celle du produit — le corps y est à
+   17 pt, là où une interface dense de bureau tourne à 13. C'est le fond de
+   l'affaire : Apple dessine pour le pouce et pour le bras tendu, et une
+   traduction honnête garde ces tailles au lieu de les rétrécir jusqu'à ce
+   qu'elles ressemblent à ce qu'on avait déjà.
+
+   Les crans du produit (--text-9 à --text-40) sont remappés dessus, pour que
+   les milliers de classes `text-13` existantes tombent sur le cran Apple le
+   plus proche au lieu de rester à l'ancienne échelle.                        */
+:root[data-skin="apple"] {
+  --text-large-title: 2.125rem;   /* 34 / 41 */
+  --text-title-1: 1.75rem;        /* 28 / 34 */
+  --text-title-2: 1.375rem;       /* 22 / 28 */
+  --text-title-3: 1.25rem;        /* 20 / 25 */
+  --text-headline: 1.0625rem;     /* 17 / 22, semibold */
+  --text-body: 1.0625rem;         /* 17 / 22 */
+  --text-callout: 1rem;           /* 16 / 21 */
+  --text-subhead: 0.9375rem;      /* 15 / 20 */
+  --text-footnote: 0.8125rem;     /* 13 / 18 */
+  --text-caption-1: 0.75rem;      /* 12 / 16 */
+  --text-caption-2: 0.6875rem;    /* 11 / 13 */
+
+  /* Le remappage. On ne descend jamais sous 11 pt : c'est le minimum publié
+     pour iOS, et les crans 9 et 10 du produit y sont ramenés plutôt que
+     conservés — un texte de 9 px n'existe pas dans ce système. */
+  --text-9: 0.6875rem;
+  --text-10: 0.6875rem;
+  --text-11: 0.6875rem;
+  --text-12: 0.75rem;
+  --text-13: 0.8125rem;
+  --text-14: 0.9375rem;
+  --text-16: 1rem;
+  --text-18: 1.0625rem;
+  --text-20: 1.25rem;
+  --text-24: 1.375rem;
+  --text-28: 1.75rem;
+  --text-32: 2.125rem;
+  --text-40: 2.5rem;
+
+  /* ── L'échelle nommée, remappée sur la grille des HIG ──────────────────
+     C'est CE bloc qui fait basculer le reste de l'application. Chaque cran
+     nommé de Tailwind tombe sur le style iOS de même rôle, avec son interligne
+     publié converti en ratio :
+
+       xs   → Caption 2  (11 / 13)     lg  → Title 3     (20 / 25)
+       sm   → Footnote   (13 / 18)     xl  → Title 2     (22 / 28)
+       base → Body       (17 / 22)     2xl → Title 1     (28 / 34)
+                                       3xl → Large Title (34 / 41)
+
+     Le saut le plus visible est `base` : 16 px devient 17. Ce n'est pas un
+     arrondi, c'est le corps de lecture d'iOS, et c'est le pivot de toute la
+     grille — tout le reste s'y rapporte. Le rendre à 16 pour « moins déranger »
+     reviendrait à traduire le système en gardant son unité de mesure d'avant.
+
+     Les interlignes passent en RATIO et non en pixels : c'est ce qui laisse le
+     texte respirer quand quelqu'un grossit la police de son navigateur, ce que
+     les HIG exigent au titre du Dynamic Type. */
+  --fs-xs: 0.6875rem;   --lh-xs: 1.182;
+  --fs-sm: 0.8125rem;   --lh-sm: 1.385;
+  --fs-base: 1.0625rem; --lh-base: 1.294;
+  --fs-lg: 1.25rem;     --lh-lg: 1.25;
+  --fs-xl: 1.375rem;    --lh-xl: 1.273;
+  --fs-2xl: 1.75rem;    --lh-2xl: 1.214;
+  --fs-3xl: 2.125rem;   --lh-3xl: 1.206;
+  --fs-4xl: 2.5rem;     --lh-4xl: 1.15;
+  --fs-5xl: 3rem;       --lh-5xl: 1.08;
+  --fs-6xl: 3.75rem;    --lh-6xl: 1.05;
+  --fs-7xl: 4.5rem;     --lh-7xl: 1.03;
+
+  /* Apple déconseille explicitement Ultralight, Thin et Light : « difficiles à
+     voir, en particulier aux petits corps ». Le regular reste donc à 400, et
+     non au 450 de Plane. */
+  --font-weight-light: 400;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* SF resserre déjà l'interlettrage toute seule à chaque corps ; on n'ajoute
+     rien par-dessus, sous peine de corriger deux fois. */
+  --tracking-extra-tight: 0em;
+  --tracking-tight: 0em;
+  --tracking-default: 0em;
+  --tracking-wide: 0em;
+}
+
+:root[data-skin="apple"] body,
+:root[data-skin="apple"] .font-sans {
+  /* `-apple-system` d'abord : sur matériel Apple, c'est SF Pro, servie par le
+     système, avec ses tailles optiques et son interlettrage dynamique. Aucun
+     fichier de fonte n'est embarqué — ce serait hors licence, et de toute
+     façon moins bon. */
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Segoe UI Variable", system-ui, "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+:root[data-skin="apple"] .font-mono,
+:root[data-skin="apple"] code,
+:root[data-skin="apple"] pre {
+  font-family: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+/* ── Le mode clair ──────────────────────────────────────────────────────────
+   On réécrit les tokens du produit à partir des couleurs système, pour que les
+   composants existants basculent sans qu'on les touche un par un.            */
+:root[data-skin="apple"],
+:root[data-skin="apple"][data-theme="light"] {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 0%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 0%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 0%;
+
+  --muted: 240 24% 96%;
+  --muted-foreground: 240 6% 44%;
+
+  /* L'accent reste celui de FounderOS — le bleu de Plane, 201°.
+     C'est un écart DÉLIBÉRÉ aux HIG, et le bon : Apple ne prescrit pas son
+     bleu système comme couleur d'accent des applications, il prescrit d'en
+     avoir une et de l'employer avec parcimonie (« apply color sparingly »,
+     « reserve colored backgrounds for elements needing emphasis »). Le bleu
+     d'iOS est celui du système, pas celui des apps qui tournent dessus —
+     l'adopter reviendrait à se faire passer pour le système.
+
+     Le 201° est aussi un cran plus froid et plus sourd que le 212° d'Apple,
+     ce qui lui va mieux sur les grandes surfaces de cette interface. */
+  --primary: 201 100% 30%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 24% 96%;
+  --secondary-foreground: 0 0% 0%;
+  --accent: 240 24% 96%;
+  --accent-foreground: 0 0% 0%;
+
+  --destructive: 359 100% 61%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 240 6% 84%;
+  --input: 240 6% 84%;
+  --ring: 201 100% 30%;
+
+  /* Les trois crans de texte du produit, alignés sur la rampe d'étiquettes.
+     60 % et 30 % d'opacité de noir donnent, sur blanc, exactement ces gris. */
+  --text-secondary: 240 3% 40%;
+  --text-tertiary: 240 3% 60%;
+  --text-placeholder: 240 3% 70%;
+
+  --sidebar-background: 240 24% 97%;
+  --sidebar-foreground: 240 6% 30%;
+  --sidebar-accent: 240 14% 92%;
+  --sidebar-border: 240 6% 88%;
+}
+
+/* ── Le mode sombre ─────────────────────────────────────────────────────────
+   Pas un négatif du clair. Apple remonte la luminosité des accents en sombre
+   et empile les fonds du plus sombre au plus clair, à l'inverse du mode clair.
+
+   UN ÉCART ASSUMÉ : iOS pose du noir pur (#000) en fond primaire, parce qu'un
+   écran OLED l'éteint réellement — c'est une décision d'économie d'énergie sur
+   téléphone. Sur un écran de bureau, le même noir donne un contraste maximal
+   contre le texte blanc, et c'est un contraste FATIGANT : le halo autour des
+   lettres s'accentue, la lecture longue devient pénible. macOS lui-même ne
+   descend pas au noir pur pour ses fenêtres.
+
+   Le fond est donc un gris très sombre, à peine désaturé vers le bleu, et les
+   plans qui viennent devant montent de deux à trois points de luminosité —
+   c'est ce qui porte la profondeur en sombre, à la place des ombres.        */
+:root[data-skin="apple"].dark,
+:root[data-skin="apple"][data-theme="dark"] {
+  --label: 255 255 255;
+  --label-2: 0.6;
+  --label-3: 0.3;
+  --label-4: 0.16;
+
+  --separator: 84 84 88;
+  --separator-opacity: 0.6;
+  --separator-opaque: 56 56 58;
+
+  --bg-1: 22 22 24;
+  --bg-2: 32 32 35;
+  --bg-3: 44 44 48;
+  --bg-grouped-1: 22 22 24;
+  --bg-grouped-2: 32 32 35;
+  --bg-grouped-3: 44 44 48;
+
+  --sys-blue: 0 145 255;
+  --sys-red: 255 66 69;
+  --sys-green: 48 209 88;
+
+  /* 240° 4 % 9 % : le gris de fond. Assez sombre pour que les plans du dessus
+     s'en détachent, assez clair pour ne pas être un trou noir. */
+  --background: 240 4% 9%;
+  --foreground: 0 0% 100%;
+
+  --card: 240 4% 11%;
+  --card-foreground: 0 0% 100%;
+  --popover: 240 4% 13%;
+  --popover-foreground: 0 0% 100%;
+
+  --muted: 240 4% 15%;
+  --muted-foreground: 240 3% 62%;
+
+  /* En sombre, l'accent monte en luminosité comme le fait tout accent chez
+     Apple : le même bleu profond qu'en clair deviendrait illisible sur fond
+     sombre. C'est la valeur « brand-default » du produit en sombre. */
+  --primary: 201 67% 48%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 4% 15%;
+  --secondary-foreground: 0 0% 100%;
+  --accent: 240 4% 18%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 359 100% 63%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 240 2% 22%;
+  --input: 240 2% 22%;
+  --ring: 201 67% 48%;
+
+  --text-secondary: 240 3% 72%;
+  --text-tertiary: 240 3% 55%;
+  --text-placeholder: 240 3% 45%;
+
+  /* La barre latérale RECULE d'un cran sous le fond de page : c'est le jeu
+     « base » des HIG, celui de ce qui n'est pas au premier plan. */
+  --sidebar-background: 240 4% 7%;
+  --sidebar-foreground: 240 3% 72%;
+  --sidebar-accent: 240 4% 15%;
+  --sidebar-border: 240 2% 18%;
+
+  /* En sombre, une ombre portée ne se voit pas : c'est du noir sur du noir.
+     Apple sépare les plans par la LUMINOSITÉ des surfaces. On garde donc des
+     ombres presque nulles plutôt que d'en pousser l'opacité en vain. */
+  --shadow-raised-100: 0 0.5px 1px rgb(0 0 0 / 0.3);
+  --shadow-raised-200: 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-raised-300: 0 2px 8px rgb(0 0 0 / 0.45);
+  --shadow-overlay-100: 0 8px 24px rgb(0 0 0 / 0.5);
+  --shadow-overlay-200: 0 16px 48px rgb(0 0 0 / 0.6);
+}
+
+/* ═══ Matériaux ═══════════════════════════════════════════════════════════ */
+
+:root[data-skin="apple"] .material-ultra-thin,
+:root[data-skin="apple"] .material-thin,
+:root[data-skin="apple"] .material-regular,
+:root[data-skin="apple"] .material-thick {
+  backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+  -webkit-backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+}
+
+:root[data-skin="apple"] .material-ultra-thin {
+  background-color: hsl(var(--card) / var(--material-ultra-thin));
+}
+:root[data-skin="apple"] .material-thin {
+  background-color: hsl(var(--card) / var(--material-thin));
+}
+:root[data-skin="apple"] .material-regular {
+  background-color: hsl(var(--card) / var(--material-regular));
+}
+:root[data-skin="apple"] .material-thick {
+  background-color: hsl(var(--card) / var(--material-thick));
+}
+
+/* Le verre : un matériau, un filet clair en haut (la lumière qui accroche
+   l'arête) et une ombre douce. C'est cette arête qui donne l'épaisseur ; sans
+   elle, un fond flouté reste un fond flouté. */
+:root[data-skin="apple"] .glass {
+  background-color: hsl(var(--card) / var(--material-regular));
+  backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+  -webkit-backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+  border: 0.5px solid hsl(var(--border) / 0.8);
+  box-shadow:
+    inset 0 0.5px 0 rgb(255 255 255 / 0.5),
+    var(--shadow-overlay-100);
+}
+
+:root[data-skin="apple"].dark .glass,
+:root[data-skin="apple"][data-theme="dark"] .glass {
+  box-shadow:
+    inset 0 0.5px 0 rgb(255 255 255 / 0.08),
+    var(--shadow-overlay-100);
+}
+
+/* La variante « clear » des HIG : très translucide, pour ce qui flotte sur une
+   photo ou une vidéo. Le voile sombre à 35 % est la valeur prescrite. */
+:root[data-skin="apple"] .glass-clear {
+  background-color: rgb(0 0 0 / var(--glass-dim));
+  backdrop-filter: blur(12px) saturate(var(--material-saturate));
+  -webkit-backdrop-filter: blur(12px) saturate(var(--material-saturate));
+  color: rgb(255 255 255);
+}
+
+/* ═══ Coins continus ══════════════════════════════════════════════════════ */
+
+@supports (corner-shape: squircle) {
+  :root[data-skin="apple"] [class*="rounded"] {
+    corner-shape: squircle;
+  }
+  /* …sauf le rayon « plein » : un squircle à 9999px n'est plus un cercle
+     mais un carré arrondi. Boutons ronds, pastilles et avatars restent ronds
+     — c'est ce que `rounded-full` promet. */
+  :root[data-skin="apple"] [class*="rounded-full"] {
+    corner-shape: round;
+  }
+}
+
+/* ═══ Mouvement ═══════════════════════════════════════════════════════════ */
+
+/* Les surfaces qui apparaissent utilisent `smooth` : on les ouvre pour LIRE ce
+   qu'elles contiennent, et un rebond fait relire. */
+:root[data-skin="apple"] [data-radix-popper-content-wrapper],
+:root[data-skin="apple"] [role="dialog"],
+:root[data-skin="apple"] [role="menu"],
+:root[data-skin="apple"] [role="listbox"] {
+  animation-timing-function: var(--ease-smooth) !important;
+  animation-duration: var(--duration-standard) !important;
+}
+
+/* Les commandes répondent au doigt : `snappy`, et court. Les HIG mettent en
+   garde contre l'animation des interactions FRÉQUENTES — un bouton qu'on
+   clique cent fois par jour ne doit pas faire attendre. */
+:root[data-skin="apple"] button,
+:root[data-skin="apple"] [role="button"],
+:root[data-skin="apple"] a,
+:root[data-skin="apple"] input,
+:root[data-skin="apple"] textarea,
+:root[data-skin="apple"] select {
+  transition-timing-function: var(--ease-snappy);
+  transition-duration: var(--duration-quick);
+}
+
+/* L'enfoncement : la seule chose qu'Apple exige des boutons personnalisés, et
+   c'est un « press state », pas un survol. Sur iOS il n'y a pas de survol —
+   le retour visuel doit venir de l'appui. */
+:root[data-skin="apple"] button:active:not(:disabled),
+:root[data-skin="apple"] [role="button"]:active {
+  transform: scale(0.97);
+  transition-duration: var(--duration-instant);
+}
+
+/* ═══ Le mouvement est optionnel ══════════════════════════════════════════
+   « Make motion optional. Not everyone can or wants to experience the motion
+   in your app. » C'est la règle la plus explicite de la page Motion, et la
+   seule qui soit une obligation plutôt qu'un conseil.
+
+   On ne supprime pas les transitions : on les ramène à 1 ms. La différence
+   compte — un composant qui attend la fin d'une transition pour révéler son
+   contenu resterait bloqué si on la mettait à zéro dans certains navigateurs.
+   Les animations en boucle, elles, sont bien arrêtées.                      */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-skin="apple"] *,
+  :root[data-skin="apple"] *::before,
+  :root[data-skin="apple"] *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  :root[data-skin="apple"] button:active:not(:disabled),
+  :root[data-skin="apple"] [role="button"]:active {
+    transform: none;
+  }
+}
+
+/* ═══ Contraste accru ═════════════════════════════════════════════════════
+   Apple sert une seconde palette entière quand le réglage est actif, plutôt
+   que d'assombrir la première. On fait pareil : les accents passent aux cuts
+   « accessible » publiés, et les filets deviennent opaques.                 */
+@media (prefers-contrast: more) {
+  :root[data-skin="apple"] {
+    --sys-blue: 30 110 244;
+    --sys-red: 233 21 45;
+    --sys-green: 0 137 50;
+    --primary: 201 100% 24%;
+    --border: 240 6% 65%;
+    --text-secondary: 240 3% 28%;
+    --text-tertiary: 240 3% 40%;
+    --separator-opacity: 0.6;
+  }
+
+  :root[data-skin="apple"].dark,
+  :root[data-skin="apple"][data-theme="dark"] {
+    --sys-blue: 92 184 255;
+    --sys-red: 255 97 101;
+    --sys-green: 74 217 104;
+    --primary: 201 72% 62%;
+    --border: 240 2% 38%;
+    --text-secondary: 240 3% 84%;
+    --text-tertiary: 240 3% 68%;
+  }
+}
+
+/* ═══ Détails d'ajustement ════════════════════════════════════════════════ */
+
+/* Les filets d'Apple font un demi-point, pas un pixel. Sur un écran à densité,
+   la différence est très visible : un filet d'1 px y paraît épais et découpe
+   l'interface en cases, là où le demi-point la laisse respirer. */
+:root[data-skin="apple"] {
+  --border-width-sm: 0.5px;
+}
+
+/* ── La cible de 44 pt ──────────────────────────────────────────────────────
+   Elle passe par `min-height`/`min-width`, PAS par un pseudo-élément.
+
+   La première version posait un `::after` sur tous les boutons de
+   l'application pour agrandir la zone cliquable sans toucher au dessin. C'est
+   la technique du système — et c'était une faute ici : dans une application
+   web, `::after` appartient aux composants. Plusieurs s'en servent déjà (le
+   ratio d'aspect d'une vidéo intégrée, le halo d'une équation, la pastille d'un
+   nœud d'IA), et une règle globale le leur confisque en silence. Le symptôme
+   n'a rien à voir avec des boutons : c'est une carte qui perd sa proportion ou
+   un badge qui disparaît, très loin de la règle fautive.
+
+   Le minimum de taille obtient le même résultat sans rien voler à personne. Il
+   ne s'applique qu'aux pointeurs GROSSIERS — sur un écran tactile, viser 28 px
+   au doigt est le vrai problème ; à la souris, agrandir tous les boutons
+   déferait la densité de l'interface pour rien. */
+@media (pointer: coarse) {
+  :root[data-skin="apple"] button:not(:disabled):not([data-compact]) {
+    min-height: var(--tap-target);
+    min-width: var(--tap-target);
+  }
+}
+
+/* ═══ Ce qui suit ne concerne PAS le seul module de suivi ══════════════════
+   Les blocs ci-dessus repeignent l'application entière, parce qu'ils
+   réassignent les variables dont dérive toute la configuration Tailwind. Les
+   règles qui suivent ajustent les composants PARTAGÉS — boutons, champs,
+   listes, en-têtes — là où une simple variable ne suffit pas.                */
+
+/* ── Hauteurs de commandes ──────────────────────────────────────────────────
+   Les gabarits du produit (h-9 / h-10 / h-11 = 36 / 40 / 44 px) sont plus
+   serrés que ceux d'Apple. On les remonte d'un cran plutôt que de réécrire les
+   variantes du composant : la classe reste `size="sm"`, mais elle mesure ce
+   qu'un « small » mesure dans ce système. La taille par défaut atteint enfin
+   les 44 points de la règle de cible, sans pseudo-élément. */
+:root[data-skin="apple"] .h-8:where(button, a, [role="button"]) { height: 2.25rem; }
+:root[data-skin="apple"] .h-9:where(button, a, [role="button"]) { height: 2.5rem; }
+:root[data-skin="apple"] .h-10:where(button, a, [role="button"]) { height: 2.75rem; }
+:root[data-skin="apple"] .h-11:where(button, a, [role="button"]) { height: 3.25rem; }
+
+/* ── Champs ─────────────────────────────────────────────────────────────────
+   Le fond gris d'un champ vient de la rampe des REMPLISSAGES, pas d'un gris
+   choisi à la main : c'est ce qui le fait rester lisible posé sur un matériau
+   translucide, où un gris opaque ferait une tache. */
+:root[data-skin="apple"] input:not([type="checkbox"]):not([type="radio"]),
+:root[data-skin="apple"] textarea,
+:root[data-skin="apple"] select {
+  border-radius: var(--radius-control);
+  font-size: var(--fs-base);
+}
+
+/* ── Focus ──────────────────────────────────────────────────────────────────
+   Apple pose un anneau DÉTACHÉ de l'élément, jamais un contour collé. L'écart
+   compte : collé, l'anneau se lit comme une bordure et on ne sait plus si le
+   champ est focalisé ou simplement encadré.
+
+   L'épaisseur, elle, dépend de la TAILLE de la cible. Trois points autour d'un
+   bouton de 36 px se remarquent sans peser ; les mêmes trois points autour d'un
+   textarea de 140 px de haut tracent un cadre épais sur toute la hauteur du
+   champ, et c'est ce cadre qu'on voit avant le texte qu'on est en train
+   d'écrire. Les champs de saisie prennent donc l'anneau fin. */
+:root[data-skin="apple"] :focus-visible {
+  outline: 2.5px solid hsl(var(--ring) / 0.45);
+  outline-offset: 2px;
+}
+
+:root[data-skin="apple"] input:focus-visible,
+:root[data-skin="apple"] textarea:focus-visible,
+:root[data-skin="apple"] [contenteditable="true"]:focus-visible {
+  outline: 2px solid hsl(var(--ring) / 0.32);
+  outline-offset: 1px;
+}
+
+/* ── Barres et en-têtes ─────────────────────────────────────────────────────
+   Les barres du système sont des MATÉRIAUX : le contenu passe dessous et s'y
+   devine. C'est ce qui donne la profondeur, là où une barre opaque coupe la
+   page en deux. On ne l'applique qu'aux barres COLLANTES — une barre qui ne
+   défile pas n'a rien sous elle à laisser voir, et le flou n'y coûterait que
+   du GPU. */
+:root[data-skin="apple"] header.sticky,
+:root[data-skin="apple"] .sticky > header,
+:root[data-skin="apple"] [data-slot="toolbar"] {
+  background-color: hsl(var(--background) / var(--material-regular));
+  backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+  -webkit-backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+}
+
+/* ── Le site marketing garde sa direction artistique ────────────────────────
+   `.marketing` réassigne ses propres fonds et sa propre fonte, et sa
+   spécificité de classe l'emporte sur la peau pour ses descendants. C'est
+   voulu : une page d'accueil publique répond à d'autres contraintes qu'un
+   outil interne, et la faire basculer avec le reste lui ferait perdre son
+   identité. Seul le MOUVEMENT y est repris, parce que là-dessus les HIG ont
+   raison partout. */
+:root[data-skin="apple"] .marketing {
+  --ease-smooth: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Élévation, icônes, effets, mouvement
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── L'élévation en mode sombre ─────────────────────────────────────────────
+   Apple ne pose PAS d'ombre pour séparer les plans en sombre — du noir sur du
+   noir ne se voit pas. Il sert deux jeux de fonds : les couleurs « base » pour
+   ce qui recule, les couleurs « elevated » pour ce qui vient devant
+   (popovers, feuilles, dialogues). C'est la LUMINOSITÉ qui dit la profondeur.
+
+   D'où deux tokens explicites plutôt qu'un empilement d'ombres : un dialogue
+   posé sur une carte doit être plus CLAIR qu'elle, et une ombre plus marquée
+   n'y changerait rien. */
+:root[data-skin="apple"] {
+  --elevated-1: var(--card);
+  --elevated-2: var(--popover);
+}
+
+:root[data-skin="apple"].dark,
+:root[data-skin="apple"][data-theme="dark"] {
+  --elevated-1: 240 4% 11%;
+  --elevated-2: 240 4% 16%;
+}
+
+:root[data-skin="apple"].dark [role="dialog"],
+:root[data-skin="apple"][data-theme="dark"] [role="dialog"],
+:root[data-skin="apple"].dark [data-radix-popper-content-wrapper] > *,
+:root[data-skin="apple"][data-theme="dark"] [data-radix-popper-content-wrapper] > * {
+  background-color: hsl(var(--elevated-2));
+}
+
+/* ── Icônes ─────────────────────────────────────────────────────────────────
+   Les icônes posées dans une ligne de texte s'alignent sur la HAUTEUR DE
+   CAPITALE, pas sur la ligne de base ni sur le cadrat. Sans ce calage, une
+   icône de 16 px à côté d'un libellé de 13 flotte un ou deux pixels trop haut,
+   ce qui se remarque sur une liste sans qu'on sache dire d'où ça vient.
+
+   Le sélecteur ne vise que les svg DANS un bouton ou un libellé : les icônes
+   décoratives d'un état vide ou d'une illustration n'ont pas de texte auquel
+   s'accorder. */
+:root[data-skin="apple"] :where(button, a, label, li, td, th) > svg:not([width]),
+:root[data-skin="apple"] :where(button, a, label) > span > svg:not([width]) {
+  vertical-align: -0.125em;
+}
+
+/* ── Vibrance ───────────────────────────────────────────────────────────────
+   Le texte posé sur un matériau ne prend pas un gris : il prend la couleur de
+   l'étiquette, en opacité. C'est ce qui le laisse se teinter de ce qu'il y a
+   dessous — le principe même de la vibrance — là où un gris fixe fait une
+   tache morte sur un fond qui bouge. */
+:root[data-skin="apple"] .vibrant,
+:root[data-skin="apple"] .vibrant-secondary,
+:root[data-skin="apple"] .vibrant-tertiary {
+  color: rgb(var(--label));
+}
+:root[data-skin="apple"] .vibrant { opacity: var(--label-1); }
+:root[data-skin="apple"] .vibrant-secondary { opacity: var(--label-2); }
+:root[data-skin="apple"] .vibrant-tertiary { opacity: var(--label-3); }
+
+/* ── L'arête du défilement ──────────────────────────────────────────────────
+   Une barre du haut ne devient un matériau QUE lorsque du contenu passe
+   dessous. Tant que la page est en haut, elle reste transparente et se fond
+   dans le fond. C'est un détail, et c'est ce qui distingue une barre native
+   d'une barre floutée en permanence : la seconde annonce une profondeur qui
+   n'existe pas encore.
+
+   Le déclenchement se fait sans JavaScript, par un pixel témoin placé en tête
+   de la zone défilante. */
+:root[data-skin="apple"] .scroll-edge {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  transition: background-color var(--duration-quick) var(--ease-smooth),
+              backdrop-filter var(--duration-quick) var(--ease-smooth),
+              border-color var(--duration-quick) var(--ease-smooth);
+  border-bottom: var(--border-width-sm) solid transparent;
+}
+
+:root[data-skin="apple"] .scroll-sentinel {
+  height: 1px;
+  margin-bottom: -1px;
+}
+
+/* ── Feuilles et dialogues ──────────────────────────────────────────────────
+   Une feuille modale d'iOS ne se contente pas d'apparaître : le plan du
+   dessous RECULE — il s'assombrit et rétrécit très légèrement. C'est ce qui
+   donne l'impression d'une pile de cartes plutôt que d'un panneau collé sur
+   l'écran, et c'est aussi ce qui rend évident qu'on peut revenir en arrière. */
+:root[data-skin="apple"] [data-sheet-host][data-open="true"] {
+  transform: scale(0.972) translateY(-0.25rem);
+  border-radius: var(--radius-window);
+  overflow: hidden;
+  filter: brightness(0.86);
+  transition: transform var(--duration-standard) var(--ease-smooth),
+              filter var(--duration-standard) var(--ease-smooth);
+}
+
+:root[data-skin="apple"] [data-sheet-host] {
+  transition: transform var(--duration-standard) var(--ease-smooth),
+              filter var(--duration-standard) var(--ease-smooth);
+}
+
+/* Le voile d'un dialogue : très peu opaque, parce que le recul du plan du
+   dessous fait déjà le travail. Un voile épais par-dessus donnerait deux fois
+   le même signal, et masquerait ce qu'on cherche à laisser deviner. */
+:root[data-skin="apple"] [data-radix-dialog-overlay],
+:root[data-skin="apple"] [data-state][class*="overlay"] {
+  background-color: rgb(0 0 0 / 0.28);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* ── Mouvement, sur les composants réels ────────────────────────────────────
+   Les règles génériques plus haut couvrent les balises. Celles-ci visent ce
+   que Radix produit, qui n'est ni un `button` ni un `dialog` mais un div
+   porteur d'un `data-state`. Sans elles, menus, infobulles et notifications
+   gardaient les courbes du système précédent. */
+:root[data-skin="apple"] [data-state="open"],
+:root[data-skin="apple"] [data-state="closed"] {
+  animation-timing-function: var(--ease-smooth);
+}
+
+:root[data-skin="apple"] [data-state="checked"],
+:root[data-skin="apple"] [data-state="unchecked"] {
+  transition-timing-function: var(--ease-snappy);
+  transition-duration: var(--duration-quick);
+}
+
+/* Ce qui SURGIT — une notification, une pastille de compteur — prend le rebond
+   marqué : l'élan explique d'où la chose vient, ce qu'une apparition en fondu
+   ne dit pas. */
+:root[data-skin="apple"] [role="status"],
+:root[data-skin="apple"] [role="alert"] {
+  animation-timing-function: var(--ease-bouncy);
+  animation-duration: var(--duration-slow);
+}
+
+/* ── L'appui ────────────────────────────────────────────────────────────────
+   Défini plus haut pour les boutons. On l'étend aux lignes cliquables — une
+   carte de projet, une ligne de liste — parce que sur iOS c'est TOUTE la
+   surface tappable qui répond, pas seulement ce qui ressemble à un bouton.
+   L'échelle y est plus faible : une carte de 300 px qui rétrécit de 3 % bouge
+   de neuf pixels, ce qui est trop. */
+:root[data-skin="apple"] [role="listitem"]:active,
+:root[data-skin="apple"] li > button:active:not(:disabled),
+:root[data-skin="apple"] [data-pressable]:active {
+  transform: scale(0.994);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-skin="apple"] [data-sheet-host][data-open="true"] {
+    transform: none;
+  }
+  :root[data-skin="apple"] [role="listitem"]:active,
+  :root[data-skin="apple"] li > button:active:not(:disabled),
+  :root[data-skin="apple"] [data-pressable]:active {
+    transform: none;
+  }
+}

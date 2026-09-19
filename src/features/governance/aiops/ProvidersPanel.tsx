@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { Cloud, Server, Plug, Plus, Loader2, Check, AlertTriangle, RefreshCw, Trash2, Zap } from "lucide-react";
+import {
+  CloudIcon as Cloud,
+  HardDrivesIcon as Server,
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  CheckIcon as Check,
+  WarningIcon as AlertTriangle,
+  ArrowsClockwiseIcon as RefreshCw,
+  TrashIcon as Trash2,
+  LightningIcon as Zap,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Users, Route, Package, X, Plus, MonitorPlay, SquareTerminal } from "lucide-react";
+import {
+  UsersIcon as Users,
+  PathIcon as Route,
+  PackageIcon as Package,
+  XIcon as X,
+  PlusIcon as Plus,
+  MonitorPlayIcon as MonitorPlay,
+  TerminalWindowIcon as SquareTerminal,
+} from "@phosphor-icons/react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";

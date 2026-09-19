@@ -93,6 +93,30 @@
       <p class="err" id="ctl-err"></p>
     </div>
 
+    <!-- Deux pouvoirs, deux consentements. Celui-ci dure plus longtemps parce
+         qu'il peut moins : l'agent affiche, il ne touche à rien. -->
+    <div class="panel">
+      <div class="row" style="margin:0 0 6px">
+        <strong style="font-size:12px">Mode formation</strong>
+        <span class="muted" id="coach-state" style="margin-left:auto">désactivé</span>
+      </div>
+      <p class="muted" style="margin:0 0 8px">
+        Un agent vous guide dans l'outil&nbsp;: il entoure le bon bouton et vous
+        dit quoi faire. Il ne clique jamais à votre place.
+      </p>
+      <label for="coach-scope">Périmètre</label>
+      <select id="coach-scope">
+        <option value="site">Ce site uniquement</option>
+        <option value="all">Tous les sites</option>
+      </select>
+      <div class="stack">
+        <button id="coach60">Activer 1 heure</button>
+        <button class="ghost" id="coach240">Activer 4 heures</button>
+        <button class="ghost" id="coach-off" style="display:none">Arrêter la formation</button>
+      </div>
+      <p class="err" id="coach-err"></p>
+    </div>
+
     <div class="stack">
       <button class="ghost" id="forget">Dissocier cet appareil</button>
     </div>

@@ -1,7 +1,13 @@
 import {
-  FileBarChart, CheckCircle2, XCircle, AlertTriangle, Info, ChevronRight,
-  Download, Lightbulb,
-} from "lucide-react";
+  FileTextIcon as FileBarChart,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  WarningIcon as AlertTriangle,
+  InfoIcon as Info,
+  CaretRightIcon as ChevronRight,
+  DownloadSimpleIcon as Download,
+  LightbulbIcon as Lightbulb,
+} from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";

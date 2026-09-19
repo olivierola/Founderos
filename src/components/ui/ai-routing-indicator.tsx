@@ -1,13 +1,13 @@
 import * as React from "react";
 
 import {
-  ArrowRight,
-  Bot,
-  CircleDashed,
-  Route,
-  Sparkles,
-  Zap,
-} from "lucide-react";
+  ArrowRightIcon as ArrowRight,
+  RobotIcon as Bot,
+  CircleDashedIcon as CircleDashed,
+  PathIcon as Route,
+  SparkleIcon as Sparkles,
+  LightningIcon as Zap,
+} from "@phosphor-icons/react";
 
 import { cn } from "@/lib/utils";
 

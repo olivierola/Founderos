@@ -8,31 +8,58 @@ import type { Node, Edge } from "reactflow";
 // playbook and executes it — deciding for itself who does what.
 
 export type WorkflowStatus = "draft" | "active" | "paused" | "archived";
-export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
+export type RunStatus = "running" | "succeeded" | "failed" | "cancelled" | "stopped";
 
-/** The sections a good procedure is made of. */
-export type BlockKind =
-  | "trigger"      // when it runs → frontmatter
-  | "input"        // what the run needs to start
-  | "goal"         // what it is for
-  | "rule"         // a constraint that holds throughout
-  | "context"      // knowledge to load — globally, or for one branch only
-  | "resource"     // a document / collection / app to use
-  | "tool"         // a capability the procedure must use (search, code, HTTP, connector…)
-  | "step"         // one action, optionally delegated, optionally with its own context
-  | "decision"     // a branch
-  | "loop"         // repeat: for each X, or until a condition holds
-  | "handoff"      // pass the baton to one or several agents, with a return contract
-  | "approval"     // stop and ask a human
-  | "deliverable"  // what must be produced
-  | "memory"       // what must outlive the run
-  | "example";     // one worked case
+/**
+ * Les deux natures d'un workflow (migration 0216).
+ *
+ *   procedure  — des instructions. Un agent lit le playbook et l'exécute en
+ *                décidant qui fait quoi. Souple, jamais deux fois identique.
+ *   automation — une suite d'appels. Le moteur les exécute lui-même, sans
+ *                modèle. Rigide, et strictement reproductible.
+ *
+ * Ce n'est pas un réglage d'affichage : le déclenchement emprunte deux chemins
+ * différents (workflow-engine.ts) et les blocs disponibles ne sont pas les mêmes.
+ */
+export type WorkflowKind = "procedure" | "automation";
 
-// Block knowledge lives in ./context — the compiler needs those rules and has
-// no business importing a Supabase client to get them. Re-exported so callers
-// keep one import for "the workflow model".
-export { contextSourceOf, contextBodyOf } from "./context";
-export type { ContextRef, ContextSourceKind } from "./context";
+export const WORKFLOW_KIND_META: Record<WorkflowKind, {
+  label: string; short: string; long: string; tone: string;
+}> = {
+  procedure: {
+    label: "Procédure",
+    short: "Un agent lit et décide",
+    long: "Des instructions écrites pour un agent. Il les lit au déclenchement et décide comment faire — utile quand le travail demande du jugement.",
+    tone: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+  },
+  automation: {
+    label: "Automatisation",
+    short: "Le moteur exécute",
+    long: "Une suite d'actions exécutées telles quelles, sans modèle. Identique à chaque fois — utile quand il n'y a rien à juger.",
+    tone: "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+  },
+};
+
+// Le vocabulaire des blocs vient du langage partagé (workflow-doc.ts) et n'est
+// PAS redéclaré ici. Il l'était, et la copie a divergé au premier type ajouté :
+// l'éditeur refusait un bloc que le compilateur savait très bien produire.
+//
+// Les lecteurs du sac `data` vivent dans ./context — le compilateur en a besoin
+// et n'a aucune raison d'importer un client Supabase pour les obtenir.
+// Ré-exportés ici pour que « le modèle du workflow » reste un seul import.
+export {
+  contextSourceOf, contextBodyOf, chipToken, chipIdsIn, cleanArgs,
+  CODE_TOOLS, codeToolOf, outputVarOf,
+} from "./context";
+export type { BlockKind, ContextRef, ContextSourceKind } from "./context";
+
+// Le cron : une seule implémentation, partagée avec le planificateur. L'éditeur
+// en a besoin pour montrer la prochaine échéance AVANT d'enregistrer.
+export {
+  nextCronRun, isValidCron, buildCron, parseCron, describeCron, parseNaturalCron,
+  DEFAULT_CRON_SPEC, CRON_FREQUENCIES, CRON_WEEKDAYS,
+} from "../../../supabase/functions/_shared/cron";
+export type { CronSpec, CronFrequency } from "../../../supabase/functions/_shared/cron";
 
 export interface WorkflowGraph {
   nodes: Node[];
@@ -47,6 +74,7 @@ export interface Workflow {
   name: string;
   description: string | null;
   status: WorkflowStatus;
+  kind: WorkflowKind;
   /** The canvas. */
   blocks: WorkflowGraph;
   /** The compiled (and hand-editable) playbook. */
@@ -89,6 +117,10 @@ function toWorkflow(row: Record<string, unknown>): Workflow {
       edges: Array.isArray(g?.edges) ? (g!.edges as Edge[]) : [],
     },
     document: String(row.document ?? ""),
+    // Défaut « procedure » : c est ce qu étaient toutes les lignes écrites avant
+    // que la distinction existe, et une automatisation supposée par défaut
+    // exécuterait sans agent un contenu écrit pour un agent.
+    kind: (row.kind as WorkflowKind) === "automation" ? "automation" : "procedure",
   };
 }
 
@@ -109,7 +141,7 @@ export async function fetchWorkflow(id: string): Promise<Workflow | null> {
 
 export async function createWorkflow(input: {
   workspaceId: string; projectId: string; dashboardId: string;
-  name: string; description: string;
+  name: string; description: string; kind?: WorkflowKind;
 }): Promise<string | null> {
   const { data: auth } = await supabase.auth.getUser();
   const { data, error } = await supabase.from("agent_workflows").insert({
@@ -119,14 +151,20 @@ export async function createWorkflow(input: {
     name: input.name.trim().slice(0, 120),
     description: input.description.trim().slice(0, 2000) || null,
     created_by: auth.user?.id ?? null,
-    // Every workflow opens with its trigger and an objective already placed: an
-    // empty canvas gives no clue that a procedure starts by saying what it is for.
+    kind: input.kind ?? "procedure",
+    // L'amorce dépend de la nature. Une procédure s'ouvre avec son objectif
+    // déjà posé — c'est par là qu'on commence à en écrire une. Une
+    // automatisation n'a pas d'objectif à rédiger : elle a un déclencheur et
+    // des actions, et un bloc « objectif » qu'elle n'exécutera jamais y serait
+    // une invitation à écrire quelque chose qui ne sert à rien.
     blocks: {
       nodes: [
         { id: "trigger-1", type: "trigger", position: { x: 260, y: 80 }, data: { label: "Déclencheur", mode: "manual" } },
-        { id: "goal-1", type: "goal", position: { x: 260, y: 240 }, data: { label: "", body: "" } },
+        ...(input.kind === "automation" ? [] : [
+          { id: "goal-1", type: "goal", position: { x: 260, y: 240 }, data: { label: "", body: "" } },
+        ]),
       ],
-      edges: [{ id: "e-trigger-goal", source: "trigger-1", target: "goal-1" }],
+      edges: input.kind === "automation" ? [] : [{ id: "e-trigger-goal", source: "trigger-1", target: "goal-1" }],
     },
     document: "",
   }).select("id").single();
@@ -136,15 +174,24 @@ export async function createWorkflow(input: {
 
 /** Persist blocks + document together. They are two faces of one procedure, so
  *  saving one without the other is what makes them drift. */
-export async function saveWorkflowContent(id: string, blocks: WorkflowGraph, document: string) {
-  const { error } = await supabase.from("agent_workflows")
-    .update({ blocks, document, updated_at: new Date().toISOString() }).eq("id", id);
+export async function saveWorkflowContent(
+  id: string, blocks: WorkflowGraph, document: string,
+): Promise<string | null> {
+  const stamp = new Date().toISOString();
+  // The new `updated_at` comes BACK so the editor can tell its own write apart
+  // from someone else's. Without that it cannot distinguish "the row changed
+  // because I just saved" from "the row changed because the assistant built
+  // three blocks into it" — and the second one must never be overwritten.
+  const { data, error } = await supabase.from("agent_workflows")
+    .update({ blocks, document, updated_at: stamp }).eq("id", id)
+    .select("updated_at").maybeSingle();
   if (error) throw new Error(error.message);
+  return (data as { updated_at: string } | null)?.updated_at ?? stamp;
 }
 
 export async function updateWorkflow(
   id: string,
-  patch: Partial<Pick<Workflow, "name" | "description" | "status">>,
+  patch: Partial<Pick<Workflow, "name" | "description" | "status" | "kind">>,
 ) {
   const { error } = await supabase.from("agent_workflows")
     .update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
@@ -253,6 +300,32 @@ export async function fetchLatestRun(workflowId: string): Promise<WorkflowRun | 
     .order("started_at", { ascending: false })
     .limit(1).maybeSingle();
   return (data ?? null) as WorkflowRun | null;
+}
+
+/** La trace pas-à-pas d'une exécution automatique (0216).
+ *
+ *  Une procédure raconte ce qu'elle a fait dans le rapport de son agent. Une
+ *  automatisation ne raconte rien : sans ce journal, un échec se résume à
+ *  « failed » et rien ne dit quelle action a cassé, ni avec quels arguments. */
+export interface RunStep {
+  id: number;
+  position: number;
+  block_id: string;
+  block_kind: string;
+  label: string | null;
+  status: "running" | "succeeded" | "failed" | "skipped";
+  input: Record<string, unknown>;
+  output: unknown;
+  error_message: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export async function fetchRunSteps(runId: string): Promise<RunStep[]> {
+  const { data } = await supabase.from("agent_workflow_run_steps")
+    .select("id, position, block_id, block_kind, label, status, input, output, error_message, started_at, finished_at")
+    .eq("run_id", runId).order("position", { ascending: true });
+  return (data ?? []) as RunStep[];
 }
 
 export async function fetchWorkflowRuns(workflowId: string, limit = 20): Promise<WorkflowRun[]> {

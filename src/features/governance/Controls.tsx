@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { ClipboardCheck, Plus, Pencil, Trash2, ShieldCheck } from "lucide-react";
+import {
+  ClipboardTextIcon as ClipboardCheck,
+  PlusIcon as Plus,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  ShieldCheckIcon as ShieldCheck,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

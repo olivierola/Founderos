@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Loader2, FolderGit2 } from "lucide-react";
+import {
+  BuildingsIcon as Building2,
+  CircleNotchIcon as Loader2,
+  FolderIcon as FolderGit2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

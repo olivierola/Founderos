@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Plus, Pencil, Trash2, ShieldAlert } from "lucide-react";
+import {
+  WarningIcon as AlertTriangle,
+  PlusIcon as Plus,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  ShieldWarningIcon as ShieldAlert,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

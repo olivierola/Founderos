@@ -14,9 +14,17 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   PieChart, Pie, Cell,
 } from "recharts";
-import { X, Maximize2, TrendingUp, TrendingDown, Minus, type LucideIcon } from "lucide-react";
+import {
+  XIcon as X,
+  ArrowsOutSimpleIcon as Maximize2,
+  TrendUpIcon as TrendingUp,
+  TrendDownIcon as TrendingDown,
+  MinusIcon as Minus,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { StatisticsCard7 } from "@/components/ui/statistics-card-7";
 import {
   useCategorical, useDeltaColors, useContextGreys, STATUS,
 } from "@/features/crm/overview/vizPalette";
@@ -262,25 +270,40 @@ export function StatTile({
   );
 }
 
-/** Grid of KPI tiles; a tile carrying a curve expands full-width on click. */
+/** Grid of KPI tiles; a tile carrying a curve expands full-width on click.
+ *
+ *  Rendered as one segmented strip rather than as floating tiles — a row of
+ *  related numbers is a single instrument, and the hairlines say so. The
+ *  sparkline, the delta pill and the click-to-expand curve are unchanged; only
+ *  the surface they sit on is. */
 export function KpiGrid({ cards, gridClass }: { cards: KpiCardDef[]; gridClass?: string }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const expanded = cards.find((c) => c.key === expandedKey);
 
   return (
     <div className="space-y-3">
-      <div className={cn("grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6", gridClass)}>
-        {cards.map((c) => (
-          <StatTile
-            key={c.key}
-            label={c.label} value={c.value} sub={c.sub} icon={c.icon} accent={c.accent} tone={c.tone}
-            delta={c.delta} deltaGood={c.deltaGood} deltaSuffix={c.deltaSuffix}
-            spark={c.curve?.data} hint={!!c.curve}
-            expanded={expandedKey === c.key}
-            onClick={c.curve ? () => setExpandedKey(expandedKey === c.key ? null : c.key) : undefined}
-          />
-        ))}
-      </div>
+      <StatisticsCard7
+        size="compact"
+        columnsClassName={cn("grid-cols-2 md:grid-cols-3 xl:grid-cols-6", gridClass)}
+        cards={cards.map((c) => ({
+          key: c.key,
+          title: c.label,
+          value: c.value,
+          subtext: c.sub,
+          valueClassName: c.tone,
+          icon: c.icon,
+          accent: c.accent,
+          badgeNode: c.delta !== undefined
+            ? <TrendBadge value={c.delta ?? null} good={c.deltaGood} suffix={c.deltaSuffix} />
+            : undefined,
+          sparkline: c.curve && c.curve.data.length >= 2
+            ? <Sparkline data={c.curve.data} color={c.accent} />
+            : undefined,
+          hint: !!c.curve,
+          expanded: expandedKey === c.key,
+          onClick: c.curve ? () => setExpandedKey(expandedKey === c.key ? null : c.key) : undefined,
+        }))}
+      />
       <AnimatePresence mode="wait">
         {expanded?.curve && (
           <motion.div key={expanded.key} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}

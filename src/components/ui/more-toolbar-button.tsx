@@ -7,17 +7,17 @@ import type { DropdownMenuProps } from '@radix-ui/react-dropdown-menu';
 import { TextAlignPlugin } from '@platejs/basic-styles/react';
 import { ListStyleType, toggleList } from '@platejs/list';
 import {
-  AlignCenterIcon,
-  AlignJustifyIcon,
-  AlignLeftIcon,
-  AlignRightIcon,
+  TextAlignCenterIcon as AlignCenterIcon,
+  TextAlignJustifyIcon as AlignJustifyIcon,
+  TextAlignLeftIcon as AlignLeftIcon,
+  TextAlignRightIcon as AlignRightIcon,
   KeyboardIcon,
-  List,
-  ListOrdered,
-  MoreHorizontalIcon,
-  SubscriptIcon,
-  SuperscriptIcon,
-} from 'lucide-react';
+  ListIcon as List,
+  ListNumbersIcon as ListOrdered,
+  DotsThreeIcon as MoreHorizontalIcon,
+  TextSubscriptIcon as SubscriptIcon,
+  TextSuperscriptIcon as SuperscriptIcon,
+} from "@phosphor-icons/react";
 import { KEYS } from 'platejs';
 import { useEditorPlugin, useEditorRef } from 'platejs/react';
 

@@ -48,7 +48,16 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: `No actions available for provider "${provider}"` }, { status: 400 });
     }
     if (!action) {
-      return jsonResponse({ provider, actions: available.map((a) => ({ name: a.name, description: a.description, params: a.params ?? {} })) });
+      // `write` fait partie de la découverte : un écran qui propose ces actions
+      // doit pouvoir signaler celles qui envoient ou créent quelque chose —
+      // sinon « poster dans Slack » se choisit aussi légèrement que « lister
+      // les deals », et la différence n'apparaît qu'à l'exécution.
+      return jsonResponse({
+        provider,
+        actions: available.map((a) => ({
+          name: a.name, description: a.description, params: a.params ?? {}, write: a.write === true,
+        })),
+      });
     }
 
     const def = findAction(provider, action);

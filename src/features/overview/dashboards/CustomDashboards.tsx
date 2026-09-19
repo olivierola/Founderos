@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LayoutGrid, Plus, Loader2, MoreVertical, Pencil, Trash2, ChevronRight, Copy } from "lucide-react";
+import {
+  GridFourIcon as LayoutGrid,
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  DotsThreeVerticalIcon as MoreVertical,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { Plus, Trash2, ShieldCheck } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  ShieldCheckIcon as ShieldCheck,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ModuleProject } from "../moduleProjectModel";

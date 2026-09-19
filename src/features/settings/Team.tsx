@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Users, Loader2, Plus, Trash2, Mail, Shield, Copy } from "lucide-react";
+import {
+  UsersIcon as Users,
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  EnvelopeSimpleIcon as Mail,
+  ShieldIcon as Shield,
+  CopyIcon as Copy,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

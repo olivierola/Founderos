@@ -3,7 +3,12 @@
 import * as React from 'react';
 
 import { formatCodeBlock, isLangSupported } from '@platejs/code-block';
-import { BracesIcon, Check, CheckIcon, CopyIcon } from 'lucide-react';
+import {
+  BracketsCurlyIcon as BracesIcon,
+  CheckIcon as Check,
+  CheckIcon,
+  CopyIcon,
+} from "@phosphor-icons/react";
 import { type TCodeBlockElement, type TCodeSyntaxLeaf, NodeApi } from 'platejs';
 import {
   type PlateElementProps,

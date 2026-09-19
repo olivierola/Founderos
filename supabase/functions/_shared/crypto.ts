@@ -16,8 +16,16 @@ function toBase64(bytes: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)));
 }
 
-function fromBase64(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+// Le type de retour est annoté `Uint8Array<ArrayBuffer>` et non `Uint8Array` :
+// depuis TypeScript 5.7 le type nu est générique sur `ArrayBufferLike`, qui
+// inclut `SharedArrayBuffer` — que WebCrypto refuse. Sans cette précision,
+// `deno check` échoue sur chaque appel à encrypt/decrypt, ce qui privait tout le
+// projet de la vérification de types.
+function fromBase64(b64: string): Uint8Array<ArrayBuffer> {
+  const raw = atob(b64);
+  const bytes = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
 }
 
 export async function encryptSecret(plaintext: string): Promise<{ ciphertext: string; iv: string }> {

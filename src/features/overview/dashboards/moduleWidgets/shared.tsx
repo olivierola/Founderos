@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 
 /** Props every module widget receives when rendered inside a custom dashboard. */
 export interface ModuleWidgetProps {

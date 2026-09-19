@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, Save, Loader2, X, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  FloppyDiskIcon as Save,
+  CircleNotchIcon as Loader2,
+  XIcon as X,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";

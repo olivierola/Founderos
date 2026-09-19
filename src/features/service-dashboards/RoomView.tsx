@@ -2,8 +2,14 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Users, Loader2, Activity, X, Target, MessageSquare, FileText,
-} from "lucide-react";
+  ArrowLeftIcon as ArrowLeft,
+  UsersIcon as Users,
+  PulseIcon as Activity,
+  XIcon as X,
+  TargetIcon as Target,
+  ChatIcon as MessageSquare,
+  FileTextIcon as FileText,
+} from "@phosphor-icons/react";
 import { CodeArtifactContext } from "@/components/AgentMarkdown";
 import { ChatInput } from "@/components/ui/chat-input";
 import { supabase } from "@/lib/supabase";
@@ -12,6 +18,8 @@ import { AgentIdentity } from "@/components/AgentIdentity";
 import { UiBlocks, InterleavedMessage, type UiBlock, type ArtifactOpenTarget } from "@/features/internal-agents/UiBlocks";
 import { SubAgentInstances } from "@/features/internal-agents/SubAgentInstances";
 import { RunTimeline } from "@/features/internal-agents/RunTimeline";
+import { AgentActivityOrb, useRunOrbState } from "@/features/internal-agents/AgentActivityOrb";
+import { ORB_STATE_LABEL } from "@/features/internal-agents/runEventMeta";
 import { cn } from "@/lib/utils";
 import {
   fetchRoomMessages, fetchRoomParticipants, addRoomAgent, removeRoomAgent,
@@ -245,7 +253,7 @@ export function RoomView({ dashboardId, roomId, workspaceId }: {
           <div className="mx-auto max-w-3xl">
             <ChatInput
               busy={sending}
-              placeholder="Écrivez un message… @ pour taguer, glissez des fichiers, ou dictez"
+              placeholder="Écrivez un message…"
               mentionAgents={participants.map((a) => ({ id: a.id, name: a.name, accentColor: a.accent_color }))}
               slashCommands={SLASH_COMMANDS.map((c) => ({ key: c.key, label: c.label, color: c.color, icon: c.icon }))}
               onSendMessage={(msg, files, mentionedIds) => { void sendFrom(msg, mentionedIds, files); }}
@@ -306,7 +314,7 @@ function RoomRunDrawer({ run, onClose, onOpenDeliverable }: { run: { runId: stri
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/60 px-4">
           <Activity className="h-4 w-4 text-primary" />
           <span className="min-w-0 flex-1 truncate text-sm font-semibold">{run.name ?? "Agent"} — activité</span>
-          {run.live && <span className="flex items-center gap-1 text-[11px] text-emerald-500"><Loader2 className="h-3 w-3 animate-spin" /> en cours</span>}
+          {run.live && <LiveRunBadge runId={run.runId} />}
           <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-4">
@@ -340,6 +348,15 @@ function RoomRunDrawer({ run, onClose, onOpenDeliverable }: { run: { runId: stri
         </div>
       </aside>
     </>
+  );
+}
+
+function LiveRunBadge({ runId }: { runId: string }) {
+  const state = useRunOrbState(runId);
+  return (
+    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <AgentActivityOrb state={state} /> {ORB_STATE_LABEL[state]}
+    </span>
   );
 }
 
@@ -378,6 +395,27 @@ function MissionBadge({ mission, onOpen }: { mission: RoomMission; onOpen: () =>
       <Target className="h-3 w-3 text-primary" />
       <span className="max-w-[220px] truncate">{mission.title}</span>
       <span className={cn("rounded-full px-1.5", meta.tone)}>{meta.label}</span>
+    </button>
+  );
+}
+
+// A working agent's placeholder: the thinking orb + a verb for what it is
+// doing right now (searching, drafting…), both following the run's events.
+function ThinkingRow({ runId, onOpen }: { runId: string | null | undefined; onOpen: () => void }) {
+  const state = useRunOrbState(runId);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!runId}
+      className={cn(
+        "flex items-center gap-2 py-0.5 text-sm text-muted-foreground",
+        runId && "rounded-md transition-colors hover:text-foreground",
+      )}
+      title={runId ? "Voir l'activité de l'agent" : undefined}
+    >
+      <AgentActivityOrb state={state} /> {ORB_STATE_LABEL[state]}
+      {runId && <span className="text-[11px] text-primary underline-offset-2 hover:underline">voir l'activité</span>}
     </button>
   );
 }
@@ -429,19 +467,7 @@ function RoomMessageRow({ m, grouped, me, name, avatarUrl, colorOf, mission, sho
           </div>
         )}
         {m.status === "thinking" ? (
-          <button
-            type="button"
-            onClick={() => m.run_id && onOpenRun(m.run_id, name, true)}
-            disabled={!m.run_id}
-            className={cn(
-              "flex items-center gap-2 py-0.5 text-sm text-muted-foreground",
-              m.run_id && "rounded-md transition-colors hover:text-foreground",
-            )}
-            title={m.run_id ? "Voir l'activité de l'agent" : undefined}
-          >
-            <Loader2 className="h-4 w-4 animate-spin" /> travaille…
-            {m.run_id && <span className="text-[11px] text-primary underline-offset-2 hover:underline">voir l'activité</span>}
-          </button>
+          <ThinkingRow runId={m.run_id} onOpen={() => m.run_id && onOpenRun(m.run_id, name, true)} />
         ) : isUser ? (
           <>
             {m.content && <div className="chat-prose break-words text-[15px] leading-relaxed text-foreground">{renderWithMentions(m.content, colorOf)}</div>}

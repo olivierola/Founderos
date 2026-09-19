@@ -1,5 +1,15 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { ChevronsUpDown, Settings, Plug, Users, LogOut, Check, ShieldCheck, Palette } from "lucide-react";
+import {
+  SparkleIcon as Sparkles,
+  CaretUpDownIcon as ChevronsUpDown,
+  GearSixIcon as Settings,
+  PlugIcon as Plug,
+  UsersIcon as Users,
+  SignOutIcon as LogOut,
+  CheckIcon as Check,
+  ShieldCheckIcon as ShieldCheck,
+  PaletteIcon as Palette,
+} from "@phosphor-icons/react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuPortal,
@@ -10,6 +20,7 @@ import { useWorkspaces } from "@/hooks/useWorkspace";
 import { useTheme } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
 import { THEMES } from "@/lib/themes";
+import { useSkin } from "@/lib/useSkin";
 
 function Avatar({ name, url, size, rounded = "rounded-full" }: { name: string; url?: string; size: number; rounded?: string }) {
   const initial = (name.trim()[0] ?? "?").toUpperCase();
@@ -36,11 +47,31 @@ function Tile({ name }: { name: string }) {
  * (ServiceDashboardShell has no top navbar, so account access lives here).
  * `compact` renders just the avatar tile — the icon rail's bottom slot.
  */
+/**
+ * Les deux systèmes visuels installés.
+ *
+ * Le libellé dit ce qui change, pas seulement un nom : quelqu'un qui bascule
+ * sans savoir que la typographie passe de 13 à 17 points croira à un bug.
+ */
+const SKINS = [
+  {
+    key: "founderos" as const,
+    label: "FounderOS",
+    hint: "Dense. Corps de 13, gris froids, filets marqués.",
+  },
+  {
+    key: "apple" as const,
+    label: "Apple (HIG)",
+    hint: "Aéré. Corps de 17, matériaux translucides, cibles de 44 px.",
+  },
+];
+
 export function SidebarProfileFooter({ compact }: { compact?: boolean } = {}) {
   const { user, signOut } = useAuth();
   const { workspace, workspaceId, project } = useCurrentContext();
   const { data: memberships } = useWorkspaces();
   const { theme: appTheme, setTheme } = useTheme();
+  const { skin, setSkin } = useSkin();
   const navigate = useNavigate();
   // The footer only renders inside a service dashboard, so the id is in the URL.
   const { dashboardId } = useParams();
@@ -131,6 +162,37 @@ export function SidebarProfileFooter({ compact }: { compact?: boolean } = {}) {
                     <span className="mr-2 h-4 w-4 shrink-0 rounded-full border border-border" style={{ background: t.swatch }} />
                     <span className="min-w-0 flex-1 truncate">{t.label}</span>
                     {appTheme === t.key && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+
+          {/* La PEAU n'est pas le thème. Le thème choisit une palette dans le
+              système visuel du produit ; la peau change de système — grille
+              typographique, rayons, matériaux, mouvement et cibles comprises.
+              Les mettre côte à côte sans le dire ferait croire à deux réglages
+              de la même chose. */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="rounded-xl">
+              <Sparkles className="mr-2 h-4 w-4" />
+              <span className="min-w-0 flex-1 truncate">Système visuel</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className="w-64 rounded-2xl p-1.5">
+                {SKINS.map((s) => (
+                  <DropdownMenuItem
+                    key={s.key}
+                    className="items-start rounded-xl"
+                    onSelect={() => setSkin(s.key)}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-13">{s.label}</span>
+                      <span className="block text-[11px] leading-snug text-muted-foreground">
+                        {s.hint}
+                      </span>
+                    </span>
+                    {skin === s.key && <Check className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuSubContent>

@@ -1,7 +1,15 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Loader2, Trash2, Calendar, FolderKanban, X, ArrowLeft } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  CalendarBlankIcon as Calendar,
+  KanbanIcon as FolderKanban,
+  XIcon as X,
+  ArrowLeftIcon as ArrowLeft,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

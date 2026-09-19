@@ -1,4 +1,4 @@
-import { Palette, Check } from "lucide-react";
+import { PaletteIcon as Palette, CheckIcon as Check } from "@phosphor-icons/react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";

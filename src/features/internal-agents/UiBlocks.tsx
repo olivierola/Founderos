@@ -13,9 +13,22 @@ import {
   PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
 import {
-  ExternalLink, TrendingUp, TrendingDown, FileText, Presentation, Table as TableIcon, Image as ImageIcon, Type,
-  ShieldCheck, Check, X, Loader2, ChartBar, Braces, Code2,
-} from "lucide-react";
+  ArrowSquareOutIcon as ExternalLink,
+  TrendUpIcon as TrendingUp,
+  TrendDownIcon as TrendingDown,
+  FileTextIcon as FileText,
+  PresentationChartIcon as Presentation,
+  TableIcon,
+  ImageIcon,
+  TextTIcon as Type,
+  ShieldCheckIcon as ShieldCheck,
+  CheckIcon as Check,
+  XIcon as X,
+  CircleNotchIcon as Loader2,
+  ChartBarIcon as ChartBar,
+  BracketsCurlyIcon as Braces,
+  CodeIcon as Code2,
+} from "@phosphor-icons/react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -194,7 +207,7 @@ function DeliverableBlock({ props, agentName, onOpen }: {
   return (
     <WorkCard
       title={name}
-      subtitle={agentName ? `Créé par ${agentName}` : (DELIVERABLE_LABELS[kind] ?? kind)}
+      subtitle={agentName ? `Créé par ${agentName}` : "Livrable de l'agent"}
       kind={kind}
       onOpen={open}
     />
@@ -202,8 +215,10 @@ function DeliverableBlock({ props, agentName, onOpen }: {
 }
 
 const DELIVERABLE_LABELS: Record<string, string> = {
-  report: "Rapport", markdown: "Document", json: "Données", file: "Fichier",
-  url: "Lien", code: "Code", csv: "Tableur",
+  report: "Rapport", presentation: "Présentation", document: "Document",
+  markdown: "Document", json: "Données", file: "Fichier",
+  url: "Lien", code: "Code", csv: "Tableur", spreadsheet: "Tableur",
+  image: "Image", text: "Note",
 };
 
 // ── artifact (document/presentation/spreadsheet/image/text, created by
@@ -256,6 +271,9 @@ function WorkCard({ title, subtitle, kind, imageUrl, onOpen }: {
 }) {
   const Icon = ARTIFACT_ICONS[kind] ?? FileText;
   const tone = ARTIFACT_TONE[kind] ?? ARTIFACT_TONE.document;
+  // The type is a property of the object, not a fallback for a missing author:
+  // it rides on the card as its own chip, always visible.
+  const label = DELIVERABLE_LABELS[kind] ?? kind;
   return (
     <motion.div
       whileHover={{ y: -2 }}
@@ -286,8 +304,11 @@ function WorkCard({ title, subtitle, kind, imageUrl, onOpen }: {
       {/* Content */}
       <div className="flex min-w-0 flex-1 items-center gap-4 px-6 py-5">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-lg font-semibold tracking-tight text-card-foreground">{title}</div>
-          <div className="mt-1 truncate text-sm text-muted-foreground">{subtitle}</div>
+          <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", tone.bg, tone.icon)}>
+            {label}
+          </span>
+          <div className="mt-1.5 truncate text-lg font-semibold tracking-tight text-card-foreground">{title}</div>
+          <div className="mt-0.5 truncate text-sm text-muted-foreground">{subtitle}</div>
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onOpen(); }}

@@ -1,8 +1,22 @@
 import {
-  Boxes, Megaphone, Headphones, Wallet, Code2, Users, ShoppingCart, Truck,
-  Scale, Palette, LineChart, ShieldCheck, Rocket, BookOpen, Building2, Sparkles,
-  type LucideIcon,
-} from "lucide-react";
+  CubeIcon as Boxes,
+  MegaphoneIcon as Megaphone,
+  HeadphonesIcon as Headphones,
+  WalletIcon as Wallet,
+  CodeIcon as Code2,
+  UsersIcon as Users,
+  ShoppingCartIcon as ShoppingCart,
+  TruckIcon as Truck,
+  ScalesIcon as Scale,
+  PaletteIcon as Palette,
+  ChartLineIcon as LineChart,
+  ShieldCheckIcon as ShieldCheck,
+  RocketLaunchIcon as Rocket,
+  BookOpenIcon as BookOpen,
+  BuildingsIcon as Building2,
+  SparkleIcon as Sparkles,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 /**

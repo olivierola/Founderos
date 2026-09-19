@@ -1,4 +1,8 @@
-import { ArrowDown, ArrowUp, Minus } from "lucide-react";
+import {
+  ArrowDownIcon as ArrowDown,
+  ArrowUpIcon as ArrowUp,
+  MinusIcon as Minus,
+} from "@phosphor-icons/react";
 import { formatCompact } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { iconByName } from "../crmIcons";

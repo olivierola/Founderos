@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Save, FileEdit, Bot, Plus, Trash2 } from "lucide-react";
+import {
+  FloppyDiskIcon as Save,
+  NotePencilIcon as FileEdit,
+  RobotIcon as Bot,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ModuleProject } from "../moduleProjectModel";

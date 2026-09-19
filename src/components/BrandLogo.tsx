@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plug } from "lucide-react";
+import { PlugIcon as Plug } from "@phosphor-icons/react";
 import {
   siGmail, siGoogle, siGithub, siStripe, siHubspot, siIntercom, siNotion,
   siLinear, siAirtable, siPosthog, siPlausibleanalytics, siSentry, siFigma,

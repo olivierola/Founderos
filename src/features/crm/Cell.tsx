@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, X, ExternalLink, Plus } from "lucide-react";
+import {
+  CheckIcon as Check,
+  XIcon as X,
+  ArrowSquareOutIcon as ExternalLink,
+  PlusIcon as Plus,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { iconByName } from "./crmIcons";
 import type { CrmProperty, CrmRecord, SelectOption, RelatedDisplay } from "./objectModel";

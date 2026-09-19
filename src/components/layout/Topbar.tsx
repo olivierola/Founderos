@@ -1,4 +1,10 @@
-import { Search, Bell, PanelLeft, PanelLeftOpen, LogOut } from "lucide-react";
+import {
+  MagnifyingGlassIcon as Search,
+  BellIcon as Bell,
+  SidebarSimpleIcon as PanelLeft,
+  SidebarSimpleIcon as PanelLeftOpen,
+  SignOutIcon as LogOut,
+} from "@phosphor-icons/react";
 import { ChatCircleDotsIcon } from "@phosphor-icons/react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Input } from "@/components/ui/input";

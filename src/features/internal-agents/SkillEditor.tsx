@@ -8,9 +8,17 @@ import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronLeft, Plus, FolderPlus, FileText, FileCode, MoreVertical,
-  Loader2, Trash2, Pencil, Lock,
-} from "lucide-react";
+  CaretLeftIcon as ChevronLeft,
+  PlusIcon as Plus,
+  FolderPlusIcon as FolderPlus,
+  FileTextIcon as FileText,
+  FileCodeIcon as FileCode,
+  DotsThreeVerticalIcon as MoreVertical,
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  PencilSimpleIcon as Pencil,
+  LockIcon as Lock,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,

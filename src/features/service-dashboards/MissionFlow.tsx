@@ -1,9 +1,17 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Loader2, Target, ChevronDown, FileText, CheckCircle2, XCircle, Clock,
-  Brain, Wrench, Activity,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  TargetIcon as Target,
+  CaretDownIcon as ChevronDown,
+  FileTextIcon as FileText,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  ClockIcon as Clock,
+  BrainIcon as Brain,
+  WrenchIcon as Wrench,
+  PulseIcon as Activity,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { cn } from "@/lib/utils";
@@ -129,15 +137,12 @@ function MissionCard({ mission, participants, defaultOpen }: {
   const running = (tasks ?? []).filter((t) => t.status === "in_progress");
 
   return (
-    <div className={cn(
-      "overflow-hidden rounded-xl border bg-card transition-colors",
-      live ? "border-indigo-300/70 dark:border-indigo-800/70" : "border-border/60",
-    )}>
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
       <button
         type="button" onClick={() => setOpen((v) => !v)}
         className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left"
       >
-        <Target className={cn("mt-0.5 h-4 w-4 shrink-0", live ? "text-indigo-500" : "text-muted-foreground")} />
+        <Target className={cn("mt-0.5 h-4 w-4 shrink-0", live ? "text-foreground/70" : "text-muted-foreground")} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{mission.title}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -214,7 +219,7 @@ function TaskRow({ task, agent, tasks }: { task: RoomTask; agent?: Participant; 
     .filter((d): d is RoomTask => Boolean(d) && !["done", "skipped"].includes(d!.status));
 
   return (
-    <div className={cn("rounded-lg border bg-background/60", active ? "border-sky-300/70 dark:border-sky-800/70" : "border-border/50")}>
+    <div className="rounded-lg border border-border/50 bg-background/60">
       <button
         type="button" onClick={() => setOpen((v) => !v)}
         className="flex w-full items-start gap-2 px-2.5 py-2 text-left"

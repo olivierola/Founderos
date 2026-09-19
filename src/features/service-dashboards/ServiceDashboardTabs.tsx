@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Loader2, X } from "lucide-react";
+import { CircleNotchIcon as Loader2, XIcon as X } from "@phosphor-icons/react";
 import {
-  RobotIcon, PlusIcon, ChatsCircleIcon, CalendarDotsIcon, CaretRightIcon,
+  RobotIcon, PlusIcon, CalendarDotsIcon, CaretRightIcon,
   CheckCircleIcon, XCircleIcon, TargetIcon, PencilSimpleIcon, ArrowLeftIcon,
   GearSixIcon, LightningIcon, FileTextIcon, BrainIcon, FlowArrowIcon,
   ChartBarIcon, PlugsConnectedIcon, PlayIcon, PauseIcon, TrashIcon, ClockCountdownIcon,
@@ -18,6 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { StatisticsCard7 } from "@/components/ui/statistics-card-7";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
@@ -27,8 +28,6 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useResizableWidth } from "@/hooks/useResizableWidth";
 import { AgentIdentity } from "@/components/AgentIdentity";
-import { AgentOrb } from "@/components/AgentOrb";
-import { BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 import { useAssistant } from "@/lib/assistant-context";
 import {
@@ -41,13 +40,12 @@ import { AgentTerminalPanel } from "@/features/internal-agents/AgentTerminalPane
 import { AppTestPanel } from "@/features/ops/AppTestPanel";
 import { type InternalAgent } from "@/features/internal-agents/shared";
 import { type StudioKind } from "@/features/internal-agents/agentTemplates";
-import { createRoom, addRoomAgent } from "./model";
-import { SLASH_COMMANDS, expandSlash, sendToRoom } from "./roomCompose";
-import { ChatInput } from "@/components/ui/chat-input";
+
+import { RoomLauncher } from "./RoomLauncher";
 import { AssetsHub } from "./AssetsHub";
 import { MemoryGraph } from "./MemoryGraph";
 import { CatalogCard } from "./CatalogCard";
-import { GradientBackground } from "@/components/ui/paper-design-shader-background";
+import { GetStartedCard } from "./GetStarted";
 import {
   useComposioToolkits, useConnectorStatus, toolSlugsFromRows, resolveNeeds,
 } from "./useToolkits";
@@ -56,8 +54,8 @@ import {
   fetchAgentFolders, createAgentFolder, renameAgentFolder, deleteAgentFolder, moveAgentToFolder,
   FOLDER_COLORS, type AgentFolder,
 } from "./agentFolders";
-import { useHqData, useHqRefresh, HqCockpit } from "@/features/dashboard/hq/Cockpit";
 import type { RangeKey } from "@/features/crm/overview/crmStats";
+import { firstOccurrenceLocal, toAlignment, type Cadence, type Cadenced } from "./scheduleCadence";
 
 // Agents scoped to this dashboard drive every other tab (rooms, schedules,
 // activity, artifacts are all their conversations / missions / runs / outputs).
@@ -77,8 +75,9 @@ export interface DashboardAgent {
   requires_approval?: boolean | null;
 }
 
-function useDashboardAgents(dashboardId: string) {
-  return useQuery({
+export function useDashboardAgents(dashboardId: string) {
+  const { projectId } = useCurrentContext();
+  const own = useQuery({
     queryKey: ["sd_agents", dashboardId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -91,6 +90,31 @@ function useDashboardAgents(dashboardId: string) {
       return (data ?? []) as DashboardAgent[];
     },
   });
+
+  // Le Rédacteur belongs to the PROJECT, not to one dashboard: he writes the
+  // reports of every service, so he shows up in each of their rosters. Fetched
+  // apart, and never rethrown — on a database where migration 0206 has not run
+  // the column is missing, and that must cost his row, not the whole roster.
+  const reporter = useQuery({
+    queryKey: ["sd_reporter", projectId],
+    enabled: !!projectId,
+    retry: false,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("internal_agents").select("*")
+        .eq("project_id", projectId!).eq("system_role", "reporter").eq("is_archived", false)
+        .limit(1);
+      return (data ?? []) as DashboardAgent[];
+    },
+  });
+
+  const merged = useMemo(() => {
+    const base = own.data ?? [];
+    const extra = (reporter.data ?? []).filter((r) => !base.some((b) => b.id === r.id));
+    return [...base, ...extra];
+  }, [own.data, reporter.data]);
+
+  return { ...own, data: merged };
 }
 
 /** A customer-facing agent (rag_agents) filed under this service dashboard. */
@@ -150,16 +174,25 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
     queryKey: ["sd_agent_counts", dashboardId, ids.join(",")],
     enabled: ids.length > 0,
     queryFn: async () => {
-      const [tools, skills] = await Promise.all([
+      const [tools, skills, work] = await Promise.all([
         supabase.from("internal_agent_tools").select("agent_id, kind, config").in("agent_id", ids),
         supabase.from("agent_skill_activations").select("agent_id").in("agent_id", ids),
+        // Le travail QUI LUI EST CONFIÉ (0232). C'est ce qui manquait pour que
+        // la fiche d'un agent dise autre chose que sa configuration : un agent
+        // se juge à ce qu'il porte, pas au nombre d'outils qu'on lui a donnés.
+        //
+        // L'erreur n'est jamais relancée : sur une base où 0232 n'est pas
+        // passée, la table n'existe pas, et cela doit coûter un badge — pas
+        // tout le roster.
+        supabase.from("pj_issue_agents").select("agent_id").in("agent_id", ids),
       ]);
-      const map = new Map<string, { tools: number; skills: number; slugs: string[] }>();
+      const map = new Map<string, { tools: number; skills: number; work: number; slugs: string[] }>();
       const row = (id: string) => {
-        const cur = map.get(id) ?? { tools: 0, skills: 0, slugs: [] as string[] };
+        const cur = map.get(id) ?? { tools: 0, skills: 0, work: 0, slugs: [] as string[] };
         map.set(id, cur);
         return cur;
       };
+      for (const r of (work.data ?? []) as Array<{ agent_id: string }>) row(r.agent_id).work += 1;
       for (const r of (tools.data ?? []) as Array<{ agent_id: string; kind: string; config: Record<string, unknown> | null }>) {
         const cur = row(r.agent_id);
         cur.tools += 1;
@@ -169,7 +202,7 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
       return map;
     },
   });
-  const countMap = counts ?? new Map<string, { tools: number; skills: number; slugs: string[] }>();
+  const countMap = counts ?? new Map<string, { tools: number; skills: number; work: number; slugs: string[] }>();
 
   // Composio catalogue + this project's connection status, fetched once for the
   // whole grid so each card can show which of its apps still need connecting.
@@ -318,8 +351,8 @@ function AgentGallery({ title, dot, agents, counts, folders, toolkits, connStatu
   /** Tailwind bg class of the folder's colour dot, when this is a folder. */
   dot?: string;
   agents: DashboardAgent[];
-  /** agentId → { tools, skills }, fetched once for the whole roster. */
-  counts: Map<string, { tools: number; skills: number; slugs: string[] }>;
+  /** agentId → { tools, skills, work }, fetched once for the whole roster. */
+  counts: Map<string, { tools: number; skills: number; work: number; slugs: string[] }>;
   /** Composio catalogue + connection status, to draw the app logos. */
   toolkits: ComposioToolkit[] | undefined;
   connStatus: Map<string, string> | undefined;
@@ -384,6 +417,15 @@ function AgentGallery({ title, dot, agents, counts, folders, toolkits, connStatu
               extras={c?.skills ?? null}
               tools_needed={resolveNeeds(c?.slugs ?? [], toolkits, connStatus)}
               badges={[
+                // La charge D'ABORD : c'est la seule des trois qui change d'un
+                // jour à l'autre, et la seule qui appelle une décision.
+                ...(c?.work
+                  ? [{
+                    label: `${c.work} work item${c.work > 1 ? "s" : ""}`,
+                    tone: "auth" as const,
+                    title: "Travail assigné dans le suivi",
+                  }]
+                  : []),
                 { label: a.model ?? "deepseek", tone: "auth", title: "Modèle" },
                 { label: a.sandbox_mode ?? "cloud", tone: "key", title: "Environnement d'exécution" },
               ]}
@@ -467,8 +509,15 @@ function PublicAgentGallery({ agents, dashboardId, onOpen }: {
                 </DropdownMenu>
               }
               glyph={
-                <span className="flex h-14 w-14 items-center justify-center rounded-xl" style={{ background: `${color}26` }}>
-                  <GlobeIcon weight="duotone" className="h-7 w-7" style={{ color }} />
+                // The plate sits on the card stage, which is near-black in both
+                // themes — so the glyph has to be light in both. The agent
+                // colour moves to the plate; a theme token here would go
+                // dark-on-dark in light mode.
+                <span
+                  className="flex h-14 w-14 items-center justify-center rounded-xl ring-1 ring-white/10"
+                  style={{ background: `${color}40` }}
+                >
+                  <GlobeIcon weight="duotone" className="h-7 w-7 text-white/85" />
                 </span>
               }
               name={a.name}
@@ -569,7 +618,7 @@ type AgentDetailTab = "settings" | "instructions" | "skills" | "connectors" | "a
 // page's own tab strip.
 const AGENT_DETAIL_TABS: { key: AgentDetailTab; label: string; icon: any }[] = [
   { key: "settings", label: "Général", icon: GearSixIcon },
-  { key: "instructions", label: "Instructions", icon: FileTextIcon },
+  { key: "instructions", label: "Fichiers", icon: FileTextIcon },
   { key: "skills", label: "Compétences", icon: LightningIcon },
   { key: "connectors", label: "Outils", icon: PlugsConnectedIcon },
   { key: "automations", label: "Automatisations", icon: FlowArrowIcon },
@@ -657,14 +706,14 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
             projectId={projectId}
             onConversationChange={setConvoId}
             headerLeading={
-              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2 py-1 shadow-sm backdrop-blur">
+              <div className="flex h-9 items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2.5 shadow-sm backdrop-blur">
                 <button onClick={() => navigate(`${sbase}/agents`)} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground" title="Retour aux agents"><ArrowLeftIcon className="h-3.5 w-3.5" /></button>
-                <AgentIdentity style={agent.avatar_style ?? "orb"} url={agent.avatar_url} seed={agent.name} size={20} rounded="rounded-full" />
+                <AgentIdentity style={agent.avatar_style ?? "orb"} url={agent.avatar_url} seed={agent.name} size={22} rounded="rounded-full" />
                 <span className="max-w-[160px] truncate text-xs font-semibold leading-tight">{agent.name}</span>
               </div>
             }
             headerTrailing={
-              <div className="flex items-center gap-1.5">
+              <div className="flex h-9 items-center gap-0.5 rounded-full border border-border/60 bg-background/70 px-1 shadow-sm backdrop-blur">
                 {/* Watch the machine: the app it's testing, and its shell. */}
                 <SidePanelToggle
                   icon={MonitorPlayIcon} title="Tester une app"
@@ -680,14 +729,14 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
                 <button
                   onClick={() => assistant.ask({ agent: { id: agent.id, name: agent.name } })}
                   title="Configurer avec l'assistant"
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <SparkleIcon weight="duotone" className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => navigate(`${sbase}/agent-config/${agent.id}`)}
                   title="Configuration de l'agent"
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <GearSixIcon className="h-4 w-4" />
                 </button>
@@ -743,10 +792,10 @@ function SidePanelToggle({
     <button
       onClick={onClick} title={title}
       className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-full border shadow-sm backdrop-blur transition-colors",
+        "flex h-7 w-7 items-center justify-center rounded-full transition-colors",
         active
-          ? "border-primary/40 bg-primary/15 text-primary"
-          : "border-border/60 bg-background/70 text-muted-foreground hover:text-foreground",
+          ? "bg-primary/15 text-primary"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
     >
       <Icon className="h-4 w-4" />
@@ -880,14 +929,12 @@ export function AgentConfigInDashboard({ dashboardId, agentId }: { dashboardId: 
 // recurring agent missions. A schedule is an internal_agent_missions row with a
 // cadence (hourly/daily/weekly/monthly) + UTC alignment (schedule_minute/hour/
 // dow/dom); the internal-agent-scheduler fires it and advances next_run_at.
-type Cadence = "hourly" | "daily" | "weekly" | "monthly";
 interface ScheduleRow {
   id: string; agent_id: string; title: string; brief: string | null;
   schedule: Cadence | null; schedule_minute: number | null; schedule_hour: number | null;
   schedule_dow: number | null; schedule_dom: number | null;
   status: string; next_run_at: string | null; last_run_at: string | null; board_column: string | null;
 }
-interface Cadenced { cadence: Cadence; minute: number; hour: number; dow: number; dom: number; }
 
 const CADENCE_META: Record<Cadence, { short: string; label: string; desc: string; icon: PhosphorIcon }> = {
   hourly: { short: "Horaire", label: "Toutes les heures", desc: "À chaque heure, à la minute choisie", icon: ArrowsClockwiseIcon },
@@ -912,42 +959,6 @@ function relTime(iso: string | null): string {
   const days = Math.round(hrs / 24);
   if (days < 30) return wrap(`${days} j`);
   return wrap(`${Math.round(days / 30)} mois`);
-}
-
-// First occurrence strictly after `now`, computed in the user's LOCAL time from
-// the picked minute/hour/day. We persist next_run_at (this instant) plus the UTC
-// parts as the alignment the server-side scheduler recomputes against.
-function firstOccurrenceLocal(sel: Cadenced, now = new Date()): Date {
-  const d = new Date(now);
-  d.setSeconds(0, 0);
-  if (sel.cadence === "hourly") {
-    d.setMinutes(sel.minute);
-    if (d <= now) d.setHours(d.getHours() + 1);
-    return d;
-  }
-  d.setHours(sel.hour, sel.minute);
-  if (sel.cadence === "daily") { if (d <= now) d.setDate(d.getDate() + 1); return d; }
-  if (sel.cadence === "weekly") {
-    let delta = (sel.dow - d.getDay() + 7) % 7;
-    if (delta === 0 && d <= now) delta = 7;
-    d.setDate(d.getDate() + delta);
-    return d;
-  }
-  // monthly
-  d.setDate(sel.dom);
-  if (d <= now) d.setMonth(d.getMonth() + 1, sel.dom);
-  return d;
-}
-
-// UTC alignment fields derived from a concrete occurrence, so the pure-UTC
-// scheduler lands on the same wall-clock cadence.
-function toAlignment(sel: Cadenced, occ: Date) {
-  return {
-    schedule_minute: occ.getUTCMinutes(),
-    schedule_hour: sel.cadence === "hourly" ? null : occ.getUTCHours(),
-    schedule_dow: sel.cadence === "weekly" ? occ.getUTCDay() : null,
-    schedule_dom: sel.cadence === "monthly" ? Math.min(occ.getUTCDate(), 28) : null,
-  };
 }
 
 // Human, local-time description derived from the concrete next_run_at instant.
@@ -1039,11 +1050,46 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
       </div>
 
       {/* Stat strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatCard icon={PlayIcon} tone="emerald" label="Actives" value={activeCount} />
-        <StatCard icon={PauseIcon} tone="muted" label="En pause" value={pausedCount} />
-        <StatCard icon={TimerIcon} tone="amber" label="Prochaine exécution" value={nextUp ? relTime(nextUp) : "—"} sub={nextUp ? fmt(nextUp) : undefined} />
-      </div>
+      <StatisticsCard7
+        cards={[
+          {
+            key: "active",
+            title: "Actives",
+            subtitle: "Se déclenchent à leur cadence",
+            value: String(activeCount),
+            valueClassName: activeCount > 0 ? "text-emerald-600 dark:text-emerald-400" : undefined,
+            badge: rows.length > 0
+              ? { text: `${Math.round((activeCount / rows.length) * 100)}%`, icon: PlayIcon, tone: activeCount > 0 ? "positive" : "neutral" }
+              : undefined,
+            subtext: (
+              <span className="text-muted-foreground">
+                sur {rows.length} planification{rows.length > 1 ? "s" : ""}
+              </span>
+            ),
+          },
+          {
+            key: "paused",
+            title: "En pause",
+            subtitle: "Ne se déclencheront plus",
+            value: String(pausedCount),
+            badge: pausedCount > 0 ? { text: "à relancer", icon: PauseIcon, tone: "neutral" } : undefined,
+            subtext: (
+              <span className="text-muted-foreground">
+                {pausedCount === 0 ? "tout tourne" : "reprise manuelle"}
+              </span>
+            ),
+          },
+          {
+            key: "next",
+            title: "Prochaine exécution",
+            subtitle: nextUp ? "Échéance la plus proche" : "Aucune échéance",
+            value: nextUp ? relTime(nextUp) : "—",
+            valueClassName: nextUp ? "text-amber-600 dark:text-amber-400" : undefined,
+            badge: nextUp ? { text: "planifiée", icon: TimerIcon, tone: "info" } : undefined,
+            subtext: <span className="text-muted-foreground">{nextUp ? fmt(nextUp) : "Créez une planification"}</span>,
+          },
+        ]}
+      />
 
       {isLoading ? <Centered /> : rows.length === 0 ? (
         <Empty icon={CalendarDotsIcon} title="Aucune tâche planifiée" hint="Créez une planification pour qu'un agent exécute une mission à intervalle régulier." />
@@ -1122,22 +1168,6 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
           onSaved={() => { invalidate(); setEditing(null); }}
         />
       )}
-    </div>
-  );
-}
-
-function StatCard({ icon: Icon, tone, label, value, sub }: {
-  icon: PhosphorIcon; tone: "emerald" | "amber" | "muted"; label: string; value: string | number; sub?: string;
-}) {
-  const toneCls = tone === "emerald" ? "bg-emerald-500/10 text-emerald-500"
-    : tone === "amber" ? "bg-amber-500/10 text-amber-500" : "bg-muted text-muted-foreground";
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3.5 shadow-sm">
-      <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", toneCls)}><Icon className="h-4 w-4" /></span>
-      <div className="min-w-0">
-        <div className="truncate text-lg font-semibold leading-tight">{value}</div>
-        <div className="truncate text-[11px] text-muted-foreground">{sub ?? label}</div>
-      </div>
     </div>
   );
 }
@@ -1349,53 +1379,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 // cockpit is rendered here on THIS dashboard's agents only — same components,
 // same derivations as AI Headquarters, scoped to the service. The activity feed
 // survives inside its "Vue d'ensemble" tab.
-export function DashboardStatsTab({ dashboardId, dashboardName }: {
-  dashboardId: string; dashboardName: string;
-}) {
-  const { workspaceSlug, projectSlug } = useParams();
-  const navigate = useNavigate();
-  const { projectId } = useCurrentContext();
-  const [range, setRange] = useState<RangeKey>("30d");
-  const { raw, isLoading, isFetching, hasAgents } = useHqData(projectId, dashboardId);
-  const refresh = useHqRefresh();
-  const base = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
-
-  if (!projectId || isLoading) return <Centered />;
-  if (!hasAgents) {
-    return (
-      <div className="p-6">
-        <Empty icon={ChartBarIcon} title="Aucune donnée à afficher"
-          hint="Ajoutez un agent à ce service : ses exécutions, coûts, outils et livrables apparaîtront ici." />
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-full px-6 py-6">
-      <div className="mx-auto max-w-[1400px]">
-        <HqCockpit
-          raw={raw}
-          isFetching={isFetching}
-          range={range}
-          onRangeChange={setRange}
-          onRefresh={refresh}
-          hideServices
-          header={
-            <div>
-              <h1 className="text-[26px] font-semibold tracking-tight">{dashboardName}</h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Toutes les statistiques de ce service — exécutions, coûts, outils, connaissances et gouvernance.
-              </p>
-            </div>
-          }
-          onOpenAgent={(id) => navigate(`${base}/agent/${id}`)}
-          onOpenCollection={(id) => navigate(`/app/${workspaceSlug}/${projectSlug}/agent/knowledge/${id}`)}
-        />
-      </div>
-    </div>
-  );
-}
-
 // ── Workspace memory — what the agents have learned about the team (facts,
 // preferences, learnings, context), workspace-wide. Replaces the old Activity tab.
 const MEM_LABEL: Record<string, string> = { fact: "Fait", preference: "Préférence", learning: "Appris", context: "Contexte" };
@@ -1509,173 +1492,40 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
   );
 }
 
-// ── Home — the dashboard landing: orb + greeting, three entry cards
-// (agent / room / schedule) and the daily-brief connector CTA.
-function HomeActionCard({ icon: Icon, title, desc, busy, onClick }: {
-  icon: PhosphorIcon; title: string; desc: string; busy?: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick} disabled={busy}
-      className="group flex h-[175px] flex-col rounded-2xl border border-border/70 p-5 text-left transition-colors hover:border-border hover:bg-card/50 disabled:opacity-60"
-    >
-      <span className="text-muted-foreground transition-colors group-hover:text-foreground">
-        {busy ? <Loader2 className="h-[22px] w-[22px] animate-spin" /> : <Icon className="h-[22px] w-[22px]" strokeWidth={1.6} />}
-      </span>
-      <span className="mt-auto">
-        <span className="block text-[16px] font-semibold text-foreground">{title}</span>
-        <span className="block text-sm text-muted-foreground">{desc}</span>
-      </span>
-    </button>
-  );
-}
-
+// ── Home — the dashboard landing: a question, the composer that answers it,
+// and the setup checklist. No animated ground, no orb: the page is the field.
 export function HomeTab({ dashboardId, dashboardName, workspaceId, projectId }: {
   dashboardId: string; dashboardName: string; workspaceId: string; projectId: string;
 }) {
   const { user } = useAuth();
-  const { workspaceSlug, projectSlug } = useParams();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const base = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
   const firstName = ((user?.user_metadata?.name as string | undefined) || user?.email?.split("@")[0] || "there").split(" ")[0];
   const { data: agents } = useDashboardAgents(dashboardId);
-  const lead = (agents ?? []).find((a) => (a as { is_orchestrator?: boolean }).is_orchestrator) ?? (agents ?? [])[0];
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  /** A submission that failed to send, kept so it can be retried. */
-  const [pending, setPending] = useState<{ roomId: string | null; raw: string; files: File[]; mentionedIds: string[] } | null>(null);
-
-  async function startRoom(title = "Nouvelle room"): Promise<string | null> {
-    const roomId = await createRoom({ id: dashboardId, name: dashboardName }, workspaceId, projectId, user!.id, title);
-    queryClient.invalidateQueries({ queryKey: ["service_rooms", dashboardId] });
-    return roomId;
-  }
-
-  async function startEmptyRoom() {
-    if (starting || !user) return;
-    setStarting(true);
-    try {
-      const roomId = await startRoom();
-      if (roomId) navigate(`${base}/room/${roomId}`);
-    } finally { setStarting(false); }
-  }
-
-  // Type here and the conversation exists: a room is created, titled from what
-  // you wrote, the agents you tagged are added to it, the message is sent — and
-  // only then do we open the room, so a failed send is reported HERE instead of
-  // dropping you in an empty room. Same composer and same send path as inside a
-  // room (roomCompose.ts); the turn itself runs in the background server-side,
-  // so this is one short round trip, not the agent's answer.
-  async function startRoomWith(raw: string, files: File[], mentionedIds: string[], reuseRoomId?: string | null) {
-    if ((!raw.trim() && files.length === 0) || starting || !user) return;
-    setStarting(true);
-    setStartError(null);
-    let roomId = reuseRoomId ?? null;
-    try {
-      if (!roomId) {
-        const title = expandSlash(raw).split("\n")[0]!.slice(0, 60) || (files[0]?.name ?? "Nouvelle room");
-        roomId = await startRoom(title);
-      }
-      if (!roomId) throw new Error("La room n'a pas pu être créée.");
-      // A tagged agent has to be IN the room to be able to answer it.
-      for (const id of mentionedIds) await addRoomAgent(roomId, id);
-      await sendToRoom({ roomId, workspaceId, projectId, userId: user.id }, raw, mentionedIds, files);
-      queryClient.invalidateQueries({ queryKey: ["service_room_messages", roomId] });
-      setPending(null);
-      navigate(`${base}/room/${roomId}`);
-    } catch (e) {
-      // The composer clears on submit, so what was typed is held here — retrying
-      // reuses the room already created rather than leaving an empty one behind.
-      setPending({ roomId, raw, files, mentionedIds });
-      setStartError(e instanceof Error ? e.message : String(e));
-    } finally { setStarting(false); }
-  }
 
   return (
-    /* The shader field is dark whatever the app theme is, so the dark tokens are
-       scoped to this subtree — the cards and copy below read against it in both
-       themes without being restyled one by one. `isolate` keeps the -z-10 layers
-       inside this stacking context rather than sliding behind the shell. */
-    <div className="dark relative isolate flex min-h-full flex-col items-center px-6 py-16 text-foreground">
-      <GradientBackground />
-      <div aria-hidden className="absolute inset-0 -z-10 bg-black/25" />
+    /* Flat ground: the page runs on the app's own surface — no shader field
+       behind the copy, nothing moving under a text box. The column is centred;
+       the copy inside it is not, so the eye starts on the same x as the
+       composer's first character. */
+    <div className="flex min-h-full flex-col justify-center px-6 py-16 text-foreground">
+      <div className="mx-auto w-full max-w-[760px]">
+        <div className="text-[13px] text-muted-foreground">{dashboardName}</div>
+        <h1 className="mt-1 text-[30px] font-medium leading-tight tracking-tight">
+          Que voulez-vous faire, {firstName} ?
+        </h1>
 
-      <AgentOrb size={76} accentColor={(lead as { accent_color?: string | null } | undefined)?.accent_color} />
-      <h1 className="mt-7 text-[26px] font-semibold tracking-tight">Welcome, {firstName}</h1>
-
-      {/* The way in: write, and the room is created around what you wrote. */}
-      <div className="mt-8 w-full max-w-[720px]">
-        <ChatInput
-          busy={starting}
-          placeholder="Demandez quelque chose à votre équipe… @ pour taguer un agent, / pour un livrable"
-          mentionAgents={(agents ?? []).map((a) => ({ id: a.id, name: a.name, accentColor: a.accent_color }))}
-          slashCommands={SLASH_COMMANDS.map((c) => ({ key: c.key, label: c.label, color: c.color, icon: c.icon }))}
-          onSendMessage={(msg, files, mentionedIds) => { void startRoomWith(msg, files, mentionedIds); }}
+        {/* The way in: write, and the room is created around what you wrote. */}
+        <RoomLauncher
+          className="mt-7"
+          dashboardId={dashboardId} dashboardName={dashboardName}
+          workspaceId={workspaceId} projectId={projectId}
+          agents={agents ?? []}
         />
-        <p className="mt-2 text-center text-xs text-muted-foreground">
-          {starting ? "Création de la room…" : "Une nouvelle room est créée pour cette conversation."}
-        </p>
-        {startError && (
-          <div className="mt-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
-            <div className="text-destructive">Envoi impossible : {startError}</div>
-            {pending && (
-              <div className="mt-1.5 flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-muted-foreground" title={pending.raw}>« {pending.raw} »</span>
-                <button
-                  onClick={() => void startRoomWith(pending.raw, pending.files, pending.mentionedIds, pending.roomId)}
-                  className="shrink-0 font-medium text-foreground underline"
-                >
-                  Réessayer
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
-      {/* Three entry points, as in the mockup. */}
-      <div className="mt-12 grid w-full max-w-[860px] gap-6 sm:grid-cols-3">
-        <HomeActionCard icon={RobotIcon} title="Create an agent" desc="A new AI teammate" onClick={() => navigate(`${base}/agents/new`)} />
-        <HomeActionCard icon={ChatsCircleIcon} title="Create a room" desc="Start an empty conversation" busy={starting} onClick={startEmptyRoom} />
-        <HomeActionCard icon={CalendarDotsIcon} title="Automate a task" desc="Schedule recurring work" onClick={() => navigate(`${base}/schedules`)} />
+        {/* The entry points, as steps: create an agent, plug your apps in,
+            open a room, schedule the recurring work. Each one is ticked by
+            real data, and the card leaves once they are all done. */}
+        <GetStartedCard dashboardId={dashboardId} className="mt-9" />
       </div>
-
-      {/* Daily brief */}
-      <div className="mt-8 w-full max-w-[860px] rounded-2xl border border-border/70 p-6">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
-            <div className="text-[17px] font-semibold">Setup Your Daily Brief</div>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              Gmail, Agenda, Notion, Slack, GitHub.
-            </p>
-            <button
-              onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}/connectors`)}
-              className="mt-3 text-sm font-medium text-primary hover:underline"
-            >
-              Click to setup
-            </button>
-          </div>
-          <ConnectorTile />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// The colourful app-icon tile of the daily-brief card.
-function ConnectorTile() {
-  const apps = ["gmail", "google-calendar", "notion", "slack", "github"];
-  return (
-    <div
-      className="grid h-[130px] w-[165px] shrink-0 grid-cols-3 place-items-center gap-2 rounded-xl p-3"
-      style={{ background: "linear-gradient(135deg,#f7c59f 0%,#f2a1c0 28%,#b7b0e8 55%,#9ad0f0 78%,#c9e6d8 100%)" }}
-    >
-      {apps.map((slug) => (
-        <span key={slug} className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/95 shadow-sm">
-          <BrandLogo slug={slug} className="h-5 w-5" />
-        </span>
-      ))}
     </div>
   );
 }

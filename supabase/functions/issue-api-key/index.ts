@@ -32,6 +32,15 @@ Deno.serve(async (req) => {
       .eq("user_id", userData.user.id)
       .maybeSingle();
     if (!m) return jsonResponse({ error: "Not a workspace member" }, { status: 403 });
+    // FOS-18 : la seule condition etait l'appartenance. Un membre en lecture
+    // seule pouvait donc se delivrer une cle permanente au nom du workspace —
+    // et la revocation de son acces ne revoquait pas la cle.
+    if (!["owner", "admin"].includes(String(m.role))) {
+      return jsonResponse(
+        { error: "Only workspace owners and admins can issue API keys" },
+        { status: 403 },
+      );
+    }
 
     const bytes = new Uint8Array(24);
     crypto.getRandomValues(bytes);

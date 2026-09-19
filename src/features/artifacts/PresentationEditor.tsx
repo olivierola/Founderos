@@ -1,9 +1,18 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  Loader2, ArrowLeft, Check, Sparkles, Download, Presentation as PresIcon,
-  Plus, Trash2, ChevronUp, ChevronDown, Play,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  ArrowLeftIcon as ArrowLeft,
+  CheckIcon as Check,
+  SparkleIcon as Sparkles,
+  DownloadSimpleIcon as Download,
+  PresentationChartIcon as PresIcon,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  CaretUpIcon as ChevronUp,
+  CaretDownIcon as ChevronDown,
+  PlayIcon as Play,
+} from "@phosphor-icons/react";
 import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";

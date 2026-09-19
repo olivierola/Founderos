@@ -15,7 +15,8 @@
 // emit the actual files.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireProjectMember } from "../_shared/authz.ts";
 import { callAi } from "../_shared/ai.ts";
 
 const SYSTEM = `You are a senior DevOps architect. You read a project context and a free-text
@@ -86,12 +87,11 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, message: "workspace_id, project_id and brief are required" }, { status: 400 });
     }
 
-    const userClient = createUserClient(req);
-    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !userInfo?.user) {
-      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
-    }
-    const userId = userInfo.user.id;
+    // Autorisation (FOS-02) : le plan est bâti sur le scan du projet, donc le garde porte sur le
+    // projet propriétaire — résolu en base, jamais pris dans le corps de la requête.
+    const auth = await requireProjectMember(req, project_id, "editor");
+    if (!auth.ok) return auth.response;
+    const userId = auth.userId;
 
     const admin = createServiceClient();
 

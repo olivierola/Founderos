@@ -1,26 +1,72 @@
-// AI Headquarters — the project-wide cockpit over the whole AI workforce.
-// The page owns the framing (hero, live state, navigation); every statistic
-// comes from the shared HQ cockpit, which a single service dashboard reuses on
-// its own scope (see ServiceDashboardTabs → DashboardStatsTab).
-import { useState } from "react";
+// AI Headquarters — le cockpit de toute la force de travail, à l'échelle du
+// projet.
+//
+// La page porte le cadre (héros, état vivant, navigation) ; les statistiques,
+// elles, sont rendues par `AgentStats` — le MÊME composant que l'onglet Agents des
+// analytics d'un service. Les deux écrans regardent le même genre d'objet à
+// deux échelles, et leur donner deux mises en page revenait à faire apprendre
+// deux fois la même lecture.
+//
+// Le cockpit d'origine (`HqCockpit`) avait ses propres tuiles, ses propres graphes
+// et son propre vocabulaire. Il est remplacé ici par les primitives du module de
+// suivi : bandeau de chiffres, graphes, tables cherchables et EXPORTABLES — ce
+// que le cockpit ne savait pas faire.
+import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, FolderKanban, ChevronRight, Sparkles, Activity, Building2 } from "lucide-react";
+import {
+  RobotIcon as Bot,
+  KanbanIcon as FolderKanban,
+  CaretRightIcon as ChevronRight,
+  SparkleIcon as Sparkles,
+  PulseIcon as Activity,
+  BuildingsIcon as Building2,
+} from "@phosphor-icons/react";
+import { SuitcaseSimpleIcon, UserIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { MODULE_PROJECT_CONFIGS } from "@/lib/module-project-config";
 import type { RangeKey } from "@/features/crm/overview/crmStats";
-import { useHqData, useHqRefresh, HqCockpit } from "./hq/Cockpit";
+import { useHqData, useHqRefresh } from "./hq/useHqData";
+import { AgentHealthAlert } from "./AgentHealthAlert";
+import { buildHqView } from "./hq/model";
+import { AgentStats, FilterMenu } from "@/features/tracker/analytics/AgentStats";
+import { filterHqRaw } from "@/features/tracker/analytics/agentStatsFilters";
+import { fetchAgentAttribution } from "@/features/tracker/model";
+import { loadWorkspaceMembers, memberLabel } from "@/features/internal-agents/shared";
 
 export function AiHqDashboard() {
   const { workspaceSlug, projectSlug } = useParams();
   const navigate = useNavigate();
-  const { projectId } = useCurrentContext();
+  const { projectId, workspaceId } = useCurrentContext();
   const [range, setRange] = useState<RangeKey>("30d");
+
+  const [serviceId, setServiceId] = useState<string | null>(null);
+  const [actorId, setActorId] = useState<string | null>(null);
 
   const { raw, isLoading, isFetching, hasAgents } = useHqData(projectId);
   const refresh = useHqRefresh();
+
+  // Qui a demandé quoi : la même lecture run → mission → demandeur que dans
+  // l'onglet d'un service, sur le périmètre entier cette fois.
+  const agentIds = useMemo(() => raw.agents.map((a) => a.id), [raw.agents]);
+  const { data: attribution } = useQuery({
+    queryKey: ["pj_agent_attribution", agentIds.join(",")],
+    enabled: agentIds.length > 0,
+    queryFn: () => fetchAgentAttribution(agentIds),
+  });
+  const { data: directory } = useQuery({
+    queryKey: ["hq_ws_members", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: () => loadWorkspaceMembers(workspaceId!),
+  });
+
+  const filtered = useMemo(
+    () => filterHqRaw(raw, attribution, { serviceId, actorId }),
+    [raw, attribution, serviceId, actorId],
+  );
+  const view = useMemo(() => buildHqView(filtered, range), [filtered, range]);
   const base = `/app/${workspaceSlug}/${projectSlug}`;
 
   const running = raw.runs.filter((r) => r.status === "running" || r.status === "queued").length;
@@ -50,6 +96,8 @@ export function AiHqDashboard() {
       <HqHero running={running} pending={pending} agents={raw.agents.filter((a) => !a.is_archived).length}
         onHire={() => navigate(`${base}/agent`)} />
 
+      <AgentHealthAlert projectId={projectId} />
+
       {!isLoading && !hasAgents ? (
         <div className="rounded-2xl border border-dashed border-border py-16 text-center">
           <Bot className="mx-auto h-10 w-10 text-muted-foreground/30" />
@@ -58,27 +106,59 @@ export function AiHqDashboard() {
           <Button size="sm" className="mt-4" onClick={() => navigate(`${base}/agent`)}>Créer un agent</Button>
         </div>
       ) : (
-        <HqCockpit
-          raw={raw}
-          isLoading={isLoading}
-          isFetching={isFetching}
-          range={range}
-          onRangeChange={setRange}
-          onRefresh={refresh}
-          header={
-            <div>
-              <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-                <Activity className="h-4 w-4 text-muted-foreground" /> Analyse & gouvernance
-              </h2>
-              <p className="text-[11px] text-muted-foreground">
-                Performance, coût, outils, connaissances et santé de la force de travail
-              </p>
-            </div>
-          }
-          onOpenAgent={(id) => navigate(`${base}/agent/internal/${id}/chat`)}
-          onOpenService={(id) => navigate(`${base}/service/${id}`)}
-          onOpenCollection={(id) => navigate(`${base}/agent/knowledge/${id}`)}
-        />
+        <div className="rounded-2xl border border-border/70 bg-card px-5 py-5">
+          <div className="pb-4">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+              <Activity className="h-4 w-4 text-muted-foreground" /> Analyse & gouvernance
+            </h2>
+            <p className="text-[11px] text-muted-foreground">
+              Performance, coût, outils, connaissances et santé de la force de travail
+            </p>
+          </div>
+
+          {/* La ventilation par service n'a de sens QU'ICI : dans un service,
+              on y est déjà. C'est la seule différence de contenu entre les deux
+              écrans, et elle passe par une propriété plutôt que par une copie. */}
+          <AgentStats
+            layoutKey="hq"
+            title="Force de travail"
+            view={view}
+            range={range}
+            onRangeChange={setRange}
+            showServices
+            onRefresh={refresh}
+            isFetching={isFetching}
+            filters={
+              <>
+                {/* Le service EN PREMIER : c'est la découpe la plus large, et
+                    celle qui remplace l'onglet « Services » du cockpit — un
+                    filtre plutôt qu'un écran séparé, pour que tous les autres
+                    chiffres de la page le suivent au lieu de rester globaux. */}
+                <FilterMenu
+                  icon={SuitcaseSimpleIcon}
+                  allLabel="Tous les services"
+                  value={serviceId}
+                  onChange={setServiceId}
+                  options={raw.services.map((sv) => ({ id: sv.id, label: sv.name }))}
+                  emptyHint="Aucun service dans cet espace."
+                />
+                <FilterMenu
+                  icon={UserIcon}
+                  allLabel="Tous les demandeurs"
+                  value={actorId}
+                  onChange={setActorId}
+                  options={(attribution?.actorIds ?? []).map((id) => ({
+                    id,
+                    label: memberLabel((directory ?? []).find((d) => d.user_id === id), id),
+                  }))}
+                  emptyHint="Aucune mission n'a encore de demandeur enregistré."
+                />
+              </>
+            }
+            onOpenAgent={(id) => navigate(`${base}/agent/internal/${id}/chat`)}
+            onOpenService={(id) => navigate(`${base}/service/${id}`)}
+          />
+        </div>
       )}
 
       {deptGroups.length > 0 && (

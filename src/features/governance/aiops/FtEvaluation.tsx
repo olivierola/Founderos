@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { ClipboardCheck, TrendingUp, Loader2, ArrowDown } from "lucide-react";
+import {
+  ClipboardTextIcon as ClipboardCheck,
+  TrendUpIcon as TrendingUp,
+  CircleNotchIcon as Loader2,
+  ArrowDownIcon as ArrowDown,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

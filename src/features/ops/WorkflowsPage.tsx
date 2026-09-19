@@ -2,8 +2,14 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Sparkles, Loader2, Server, Layers, Code2, Wand2, ChevronRight,
-} from "lucide-react";
+  SparkleIcon as Sparkles,
+  CircleNotchIcon as Loader2,
+  HardDrivesIcon as Server,
+  StackIcon as Layers,
+  CodeIcon as Code2,
+  MagicWandIcon as Wand2,
+  CaretRightIcon as ChevronRight,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

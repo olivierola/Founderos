@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { Download, Copy, Check, ChevronDown } from "lucide-react";
+import {
+  DownloadSimpleIcon as Download,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

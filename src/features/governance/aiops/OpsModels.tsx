@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { Cloud, HardDrive, Check, Download } from "lucide-react";
+import {
+  CloudIcon as Cloud,
+  HardDriveIcon as HardDrive,
+  CheckIcon as Check,
+  DownloadSimpleIcon as Download,
+} from "@phosphor-icons/react";
 import { CircuitryIcon, CloudCheckIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";

@@ -8,22 +8,22 @@ import type { TElement } from 'platejs';
 import { DropdownMenuItemIndicator } from '@radix-ui/react-dropdown-menu';
 import {
   CheckIcon,
-  ChevronRightIcon,
-  Code2,
-  Columns3Icon,
+  CaretRightIcon as ChevronRightIcon,
+  CodeIcon as Code2,
+  ColumnsIcon as Columns3Icon,
   FileCodeIcon,
-  Heading1Icon,
-  Heading2Icon,
-  Heading3Icon,
-  Heading4Icon,
-  Heading5Icon,
-  Heading6Icon,
+  TextHOneIcon as Heading1Icon,
+  TextHTwoIcon as Heading2Icon,
+  TextHThreeIcon as Heading3Icon,
+  TextHFourIcon as Heading4Icon,
+  TextHFiveIcon as Heading5Icon,
+  TextHSixIcon as Heading6Icon,
   ListIcon,
-  ListOrderedIcon,
-  PilcrowIcon,
-  QuoteIcon,
+  ListNumbersIcon as ListOrderedIcon,
+  ParagraphIcon as PilcrowIcon,
+  QuotesIcon as QuoteIcon,
   SquareIcon,
-} from 'lucide-react';
+} from "@phosphor-icons/react";
 import { KEYS } from 'platejs';
 import { useEditorRef, useSelectionFragmentProp } from 'platejs/react';
 

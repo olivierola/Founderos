@@ -13,6 +13,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { assertProjectInWorkspace } from "../_shared/authz.ts";
 
 // Small deterministic 0..99 bucket from a string (FNV-1a).
 function bucket(s: string): number {
@@ -43,6 +44,15 @@ Deno.serve(async (req) => {
       distinct_id?: string;
     };
     if (!project_id) return jsonResponse({ error: "project_id required" }, { status: 400 });
+
+    // FOS-10 : ces points d'entree restent PUBLICS — le SDK analytics tourne
+    // dans le navigateur d'un visiteur non connecte. Ce qu'on ferme, c'est
+    // l'ecriture croisee : workspace_id et project_id arrivaient tous deux du
+    // client sans jamais etre recoupes, donc on inserait dans le projet d'un
+    // tiers en annoncant son propre workspace.
+    if (workspace_id && !(await assertProjectInWorkspace(project_id, workspace_id))) {
+      return jsonResponse({ error: "project_id does not belong to workspace_id" }, { status: 403 });
+    }
 
     const admin = createServiceClient();
     let q = admin

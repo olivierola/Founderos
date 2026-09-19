@@ -2,10 +2,28 @@
 // Each node references a real row via (asset_type, ref_id); the canvas reads
 // live data through these definitions so the map reflects the true state.
 import {
-  Users, Handshake, FileText, Receipt, FolderKanban, ListChecks, Bot, Library,
-  UserRound, UserPlus, LifeBuoy, Package, Truck, FileSignature, type LucideIcon,
-  MessageSquare, Server, GitBranch, Plug, Phone, Globe,
-} from "lucide-react";
+  UsersIcon as Users,
+  HandshakeIcon as Handshake,
+  FileTextIcon as FileText,
+  ReceiptIcon as Receipt,
+  KanbanIcon as FolderKanban,
+  ListChecksIcon as ListChecks,
+  RobotIcon as Bot,
+  BooksIcon as Library,
+  UserIcon as UserRound,
+  UserPlusIcon as UserPlus,
+  LifebuoyIcon as LifeBuoy,
+  PackageIcon as Package,
+  TruckIcon as Truck,
+  SignatureIcon as FileSignature,
+  type Icon as LucideIcon,
+  ChatIcon as MessageSquare,
+  HardDrivesIcon as Server,
+  GitBranchIcon as GitBranch,
+  PlugIcon as Plug,
+  PhoneIcon as Phone,
+  GlobeIcon as Globe,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 
 export interface AssetTypeDef {

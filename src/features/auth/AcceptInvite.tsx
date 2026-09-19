@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  CircleNotchIcon as Loader2,
+  CheckCircleIcon as CheckCircle2,
+  WarningCircleIcon as AlertCircle,
+} from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";

@@ -1,9 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Wrench, Loader2, CheckCircle2, XCircle, Clock, AlertTriangle,
-  PlayCircle, RotateCcw, ChevronRight, Filter, X, ShieldAlert,
-} from "lucide-react";
+  WrenchIcon as Wrench,
+  CircleNotchIcon as Loader2,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  ClockIcon as Clock,
+  WarningIcon as AlertTriangle,
+  PlayCircleIcon as PlayCircle,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  CaretRightIcon as ChevronRight,
+  FunnelIcon as Filter,
+  XIcon as X,
+  ShieldWarningIcon as ShieldAlert,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

@@ -5,7 +5,14 @@ import ReactFlow, {
   type Node, type Edge, type NodeProps,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { Users, Clock, Webhook, Cloud, Server, Database } from "lucide-react";
+import {
+  UsersIcon as Users,
+  ClockIcon as Clock,
+  WebhooksLogoIcon as Webhook,
+  CloudIcon as Cloud,
+  HardDrivesIcon as Server,
+  DatabaseIcon as Database,
+} from "@phosphor-icons/react";
 import { PulseIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";

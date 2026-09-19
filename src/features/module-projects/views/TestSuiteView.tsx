@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { Plus, Trash2, TestTube2, CheckCircle, XCircle, Clock, Play } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  TestTubeIcon as TestTube2,
+  CheckCircleIcon as CheckCircle,
+  XCircleIcon as XCircle,
+  ClockIcon as Clock,
+  PlayIcon as Play,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ModuleProject } from "../moduleProjectModel";

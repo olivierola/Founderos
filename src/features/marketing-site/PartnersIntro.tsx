@@ -1,6 +1,11 @@
 import { useRef, useState } from "react";
 import { useScroll, useMotionValueEvent } from "framer-motion";
-import { Circle, Hexagon, Triangle, Wind } from "lucide-react";
+import {
+  CircleIcon as Circle,
+  HexagonIcon as Hexagon,
+  TriangleIcon as Triangle,
+  WindIcon as Wind,
+} from "@phosphor-icons/react";
 
 // Static, greyscale customer/partner wordmarks (text-based — no asset files). The
 // slight per-mark font variation reads like a real logo wall.

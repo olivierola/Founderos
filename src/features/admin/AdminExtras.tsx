@@ -1,5 +1,10 @@
 import { Link, useParams } from "react-router-dom";
-import { Check, CreditCard, Loader2, Minus } from "lucide-react";
+import {
+  CheckIcon as Check,
+  CreditCardIcon as CreditCard,
+  CircleNotchIcon as Loader2,
+  MinusIcon as Minus,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

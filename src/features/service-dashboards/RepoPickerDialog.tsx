@@ -1,7 +1,16 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Github, Search, Check, Loader2, Lock, GitFork, AlertCircle, ExternalLink } from "lucide-react";
+import {
+  GithubLogoIcon as Github,
+  MagnifyingGlassIcon as Search,
+  CheckIcon as Check,
+  CircleNotchIcon as Loader2,
+  LockIcon as Lock,
+  GitForkIcon as GitFork,
+  WarningCircleIcon as AlertCircle,
+  ArrowSquareOutIcon as ExternalLink,
+} from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";

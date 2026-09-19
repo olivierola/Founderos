@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import {
-  Library,
-  Search,
-  ChevronRight,
-  BarChart3,
-  Hash,
-  Table as TableIcon,
-  List as ListIcon,
-} from "lucide-react";
+  BooksIcon as Library,
+  MagnifyingGlassIcon as Search,
+  CaretRightIcon as ChevronRight,
+  ChartBarIcon as BarChart3,
+  HashIcon as Hash,
+  TableIcon,
+  ListIcon,
+} from "@phosphor-icons/react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,

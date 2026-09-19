@@ -2,7 +2,18 @@ import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { aiopsTabPath } from "@/lib/navigation";
-import { Package, Rocket, Trophy, Coins, Cpu, Database, GraduationCap, ArrowRight, Loader2, ArrowDown } from "lucide-react";
+import {
+  PackageIcon as Package,
+  RocketLaunchIcon as Rocket,
+  TrophyIcon as Trophy,
+  CoinsIcon as Coins,
+  CpuIcon as Cpu,
+  DatabaseIcon as Database,
+  GraduationCapIcon as GraduationCap,
+  ArrowRightIcon as ArrowRight,
+  CircleNotchIcon as Loader2,
+  ArrowDownIcon as ArrowDown,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";

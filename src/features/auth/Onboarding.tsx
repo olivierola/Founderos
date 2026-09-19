@@ -1,5 +1,10 @@
 import { Link } from "react-router-dom";
-import { Github, Boxes, ScanLine, Sparkles } from "lucide-react";
+import {
+  GithubLogoIcon as Github,
+  CubeIcon as Boxes,
+  ScanIcon as ScanLine,
+  SparkleIcon as Sparkles,
+} from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 

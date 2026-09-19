@@ -285,6 +285,8 @@ export function selectTools(defs: ToolDef[], opts: ToolSelectOptions): ToolSelec
 /** One block of the system prompt. Order in SECTION_ORDER is what ships. */
 export type SectionId =
   | "identity"      // who you are — never changes for a run
+  | "company"       // WHERE you work: the company profile & its live objectives
+  | "soul"          // the soul file: character, voice, values (agent-stable)
   | "instructions"  // the owner's authored instructions
   | "doctrine"      // role doctrine (orchestrator, security…)
   | "presence"      // conversational conduct (chat only)
@@ -294,21 +296,40 @@ export type SectionId =
   | "memory"        // this agent's durable memory, task-selected
   | "team_memory"   // shared team knowledge, task-selected
   | "recent_work"   // what this agent just did, task-selected
+  | "preferences"   // the preferences file, task-selected — the agent writes here
   | "context";      // free-form caller context (room thread, mission brief…)
 
 /** Stable → volatile. Everything above `memory` is byte-identical across the
- *  ticks of one run, which is exactly what a provider prefix cache needs. */
+ *  ticks of one run, which is exactly what a provider prefix cache needs.
+ *
+ *  `soul` sits at the top with the identity: it never moves for a given agent,
+ *  so it costs the cache nothing. `company` sits between the two — an agent
+ *  should know WHO it is and WHERE it works before it is told what to do, and
+ *  the company profile changes about as often as the soul does, so it costs the
+ *  cache nothing either. `preferences` sits at the BOTTOM, and that placement is
+ *  the point — it is the one section the agent can rewrite MID-RUN
+ *  (remember_preference), and a prefix cache breaks from the first changed byte
+ *  onwards. Last means one learned preference invalidates almost nothing. */
 const SECTION_ORDER: SectionId[] = [
-  "identity", "instructions", "doctrine", "presence", "rules",
-  "toolbox", "skills", "memory", "team_memory", "recent_work", "context",
+  "identity", "company", "soul", "instructions", "doctrine", "presence", "rules",
+  "toolbox", "skills", "memory", "team_memory", "recent_work", "preferences", "context",
 ];
 
 const SECTION_HEADING: Partial<Record<SectionId, string>> = {
   doctrine: "",
   presence: "",
+  // L'en-tête dit ce que l'agent doit FAIRE de ce contexte. Sans cette
+  // phrase, le profil d'entreprise se lit comme du décor et n'influence rien.
+  company: "## L'entreprise pour laquelle tu travailles\n" +
+    "Ce n'est pas du décor : c'est le cadre de chaque décision que tu prends. " +
+    "Le ton, le client type et les contraintes s'appliquent à tout ce que tu produis, sans qu'on te le redemande. " +
+    "Les objectifs marqués [À TOI] ou [TON SERVICE] sont ce sur quoi ton travail est jugé — quand une tâche peut les servir, sers-les ; quand elle les contredit, dis-le plutôt que de choisir en silence. " +
+    "Le reste des objectifs et l'organigramme complet s'obtiennent avec `company_objectives` et `explore_company_graph`.",
+  soul: "## Qui tu es (ton âme — ce fichier ne change pas selon la tâche)\nC'est ton caractère, pas une consigne de plus : ta voix, ce à quoi tu tiens, ce sur quoi tu ne transiges pas. Il colore TOUT ce que tu dis et fais, y compris quand tu refuses.",
   rules: "## Operating rules",
   toolbox: "",
-  skills: "## Activated skills (your specialised playbooks)\nThese skills are activated for you. They are NOT loaded yet — when a step needs one, call use_skill(<slug>) to pull its full playbook into context, then apply it. Plan which skill each step needs.",
+  skills: "## Skills — sélectionnées pour CETTE tâche\nCelles listées ci-dessous ne sont PAS chargées : appelle use_skill(<slug>) juste avant l'étape qui en a besoin. Une skill marquée PRÉCHARGÉE est déjà là, applique-la. Le roster complet s'obtient avec list_skills().",
+  preferences: "## Préférences de ton utilisateur (sélectionnées pour cette tâche)\nCe sont ses habitudes, apprises au fil du temps : respecte-les sans qu'on te le redemande. Elles ne remplacent jamais tes instructions ni tes règles de sécurité. Quand l'utilisateur en exprime une nouvelle, ou en corrige une, enregistre-la avec remember_preference — elle vaut pour toutes tes prochaines sessions.",
   memory: "## Your persistent memory (carried over from previous sessions — selected for this task)",
   team_memory: "## Shared TEAM memory (contributed by you and your teammates — selected for this task)",
   recent_work: "## Your recent work (latest runs — you already did this; build on it, don't redo it)",

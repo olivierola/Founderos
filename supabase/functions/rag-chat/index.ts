@@ -6,11 +6,13 @@
 // and logs the conversation + messages.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
+import { callerIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { embedTexts, toVectorLiteral } from "../_shared/jina.ts";
 import { callAi, callAiWithTools } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import { loadPublicAgentTools } from "../_shared/public-agent-mcp.ts";
+import { judgeTurn, visitorContext } from "../_shared/public-agent-telemetry.ts";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -19,6 +21,13 @@ Deno.serve(async (req) => {
   // answering a shopper on someone's storefront or a developer in the
   // playground, and it cannot re-read the consumed request body.
   let isPublicCaller = false;
+  // Départ du chrono de première réponse : mesuré depuis l'entrée dans la
+  // fonction, ce qui inclut l'embedding et la recherche vectorielle — le
+  // visiteur, lui, attend tout ça.
+  const startedAt = Date.now();
+  // Renseigné dès qu'une conversation existe, pour que le catch puisse la
+  // marquer « sans réponse » plutôt que de la laisser dans un état muet.
+  let telemetryConvId: string | null = null;
   try {
     const body = await req.json();
     const { public_key, message, conversation_id, visitor_id, rating } = body;
@@ -42,12 +51,28 @@ Deno.serve(async (req) => {
         .from("rag_agents").select("id").eq("public_key", public_key).maybeSingle();
       if (!rated) return jsonResponse({ error: "Agent not found" }, { status: 404 });
       await admin.from("rag_conversations")
-        .update({ rating: score })
+        .update({ rating: score, rated_at: new Date().toISOString() })
         .eq("id", conversation_id).eq("agent_id", rated.id);
       return jsonResponse({ ok: true });
     }
 
     if (!message) return jsonResponse({ error: "message required" }, { status: 400 });
+
+    // FOS-15 — le widget est anonyme et chaque tour appelle un LLM : sans
+    // plafond, une boucle sur la clé publique d'un agent facture son
+    // propriétaire aussi longtemps qu'elle tourne. Deux dimensions, parce
+    // qu'aucune ne suffit seule : la clé publique borne le coût total d'un
+    // agent, l'IP empêche un visiteur de consommer à lui seul ce plafond.
+    if (public_key) {
+      const perAgent = await enforceRateLimit(
+        { scope: "ragchat:agent", identity: String(public_key), limit: 120, windowSeconds: 60 },
+      );
+      if (perAgent) return perAgent;
+      const perVisitor = await enforceRateLimit(
+        { scope: "ragchat:ip", identity: `${public_key}:${callerIp(req)}`, limit: 20, windowSeconds: 60 },
+      );
+      if (perVisitor) return perVisitor;
+    }
 
     // Resolve the agent either by public_key (widget) or by id (authenticated).
     let agent: any = null;
@@ -67,7 +92,14 @@ Deno.serve(async (req) => {
       const { data: mem } = await admin
         .from("workspace_members").select("role").eq("workspace_id", workspace_id).eq("user_id", userData.user.id).maybeSingle();
       if (!mem) return jsonResponse({ error: "Not authorized" }, { status: 403 });
-      const { data } = await admin.from("rag_agents").select("*").eq("id", agent_id).maybeSingle();
+      // …et l'agent DOIT appartenir à ce workspace. Sans ce second filtre, le
+      // contrôle ci-dessus ne prouve rien : l'appelant passe son propre
+      // workspace_id (dont il est bien membre) avec l'agent_id d'un autre
+      // client, et repart avec sa persona, ses instructions et — question après
+      // question via match_rag_chunks — toute sa base documentaire (FOS-09).
+      const { data } = await admin
+        .from("rag_agents").select("*")
+        .eq("id", agent_id).eq("workspace_id", workspace_id).maybeSingle();
       agent = data;
       source = "playground";
     }
@@ -92,14 +124,27 @@ Deno.serve(async (req) => {
     // this turn is audited against it, and an audit row that can't say which
     // conversation caused it is of little use.
     let convId = conversation_id as string | undefined;
+    // Rang du tour : sert à distinguer « répondu du premier coup » de « le
+    // visiteur a dû reformuler quatre fois ». Sur une conversation neuve, 1.
+    let turnIndex = 1;
     if (!convId) {
       const { data: conv } = await admin
         .from("rag_conversations")
-        .insert({ workspace_id: agent.workspace_id, project_id: agent.project_id, agent_id: agent.id, visitor_id: visitor_id ?? null, source })
+        .insert({
+          workspace_id: agent.workspace_id, project_id: agent.project_id, agent_id: agent.id,
+          visitor_id: visitor_id ?? null, source,
+          ...visitorContext(req, body),
+        })
         .select("id")
         .single();
       convId = conv?.id;
+    } else {
+      const { data: prev } = await admin
+        .from("rag_conversations")
+        .select("user_message_count").eq("id", convId).eq("agent_id", agent.id).maybeSingle();
+      turnIndex = (prev?.user_message_count ?? 0) + 1;
     }
+    telemetryConvId = convId ?? null;
 
     // MCP tools the merchant has granted this agent (catalogue search, cart,
     // whatever the attached servers expose). Empty for a plain RAG agent, which
@@ -177,6 +222,27 @@ ${context || "(no knowledge indexed yet)"}`;
       provider, model, task: "rag_chat", feature: "rag-agent", usage,
     });
     if (convId) {
+      // Le verdict du tour (migration 0217). Écrit avec les mêmes signaux que
+      // ceux rendus au visiteur : les chunks réellement cités, les outils
+      // réellement joués. Un échec d'écriture ici ne doit jamais coûter la
+      // réponse au visiteur, d'où le catch silencieux.
+      const verdict = judgeTurn({
+        message: String(message),
+        groundedChunks: chunks.length,
+        toolCalls: mcp?.stats.calls ?? 0,
+        toolErrors: mcp?.stats.errors ?? 0,
+        turnIndex,
+        firstResponseMs: Date.now() - startedAt,
+      });
+      await admin.rpc("rag_conversation_record_turn", {
+        p_conversation: convId,
+        p_grounded: chunks.length > 0,
+        p_tool_calls: mcp?.stats.calls ?? 0,
+        p_first_response_ms: Date.now() - startedAt,
+        p_outcome: verdict.outcome,
+        p_outcome_reason: verdict.reason,
+      }).then(() => {}, (e: unknown) => console.error("[rag-chat] telemetry", e));
+
       await admin.from("rag_messages").insert([
         { conversation_id: convId, agent_id: agent.id, role: "user", content: String(message) },
         {
@@ -198,6 +264,18 @@ ${context || "(no knowledge indexed yet)"}`;
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    // Une question posée qui n'a produit aucune réponse : c'est une issue en
+    // soi, et la masquer ferait mentir le taux de résolution vers le haut.
+    // `is("outcome", null)` : seule une conversation qui n'a JAMAIS abouti est
+    // marquée ainsi — un pépin au cinquième tour ne réécrit pas quatre échanges
+    // réussis.
+    if (telemetryConvId) {
+      await createServiceClient()
+        .from("rag_conversations")
+        .update({ outcome: "abandoned", outcome_reason: "error", last_message_at: new Date().toISOString() })
+        .eq("id", telemetryConvId).is("outcome", null)
+        .then(() => {}, () => {});
+    }
     // The public widget renders whatever comes back in a chat bubble on a
     // customer's own site. Upstream provider errors ("model X does not exist",
     // key names, endpoints) are internal plumbing and must not surface there;

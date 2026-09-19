@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Check, Plug, AlertTriangle, CalendarClock, Zap } from "lucide-react";
+import {
+  CircleNotchIcon as Loader2,
+  CheckIcon as Check,
+  PlugIcon as Plug,
+  WarningIcon as AlertTriangle,
+  CalendarDotsIcon as CalendarClock,
+  LightningIcon as Zap,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";

@@ -2,10 +2,26 @@ import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Search, Star, Download, ExternalLink, FileText, FileJson, FileCode,
-  Link2, Paperclip, Package, Filter, X, Target, ArrowLeft, BarChart3, GitPullRequest,
-  FlaskConical, Atom,
-} from "lucide-react";
+  MagnifyingGlassIcon as Search,
+  StarIcon as Star,
+  DownloadSimpleIcon as Download,
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+  FileCodeIcon as FileJson,
+  FileCodeIcon as FileCode,
+  LinkSimpleIcon as Link2,
+  PaperclipIcon as Paperclip,
+  PackageIcon as Package,
+  FunnelIcon as Filter,
+  XIcon as X,
+  TargetIcon as Target,
+  ArrowLeftIcon as ArrowLeft,
+  ChartBarIcon as BarChart3,
+  GitPullRequestIcon as GitPullRequest,
+  FlaskIcon as FlaskConical,
+  AtomIcon as Atom,
+  PresentationChartIcon as Presentation,
+} from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
@@ -20,6 +36,7 @@ import {
 } from "./shared";
 import { ArtifactReport, ArtifactDeck } from "@/features/artifacts/BlockRenderer";
 import { parseDocument } from "@/features/artifacts/blocks";
+import { parseReportArtisan, ReportArtisanView } from "@/features/artifacts/ReportArtisanView";
 import { CodingSession, tryParseCodingSession } from "./CodingSession";
 import {
   TestSession, SimulationSession, tryParseTestSession, tryParseSimulationSession,
@@ -52,8 +69,18 @@ function darken(hex: string, amt = 0.5): string {
   return "#" + ch.map((c) => c.toString(16).padStart(2, "0")).join("");
 }
 
+// The type a reader sees. Raw kinds are storage words ("presentation",
+// "markdown"); a card is read by a human.
+const KIND_LABEL: Record<string, string> = {
+  report: "Rapport", presentation: "Présentation", markdown: "Document",
+  json: "Données", code: "Code", url: "Lien", file: "Fichier", csv: "Tableur",
+  coding_session: "Session de code", test_session: "Session de test",
+  simulation_session: "Simulation",
+};
+
 const KIND_ICON: Record<string, any> = {
   report: BarChart3,
+  presentation: Presentation,
   coding_session: GitPullRequest,
   test_session: FlaskConical,
   simulation_session: Atom,
@@ -89,8 +116,14 @@ function DeliverableBody({ d }: { d: Deliverable }) {
   if (d.kind === "json" || d.kind === "code") {
     return <pre className="overflow-x-auto rounded-xl border border-border bg-muted/40 p-3 text-xs"><code>{d.content ?? "(no inline content)"}</code></pre>;
   }
+  // A Rédacteur report is a finished HTML file, not blocks — show the file.
+  const built = parseReportArtisan(d.content);
+  // Inside a scrolling list the frame cannot fill its parent — it gets a height
+  // of its own, and its own full-screen button for reading it properly.
+  if (built) return <ReportArtisanView payload={built} title={d.name} fill={false} height="min(75vh, 820px)" />;
+
   const doc = parseDocument(d.content);
-  return d.kind === "presentation" ? <ArtifactDeck doc={doc} /> : <ArtifactReport doc={doc} />;
+  return d.kind === "presentation" ? <ArtifactDeck doc={doc} title={d.name} /> : <ArtifactReport doc={doc} />;
 }
 
 export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
@@ -214,7 +247,7 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
           variant={pinnedOnly ? "default" : "outline"}
           onClick={() => setPinnedOnly((p) => !p)}
         >
-          <Star className={cn("mr-1 h-3.5 w-3.5", pinnedOnly && "fill-current")} /> Pinned
+          <Star weight={pinnedOnly ? "fill" : "regular"} className="mr-1 h-3.5 w-3.5" /> Pinned
         </Button>
         {kinds.length > 0 && (
           <select
@@ -223,7 +256,7 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
           >
             <option value="">All types</option>
-            {kinds.map((k) => <option key={k} value={k}>{k}</option>)}
+            {kinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k] ?? k}</option>)}
           </select>
         )}
         {(missions ?? []).length > 0 && (
@@ -339,11 +372,11 @@ function DeliverableDetail({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate text-sm font-semibold">{d.name}</span>
-          <Badge variant="outline" className="shrink-0 text-[10px]">{d.kind}</Badge>
+          <Badge variant="outline" className="shrink-0 text-[10px]">{KIND_LABEL[d.kind] ?? d.kind}</Badge>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" variant="outline" onClick={onTogglePin}>
-            <Star className={cn("mr-1 h-3.5 w-3.5", d.is_pinned && "fill-current text-amber-500")} />
+            <Star weight={d.is_pinned ? "fill" : "regular"} className={cn("mr-1 h-3.5 w-3.5", d.is_pinned && "text-amber-500")} />
             {d.is_pinned ? "Pinned" : "Pin"}
           </Button>
           {d.file_url && (

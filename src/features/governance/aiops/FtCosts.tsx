@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { Coins, Cpu, TrendingUp, Calculator } from "lucide-react";
+import {
+  CoinsIcon as Coins,
+  CpuIcon as Cpu,
+  TrendUpIcon as TrendingUp,
+  CalculatorIcon as Calculator,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Card } from "@/components/ui/card";

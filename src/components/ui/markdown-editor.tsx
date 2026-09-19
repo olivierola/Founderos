@@ -1,8 +1,22 @@
 import { useCallback, useRef } from "react";
 import {
-  Loader2, Save, Check, Eye, Pencil, Bold, Italic, Strikethrough,
-  Heading1, Heading2, Heading3, List, ListOrdered, Quote, Code, Link2,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  FloppyDiskIcon as Save,
+  CheckIcon as Check,
+  EyeIcon as Eye,
+  PencilSimpleIcon as Pencil,
+  TextBIcon as Bold,
+  TextItalicIcon as Italic,
+  TextStrikethroughIcon as Strikethrough,
+  TextHOneIcon as Heading1,
+  TextHTwoIcon as Heading2,
+  TextHThreeIcon as Heading3,
+  ListIcon as List,
+  ListNumbersIcon as ListOrdered,
+  QuotesIcon as Quote,
+  CodeIcon as Code,
+  LinkSimpleIcon as Link2,
+} from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";

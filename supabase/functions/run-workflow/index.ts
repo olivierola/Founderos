@@ -68,17 +68,43 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return jsonResponse({ error: "Missing Authorization" }, { status: 401 });
-    const userClient = createUserClient(authHeader);
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+
+    /**
+     * Deux appelants, deux preuves d'identité.
+     *
+     * Un humain arrive avec sa session : on vérifie qu'il est membre du
+     * workspace. Le RUNTIME arrive avec la clé de service — c'est lui qui
+     * exécute déjà les agents, et c'est par là qu'un agent lance une procédure
+     * (`use_procedure(mode="run")`).
+     *
+     * Cette porte n'existait pas : `auth.getUser()` échoue sur une clé de
+     * service, donc toute demande venue du runtime repartait en « Invalid
+     * session ». Une procédure ne pouvait être lancée que par un humain
+     * cliquant sur « Tester » — ce qui rendait impossible ce pour quoi les
+     * procédures existent : que les agents s'en servent.
+     *
+     * La comparaison est EXACTE et faite sur l'en-tête entier : rien qui
+     * ressemble à un jeton d'utilisateur ne peut la satisfaire.
+     */
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const isService = !!serviceKey && authHeader === `Bearer ${serviceKey}`;
+
+    let userId: string | null = null;
+    if (!isService) {
+      const userClient = createUserClient(authHeader);
+      const { data: userData, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+      userId = userData.user.id;
+    }
 
     const body = await req.json().catch(() => ({}));
     const { workflow_id, trigger_payload, action, run_id } = body as Record<string, unknown>;
     const admin = createServiceClient();
-    const userId = userData.user.id;
 
-    /** Membership check — every action below mutates a workspace's runs. */
+    /** Membership check — every action below mutates a workspace's runs. Le
+     *  runtime n'a pas de compte : son droit vient de la clé, déjà vérifiée. */
     const canTouch = async (workspaceId: string) => {
+      if (isService) return true;
       const { data } = await admin.from("workspace_members").select("role")
         .eq("workspace_id", workspaceId).eq("user_id", userId).maybeSingle();
       return Boolean(data);

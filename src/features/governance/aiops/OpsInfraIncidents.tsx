@@ -1,5 +1,9 @@
 import { useMemo, useState } from "react";
-import { ServerCrash, Server, Flame } from "lucide-react";
+import {
+  HardDrivesIcon as ServerCrash,
+  HardDrivesIcon as Server,
+  FlameIcon as Flame,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

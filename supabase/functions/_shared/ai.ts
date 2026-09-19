@@ -100,9 +100,24 @@ export async function callAi(opts: CallOpts): Promise<{ content: string; provide
   // (finish_reason==="length") is transparently continued and stitched. jsonMode
   // can't be safely stitched across continuations, so it stays single-shot.
   // Both reuse postChat's retry/backoff + malformed-call recovery.
-  const json = opts.jsonMode
-    ? await postChat(url, apiKey, body)
-    : await completeChat(url, apiKey, body);
+  const send = (u: string, k: string, b: Record<string, unknown>) =>
+    (opts.jsonMode ? postChat(u, k, b) : completeChat(u, k, b));
+
+  let json: ToolChatResponse;
+  try {
+    json = await send(url, apiKey ?? "", body);
+  } catch (e) {
+    // Ces appels-là sont des one-shot courts (résumés, classements, briefings) :
+    // ils tiennent sans effort dans la fenêtre de Groq. Quand le compte DeepSeek
+    // est à sec, les laisser mourir arrêterait la moitié du produit — briefing
+    // quotidien, génération marketing, extraction — pour une raison qui n'a rien
+    // à voir avec eux.
+    const groqKey = Deno.env.get("GROQ_API_KEY");
+    if (!(e instanceof ProviderExhaustedError) || ep || provider !== "deepseek" || !groqKey) throw e;
+    json = await send(TOOL_ENDPOINTS.groq, groqKey, { ...body, model: GROQ_MODEL });
+    const fallbackContent = json.choices?.[0]?.message?.content ?? "";
+    return { content: fallbackContent, provider: "groq", model: json.model ?? GROQ_MODEL, usage: json.usage };
+  }
   const content = json.choices?.[0]?.message?.content ?? "";
   return { content, provider, model: json.model ?? model, usage: json.usage };
 }
@@ -169,6 +184,11 @@ interface ToolLoopOpts {
   temperature?: number;
   maxTokens?: number;
   maxRounds?: number; // safety cap on tool-call iterations
+  /** Epoch ms after which no new round starts: the loop stops calling tools and
+   *  writes its answer from what it has. For callers running inside a bounded
+   *  worker (sub-agents) — a result delivered short beats a result killed with
+   *  the worker, whose spend is lost entirely. */
+  deadlineAt?: number;
   /** Out-of-band notices (e.g. a detected incomplete/malformed tool call) so
    *  the caller can surface them in the run timeline. Best-effort. */
   onNotice?: (n: { type: "tool_error" | "info"; message: string; detail?: string }) => Promise<void>;
@@ -352,7 +372,14 @@ async function chatWithinBudget(opts: {
 }): Promise<BudgetedChat> {
   const budget = REQUEST_TOKEN_BUDGET[opts.provider];
   const deepseekKey = opts.pinned ? null : Deno.env.get("DEEPSEEK_API_KEY") ?? null;
+  const groqKey = opts.pinned ? null : Deno.env.get("GROQ_API_KEY") ?? null;
   const canFailover = !opts.pinned && opts.provider === "groq" && !!deepseekKey;
+  // La bascule inverse n'existait pas : DeepSeek portait tout le trafic (voir
+  // routeAiRequest), et le jour où son compte tombe à sec, TOUS les agents
+  // s'arrêtent d'un coup. Groq ne remplace pas DeepSeek — sa fenêtre est cinq
+  // fois plus étroite — mais un run qui continue en écrivant moins vaut mieux
+  // qu'un run qui meurt sur un 402.
+  const canFallBackToGroq = !opts.pinned && opts.provider === "deepseek" && !!groqKey;
   let msgs = ensureToolPairing(shrinkOldToolResults(opts.messages));
 
   // Pre-flight: a body we can already see is over budget is squeezed before the
@@ -387,16 +414,40 @@ async function chatWithinBudget(opts: {
       // Quota spent on this provider: squeezing cannot help and the reset is
       // half an hour away. Move the work, or say so plainly.
       if (e instanceof ProviderExhaustedError) {
-        if (!canFailover) throw e;
-        await opts.onNotice?.({
-          type: "info",
-          message: `Quota ${opts.provider} épuisé — bascule sur DeepSeek pour la suite du run.`,
-        }).catch(() => {});
-        return {
-          json: await completeChat(TOOL_ENDPOINTS.deepseek, deepseekKey!, opts.build(msgs, DEEPSEEK_MODEL)),
-          provider: "deepseek",
-          model: DEEPSEEK_MODEL,
-        };
+        if (canFailover) {
+          await opts.onNotice?.({
+            type: "info",
+            message: `Quota ${opts.provider} épuisé — bascule sur DeepSeek pour la suite du run.`,
+          }).catch(() => {});
+          return {
+            json: await completeChat(TOOL_ENDPOINTS.deepseek, deepseekKey!, opts.build(msgs, DEEPSEEK_MODEL)),
+            provider: "deepseek",
+            model: DEEPSEEK_MODEL,
+          };
+        }
+        if (canFallBackToGroq) {
+          // Groq tient 10k tokens là où DeepSeek en tient 48k : envoyer le
+          // transcrit tel quel se ferait refuser aussitôt. On le comprime
+          // d'abord au budget de la destination — l'agent perd du contexte
+          // ancien, il ne perd pas son run.
+          let small = msgs;
+          for (let pass = 0; pass < 3 && estimateTokens(opts.build(small, GROQ_MODEL)) > REQUEST_TOKEN_BUDGET.groq; pass++) {
+            small = ensureToolPairing(squeeze(small, pass));
+          }
+          await opts.onNotice?.({
+            type: "info",
+            message: e.kind === "unfunded"
+              ? "Crédits DeepSeek épuisés — bascule sur Llama 3.3 (Groq) pour la suite du run. Rechargez le compte DeepSeek."
+              : "Quota DeepSeek épuisé — bascule sur Llama 3.3 (Groq) pour la suite du run.",
+            detail: "Fenêtre plus étroite : le contexte le plus ancien a été compacté.",
+          }).catch(() => {});
+          return {
+            json: await completeChat(TOOL_ENDPOINTS.groq, groqKey!, opts.build(small, GROQ_MODEL)),
+            provider: "groq",
+            model: GROQ_MODEL,
+          };
+        }
+        throw e;
       }
       if (!(e instanceof PayloadTooLargeError)) throw e;
       lastError = e;
@@ -454,7 +505,10 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
       content: "You've finished using tools. Write your FINAL reply to the user now in markdown: a concise summary of what you did, the key results/findings, and any deliverables produced. Do NOT call any tools and do NOT output any tool-call markup.",
     });
     try {
-      const sj = await completeChat(url, apiKey, { model, messages: ensureToolPairing(messages), temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000 });
+      // `apiKey` vaut `string | undefined` (Deno.env.get) ; les deux autres
+      // appels à completeChat coalescent déjà (lignes 108 et 407), celui-ci
+      // l'avait oublié et faisait échouer `deno check` sur tout le projet.
+      const sj = await completeChat(url, apiKey ?? "", { model, messages: ensureToolPairing(messages), temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens ?? 4000 });
       if (sj.usage) {
         usageTotal.prompt_tokens += sj.usage.prompt_tokens ?? 0;
         usageTotal.completion_tokens += sj.usage.completion_tokens ?? 0;
@@ -472,7 +526,13 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
   let activeUrl = url;
   let activeKey = apiKey;
   let activeModel = model;
+  const outOfTime = () => opts.deadlineAt != null && Date.now() >= opts.deadlineAt;
+  const stopForTime = async (): Promise<ToolLoopResult> => {
+    await opts.onNotice?.({ type: "info", message: "Budget de temps atteint — synthèse de ce qui a déjà été trouvé." }).catch(() => {});
+    return { content: await finalizeAnswer(""), provider: activeProvider, model: modelName, usage: usageTotal, toolCalls };
+  };
   for (let round = 0; round < maxRounds; round++) {
+    if (round > 0 && outOfTime()) return await stopForTime();
     const sent = await chatWithinBudget({
       url: activeUrl, apiKey: activeKey, provider: activeProvider, model: activeModel, pinned: !!ep,
       messages,
@@ -591,6 +651,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
   // leaked as DSML text. Drain up to 2 more recovered calls so the agent doesn't
   // abandon work mid-flight, then force a clean (sanitized) final answer.
   for (let drain = 0; drain < 2; drain++) {
+    if (outOfTime()) return await stopForTime();
     const drained = await chatWithinBudget({
       url: activeUrl, apiKey: activeKey, provider: activeProvider, model: activeModel, pinned: !!ep,
       messages, onNotice: opts.onNotice,
@@ -1010,8 +1071,15 @@ const OVERSIZE_RE = /request too large|reduce your message size|too many tokens|
  * tens of minutes. The only useful answer is another provider.
  */
 export class ProviderExhaustedError extends Error {
-  constructor(readonly provider: string, detail: string) {
-    super(`provider ${provider} exhausted: ${detail.slice(0, 200)}`);
+  constructor(readonly provider: string, detail: string, readonly kind: "quota" | "unfunded" = "quota") {
+    // Deux causes, deux phrases : un quota se rouvre tout seul, un compte à sec
+    // demande une carte bancaire. Les confondre ferait attendre un utilisateur
+    // devant un compteur qui ne repartira jamais.
+    super(
+      kind === "unfunded"
+        ? `Les crédits ${provider} sont épuisés. Rechargez le compte chez le fournisseur, ou choisissez l'autre modèle dans le sélecteur du composer. Détail : ${detail.slice(0, 200)}`
+        : `provider ${provider} exhausted: ${detail.slice(0, 200)}`,
+    );
     this.name = "ProviderExhaustedError";
   }
 }
@@ -1019,11 +1087,29 @@ export class ProviderExhaustedError extends Error {
 /** A quota that resets in more than a minute is not something a run can wait
  *  out; a short burst limit still deserves the normal backoff. */
 const QUOTA_RE = /tokens per day|TPD|requests per day|RPD|quota exceeded|insufficient_quota/i;
-function exhaustedFrom(status: number, body: string): boolean {
-  if (status !== 429) return false;
-  if (QUOTA_RE.test(body)) return true;
+
+/** Le compte n'a plus d'argent — DeepSeek répond 402 « Insufficient Balance »,
+ *  les passerelles compatibles OpenAI répondent 429 `insufficient_quota` ou
+ *  402. Aucun de ces cas ne se répare en attendant ni en compactant. */
+const UNFUNDED_RE = /insufficient balance|insufficient_quota|insufficient funds|payment required|billing|not enough credit|credit balance is too low/i;
+
+function exhaustedFrom(status: number, body: string): "quota" | "unfunded" | null {
+  if (status === 402 || (UNFUNDED_RE.test(body) && (status === 400 || status === 402 || status === 403 || status === 429))) {
+    return "unfunded";
+  }
+  if (status !== 429) return null;
+  if (QUOTA_RE.test(body)) return "quota";
   const wait = /try again in (\d+)m/i.exec(body);
-  return !!wait && Number(wait[1]) >= 1;
+  return wait && Number(wait[1]) >= 1 ? "quota" : null;
+}
+
+/** Le nom du fournisseur tel qu'un humain le lira, déduit de l'URL : postChat
+ *  ne connaît qu'un endpoint, et une erreur qui dit « provider unknown » ne
+ *  vaut pas mieux que pas d'erreur du tout. */
+function providerFromUrl(url: string): string {
+  if (url.includes("deepseek")) return "DeepSeek";
+  if (url.includes("groq")) return "Groq";
+  try { return new URL(url).host; } catch { return "le fournisseur"; }
 }
 function oversizeFrom(status: number, body: string): PayloadTooLargeError | null {
   if (status !== 413 && !(OVERSIZE_RE.test(body) && (status === 400 || status === 429))) return null;
@@ -1054,6 +1140,14 @@ async function postChat(
     // gateways, and sleeping does not make the payload any smaller.
     const oversize = oversizeFrom(res.status, text);
     if (oversize) throw oversize;
+    // Compte à sec, ou quota journalier consommé : ni l'attente ni la
+    // compaction n'y changent quoi que ce soit, et le seul geste utile est de
+    // changer de fournisseur — ou de le dire. `exhaustedFrom` existait depuis
+    // le début mais n'était appelée nulle part : la bascule prévue plus haut
+    // (chatWithinBudget) ne pouvait donc jamais se déclencher, et un compte
+    // épuisé remontait en « tool chat failed: 402 {...} » au milieu d'un run.
+    const exhausted = exhaustedFrom(res.status, text);
+    if (exhausted) throw new ProviderExhaustedError(providerFromUrl(url), text, exhausted);
     // Recover a malformed tool call (Groq tool_use_failed) instead of failing.
     if (res.status === 400) {
       const recovered = recoverFailedToolCall(text);

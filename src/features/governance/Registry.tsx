@@ -1,8 +1,16 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ShieldCheck, Plus, Bot, ExternalLink, Pencil, Trash2, Search, Cpu, AlertTriangle,
-} from "lucide-react";
+  ShieldCheckIcon as ShieldCheck,
+  PlusIcon as Plus,
+  RobotIcon as Bot,
+  ArrowSquareOutIcon as ExternalLink,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  MagnifyingGlassIcon as Search,
+  CpuIcon as Cpu,
+  WarningIcon as AlertTriangle,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

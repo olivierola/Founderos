@@ -7,9 +7,17 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
 import {
-  CheckCircle2, XCircle, MinusCircle, AlertTriangle, Bug, Gauge, Users,
-  MessageSquareQuote, ExternalLink, Clock,
-} from "lucide-react";
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  MinusCircleIcon as MinusCircle,
+  WarningIcon as AlertTriangle,
+  BugIcon as Bug,
+  GaugeIcon as Gauge,
+  UsersIcon as Users,
+  QuotesIcon as MessageSquareQuote,
+  ArrowSquareOutIcon as ExternalLink,
+  ClockIcon as Clock,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useCategorical } from "@/features/crm/overview/vizPalette";
 

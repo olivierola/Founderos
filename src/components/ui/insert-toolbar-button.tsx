@@ -5,30 +5,30 @@ import * as React from 'react';
 import type { DropdownMenuProps } from '@radix-ui/react-dropdown-menu';
 
 import {
-  CalendarIcon,
-  ChevronRightIcon,
-  Code2,
-  Columns3Icon,
+  CalendarBlankIcon as CalendarIcon,
+  CaretRightIcon as ChevronRightIcon,
+  CodeIcon as Code2,
+  ColumnsIcon as Columns3Icon,
   FileCodeIcon,
-  FilmIcon,
-  Heading1Icon,
-  Heading2Icon,
-  Heading3Icon,
+  FilmStripIcon as FilmIcon,
+  TextHOneIcon as Heading1Icon,
+  TextHTwoIcon as Heading2Icon,
+  TextHThreeIcon as Heading3Icon,
   ImageIcon,
-  Link2Icon,
+  LinkSimpleIcon as Link2Icon,
   ListIcon,
-  ListOrderedIcon,
+  ListNumbersIcon as ListOrderedIcon,
   MinusIcon,
-  PenToolIcon,
-  PilcrowIcon,
+  PenNibIcon as PenToolIcon,
+  ParagraphIcon as PilcrowIcon,
   PlusIcon,
-  QuoteIcon,
-  RadicalIcon,
+  QuotesIcon as QuoteIcon,
+  FunctionIcon as RadicalIcon,
   SquareIcon,
-  SuperscriptIcon,
+  TextSuperscriptIcon as SuperscriptIcon,
   TableIcon,
-  TableOfContentsIcon,
-} from 'lucide-react';
+  ListBulletsIcon as TableOfContentsIcon,
+} from "@phosphor-icons/react";
 import { KEYS } from 'platejs';
 import { type PlateEditor, useEditorRef } from 'platejs/react';
 

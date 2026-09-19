@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Minus, Plus, Search } from "lucide-react";
+import {
+  MinusIcon as Minus,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+} from "@phosphor-icons/react";
 import { LandingNav } from "./LandingNav";
 import { LandingFooter } from "./LandingFooter";
 import { ClosingCta, PageHero, useLandingSkin } from "./PageHero";
@@ -218,14 +222,13 @@ export function FaqPage() {
       <LandingNav />
 
       <PageHero
-        eyebrow="FAQ"
-        title="Questions, answered properly"
-        lead="Everything teams ask us before an engagement. If yours is not here, ask it directly and we will add it."
-        hue="amber"
-        frame={620}
-        padBottom={70}
+        label="FAQ"
+        frame={["Everything teams ask,"]}
+        claim="answered properly"
+        lead="The questions that come up before an engagement. If yours is not here, ask it directly and we will add it."
+        tiles={["scale", "foundation"]}
       >
-        <div className="relative mx-auto mt-10 max-w-md">
+        <div className="relative mx-auto max-w-md">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/35" />
           <input
             value={query}
@@ -340,7 +343,7 @@ export function FaqPage() {
                 <div className="min-w-0">
                   {GROUPS.map((g) => (
                     <section key={g.id} id={g.id} className="scroll-mt-[110px] pt-14 first:pt-0">
-                      <h2 className="text-[13px] font-medium uppercase tracking-[0.14em] text-[var(--amp-orange)]">
+                      <h2 className="text-[13px] font-medium uppercase tracking-[0.14em] text-[var(--amp-accent-deep)]">
                         {g.label}
                       </h2>
                       <div className="mt-2 border-t border-black/[0.08]">

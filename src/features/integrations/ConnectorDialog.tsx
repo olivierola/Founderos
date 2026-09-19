@@ -1,6 +1,14 @@
 import { useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ExternalLink, Loader2, Settings2, X, Zap, ArrowUpRight, Eye } from "lucide-react";
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  CircleNotchIcon as Loader2,
+  SlidersHorizontalIcon as Settings2,
+  XIcon as X,
+  LightningIcon as Zap,
+  ArrowUpRightIcon as ArrowUpRight,
+  EyeIcon as Eye,
+} from "@phosphor-icons/react";
 import {
   Dialog,
   DialogPortal,

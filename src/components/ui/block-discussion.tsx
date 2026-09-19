@@ -9,10 +9,10 @@ import { CommentPlugin } from '@platejs/comment/react';
 import { getTransientSuggestionKey } from '@platejs/suggestion';
 import { SuggestionPlugin } from '@platejs/suggestion/react';
 import {
-  MessageSquareTextIcon,
-  MessagesSquareIcon,
+  ChatTextIcon as MessageSquareTextIcon,
+  ChatsIcon as MessagesSquareIcon,
   PencilLineIcon,
-} from 'lucide-react';
+} from "@phosphor-icons/react";
 import { type AnyPluginConfig, type NodeEntry, PathApi } from 'platejs';
 import { useEditorRef, usePluginOption } from 'platejs/react';
 

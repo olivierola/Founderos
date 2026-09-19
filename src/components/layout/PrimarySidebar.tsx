@@ -1,5 +1,5 @@
 import { NavLink, useParams, useLocation } from "react-router-dom";
-import { ChevronRight, HelpCircle } from "lucide-react";
+import { CaretRightIcon as ChevronRight, QuestionIcon as HelpCircle } from "@phosphor-icons/react";
 import { ZONES, modulesInZone, type ModuleNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -110,7 +110,7 @@ export function PrimarySidebar() {
         {/* Bottom — usage meter + help & resources (account lives in the navbar now). */}
         <div className={cn("mt-auto shrink-0", expanded ? "px-3 pb-3 pt-1" : "px-2 pb-3 pt-1")}>
           <div className={cn(expanded ? "mb-2" : "mb-2 flex justify-center")}>
-            <UsageMeter percent={1} resetDays={20} expanded={expanded} />
+            <UsageMeter expanded={expanded} />
           </div>
           {expanded ? (
             <button

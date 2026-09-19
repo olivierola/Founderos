@@ -1,14 +1,17 @@
-// RunTimeline — Claude-Code-style live view of ONE agent run, anchored by
-// run id (never "the latest run", which made timelines vanish or mix up).
+// RunTimeline — live view of ONE agent run, anchored by run id (never "the
+// latest run", which made timelines vanish or mix up).
 //
-//   ┌ ⟳ En cours · 2m 14s · 12 actions · $0.0210            [replier] ┐
-//   │ ✓ Cloner le dépôt                                                │
-//   │ ▶ Installer les dépendances                                      │
-//   │ ○ Lancer l'app                                                   │
-//   │ ─────────────────────────────────────────────                    │
-//   │ ⏺ $ git clone https://github.com/…                               │
-//   │   ⎿ Cloning into 'deploy-demo'…                                  │
-//   └──────────────────────────────────────────────────────────────────┘
+// Two states, deliberately different in weight:
+//
+//   RUNNING — no card, no border, no spinner. One sentence saying what the
+//   agent is doing, cross-fading as it changes, over the collapsed tool list:
+//
+//        Installe les dépendances du dépôt
+//        🔧🔧🔧  3 outils utilisés                    ⌄
+//
+//   FINISHED — the recap unfolds: status line, checklist, success contract,
+//   notices, and the same tool list. Still borderless; the run is part of the
+//   conversation, not a widget sitting on top of it.
 //
 // Data: `internal_agent_runs.todos` (structured checklist) + run events keyed
 // by event id (naturally deduped). Live via Supabase realtime with a polling
@@ -16,12 +19,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, Circle,
-  CircleCheck, CircleAlert, Play, MessageSquare, BrainCircuit, ListTree, ShieldCheck,
-} from "lucide-react";
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CircleIcon as Circle,
+  CheckCircleIcon as CircleCheck,
+  WarningCircleIcon as CircleAlert,
+  PlayIcon as Play,
+  ChatIcon as MessageSquare,
+  BrainIcon as BrainCircuit,
+  TreeViewIcon as ListTree,
+  ShieldCheckIcon as ShieldCheck,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { toolSummary, toolEnv, type RunTodo, type RunEventRow } from "./runEventMeta";
+import { toolSummary, toolCategory, toolIntegrationName, orbStateForRun, type RunTodo, type RunEventRow } from "./runEventMeta";
+import { AgentActivityOrb } from "./AgentActivityOrb";
+import { ToolCallsSection, type ToolCallEntry } from "@/components/ui/tool-calls-section";
+import { LiveActivity } from "./LiveActivity";
 
 interface RunRow {
   id: string;
@@ -138,12 +154,6 @@ export function RunTimeline({
     return () => clearInterval(t);
   }, [isActive]);
 
-  // Auto-scroll the action stream while live.
-  const streamRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (isActive && streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
-  }, [events, isActive]);
-
   // Build the action list: pair each tool_call with its result, and attribute
   // it to the todo that was active at that moment (todos snapshots as markers).
   const { actions, notices, contractChecks, checkResults, loopState } = useMemo(() => {
@@ -245,16 +255,73 @@ export function RunTimeline({
       case "failed": return { icon: <XCircle className="h-4 w-4 text-destructive" />, label: "Échec" };
       case "cancelled": return { icon: <XCircle className="h-4 w-4 text-muted-foreground" />, label: "Annulé" };
       case "awaiting_input": return { icon: <MessageSquare className="h-4 w-4 text-amber-500" />, label: "Question posée" };
-      default: return { icon: <Loader2 className="h-4 w-4 animate-spin text-blue-500" />, label: "En cours" };
+      // Reachable only before the run row loads: the running state renders
+      // above, in the borderless live branch.
+      default: return { icon: <Circle className="h-4 w-4 text-muted-foreground/50" />, label: "Exécution" };
     }
   })();
 
   const doneCount = leafTodos.filter((t) => t.status === "done").length;
 
+  // Every executed call, in the shape ToolCallsSection reads. The category is
+  // what picks the icon, so an integration call shows its real logo and an
+  // internal capability shows its family glyph.
+  const toolCalls: ToolCallEntry[] = useMemo(
+    () => actions.map((a) => ({
+      tool_name: a.tool,
+      tool_category: toolCategory(a.tool),
+      integration_name: toolIntegrationName(a.tool),
+      message: a.summary,
+      tool_call_id: a.id,
+      inputs: a.args && Object.keys(a.args).length > 0 ? a.args : undefined,
+      output: a.result || undefined,
+    })),
+    [actions],
+  );
+
+  // What the agent is doing *right now*. The newest signal wins: a status
+  // message the agent wrote about itself beats the mechanical description of
+  // its last call, which in turn beats the checklist item it is standing on.
+  const activity = (() => {
+    const lastNotice = [...notices].reverse().find((n) => n.kind === "status" && n.text.trim());
+    const lastAction = actions.length > 0 ? actions[actions.length - 1] : null;
+    const activeTodo = todos.find((t) => t.status === "active");
+    if (lastNotice && lastAction) {
+      return lastNotice.at >= lastAction.at ? lastNotice.text : lastAction.summary;
+    }
+    return lastNotice?.text || lastAction?.summary || activeTodo?.title || "Démarre…";
+  })();
+
+  // The orb animates the *kind* of work behind that sentence.
+  const orbState = useMemo(() => {
+    const evs = events ?? [];
+    for (let i = evs.length - 1; i >= 0; i--) {
+      if (["tool_call", "question", "loop", "todos"].includes(evs[i].kind)) return orbStateForRun(run?.status, evs[i]);
+    }
+    return orbStateForRun(run?.status, null);
+  }, [events, run?.status]);
+
+  // While it runs there is no chrome at all — the orb, the sentence and the tools.
+  if (isActive) {
+    return (
+      <div className="text-sm">
+        <div className="flex items-center gap-2">
+          <AgentActivityOrb state={orbState} />
+          <LiveActivity text={activity} className="min-w-0 flex-1" />
+        </div>
+        <ToolCallsSection
+          toolCalls={toolCalls}
+          className="-mt-0.5"
+          summaryLabel={(n) => `${n} outil${n > 1 ? "s" : ""} utilisé${n > 1 ? "s" : ""}`}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className={cn("overflow-hidden rounded-xl border bg-card text-sm", isActive ? "border-blue-500/30" : "border-border")}>
+    <div className="text-sm">
       {/* Header */}
-      <button onClick={() => setOpen(!isOpen)} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left hover:bg-muted/30">
+      <button onClick={() => setOpen(!isOpen)} className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-2 rounded-lg px-1.5 py-1.5 text-left hover:bg-muted/30">
         {header.icon}
         <span className="font-semibold">{header.label}</span>
         {elapsedMs > 0 && <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{fmtElapsed(elapsedMs)}</span>}
@@ -265,14 +332,14 @@ export function RunTimeline({
       </button>
 
       {isOpen && (
-        <div className="border-t border-border/60">
+        <div className="mt-1">
           {/* Failure banner */}
           {run?.status === "failed" && run.error_message && (
-            <div className="border-b border-destructive/20 bg-destructive/10 px-3.5 py-2 text-[12px] text-destructive">{run.error_message}</div>
+            <div className="mb-2 rounded-lg bg-destructive/10 px-2.5 py-2 text-[12px] text-destructive">{run.error_message}</div>
           )}
           {/* Pending question */}
           {run?.status === "awaiting_input" && run.pending_question?.question && (
-            <div className="border-b border-amber-500/20 bg-amber-500/10 px-3.5 py-2 text-[12px] text-amber-700 dark:text-amber-300">
+            <div className="mb-2 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[12px] text-amber-700 dark:text-amber-300">
               <span className="font-medium">Question : </span>{run.pending_question.question}
               <span className="ml-1 text-muted-foreground">↳ réponds dans le chat pour continuer.</span>
             </div>
@@ -280,11 +347,11 @@ export function RunTimeline({
 
           {/* Todo checklist */}
           {todos.length > 0 && (
-            <div className="space-y-1 border-b border-border/60 px-3.5 py-2.5">
+            <div className="space-y-1 py-1.5">
               {orderedTodos.map(({ t, depth }) => (
                 <div key={t.id} className="flex items-start gap-2" style={depth > 0 ? { marginLeft: depth * 18 } : undefined}>
                   {t.status === "done" ? <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                    : t.status === "active" ? <Play className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500", isActive && "animate-pulse")} />
+                    : t.status === "active" ? <Play className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/70" />
                     : t.status === "blocked" ? <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
                     : <Circle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />}
                   <div className="min-w-0 flex-1">
@@ -306,7 +373,7 @@ export function RunTimeline({
               finish. Grey while pending, then green/red once the loop's verify
               step has run. */}
           {(contractChecks.length > 0 || checkResults.length > 0) && (
-            <div className="space-y-1 border-b border-border/60 px-3.5 py-2.5">
+            <div className="space-y-1 py-1.5">
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className={cn("h-3.5 w-3.5", loopState?.verdict === "pass" ? "text-emerald-500" : loopState?.verdict === "fail" ? "text-amber-500" : "text-muted-foreground/60")} />
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Contrat de réussite</span>
@@ -344,85 +411,29 @@ export function RunTimeline({
             </div>
           )}
 
-          {/* Action stream (Claude-Code-style ⏺ / ⎿ lines) */}
-          <div ref={streamRef} className="scrollbar-slim max-h-72 space-y-1 overflow-y-auto px-3.5 py-2.5">
+          {/* What the agent actually did — same component as the live view, so
+              a run reads the same way while it happens and afterwards. */}
+          <div className="py-1">
             {actions.length === 0 && notices.length === 0 && (
-              <div className="flex items-center gap-2 py-1 text-[12px] text-blue-400">
-                <BrainCircuit className="h-3.5 w-3.5" /> {isActive ? "Réflexion — plan en préparation…" : "Aucune action enregistrée."}
+              <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+                <BrainCircuit className="h-3.5 w-3.5" /> Aucune action enregistrée.
               </div>
             )}
-            {actions.map((a) => <ActionLine key={a.id} action={a} />)}
+            <ToolCallsSection
+              toolCalls={toolCalls}
+              summaryLabel={(n) => `${n} outil${n > 1 ? "s" : ""} utilisé${n > 1 ? "s" : ""}`}
+            />
             {/* Trailing notices (status / errors not tied to a call) */}
             {notices.slice(-3).map((n) => (
               <div key={n.id} className={cn(
-                "flex items-start gap-1.5 text-[11px]",
+                "flex items-start gap-1.5 pt-1 text-[11px]",
                 n.kind === "error" ? "text-destructive" : n.kind === "question" ? "text-amber-500" : "text-muted-foreground",
               )}>
                 <ListTree className="mt-0.5 h-3 w-3 shrink-0 opacity-60" />
                 <span className="min-w-0 flex-1">{n.text}</span>
               </div>
             ))}
-            {isActive && actions.length > 0 && (
-              <div className="flex items-center gap-2 pt-0.5 text-[12px] text-blue-400">
-                <Loader2 className="h-3 w-3 animate-spin" /> …
-              </div>
-            )}
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ActionLine({ action }: { action: ActionItem }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasResult = action.result != null && action.result !== "";
-  const failed = action.ok === false;
-  const resultLines = (action.result ?? "").split("\n");
-  const preview = resultLines.slice(0, 3).join("\n");
-  const truncated = resultLines.length > 3 || (action.result ?? "").length > 300;
-
-  return (
-    <div className="group">
-      <button
-        onClick={() => hasResult && setExpanded(!expanded)}
-        className={cn("flex w-full items-start gap-1.5 text-left", hasResult && "cursor-pointer")}
-      >
-        <span className={cn("mt-[3px] text-[10px] leading-none", failed ? "text-destructive" : action.ok ? "text-emerald-500" : "text-blue-400")}>⏺</span>
-        {(() => {
-          // Hybrid agents namespace tools (runner_* / sandbox_*) — show which world
-          // each call ran in. Single-world agents have plain names → no badge.
-          const env = toolEnv(action.tool);
-          if (!env) return null;
-          return (
-            <span
-              className={cn(
-                "mt-[2px] shrink-0 rounded px-1 text-[9px] font-semibold uppercase leading-tight",
-                env === "runner"
-                  ? "bg-sky-500/15 text-sky-600 dark:text-sky-400"
-                  : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-              )}
-              title={env === "runner" ? "Ran on the runner (real machine)" : "Ran in the sandbox (container)"}
-            >
-              {env === "runner" ? "RUN" : "SBX"}
-            </span>
-          );
-        })()}
-        <span className={cn("min-w-0 flex-1 truncate font-mono text-[12px]", failed ? "text-destructive" : "text-foreground/90")} title={action.summary}>
-          {action.summary}
-        </span>
-      </button>
-      {hasResult && (
-        <div className="flex items-start gap-1.5 pl-0.5">
-          <span className="select-none font-mono text-[10px] text-muted-foreground/50">⎿</span>
-          <pre
-            onClick={() => setExpanded(!expanded)}
-            className={cn(
-              "min-w-0 flex-1 cursor-pointer whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed",
-              failed ? "text-destructive/80" : "text-muted-foreground",
-              expanded ? "max-h-64 overflow-y-auto scrollbar-slim" : "",
-            )}
-          >{expanded ? (action.result ?? "").slice(0, 6000) : preview}{!expanded && truncated ? " …" : ""}</pre>
         </div>
       )}
     </div>

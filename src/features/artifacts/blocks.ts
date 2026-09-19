@@ -166,5 +166,64 @@ export function toSlides(doc: ArtifactDocument): Array<{ slide: SlideData; block
     current.blocks.push(b);
   }
   if (current.blocks.length > 0 || current.slide.title) out.push(current);
-  return out;
+  // No boundaries at all: the whole document is one page, which is the wall of
+  // text a deck exists to avoid. Cut it where its own structure says a new idea
+  // starts. The authoring tools now refuse a slideless deck, but documents
+  // written before that guard are already stored — they get paginated here.
+  return out.length === 1 && !out[0].slide.title ? autoPaginate(out[0].blocks) : out;
+}
+
+/** How much room a block asks for, in "lines". A slide holds about seven. */
+function weigh(b: ArtifactBlock): number {
+  const d = (b.data ?? {}) as { items?: unknown[]; content?: unknown[]; rows?: unknown[]; text?: string };
+  switch (b.type) {
+    case "table": return 2 + (Array.isArray(d.content) ? d.content.length : 0);
+    case "chart": case "matrix": case "image": return 6;
+    case "comparison": return 3 + (Array.isArray(d.rows) ? d.rows.length : 0);
+    case "kpi": return 3;
+    case "list": case "checklist": return 1 + (Array.isArray(d.items) ? d.items.length : 0);
+    case "code": case "quote": return 3;
+    case "callout": return 2;
+    case "header": return 1;
+    default: return Math.max(1, Math.ceil(String(d.text ?? "").length / 90));
+  }
+}
+
+const SLIDE_CAPACITY = 7;
+/** A little overshoot is allowed before cutting: a page that ends on its own
+ *  callout reads better than a page holding nothing but that callout. */
+const SLIDE_TOLERANCE = 2;
+
+/** Split a flat document into pages: a new page at every heading, and again
+ *  whenever one gets too full to be read from across a room. */
+function autoPaginate(blocks: ArtifactBlock[]): Array<{ slide: SlideData; blocks: ArtifactBlock[] }> {
+  const pages: Array<{ slide: SlideData; blocks: ArtifactBlock[] }> = [];
+  let page: { slide: SlideData; blocks: ArtifactBlock[] } = { slide: {}, blocks: [] };
+  let load = 0;
+  const flush = () => {
+    if (page.blocks.length > 0 || page.slide.title) pages.push(page);
+    page = { slide: {}, blocks: [] };
+    load = 0;
+  };
+  for (const b of blocks) {
+    const w = weigh(b);
+    if (b.type === "header") {
+      // The heading becomes the page's title rather than a block inside it —
+      // the slide draws its own title.
+      flush();
+      page.slide = { title: String(((b.data ?? {}) as { text?: string }).text ?? "").trim() || undefined };
+      continue;
+    }
+    if (load > 0 && load + w > SLIDE_CAPACITY + SLIDE_TOLERANCE) {
+      const carried = page.slide.title;
+      flush();
+      // A section that spills keeps its title, so the reader does not lose the
+      // thread halfway through it.
+      page.slide = carried ? { title: `${carried} (suite)` } : {};
+    }
+    page.blocks.push(b);
+    load += w;
+  }
+  flush();
+  return pages.length > 0 ? pages : [{ slide: {}, blocks }];
 }

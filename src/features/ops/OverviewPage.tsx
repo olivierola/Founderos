@@ -1,9 +1,17 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Server, Wrench, ShieldCheck, Activity, ArrowRight, Loader2,
-  CheckCircle2, XCircle, Clock, AlertTriangle,
-} from "lucide-react";
+  HardDrivesIcon as Server,
+  WrenchIcon as Wrench,
+  ShieldCheckIcon as ShieldCheck,
+  PulseIcon as Activity,
+  ArrowRightIcon as ArrowRight,
+  CircleNotchIcon as Loader2,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  ClockIcon as Clock,
+  WarningIcon as AlertTriangle,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

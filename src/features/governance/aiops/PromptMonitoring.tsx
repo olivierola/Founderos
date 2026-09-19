@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { Eye, User, Wrench, DatabaseZap, ChevronRight, Copy, Check } from "lucide-react";
+import {
+  EyeIcon as Eye,
+  UserIcon as User,
+  WrenchIcon as Wrench,
+  DatabaseIcon as DatabaseZap,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

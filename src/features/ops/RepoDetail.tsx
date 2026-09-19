@@ -3,10 +3,28 @@ import { useNavigate, useParams } from "react-router-dom";
 import "highlight.js/styles/github-dark.css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Github, ArrowLeft, Folder, FileCode, ChevronRight, GitBranch, Loader2, X,
-  ExternalLink, ScanLine, ShieldAlert, Boxes, Braces, Cpu, Home, Copy, Check,
-  Star, GitFork, CircleDot, Eye,
-} from "lucide-react";
+  GithubLogoIcon as Github,
+  ArrowLeftIcon as ArrowLeft,
+  FolderIcon as Folder,
+  FileCodeIcon as FileCode,
+  CaretRightIcon as ChevronRight,
+  GitBranchIcon as GitBranch,
+  CircleNotchIcon as Loader2,
+  XIcon as X,
+  ArrowSquareOutIcon as ExternalLink,
+  ScanIcon as ScanLine,
+  ShieldWarningIcon as ShieldAlert,
+  CubeIcon as Boxes,
+  BracketsCurlyIcon as Braces,
+  CpuIcon as Cpu,
+  HouseIcon as Home,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  StarIcon as Star,
+  GitForkIcon as GitFork,
+  RadioButtonIcon as CircleDot,
+  EyeIcon as Eye,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {

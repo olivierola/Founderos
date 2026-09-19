@@ -14,7 +14,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { executeApprovalAction, approvalScopePrefix } from "../_shared/approval-exec.ts";
+import { applyApprovalDecision } from "../_shared/channel-approval.ts";
 
 interface ApprovalRow {
   id: string;
@@ -81,59 +81,17 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Only the agent's creator or an editor can decide approvals" }, { status: 403 });
     }
 
-    const now = new Date().toISOString();
-    if (decision === "reject") {
-      await admin
-        .from("internal_agent_approvals")
-        .update({ status: "rejected", decided_by: userId, decided_at: now })
-        .eq("id", approval_id);
-      return jsonResponse({ ok: true, status: "rejected" });
+    // La décision elle-même est partagée avec les passerelles Slack et Teams
+    // (channel-approval.ts) : une demande validée depuis la messagerie doit
+    // s'exécuter exactement comme une demande validée ici.
+    const outcome = await applyApprovalDecision(
+      admin, approval as never, decision as "approve" | "approve_all" | "reject", userId,
+    );
+    if (outcome.status === "already_decided") {
+      return jsonResponse({ error: outcome.detail }, { status: 409 });
     }
-
-    // Approve: mark first (claims the row), then execute.
-    await admin
-      .from("internal_agent_approvals")
-      .update({ status: "approved", decided_by: userId, decided_at: now })
-      .eq("id", approval_id);
-
-    let outcome: { ok: boolean; detail: string };
-    try {
-      outcome = await executeApprovalAction(approval as ApprovalRow);
-    } catch (e) {
-      outcome = { ok: false, detail: e instanceof Error ? e.message : String(e) };
-    }
-
-    // "approve_all" grants the whole toolkit for the conversation (stored on the
-    // row's result; the runtime reads grant_scope to auto-run future actions).
-    const grantScope = decision === "approve_all"
-      ? approvalScopePrefix(approval.action_kind, (approval.payload ?? {}) as Record<string, unknown>, approval.tool_name)
-      : undefined;
-    await admin
-      .from("internal_agent_approvals")
-      .update({
-        status: outcome.ok ? "executed" : "failed",
-        executed_at: new Date().toISOString(),
-        result: grantScope ? { detail: outcome.detail, grant_scope: grantScope } : { detail: outcome.detail },
-        error_message: outcome.ok ? null : outcome.detail.slice(0, 500),
-      })
-      .eq("id", approval_id);
-
-    // Surface the late execution on the originating run's timeline.
-    if (approval.run_id) {
-      await admin.from("internal_agent_run_events").insert({
-        run_id: approval.run_id,
-        agent_id: approval.agent_id,
-        kind: "tool_result",
-        payload: {
-          tool: approval.tool_name,
-          ok: outcome.ok,
-          approved_by: userId,
-          preview: outcome.detail.slice(0, 500),
-        },
-      });
-    }
-
-    return jsonResponse({ ok: outcome.ok, status: outcome.ok ? "executed" : "failed", detail: outcome.detail.slice(0, 1000) });
+    if (decision === "reject") return jsonResponse({ ok: true, status: "rejected" });
+    return jsonResponse({ ok: outcome.ok, status: outcome.status, detail: outcome.detail.slice(0, 1000) });
   } catch (e) {
     return jsonResponse({ error: e instanceof Error ? e.message : "Internal error" }, { status: 500 });
   }

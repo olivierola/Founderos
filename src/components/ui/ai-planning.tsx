@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  Check,
-  BrainCircuit,
-} from "lucide-react";
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CircleNotchIcon as Loader2,
+  CheckIcon as Check,
+  BrainIcon as BrainCircuit,
+} from "@phosphor-icons/react";
 
 export type PlanStepStatus = "pending" | "active" | "success" | "error";
 

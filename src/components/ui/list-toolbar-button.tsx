@@ -7,7 +7,11 @@ import {
   useIndentTodoToolBarButton,
   useIndentTodoToolBarButtonState,
 } from '@platejs/list/react';
-import { List, ListOrdered, ListTodoIcon } from 'lucide-react';
+import {
+  ListIcon as List,
+  ListNumbersIcon as ListOrdered,
+  ListChecksIcon as ListTodoIcon,
+} from "@phosphor-icons/react";
 import { useEditorRef, useEditorSelector } from 'platejs/react';
 
 import {

@@ -1,9 +1,26 @@
 import { useState } from "react";
 import {
-  Plus, Trash2, FileText, Code2, Image, FlaskConical, TestTube2, BarChart3,
-  Shield, Package, ExternalLink, ChevronDown, Search, Bot, BrainCircuit,
-  Loader2, Check, AlertTriangle, Activity, ListTree,
-} from "lucide-react";
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  FileTextIcon as FileText,
+  CodeIcon as Code2,
+  ImageIcon as Image,
+  FlaskIcon as FlaskConical,
+  TestTubeIcon as TestTube2,
+  ChartBarIcon as BarChart3,
+  ShieldIcon as Shield,
+  PackageIcon as Package,
+  ArrowSquareOutIcon as ExternalLink,
+  CaretDownIcon as ChevronDown,
+  MagnifyingGlassIcon as Search,
+  RobotIcon as Bot,
+  BrainIcon as BrainCircuit,
+  CircleNotchIcon as Loader2,
+  CheckIcon as Check,
+  WarningIcon as AlertTriangle,
+  PulseIcon as Activity,
+  TreeViewIcon as ListTree,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

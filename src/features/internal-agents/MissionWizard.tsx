@@ -1,9 +1,18 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Loader2, Trash2, ChevronRight, ChevronLeft, Check,
-  FileText, FileJson, FileCode, Link2, Paperclip, Target,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  CaretRightIcon as ChevronRight,
+  CaretLeftIcon as ChevronLeft,
+  CheckIcon as Check,
+  FileTextIcon as FileText,
+  FileCodeIcon as FileJson,
+  FileCodeIcon as FileCode,
+  LinkSimpleIcon as Link2,
+  PaperclipIcon as Paperclip,
+  TargetIcon as Target,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {

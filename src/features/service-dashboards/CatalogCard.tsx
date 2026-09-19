@@ -58,10 +58,10 @@ export function CatalogCard({
         "hover:border-border hover:bg-card/60 disabled:opacity-60",
       )}
     >
-      <div className="relative flex h-[112px] shrink-0 items-center justify-center">
+      <div className="relative flex h-[112px] shrink-0 items-center justify-center bg-[hsl(var(--catalog-stage))]">
         {glyph}
         {overlay && (
-          <span className="absolute inset-0 flex items-center justify-center bg-background/70 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
+          <span className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
             {overlay}
           </span>
         )}

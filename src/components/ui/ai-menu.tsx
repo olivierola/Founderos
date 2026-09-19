@@ -13,22 +13,22 @@ import { BlockSelectionPlugin, useIsSelecting } from '@platejs/selection/react';
 import { getTransientSuggestionKey } from '@platejs/suggestion';
 import { Command as CommandPrimitive } from 'cmdk';
 import {
-  Album,
-  BadgeHelp,
-  BookOpenCheck,
-  Check,
-  CornerUpLeft,
+  ImagesIcon as Album,
+  SealQuestionIcon as BadgeHelp,
+  BookOpenTextIcon as BookOpenCheck,
+  CheckIcon as Check,
+  ArrowElbowUpLeftIcon as CornerUpLeft,
   FeatherIcon,
-  ListEnd,
-  ListMinus,
-  ListPlus,
-  Loader2Icon,
+  ListBulletsIcon as ListEnd,
+  ListDashesIcon as ListMinus,
+  ListPlusIcon as ListPlus,
+  CircleNotchIcon as Loader2Icon,
   PauseIcon,
-  PenLine,
-  SmileIcon,
-  Wand,
-  X,
-} from 'lucide-react';
+  PencilLineIcon as PenLine,
+  SmileyIcon as SmileIcon,
+  MagicWandIcon as Wand,
+  XIcon as X,
+} from "@phosphor-icons/react";
 import {
   type NodeEntry,
   type SlateEditor,

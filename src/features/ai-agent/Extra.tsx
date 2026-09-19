@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { Sparkles, FileText, FileCode2, Shield, Loader2, Play, Download } from "lucide-react";
+import {
+  SparkleIcon as Sparkles,
+  FileTextIcon as FileText,
+  FileCodeIcon as FileCode2,
+  ShieldIcon as Shield,
+  CircleNotchIcon as Loader2,
+  PlayIcon as Play,
+  DownloadSimpleIcon as Download,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

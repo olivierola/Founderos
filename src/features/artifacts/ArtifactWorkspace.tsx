@@ -9,7 +9,13 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, PencilLine, Eye, Trash2 } from "lucide-react";
+import {
+  ArrowLeftIcon as ArrowLeft,
+  CircleNotchIcon as Loader2,
+  PencilLineIcon as PencilLine,
+  EyeIcon as Eye,
+  TrashIcon as Trash2,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/utils";
@@ -100,7 +106,8 @@ export function ArtifactWorkspace({ docId, onBack, onDeleted }: {
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* A deck paginates and owns its height; anything else scrolls. */}
+      <div className={!editing && isDeck ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-y-auto"}>
         {editing ? (
           <div className="mx-auto w-full max-w-[1060px] px-5 py-8 sm:px-8">
             <ArtifactEditor
@@ -108,7 +115,7 @@ export function ArtifactWorkspace({ docId, onBack, onDeleted }: {
               onChange={(next: ArtifactDocument) => persist({ content: next })}
             />
           </div>
-        ) : isDeck ? <ArtifactDeck doc={doc} /> : <ArtifactReport doc={doc} />}
+        ) : isDeck ? <ArtifactDeck doc={doc} fill title={data?.title} /> : <ArtifactReport doc={doc} />}
       </div>
     </div>
   );

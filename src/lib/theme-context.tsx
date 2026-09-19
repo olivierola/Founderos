@@ -126,3 +126,60 @@ export function useThemeMode(): Theme {
   if (typeof document === "undefined") return "light";
   return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
+
+/** HSL (h in degrees, s/l in percent) → "#rrggbb". Fractional inputs welcome —
+ *  they are exactly what breaks the naive parsers this exists to feed. */
+export function hslToHex(h: number, s: number, l: number): string {
+  const sat = s / 100;
+  const lum = l / 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = sat * Math.min(lum, 1 - lum);
+  const f = (n: number) => lum - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const hex = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 255).toString(16).padStart(2, "0");
+  return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`;
+}
+
+/**
+ * The live value of a theme token, as a usable CSS colour.
+ *
+ * For anything painted OUTSIDE of CSS — a WebGL shader, a canvas, a chart
+ * library that wants a string — where `bg-background` cannot be applied. It
+ * returns `hsl(<triple>)` because the tokens are stored as bare HSL triples
+ * ("30 5% 9%"), the way shadcn does.
+ *
+ * It watches <html> rather than the context on purpose: `paintTheme` also runs
+ * when the OS flips under "system", which changes no React state, and detached
+ * roots (an Editor.js block, a portal) have no provider above them at all. The
+ * attributes the provider writes are the one source of truth both cases share.
+ */
+export function useThemeToken(name: string, fallback = "transparent"): string {
+  const read = () => {
+    if (typeof document === "undefined") return fallback;
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (!raw) return fallback;
+    // A bare triple ("30 5% 9%") is converted to HEX; anything already a colour
+    // (a hex, an oklch, a full hsl()) is passed through untouched.
+    //
+    // Hex rather than hsl() is the whole point. Consumers here are OUTSIDE CSS
+    // — a WebGL shader, a canvas, a charting lib — and they parse the string
+    // themselves, often with a hand-rolled regex. @paper-design/shaders is the
+    // proof: its hsl() parser accepts integers only (`(\d+)%`), so a token like
+    // `7.5%` — which half our skins use — fails to match and silently falls
+    // back to its `[0.5, 0.5, 0.5]` MID GREY. Hex has no such trap, and stays a
+    // perfectly valid CSS colour for callers that just drop it into a style.
+    const m = /^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%$/.exec(raw);
+    return m ? hslToHex(Number(m[1]), Number(m[2]), Number(m[3])) : raw;
+  };
+  const [value, setValue] = useState(read);
+
+  useEffect(() => {
+    const sync = () => setValue(read());
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-skin", "style"] });
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, fallback]);
+
+  return value;
+}

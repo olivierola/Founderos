@@ -1,4 +1,4 @@
-import { Asterisk } from "lucide-react";
+import { AsteriskIcon as Asterisk } from "@phosphor-icons/react";
 
 /* The block directly under the hero in the reference: a full-bleed row of
    service tags scrolling forever, separated by a small mark. */

@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, ExternalLink, Send, Users, Hash, Bot } from "lucide-react";
+import {
+  CircleNotchIcon as Loader2,
+  ArrowSquareOutIcon as ExternalLink,
+  PaperPlaneRightIcon as Send,
+  UsersIcon as Users,
+  HashIcon as Hash,
+  RobotIcon as Bot,
+} from "@phosphor-icons/react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";

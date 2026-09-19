@@ -34,6 +34,16 @@ L'utilisateur voit ces trois cartes dans ce panneau ; il clique "Configurer" sur
   4) Après accord, écris : update_agent_profile (instructions), configure_agent_tool / add_agent_tool avec kind 'connector_action' ou 'composio_toolkit' (connecteurs), search_agent_skills puis set_agent_skills (skills).
   5) Termine par l'état de CETTE carte : ce qui est prêt, ce qui reste.
 
+AUTOMATISER UN TRAVAIL (WORKFLOWS) — TU CONSTRUIS, TU NE DÉCRIS PAS:
+Quand l'utilisateur veut qu'un travail se répète tout seul ("chaque matin…", "à chaque nouveau lead…", "automatise…"), tu CONSTRUIS un workflow avec les outils workflow_*. Un récapitulatif en markdown, un document ou un artefact ne créent RIEN : le workflow n'existe que s'il a été construit par ces appels.
+  0) Si l'utilisateur parle d'un workflow DÉJÀ ouvert devant lui (le snapshot de page le nomme), commence par workflow_list pour récupérer son id et construis DEDANS. Créer un doublon à côté du sien est le pire résultat possible.
+  1) Sinon workflow_create (nom, déclencheur, cron si planifié) — rend l'id à réutiliser.
+  2) workflow_add_block, un appel par bloc, dans l'ordre de lecture : l'objectif, puis les étapes. Chaque appel te rend l'état du graphe ET ce qui reste à corriger — lis-le.
+  3) Le CADRAGE se rattache : un contexte, une règle, un outil imposé, un livrable se posent avec attach_to sur l'action qu'ils concernent, et ne valent que pour elle. Un même contexte peut être attaché à plusieurs étapes (workflow_link, mode="attach").
+  4) Une décision a DEUX suites : ajoute les blocs des deux branches avec branch="true" et branch="false", sinon la procédure s'arrête là.
+  5) workflow_activate EN DERNIER. Tant qu'il n'a pas réussi, ne dis jamais que le workflow est prêt, en place, ou qu'il ne reste plus qu'à l'activer.
+Pose au plus UNE question de clarification si un réglage est vraiment indécidable (l'heure, le nombre d'éléments) ; pour le reste, choisis un défaut raisonnable, construis, et dis ce que tu as choisi.
+
 INSTRUMENTATION DU CODE & ANALYTICS AVANCÉE:
 Tu peux instrumenter le dépôt GitHub connecté du projet : poser du tracking d'events, du feature flagging, installer les SDK Anduran (analytics & RAG), et définir une analytics avancée à partir d'une description en langage naturel.
 - Tu ne MODIFIES JAMAIS le dépôt directement. Chaque outil d'écriture (propose_code_changes, instrument_event, add_feature_flag, install_sdk) crée une proposition EN ATTENTE qu'un owner/admin doit approuver ; l'application réelle (Pull Request par défaut, ou commit direct si demandé) se fait après approbation. Annonce toujours clairement qu'une approbation humaine est requise.
@@ -194,6 +204,25 @@ Deno.serve(async (req) => {
       ? `\n\n--- PAGE ACTUELLE DE L'UTILISATEUR (contexte premier — ce qu'il regarde à l'écran) ---\n${page_context.slice(0, 6000)}`
       : "";
 
+    // The workflow the user is LOOKING AT, extracted here rather than left to
+    // the model to read off a URL.
+    //
+    // The snapshot already carried the path — /…/service/<id>/workflows/<id> —
+    // and the model ignored it: asked to automate something while an empty
+    // workflow was open in front of them, it built a brand-new one under a name
+    // of its own and reported success. The user was watching the page it had
+    // not touched. A path is not a hint you can leave to interpretation, so the
+    // id is pulled out deterministically and the instruction is made explicit.
+    const openWorkflow = /\/service\/[0-9a-f-]{8,}\/workflows\/([0-9a-f-]{8,})/i
+      .exec(typeof page_context === "string" ? page_context : "")?.[1] ?? null;
+    const openWorkflowSection = openWorkflow
+      ? `\n\n--- LE WORKFLOW OUVERT DEVANT L'UTILISATEUR ---
+Il a le workflow ${openWorkflow} sous les yeux, sur son canvas.
+Toute demande d'automatisation porte sur CELUI-CI : appelle les outils workflow_* avec workflow_id="${openWorkflow}".
+N'appelle PAS workflow_create — il en existe déjà un, et en créer un second à côté du sien laisse sa page vide pendant que tu annonces un travail fait ailleurs.
+S'il te demande explicitement un NOUVEAU workflow, dis-lui d'abord que celui-ci est ouvert et demande confirmation.`
+      : "";
+
     // System prompt = base behaviour + access-scope summary tailored to the role.
     const systemPrompt = `${BASE_SYSTEM_PROMPT}
 
@@ -201,7 +230,7 @@ Deno.serve(async (req) => {
 ${accessScopeSummary(userRole)}
 
 --- CONTEXTE PROJET (non sensible) ---
-${JSON.stringify({ project: context.project, connectors: context.connectors, code: context.code }, null, 2)}${pageSection}`;
+${JSON.stringify({ project: context.project, connectors: context.connectors, code: context.code }, null, 2)}${pageSection}${openWorkflowSection}`;
 
     // Assemble the message list from history.
     const chatMessages: ChatMessage[] = [
@@ -249,7 +278,10 @@ ${JSON.stringify({ project: context.project, connectors: context.connectors, cod
         executor: buildExecutor(toolCtx),
         temperature: 0.3,
         maxTokens: 1500,
-        maxRounds: 6,
+        // Building a workflow is a SEQUENCE of calls (create → un bloc par
+        // appel → activate). At six the loop stopped mid-procedure and the
+        // model narrated a workflow it had never finished.
+        maxRounds: 16,
       });
     } catch (e) {
       // If the preferred provider fails, retry once on the other provider.
@@ -263,7 +295,10 @@ ${JSON.stringify({ project: context.project, connectors: context.connectors, cod
         executor: buildExecutor(toolCtx),
         temperature: 0.3,
         maxTokens: 1500,
-        maxRounds: 6,
+        // Building a workflow is a SEQUENCE of calls (create → un bloc par
+        // appel → activate). At six the loop stopped mid-procedure and the
+        // model narrated a workflow it had never finished.
+        maxRounds: 16,
       });
     }
 

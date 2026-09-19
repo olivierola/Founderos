@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Plus, Trash2, TrendingUp, TrendingDown, Minus, BarChart3 } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  TrendUpIcon as TrendingUp,
+  TrendDownIcon as TrendingDown,
+  MinusIcon as Minus,
+  ChartBarIcon as BarChart3,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ModuleProject } from "../moduleProjectModel";

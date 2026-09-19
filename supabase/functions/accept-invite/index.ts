@@ -32,6 +32,16 @@ Deno.serve(async (req) => {
     if (inv.email.toLowerCase() !== (userData.user.email ?? "").toLowerCase()) {
       return jsonResponse({ error: "Email mismatch with current session" }, { status: 403 });
     }
+    // FOS-14 : la ligne ci-dessus est le seul garde-fou si un lien d'invitation
+    // fuite — et elle ne vaut que si l'adresse a été prouvée. L'inscription
+    // acceptait jusqu'ici n'importe quelle adresse sans confirmation : il
+    // suffisait de créer un compte au nom de l'invité.
+    if (!userData.user.email_confirmed_at) {
+      return jsonResponse(
+        { error: "Confirmez votre adresse e-mail avant d'accepter l'invitation." },
+        { status: 403 },
+      );
+    }
 
     await admin
       .from("workspace_members")

@@ -16,6 +16,9 @@ import {
   type RoomRef, type RosterAgent,
 } from "../_shared/room-orchestrator.ts";
 import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
+import {
+  loadCompanyContext, renderCompanySection, type CompanyContext,
+} from "../_shared/company-context.ts";
 
 type Admin = ReturnType<typeof createServiceClient>;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -62,6 +65,8 @@ async function createRoomArtifact(
 
 interface AgentRow {
   id: string; name: string; persona: string | null; instructions: string | null;
+  /** The other two files (0210) — see agent-context.ts. */
+  soul?: string | null; preferences?: string | null;
   model: string | null;
   temperature: number | null; is_orchestrator: boolean | null;
   service_dashboard_id: string | null; created_by: string | null;
@@ -428,7 +433,7 @@ async function runResponder(
   missionId: string | null = null,
 ) {
   const { data: agent } = await admin.from("internal_agents")
-    .select("id, name, persona, instructions, model, temperature, is_orchestrator, service_dashboard_id, created_by, swarm_enabled, swarm_max_concurrency")
+    .select("id, name, persona, instructions, soul, preferences, model, temperature, is_orchestrator, service_dashboard_id, created_by, swarm_enabled, swarm_max_concurrency")
     .eq("id", agentId).maybeSingle();
   if (!agent) throw new Error("Agent introuvable");
   const a = agent as AgentRow;
@@ -462,7 +467,9 @@ async function runResponder(
     agentId: a.id, agentName: a.name,
     collaborationEnabled: true, autopilot: false, runId: turnRunId,
     missionMode: false, delegationDepth: 0,
-    serviceDashboardId: a.service_dashboard_id ?? room.dashboard_id, userId: a.created_by ?? null,
+    serviceDashboardId: a.service_dashboard_id ?? room.dashboard_id,
+    serviceRoomId: room.id,
+    userId: a.created_by ?? null,
     createDeliverable: async (d) => {
       const { data } = await admin.from("internal_agent_deliverables").insert({
         agent_id: a.id, run_id: turnRunId, kind: d.kind, name: d.name, content: d.content, summary: d.summary,
@@ -486,17 +493,32 @@ async function runResponder(
   // Essaim: only expose the fan-out when the owner left it on. The tool is
   // registered from ctx.swarmEnabled below, so keep the two in sync.
   ctx.swarmEnabled = a.swarm_enabled !== false;
+  // Mémoïsé : lu seulement si un fan-out a effectivement lieu.
+  let childCompany: Promise<CompanyContext | null> | null = null;
   if (ctx.swarmEnabled && turnRunId) ctx.spawnParallel = async (subtasks) => {
     return await runParallelSubagents({
       admin, parentRunId: turnRunId,
       agentId: a.id, workspaceId: room.workspace_id, projectId: room.project_id, createdBy: a.created_by ?? null,
       tools: (toolRows ?? []) as AgentToolRow[], provider: agentProvider, temperature: a.temperature ?? 0.4,
       makeChildContext: (childRunId) => ({ ...ctx, runId: childRunId, isSubagent: true, spawnParallel: undefined }),
-      buildChildSystem: (cap) => [
-        `You are ${a.name}${a.persona ? ` — ${a.persona}` : ""}, focused on a single subtask for the "${room.title}" room.`,
-        a.instructions ? `Your instructions:\n${a.instructions}` : "",
-        "Your tools:", cap,
-      ].filter(Boolean).join("\n"),
+      // Un sous-agent de room hérite de l'employeur comme le ferait un
+      // sous-agent de mission : le ton et les non-négociables de l'entreprise
+      // s'appliquent à ce qu'il produit. Chargé au premier enfant, partagé
+      // ensuite — une vague de huit ne paie qu'une lecture.
+      buildChildSystem: async (cap) => {
+        const comp = renderCompanySection(
+          await (childCompany ??= loadCompanyContext(admin, room.project_id, {
+            agentId: a.id, dashboardId: a.service_dashboard_id ?? room.dashboard_id,
+          })),
+          "", 900,
+        );
+        return [
+          `You are ${a.name}${a.persona ? ` — ${a.persona}` : ""}, focused on a single subtask for the "${room.title}" room.`,
+          comp.body ? `## L'entreprise pour laquelle tu travailles\n${comp.body}` : "",
+          a.instructions ? `Your instructions:\n${a.instructions}` : "",
+          "Your tools:", cap,
+        ].filter(Boolean).join("\n");
+      },
       maxConcurrency: a.swarm_max_concurrency ?? undefined,
     }, subtasks);
   };
@@ -522,6 +544,10 @@ async function runResponder(
   // knowledge, one place that decides what a room turn sees. The DURABLE tick
   // engine (internal-agent-run) rebuilds the real toolset + executor and runs
   // the loop, so a long room turn survives the edge wall-clock.
+  const company = await loadCompanyContext(admin, room.project_id, {
+    agentId: a.id,
+    dashboardId: a.service_dashboard_id ?? room.dashboard_id,
+  });
   const system = buildRoomSystemPrompt({
     admin, agent: a as RosterAgent,
     room: { id: room.id, dashboard_id: room.dashboard_id, workspace_id: room.workspace_id, project_id: room.project_id, title: room.title },
@@ -529,6 +555,7 @@ async function runResponder(
     extraContext: missionId
       ? "Cette conversation appartient à une mission en cours de la room : tiens-en compte et reste dans son périmètre."
       : undefined,
+    company,
   });
 
   const messages: ChatMessage[] = [{ role: "system", content: system }, ...history];

@@ -13,7 +13,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import { callEdge } from "@/lib/edge";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";

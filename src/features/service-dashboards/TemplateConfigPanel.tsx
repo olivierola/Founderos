@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import { XIcon, CheckIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,12 +12,28 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { AvatarPicker } from "@/features/internal-agents/AvatarPicker";
 import { templateAvatar, type AgentTemplate } from "@/features/internal-agents/agentTemplates";
+import { findMcpCatalogEntry } from "@/features/internal-agents/mcpCatalog";
+import { Icon3D } from "@/features/internal-agents/icons3d";
 import { instantiateTemplate } from "@/features/internal-agents/instantiateTemplate";
 import {
   ComposioConnectDialog, synthToolkit, type ComposioToolkit,
 } from "@/features/integrations/ComposioCatalog";
 import { applyAgentDefaults, fetchServiceDashboard, DEFAULT_AGENT_DEFAULTS } from "./model";
 import { useComposioToolkits, useConnectorStatus, toolSlugsFromTemplate, resolveNeeds } from "./useToolkits";
+import { cadenceFromCron, firstOccurrenceLocal, toAlignment, type Cadenced } from "./scheduleCadence";
+
+const DOW_FR = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+
+/** "Chaque lundi à 08:00" — the cadence in the words the Schedules tab uses. */
+function describeCadence(c: Cadenced): string {
+  const hhmm = `${String(c.hour).padStart(2, "0")}:${String(c.minute).padStart(2, "0")}`;
+  switch (c.cadence) {
+    case "hourly": return `Toutes les heures à :${String(c.minute).padStart(2, "0")}`;
+    case "daily": return `Chaque jour à ${hhmm}`;
+    case "weekly": return `Chaque ${DOW_FR[c.dow]} à ${hhmm}`;
+    case "monthly": return `Le ${c.dom} de chaque mois à ${hhmm}`;
+  }
+}
 
 /**
  * A template is a starting point, not a finished agent. Before it lands you
@@ -44,11 +60,20 @@ export function TemplateConfigPanel({
   const [avatar, setAvatar] = useState<string | null>(null);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [instructions, setInstructions] = useState("");
+  const [soul, setSoul] = useState("");
   const [skillSlugs, setSkillSlugs] = useState<string[]>([]);
   const [skillQuery, setSkillQuery] = useState("");
+  // The template's suggested recurring job. Pre-ticked for personal agents,
+  // where the schedule IS the value (morning briefing, weekly budget) and
+  // "enable it later" is a step nobody takes. Business templates keep it
+  // opt-in: a recurring run spends credits the team didn't choose to spend.
+  const [scheduleOn, setScheduleOn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<ComposioToolkit | null>(null);
+  // A role's full stack runs to ~20 apps. Show what is connected plus a handful
+  // to pick from, and keep the tail one click away.
+  const [allApps, setAllApps] = useState(false);
 
   const { data: board } = useQuery({
     queryKey: ["service_dashboard", dashboardId],
@@ -82,14 +107,24 @@ export function TemplateConfigPanel({
     setDescription(template.tagline);
     setAvatar(templateAvatar(template));
     setInstructions(template.instructions);
+    setSoul(template.soul);
     setSkillSlugs(template.skillSlugs ?? []);
+    setScheduleOn(template.category === "Personnel" && !!template.suggestedSchedule && !!cadenceFromCron(template.suggestedSchedule.cron));
+    setAllApps(false);
     setError(null);
   }, [template?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!template) return null;
 
   const needs = resolveNeeds(toolSlugsFromTemplate(template), toolkits, connStatus);
-  const missing = needs.filter((n) => !n.connected).length;
+  const linked = needs.filter((n) => n.connected).length;
+
+  // resolveNeeds puts the connected ones first, so the head of the list is
+  // always the project's real stack rather than an arbitrary slice.
+  const shownNeeds = allApps ? needs : needs.slice(0, Math.max(6, linked + 4));
+
+  const suggested = template.suggestedSchedule ?? null;
+  const cadence = suggested ? cadenceFromCron(suggested.cron) : null;
 
   async function create() {
     if (!template || !user || busy) return;
@@ -101,9 +136,30 @@ export function TemplateConfigPanel({
       const id = await instantiateTemplate(
         { ...template, skillSlugs },
         { workspaceId, projectId, userId: user.id, serviceDashboardId: dashboardId },
-        { name, description, avatar: avatar ?? undefined, instructions },
+        { name, description, avatar: avatar ?? undefined, instructions, soul },
       );
       await applyAgentDefaults(id, board?.settings.agent_defaults ?? DEFAULT_AGENT_DEFAULTS, "template");
+      // Same row the Schedules tab writes, so the job shows up there and can be
+      // edited or paused like any other. Best-effort: the agent already exists,
+      // and failing the whole creation over its schedule would be worse.
+      if (scheduleOn && suggested && cadence) {
+        const occ = firstOccurrenceLocal(cadence);
+        const { error: schedErr } = await supabase.from("internal_agent_missions").insert({
+          agent_id: id,
+          workspace_id: workspaceId,
+          project_id: projectId,
+          title: suggested.label,
+          brief: suggested.prompt,
+          schedule: cadence.cadence,
+          next_run_at: occ.toISOString(),
+          ...toAlignment(cadence, occ),
+          status: "active",
+          board_column: "todo",
+          created_by: user.id,
+        });
+        if (schedErr) console.warn("Planification non créée:", schedErr.message);
+        queryClient.invalidateQueries({ queryKey: ["sd_schedules", dashboardId] });
+      }
       queryClient.invalidateQueries({ queryKey: ["sd_agents", dashboardId] });
       queryClient.invalidateQueries({ queryKey: ["sd_panel_agents", dashboardId] });
       onCreated(id);
@@ -130,6 +186,7 @@ export function TemplateConfigPanel({
             />
             <div className="text-xs text-muted-foreground">{template.category} · {template.max_steps} pas</div>
           </div>
+          <Icon3D icon={template.icon3d} px={34} className="shrink-0 opacity-90" />
           <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             <XIcon className="h-4 w-4" />
           </button>
@@ -145,19 +202,27 @@ export function TemplateConfigPanel({
 
           {/* Apps — what actually decides whether this agent can do its job. */}
           <section>
-            <div className="mb-2 flex items-center gap-2">
+            <div className="mb-1 flex items-center gap-2">
               <h3 className="text-sm font-semibold">Applications</h3>
-              {missing > 0 && (
-                <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[11px] text-amber-600 dark:text-amber-400">
-                  {missing} à connecter
+              {needs.length > 0 && (
+                <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  {linked} / {needs.length} connectées
                 </span>
               )}
             </div>
             {needs.length === 0 ? (
               <p className="text-xs text-muted-foreground">Aucune application externe requise.</p>
             ) : (
+              <>
+              {/* These are alternatives, not prerequisites: a company runs one
+                  CRM out of five. Saying so stops the list reading as a wall of
+                  missing dependencies. */}
+              <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
+                Les outils du métier. Connectez ceux que vous utilisez — les autres restent
+                simplement inactifs.
+              </p>
               <div className="space-y-1.5">
-                {needs.map((n) => {
+                {shownNeeds.map((n) => {
                   const tk = (toolkits ?? []).find((x) => x.slug === n.slug);
                   return (
                     <div key={n.slug} className="flex items-center gap-3 rounded-xl border border-border p-2.5">
@@ -183,8 +248,39 @@ export function TemplateConfigPanel({
                   );
                 })}
               </div>
+              {needs.length > shownNeeds.length && (
+                <button
+                  type="button"
+                  onClick={() => setAllApps(true)}
+                  className="mt-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Voir les {needs.length - shownNeeds.length} autres applications
+                </button>
+              )}
+              </>
             )}
           </section>
+
+          {suggested && cadence && (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold">Travail récurrent</h3>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-3">
+                <input
+                  type="checkbox"
+                  checked={scheduleOn}
+                  onChange={(e) => setScheduleOn(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-primary"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{suggested.label}</span>
+                  <span className="block text-xs text-muted-foreground">{describeCadence(cadence)} · modifiable ensuite dans Planifications</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">« {suggested.prompt} »</span>
+                </span>
+              </label>
+            </section>
+          )}
+
+          <McpSuggestions template={template} />
 
           <section>
             <h3 className="mb-2 text-sm font-semibold">Skills</h3>
@@ -225,6 +321,7 @@ export function TemplateConfigPanel({
 
           <section>
             <label className="mb-1.5 block text-sm font-semibold">Instructions</label>
+            <p className="mb-1.5 text-xs text-muted-foreground">Ce qu'il fait : sa procédure et ses règles absolues.</p>
             <Textarea
               rows={12}
               value={instructions}
@@ -233,13 +330,30 @@ export function TemplateConfigPanel({
             />
           </section>
 
+          {/* L'âme est modifiable ICI, avant la création : c'est le moment où on
+              adapte le caractère d'un template à sa maison (le ton d'un support
+              n'est pas le même chez un cabinet d'avocats et chez un jeu vidéo).
+              Après, ça se retravaille dans l'onglet Fichiers de l'agent. */}
+          <section>
+            <label className="mb-1.5 block text-sm font-semibold">Âme</label>
+            <p className="mb-1.5 text-xs text-muted-foreground">
+              Qui il est : sa voix, ce à quoi il tient, ce qu'il refuse. Court — c'est du caractère, pas une procédure.
+            </p>
+            <Textarea
+              rows={6}
+              value={soul}
+              onChange={(e) => setSoul(e.target.value)}
+              className="resize-none rounded-2xl bg-background/60 text-sm"
+            />
+          </section>
+
           {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
         </div>
 
         <footer className="flex items-center gap-3 border-t border-border px-5 py-4">
-          {missing > 0 && (
+          {linked === 0 && needs.length > 0 && (
             <span className="text-xs text-muted-foreground">
-              L'agent se crée quand même — il restera bloqué sur les apps non connectées.
+              Aucune application connectée : l'agent se crée, mais restera limité à ses outils internes.
             </span>
           )}
           <Button onClick={create} disabled={busy || !name.trim()} className="ml-auto rounded-xl">
@@ -256,5 +370,52 @@ export function TemplateConfigPanel({
         onConnected={() => { setConnecting(null); refetchStatus(); }}
       />
     </>
+  );
+}
+
+/**
+ * Which remote MCP servers this template is worth attaching to. They are not
+ * provisioned here on purpose: an MCP server is a workspace-level resource
+ * shared by every agent, so the template can only point at it. Entries the
+ * catalogue knows to be local-only are shown as such rather than hidden —
+ * knowing a server exists but can't run in the cloud is useful information.
+ */
+function McpSuggestions({ template }: { template: AgentTemplate }) {
+  const names = template.mcpServers ?? [];
+  if (names.length === 0) return null;
+  return (
+    <section>
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-sm font-semibold">Serveurs MCP conseillés</h3>
+        <span className="text-[11px] text-muted-foreground">à ajouter depuis AI Workforce → MCP</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {names.map((n) => {
+          const entry = findMcpCatalogEntry(n);
+          const ready = !!entry?.url;
+          return (
+            <span
+              key={n}
+              title={entry?.note ?? (ready ? "Endpoint distant officiel — connexion en un clic." : "URL de votre instance à renseigner.")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs",
+                ready ? "border-border/60 text-foreground" : "border-dashed border-border/60 text-muted-foreground",
+              )}
+            >
+              {n}
+              {entry?.local && (
+                <span className="rounded bg-muted px-1 text-[10px] leading-4 text-muted-foreground">local</span>
+              )}
+            </span>
+          );
+        })}
+      </div>
+      {/* Three states, and the difference decides whether it is usable at all. */}
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+        Trait plein : endpoint officiel, connexion en un clic. Pointillés : URL de votre instance à
+        renseigner. <span className="rounded bg-muted px-1">local</span> : serveur stdio, joignable
+        seulement en auto-hébergé — pas depuis le runtime cloud.
+      </p>
+    </section>
   );
 }

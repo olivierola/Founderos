@@ -12,9 +12,14 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ScrollText, PlugZap, Sparkles, ChevronDown, ArrowRight, Check,
-  type LucideIcon,
-} from "lucide-react";
+  ScrollIcon as ScrollText,
+  PlugChargingIcon as PlugZap,
+  SparkleIcon as Sparkles,
+  CaretDownIcon as ChevronDown,
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { ConfigurableTool } from "@/features/internal-agents/toolSetup";

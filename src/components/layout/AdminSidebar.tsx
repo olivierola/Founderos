@@ -1,5 +1,5 @@
 import { NavLink, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react";
 import { ADMIN_SECTIONS } from "@/lib/admin-navigation";
 import { dashboardLandingSlug } from "@/lib/navigation";
 import { cn } from "@/lib/utils";

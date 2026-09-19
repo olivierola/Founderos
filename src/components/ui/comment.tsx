@@ -15,11 +15,11 @@ import {
 import {
   ArrowUpIcon,
   CheckIcon,
-  MoreHorizontalIcon,
-  PencilIcon,
+  DotsThreeIcon as MoreHorizontalIcon,
+  PencilSimpleIcon as PencilIcon,
   TrashIcon,
   XIcon,
-} from 'lucide-react';
+} from "@phosphor-icons/react";
 import {
   type NodeEntry,
   type TCommentText,

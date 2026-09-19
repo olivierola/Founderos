@@ -55,3 +55,26 @@ export async function teamsSendMessage(
     return false;
   }
 }
+
+// Poste une activité arbitraire — typiquement une carte adaptative avec des
+// boutons (demande d'autorisation d'un agent, voir channel-approval.ts).
+export async function teamsSendActivity(
+  serviceUrl: string | null | undefined,
+  conversationId: string | null | undefined,
+  activity: Record<string, unknown>,
+): Promise<boolean> {
+  if (!serviceUrl || !conversationId) return false;
+  const token = await getBotFrameworkToken();
+  if (!token) return false;
+  try {
+    const url = `${serviceUrl.replace(/\/$/, "")}/v3/conversations/${encodeURIComponent(conversationId)}/activities`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(activity),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

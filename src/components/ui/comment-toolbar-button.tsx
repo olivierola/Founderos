@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 
-import { MessageSquareTextIcon } from 'lucide-react';
+import { ChatTextIcon as MessageSquareTextIcon } from "@phosphor-icons/react";
 import { useEditorRef } from 'platejs/react';
 
 import { commentPlugin } from '@/components/comment-kit';

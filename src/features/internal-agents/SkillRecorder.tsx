@@ -22,11 +22,30 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { signShots, toStoragePath } from "./recordingShots";
 import {
-  ChevronLeft, Mic, MicOff, Square, Loader2, Sparkles, AlertTriangle,
-  MousePointerClick, Keyboard, Navigation, CheckSquare, Upload, StickyNote,
-  ListChecks, Terminal, Radio, ArrowRight, Clapperboard, ChevronsUpDown, KeyRound, Puzzle,
-} from "lucide-react";
+  CaretLeftIcon as ChevronLeft,
+  MicrophoneIcon as Mic,
+  MicrophoneSlashIcon as MicOff,
+  SquareIcon as Square,
+  CircleNotchIcon as Loader2,
+  SparkleIcon as Sparkles,
+  WarningIcon as AlertTriangle,
+  CursorClickIcon as MousePointerClick,
+  KeyboardIcon as Keyboard,
+  NavigationArrowIcon as Navigation,
+  CheckSquareIcon as CheckSquare,
+  UploadSimpleIcon as Upload,
+  NoteIcon as StickyNote,
+  ListChecksIcon as ListChecks,
+  TerminalIcon as Terminal,
+  RadioIcon as Radio,
+  ArrowRightIcon as ArrowRight,
+  FilmSlateIcon as Clapperboard,
+  CaretUpDownIcon as ChevronsUpDown,
+  KeyIcon as KeyRound,
+  PuzzlePieceIcon as Puzzle,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { SoftField, SoftInput, SoftTextarea, SoftSelect } from "@/components/ui/soft-form";
 import { supabase } from "@/lib/supabase";
@@ -934,6 +953,20 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [events.length]);
 
+  // FOS-04 — le bucket `skill-recordings` était public : ces captures filment
+  // l'écran de l'opérateur pendant qu'il manipule ses vrais outils, et
+  // n'importe qui pouvait les lire. Il est privé depuis la migration 0241, donc
+  // chaque vignette doit être signée avant d'être affichée. Signature par lot,
+  // mise en cache dans recordingShots : une timeline en compte des dizaines.
+  const [shots, setShots] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    const stored = events.map((e) => e.screenshot_url).filter(Boolean);
+    if (stored.length === 0) return;
+    signShots(stored).then((m) => { if (!cancelled) setShots(m); });
+    return () => { cancelled = true; };
+  }, [events]);
+
   if (events.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
@@ -963,11 +996,18 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
             <span className={cn("min-w-0 flex-1 break-words leading-relaxed", spoken && "italic text-foreground")}>
               {spoken ? `« ${describeEvent(ev)} »` : describeEvent(ev)}
             </span>
-            {ev.screenshot_url && (
-              <a href={ev.screenshot_url} target="_blank" rel="noreferrer" className="shrink-0">
-                <img src={ev.screenshot_url} alt="" className="h-8 w-14 rounded border border-border object-cover" />
-              </a>
-            )}
+            {(() => {
+              // Rien tant que la signature n'est pas revenue — et rien non plus
+              // si elle a été refusée (vignette d'un autre workspace).
+              const path = toStoragePath(ev.screenshot_url);
+              const signed = path ? shots.get(path) : null;
+              if (!signed) return null;
+              return (
+                <a href={signed} target="_blank" rel="noreferrer" className="shrink-0">
+                  <img src={signed} alt="" className="h-8 w-14 rounded border border-border object-cover" />
+                </a>
+              );
+            })()}
           </div>
         );
       })}

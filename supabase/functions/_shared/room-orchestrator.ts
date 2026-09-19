@@ -34,8 +34,11 @@ import { callAi, safeParseJson, type ChatMessage } from "./ai.ts";
 import { buildInternalToolset, type AgentToolRow, type InternalToolContext } from "./internal-agent-tools.ts";
 import { classifyTier, modelForTier, resolveProvider, cheapProvider } from "./model-router.ts";
 import { compileSystemPrompt, type SectionInput } from "./prompt-compiler.ts";
+import { renderSoul, selectPreferences } from "./agent-context.ts";
+import { loadCompanyContext, renderCompanySection, type CompanyContext } from "./company-context.ts";
 import { ORCHESTRATOR_PROACTIVITY } from "./proactivity.ts";
 import { deriveContract } from "./agent-loop.ts";
+import { defaultTimezone, renderClock } from "./clock.ts";
 
 type Admin = SupabaseClient;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -53,6 +56,9 @@ export interface RosterAgent {
   name: string;
   persona: string | null;
   instructions: string | null;
+  /** The other two files (0210) — who it is, and what its user prefers. */
+  soul?: string | null;
+  preferences?: string | null;
   role?: string | null;
   /** Provider/model pin from the agent's settings — see resolveProvider. */
   model?: string | null;
@@ -450,7 +456,7 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
   dashboardName: string;
 }): Promise<{ runId: string; messageId: string } | null> {
   const { data: agentRow } = await admin.from("internal_agents")
-    .select("id, name, persona, instructions, model, temperature, is_orchestrator, service_dashboard_id, created_by, swarm_enabled, swarm_max_concurrency")
+    .select("id, name, persona, instructions, soul, preferences, model, temperature, is_orchestrator, service_dashboard_id, created_by, swarm_enabled, swarm_max_concurrency")
     .eq("id", opts.agentId).maybeSingle();
   if (!agentRow) return null;
   const a = agentRow as RosterAgent;
@@ -475,10 +481,15 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
   const messageId = (ph as { id: string } | null)?.id ?? null;
   if (!messageId) return null;
 
+  const company = await loadCompanyContext(admin, opts.room.project_id, {
+    agentId: a.id,
+    dashboardId: a.service_dashboard_id ?? opts.room.dashboard_id,
+  });
   const system = buildRoomSystemPrompt({
     agent: a, room: opts.room, dashboardName: opts.dashboardName,
     toolRows: (toolRows ?? []) as AgentToolRow[], admin,
     mission: opts.missionId ? { taskTitle: opts.brief.slice(0, 120) } : null,
+    company,
   });
 
   const messages: ChatMessage[] = [
@@ -542,6 +553,10 @@ export function buildRoomSystemPrompt(opts: {
   toolRows: AgentToolRow[];
   mission?: { taskTitle: string } | null;
   extraContext?: string;
+  /** L'entreprise (0212), chargée par l'appelant. Un agent qui a un employeur
+   *  dans son chat direct et aucun dans une room est deux agents différents
+   *  pour la personne qui lui parle. */
+  company?: CompanyContext | null;
 }): string {
   // A throwaway context: buildInternalToolset is only asked for its capability
   // TREE here — the durable tick engine rebuilds the real executor. Everything
@@ -554,6 +569,10 @@ export function buildRoomSystemPrompt(opts: {
     serviceDashboardId: opts.agent.service_dashboard_id ?? opts.room.dashboard_id,
     userId: opts.agent.created_by ?? null,
     swarmEnabled: opts.agent.swarm_enabled !== false,
+    // Inert like the rest of this stub, but it must be PRESENT: its presence is
+    // what tells buildInternalToolset that reports go to Le Rédacteur, so the
+    // advertised toolbox matches the one the tick engine really executes.
+    requestReport: async () => "",
     createDeliverable: async () => {},
     requestApproval: async () => "approval-skipped-in-room",
     logEvent: async () => {},
@@ -570,7 +589,20 @@ export function buildRoomSystemPrompt(opts: {
       ].join("\n"),
     },
   ];
+  // Ce qu'on est en train de faire, pour la sélection par pertinence.
+  const turnSubject = [opts.mission?.taskTitle ?? "", opts.extraContext ?? ""].join(" ").trim();
+  // L'employeur, avant le caractère — même ordre que dans le chat direct.
+  const comp = renderCompanySection(opts.company ?? null, turnSubject, 1200);
+  if (comp.body) sections.push({ id: "company", body: comp.body, dropped: comp.dropped, offered: comp.offered });
+  // Same three files as a direct chat: an agent that has a character in its own
+  // chat and none in a room is two different agents to the person talking to it.
+  // Preferences are selected against what this turn is about — the task title
+  // for a mission, the free context otherwise.
+  const soul = renderSoul(opts.agent.soul);
+  if (soul) sections.push({ id: "soul", body: soul });
   if (opts.agent.instructions) sections.push({ id: "instructions", body: `Your instructions:\n${opts.agent.instructions}` });
+  const prefs = selectPreferences(opts.agent.preferences, turnSubject, 1200);
+  if (prefs.body) sections.push({ id: "preferences", body: prefs.body, dropped: prefs.dropped, offered: prefs.offered });
   if (opts.agent.is_orchestrator) {
     sections.push({
       id: "doctrine",
@@ -578,7 +610,7 @@ export function buildRoomSystemPrompt(opts: {
         "## Tu es le chef d'orchestre de cette room",
         "Tu es le nœud central du service : tu réponds, tu routes, tu organises, et tu peux CONSTRUIRE l'espace de travail à la demande.",
         "- Crée un agent sur mesure (create_agent) dès que l'utilisateur décrit un besoin qu'aucun agent existant ne couvre — nom clair, rôle, instructions opérationnelles.",
-        "- Planifie du récurrent avec create_mission (schedule cron), lance de l'immédiat avec create_mission (start_now) sur l'agent le mieux placé.",
+        "- Planifie du récurrent avec create_mission (schedule cron, heure locale de l'utilisateur), un rappel ou une tâche ponctuelle plus tard avec create_mission (run_at), lance de l'immédiat avec create_mission (start_now) sur l'agent le mieux placé.",
         "- Quand une mission de room est en cours, tu en es le responsable : tu suis l'avancement, tu synthétises les résultats des autres agents, et tu conclus.",
         "Confirme chaque action faite, en une phrase (« Agent X créé », « Brief quotidien planifié à 6h »).",
         "",
@@ -601,13 +633,15 @@ export function buildRoomSystemPrompt(opts: {
   sections.push({
     id: "rules",
     body: [
-      "- Use render_ui for metrics/tables/charts, and create_deliverable to produce a document/file/report (it appears as a card). Real data only.",
-      "- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : NE demande PAS quoi faire, ne réponds PAS juste par du texte conversationnel. Fais l'analyse avec tes outils MAINTENANT et produis-la avec create_deliverable(kind=\"report\"). Pour un gros rapport, construis-le avec report_section puis finalise avec create_deliverable(kind=\"report\") sans content.",
+      "- Use render_ui for metrics/tables/charts. A REPORT is not written here: hand the matter to Le Rédacteur with request_report and he publishes it (it appears as a card). Real data only.",
+      "- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : NE demande PAS quoi faire, ne réponds PAS juste par du texte conversationnel. Fais l'analyse avec tes outils MAINTENANT, puis appelle request_report(subject, material, angle) en lui passant les chiffres avec leurs sources, les constats et ce qui reste incertain. C'est lui qui rédige — toi, tu rassembles.",
       "- Ne pose une question de clarification QUE si c'est réellement impossible d'avancer.",
       "- ARTIFACTS : list_artifacts pour voir ce qui existe déjà, read_artifact pour le relire, update_artifact pour le corriger EN PLACE. Ne crée pas un deuxième document là où il faut modifier le premier.",
     ].join("\n"),
   });
   sections.push({ id: "toolbox", body: `Your tools (full schemas are provided separately):\n${capabilitySummary}` });
+  // Same clock as a direct chat — "remind me Thursday" in a room is no less common.
+  sections.push({ id: "context", body: renderClock(defaultTimezone()) });
 
   return compileSystemPrompt(sections).system;
 }
@@ -1109,7 +1143,7 @@ async function finishMission(
       `RÈGLE STRICTE sur les livrables : la seule liste qui fait foi est « Livrables réellement enregistrés » ci-dessous.`,
       delivs.length
         ? `Ne cite QUE ces livrables. Si un résumé de tâche en annonce un autre, écris explicitement qu'il n'a pas été enregistré.`
-        : `Aucun livrable n'existe : ne dis PAS qu'un rapport a été produit. Si le contenu est là, produis-le maintenant toi-même avec create_deliverable ; sinon dis clairement qu'il manque.`,
+        : `Aucun livrable n'existe : ne dis PAS qu'un rapport a été produit. Si la matière est là, confie-la maintenant au Rédacteur avec request_report ; sinon dis clairement qu'il manque.`,
     ].join("\n"),
     context: [
       mission.objective ? `Objectif : ${mission.objective}` : "",

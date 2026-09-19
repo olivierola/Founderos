@@ -2,9 +2,18 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Sparkles, Loader2, ArrowLeft, Brain, ListChecks, Wand2,
-  AlertTriangle, Plus, Trash2, ChevronRight, Check,
-} from "lucide-react";
+  SparkleIcon as Sparkles,
+  CircleNotchIcon as Loader2,
+  ArrowLeftIcon as ArrowLeft,
+  BrainIcon as Brain,
+  ListChecksIcon as ListChecks,
+  MagicWandIcon as Wand2,
+  WarningIcon as AlertTriangle,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  CaretRightIcon as ChevronRight,
+  CheckIcon as Check,
+} from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

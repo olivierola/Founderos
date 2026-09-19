@@ -1,5 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, DollarSign, Wallet, Users, Activity, AlertCircle } from "lucide-react";
+import {
+  TrendUpIcon as TrendingUp,
+  CurrencyDollarIcon as DollarSign,
+  WalletIcon as Wallet,
+  UsersIcon as Users,
+  PulseIcon as Activity,
+  WarningCircleIcon as AlertCircle,
+} from "@phosphor-icons/react";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";

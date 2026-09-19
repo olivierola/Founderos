@@ -1,6 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Timer, Users, Target, FlaskConical, Gauge, Trophy, Loader2 } from "lucide-react";
+import {
+  TrendUpIcon as TrendingUp,
+  TimerIcon as Timer,
+  UsersIcon as Users,
+  TargetIcon as Target,
+  FlaskIcon as FlaskConical,
+  GaugeIcon as Gauge,
+  TrophyIcon as Trophy,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

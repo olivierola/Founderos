@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import type { SlateElementProps } from 'platejs/static';
 
-import { ChevronRight } from 'lucide-react';
+import { CaretRightIcon as ChevronRight } from "@phosphor-icons/react";
 import { SlateElement } from 'platejs/static';
 
 export function ToggleElementStatic(props: SlateElementProps) {

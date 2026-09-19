@@ -12,7 +12,19 @@ interface GridItem {
   minW?: number;
   minH?: number;
 }
-import { ArrowLeft, Plus, Loader2, Pencil, Trash2, Save, GripVertical, MoreVertical, RefreshCw, X, FileDown } from "lucide-react";
+import {
+  ArrowLeftIcon as ArrowLeft,
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  FloppyDiskIcon as Save,
+  DotsSixVerticalIcon as GripVertical,
+  DotsThreeVerticalIcon as MoreVertical,
+  ArrowsClockwiseIcon as RefreshCw,
+  XIcon as X,
+  FileArrowDownIcon as FileDown,
+} from "@phosphor-icons/react";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { Button } from "@/components/ui/button";
@@ -33,7 +45,7 @@ import { WidgetLibraryDropdown } from "./WidgetLibraryDropdown";
 import { exportDashboardPdf } from "./exportPdf";
 import type { CatalogWidget } from "./widgetCatalog";
 import { moduleWidgetDefaultSize, type ModuleWidgetEntry } from "./moduleWidgetRegistry";
-import { LayoutGrid } from "lucide-react";
+import { GridFourIcon as LayoutGrid } from "@phosphor-icons/react";
 import type { Widget, WidgetConfig, WidgetType } from "./types";
 
 const COLS = 12;

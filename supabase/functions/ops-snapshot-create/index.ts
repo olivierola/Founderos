@@ -7,7 +7,8 @@
 // Returns: { ok, snapshot_id, version }
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireResourceAccess } from "../_shared/authz.ts";
 
 Deno.serve(async (req) => {
   const corsResp = handleCors(req);
@@ -17,12 +18,11 @@ Deno.serve(async (req) => {
     const { infra_id, label, message } = await req.json();
     if (!infra_id) return jsonResponse({ ok: false, message: "infra_id required" }, { status: 400 });
 
-    const userClient = createUserClient(req);
-    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !userInfo?.user) {
-      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
-    }
-    const userId = userInfo.user.id;
+    // Autorisation (FOS-02) : un snapshot lit toute la configuration d'infra, donc le garde porte sur le
+    // projet propriétaire — résolu en base, jamais pris dans le corps de la requête.
+    const auth = await requireResourceAccess(req, "ops_infra_projects", infra_id, "editor");
+    if (!auth.ok) return auth.response;
+    const userId = auth.userId;
 
     const admin = createServiceClient();
 

@@ -19,7 +19,12 @@ import {
   useFloatingLinkInsertState,
 } from '@platejs/link/react';
 import { cva } from 'class-variance-authority';
-import { ExternalLink, Link, Text, Unlink } from 'lucide-react';
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  LinkIcon as Link,
+  TextTIcon as Text,
+  LinkBreakIcon as Unlink,
+} from "@phosphor-icons/react";
 import { KEYS } from 'platejs';
 import {
   useEditorRef,

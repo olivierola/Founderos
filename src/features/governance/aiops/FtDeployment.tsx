@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Rocket, Activity, AlertTriangle, Server, History, BellRing } from "lucide-react";
+import {
+  RocketLaunchIcon as Rocket,
+  PulseIcon as Activity,
+  WarningIcon as AlertTriangle,
+  HardDrivesIcon as Server,
+  ClockCounterClockwiseIcon as History,
+  BellRingingIcon as BellRing,
+} from "@phosphor-icons/react";
 import { RocketIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";

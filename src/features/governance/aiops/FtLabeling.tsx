@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Tags, Check, X, Bot, UserCheck, Plus, PartyPopper } from "lucide-react";
+import {
+  TagIcon as Tags,
+  CheckIcon as Check,
+  XIcon as X,
+  RobotIcon as Bot,
+  UserCheckIcon as UserCheck,
+  PlusIcon as Plus,
+  ConfettiIcon as PartyPopper,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Button } from "@/components/ui/button";

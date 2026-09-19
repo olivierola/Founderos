@@ -1,5 +1,15 @@
 import { useMemo } from "react";
-import { BellRing, MessagesSquare, Mail, Smartphone, Activity, Gauge, ShieldAlert, TrendingUp, Loader2 } from "lucide-react";
+import {
+  BellRingingIcon as BellRing,
+  ChatsIcon as MessagesSquare,
+  EnvelopeSimpleIcon as Mail,
+  DeviceMobileIcon as Smartphone,
+  PulseIcon as Activity,
+  GaugeIcon as Gauge,
+  ShieldWarningIcon as ShieldAlert,
+  TrendUpIcon as TrendingUp,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Card } from "@/components/ui/card";

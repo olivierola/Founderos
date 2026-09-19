@@ -2,10 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Globe, Loader2, Eye, XCircle, CheckCircle2, Send,
-  MessageCircleQuestion, MousePointerClick, Keyboard, ArrowDownUp,
-  ListChecks, Bot,
-} from "lucide-react";
+  ArrowLeftIcon as ArrowLeft,
+  GlobeIcon as Globe,
+  CircleNotchIcon as Loader2,
+  EyeIcon as Eye,
+  XCircleIcon as XCircle,
+  CheckCircleIcon as CheckCircle2,
+  PaperPlaneRightIcon as Send,
+  QuestionIcon as MessageCircleQuestion,
+  CursorClickIcon as MousePointerClick,
+  KeyboardIcon as Keyboard,
+  ArrowsDownUpIcon as ArrowDownUp,
+  ListChecksIcon as ListChecks,
+  RobotIcon as Bot,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";

@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { Settings2, Save, Check, Plug } from "lucide-react";
+import {
+  SlidersHorizontalIcon as Settings2,
+  FloppyDiskIcon as Save,
+  CheckIcon as Check,
+  PlugIcon as Plug,
+} from "@phosphor-icons/react";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { PlugsConnectedIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";

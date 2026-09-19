@@ -10,6 +10,10 @@
 // host can add its own read-only commands, and anything else is forwarded to
 // `onCommand` (which, in this app, asks the agent to run it — the agent owns
 // the runner, not the browser).
+//
+// Colours: none are hardcoded. The `.agent-terminal` class (globals.css) derives
+// every one from the app theme tokens, so the surface follows Light, Dark and
+// each named skin instead of imposing its own black-and-cyan.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -53,7 +57,7 @@ function linkify(text: string): ReactNode[] {
     out.push(
       <a
         key={`l${i++}`} href={m[0]} target="_blank" rel="noopener noreferrer"
-        className="text-[#67e8f9] underline-offset-2 hover:underline"
+        className="text-[var(--term-link)] underline-offset-2 hover:underline"
       >{m[0]}</a>,
     );
     last = m.index + m[0].length;
@@ -198,29 +202,29 @@ export function AgentTerminal({
     }
   }
 
-  const dot = status === "live" ? "bg-[#34d399]" : status === "off" ? "bg-[#f87171]" : "bg-[#64748b]";
+  const dot = status === "live" ? "bg-[var(--term-ok)]" : status === "off" ? "bg-[var(--term-danger)]" : "bg-[var(--term-dim)]";
   const label = statusLabel ?? (status === "live" ? "EN COURS" : status === "off" ? "HORS LIGNE" : "AU REPOS");
 
   return (
     <div
       onClick={() => input.current?.focus()}
       className={cn(
-        "flex h-full min-h-0 cursor-text flex-col overflow-hidden rounded-xl border border-[#1e2530] bg-[#0a0c10] font-mono text-[12px] leading-relaxed",
+        "agent-terminal flex h-full min-h-0 cursor-text flex-col overflow-hidden rounded-xl border border-[var(--term-border)] bg-[var(--term-bg)] font-mono text-[12px] leading-relaxed",
         className,
       )}
     >
       {/* Window chrome */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-[#1e2530] bg-[#12161c] px-3 py-2 text-[10px] text-[#64748b]">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--term-border)] bg-[var(--term-chrome)] px-3 py-2 text-[10px] text-[var(--term-dim)]">
         <span className="flex gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#f87171]/80" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#fbbf24]/80" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#34d399]/80" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[var(--term-danger)]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[var(--term-prompt)]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[var(--term-ok)]" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[#94a3b8]">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-[var(--term-out)]">{title}</span>
         {filter && (
           <button
             onClick={(e) => { e.stopPropagation(); setFilter(""); }}
-            className="shrink-0 rounded bg-[#1e2530] px-1.5 py-0.5 text-[#67e8f9] hover:text-white"
+            className="shrink-0 rounded bg-[var(--term-chip-bg)] px-1.5 py-0.5 text-[var(--term-link)] hover:text-[var(--term-fg)]"
             title="Retirer le filtre"
           >grep: {filter} ✕</button>
         )}
@@ -240,14 +244,14 @@ export function AgentTerminal({
         className="scrollbar-slim min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-2.5"
       >
         {shown.length === 0 ? (
-          <p className="whitespace-pre-wrap text-[#64748b]">{emptyMessage}</p>
+          <p className="whitespace-pre-wrap text-[var(--term-dim)]">{emptyMessage}</p>
         ) : (
           shown.map((l) => <Line key={l.id} line={l} prompt={prompt} />)
         )}
 
         {/* The prompt itself lives in the scroller, at the end of the session. */}
         <div className="flex items-center gap-2 pt-0.5">
-          <span className="shrink-0 text-[#22d3ee]">{prompt}</span>
+          <span className="shrink-0 text-[var(--term-prompt)]">{prompt}</span>
           <input
             ref={input}
             value={value}
@@ -255,14 +259,14 @@ export function AgentTerminal({
             onKeyDown={onKeyDown}
             spellCheck={false}
             autoComplete="off"
-            className="min-w-0 flex-1 bg-transparent text-[#e5e7eb] caret-[#34d399] outline-none placeholder:text-[#475569]"
+            className="min-w-0 flex-1 bg-transparent text-[var(--term-fg)] caret-[var(--term-caret)] outline-none placeholder:text-[var(--term-note)]"
             placeholder={onCommand ? "help · clear · grep <texte> · ou une commande à faire exécuter" : "help · clear · grep <texte>"}
           />
         </div>
       </div>
 
       {footerHint && (
-        <div className="shrink-0 border-t border-[#1e2530] bg-[#12161c] px-3 py-1.5 text-[10px] text-[#64748b]">
+        <div className="shrink-0 border-t border-[var(--term-border)] bg-[var(--term-chrome)] px-3 py-1.5 text-[10px] text-[var(--term-dim)]">
           {footerHint}
         </div>
       )}
@@ -273,7 +277,7 @@ export function AgentTerminal({
 function Line({ line, prompt }: { line: TerminalLine; prompt: string }) {
   const [expanded, setExpanded] = useState(false);
   if (line.note) {
-    return <div className="whitespace-pre-wrap text-[#4b5b6e]"># {line.note}</div>;
+    return <div className="whitespace-pre-wrap text-[var(--term-note)]"># {line.note}</div>;
   }
 
   const failed = line.ok === false;
@@ -284,30 +288,30 @@ function Line({ line, prompt }: { line: TerminalLine; prompt: string }) {
   return (
     <div>
       <div className="flex items-start gap-2">
-        <span className={cn("shrink-0", failed ? "text-[#f87171]" : "text-[#22d3ee]")}>{prompt}</span>
+        <span className={cn("shrink-0", failed ? "text-[var(--term-danger)]" : "text-[var(--term-prompt)]")}>{prompt}</span>
         {line.env && (
           <span
             className={cn(
               "mt-[2px] shrink-0 rounded px-1 text-[9px] font-semibold uppercase leading-tight",
-              line.env === "runner" ? "bg-[#0ea5e9]/20 text-[#7dd3fc]" : "bg-[#10b981]/20 text-[#6ee7b7]",
+              line.env === "runner" ? "bg-[var(--term-run-bg)] text-[var(--term-run)]" : "bg-[var(--term-sbx-bg)] text-[var(--term-sbx)]",
             )}
             title={line.env === "runner" ? "Exécuté sur le runner (machine réelle)" : "Exécuté dans la sandbox (conteneur)"}
           >{line.env === "runner" ? "run" : "sbx"}</span>
         )}
-        {line.who && <span className="mt-[1px] shrink-0 text-[10px] text-[#7c8da3]">{line.who}</span>}
-        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[#e5e7eb]">{line.command}</span>
-        {line.running && <span className="shrink-0 animate-pulse text-[#34d399]">▍</span>}
+        {line.who && <span className="mt-[1px] shrink-0 text-[10px] text-[var(--term-dim)]">{line.who}</span>}
+        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[var(--term-fg)]">{line.command}</span>
+        {line.running && <span className="shrink-0 animate-pulse text-[var(--term-ok)]">▍</span>}
       </div>
       {(line.output ?? "") !== "" && (
         <pre className={cn(
           "mt-0.5 whitespace-pre-wrap break-words pl-4",
-          failed ? "text-[#fca5a5]" : "text-[#9aa4b2]",
+          failed ? "text-[var(--term-danger)]" : "text-[var(--term-out)]",
         )}>{linkify(text)}</pre>
       )}
       {clipped && (
         <button
           onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
-          className="ml-4 text-[10px] text-[#64748b] hover:text-[#94a3b8]"
+          className="ml-4 text-[10px] text-[var(--term-dim)] hover:text-[var(--term-fg)]"
         >… {outLines.length - MAX_OUTPUT_LINES} lignes de plus</button>
       )}
     </div>

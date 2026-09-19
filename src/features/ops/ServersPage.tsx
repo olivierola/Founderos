@@ -2,9 +2,17 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Server, Plus, Loader2, ChevronRight, ShieldCheck, Globe, Cpu, HardDrive,
-  CheckCircle2, AlertTriangle,
-} from "lucide-react";
+  HardDrivesIcon as Server,
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  CaretRightIcon as ChevronRight,
+  ShieldCheckIcon as ShieldCheck,
+  GlobeIcon as Globe,
+  CpuIcon as Cpu,
+  HardDriveIcon as HardDrive,
+  CheckCircleIcon as CheckCircle2,
+  WarningIcon as AlertTriangle,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

@@ -4,13 +4,54 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Sparkles, Loader2, GitBranch, GitPullRequest, GitMerge, GitFork, FileCode, Send, ExternalLink,
-  FilePenLine, Wand2, ArrowRight, Eye, Github, Package, Download, RefreshCw, Monitor,
-  Mic, Square, Compass, FlaskConical, Plug, ArrowUp, ChevronDown, Check,
-  Copy, Pencil, RotateCcw, ThumbsUp, ThumbsDown, Brain, TerminalSquare,
-  AlertTriangle, CheckCircle2, Trash2, SlidersHorizontal, Circle, ListChecks,
-  FileText, Zap, Server, Workflow, Plus, Play, Power, FolderKanban,
-} from "lucide-react";
+  SparkleIcon as Sparkles,
+  CircleNotchIcon as Loader2,
+  GitBranchIcon as GitBranch,
+  GitPullRequestIcon as GitPullRequest,
+  GitMergeIcon as GitMerge,
+  GitForkIcon as GitFork,
+  FileCodeIcon as FileCode,
+  PaperPlaneRightIcon as Send,
+  ArrowSquareOutIcon as ExternalLink,
+  NotePencilIcon as FilePenLine,
+  MagicWandIcon as Wand2,
+  ArrowRightIcon as ArrowRight,
+  EyeIcon as Eye,
+  GithubLogoIcon as Github,
+  PackageIcon as Package,
+  DownloadSimpleIcon as Download,
+  ArrowsClockwiseIcon as RefreshCw,
+  MonitorIcon as Monitor,
+  MicrophoneIcon as Mic,
+  SquareIcon as Square,
+  CompassIcon as Compass,
+  FlaskIcon as FlaskConical,
+  PlugIcon as Plug,
+  ArrowUpIcon as ArrowUp,
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  PencilSimpleIcon as Pencil,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ThumbsUpIcon as ThumbsUp,
+  ThumbsDownIcon as ThumbsDown,
+  BrainIcon as Brain,
+  TerminalWindowIcon as TerminalSquare,
+  WarningIcon as AlertTriangle,
+  CheckCircleIcon as CheckCircle2,
+  TrashIcon as Trash2,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  CircleIcon as Circle,
+  ListChecksIcon as ListChecks,
+  FileTextIcon as FileText,
+  LightningIcon as Zap,
+  HardDrivesIcon as Server,
+  FlowArrowIcon as Workflow,
+  PlusIcon as Plus,
+  PlayIcon as Play,
+  PowerIcon as Power,
+  KanbanIcon as FolderKanban,
+} from "@phosphor-icons/react";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +67,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { useDictation } from "@/lib/useDictation";
+import { VoiceComposer } from "@/components/ui/composer-voice-glow";
 import { chatUserBubble, chatCard, chatAccentText } from "@/lib/chatStyles";
 import { AgentIdentity } from "@/components/AgentIdentity";
 
@@ -821,7 +863,10 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
     } finally { setRunning(false); }
   }
 
+  // Framed by voice-glow (VoiceComposer): breathing at rest, following the
+  // dictated voice, sweeping while the agent codes.
   const composer = (
+    <VoiceComposer stream={dictation.stream} processing={running || dictation.connecting} radius={16}>
     <div className="rounded-2xl border border-border bg-card/60 p-2 shadow-sm backdrop-blur">
       {/* Context row — the repo to work on. Inside a Vibe project the repo is
           fixed by the project, so it's shown locked instead of pickable. */}
@@ -880,13 +925,14 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
             dictation.recording ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-border text-muted-foreground hover:bg-muted/60",
           )}
         >
-          {dictation.connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : dictation.recording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-4 w-4" />}
+          {dictation.connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : dictation.recording ? <Square weight="fill" className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
         </button>
         <button onClick={() => send(input)} disabled={!input.trim() || running} className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground disabled:opacity-40">
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
         </button>
       </div>
     </div>
+    </VoiceComposer>
   );
 
   return (

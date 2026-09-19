@@ -14,6 +14,7 @@
 
 import { jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { decideApprovalFromChannel } from "../_shared/channel-approval.ts";
 import { teamsSendMessage } from "../_shared/teams.ts";
 import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6";
 
@@ -108,6 +109,25 @@ async function handleActivity(raw: string): Promise<Response> {
     channel.service_url = serviceUrl || channel.service_url;
   }
 
+  // L'identifiant STABLE de l'auteur — son objet Azure AD. Le nom affiché ne
+  // prouve rien : deux personnes peuvent le porter.
+  const fromRef = String(a.from?.aadObjectId ?? a.from?.id ?? "");
+
+  // Un clic sur un bouton de carte adaptative arrive comme un message SANS
+  // texte, avec les données du bouton dans `value`. On le traite avant le
+  // texte, qui serait vide et ferait ignorer le clic.
+  if (a.value && typeof a.value === "object" && a.value.fos_approval) {
+    const d = a.value.decision;
+    const decision = d === "approve" || d === "approve_all" || d === "reject" ? d : null;
+    if (decision) {
+      const outcome = await decideApprovalFromChannel(admin, {
+        approvalId: String(a.value.fos_approval), decision, provider: "teams", clickerRef: fromRef,
+      });
+      await teamsSendMessage(channel.service_url ?? serviceUrl, conversationId, `${outcome.message} — par ${fromName}`);
+    }
+    return jsonResponse({ ok: true });
+  }
+
   const text = cleanText(a.text);
   if (!text) return jsonResponse({ ok: true });
 
@@ -126,13 +146,14 @@ async function handleActivity(raw: string): Promise<Response> {
   if (existing) {
     conversationRowId = existing.id;
     await admin.from("internal_agent_conversations")
-      .update({ channel_id: channel.id, external_channel_ref: conversationId, external_thread_ref: null })
+      .update({ channel_id: channel.id, external_channel_ref: conversationId, external_thread_ref: null, external_user_ref: fromRef || null })
       .eq("id", conversationRowId);
   } else {
     const { data: created } = await admin.from("internal_agent_conversations").insert({
       agent_id: channel.agent_id, workspace_id: channel.workspace_id, project_id: channel.project_id,
       title, channel_id: channel.id, external_channel_ref: conversationId, external_thread_ref: null,
-    }).select("id").single();
+    external_user_ref: fromRef || null,
+  }).select("id").single();
     conversationRowId = created?.id ?? null;
   }
   if (!conversationRowId) return jsonResponse({ ok: true });

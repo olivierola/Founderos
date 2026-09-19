@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { FlaskConical, Play, Loader2, ThumbsUp, Clock, Hash, Coins } from "lucide-react";
+import {
+  FlaskIcon as FlaskConical,
+  PlayIcon as Play,
+  CircleNotchIcon as Loader2,
+  ThumbsUpIcon as ThumbsUp,
+  ClockIcon as Clock,
+  HashIcon as Hash,
+  CoinsIcon as Coins,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";

@@ -4,8 +4,12 @@
 // the same conversation). Keeping it in one place means the routing rules for
 // each action kind never drift between the two call sites.
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { runTrackerAction, trackerScope } from "./tracker-actions.ts";
+
 export type ApprovalActionKind =
-  | "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write";
+  | "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write"
+  | "tracker_write";
 
 export interface ApprovalActionInput {
   action_kind: ApprovalActionKind;
@@ -63,6 +67,29 @@ export async function executeApprovalAction(a: ApprovalActionInput): Promise<{ o
     });
     return { ok: res.ok, detail: `HTTP ${res.status}\n${(await res.text()).slice(0, 4000)}` };
   }
+  // Le suivi de travail ne passe PAS par une fonction edge : il écrit
+  // directement, avec la même implémentation que l'agent utilise en direct.
+  // C'est le seul moyen que l'action validée trois heures plus tard fasse
+  // exactement ce qui avait été montré au moment de l'approbation.
+  if (a.action_kind === "tracker_write") {
+    if (!base || !key) return { ok: false, detail: "Tracker actions not configured" };
+    const agentId = String(p.agent_id ?? "");
+    if (!agentId) return { ok: false, detail: "Missing agent_id in approval payload" };
+
+    const admin = createClient(base, key, { auth: { persistSession: false } });
+    const actor = { admin, agentId };
+    const allowed = await trackerScope(actor);
+    const detail = await runTrackerAction(
+      actor,
+      String(p.action ?? ""),
+      (p.params && typeof p.params === "object") ? p.params as Record<string, unknown> : {},
+      allowed,
+    );
+    // L'implémentation rend une phrase, pas un code : une réponse qui commence
+    // par ERREUR est un échec, tout le reste a abouti.
+    return { ok: !detail.startsWith("ERREUR"), detail };
+  }
+
   if (a.action_kind === "edge_function") {
     const slug = String(p.slug ?? "");
     if (!/^[a-z0-9-]+$/.test(slug)) return { ok: false, detail: "Invalid function slug" };
@@ -98,6 +125,7 @@ export function approvalScope(action_kind: string, payload: Record<string, unkno
   if (action_kind === "composio_action") return `composio:${p.toolkit ?? ""}:${p.tool_slug ?? ""}:${canon(p.params)}`;
   if (action_kind === "connector_action") return `connector:${p.provider ?? ""}:${p.action ?? ""}:${canon(p.params)}`;
   if (action_kind === "crm_write") return `crm:${p.action ?? ""}:${canon(p.params)}`;
+  if (action_kind === "tracker_write") return `tracker:${p.action ?? ""}:${canon(p.params)}`;
   if (action_kind === "edge_function") return `edge:${p.slug ?? ""}:${canon(p.args)}`;
   return `webhook:${toolName}:${canon(p.args)}`;
 }

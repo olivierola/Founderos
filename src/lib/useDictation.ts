@@ -25,6 +25,9 @@ export function useDictation(onText: (dictated: string) => void) {
   const [connecting, setConnecting] = useState(false);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // The live mic stream, exposed so the composer's voice glow (voice-glow)
+  // reacts to the very audio being transcribed — no second mic capture.
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -41,6 +44,7 @@ export function useDictation(onText: (dictated: string) => void) {
     try { ctxRef.current?.close(); } catch { /* noop */ }
     processorRef.current = null; sourceRef.current = null; streamRef.current = null; ctxRef.current = null;
     setLevel(0);
+    setStream(null);
   }, []);
 
   const stop = useCallback(() => {
@@ -71,6 +75,7 @@ export function useDictation(onText: (dictated: string) => void) {
       setError("Accès micro refusé"); setConnecting(false); return;
     }
     streamRef.current = stream;
+    setStream(stream);
 
     const ctx = new AudioContext();
     ctxRef.current = ctx;
@@ -89,7 +94,8 @@ export function useDictation(onText: (dictated: string) => void) {
     wsRef.current = ws;
 
     ws.onopen = () => { setConnecting(false); setRecording(true); };
-    ws.onerror = () => { setError("Connexion dictée échouée"); setConnecting(false); };
+    // A failed connection used to leave the mic open (and, now, the glow lit).
+    ws.onerror = () => { setError("Connexion dictée échouée"); setConnecting(false); teardownAudio(); };
     ws.onclose = () => { readyRef.current = false; };
     ws.onmessage = (e) => {
       let msg: any;
@@ -118,9 +124,9 @@ export function useDictation(onText: (dictated: string) => void) {
     // A muted gain keeps the processor pulling audio without echoing the mic.
     const mute = ctx.createGain(); mute.gain.value = 0;
     source.connect(processor); processor.connect(mute); mute.connect(ctx.destination);
-  }, [onText]);
+  }, [onText, teardownAudio]);
 
   const toggle = useCallback(() => { if (recording || connecting) stop(); else void start(); }, [recording, connecting, start, stop]);
 
-  return { recording, connecting, level, error, start, stop, toggle };
+  return { recording, connecting, level, error, stream, start, stop, toggle };
 }

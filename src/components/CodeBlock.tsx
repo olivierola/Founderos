@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { CopyIcon as Copy, CheckIcon as Check } from "@phosphor-icons/react";
 
 interface Props {
   code: string;

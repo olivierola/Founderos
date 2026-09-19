@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { Plus, Trash2, Bot, User } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  RobotIcon as Bot,
+  UserIcon as User,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import type { ModuleProject } from "../moduleProjectModel";
 import { updateModuleProject } from "../moduleProjectModel";

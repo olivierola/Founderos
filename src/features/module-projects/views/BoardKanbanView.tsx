@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { Plus, Trash2, GripVertical, MoreHorizontal } from "lucide-react";
+import {
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  DotsSixVerticalIcon as GripVertical,
+  DotsThreeIcon as MoreHorizontal,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ModuleProject } from "../moduleProjectModel";

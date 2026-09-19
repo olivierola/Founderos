@@ -143,6 +143,9 @@ const FAMILY_OF: Record<string, ToolFamilyKey> = {
 
   say: "comm", ask_user: "comm", render_ui: "comm", send_email: "comm",
   send_message_to_agent: "comm",
+  // Guider quelqu'un dans son propre écran est une conversation, pas une
+  // navigation : ce que l'agent y produit est une phrase, pas une requête.
+  guide_user: "comm", training: "comm",
 
   security_scan: "security", pentest_scope: "security", testing: "security", simulation: "security",
 

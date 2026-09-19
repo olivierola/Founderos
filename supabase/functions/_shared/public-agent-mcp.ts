@@ -41,9 +41,13 @@ export interface PublicAgentTools {
   products: ProductCard[];
   /** Server names, for the system prompt. */
   serverNames: string[];
+  /** Compteurs du tour en cours, mutés par l'executor : la télémétrie de
+   *  conversation (0217) doit savoir si un outil a été joué et s'il a cassé,
+   *  et rag-chat ne voit pas passer les appels. */
+  stats: { calls: number; errors: number };
 }
 
-const EMPTY: PublicAgentTools = { tools: [], executor: async () => "", products: [], serverNames: [] };
+const EMPTY: PublicAgentTools = { tools: [], executor: async () => "", products: [], serverNames: [], stats: { calls: 0, errors: 0 } };
 
 interface AttachedServer {
   id: string; name: string; url: string;
@@ -123,12 +127,14 @@ export async function loadPublicAgentTools(
   }
 
   const products: ProductCard[] = [];
+  const stats = { calls: 0, errors: 0 };
   const sessions = new Map<string, { id?: string }>();
 
   const executor = async (name: string, args: Record<string, unknown>): Promise<string> => {
     const target = dispatch.get(name);
     if (!target) return `ERROR: unknown tool ${name}`;
     const started = Date.now();
+    stats.calls += 1;
     let out = "";
     let failed = false;
     try {
@@ -149,6 +155,8 @@ export async function loadPublicAgentTools(
       }
     }
 
+    if (failed) stats.errors += 1;
+
     // Anonymous visitors are triggering calls to an external system: keep a trail.
     await admin.from("rag_agent_tool_calls").insert({
       workspace_id: agent.workspace_id, project_id: agent.project_id, agent_id: agent.id,
@@ -162,7 +170,7 @@ export async function loadPublicAgentTools(
     return out;
   };
 
-  return { tools: defs, executor, products, serverNames: servers.map((s) => s.name) };
+  return { tools: defs, executor, products, serverNames: servers.map((s) => s.name), stats };
 }
 
 function safeJson(v: unknown): Record<string, unknown> {

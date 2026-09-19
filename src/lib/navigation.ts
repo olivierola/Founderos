@@ -21,6 +21,7 @@ import {
   PulseIcon,
   WarningOctagonIcon,
   GraduationCapIcon,
+  ChalkboardTeacherIcon,
   CircuitryIcon,
   StackIcon,
   ExamIcon,
@@ -212,6 +213,24 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Dashboard", slug: "dashboard", icon: GaugeIcon },
     ],
   },
+  // La couche BUSINESS, au-dessus de la workforce (migrations 0212 → 0215).
+  // Elle vient AVANT les agents dans le rail, et c'est délibéré : on décrit ce
+  // que l'entreprise est et cherche à accomplir, ensuite on regarde qui
+  // l'exécute. Un produit qui ouvre sur la liste des agents vend un builder ;
+  // un produit qui ouvre sur l'entreprise vend une workforce.
+  {
+    slug: "company",
+    label: "Entreprise",
+    icon: BuildingsIcon,
+    color: "text-amber-400/70",
+    zone: "run",
+    subItems: [
+      { label: "Contexte", slug: "context", icon: BuildingsIcon },
+      { label: "Objectifs", slug: "objectives", icon: TargetIcon },
+      { label: "Carte", slug: "graph", icon: GitForkIcon },
+      { label: "ROI", slug: "roi", icon: CoinsIcon },
+    ],
+  },
   {
     slug: "agent",
     label: "AI Workforce",
@@ -227,6 +246,10 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Agents", slug: "agents", group: "Agents", icon: RobotIcon },
       { label: "Base de connaissances", slug: "collections", group: "Connaissances", icon: BooksIcon },
       { label: "Skills", slug: "skills", group: "Compétences", icon: PuzzlePieceIcon },
+      // Les parcours qui apprennent un outil à quelqu'un, guidés dans l'outil même
+      // par l'extension (0218). Ils vivent à côté des Skills parce qu'ils en sont
+      // faits : une procédure démontrée est ce qu'on enseigne.
+      { label: "Formations", slug: "training", group: "Compétences", icon: ChalkboardTeacherIcon },
       { label: "MCP Servers", slug: "mcp", group: "MCP", icon: PlugsConnectedIcon },
       // Connecteurs is NOT here: a connection belongs to one service dashboard
       // (or to one person inside it) — see migration 0177. It lives as a tab of

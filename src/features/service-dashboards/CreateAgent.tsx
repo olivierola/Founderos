@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import {
   GlobeIcon, LaptopIcon, PlusIcon, MagnifyingGlassIcon, SquaresFourIcon, XIcon, CheckIcon, SlidersIcon,
 } from "@phosphor-icons/react";
 import { PUBLIC_AGENT_PRESETS, type PublicAgentPreset } from "@/features/agent-rag/publicAgentPresets";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { SoftField, SoftInput } from "@/components/ui/soft-form";
+import { callEdge } from "@/lib/edge";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { BrandLogo } from "@/components/BrandLogo";
 import { supabase } from "@/lib/supabase";
@@ -15,10 +17,11 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { AVATAR_OPTIONS, AvatarPicker } from "@/features/internal-agents/AvatarPicker";
 import { AGENT_TEMPLATES, type AgentTemplate } from "@/features/internal-agents/agentTemplates";
-import { explainAgentInsertError } from "@/features/internal-agents/instantiateTemplate";
+import { diagnoseAgentInsertError } from "@/features/internal-agents/instantiateTemplate";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "@/features/internal-agents/connectorActionProviders";
 import { applyAgentDefaults, fetchServiceDashboard, DEFAULT_AGENT_DEFAULTS } from "./model";
 import { CatalogCard } from "./CatalogCard";
+import { Icon3D } from "@/features/internal-agents/icons3d";
 import { TemplateConfigPanel } from "./TemplateConfigPanel";
 import {
   useComposioToolkits, useConnectorStatus, toolSlugsFromTemplate, resolveNeeds,
@@ -42,8 +45,10 @@ const OWN_MODELS = "__own__";
 // Template categories, mapped onto the buckets the mockup shows.
 const TEMPLATE_TABS: { key: string; label: string; match?: string[] }[] = [
   { key: "all", label: "All" },
-  { key: "productivity", label: "Productivity", match: ["Assistant", "Ops", "Product"] },
+  { key: "personal", label: "Personnel", match: ["Personnel"] },
+  { key: "productivity", label: "Productivity", match: ["Assistant", "Ops", "Product", "Leadership"] },
   { key: "sales", label: "Sales & Marketing", match: ["Revenue", "Growth", "Marketing"] },
+  { key: "customer", label: "Customer", match: ["Support"] },
   { key: "operations", label: "Operations", match: ["Ops", "Supply chain", "Finance", "HR", "Legal"] },
   { key: "creative", label: "Creative", match: ["Design", "Marketing"] },
   { key: "engineering", label: "Engineering", match: ["QA", "R&D", "Cybersecurity", "Data"] },
@@ -103,30 +108,152 @@ export function CreateAgentPage({ dashboardId, workspaceId, projectId }: {
 }
 
 // ── Public agent ─────────────────────────────────────────────────────────────
-// A customer-facing agent: pick the use case (its preset seeds persona,
-// instructions, welcome message and widget), name it, and it opens on its
-// Knowledge tab — a public agent is only useful once it is fed.
+// Customer-facing agents are picked from the same catalogue cards as the
+// internal ones, then configured before creation — because several templates
+// need something only the merchant can supply (their shop domain) and grant a
+// live MCP server, which is not a decision to make blind.
 function BuildPublicAgent({ dashboardId, workspaceId, projectId, base }: {
+  dashboardId: string; workspaceId: string; projectId: string; base: string;
+}) {
+  const [configuring, setConfiguring] = useState<PublicAgentPreset | null>(null);
+
+  return (
+    <div className="mx-auto mt-8 max-w-6xl">
+      <div className="mb-7">
+        <h1 className="text-2xl font-semibold tracking-tight">Nouvel agent public</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+          Il répond à vos clients depuis sa base de connaissances et s'intègre en widget sur votre
+          site. Les modèles marqués « MCP » vont plus loin : ils interrogent votre boutique en
+          direct, catalogue et stock compris.
+        </p>
+      </div>
+
+      <PublicTemplateConfig
+        preset={configuring}
+        onClose={() => setConfiguring(null)}
+        dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} base={base}
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        {PUBLIC_AGENT_PRESETS.map((t) => (
+          <CatalogCard
+            key={t.key}
+            onClick={() => setConfiguring(t)}
+            glyph={<Icon3D icon={t.icon3d} px={72} />}
+            name={t.label}
+            // Wrench = granted tools, bolt = live servers. A knowledge-only
+            // template shows the em dash rather than a misleading zero.
+            tools={t.mcp ? (t.mcp.allowedTools.length || null) : null}
+            extras={t.mcp ? 1 : null}
+            badges={[
+              { label: t.category, tone: "auth" as const, title: "Catégorie" },
+              ...(t.mcp ? [{ label: "MCP", tone: "key" as const, title: "Se connecte à un serveur MCP" }] : []),
+            ]}
+            meta={t.seed.onboarding_enabled ? "guidé" : undefined}
+            overlay={
+              <span className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-zinc-900">
+                <SlidersIcon className="h-3.5 w-3.5" /> Configurer
+              </span>
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Turn a shop domain into the Storefront MCP endpoint. */
+function shopifyMcpUrl(domain: string): string {
+  const host = domain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  return "https://" + host + "/api/mcp";
+}
+
+/**
+ * Configure-then-create panel for a public template. Creating first and asking
+ * afterwards would leave a half-provisioned agent behind every time the store
+ * turns out to be unreachable.
+ */
+function PublicTemplateConfig({ preset, onClose, dashboardId, workspaceId, projectId, base }: {
+  preset: PublicAgentPreset | null;
+  onClose: () => void;
   dashboardId: string; workspaceId: string; projectId: string; base: string;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [preset, setPreset] = useState<PublicAgentPreset>(PUBLIC_AGENT_PRESETS[0]);
-  const [name, setName] = useState(PUBLIC_AGENT_PRESETS[0].defaultName);
-  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [endpoint, setEndpoint] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function choose(p: PublicAgentPreset) {
-    setPreset(p);
-    // Only overwrite the name when the user hasn't typed one of their own.
-    setName((cur) => (PUBLIC_AGENT_PRESETS.some((x) => x.defaultName === cur) ? p.defaultName : cur));
+  // Reset the form whenever a different card is opened.
+  const activeKey = preset?.key ?? "";
+  const [seenKey, setSeenKey] = useState("");
+  if (activeKey !== seenKey) {
+    setSeenKey(activeKey);
+    setName(preset?.defaultName ?? "");
+    setEndpoint("");
+    setError(null);
+    setStep(null);
   }
 
+  if (!preset) return null;
+  const mcp = preset.mcp;
+  const resolvedUrl = !mcp
+    ? ""
+    : mcp.kind === "shopify"
+      ? (endpoint.trim() ? shopifyMcpUrl(endpoint) : "")
+      : endpoint.trim();
+
   async function create() {
-    if (!name.trim() || creating) return;
-    setCreating(true); setError(null);
+    if (!preset || !name.trim() || busy) return;
+    setBusy(true); setError(null);
     try {
+      // 1. Validate the MCP endpoint BEFORE creating anything, so a typo in the
+      //    shop domain doesn't leave a dangling agent behind.
+      let serverId: string | null = null;
+      if (mcp) {
+        if (!resolvedUrl || !/^https?:\/\//i.test(resolvedUrl)) {
+          throw new Error("Renseignez un endpoint MCP valide (http/https).");
+        }
+        setStep("Test du serveur MCP…");
+        const test = await callEdge<{ ok: boolean; error?: string; count?: number }>("mcp-gateway", {
+          action: "test", url: resolvedUrl, headers: {}, transport: "http",
+        });
+        if (!test.ok) throw new Error(test.error || "Le serveur MCP n'a pas répondu.");
+
+        setStep("Enregistrement du serveur…");
+        const host = endpoint.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+
+        // Reuse the workspace's existing server for this endpoint. mcp_servers
+        // is unique on (workspace_id, name), so a second agent pointed at the
+        // same shop would otherwise collide and fail outright — and one row per
+        // store is what we want anyway: rediscovering its tools once updates
+        // every agent attached to it.
+        const { data: existing } = await supabase
+          .from("mcp_servers").select("id")
+          .eq("workspace_id", workspaceId).eq("url", resolvedUrl).limit(1);
+
+        if (existing && existing.length > 0) {
+          serverId = existing[0].id;
+        } else {
+          const { data: srv, error: srvErr } = await supabase
+            .from("mcp_servers")
+            .insert({
+              workspace_id: workspaceId,
+              name: mcp.name.replace("{domain}", host),
+              url: resolvedUrl, headers: {}, transport: "http", auth_mode: "none",
+            })
+            .select("id").single();
+          if (srvErr) throw new Error(srvErr.message);
+          serverId = srv.id;
+        }
+        // Cache the tool list so rag-chat never re-handshakes per message.
+        await callEdge("mcp-gateway", { action: "discover", server_id: serverId }).catch(() => {});
+      }
+
+      setStep("Création de l'agent…");
       const { seed } = preset;
       const { data, error: err } = await supabase
         .from("rag_agents")
@@ -143,92 +270,109 @@ function BuildPublicAgent({ dashboardId, workspaceId, projectId, base }: {
           onboarding_enabled: seed.onboarding_enabled,
           widget_config: seed.widget_config,
           accent_color: preset.accent,
+          tool_use_enabled: seed.tool_use_enabled,
+          max_tool_calls: seed.max_tool_calls,
         })
-        .select("id")
-        .single();
+        .select("id").single();
       if (err) throw new Error(err.message);
+
+      // 2. Attach the server with the template's grant. The runtime intersects
+      //    it with the tools actually discovered, so a stale name is inert
+      //    rather than broken.
+      if (serverId && data) {
+        setStep("Attribution des outils…");
+        const { error: attErr } = await supabase.from("rag_agent_mcp_servers").insert({
+          agent_id: data.id, server_id: serverId, allowed_tools: mcp?.allowedTools ?? [],
+        });
+        if (attErr) throw new Error(attErr.message);
+      }
+
       queryClient.invalidateQueries({ queryKey: ["sd_public_agents", dashboardId] });
       queryClient.invalidateQueries({ queryKey: ["sd_panel_public_agents", dashboardId] });
       queryClient.invalidateQueries({ queryKey: ["rag_agents", projectId] });
-      if (data) navigate(`${base}/public/${data.id}?t=knowledge`);
+      // An MCP template lands on its E-commerce tab (its tools are the point);
+      // a knowledge-only one lands on Knowledge, where it has to be fed first.
+      if (data) navigate(base + "/public/" + data.id + "?t=" + (mcp ? "ecommerce" : "knowledge"));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setCreating(false);
+      setBusy(false);
+      setStep(null);
     }
   }
 
   return (
-    <div className="mx-auto mt-8 max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Nouvel agent public</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Il répond à vos clients depuis sa base de connaissances, et s'intègre en widget sur votre site.
-          Il vit dans ce service, avec les agents internes de l'équipe.
-        </p>
-      </div>
-
-      <div>
-        <label className="mb-2 block text-sm font-medium">Partir d'un cas d'usage</label>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {PUBLIC_AGENT_PRESETS.map((p) => {
-            const active = p.key === preset.key;
-            return (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => choose(p)}
-                className={cn(
-                  "flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors",
-                  active ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/40 hover:bg-secondary/40",
-                )}
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-base" style={{ background: `${p.accent}26` }}>
-                  {p.emoji}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">{p.label}</span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{p.tagline}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        <label className="mb-1.5 block text-sm font-medium">Nom de l'agent</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && create()}
-          placeholder={preset.defaultName}
-          className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        />
-      </div>
-
-      {/* Live preview of the card it will become. */}
-      <div className="overflow-hidden rounded-xl border border-border">
-        <div className="h-1" style={{ background: preset.accent }} />
-        <div className="flex items-center gap-2 p-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md text-base" style={{ background: `${preset.accent}26` }}>
-            {preset.emoji}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3">
+          <Icon3D icon={preset.icon3d} px={52} />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold">{preset.label}</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">{preset.tagline}</p>
           </div>
-          <span className="text-sm font-medium">{name.trim() || preset.defaultName}</span>
+          <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-muted">
+            <XIcon className="h-4 w-4" />
+          </button>
         </div>
-      </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="mt-5 space-y-4">
+          <SoftField label="Nom de l'agent">
+            <SoftInput
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={preset.defaultName}
+            />
+          </SoftField>
 
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={() => navigate(`${base}/agents`)}>Annuler</Button>
-        <Button onClick={create} disabled={creating || !name.trim()}>
-          {creating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <PlusIcon className="mr-1.5 h-4 w-4" />} Créer l'agent
-        </Button>
+          {mcp && (
+            <>
+              <SoftField label={mcp.domainLabel ?? "Endpoint MCP"}>
+                <SoftInput
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder={mcp.domainPlaceholder}
+                />
+              </SoftField>
+              {resolvedUrl && <p className="font-mono text-xs text-muted-foreground">→ {resolvedUrl}</p>}
+
+              <div className="rounded-xl bg-muted/50 p-3.5">
+                <div className="text-xs font-medium">Outils accordés à la création</div>
+                {mcp.allowedTools.length === 0 ? (
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Aucun : les outils de ce serveur sont découverts à la connexion, vous les
+                    cocherez ensuite dans l'onglet E-commerce.
+                  </p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {mcp.allowedTools.map((t) => (
+                      <span key={t} className="rounded-md bg-background px-1.5 py-0.5 font-mono text-[11px]">{t}</span>
+                    ))}
+                  </div>
+                )}
+                {mcp.note && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{mcp.note}</p>}
+              </div>
+            </>
+          )}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          <div className="flex items-center justify-end gap-2">
+            {step && <span className="mr-auto text-xs text-muted-foreground">{step}</span>}
+            <Button variant="ghost" onClick={onClose} disabled={busy}>Annuler</Button>
+            <Button onClick={create} disabled={busy || !name.trim() || (!!mcp && !resolvedUrl)}>
+              {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <PlusIcon className="mr-1.5 h-4 w-4" />}
+              Créer l'agent
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
+
 
 // ── Build your own ───────────────────────────────────────────────────────────
 function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
@@ -256,6 +400,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
   const [apps, setApps] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
   const [instructions, setInstructions] = useState("");
+  const [soul, setSoul] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<"apps" | "skills" | null>(null);
@@ -304,8 +449,17 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
         instructions: instructions.trim() || null,
         chat_enabled: true, mission_enabled: true,
       }).select("id").single();
-      if (insErr) throw new Error(explainAgentInsertError(insErr.message, !!authData.user));
+      if (insErr) throw new Error(await diagnoseAgentInsertError(insErr, workspaceId));
       const agentId = (data as { id: string }).id;
+
+      // L'âme part dans un update séparé, pas dans l'insert : la colonne date de
+      // 0210, et un cache PostgREST en retard ferait échouer toute la création
+      // au lieu de coûter un caractère à réécrire.
+      if (soul.trim()) {
+        const { error: soulErr } = await supabase.from("internal_agents")
+          .update({ soul: soul.trim() }).eq("id", agentId);
+        if (soulErr) console.warn("Âme non enregistrée:", soulErr.message);
+      }
 
       // Service defaults first, then this form's explicit choices.
       await applyAgentDefaults(agentId, defaults, "blank");
@@ -510,12 +664,24 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
         </PickerPanel>
       )}
 
-      {/* Instructions */}
+      {/* Les deux fichiers qu'on écrit à la main. Le troisième — les préférences
+          — n'est pas ici : il se remplit tout seul, à mesure que l'agent
+          travaille avec vous. Le pré-remplir reviendrait à inventer des
+          habitudes que personne n'a exprimées. */}
       <div className="mt-6">
         <label className="mb-2 block text-sm text-muted-foreground">Instructions</label>
         <Textarea
           rows={11} value={instructions} onChange={(e) => setInstructions(e.target.value)}
-          placeholder="What should this agent do? Describe its job, tone, and any rules."
+          placeholder="Que fait cet agent ? Sa procédure de travail, étape par étape, et ses règles absolues."
+          className="resize-none rounded-2xl bg-background/60 text-sm"
+        />
+      </div>
+
+      <div className="mt-6">
+        <label className="mb-2 block text-sm text-muted-foreground">Âme</label>
+        <Textarea
+          rows={5} value={soul} onChange={(e) => setSoul(e.target.value)}
+          placeholder="Qui il est : sa voix, ce à quoi il tient, ce qu'il refuse même quand on insiste. Trois lignes suffisent — c'est du caractère, pas une procédure."
           className="resize-none rounded-2xl bg-background/60 text-sm"
         />
       </div>
@@ -665,14 +831,7 @@ function TemplateGallery({ dashboardId, workspaceId, projectId, base }: {
             <CatalogCard
               key={t.key}
               onClick={() => setConfiguring(t)}
-              glyph={
-                <span
-                  className="flex h-14 w-14 items-center justify-center rounded-xl text-2xl"
-                  style={{ background: `${t.accent}22`, boxShadow: `inset 0 0 0 1px ${t.accent}44` }}
-                >
-                  {t.emoji}
-                </span>
-              }
+              glyph={<Icon3D icon={t.icon3d} px={72} />}
               name={t.name}
               tools={t.tools.length}
               extras={t.skillSlugs?.length ?? 0}
@@ -681,10 +840,10 @@ function TemplateGallery({ dashboardId, workspaceId, projectId, base }: {
                 { label: t.sandboxMode ?? "cloud", tone: "key", title: "Environnement d'exécution" },
               ]}
               shield={t.autonomy !== "autopilot"}
-              meta={` pas`}
+              meta={`${t.max_steps} pas`}
               tools_needed={resolveNeeds(toolSlugsFromTemplate(t), toolkits, connStatus)}
               overlay={
-                <span className="flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background">
+                <span className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-zinc-900">
                   <SlidersIcon className="h-3.5 w-3.5" /> Configurer
                 </span>
               }

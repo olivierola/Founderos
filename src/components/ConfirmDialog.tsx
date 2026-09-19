@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { WarningIcon as AlertTriangle, CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import {
   Dialog,
   DialogContent,

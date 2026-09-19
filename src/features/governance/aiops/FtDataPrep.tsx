@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eraser, Sparkles, VenetianMask, ScanSearch, ChevronRight, Play } from "lucide-react";
+import {
+  EraserIcon as Eraser,
+  SparkleIcon as Sparkles,
+  MaskHappyIcon as VenetianMask,
+  ScanIcon as ScanSearch,
+  CaretRightIcon as ChevronRight,
+  PlayIcon as Play,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";

@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, CircleDashed, Eye, Plug } from "lucide-react";
+import {
+  CheckCircleIcon as CheckCircle2,
+  CircleDashedIcon as CircleDashed,
+  EyeIcon as Eye,
+  PlugIcon as Plug,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

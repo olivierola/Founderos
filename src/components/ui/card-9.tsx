@@ -1,5 +1,5 @@
 import * as React from "react";
-import { X } from "lucide-react";
+import { XIcon as X } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";

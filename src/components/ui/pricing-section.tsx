@@ -4,7 +4,13 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import NumberFlow from "@number-flow/react";
 import { motion } from "framer-motion";
-import { Bot, CheckCheck, HardDrive, LayoutGrid, Sparkles } from "lucide-react";
+import {
+  RobotIcon as Bot,
+  ChecksIcon as CheckCheck,
+  HardDriveIcon as HardDrive,
+  GridFourIcon as LayoutGrid,
+  SparkleIcon as Sparkles,
+} from "@phosphor-icons/react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { TimelineContent } from "@/components/ui/timeline-animation";
 
@@ -17,7 +23,7 @@ import { TimelineContent } from "@/components/ui/timeline-animation";
  * Annuel = 10 mois payés (≈ -17 %).
  *
  * Écart assumé avec la maquette d'origine : l'accent est l'orange de la marque
- * (#FF4D00) et non le bleu. La page vit sous la navbar du site, dont toute la
+ * (noir #141414) et non le bleu. La page vit sous la navbar du site, dont toute la
  * palette est orange/graphite — un bleu y jurerait.
  *
  * Les boutons passent par `/subscribe/:plan`, qui décide selon la session :
@@ -32,7 +38,7 @@ import { TimelineContent } from "@/components/ui/timeline-animation";
  * genre de promesse qui se règle en litige.
  */
 
-const ACCENT = "#ff4d00";
+const ACCENT = "#141414";
 
 interface Plan {
   name: string;
@@ -208,7 +214,7 @@ export default function PricingSection({ className = "" }: { className?: string 
           >
             <Card
               className={`relative flex h-full flex-col rounded-2xl border-black/[0.08] shadow-[0_20px_50px_-24px_rgba(0,0,7,0.35)] ${
-                plan.popular ? "bg-[#fff6f2] ring-2 ring-[#ff4d00]" : "bg-white"
+                plan.popular ? "bg-[#F7F7F7] ring-2 ring-[#141414]" : "bg-white"
               }`}
             >
               <CardHeader className="text-left">
@@ -247,12 +253,12 @@ export default function PricingSection({ className = "" }: { className?: string 
                   to={plan.href}
                   className={`mb-6 block rounded-xl p-4 text-center text-xl transition-opacity hover:opacity-90 ${
                     plan.popular
-                      ? "border border-[#ff6a2b] text-white shadow-lg shadow-[#ff4d00]/40"
+                      ? "border border-[#2B2B2B] text-white shadow-lg shadow-black/30"
                       : "border border-neutral-700 bg-gradient-to-t from-neutral-900 to-neutral-600 text-white shadow-lg shadow-neutral-900/30"
                   }`}
                   style={
                     plan.popular
-                      ? { backgroundImage: "linear-gradient(to top, #ff4d00, #ff7a3d)" }
+                      ? { backgroundImage: "linear-gradient(to top, #0E0E0E, #2B2B2B)" }
                       : undefined
                   }
                 >
@@ -275,7 +281,7 @@ export default function PricingSection({ className = "" }: { className?: string 
                   <ul className="space-y-2 font-semibold">
                     {plan.includes.slice(1).map((feature) => (
                       <li key={feature} className="flex items-center">
-                        <span className="mr-3 mt-0.5 grid h-6 w-6 shrink-0 place-content-center rounded-full border border-[#ff4d00] bg-[#fff1ea]">
+                        <span className="mr-3 mt-0.5 grid h-6 w-6 shrink-0 place-content-center rounded-full border border-[#141414] bg-[#F1F1F1]">
                           <CheckCheck className="h-4 w-4" style={{ color: ACCENT }} />
                         </span>
                         <span className="text-sm text-black/60">{feature}</span>

@@ -1,9 +1,18 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, Plus, CheckCircle2, XCircle, AlertTriangle, Loader2,
-  Trash2, Play, ShieldCheck, Smartphone, Globe,
-} from "lucide-react";
+  PulseIcon as Activity,
+  PlusIcon as Plus,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  WarningIcon as AlertTriangle,
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  PlayIcon as Play,
+  ShieldCheckIcon as ShieldCheck,
+  DeviceMobileIcon as Smartphone,
+  GlobeIcon as Globe,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

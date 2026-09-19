@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { persistAttributionToUser } from "@/lib/attribution";
 
 interface AuthContextValue {
   session: Session | null;
@@ -27,6 +28,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.subscription.unsubscribe();
   }, []);
+
+  // OAuth sign-ups can't carry metadata through the redirect: attach the stored
+  // acquisition touch on their first session. Only for accounts created in the
+  // last 24 h — an old account clicking a widget badge is not an acquisition.
+  const userId = session?.user?.id;
+  useEffect(() => {
+    const u = session?.user;
+    if (!u?.created_at || Date.now() - new Date(u.created_at).getTime() > 86_400_000) return;
+    void persistAttributionToUser(u);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   const value: AuthContextValue = {
     session,

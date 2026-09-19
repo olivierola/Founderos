@@ -1,6 +1,9 @@
 "use client";
 
-import { CornerRightUp, Loader2 } from "lucide-react";
+import {
+  ArrowElbowRightUpIcon as CornerRightUp,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";

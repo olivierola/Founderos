@@ -4,7 +4,7 @@ import * as React from 'react';
 
 import { acceptSuggestion, rejectSuggestion } from '@platejs/suggestion';
 import { SuggestionPlugin } from '@platejs/suggestion/react';
-import { CheckIcon, XIcon } from 'lucide-react';
+import { CheckIcon, XIcon } from "@phosphor-icons/react";
 import { useEditorPlugin, usePluginOption } from 'platejs/react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';

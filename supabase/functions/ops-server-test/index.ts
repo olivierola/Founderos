@@ -18,7 +18,8 @@
 // probe, updates ops_servers with discovered metadata + status + security score.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireProjectMember } from "../_shared/authz.ts";
 import { encryptSecret } from "../_shared/crypto.ts";
 
 Deno.serve(async (req) => {
@@ -35,13 +36,16 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    // Verify the caller is a member of the workspace (RLS-safe call via user JWT).
-    const userClient = createUserClient(req);
-    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !userInfo?.user) {
-      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
-    }
-    const userId = userInfo.user.id;
+    // Autorisation (FOS-02) : enregistre un serveur et sa clé SSH dans le projet,
+    // donc le garde porte sur le projet propriétaire — résolu en base, jamais
+    // pris dans le corps de la requête.
+    const auth = await requireProjectMember(req, project_id, "editor");
+    if (!auth.ok) return auth.response;
+    const userId = auth.userId;
+    // Le workspace écrit sur la ligne est celui QUI POSSÈDE le projet, pas celui
+    // que l'appelant annonce : sinon on rattache le serveur d'un projet au
+    // workspace d'un autre, et tous les cadrages en aval suivent le mauvais fil.
+    const ownerWorkspaceId = auth.workspaceId;
 
     const admin = createServiceClient();
 
@@ -53,7 +57,7 @@ Deno.serve(async (req) => {
     const { data: serverRow, error: serverErr } = await admin
       .from("ops_servers")
       .insert({
-        workspace_id, project_id,
+        workspace_id: ownerWorkspaceId, project_id,
         name, description: description ?? null,
         provider: provider ?? "vps",
         ip_address,
@@ -72,7 +76,7 @@ Deno.serve(async (req) => {
     const { data: secretRow, error: secretErr } = await admin
       .from("ops_secrets")
       .insert({
-        workspace_id,
+        workspace_id: ownerWorkspaceId,
         project_id,
         server_id: serverRow.id,
         kind: "ssh_private_key",
@@ -95,7 +99,7 @@ Deno.serve(async (req) => {
     const { data: jobRow, error: jobErr } = await admin
       .from("ops_jobs")
       .insert({
-        workspace_id, project_id,
+        workspace_id: ownerWorkspaceId, project_id,
         server_id: serverRow.id,
         job_type: "server_test",
         autonomy_mode: "assisted",

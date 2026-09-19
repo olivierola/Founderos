@@ -1,8 +1,14 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
-  Cpu, ShieldAlert, GitPullRequestArrow, Siren, ShieldCheck, ClipboardCheck, ArrowRight,
-} from "lucide-react";
+  CpuIcon as Cpu,
+  ShieldWarningIcon as ShieldAlert,
+  GitPullRequestIcon as GitPullRequestArrow,
+  SirenIcon as Siren,
+  ShieldCheckIcon as ShieldCheck,
+  ClipboardTextIcon as ClipboardCheck,
+  ArrowRightIcon as ArrowRight,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Card } from "@/components/ui/card";

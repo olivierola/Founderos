@@ -1,6 +1,11 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, GitMerge, AlertOctagon, Gauge } from "lucide-react";
+import {
+  PulseIcon as Activity,
+  GitMergeIcon as GitMerge,
+  WarningOctagonIcon as AlertOctagon,
+  GaugeIcon as Gauge,
+} from "@phosphor-icons/react";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";

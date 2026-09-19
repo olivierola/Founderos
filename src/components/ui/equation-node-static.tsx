@@ -4,7 +4,7 @@ import type { TEquationElement } from 'platejs';
 import type { SlateElementProps } from 'platejs/static';
 
 import { getEquationHtml } from '@platejs/math';
-import { RadicalIcon } from 'lucide-react';
+import { FunctionIcon as RadicalIcon } from "@phosphor-icons/react";
 import { SlateElement } from 'platejs/static';
 
 import { cn } from '@/lib/utils';

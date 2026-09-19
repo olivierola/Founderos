@@ -1,8 +1,17 @@
 import { useState } from "react";
 import {
-  FileText, FileJson, Table as TableIcon, Code as CodeIcon, FileDown,
-  Download, Copy, Check, ChevronDown, ChevronRight, Plug,
-} from "lucide-react";
+  FileTextIcon as FileText,
+  FileCodeIcon as FileJson,
+  TableIcon,
+  CodeIcon,
+  FileArrowDownIcon as FileDown,
+  DownloadSimpleIcon as Download,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  PlugIcon as Plug,
+} from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";

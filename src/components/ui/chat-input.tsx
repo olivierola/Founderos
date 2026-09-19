@@ -1,14 +1,29 @@
 "use client";
 
 import type React from "react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react";
 import {
-  Plus, ArrowUp, X, FileText, Image as ImageIcon, Video, Music, Archive,
-  Loader2, Copy, Mic, Square, AtSign, Slash, Keyboard,
-} from "lucide-react";
+  PlusIcon as Plus,
+  ArrowUpIcon as ArrowUp,
+  XIcon as X,
+  FileTextIcon as FileText,
+  ImageIcon,
+  VideoCameraIcon as Video,
+  MusicNoteIcon as Music,
+  ArchiveIcon as Archive,
+  CircleNotchIcon as Loader2,
+  CopyIcon as Copy,
+  MicrophoneIcon as Mic,
+  SquareIcon as Square,
+  AtIcon as AtSign,
+  CommandIcon as Slash,
+  KeyboardIcon as Keyboard,
+  CaretDownIcon as ChevronDown,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useDictation } from "@/lib/useDictation";
+import { VoiceComposer } from "@/components/ui/composer-voice-glow";
 import { cn } from "@/lib/utils";
 
 export interface MentionAgent { id: string; name: string; accentColor?: string | null; avatarUrl?: string | null; }
@@ -72,6 +87,25 @@ export interface PastedContent {
   content: string;
   wordCount: number;
 }
+
+// What the empty field says. It rotates, and every line teaches a key that
+// works HERE — @ and / only appear when this composer was actually given
+// agents / actions, so a hint never promises something that does nothing.
+function buildTips(hasMentions: boolean, hasSlash: boolean, base: string): string[] {
+  const tips = [base];
+  if (hasMentions) tips.push("Tapez @ pour parler à un agent en particulier");
+  if (hasSlash) tips.push("Tapez / pour demander un livrable : document, tableur, image…");
+  tips.push("Glissez un fichier ici — PDF, image, CSV — il part avec le message");
+  tips.push("Cliquez le micro pour dicter au lieu d'écrire");
+  tips.push("Entrée pour envoyer, Maj + Entrée pour aller à la ligne");
+  return tips;
+}
+const TIP_INTERVAL_MS = 4600;
+
+// The toolbar's controls are labelled pills, not a row of mystery glyphs: what
+// @ and / do is written on them, and the tip carousel above says it again.
+const PILL = "flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/70 px-3 text-[13px] text-muted-foreground transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground disabled:opacity-50";
+const PILL_ON = "border-transparent bg-muted text-foreground";
 
 const MAX_FILES = 10;
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -193,10 +227,20 @@ export interface ChatInputProps {
   maxFileSize?: number;
   autoFocus?: boolean;
   className?: string;
+  /** Overrides on the composer BOX itself (its background and border), for
+   *  surfaces that don't sit on the plain content ground — the Home field
+   *  paints its own, so a flat `bg-card` box would read as a foreign panel
+   *  dropped on it. Applied last, so it wins over the defaults. */
+  surfaceClassName?: string;
   /** Enable @ tagging: taggable agents (name + accent colour → colored badges). */
   mentionAgents?: MentionAgent[];
   /** Enable / actions as colored badges (create document/spreadsheet…). */
   slashCommands?: SlashCommand[];
+  /** Rotating hints shown in the empty field, one every few seconds. Left
+   *  unset, the composer writes its own from what it actually supports on this
+   *  surface (@ tagging, / actions, drag-and-drop, dictation) — a placeholder
+   *  that teaches the keys rather than repeating "write a message". */
+  placeholders?: string[];
 }
 
 export function ChatInput({
@@ -208,14 +252,31 @@ export function ChatInput({
   maxFileSize = MAX_FILE_SIZE,
   autoFocus,
   className,
+  surfaceClassName,
   mentionAgents = [],
   slashCommands = [],
+  placeholders,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const [pasted, setPasted] = useState<PastedContent[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  /**
+   * De quel côté ouvrir les menus @ et /.
+   *
+   * Ils s'ouvraient TOUJOURS vers le haut, ce qui convient à un composeur posé
+   * en bas d'une conversation — sa place d'origine. Sur une page d'accueil, où
+   * il est en haut, la liste sortait du cadre par le dessus : le conteneur
+   * défilant la rognait, et l'on ne voyait que ses quatre dernières entrées,
+   * décalées au-dessus du champ.
+   *
+   * On mesure donc la place réellement disponible au moment de l'ouverture. Le
+   * seuil est la hauteur maximale du menu (256 px de liste + son en-tête et ses
+   * marges) : en dessous, on bascule vers le bas.
+   */
+  const [openDown, setOpenDown] = useState(false);
   const [slashOpen, setSlashOpen] = useState(false);
   const [pttEnabled, setPttEnabled] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -226,6 +287,22 @@ export function ChatInput({
   const hasHighlight = mentionAgents.length > 0 || slashCommands.length > 0;
   const mentionedIds = hasHighlight ? deriveMentionIds(message, mentionAgents) : [];
   const filteredMentionAgents = mentionQuery == null ? [] : mentionAgents.filter((a) => a.name.toLowerCase().includes(mentionQuery.toLowerCase()));
+
+  // Rotating placeholder. It only ever runs on an EMPTY field: the moment
+  // something is typed the carousel stops and the tip is gone, so nothing
+  // moves under the text being written.
+  const tips = useMemo(
+    () => (placeholders?.length ? placeholders : buildTips(mentionAgents.length > 0, slashCommands.length > 0, placeholder)),
+    [placeholders, mentionAgents.length, slashCommands.length, placeholder],
+  );
+  const [tipIndex, setTipIndex] = useState(0);
+  const empty = message.length === 0;
+  useEffect(() => {
+    if (!empty || tips.length < 2) return;
+    const id = window.setInterval(() => setTipIndex((i) => (i + 1) % tips.length), TIP_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [empty, tips.length]);
+  const tip = tips[tipIndex % tips.length] ?? placeholder;
 
   // Streaming voice dictation → appended to the message.
   const voiceBaseRef = useRef("");
@@ -380,8 +457,24 @@ export function ChatInput({
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   }, [canSend, message, pasted, files, onSendMessage, mentionedIds]);
 
+  const menuOpen = mentionQuery !== null || slashOpen;
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const box = rootRef.current?.getBoundingClientRect();
+    if (!box) return;
+    // Au-dessus du champ, la place vaut la distance au haut de la fenêtre ; en
+    // dessous, la distance à son bas. On ouvre vers le haut tant qu'il y tient,
+    // parce que c'est le sens attendu d'un composeur — et vers le bas dès que
+    // la liste y serait rognée.
+    const MENU = 300;
+    setOpenDown(box.top < MENU && window.innerHeight - box.bottom > box.top);
+  }, [menuOpen]);
+
+  const menuSide = openDown ? "top-full mt-2" : "bottom-full mb-2";
+
   return (
     <div
+      ref={rootRef}
       className={cn("relative mx-auto w-full", className)}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
@@ -395,7 +488,7 @@ export function ChatInput({
 
       {/* @ mention menu — sober (Avatar + name + status dot), AssigneeUser style */}
       {mentionAgents.length > 0 && mentionQuery !== null && (
-        <div className="absolute bottom-full left-1 z-40 mb-2 w-[224px] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lg">
+        <div className={cn("absolute left-1 z-40 w-[224px] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lg", menuSide)}>
           <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Taguer un agent</div>
           <div className="max-h-64 overflow-y-auto">
             {filteredMentionAgents.length === 0 ? (
@@ -417,7 +510,7 @@ export function ChatInput({
       )}
       {/* / slash menu */}
       {slashCommands.length > 0 && slashOpen && (
-        <div className="absolute bottom-full left-1 z-40 mb-2 w-64 overflow-hidden rounded-2xl border border-border bg-popover py-1 shadow-lg">
+        <div className={cn("absolute left-1 z-40 w-64 overflow-hidden rounded-2xl border border-border bg-popover py-1 shadow-lg", menuSide)}>
           {slashCommands.map((c) => (
             <button key={c.key} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pickSlash(c)} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-muted">
               <span className="flex h-6 w-6 items-center justify-center rounded-md" style={{ backgroundColor: c.color + "26", color: c.color }}>{c.icon ? <c.icon className="h-3.5 w-3.5" /> : <span className="text-xs font-bold">/</span>}</span>
@@ -427,7 +520,10 @@ export function ChatInput({
         </div>
       )}
 
-      <div className={cn("flex min-h-[128px] flex-col rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-ring/40", busy && "prompt-run-border")}>
+      {/* The card, framed by voice-glow (VoiceComposer): breathing at rest,
+          following the dictated voice, sweeping while the agents work. */}
+      <VoiceComposer stream={dictation.stream} processing={busy || dictation.connecting} radius={22}>
+      <div className={cn("relative flex min-h-[132px] flex-col rounded-[22px] border border-border/70 bg-card transition-colors focus-within:border-border", surfaceClassName)}>
         {/* Mentions/slash render as colored badges: a backdrop mirrors the text
             with badges, under a transparent-text textarea that owns the caret. */}
         <div className="relative w-full">
@@ -435,9 +531,17 @@ export function ChatInput({
             <div
               ref={backdropRef}
               aria-hidden
-              className="custom-scrollbar pointer-events-none absolute inset-0 max-h-[180px] overflow-hidden whitespace-pre-wrap break-words px-4 pt-4 text-sm leading-6 text-foreground"
+              className="custom-scrollbar pointer-events-none absolute inset-0 max-h-[180px] overflow-hidden whitespace-pre-wrap break-words px-5 pt-4 text-[15px] leading-7 text-foreground"
             >
               {highlightNodes(message, mentionAgents, slashCommands)}
+            </div>
+          )}
+          {/* The rotating tip. Drawn UNDER the (transparent) textarea, exactly
+              where its first line starts, so the caret sits on it like a real
+              placeholder — which a <textarea placeholder> could never fade. */}
+          {empty && (
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 px-5 pt-4 text-[15px] leading-7 text-muted-foreground/70">
+              <span key={tipIndex} className="block animate-in fade-in slide-in-from-bottom-1 duration-500">{tip}</span>
             </div>
           )}
           <textarea
@@ -450,37 +554,63 @@ export function ChatInput({
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
               if (e.key === "Escape") { setMentionQuery(null); setSlashOpen(false); }
             }}
-            placeholder={placeholder}
+            aria-label={placeholder}
             disabled={disabled}
             rows={1}
             style={{ caretColor: hasHighlight ? "hsl(var(--foreground))" : undefined }}
             className={cn(
-              "custom-scrollbar relative max-h-[180px] min-h-[84px] w-full resize-none border-0 bg-transparent px-4 pt-4 text-sm leading-6 outline-none placeholder:text-muted-foreground focus:outline-none",
+              "custom-scrollbar relative max-h-[180px] min-h-[84px] w-full resize-none border-0 bg-transparent px-5 pt-4 text-[15px] leading-7 outline-none focus:outline-none",
               hasHighlight ? "text-transparent" : "text-foreground",
             )}
           />
         </div>
 
-        <div className="flex w-full items-center justify-between gap-2 px-3 pb-2.5">
-          <div className="flex items-center gap-0.5">
-            <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => fileInputRef.current?.click()} disabled={disabled || files.length >= maxFiles} title="Joindre des fichiers">
+        <div className="flex w-full items-center justify-between gap-2 px-3 pb-3">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <button
+              type="button" onClick={() => fileInputRef.current?.click()} disabled={disabled || files.length >= maxFiles}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
+              title="Joindre des fichiers"
+            >
               <Plus className="h-[18px] w-[18px]" />
-            </Button>
+            </button>
             {mentionAgents.length > 0 && (
-              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={openMentionMenu} title="Taguer un agent (@)"><AtSign className="h-4 w-4" /></Button>
+              <button type="button" onClick={openMentionMenu} className={cn(PILL, mentionQuery !== null && PILL_ON)} title="Taguer un agent (@)">
+                <AtSign className="h-3.5 w-3.5" />
+                Agents
+                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              </button>
             )}
             {slashCommands.length > 0 && (
-              <Button size="icon" variant="ghost" className={cn("h-7 w-7 text-muted-foreground hover:text-foreground", slashOpen && "text-foreground")} onClick={() => { setSlashOpen((v) => !v); setMentionQuery(null); }} title="Actions (/)"><Slash className="h-4 w-4" /></Button>
+              <button
+                type="button" onClick={() => { setSlashOpen((v) => !v); setMentionQuery(null); }}
+                className={cn(PILL, slashOpen && PILL_ON)} title="Demander un livrable (/)"
+              >
+                <Slash className="h-3.5 w-3.5" />
+                Livrables
+              </button>
             )}
-            <Button size="icon" variant="ghost" className={cn("h-7 w-7", pttEnabled ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground")} onClick={togglePtt} title={pttEnabled ? "Push-to-talk activé — maintenez Espace" : "Activer le push-to-talk (maintenir Espace)"}><Keyboard className="h-4 w-4" /></Button>
           </div>
-          <div className="flex items-center gap-1">
-            <Button size="icon" variant="ghost" className={cn("h-8 w-8 text-muted-foreground hover:text-foreground", dictation.recording && "text-destructive")} onClick={toggleVoice} title={dictation.recording ? "Arrêter la dictée" : "Dictée vocale"}>
-              {dictation.connecting ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : dictation.recording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-[18px] w-[18px]" />}
-            </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button" onClick={togglePtt}
+              className={cn("flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                pttEnabled ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
+              title={pttEnabled ? "Push-to-talk activé — maintenez Espace" : "Activer le push-to-talk (maintenir Espace)"}
+            >
+              <Keyboard className="h-4 w-4" />
+            </button>
+            <button
+              type="button" onClick={toggleVoice}
+              className={cn("flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-muted/60",
+                dictation.recording ? "text-destructive" : "text-muted-foreground hover:text-foreground")}
+              title={dictation.recording ? "Arrêter la dictée" : "Dictée vocale"}
+            >
+              {dictation.connecting ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : dictation.recording ? <Square weight="fill" className="h-4 w-4" /> : <Mic className="h-[18px] w-[18px]" />}
+            </button>
             <Button
               size="icon"
-              className={cn("h-9 w-9 rounded-xl transition-colors", canSend ? "bg-foreground text-background hover:bg-foreground/90" : "bg-muted text-muted-foreground")}
+              className={cn("h-9 w-9 rounded-full transition-colors", canSend ? "bg-foreground text-background hover:bg-foreground/90" : "bg-muted text-muted-foreground")}
               onClick={send}
               disabled={!canSend}
               title="Envoyer"
@@ -499,6 +629,7 @@ export function ChatInput({
           </div>
         )}
       </div>
+      </VoiceComposer>
 
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); if (e.target) e.target.value = ""; }} />
     </div>

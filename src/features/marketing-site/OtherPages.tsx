@@ -1,34 +1,34 @@
 ﻿import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Check,
-  ArrowRight,
-  LayoutDashboard,
-  Wallet,
-  Braces,
-  ShieldCheck,
-  Brain,
-  Plug2,
-  Rocket,
-  Sparkles,
-  Activity,
-  Cog,
-  Loader2,
-  Mail,
-  ExternalLink,
-  Search,
-  MessageSquareText,
-  Zap,
-  BookOpen,
-  PlayCircle,
-  Phone,
-  MapPin,
-  Globe,
-  Calendar,
-  Star,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react";
+  CheckIcon as Check,
+  ArrowRightIcon as ArrowRight,
+  SquaresFourIcon as LayoutDashboard,
+  WalletIcon as Wallet,
+  BracketsCurlyIcon as Braces,
+  ShieldCheckIcon as ShieldCheck,
+  BrainIcon as Brain,
+  PlugIcon as Plug2,
+  RocketLaunchIcon as Rocket,
+  SparkleIcon as Sparkles,
+  PulseIcon as Activity,
+  GearIcon as Cog,
+  CircleNotchIcon as Loader2,
+  EnvelopeSimpleIcon as Mail,
+  ArrowSquareOutIcon as ExternalLink,
+  MagnifyingGlassIcon as Search,
+  ChatTextIcon as MessageSquareText,
+  LightningIcon as Zap,
+  BookOpenIcon as BookOpen,
+  PlayCircleIcon as PlayCircle,
+  PhoneIcon as Phone,
+  MapPinIcon as MapPin,
+  GlobeIcon as Globe,
+  CalendarBlankIcon as Calendar,
+  StarIcon as Star,
+  CheckCircleIcon as CheckCircle2,
+  WarningCircleIcon as AlertCircle,
+} from "@phosphor-icons/react";
 import { MarketingShell, DotGrid } from "./MarketingShell";
 import { GradientOrb } from "./Illustrations";
 import { PROVIDERS } from "@/lib/providers";
@@ -48,7 +48,7 @@ const FEATURE_MODULES = [
     icon: Wallet,
     color: "hsl(var(--accent-2))",
     name: "Finance & Costs",
-    tagline: "MRR, churn, forecasting — done.",
+    tagline: "MRR, churn, forecasting, done.",
     body: "Real-time Stripe data, cohorts with retention curves, scenario forecasting, LLM spend tracking.",
     bullets: ["MRR/ARR trends", "Cohort retention", "Forecasting best/base/worst", "LLM cost per provider"],
   },
@@ -81,7 +81,7 @@ const FEATURE_MODULES = [
     color: "#fbbf24",
     name: "RAG Agent",
     tagline: "AI support trained on your docs.",
-    body: "Embeddable chat widget with onboarding flows the AI drives — highlights, popups, navigation, live.",
+    body: "Embeddable chat widget with onboarding flows the AI drives: highlights, popups, navigation, live.",
     bullets: ["Train on URLs / files / SaaS structure", "Live in-product onboarding", "Multi-language", "Analytics dashboard"],
   },
   {
@@ -104,7 +104,7 @@ const FEATURE_MODULES = [
     icon: Cog,
     color: "#94a3b8",
     name: "Settings",
-    tagline: "Workspaces, roles, billing — done right.",
+    tagline: "Workspaces, roles, billing, done right.",
     body: "Workspaces, projects, team roles, billing portal, 2FA, data export, granular permissions.",
     bullets: ["Workspaces + projects", "Granular roles", "2FA + SSO (Enterprise)", "Data export"],
   },
@@ -188,7 +188,7 @@ export function FeaturesPage() {
               Anduran vs. spreadsheets + Notion + 5 dashboards
             </h2>
             <p className="mt-3 text-muted-foreground">
-              The honest comparison. We don't replace your IDE or your design tool — we replace the operational mess between them.
+              The honest comparison. We don't replace your IDE or your design tool. We replace the operational mess between them.
             </p>
           </div>
           <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -387,7 +387,7 @@ const CHANGELOG = [
   {
     date: "2026-05-31",
     tag: "feature",
-    title: "Deployment sync — Supabase, Firebase, Fly, Heroku, Railway, DO, Hetzner",
+    title: "Deployment sync: Supabase, Firebase, Fly, Heroku, Railway, DO, Hetzner",
     items: ["kind / duration_ms / author / commit_message as first-class columns", "Infra events from VPS providers as a separate kind", "Sparkline summary per provider with brand colors"],
   },
   {
@@ -411,7 +411,7 @@ const CHANGELOG = [
   {
     date: "2026-05-25",
     tag: "fix",
-    title: "Credentials vault — surface secrets from connected providers",
+    title: "Credentials vault: surface secrets from connected providers",
     items: ["Every catalog connector's secret fields now appear in the vault", "Push from vault → backend in one click"],
   },
   {
@@ -582,7 +582,7 @@ export function DocsPage() {
           </div>
 
           <div className="mt-10 rounded-xl border border-dashed border-border bg-secondary/30 p-6 text-center text-sm text-muted-foreground">
-            Docs are growing — for anything missing, ping us at{" "}
+            Docs are growing. For anything missing, ping us at{" "}
             <Link to="/contact" className="underline hover:text-foreground">/contact</Link>{" "}
             and we'll write it.
           </div>
@@ -592,185 +592,10 @@ export function DocsPage() {
   );
 }
 
-/* ===================== Contact Page ===================== */
-
-const CONTACT_REASONS = [
-  { value: "sales", label: "Talk to sales / Enterprise" },
-  { value: "support", label: "Product support" },
-  { value: "partnership", label: "Partnership" },
-  { value: "press", label: "Press / media" },
-  { value: "other", label: "Other" },
-];
-
-const OFFICES = [
-  { city: "Paris", country: "France", icon: MapPin },
-  { city: "Lisbon", country: "Portugal", icon: MapPin },
-  { city: "Remote-first", country: "Worldwide", icon: Globe },
-];
-
-export function ContactPage() {
-  const [reason, setReason] = useState("sales");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [company, setCompany] = useState("");
-  const [message, setMessage] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || !email.trim() || !message.trim()) return;
-    setStatus("sending");
-    try {
-      const body = encodeURIComponent(`Reason: ${reason}\nCompany: ${company}\n\n${message}\n\n— ${name}`);
-      window.location.href = `mailto:hello@founderos.dev?subject=Hello from ${encodeURIComponent(name)}&body=${body}`;
-      setStatus("sent");
-    } catch {
-      setStatus("error");
-    }
-  }
-
-  return (
-    <MarketingShell>
-      <section className="relative overflow-hidden border-b border-border/60">
-        <DotGrid />
-        <GradientOrb className="absolute -top-32 -right-32 h-96 w-96" color="hsl(var(--accent-2))" />
-        <div className="relative mx-auto max-w-3xl px-4 py-24 text-center sm:px-6">
-          <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
-            Get in touch.
-          </h1>
-          <p className="mx-auto mt-5 max-w-xl text-muted-foreground sm:text-lg">
-            Enterprise pricing, partnership, press — we read every message and reply in 24h.
-          </p>
-        </div>
-      </section>
-
-      <section className="bg-background py-16">
-        <div className="mx-auto grid max-w-5xl gap-8 px-4 sm:px-6 lg:grid-cols-[1fr_320px]">
-          <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-border bg-card/60 p-6 sm:p-8">
-            <div>
-              <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                I'm reaching out about
-              </label>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {CONTACT_REASONS.map((r) => (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => setReason(r.value)}
-                    className={
-                      "rounded-md border px-3 py-2 text-xs transition " +
-                      (reason === r.value
-                        ? "border-[hsl(var(--primary-soft)/0.5)] bg-[hsl(var(--primary-soft)/0.1)] text-[hsl(var(--primary-soft))]"
-                        : "border-border text-muted-foreground hover:bg-secondary")
-                    }
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs text-muted-foreground">Your name</label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs text-muted-foreground">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs text-muted-foreground">Company (optional)</label>
-              <input
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs text-muted-foreground">Message</label>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                required
-                rows={6}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={status === "sending"}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {status === "sending" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-              {status === "sent" ? "Mailto opened" : "Send message"}
-            </button>
-          </form>
-
-          <aside className="space-y-6">
-            <div className="rounded-2xl border border-border bg-card/60 p-6">
-              <h3 className="text-sm font-semibold">Reach us directly</h3>
-              <ul className="mt-4 space-y-3 text-sm">
-                <li className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono text-xs">hello@founderos.dev</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono text-xs">+33 1 23 45 67 89</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <a href="#" className="text-xs underline">Book a demo</a>
-                </li>
-              </ul>
-            </div>
-
-            <div className="rounded-2xl border border-border bg-card/60 p-6">
-              <h3 className="text-sm font-semibold">Where we are</h3>
-              <ul className="mt-4 space-y-3 text-sm">
-                {OFFICES.map((o) => {
-                  const I = o.icon;
-                  return (
-                    <li key={o.city} className="flex items-center gap-2">
-                      <I className="h-4 w-4 text-muted-foreground" />
-                      <span>
-                        <strong>{o.city}</strong>
-                        <span className="text-muted-foreground"> · {o.country}</span>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-
-            <div className="rounded-2xl border border-border bg-gradient-to-br from-[hsl(var(--primary-soft)/0.08)] to-card p-6">
-              <Star className="h-5 w-5 text-[hsl(var(--accent-2))]" />
-              <p className="mt-3 text-sm">
-                "Customer success replies within 4 hours during EU business days."
-              </p>
-            </div>
-          </aside>
-        </div>
-      </section>
-    </MarketingShell>
-  );
-}
+/* Contact moved out to ContactPage.tsx when it was rebuilt on the paper system;
+   its reasons and office lists went with it. The pages left in this file —
+   Features, Integrations, Changelog, Docs — are still on the old marketing
+   shell and are the remaining migration. */
 
 /* ===================== Shared CTA ===================== */
 

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity } from "lucide-react";
+import { PulseIcon as Activity } from "@phosphor-icons/react";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";

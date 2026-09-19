@@ -4,25 +4,25 @@ import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import {
-  X,
-  Download,
-  Copy,
-  Check,
-  FileText,
-  FileDown,
-  FileJson,
-  Bold,
-  Italic,
-  List,
-  ListOrdered,
-  Heading1,
-  Heading2,
-  Heading3,
-  Quote,
-  Code,
-  Pencil,
-  Eye,
-} from "lucide-react";
+  XIcon as X,
+  DownloadSimpleIcon as Download,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  FileTextIcon as FileText,
+  FileArrowDownIcon as FileDown,
+  FileCodeIcon as FileJson,
+  TextBIcon as Bold,
+  TextItalicIcon as Italic,
+  ListIcon as List,
+  ListNumbersIcon as ListOrdered,
+  TextHOneIcon as Heading1,
+  TextHTwoIcon as Heading2,
+  TextHThreeIcon as Heading3,
+  QuotesIcon as Quote,
+  CodeIcon as Code,
+  PencilSimpleIcon as Pencil,
+  EyeIcon as Eye,
+} from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import TurndownService from "turndown";

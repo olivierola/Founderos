@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import {
   ArrowLeftIcon, ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, ChartBarIcon, CompassIcon,
   GearSixIcon, RobotIcon, StorefrontIcon, type Icon as PhosphorIcon,
@@ -13,6 +13,7 @@ import { FloatingTabBar } from "./FloatingTabBar";
 import {
   PublicAgentTabBody, VALID_PUBLIC_AGENT_TABS, type Agent, type PublicAgentTab,
 } from "@/features/agent-rag/AgentBuilder";
+import { resolveSubtab, subtabsFor } from "@/features/agent-rag/publicAgentSubtabs";
 
 // A public (customer-facing) agent, configured INSIDE the service dashboard
 // that owns it — the same move internal agents made in 0133. The six builder
@@ -40,7 +41,13 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
 
   const rawTab = params.get("t") || "playground";
   const tab = (VALID_PUBLIC_AGENT_TABS.includes(rawTab as PublicAgentTab) ? rawTab : "playground") as PublicAgentTab;
+  // Seconde barre : les tabs qui ont des sous-onglets les affichent ici, sous
+  // la première, au lieu de dessiner chacun sa propre bande dans le contenu.
+  const subs = subtabsFor(tab);
+  const sub = resolveSubtab(tab, params.get("s"));
   const [barHeight, setBarHeight] = useState(48);
+  const [subHeight, setSubHeight] = useState(0);
+  useEffect(() => { if (!subs) setSubHeight(0); }, [subs]);
 
   const { data: agent, isLoading } = useQuery({
     queryKey: ["rag_agent", agentId],
@@ -111,13 +118,39 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
         sections={tabs}
         active={tab}
         onHeight={setBarHeight}
-        onSelect={(k) => setParams((p) => { const n = new URLSearchParams(p); n.set("t", k); return n; }, { replace: true })}
+        onSelect={(k) => setParams((p) => {
+          const n = new URLSearchParams(p);
+          n.set("t", k);
+          // Le sous-onglet appartient au tab qu'on quitte : le garder ferait
+          // atterrir sur une clé que le nouveau tab ne connaît pas.
+          n.delete("s");
+          return n;
+        }, { replace: true })}
       />
+
+      {subs && sub && (
+        <FloatingTabBar
+          key={tab}
+          variant="sub"
+          // 12px = le décalage haut de la barre principale, 8px l'espace entre les deux.
+          style={{ top: barHeight + 20 }}
+          sections={subs}
+          active={sub}
+          onHeight={setSubHeight}
+          onSelect={(k) => setParams((p) => { const n = new URLSearchParams(p); n.set("s", k); return n; }, { replace: true })}
+        />
+      )}
 
       {/* Offset by the bar's measured height: it wraps to two lines when the
           window is narrow, so a fixed padding would overlap it. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-10" style={{ paddingTop: barHeight + 28 }}>
-        <PublicAgentTabBody agent={agent} tab={tab} workspaceId={workspaceId} projectId={projectId} />
+      <div
+        className="min-h-0 flex-1 overflow-y-auto px-6 pb-10"
+        style={{ paddingTop: barHeight + 28 + (subs ? subHeight + 8 : 0) }}
+      >
+        <PublicAgentTabBody
+          agent={agent} tab={tab} sub={sub}
+          workspaceId={workspaceId} projectId={projectId}
+        />
       </div>
     </div>
   );

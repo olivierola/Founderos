@@ -1,6 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Pencil, Trash2, Check, ScrollText } from "lucide-react";
+import {
+  FileTextIcon as FileText,
+  PlusIcon as Plus,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  CheckIcon as Check,
+  ScrollIcon as ScrollText,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";

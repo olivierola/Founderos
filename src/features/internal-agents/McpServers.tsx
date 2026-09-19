@@ -4,9 +4,20 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Plus, Loader2, Trash2, Pencil, RefreshCw, CheckCircle2, XCircle,
-  Plug, Wrench, ChevronDown, X, LogIn, LayoutGrid,
-} from "lucide-react";
+  PlusIcon as Plus,
+  CircleNotchIcon as Loader2,
+  TrashIcon as Trash2,
+  PencilSimpleIcon as Pencil,
+  ArrowsClockwiseIcon as RefreshCw,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  PlugIcon as Plug,
+  WrenchIcon as Wrench,
+  CaretDownIcon as ChevronDown,
+  XIcon as X,
+  SignInIcon as LogIn,
+  GridFourIcon as LayoutGrid,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";

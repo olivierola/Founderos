@@ -2,7 +2,9 @@
 // Body: { workspace_id, project_id, message, stack?, url?, user_agent?, level? }
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
+import { callerIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { assertProjectInWorkspace } from "../_shared/authz.ts";
 
 async function sha1(text: string) {
   const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text));
@@ -21,6 +23,21 @@ Deno.serve(async (req) => {
     if (!workspace_id || !project_id || !message) {
       return jsonResponse({ error: "workspace_id, project_id, message required" }, { status: 400 });
     }
+
+    // FOS-10 : ces points d'entree restent PUBLICS — le SDK analytics tourne
+    // dans le navigateur d'un visiteur non connecte. Ce qu'on ferme, c'est
+    // l'ecriture croisee : workspace_id et project_id arrivaient tous deux du
+    // client sans jamais etre recoupes, donc on inserait dans le projet d'un
+    // tiers en annoncant son propre workspace.
+    if (workspace_id && !(await assertProjectInWorkspace(project_id, workspace_id))) {
+      return jsonResponse({ error: "project_id does not belong to workspace_id" }, { status: 403 });
+    }
+
+    // FOS-15 — meme raison : point d'entree anonyme en ecriture.
+    const errLimited = await enforceRateLimit(
+      { scope: "reporterror", identity: `${project_id}:${callerIp(req)}`, limit: 60, windowSeconds: 60 },
+    );
+    if (errLimited) return errLimited;
     const fingerprint = await sha1(`${message}|${(body.stack ?? "").split("\n")[0] ?? ""}`);
     const admin = createServiceClient();
 

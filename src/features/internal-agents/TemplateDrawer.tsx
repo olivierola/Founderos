@@ -3,9 +3,24 @@ import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Sparkles, X, Check, Wrench, ShieldCheck, CalendarClock, ArrowLeft, ArrowRight,
-  Loader2, Plus, ChevronRight, Plug, AlertTriangle, ExternalLink, Search, Palette, Wand2,
-} from "lucide-react";
+  SparkleIcon as Sparkles,
+  XIcon as X,
+  CheckIcon as Check,
+  WrenchIcon as Wrench,
+  ShieldCheckIcon as ShieldCheck,
+  CalendarDotsIcon as CalendarClock,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  CaretRightIcon as ChevronRight,
+  PlugIcon as Plug,
+  WarningIcon as AlertTriangle,
+  ArrowSquareOutIcon as ExternalLink,
+  MagnifyingGlassIcon as Search,
+  PaletteIcon as Palette,
+  MagicWandIcon as Wand2,
+} from "@phosphor-icons/react";
 import { callEdge } from "@/lib/edge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +35,7 @@ import {
 } from "./agentTemplates";
 import type { TemplateOverrides } from "./instantiateTemplate";
 import { AgentAvatar, AvatarPicker } from "./AvatarPicker";
+import { Icon3D } from "./icons3d";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
 import { ToolkitCard, synthToolkit, type ComposioToolkit } from "@/features/integrations/ComposioCatalog";
 
@@ -156,7 +172,7 @@ function BrowseView({ onClose, onSelect }: { onClose: () => void; onSelect: (t: 
                   : "border-border bg-card/40 hover:border-foreground/30",
               )}>
               <div className="flex items-start gap-3">
-                <AgentAvatar url={templateAvatar(t)} className="h-10 w-10 shrink-0 rounded-xl" />
+                <Icon3D icon={t.icon3d} px={44} className="shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="truncate font-semibold leading-tight">{t.name}</h3>
@@ -243,6 +259,7 @@ interface GeneratedSpec {
   category: AgentCategory;
   studio: AgentTemplate["studio"] | null;
   persona: string;
+  soul: string;
   instructions: string;
   autonomy: AutonomyLevel;
   max_steps: number;
@@ -258,8 +275,11 @@ function specToTemplate(spec: GeneratedSpec): AgentTemplate {
     tagline: spec.tagline,
     category: spec.category,
     emoji: "✨",
+    // Generated agents have no curated icon; the sparkle reads as "made here".
+    icon3d: "magic",
     accent: "#7c3aed",
     persona: spec.persona,
+    soul: spec.soul ?? "",
     instructions: spec.instructions,
     autonomy: spec.autonomy,
     max_steps: spec.max_steps,
@@ -297,6 +317,7 @@ const SUGGESTED_COMPOSIO_BY_CATEGORY: Partial<Record<AgentCategory, string[]>> =
   Support: ["slack", "notion"],
   Data: ["googlesheets", "google_analytics"],
   Assistant: ["gmail", "googledrive", "slack", "notion"],
+  Personnel: ["gmail", "googlesheets", "googledrive", "notion"],
   Product: ["notion", "googlesheets", "slack"],
 };
 const DEFAULT_SUGGESTED_COMPOSIO = ["slack", "notion", "googlesheets", "gmail"];

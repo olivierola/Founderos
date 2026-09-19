@@ -1,7 +1,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Library, Upload, Settings2, Trash2, FolderPlus, ArrowLeft, PenLine, FileText } from "lucide-react";
+import {
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  BooksIcon as Library,
+  UploadSimpleIcon as Upload,
+  SlidersHorizontalIcon as Settings2,
+  TrashIcon as Trash2,
+  FolderPlusIcon as FolderPlus,
+  ArrowLeftIcon as ArrowLeft,
+  PencilLineIcon as PenLine,
+  FileTextIcon as FileText,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

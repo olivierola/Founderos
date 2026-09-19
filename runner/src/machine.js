@@ -8,22 +8,31 @@
 //
 // Every agent session gets a persistent workspace directory under
 // RUNNER_WORKSPACE_ROOT (default ./workspace/<session_id>); relative paths
-// resolve inside it, so state survives across runs. Absolute paths are allowed
-// unless RUNNER_RESTRICT_TO_WORKSPACE=1 — shell access already implies machine
-// access, the flag exists for locked-down file-only setups (pair it with
-// RUNNER_DISABLE_EXEC=1). Auth is the same X-Runner-Token as the browser API.
+// resolve inside it, so state survives across runs.
+//
+// Les chemins absolus sont REFUSES par defaut (RUNNER_RESTRICT_TO_WORKSPACE=0
+// pour lever le cantonnement). L'ancien defaut etait l'inverse, au motif que
+// « shell access already implies machine access » — vrai en soi, mais cela
+// supposait un shell libre : voir policy.js, qui ne l'est plus.
+//
+// Les commandes passent par checkCommand() (policy.js) avant execution.
+// Auth is the same X-Runner-Token as the browser API.
 
 import { spawn, spawnSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ts } from "./env.js";
+import { checkCommand } from "./policy.js";
 
 const IS_WIN = process.platform === "win32";
 export const WORKSPACE_ROOT = path.resolve(
   process.env.RUNNER_WORKSPACE_ROOT || path.join(process.cwd(), "workspace"),
 );
-const RESTRICT_TO_WORKSPACE = process.env.RUNNER_RESTRICT_TO_WORKSPACE === "1";
+// FOS-07 — ce cantonnement etait opt-IN, donc desactive partout par defaut :
+// une lecture de fichier arbitraire suffisait a remonter ~/.ssh/id_rsa dans le
+// contexte du modele. Il est desormais actif sauf desactivation explicite.
+const RESTRICT_TO_WORKSPACE = process.env.RUNNER_RESTRICT_TO_WORKSPACE !== "0";
 export const EXEC_DISABLED = process.env.RUNNER_DISABLE_EXEC === "1";
 const PYTHON_BIN = process.env.PYTHON_BIN || (IS_WIN ? "python" : "python3");
 const MAX_OUTPUT = 200_000; // chars kept per stream
@@ -135,6 +144,13 @@ export async function handleExec(body) {
   if (EXEC_DISABLED) return { error: "exec is disabled on this runner (RUNNER_DISABLE_EXEC=1)" };
   const { session_id, command, shell, cwd, timeout, env } = body;
   if (!String(command || "").trim()) return { error: "command is required" };
+  // FOS-07 : la politique est appliquee ici, cote machine. Le prompt systeme
+  // demandait au modele de s'abstenir ; une consigne se negocie, pas ceci.
+  const verdict = checkCommand(command);
+  if (!verdict.ok) {
+    console.log(`[${ts()}] exec [${session_id ?? "default"}] REFUSE: ${verdict.reason}`);
+    return { error: verdict.reason, exit_code: -1, stdout: "", stderr: verdict.reason, blocked: true };
+  }
   const ws = await ensureSessionDir(session_id);
   const workdir = cwd ? resolvePath(session_id, cwd) : ws;
   const [bin, args] = shellArgv(String(shell || "").toLowerCase(), String(command));
@@ -175,6 +191,9 @@ export async function handleProc(body) {
   switch (String(action || "")) {
     case "start": {
       if (!String(body.command || "").trim()) return { error: "command is required" };
+      // Meme politique qu'exec : sans cela, run_background serait le contournement.
+      const procVerdict = checkCommand(body.command);
+      if (!procVerdict.ok) return { error: procVerdict.reason, blocked: true };
       const running = [...procs.values()].filter((p) => p.session_id === sid && p.status === "running");
       if (running.length >= MAX_PROCS_PER_SESSION) {
         return { error: `too many background processes (${MAX_PROCS_PER_SESSION}). Stop one before starting another.` };

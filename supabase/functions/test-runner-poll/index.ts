@@ -512,19 +512,55 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, control_until: until, origins });
     }
 
+    // rec_coach_arm — l'utilisateur ouvre (ou ferme) le mode formation.
+    //
+    // Volontairement distinct de rec_control_arm : ce que le coach peut faire
+    // — dessiner un repère, écrire une phrase, lire la page — ne se confond pas
+    // avec cliquer à la place de quelqu'un. Un consentement unique aurait fait
+    // du plus dangereux le prix d'entrée du plus anodin. D'où aussi la durée
+    // maximale plus généreuse : une formation dure une matinée.
+    if (mode === "rec_coach_arm") {
+      if (!auth.deviceId) {
+        return jsonResponse({ ok: false, message: "Réservé à un appareil appairé" }, { status: 403 });
+      }
+      const minutes = Math.min(480, Math.max(0, Number(body.minutes ?? 0)));
+      const origins = Array.isArray(body.origins)
+        ? body.origins.map((o: unknown) => String(o)).slice(0, 50)
+        : [];
+      const until = minutes > 0 ? new Date(Date.now() + minutes * 60_000).toISOString() : null;
+      await admin.from("recorder_devices")
+        .update({ coach_until: until, coach_origins: origins })
+        .eq("id", auth.deviceId);
+
+      // Couper la formation ferme aussi les repères en vol : un pas de plus
+      // affiché après l'arrêt donnerait le sentiment que le bouton ne fait rien.
+      if (!until) {
+        await admin.from("browser_commands")
+          .update({ status: "expired", finished_at: new Date().toISOString(), error: "mode formation désactivé" })
+          .eq("device_id", auth.deviceId).eq("channel", "coach").in("status", ["pending", "running"]);
+      }
+      return jsonResponse({ ok: true, coach_until: until, origins });
+    }
+
     // rec_control_poll — l'extension réclame les ordres en attente.
+    //
+    // Un seul appel sert les deux canaux, parce qu'un seul battement doit
+    // suffire : l'extension n'a pas à savoir combien de pouvoirs existent. Ce
+    // qu'elle reçoit dépend de ce qui est armé, et rien d'autre.
     if (mode === "rec_control_poll") {
       if (!auth.deviceId) {
         return jsonResponse({ ok: false, message: "Réservé à un appareil appairé" }, { status: 403 });
       }
       const { data: dev } = await admin.from("recorder_devices")
-        .select("control_until, control_origins").eq("id", auth.deviceId).maybeSingle();
+        .select("control_until, control_origins, coach_until, coach_origins")
+        .eq("id", auth.deviceId).maybeSingle();
 
       const armed = !!dev?.control_until && Date.parse(dev.control_until) > Date.now();
-      if (!armed) {
-        // Non armé : on ne remet AUCUN ordre. L'extension n'a même pas à savoir
-        // qu'il en existait.
-        return jsonResponse({ ok: true, armed: false, commands: [] });
+      const coachArmed = !!dev?.coach_until && Date.parse(dev.coach_until) > Date.now();
+      if (!armed && !coachArmed) {
+        // Rien d'armé : on ne remet AUCUN ordre. L'extension n'a même pas à
+        // savoir qu'il en existait.
+        return jsonResponse({ ok: true, armed: false, coach_armed: false, commands: [] });
       }
 
       const nowIso = new Date().toISOString();
@@ -534,9 +570,15 @@ Deno.serve(async (req) => {
         .update({ status: "expired", finished_at: nowIso, error: "expiré avant exécution" })
         .eq("device_id", auth.deviceId).eq("status", "pending").lt("expires_at", nowIso);
 
+      // Qui peut agir peut montrer ; l'inverse est faux. C'est ici que la
+      // promesse du mode formation tient, avant même la liste blanche de
+      // l'extension : un ordre de pilotage n'est jamais REMIS à un appareil
+      // armé pour la seule formation.
+      const channels = armed ? ["control", "coach"] : ["coach"];
       const { data: queued } = await admin.from("browser_commands")
-        .select("id, action, params")
+        .select("id, action, params, channel")
         .eq("device_id", auth.deviceId).eq("status", "pending")
+        .in("channel", channels)
         .order("created_at").limit(5);
 
       const ids = (queued ?? []).map((c: { id: string }) => c.id);
@@ -545,9 +587,13 @@ Deno.serve(async (req) => {
           .update({ status: "running", claimed_at: nowIso }).in("id", ids);
       }
       return jsonResponse({
-        ok: true, armed: true,
-        control_until: dev!.control_until,
-        origins: dev!.control_origins ?? [],
+        ok: true,
+        armed,
+        control_until: dev?.control_until ?? null,
+        origins: dev?.control_origins ?? [],
+        coach_armed: coachArmed,
+        coach_until: dev?.coach_until ?? null,
+        coach_origins: dev?.coach_origins ?? [],
         commands: queued ?? [],
       });
     }
@@ -613,8 +659,10 @@ Deno.serve(async (req) => {
       // continue sans image.
       if (upErr) return jsonResponse({ ok: true, url: null, warning: upErr.message });
 
-      const { data: pub } = admin.storage.from("skill-recordings").getPublicUrl(path);
-      return jsonResponse({ ok: true, url: pub.publicUrl });
+      // FOS-04 : on rend le CHEMIN, plus une URL publique. Le bucket est privé
+      // depuis la migration 0241 — ces vignettes filment l'écran d'un opérateur
+      // au travail — et le front signe le chemin au moment de l'afficher.
+      return jsonResponse({ ok: true, url: path, path });
     }
 
     // rec_finish — le recorder a refermé le navigateur. On bascule en

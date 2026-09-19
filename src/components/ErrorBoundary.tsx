@@ -1,5 +1,8 @@
 import React from "react";
-import { AlertOctagon, RefreshCw } from "lucide-react";
+import {
+  WarningOctagonIcon as AlertOctagon,
+  ArrowsClockwiseIcon as RefreshCw,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 

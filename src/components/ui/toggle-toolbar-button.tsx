@@ -6,7 +6,7 @@ import {
   useToggleToolbarButton,
   useToggleToolbarButtonState,
 } from '@platejs/toggle/react';
-import { ListCollapseIcon } from 'lucide-react';
+import { ListDashesIcon as ListCollapseIcon } from "@phosphor-icons/react";
 
 import { ToolbarButton } from './toolbar';
 

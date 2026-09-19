@@ -1,9 +1,16 @@
 import { useMemo, useState } from "react";
 import {
-  History, ShieldCheck, ShieldAlert, ScrollText, ClipboardCheck,
-  GitPullRequestArrow, Siren, Database, Dot,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+  ClockCounterClockwiseIcon as History,
+  ShieldCheckIcon as ShieldCheck,
+  ShieldWarningIcon as ShieldAlert,
+  ScrollIcon as ScrollText,
+  ClipboardTextIcon as ClipboardCheck,
+  GitPullRequestIcon as GitPullRequestArrow,
+  SirenIcon as Siren,
+  DatabaseIcon as Database,
+  DotIcon as Dot,
+} from "@phosphor-icons/react";
+import type { Icon as LucideIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuditEvents, type AuditEvent } from "./shared";

@@ -7,7 +7,14 @@ import {
   useScaleInput,
 } from '@platejs/media/react';
 import { cva } from 'class-variance-authority';
-import { ArrowLeft, ArrowRight, Download, Minus, Plus, X } from 'lucide-react';
+import {
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  DownloadSimpleIcon as Download,
+  MinusIcon as Minus,
+  PlusIcon as Plus,
+  XIcon as X,
+} from "@phosphor-icons/react";
 import { useEditorRef } from 'platejs/react';
 
 import { cn } from '@/lib/utils';

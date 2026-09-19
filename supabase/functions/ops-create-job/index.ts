@@ -9,7 +9,8 @@
 // 'awaiting_approval'. Otherwise it goes straight to 'queued' for the runner.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
-import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { requireProjectMember } from "../_shared/authz.ts";
 
 Deno.serve(async (req) => {
   const corsResp = handleCors(req);
@@ -25,16 +26,16 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, message: "job_type required" }, { status: 400 });
     }
 
-    const userClient = createUserClient(req);
-    const { data: userInfo, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !userInfo?.user) {
-      return jsonResponse({ ok: false, message: "Unauthenticated" }, { status: 401 });
-    }
-    const userId = userInfo.user.id;
-
     const admin = createServiceClient();
 
     // Resolve workspace + project from the server.
+    //
+    // Résoudre le workspace depuis la ligne du serveur donnait l'ILLUSION d'un
+    // cadrage (« il vient bien de la base ») alors que rien ne reliait ce
+    // workspace à l'appelant : un compte quelconque enfilait un job sur le
+    // serveur d'un autre client, que son runner exécutait ensuite (FOS-02).
+    // On résout d'abord, on autorise ensuite — et sur le projet résolu, jamais
+    // sur celui que l'appelant prétend.
     let workspaceId: string | null = null;
     let projectId: string | null = null;
     if (server_id) {
@@ -49,11 +50,19 @@ Deno.serve(async (req) => {
       }
     }
     // Fallback for jobs without a server (e.g. project-wide checks): allow caller to pass them.
-    if (!workspaceId) workspaceId = body.workspace_id;
     if (!projectId) projectId = body.project_id;
-    if (!workspaceId || !projectId) {
+    if (!projectId) {
       return jsonResponse({ ok: false, message: "Could not resolve workspace/project" }, { status: 400 });
     }
+
+    // Un job Ops fait tourner des commandes sur une machine : rôle « editor »
+    // au minimum, un lecteur du workspace n'a rien à faire ici.
+    const auth = await requireProjectMember(req, projectId, "editor");
+    if (!auth.ok) return auth.response;
+    const userId = auth.userId;
+    // Le workspace vient du garde (résolu depuis `projects`), pas du corps de
+    // la requête : on ne peut pas rattacher le job au workspace d'un tiers.
+    workspaceId = auth.workspaceId;
 
     // Look up the project's Ops settings to apply the autonomy default + denylist check.
     const { data: settings } = await admin

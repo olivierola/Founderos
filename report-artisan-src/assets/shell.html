@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="__LANG__" data-theme="__THEME__" data-accent="__ACCENT__" data-type="__TYPEFACE__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__TITLE__</title>
+__FONTS__
+<style id="ra-css">__CSS__</style>
+</head>
+<body>
+
+<!--RA_BAR_START--><div class="ra-bar" role="toolbar" aria-label="Actions du rapport">
+  <div class="ra-bar__brand">
+    <span class="ra-bar__dot"></span>
+    <span>__TITLE__</span>
+    <span class="ra-bar__status" id="ra-status">chargement…</span>
+  </div>
+  <button class="ra-btn" id="ra-theme" title="Basculer clair / sombre">Thème</button>
+  <button class="ra-btn" id="ra-reset" title="Rétablir la version d'origine">Réinitialiser</button>
+  <button class="ra-btn" id="ra-print" title="Imprimer ou enregistrer en PDF">PDF</button>
+  <button class="ra-btn" id="ra-export-json" title="Exporter le contenu structuré">JSON</button>
+  <button class="ra-btn ra-btn--primary" id="ra-export-html" title="Exporter une page HTML autonome">Exporter HTML</button>
+</div><!--RA_BAR_END-->
+
+<div class="ra-shell" id="ra-shell"></div>
+
+<script id="ra-vendor">__VENDOR__</script>
+<script id="ra-runtime">__RUNTIME__</script>
+<script id="ra-doc" type="application/json">__DOC__</script>
+<script>
+  RA.__fontLink = __FONTS_JSON__;
+  RA.boot(JSON.parse(document.getElementById('ra-doc').textContent));
+</script>
+
+</body>
+</html>

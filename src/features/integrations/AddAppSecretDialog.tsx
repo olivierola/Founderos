@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, AlertCircle, CheckCircle2, KeyRound, Link2 } from "lucide-react";
+import {
+  CircleNotchIcon as Loader2,
+  WarningCircleIcon as AlertCircle,
+  CheckCircleIcon as CheckCircle2,
+  KeyIcon as KeyRound,
+  LinkSimpleIcon as Link2,
+} from "@phosphor-icons/react";
 import {
   Dialog,
   DialogContent,

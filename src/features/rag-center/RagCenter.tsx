@@ -2,9 +2,23 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Plus, Library, FileText, Globe, Boxes, Sparkles, Trash2, X,
-  ArrowLeft, Database, CheckCircle2, AlertTriangle, RefreshCw, Power, Bot,
-} from "lucide-react";
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  BooksIcon as Library,
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  CubeIcon as Boxes,
+  SparkleIcon as Sparkles,
+  TrashIcon as Trash2,
+  XIcon as X,
+  ArrowLeftIcon as ArrowLeft,
+  DatabaseIcon as Database,
+  CheckCircleIcon as CheckCircle2,
+  WarningIcon as AlertTriangle,
+  ArrowsClockwiseIcon as RefreshCw,
+  PowerIcon as Power,
+  RobotIcon as Bot,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

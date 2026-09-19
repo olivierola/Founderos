@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import NumberFlow from "@number-flow/react";
-import { ArrowRight, ArrowUpRight } from "lucide-react";
+import {
+  ArrowRightIcon as ArrowRight,
+  ArrowUpRightIcon as ArrowUpRight,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 /* The wordmark face. Fascinate is a single-weight display cut — never ask it
@@ -53,6 +56,7 @@ export function Typewriter({
   words,
   className,
   caretClassName,
+  align = "center",
   startDelay = 0,
   typeMs = 58,
   deleteMs = 28,
@@ -61,6 +65,9 @@ export function Typewriter({
   words: string[];
   className?: string;
   caretClassName?: string;
+  /** Where the phrase sits inside the slot the longest one reserves. A left
+      alignment is what a headline wants; centred suits a standalone line. */
+  align?: "left" | "center";
   startDelay?: number;
   typeMs?: number;
   deleteMs?: number;
@@ -124,7 +131,10 @@ export function Typewriter({
       </span>
 
       {/* Out of flow, centred on that reserved slot. */}
-      <span aria-hidden className="absolute left-0 top-0 w-full text-center">
+      <span
+        aria-hidden
+        className={cn("absolute left-0 top-0 w-full", align === "center" ? "text-center" : "text-left")}
+      >
         {still ? words[0] : word.slice(0, len)}
         <span
           className={cn(
@@ -269,8 +279,14 @@ export function CtaPrimary({ children, className }: { children: ReactNode; class
       style={{ background: ACCENT, color: ON_ACCENT }}
     >
       {children}
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white">
-        {/* The accent itself — ON_ACCENT is white and would vanish on the tile. */}
+      {/* The tile inverts the slab rather than going white. The accent is a
+          bright lime at 0.80 luminance: a lime arrow on a white tile is 1.2:1
+          and disappears, where the same arrow on the near-black tile is 15:1
+          and is the one spot of colour inside the button. */}
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+        style={{ background: ON_ACCENT }}
+      >
         <ArrowUpRight className="h-4 w-4" style={{ color: ACCENT }} />
       </span>
     </span>
@@ -305,3 +321,87 @@ export function CtaGhost({ children, className }: { children: ReactNode; classNa
     </span>
   );
 }
+
+/* ══ The landing page's own vocabulary ══════════════════════════════════════
+   The page is one dark canvas (see LandingTone), so these are written for
+   light ink on a moving dark ground and deliberately do not read the amp
+   tokens — those flip on the interior pages, and a pill that changes colour
+   with the route is not a pill you can put in a hero.                        */
+
+/* Display headings: large, set at medium weight with a tight track. Weight is
+   what separates this from the old page — a semibold 54px line reads as an
+   announcement, the same line at 500 reads as a statement. */
+export function Display({
+  children,
+  className,
+  as: Tag = "h2",
+}: {
+  children: ReactNode;
+  className?: string;
+  as?: "h1" | "h2" | "h3";
+}) {
+  return (
+    <Tag
+      className={cn(
+        "text-balance text-[31px] font-medium leading-[1.08] tracking-[-0.028em] text-white sm:text-[40px] lg:text-[46px]",
+        className,
+      )}
+    >
+      {children}
+    </Tag>
+  );
+}
+
+/* One word of a display line, set in italic. Used once per heading at most —
+   it is punctuation, and a second italic in the same line cancels the first. */
+export function Em({ children }: { children: ReactNode }) {
+  return <em className="font-normal italic">{children}</em>;
+}
+
+/* The small caps label that opens a block. Flat text, not a badge: the badge
+   version (Eyebrow) belongs to the interior pages. */
+export function Kicker({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-2 text-[11.5px] font-medium uppercase tracking-[0.14em] text-white/45",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* The one button shape on the page. Solid is the accent, ghost is a hairline
+   ring — both are full pills, both keep the same height, so a pair of them
+   sits on one optical line. */
+export function Pill({
+  children,
+  variant = "solid",
+  className,
+}: {
+  children: ReactNode;
+  variant?: "solid" | "ghost" | "light";
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-[13.5px] font-medium leading-none transition-colors duration-300",
+        // Solid is the black button: it belongs on the light sections.
+        variant === "solid" && "bg-[#0E0E0E] text-white hover:bg-[#2B2B2B]",
+        variant === "ghost" && "border border-white/20 text-white hover:border-white/45 hover:bg-white/[0.06]",
+        // Its inverse, for the dark canvas — a black pill on a #121212 ground
+        // is a hole, not a call to action.
+        variant === "light" && "bg-[#F5F5F5] text-[#0E0E0E] hover:bg-white",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* A hairline that survives on every tone the canvas passes through. */
+export const RULE = "rgba(255,255,255,0.10)";

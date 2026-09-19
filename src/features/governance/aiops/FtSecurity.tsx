@@ -1,9 +1,24 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  Lock, ShieldCheck, Users, ClipboardList, BadgeCheck, Check, X, Plus, Pencil, Trash2,
-  Download, KeyRound, Search, SlidersHorizontal, ShieldAlert, Clock, FileCheck2,
-} from "lucide-react";
+  LockIcon as Lock,
+  ShieldCheckIcon as ShieldCheck,
+  UsersIcon as Users,
+  ClipboardTextIcon as ClipboardList,
+  SealCheckIcon as BadgeCheck,
+  CheckIcon as Check,
+  XIcon as X,
+  PlusIcon as Plus,
+  PencilSimpleIcon as Pencil,
+  TrashIcon as Trash2,
+  DownloadSimpleIcon as Download,
+  KeyIcon as KeyRound,
+  MagnifyingGlassIcon as Search,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  ShieldWarningIcon as ShieldAlert,
+  ClockIcon as Clock,
+  FileTextIcon as FileCheck2,
+} from "@phosphor-icons/react";
 import { ShieldStarIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";

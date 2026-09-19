@@ -2,9 +2,15 @@ import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, FileText, Loader2, Network, RefreshCw,
-  Play, ShieldAlert, Download,
-} from "lucide-react";
+  ArrowLeftIcon as ArrowLeft,
+  FileTextIcon as FileText,
+  CircleNotchIcon as Loader2,
+  GraphIcon as Network,
+  ArrowsClockwiseIcon as RefreshCw,
+  PlayIcon as Play,
+  ShieldWarningIcon as ShieldAlert,
+  DownloadSimpleIcon as Download,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

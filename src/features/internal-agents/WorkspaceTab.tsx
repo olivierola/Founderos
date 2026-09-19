@@ -5,9 +5,18 @@
 import React, { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, CheckCircle2, Coins, FileText, Lightbulb, Package, Pin,
-  Settings2, Target, Loader2, LayoutGrid,
-} from "lucide-react";
+  PulseIcon as Activity,
+  CheckCircleIcon as CheckCircle2,
+  CoinsIcon as Coins,
+  FileTextIcon as FileText,
+  LightbulbIcon as Lightbulb,
+  PackageIcon as Package,
+  PushPinIcon as Pin,
+  SlidersHorizontalIcon as Settings2,
+  TargetIcon as Target,
+  CircleNotchIcon as Loader2,
+  GridFourIcon as LayoutGrid,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";

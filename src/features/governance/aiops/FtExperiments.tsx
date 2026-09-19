@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { Beaker, Trophy, Loader2, Plus } from "lucide-react";
+import {
+  FlaskIcon as Beaker,
+  TrophyIcon as Trophy,
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+} from "@phosphor-icons/react";
 import { TestTubeIcon } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";

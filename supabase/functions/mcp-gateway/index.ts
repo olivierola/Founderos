@@ -16,6 +16,8 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { mcpDiscoverTools } from "../_shared/mcp-client.ts";
+import { assertSafeUrl } from "../_shared/ssrf.ts";
+import { requireUser } from "../_shared/authz.ts";
 import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
 
 Deno.serve(async (req) => {
@@ -24,6 +26,13 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
+
+    // La branche "test" n'utilisait pas le client RLS ci-dessous : elle prenait
+    // url + headers dans le corps et partait. Le deploiement etant en
+    // --no-verify-jwt, elle etait donc joignable sans session du tout (FOS-11).
+    const user = await requireUser(req);
+    if (!user.ok) return user.response;
+
     const supa = createUserClient(req);
 
     let url = "";
@@ -49,6 +58,15 @@ Deno.serve(async (req) => {
 
     if (!/^https?:\/\//i.test(url)) {
       return jsonResponse({ ok: false, error: "url must be an absolute http(s) URL" }, { status: 400 });
+    }
+
+    // FOS-11 : jusqu'ici la seule validation était la ligne ci-dessus, qui laisse
+    // passer 127.0.0.1, 169.254.169.254 et tout service interne — et la liste
+    // d'outils comme les messages d'erreur repartaient vers l'appelant, ce qui en
+    // faisait un oracle de découverte réseau.
+    const verdict = await assertSafeUrl(url);
+    if (!verdict.ok) {
+      return jsonResponse({ ok: false, error: verdict.reason, tools: [] }, { status: 400 });
     }
 
     const { tools, error, usedUrl } = await mcpDiscoverTools(url, headers);

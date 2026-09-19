@@ -1,6 +1,12 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, XCircle, Clock, ChevronRight, Activity } from "lucide-react";
+import {
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  ClockIcon as Clock,
+  CaretRightIcon as ChevronRight,
+  PulseIcon as Activity,
+} from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/MetricCard";

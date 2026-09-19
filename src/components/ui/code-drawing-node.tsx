@@ -28,7 +28,7 @@ import {
   useSelected,
 } from 'platejs/react';
 import debounce from 'lodash/debounce.js';
-import { Trash2, DownloadIcon } from 'lucide-react';
+import { TrashIcon as Trash2, DownloadSimpleIcon as DownloadIcon } from "@phosphor-icons/react";
 
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';

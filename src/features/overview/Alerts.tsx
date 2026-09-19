@@ -1,5 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import {
+  WarningCircleIcon as AlertCircle,
+  CheckCircleIcon as CheckCircle2,
+  CircleNotchIcon as Loader2,
+} from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

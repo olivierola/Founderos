@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Loader2, Bot, User } from "lucide-react";
+import {
+  PaperPlaneRightIcon as Send,
+  CircleNotchIcon as Loader2,
+  RobotIcon as Bot,
+  UserIcon as User,
+  MicrophoneIcon as Mic,
+  SquareIcon as Square,
+} from "@phosphor-icons/react";
+import { VoiceComposer } from "@/components/ui/composer-voice-glow";
+import { useDictation } from "@/lib/useDictation";
 import { Button } from "@/components/ui/button";
 import type { ModuleProject } from "../moduleProjectModel";
 import { updateModuleProject } from "../moduleProjectModel";
@@ -14,6 +23,17 @@ export function AgentChatView({ moduleProject: mp }: { moduleProject: ModuleProj
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Streaming dictation (Deepgram), appended to what was already typed.
+  const dictBase = useRef("");
+  const dictation = useDictation((d) => {
+    const base = dictBase.current;
+    setInput(base + (base && d ? " " : "") + d);
+  });
+  const toggleDictation = () => {
+    if (dictation.recording || dictation.connecting) { dictation.stop(); return; }
+    dictBase.current = input.trimEnd();
+    void dictation.start();
+  };
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -76,15 +96,32 @@ export function AgentChatView({ moduleProject: mp }: { moduleProject: ModuleProj
       </div>
 
       <div className="border-t border-border p-3">
-        <div className="flex items-end gap-2">
-          <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder="Message the agent…"
-            className="max-h-32 min-h-[38px] flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-          <Button onClick={send} disabled={sending || !input.trim()} size="sm">
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
-        </div>
+        {/* Framed by voice-glow (VoiceComposer): breathing at rest, following
+            the dictated voice, sweeping while the agent answers. */}
+        <VoiceComposer stream={dictation.stream} processing={sending || dictation.connecting} radius={16}>
+          <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-1.5 pl-3 focus-within:border-ring/50">
+            <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder="Message the agent…"
+              className="max-h-32 min-h-[36px] flex-1 resize-none bg-transparent py-2 text-sm focus:outline-none" />
+            <button
+              type="button"
+              onClick={toggleDictation}
+              title={dictation.recording ? "Arrêter la dictée" : "Dictée vocale"}
+              className={cn(
+                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors",
+                dictation.recording ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {dictation.connecting
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : dictation.recording ? <Square weight="fill" className="h-3.5 w-3.5" /> : <Mic className="h-4 w-4" />}
+            </button>
+            <Button onClick={send} disabled={sending || !input.trim()} size="sm" className="h-8 rounded-full">
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
+        </VoiceComposer>
       </div>
     </div>
   );

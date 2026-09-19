@@ -64,23 +64,31 @@ async function render() {
 async function renderControl() {
   let armed = false;
   let until = null;
+  let coachArmed = false;
+  let coachUntil = null;
   try {
     const res = await rpc({ mode: "rec_control_poll" });
     armed = !!res.armed;
     until = res.control_until;
+    coachArmed = !!res.coach_armed;
+    coachUntil = res.coach_until;
   } catch { /* hors ligne : on montre l'état par défaut */ }
 
-  $("ctl-state").textContent = armed && until
-    ? `actif jusqu'à ${new Date(until).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`
-    : "désactivé";
+  const hhmm = (v) => new Date(v).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+  $("ctl-state").textContent = armed && until ? `actif jusqu'à ${hhmm(until)}` : "désactivé";
   $("disarm").style.display = armed ? "" : "none";
   $("arm15").textContent = armed ? "Prolonger de 15 minutes" : "Autoriser 15 minutes";
+
+  $("coach-state").textContent = coachArmed && coachUntil ? `en cours jusqu'à ${hhmm(coachUntil)}` : "désactivé";
+  $("coach-off").style.display = coachArmed ? "" : "none";
+  $("coach60").textContent = coachArmed ? "Prolonger d'une heure" : "Activer 1 heure";
 }
 
 /** Le périmètre « ce site » est résolu depuis l'onglet ACTIF au moment du clic —
  *  c'est le site que l'utilisateur a sous les yeux quand il décide. */
-async function currentOrigins() {
-  if ($("ctl-scope").value === "all") return [];
+async function currentOrigins(selectId) {
+  if ($(selectId).value === "all") return [];
   try {
     const [tab] = await api.tabs.query({ active: true, lastFocusedWindow: true });
     return tab?.url ? [new URL(tab.url).host] : [];
@@ -90,16 +98,33 @@ async function currentOrigins() {
 async function arm(minutes) {
   $("ctl-err").textContent = "";
   try {
-    await rpc({ mode: "rec_control_arm", minutes, origins: await currentOrigins() });
+    await rpc({ mode: "rec_control_arm", minutes, origins: await currentOrigins("ctl-scope") });
     await renderControl();
   } catch (e) {
     $("ctl-err").textContent = e.message;
   }
 }
 
+/** Le mode formation se donne pour des heures, là où le pilotage se compte en
+ *  minutes : on ne réarme pas tous les quarts d'heure pendant qu'on apprend un
+ *  outil, et ce que le coach peut faire — dessiner et écrire — ne justifie pas
+ *  la même parcimonie. */
+async function armCoach(minutes) {
+  $("coach-err").textContent = "";
+  try {
+    await rpc({ mode: "rec_coach_arm", minutes, origins: await currentOrigins("coach-scope") });
+    await renderControl();
+  } catch (e) {
+    $("coach-err").textContent = e.message;
+  }
+}
+
 $("arm15").addEventListener("click", () => arm(15));
 $("arm60").addEventListener("click", () => arm(60));
 $("disarm").addEventListener("click", () => arm(0));
+$("coach60").addEventListener("click", () => armCoach(60));
+$("coach240").addEventListener("click", () => armCoach(240));
+$("coach-off").addEventListener("click", () => armCoach(0));
 
 async function requestCode() {
   $("pair-err").textContent = "";

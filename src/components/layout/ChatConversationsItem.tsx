@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { NavLink, useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, MessageSquare, Plus } from "lucide-react";
+import {
+  CaretDownIcon as ChevronDown,
+  ChatIcon as MessageSquare,
+  PlusIcon as Plus,
+} from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
