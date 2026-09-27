@@ -4,7 +4,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import {
   ArrowLeftIcon, ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, ChartBarIcon, CompassIcon,
-  GearSixIcon, RobotIcon, StorefrontIcon, type Icon as PhosphorIcon,
+  GearSixIcon, RobotIcon, StorefrontIcon, TrayIcon, type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -27,6 +27,7 @@ const TABS: { key: PublicAgentTab; label: string; icon: PhosphorIcon }[] = [
   { key: "knowledge", label: "Knowledge", icon: BookOpenIcon },
   { key: "widget", label: "Widget", icon: PuzzlePieceIcon },
   { key: "analytics", label: "Analytics", icon: ChartBarIcon },
+  { key: "support", label: "Demandes", icon: TrayIcon },
   { key: "onboarding", label: "Onboarding", icon: CompassIcon },
   { key: "ecommerce", label: "E-commerce", icon: StorefrontIcon },
   { key: "settings", label: "Settings", icon: GearSixIcon },

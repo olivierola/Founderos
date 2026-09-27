@@ -2443,7 +2443,7 @@ function DeliverableItem({ d }: { d: Deliverable }) {
 interface AgentTool {
   id: string;
   agent_id: string;
-  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
+  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "support" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
   name: string;
   description: string | null;
   config: Record<string, any>;
@@ -2456,6 +2456,7 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "web_fetch", label: "Fetch URL", icon: Globe, description: "Download and extract text from a URL." },
   { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed/ingested knowledge base." },
   { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM — contacts, deals, companies. Writes need approval unless the agent is on autopilot." },
+  { kind: "support", label: "Support desk", icon: Database, description: "The support queue triaged by ResolveAI from your public agents: read requests and transcripts, update their status, pull real figures for reports." },
   { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Anduran function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
   { kind: "connector_action", label: "Integration", icon: Plug, description: "Read data from a connected integration (CRM, HR, data lake) via its official API." },

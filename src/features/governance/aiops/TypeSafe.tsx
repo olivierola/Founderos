@@ -155,6 +155,16 @@ const FEATURES: Array<{
     thresholdLabel: "Probabilité minimale pour poser la question",
     defaultThreshold: 0.7,
   },
+  {
+    feature: "support_triage",
+    label: "ResolveAI — tri des demandes",
+    effect: "Chaque message reçu par un agent public est classé (intention, urgence, besoin d'une personne). Une demande qui relève de l'équipe reçoit une réponse prudente qui annonce le relais, et entre dans la file avec son échéance SLA.",
+    where: "Agents publics (widget, playground) · File dans l'onglet « Demandes » de chaque agent public",
+    thresholdLabel: "Probabilité minimale pour confier la demande à l'équipe",
+    // Bas : laisser l'agent répondre seul à une demande de remboursement coûte
+    // plus cher que d'en confier une de trop à l'équipe.
+    defaultThreshold: 0.55,
+  },
 ];
 
 const MODE_META: Record<Mode, { label: string; hint: string; tone: string; icon: typeof Power }> = {

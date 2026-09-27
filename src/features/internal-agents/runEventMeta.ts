@@ -144,7 +144,7 @@ const FAMILY_BY_TOOL: Array<[RegExp, string]> = [
   [/^(guide_user|training)$/, "training"],
   [/^(update_todos|update_plan_step|use_skill|read_skill_file|load_toolset|need_tools)$/, "planning"],
   [/^send_email$/, "email"],
-  [/^(query_table|crm|list_connectors|list_assets)$/, "data"],
+  [/^(query_table|crm|support_desk|list_connectors|list_assets)$/, "data"],
   [/^(security_scan|pentest_scope)$/, "security"],
   [/^(testing|simulation)$/, "testing"],
   [/^(render_ui|vibe_code|create_workflow)$/, "generation"],

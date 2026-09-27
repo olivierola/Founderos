@@ -17,6 +17,8 @@ import {
   TextTIcon as Type,
   UsersIcon as Users,
   WrenchIcon as Wrench,
+  TrayIcon as Tray,
+  ChartBarIcon as ChartBar,
 } from "@phosphor-icons/react";
 import type { PublicAgentTab } from "./AgentBuilder";
 
@@ -54,6 +56,11 @@ export const PUBLIC_AGENT_SUBTABS: Partial<Record<PublicAgentTab, SubtabDef[]>> 
     { key: "tools", label: "Outils", icon: Wrench },
     { key: "llm", label: "Modèles & coûts", icon: Coins },
     { key: "knowledge", label: "Base de connaissances", icon: BookOpen },
+  ],
+  support: [
+    { key: "queue", label: "File", icon: Tray },
+    { key: "insights", label: "Tendances", icon: ChartBar },
+    { key: "setup", label: "Intentions & SLA", icon: SlidersHorizontal },
   ],
   onboarding: [
     { key: "goals", label: "Objectifs", icon: Target },
