@@ -138,6 +138,9 @@ import { GovDataAssetsPage } from "@/features/governance/DataAssets";
 import { GovAuditPage } from "@/features/governance/AuditTrail";
 // AI Ops & Governance — onglet "AI Governance"
 import { GovGuardrailsPage } from "@/features/governance/aiops/Guardrails";
+import { GovTypeSafePage } from "@/features/governance/aiops/TypeSafe";
+import { GovContextIQPage } from "@/features/governance/aiops/ContextIQ";
+import { GovAgentPilotPage } from "@/features/governance/aiops/AgentPilot";
 import { GovAccessLogsPage } from "@/features/governance/aiops/AccessLogs";
 import { GovPromptMonitoringPage } from "@/features/governance/aiops/PromptMonitoring";
 import { GovCostsPage } from "@/features/governance/aiops/Costs";
@@ -277,6 +280,9 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   billing: <SettingsBillingPage />,
   // ── Gouvernance IA ──
   "gov-guardrails": <GovGuardrailsPage />,
+  "gov-typesafe": <GovTypeSafePage />,
+  "gov-contextiq": <GovContextIQPage />,
+  "gov-agentpilot": <GovAgentPilotPage />,
   "gov-access": <GovAccessLogsPage />,
   "gov-prompts": <GovPromptMonitoringPage />,
   "gov-costs": <GovCostsPage />,
