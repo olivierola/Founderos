@@ -141,6 +141,7 @@ import { GovGuardrailsPage } from "@/features/governance/aiops/Guardrails";
 import { GovTypeSafePage } from "@/features/governance/aiops/TypeSafe";
 import { GovContextIQPage } from "@/features/governance/aiops/ContextIQ";
 import { GovAgentPilotPage } from "@/features/governance/aiops/AgentPilot";
+import { GovPolicyGuardPage } from "@/features/governance/aiops/PolicyGuard";
 import { GovAccessLogsPage } from "@/features/governance/aiops/AccessLogs";
 import { GovPromptMonitoringPage } from "@/features/governance/aiops/PromptMonitoring";
 import { GovCostsPage } from "@/features/governance/aiops/Costs";
@@ -283,6 +284,7 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   "gov-typesafe": <GovTypeSafePage />,
   "gov-contextiq": <GovContextIQPage />,
   "gov-agentpilot": <GovAgentPilotPage />,
+  "gov-policyguard": <GovPolicyGuardPage />,
   "gov-access": <GovAccessLogsPage />,
   "gov-prompts": <GovPromptMonitoringPage />,
   "gov-costs": <GovCostsPage />,

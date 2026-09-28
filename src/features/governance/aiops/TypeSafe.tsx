@@ -165,6 +165,14 @@ const FEATURES: Array<{
     // plus cher que d'en confier une de trop à l'équipe.
     defaultThreshold: 0.55,
   },
+  {
+    feature: "policy_guard",
+    label: "PolicyGuard — risque des actions",
+    effect: "Chaque action d'écriture d'un agent reçoit un niveau de risque (0 lecture → 3 irréversible), confronté à la grille de son équipe : approbation, refus, ou plafond de l'autopilote. Ne retire jamais une approbation existante.",
+    where: "Actions de connecteurs, Composio, CRM, suivi de travail, fonctions internes, webhooks · Grille dans Gouvernance IA → PolicyGuard",
+    thresholdLabel: "Seuil (non utilisé : c'est la grille de l'équipe qui décide)",
+    defaultThreshold: 0.5,
+  },
 ];
 
 const MODE_META: Record<Mode, { label: string; hint: string; tone: string; icon: typeof Power }> = {

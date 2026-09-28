@@ -17,6 +17,7 @@ import {
   ScalesIcon,
   FunnelIcon,
   SteeringWheelIcon,
+  ShieldCheckeredIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -77,6 +78,7 @@ export const ADMIN_SECTIONS: AdminNavSection[] = [
       { label: "Jugement rapide", slug: "gov-typesafe", icon: ScalesIcon },
       { label: "ContextIQ", slug: "gov-contextiq", icon: FunnelIcon },
       { label: "AgentPilot", slug: "gov-agentpilot", icon: SteeringWheelIcon },
+      { label: "PolicyGuard", slug: "gov-policyguard", icon: ShieldCheckeredIcon },
       { label: "Accès agents", slug: "gov-access", icon: FingerprintIcon },
       { label: "Prompts", slug: "gov-prompts", icon: EyeIcon },
       { label: "Dépenses", slug: "gov-costs", icon: WalletIcon },
