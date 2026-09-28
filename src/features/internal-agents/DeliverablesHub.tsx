@@ -43,6 +43,7 @@ import {
 } from "./StudioSessions";
 import { PerspectiveBook } from "@/components/ui/perspective-book";
 import { LeadBoardView, tryParseLeadBoard } from "./leadsense/LeadBoardView";
+import { SocBoardView, tryParseSocBoard } from "./sentinel/SocBoardView";
 
 // Sober but defined book-cover palette (works on the dark odin theme). Each cover
 // is a muted "clothbound" jewel tone with white text on top.
@@ -76,7 +77,7 @@ const KIND_LABEL: Record<string, string> = {
   report: "Rapport", presentation: "Présentation", markdown: "Document",
   json: "Données", code: "Code", url: "Lien", file: "Fichier", csv: "Tableur",
   coding_session: "Session de code", test_session: "Session de test",
-  simulation_session: "Simulation", lead_board: "LeadSense",
+  simulation_session: "Simulation", lead_board: "LeadSense", soc_board: "SentinelFlow",
 };
 
 const KIND_ICON: Record<string, any> = {
@@ -86,6 +87,7 @@ const KIND_ICON: Record<string, any> = {
   test_session: FlaskConical,
   simulation_session: Atom,
   lead_board: Target,
+  soc_board: FlaskConical,
   markdown: FileText,
   json: FileJson,
   code: FileCode,
@@ -108,6 +110,8 @@ function DeliverableBody({ d }: { d: Deliverable }) {
   // prospects réellement qualifiés.
   const board = tryParseLeadBoard(d.content);
   if (board) return <LeadBoardView board={board} />;
+  const soc = tryParseSocBoard(d.content);
+  if (soc) return <SocBoardView board={soc} />;
 
   // Reports and decks are Editor.js documents now — one renderer, no
   // format sniffing. Anything that is not one of the session kinds above and

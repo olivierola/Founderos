@@ -147,7 +147,7 @@ const FAMILY_OF: Record<string, ToolFamilyKey> = {
   // navigation : ce que l'agent y produit est une phrase, pas une requête.
   guide_user: "comm", training: "comm",
 
-  security_scan: "security", pentest_scope: "security", testing: "security", simulation: "security",
+  security_scan: "security", pentest_scope: "security", sentinel: "security", testing: "security", simulation: "security",
 
   list_connectors: "integration",
 };

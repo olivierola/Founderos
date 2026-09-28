@@ -43,6 +43,7 @@ import { ArtifactDeck, ArtifactHeader } from "@/features/artifacts/BlockRenderer
 import { parseDocument, type ArtifactDocument } from "@/features/artifacts/blocks";
 import { parseReportArtisan, ReportArtisanView } from "@/features/artifacts/ReportArtisanView";
 import { LeadBoardView, tryParseLeadBoard } from "@/features/internal-agents/leadsense/LeadBoardView";
+import { SocBoardView, tryParseSocBoard } from "@/features/internal-agents/sentinel/SocBoardView";
 
 const KIND_ICON: Record<string, typeof FileText> = {
   document: FileText, presentation: Presentation, spreadsheet: TableIcon, image: ImageIcon, text: Type,
@@ -289,6 +290,7 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
   const built = parseReportArtisan(data?.content);
   // A LeadSense board: a predefined view over real rows, not an editable document.
   const leadBoard = tryParseLeadBoard(data?.content);
+  const socBoard = tryParseSocBoard(data?.content);
 
   // The header is system chrome now, so a `banner` block an older document still
   // carries would render a second title under the real one. Drop it from the
@@ -330,6 +332,8 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
           ? <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
           : leadBoard
           ? <LeadBoardView board={leadBoard} />
+          : socBoard
+          ? <SocBoardView board={socBoard} />
           : built
           ? <ReportArtisanView payload={built} title={data?.name || title} onBack={onBack} />
           : isDeck

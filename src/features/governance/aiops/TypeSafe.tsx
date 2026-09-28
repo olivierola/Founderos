@@ -181,6 +181,14 @@ const FEATURES: Array<{
     thresholdLabel: "Probabilité minimale pour déclarer un prospect chaud",
     defaultThreshold: 0.6,
   },
+  {
+    feature: "soc_triage",
+    label: "SentinelFlow — triage des alertes",
+    effect: "Chaque alerte de sécurité reçue est classée (catégorie, situation réelle, procédure) et les cas urgents sont escaladés. Un faux positif n'est jamais décidé par le modèle : seulement par des critères vérifiables (suppression, actif de test, scan autorisé, historique).",
+    where: "Toutes les sources SentinelFlow (webhooks, interrogations, signaux internes, agents, imports) · Gouvernance IA → SentinelFlow",
+    thresholdLabel: "Probabilité minimale pour escalader à un analyste",
+    defaultThreshold: 0.7,
+  },
 ];
 
 const MODE_META: Record<Mode, { label: string; hint: string; tone: string; icon: typeof Power }> = {

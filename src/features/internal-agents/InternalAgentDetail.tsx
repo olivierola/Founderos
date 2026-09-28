@@ -1635,6 +1635,7 @@ function ArtifactCard({ artifact, onOpen }: { artifact: ChatArtifact; onOpen: ()
         : artifact.kind === "test_session" ? FlaskConical
           : artifact.kind === "simulation_session" ? Atom
             : artifact.kind === "lead_board" ? Target
+            : artifact.kind === "soc_board" ? ShieldCheck
             : artifact.kind === "json" ? Database
               : artifact.kind === "code" ? FileText
                 : artifact.kind === "url" ? Globe
@@ -1645,6 +1646,7 @@ function ArtifactCard({ artifact, onOpen }: { artifact: ChatArtifact; onOpen: ()
         : artifact.kind === "test_session" ? "Session de test"
           : artifact.kind === "simulation_session" ? "Simulation"
             : artifact.kind === "lead_board" ? "Tableau LeadSense"
+            : artifact.kind === "soc_board" ? "Tableau SentinelFlow"
             : artifact.kind;
   return (
     <button
@@ -2446,7 +2448,7 @@ function DeliverableItem({ d }: { d: Deliverable }) {
 interface AgentTool {
   id: string;
   agent_id: string;
-  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "support" | "governance" | "leads" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
+  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "support" | "governance" | "leads" | "soc" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
   name: string;
   description: string | null;
   config: Record<string, any>;
@@ -2461,6 +2463,7 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM — contacts, deals, companies. Writes need approval unless the agent is on autopilot." },
   { kind: "support", label: "Support desk", icon: Database, description: "The support queue triaged by ResolveAI from your public agents: read requests and transcripts, update their status, pull real figures for reports." },
   { kind: "leads", label: "LeadSense", icon: Target, description: "Qualify inbound prospects on the company's own grid, spot the ones to call now, assign the right sales rep, and publish the LeadSense board." },
+  { kind: "soc", label: "SentinelFlow (SOC)", icon: ShieldCheck, description: "Triage security alerts from every connected source: investigate with correlation, close proven false positives, propose remediations for human validation, publish the SOC board." },
   { kind: "governance", label: "Policy audit", icon: ShieldCheck, description: "Read-only PolicyGuard figures: risk levels of the agents' actions, decisions, human validations — for compliance reports." },
   { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Anduran function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
