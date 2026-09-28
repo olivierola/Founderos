@@ -107,6 +107,7 @@ import { RunTimeline } from "./RunTimeline";
 import { AgentActivityOrb } from "./AgentActivityOrb";
 import { SubAgentInstances } from "./SubAgentInstances";
 import { InterleavedMessage, type UiBlock, type ArtifactOpenTarget } from "./UiBlocks";
+import { LeadSenseSettings } from "./leadsense/LeadSenseSettings";
 import { WorkspaceTab } from "./WorkspaceTab";
 import { chatUserBubble } from "@/lib/chatStyles";
 import { AgentIdentity } from "@/components/AgentIdentity";
@@ -1633,6 +1634,7 @@ function ArtifactCard({ artifact, onOpen }: { artifact: ChatArtifact; onOpen: ()
       : artifact.kind === "coding_session" ? GitPullRequest
         : artifact.kind === "test_session" ? FlaskConical
           : artifact.kind === "simulation_session" ? Atom
+            : artifact.kind === "lead_board" ? Target
             : artifact.kind === "json" ? Database
               : artifact.kind === "code" ? FileText
                 : artifact.kind === "url" ? Globe
@@ -1642,6 +1644,7 @@ function ArtifactCard({ artifact, onOpen }: { artifact: ChatArtifact; onOpen: ()
       : artifact.kind === "coding_session" ? "Session de code"
         : artifact.kind === "test_session" ? "Session de test"
           : artifact.kind === "simulation_session" ? "Simulation"
+            : artifact.kind === "lead_board" ? "Tableau LeadSense"
             : artifact.kind;
   return (
     <button
@@ -2443,7 +2446,7 @@ function DeliverableItem({ d }: { d: Deliverable }) {
 interface AgentTool {
   id: string;
   agent_id: string;
-  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "support" | "governance" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
+  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "support" | "governance" | "leads" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
   name: string;
   description: string | null;
   config: Record<string, any>;
@@ -2457,6 +2460,7 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed/ingested knowledge base." },
   { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM — contacts, deals, companies. Writes need approval unless the agent is on autopilot." },
   { kind: "support", label: "Support desk", icon: Database, description: "The support queue triaged by ResolveAI from your public agents: read requests and transcripts, update their status, pull real figures for reports." },
+  { kind: "leads", label: "LeadSense", icon: Target, description: "Qualify inbound prospects on the company's own grid, spot the ones to call now, assign the right sales rep, and publish the LeadSense board." },
   { kind: "governance", label: "Policy audit", icon: ShieldCheck, description: "Read-only PolicyGuard figures: risk levels of the agents' actions, decisions, human validations — for compliance reports." },
   { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Anduran function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
@@ -2901,7 +2905,7 @@ function toolConfigIssue(t: AgentTool): string | null {
 function ToolConfigEditor({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<string, any>) => void }) {
   const [open, setOpen] = useState(false);
   const isStudio = tool.kind === "vibe_code" || tool.kind === "testing" || tool.kind === "simulation";
-  const hasConfig = isStudio || tool.kind === "db_read" || tool.kind === "edge_function" || tool.kind === "custom";
+  const hasConfig = isStudio || tool.kind === "db_read" || tool.kind === "edge_function" || tool.kind === "custom" || tool.kind === "leads";
   if (!hasConfig) return null;
 
   return (
@@ -2918,7 +2922,8 @@ function ToolConfigEditor({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
           {tool.kind === "db_read" && <DbReadConfig tool={tool} onSave={onSave} />}
           {tool.kind === "edge_function" && <EdgeFunctionConfig tool={tool} onSave={onSave} />}
           {tool.kind === "custom" && <CustomToolConfig tool={tool} onSave={onSave} />}
-          <RawJsonConfig tool={tool} onSave={onSave} />
+          {tool.kind === "leads" && <LeadSenseSettings />}
+          {tool.kind !== "leads" && <RawJsonConfig tool={tool} onSave={onSave} />}
         </div>
       )}
     </div>

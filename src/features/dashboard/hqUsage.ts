@@ -125,7 +125,7 @@ const FAMILY_OF: Record<string, ToolFamilyKey> = {
   web_search: "web", deep_research: "web", read_url: "web", browse_web: "web",
   http_get: "web", http_request: "web", download_file: "web",
 
-  query_table: "data", crm: "data", support_desk: "data", policy_audit: "data", list_assets: "data",
+  query_table: "data", crm: "data", support_desk: "data", policy_audit: "data", lead_sense: "data", list_assets: "data",
 
   create_deliverable: "delivery", create_artifact: "delivery", update_artifact: "delivery",
   read_artifact: "delivery", list_artifacts: "delivery", report_section: "delivery",

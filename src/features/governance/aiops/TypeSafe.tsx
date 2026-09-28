@@ -173,6 +173,14 @@ const FEATURES: Array<{
     thresholdLabel: "Seuil (non utilisé : c'est la grille de l'équipe qui décide)",
     defaultThreshold: 0.5,
   },
+  {
+    feature: "lead_scoring",
+    label: "LeadSense — qualification",
+    effect: "L'outil lead_sense des agents internes qualifie un prospect sur la grille de l'entreprise (type, critères, score, rang, prospect chaud, commercial). Éteint, l'outil refuse de noter plutôt que de deviner. En Observation, il note quand même — c'est sa raison d'être — et le prospect est marqué « observation ».",
+    where: "Outil « LeadSense » des agents internes · Grille dans le réglage de l'outil",
+    thresholdLabel: "Probabilité minimale pour déclarer un prospect chaud",
+    defaultThreshold: 0.6,
+  },
 ];
 
 const MODE_META: Record<Mode, { label: string; hint: string; tone: string; icon: typeof Power }> = {

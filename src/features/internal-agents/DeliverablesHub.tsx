@@ -42,6 +42,7 @@ import {
   TestSession, SimulationSession, tryParseTestSession, tryParseSimulationSession,
 } from "./StudioSessions";
 import { PerspectiveBook } from "@/components/ui/perspective-book";
+import { LeadBoardView, tryParseLeadBoard } from "./leadsense/LeadBoardView";
 
 // Sober but defined book-cover palette (works on the dark odin theme). Each cover
 // is a muted "clothbound" jewel tone with white text on top.
@@ -75,7 +76,7 @@ const KIND_LABEL: Record<string, string> = {
   report: "Rapport", presentation: "Présentation", markdown: "Document",
   json: "Données", code: "Code", url: "Lien", file: "Fichier", csv: "Tableur",
   coding_session: "Session de code", test_session: "Session de test",
-  simulation_session: "Simulation",
+  simulation_session: "Simulation", lead_board: "LeadSense",
 };
 
 const KIND_ICON: Record<string, any> = {
@@ -84,6 +85,7 @@ const KIND_ICON: Record<string, any> = {
   coding_session: GitPullRequest,
   test_session: FlaskConical,
   simulation_session: Atom,
+  lead_board: Target,
   markdown: FileText,
   json: FileJson,
   code: FileCode,
@@ -102,6 +104,10 @@ function DeliverableBody({ d }: { d: Deliverable }) {
   if (test) return <TestSession session={test} />;
   const sim = tryParseSimulationSession(d.content);
   if (sim) return <SimulationSession session={sim} />;
+  // Le tableau LeadSense : une vue prédéfinie, construite par l'outil sur les
+  // prospects réellement qualifiés.
+  const board = tryParseLeadBoard(d.content);
+  if (board) return <LeadBoardView board={board} />;
 
   // Reports and decks are Editor.js documents now — one renderer, no
   // format sniffing. Anything that is not one of the session kinds above and
