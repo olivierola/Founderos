@@ -41,9 +41,10 @@ export interface WfGraph { nodes: WfNode[]; edges: WfEdge[] }
 
 /** The sections a good procedure is made of. */
 export type BlockKind =
-  | "trigger" | "input" | "goal" | "rule" | "context" | "resource" | "tool"
+  | "trigger" | "input" | "variables" | "goal" | "rule" | "context" | "resource" | "tool"
   | "section" | "step" | "decision" | "loop" | "handoff" | "approval"
-  | "deliverable" | "memory" | "example";
+  | "deliverable" | "memory" | "example"
+  | "note" | "set" | "wait" | "stop" | "judge";
 
 /**
  * What a block IS, which decides how it may be wired and where it lands.
@@ -71,7 +72,18 @@ export interface BlockDoc {
 export const BLOCK_DOC: Record<BlockKind, BlockDoc> = {
   trigger: { role: "trigger", compiles: "frontmatter", defaults: { label: "Déclencheur", mode: "manual", schedule: "0 9 * * 1", event: "" } },
   input: { role: "frame", compiles: "## Entrées", defaults: { label: "", body: "", params: [] } },
+  // Les valeurs nommées du workflow. Une ENTRÉE vient du déclenchement et change
+  // à chaque run ; une VARIABLE est posée ici, une fois, et se lit partout
+  // ailleurs comme `{{canal_slack}}`. Sans elle, un identifiant de canal ou un
+  // seuil se recopie dans six blocs et se corrige dans cinq.
+  variables: { role: "frame", compiles: "## Variables", defaults: { label: "", body: "", vars: [] } },
   goal: { role: "frame", compiles: "## Objectif", defaults: { label: "", body: "" } },
+  // Une note n'est lue par personne d'autre que nous. Elle n'entre PAS dans le
+  // playbook : un commentaire adressé à un collègue, transmis à un agent comme
+  // une consigne, est exactement la façon dont on fait faire n'importe quoi à
+  // une procédure. Sur le canevas, en revanche, c'est ce qui explique pourquoi
+  // cette branche existe.
+  note: { role: "frame", compiles: "(rien — visible seulement ici)", defaults: { label: "", body: "" } },
   example: { role: "frame", compiles: "## Exemples", defaults: { label: "", body: "" } },
   rule: { role: "qualifier", compiles: "## Règles", attachLabel: "Règle", defaults: { label: "", body: "" } },
   context: { role: "qualifier", compiles: "## Contexte", attachLabel: "Contexte", defaults: { label: "", body: "", refs: [], scope: "global" } },
@@ -88,8 +100,41 @@ export const BLOCK_DOC: Record<BlockKind, BlockDoc> = {
   // quand deux chemins se rejoignent.
   section: { role: "action", compiles: "#### Titre", defaults: { label: "", body: "" } },
   step: { role: "action", compiles: "### n. Titre", defaults: { label: "", body: "", agent_id: null, refs: [], output_var: "" } },
+  // Poser une valeur EN COURS de chaîne. Le bloc « Variables » déclare des
+  // constantes avant le départ ; celui-ci range ce qu'on vient d'obtenir sous
+  // un nom lisible — `total = {{deals.count}}` — sans faire écrire du code pour
+  // une affectation.
+  set: { role: "action", compiles: "### Valeurs", defaults: { label: "", body: "", vars: [] } },
+  // Une pause entre deux appels. Plafonnée à 60 s, et ce n'est pas une limite
+  // technique déguisée : une automatisation tourne EN LIGNE, et « attendre deux
+  // jours » n'est pas une pause, c'est une seconde planification.
+  wait: { role: "action", compiles: "### Pause", defaults: { label: "", body: "", seconds: 5 } },
+  // Terminer ici, en disant lequel des trois cas c'est. Sans lui, une branche
+  // qui s'arrête ne se distingue pas d'une branche qu'on a oublié de câbler.
+  stop: { role: "action", compiles: "### Fin", defaults: { label: "", body: "", outcome: "succeeded" } },
   loop: { role: "action", compiles: "### Boucle", defaults: { label: "", body: "", mode: "foreach", over: "", until: "", max: 20 } },
   decision: { role: "action", compiles: "### Décision", defaults: { label: "", body: "" } },
+  // La marche qui manquait entre les deux natures.
+  //
+  // Une `decision` compare deux valeurs : c'est exact, reproductible, et
+  // incapable de répondre à « ce message est-il une réclamation ? ». Une
+  // procédure, elle, sait juger — mais il faut un agent, un raisonnement, et on
+  // perd la reproductibilité de bout en bout.
+  //
+  // Ce bloc tranche une question ÉCRITE EN FRANÇAIS avec un modèle typé qui
+  // rend une probabilité, pas une phrase. Ce n'est pas déterministe, et c'est
+  // dit : la probabilité obtenue est journalisée avec l'étape, de sorte qu'un
+  // run qui a pris la mauvaise branche s'explique au lieu de se deviner.
+  judge: {
+    role: "action", compiles: "### Condition jugée",
+    defaults: {
+      label: "", body: "", question: "", over: "", threshold: 0,
+      // Les exemples sont le seul réglage qui fasse vraiment bouger une réponse
+      // quand la frontière est floue : « est-ce une réclamation ? » se joue sur
+      // deux ou trois cas limites, pas sur la formulation de la question.
+      yes_examples: "", no_examples: "",
+    },
+  },
   handoff: { role: "action", compiles: "### ➜ Passation", defaults: { label: "", body: "", agent_ids: [], mode: "sequential", expects: "", refs: [] } },
   approval: { role: "action", compiles: "### ⏸ Validation", defaults: { label: "", body: "" } },
 };
@@ -397,16 +442,82 @@ export const codeToolOf = (data: Record<string, unknown> | null | undefined) =>
  * `trigger` et `steps` sont refusés — ils désignent déjà autre chose dans le
  * contexte d'un run, et les laisser passer masquerait la donnée d'origine.
  */
-export function outputVarOf(data: Record<string, unknown> | null | undefined): string {
-  const raw = str(data?.output_var).trim();
-  if (!raw) return "";
-  const clean = raw
+export function normalizeVarName(raw: unknown): string {
+  const clean = str(raw).trim()
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^A-Za-z0-9_]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
   if (!clean || /^\d/.test(clean)) return "";
   return clean === "trigger" || clean === "steps" ? "" : clean;
+}
+
+export function outputVarOf(data: Record<string, unknown> | null | undefined): string {
+  return normalizeVarName(data?.output_var);
+}
+
+/**
+ * Une valeur nommée, posée une fois pour tout le workflow.
+ *
+ * Ce n'est pas une entrée : une entrée arrive du déclenchement et change à
+ * chaque run. Une variable est écrite dans le workflow — un identifiant de
+ * canal, un seuil, l'adresse d'une API — et relue partout comme `{{nom}}`.
+ * Sans elle, la même constante se recopie dans six blocs et se corrige dans
+ * cinq.
+ */
+export interface WorkflowVar {
+  name: string;
+  /** La valeur, qui peut elle-même porter des gabarits (`{{trigger.x}}`). */
+  value?: string;
+  description?: string;
+  /** `secret` : la valeur n'est pas imprimée dans le playbook d'une procédure —
+   *  un agent qui la lit la recopierait dans son rapport. */
+  secret?: boolean;
+}
+
+export const varsOf = (data: Record<string, unknown> | null | undefined): WorkflowVar[] =>
+  Array.isArray(data?.vars)
+    ? (data.vars as WorkflowVar[]).filter((v) => v && typeof v === "object")
+    : [];
+
+/** Les variables déclarées par le graphe, dédoublonnées : la première
+ *  déclaration d'un nom gagne, pour que deux blocs « Variables » posés par
+ *  mégarde ne fassent pas dépendre le résultat de l'ordre de lecture. */
+export function declaredVars(graph: WfGraph): WorkflowVar[] {
+  const out: WorkflowVar[] = [];
+  const seen = new Set<string>();
+  for (const n of graph.nodes) {
+    if (n.type !== "variables") continue;
+    for (const v of varsOf(n.data)) {
+      const name = normalizeVarName(v.name);
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      out.push({ ...v, name });
+    }
+  }
+  return out;
+}
+
+/**
+ * Tous les noms qu'un gabarit peut résoudre.
+ *
+ * Trois provenances, et c'est voulu qu'elles se mélangent ici : les constantes
+ * déclarées avant le départ, ce qu'un bloc « Valeurs » pose en cours de route,
+ * et ce qu'une action range sous son nom de sortie. Du point de vue de celui
+ * qui écrit `{{total}}`, ce sont la même chose.
+ *
+ * À NE PAS confondre avec `declaredVars`, que le moteur sème avant la première
+ * étape : une valeur posée en cours de chaîne n'existe pas encore au départ, et
+ * la semer d'avance la ferait lire vide par les étapes qui la précèdent.
+ */
+export function varNamesOf(graph: WfGraph): string[] {
+  const names = declaredVars(graph).map((v) => v.name);
+  const add = (name: string) => { if (name && !names.includes(name)) names.push(name); };
+  for (const n of graph.nodes) {
+    if (n.type === "set") for (const v of varsOf(n.data)) add(normalizeVarName(v.name));
+    add(outputVarOf(n.data));
+  }
+  return names;
 }
 
 export function toolCall(data: Record<string, unknown> | null | undefined): { text: string; isAction: boolean } {
@@ -651,6 +762,27 @@ export function compileWorkflow(
     return lines;
   });
 
+  // Les valeurs nommées. Imprimées AVANT l'objectif : une instruction qui dit
+  // « poste dans {{canal}} » n'est lisible que si « canal » a déjà été défini.
+  // Une variable marquée secrète donne son nom et pas sa valeur — un agent qui
+  // lit une clé d'API la recopie dans son rapport.
+  section("Variables", of("variables"), (n) => {
+    const rows = varsOf(n.data as Record<string, unknown>)
+      .map((v) => ({ ...v, name: normalizeVarName(v.name) }))
+      .filter((v) => v.name);
+    if (!rows.length) return [];
+    return [
+      ...(title(n) ? [`**${title(n)}**`, ""] : []),
+      ...rows.map((v) => {
+        const value = v.secret ? "(valeur masquée)" : str(v.value).trim() || "(vide)";
+        const desc = str(v.description).trim();
+        return "- `" + v.name + "` = " + value + (desc ? ` — ${desc}` : "");
+      }),
+      "",
+      "_Ces valeurs sont fixées pour tout le run : reprends-les telles quelles, ne les redemande pas._",
+    ];
+  });
+
   section("Objectif", of("goal"), (n) => [title(n) ? `**${title(n)}**` : "", body(n)].filter(Boolean));
   section("Règles", of("rule"), (n) => [`- ${[title(n), body(n)].filter(Boolean).join(" — ")}`]);
 
@@ -679,7 +811,7 @@ export function compileWorkflow(
   // The procedure keeps the reading order across step/decision/approval, so a
   // decision sits between the steps it separates — which is how a procedure is
   // actually read.
-  const proc = ordered.filter((n) => ["section", "step", "decision", "loop", "approval", "handoff"].includes(n.type ?? "")
+  const proc = ordered.filter((n) => ["section", "step", "decision", "loop", "approval", "handoff", "set", "wait", "stop", "judge"].includes(n.type ?? "")
     || (n.type === "context" && str(n.data?.scope) === "local" && !isAttached(graph.edges, n.id)));
   if (proc.length) {
     out.push("## Procédure", "");
@@ -763,6 +895,52 @@ export function compileWorkflow(
         leg("body", "À répéter");
         leg("done", "Une fois terminé");
         out.push("");
+      } else if (n.type === "set") {
+        const rows = varsOf(n.data as Record<string, unknown>)
+          .map((v) => ({ ...v, name: normalizeVarName(v.name) }))
+          .filter((v) => v.name);
+        out.push(`### 📌 Valeurs — ${title(n) || "à retenir"}`, "");
+        for (const v of rows) {
+          out.push(`- \`${v.name}\` = ${str(v.value).trim() || "(vide)"}${str(v.description).trim() ? ` — ${str(v.description).trim()}` : ""}`);
+        }
+        if (rows.length) out.push("", "_Retiens ces valeurs et réutilise-les telles quelles dans la suite._");
+        const b = bodyOf(n);
+        if (b) out.push("", b);
+        out.push("");
+      } else if (n.type === "wait") {
+        const secs = Math.max(0, Math.min(60, Number(n.data?.seconds) || 0));
+        out.push(`### ⏱ Pause — ${title(n) || `${secs} s`}`, "");
+        out.push(`Attends ${secs} seconde${secs > 1 ? "s" : ""} avant de poursuivre.`);
+        const b = bodyOf(n);
+        if (b) out.push("", b);
+        out.push("");
+      } else if (n.type === "stop") {
+        const outcome = str(n.data?.outcome) || "succeeded";
+        const verdict = outcome === "failed" ? "en échec"
+          : outcome === "stopped" ? "sans aller plus loin, et ce n'est pas un échec"
+          : "avec succès";
+        out.push(`### ⛔ Fin — ${title(n) || "s'arrêter ici"}`, "");
+        out.push(`Termine ici, ${verdict}.`);
+        const b = bodyOf(n);
+        if (b) out.push("", b);
+        out.push("");
+      } else if (n.type === "judge") {
+        const question = str(n.data?.question).trim() || title(n) || "à trancher";
+        out.push(`### 🎲 Condition jugée — ${title(n) || question}`, "");
+        out.push(`Tranche cette question, sur ce qui précède : **${question}**`);
+        if (str(n.data?.over).trim()) out.push("", `Ce qu'il faut regarder : \`${str(n.data?.over).trim()}\`.`);
+        const b = bodyOf(n);
+        if (b) out.push("", b);
+        out.push("");
+        const leg = (handle: string, label: string) => {
+          const targets = graph.edges
+            .filter((e) => e.source === n.id && (e.sourceHandle ?? null) === handle)
+            .map((e) => graph.nodes.find((x) => x.id === e.target)).filter(Boolean) as WfNode[];
+          if (targets.length) out.push(`- **${label}** → ${targets.map((t) => title(t) || t.type).join(", ")}`);
+        };
+        leg("true", "Si oui");
+        leg("false", "Sinon");
+        out.push("");
       } else if (n.type === "decision") {
         const b = bodyOf(n);
         out.push(`### Décision — ${title(n) || "à trancher"}`, "");
@@ -814,6 +992,15 @@ export function compileWorkflow(
   });
 
   section("Exemples", of("example"), (n) => [title(n) ? `**${title(n)}**` : "", body(n)].filter(Boolean));
+
+  // Les notes ne DISENT rien au playbook — elles nous parlent, à nous. Seule
+  // leur ancre est écrite, pour qu'un aller-retour par le document ne les
+  // supprime pas du graphe avec le commentaire qu'elles portent.
+  const notes = ordered.filter((n) => n.type === "note");
+  if (notes.length) {
+    out.push("");
+    for (const n of notes) out.push(anchor(n.id));
+  }
 
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }

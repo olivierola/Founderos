@@ -14,8 +14,10 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { iconByName } from "@/features/crm/crmIcons";
 import { ensureSeeded, type CrmObject } from "@/features/crm/objectModel";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export function CrmObjectsItem() {
+  const confirm = useConfirm();
   const { workspaceSlug = "default", projectSlug = "default" } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
   const { user } = useAuth();
@@ -51,7 +53,7 @@ export function CrmObjectsItem() {
   }
 
   async function deleteObject(obj: CrmObject) {
-    if (!confirm(`Delete "${obj.label_plural ?? obj.label}" and all its records? This cannot be undone.`)) return;
+    if (!(await confirm(`Delete "${obj.label_plural ?? obj.label}" and all its records? This cannot be undone.`))) return;
     await supabase.from("crm_objects").delete().eq("id", obj.id);
     queryClient.invalidateQueries({ queryKey: ["crm_objects", projectId] });
     setMenuOpen(null);

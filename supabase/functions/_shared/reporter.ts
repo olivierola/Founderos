@@ -20,7 +20,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4
 import { callAiWithTools, type ChatMessage, type ToolDef } from "./ai.ts";
 import { logLlmUsage } from "./llm-tracking.ts";
 import {
-  blockKey, blockSubstanceKey, buildReportHtml, loadReportAssets, normalizeReportDoc, reportPreviewText, reportShape,
+  blockKey, sameSubstance, tidyBlocks, buildReportHtml, loadReportAssets, normalizeReportDoc, reportPreviewText, reportShape,
   resolveSourceIcons, validateBlock, validateReportDoc,
   ACCENTS, BANNER_STYLES, BLOCK_TYPES, CHART_TYPES, REPEATABLE_BLOCKS, TYPEFACES,
   type ReportBlock, type ReportDoc, type ReportSource,
@@ -239,23 +239,22 @@ async function publish(deps: ReporterDeps, reporter: ReporterAgent, doc: ReportD
   // duplicate came in by, it does not reach the file. A reader scrolling past
   // the same KPI row four times has stopped reading.
   const seen = new Set<string>();
-  // Substance → where its first writing sits in `kept`, so a later rewrite
-  // overwrites that slot instead of piling up under it.
-  const substanceAt = new Map<string, number>();
   const kept: ReportBlock[] = [];
   for (const b of normalised.blocks ?? []) {
     if (REPEATABLE_BLOCKS.has(b.type)) { kept.push(b); continue; }
     const k = blockKey(b);
     if (seen.has(k)) continue;
     seen.add(k);
-    const substance = blockSubstanceKey(b);
-    const at = substance ? substanceAt.get(substance) : undefined;
-    if (at !== undefined) { kept[at] = b; continue; }
-    if (substance) substanceAt.set(substance, kept.length);
+    // A rewrite of a block already kept (same figures, reworded labels)
+    // overwrites that slot instead of piling up under it.
+    const at = kept.findIndex((x) => !REPEATABLE_BLOCKS.has(x.type) && sameSubstance(x, b));
+    if (at >= 0) { kept[at] = b; continue; }
     kept.push(b);
   }
-  const dropped = (normalised.blocks ?? []).length - kept.length;
-  normalised.blocks = kept;
+  // Then the holes: empty paragraphs, delimiters in a row or at the ends.
+  const tidy = tidyBlocks(kept);
+  const dropped = (normalised.blocks ?? []).length - tidy.length;
+  normalised.blocks = tidy;
 
   // Before validation: the marks are fetched once, here, and inlined — so the
   // file still shows them offline. Best-effort; a missing one becomes a monogram.
@@ -488,8 +487,7 @@ export async function writeReport(deps: ReporterDeps, brief: ReportBrief): Promi
             // a block (typically after a warning about a missing delta), and it
             // has no other way to do it. Take the new version in place of the
             // old one rather than letting both reach the reader.
-            const substance = blockSubstanceKey(block);
-            if (substance) replacedAt = blocks.findIndex((b) => blockSubstanceKey(b) === substance);
+            replacedAt = blocks.findIndex((b) => !REPEATABLE_BLOCKS.has(b.type) && sameSubstance(b, block));
           }
           const v = validateBlock(block, replacedAt >= 0 ? replacedAt : blocks.length);
           if (v.errors.length) {
@@ -564,6 +562,28 @@ export async function writeReport(deps: ReporterDeps, brief: ReportBrief): Promi
     });
 
     const summary = (result.content ?? "").trim();
+
+    // Budget de tours épuisé avant report_publish, document pourtant construit :
+    // c'est ce qui arrivait sur les rapports longs (un tour par bloc, 17 blocs
+    // + la lecture des fiches ≥ 26 tours), et un rapport presque fini partait à
+    // la poubelle avec « n'a pas publié ». On le publie tel quel — la
+    // validation de publish() s'applique comme d'habitude, et un brouillon
+    // invalide reste un échec.
+    const draft = doc as ReportDoc | null;
+    if (!published && draft && (draft.blocks?.length ?? 0) >= 4) {
+      try {
+        published = await publish(deps, reporter, draft);
+        await logChild("status", {
+          message: `Budget de tours épuisé avant la publication — brouillon publié tel quel (${draft.blocks.length} blocs).`,
+        });
+      } catch (e) {
+        await logChild("tool_error", {
+          message: "Publication du brouillon impossible",
+          detail: e instanceof ValidationError ? e.errors.join(" ") : e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
     if (!published) {
       await finishRun({
         status: "failed",

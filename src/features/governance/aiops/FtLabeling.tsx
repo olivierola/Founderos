@@ -7,6 +7,8 @@ import {
   UserCheckIcon as UserCheck,
   PlusIcon as Plus,
   ConfettiIcon as PartyPopper,
+  CircleNotchIcon as Loader2,
+  FileXIcon as FileX,
 } from "@phosphor-icons/react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
@@ -15,16 +17,18 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
 import { Pill, FormDialog, type FieldDef } from "../ui";
-import { LABEL_SETS, LABEL_QUEUE, timeAgo } from "./data";
-import { useLabelTasksDb, useFtDatasetsDb } from "./db";
+import { LABEL_SETS, timeAgo } from "./data";
+import { useLabelTasksDb, useFtDatasetsDb, useAiopsCtx } from "./db";
+import { useDatasetQueue, useSuggestions } from "./labelQueue";
 
 const SET_TONE: Record<string, "blue" | "violet" | "amber" | "cyan"> = {
   Intent: "blue", Sentiment: "violet", "Priorité": "amber", "Département": "cyan",
 };
 
 export function GovFtLabelingPage() {
-  const { tasks, taskById, validateOne, createTask } = useLabelTasksDb();
+  const { tasks, taskById, validateOne, noteSuggested, createTask } = useLabelTasksDb();
   const { datasets } = useFtDatasetsDb();
+  const { workspaceId, projectId } = useAiopsCtx();
   const [selId, setSelId] = useState<string | null>(null);
   const [queueIdx, setQueueIdx] = useState(0);
   const [validated, setValidated] = useState(0);
@@ -39,7 +43,30 @@ export function GovFtLabelingPage() {
   }, [tasks.map((t) => t.id).join(",")]);
 
   const selTask = selId ? taskById(selId) : null;
-  const item = LABEL_QUEUE[queueIdx % LABEL_QUEUE.length];
+
+  // Les documents viennent du fichier réellement importé pour ce dataset, et
+  // les labels proposés d'un vrai appel de classification restreint aux jeux
+  // cochés sur la tâche. Rien n'est simulé : sans fichier, la file le dit.
+  const selDataset = useMemo(
+    () => datasets.find((d) => d.name === selTask?.dataset),
+    [datasets, selTask?.dataset],
+  );
+  const { docs, loading: docsLoading, problem: docsProblem } = useDatasetQueue(selDataset);
+  const doc = docs.length > 0 ? docs[queueIdx % docs.length] : undefined;
+  const taskSets = useMemo(
+    () => LABEL_SETS.filter((ls) => (selTask?.labelSets ?? []).includes(ls.name)),
+    [selTask?.labelSets],
+  );
+  const { suggestions, loading: sugLoading, problem: sugProblem } =
+    useSuggestions(doc, taskSets, { workspaceId, projectId });
+
+  // Un document de plus effectivement labellisé par le modèle — c'est ce que
+  // compte la tuile « Labels proposés (IA) ».
+  useEffect(() => {
+    if (!selId || suggestions.length === 0) return;
+    noteSuggested(selId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.id, suggestions.length > 0]);
 
   const totals = useMemo(() => ({
     docs: tasks.reduce((s, t) => s + t.total, 0),
@@ -122,13 +149,34 @@ export function GovFtLabelingPage() {
                 <p className="text-sm font-medium">Tâche terminée !</p>
                 <p className="text-xs text-muted-foreground">Tous les documents de cette tâche ont été validés. Créez-en une nouvelle pour continuer.</p>
               </div>
+            ) : docsLoading ? (
+              <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-muted/20 p-6 text-xs text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Lecture du dataset…
+              </div>
+            ) : !doc ? (
+              <div className="rounded-md border border-dashed border-border p-6 text-center">
+                <FileX className="mx-auto h-7 w-7 text-muted-foreground/40" />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {docsProblem ?? "Aucun document à valider pour cette tâche."}
+                </p>
+              </div>
             ) : (
               <>
-                <div className="rounded-md border border-border bg-muted/20 p-3 text-[13px] leading-relaxed">
-                  “{item.text}”
+                <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/20 p-3 text-[13px] leading-relaxed">
+                  {doc.text}
                 </div>
                 <div className="mt-3 space-y-2">
-                  {item.suggested.map((s) => (
+                  {sugLoading && (
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Le modèle propose des labels…
+                    </div>
+                  )}
+                  {!sugLoading && sugProblem && (
+                    <p className="text-[11px] text-amber-500">
+                      Proposition automatique indisponible ({sugProblem}) — labellisez à la main.
+                    </p>
+                  )}
+                  {suggestions.map((s) => (
                     <div key={s.set} className="flex items-center gap-2 text-sm">
                       <span className="w-24 shrink-0 text-xs text-muted-foreground">{s.set}</span>
                       <Pill meta={{ label: s.value, tone: SET_TONE[s.set] ?? "slate" }} />
@@ -139,11 +187,16 @@ export function GovFtLabelingPage() {
                   ))}
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <Button size="sm" className="flex-1" onClick={approve}><Check className="mr-1.5 h-3.5 w-3.5" />Valider les labels</Button>
-                  <Button size="sm" variant="outline" className="flex-1" onClick={correct}><X className="mr-1.5 h-3.5 w-3.5" />Corriger / passer</Button>
+                  <Button size="sm" className="flex-1" onClick={approve} disabled={sugLoading || suggestions.length === 0}>
+                    <Check className="mr-1.5 h-3.5 w-3.5" />Valider les labels
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1" onClick={correct}>
+                    <X className="mr-1.5 h-3.5 w-3.5" />Corriger / passer
+                  </Button>
                 </div>
                 <p className="mt-3 text-[11px] text-muted-foreground">
-                  Chaque validation enrichit le dataset — assez de labels validés et vous pouvez entraîner un classificateur automatique de tickets.
+                  Document {(queueIdx % docs.length) + 1} sur {docs.length} lus dans {selTask?.dataset}. Chaque validation enrichit le dataset —
+                  assez de labels validés et vous pouvez entraîner un classificateur automatique.
                 </p>
               </>
             )}

@@ -69,6 +69,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { NodeConfigDialog } from "./NodeConfigDialog";
 import { EdgeConfigDialog } from "./EdgeConfigDialog";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // ============================================================================
 // Topology data model — must stay in sync with ops_topologies.topology JSON.
@@ -627,6 +628,7 @@ function InnerView({
   servers, serverId, onServerChange, onApply, applying, canApply,
   infraProjectId: _infraProjectId, onNodeProbe, onTopologyChange,
 }: ArchitectureViewProps) {
+  const confirm = useConfirm();
   // Initial layout from dagre. After this, the user can drag nodes around and
   // we keep their positions thanks to useNodesState.
   const initialNodes = useMemo(
@@ -906,11 +908,11 @@ function InnerView({
     ? topology.edges.find((e) => e.id === editingEdgeId) ?? null
     : null;
 
-  const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
+  const onEdgeClick = useCallback(async (event: React.MouseEvent, edge: Edge) => {
     if (!onTopologyChange) return;
     if (event.altKey) {
       // Alt+Click → instant delete, no dialog.
-      if (!window.confirm(`Delete edge ${edge.id}?`)) return;
+      if (!(await confirm({ title: `Supprimer la liaison ${edge.id} ?`, confirmText: "Supprimer" }))) return;
       const next: Topology = {
         ...topology,
         edges: topology.edges.filter((e) => e.id !== edge.id),

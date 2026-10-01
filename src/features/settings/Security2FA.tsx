@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Factor {
   id: string;
@@ -19,6 +20,7 @@ interface Factor {
 }
 
 export function SettingsSecurityPage() {
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(true);
   const [factors, setFactors] = useState<Factor[]>([]);
   const [enrolling, setEnrolling] = useState(false);
@@ -75,7 +77,7 @@ export function SettingsSecurityPage() {
   }
 
   async function unenroll(factorId: string) {
-    if (!confirm("Remove this 2FA factor?")) return;
+    if (!(await confirm("Remove this 2FA factor?"))) return;
     await supabase.auth.mfa.unenroll({ factorId });
     await load();
   }

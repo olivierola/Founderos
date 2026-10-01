@@ -26,6 +26,7 @@ import { CollectionFolderCard, fileKindOf } from "./FileFolderGallery";
 import { FileCard, formatOfSource } from "./FileCard";
 import { DocumentAiWorkspace, type WorkspaceSource } from "./DocumentAiWorkspace";
 import { ProcedureEditor, type ProcedureSource } from "./ProcedureEditor";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Collection { id: string; name: string; description: string | null; enabled: boolean; created_at: string }
 interface SourceRow { id: string; collection_id: string; type: string; title: string; source_ref: string | null; status: string; metadata?: { body?: string; authored?: boolean } | null }
@@ -141,6 +142,7 @@ export function KnowledgeCollectionsPage() {
 function CollectionDetail({ collection, files, onBack, onChanged, onDeleted }: {
   collection: Collection; files: SourceRow[]; onBack: () => void; onChanged: () => void; onDeleted: () => void;
 }) {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const { workspaceSlug, projectSlug } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
@@ -153,7 +155,7 @@ function CollectionDetail({ collection, files, onBack, onChanged, onDeleted }: {
   const documents = files.filter((f) => !(f.type === "text" && f.metadata?.authored));
 
   async function remove() {
-    if (!confirm("Supprimer cette collection et tous ses fichiers ? Les agents qui l'utilisent perdront cette connaissance.")) return;
+    if (!(await confirm("Supprimer cette collection et tous ses fichiers ? Les agents qui l'utilisent perdront cette connaissance."))) return;
     await supabase.from("rag_collections").delete().eq("id", collection.id);
     onDeleted();
   }

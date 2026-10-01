@@ -295,8 +295,10 @@ function Greeting({ name }: { name: string | null }) {
 
   return (
     <div className="my-6 flex flex-col items-center">
-      <h2 className="text-center text-20 font-semibold">
-        {label}{name ? `, ${name}` : ""}
+      <h2 className="text-center text-[30px] font-semibold leading-[1.05] tracking-[-0.045em]">
+        {label}
+        {name ? "," : ""}
+        {name && <span className="serif-accent ml-2 text-[1.1em]">{name}</span>}
       </h2>
       <h5 className="flex items-center gap-2 text-14 font-medium text-placeholder">
         <span aria-hidden>{glyph}</span>

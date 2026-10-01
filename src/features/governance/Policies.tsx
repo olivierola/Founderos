@@ -18,8 +18,10 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { usePolicies, useGovCrud, type Policy, POLICY_STATUS_META } from "./shared";
 import { Pill, FormDialog, type FieldDef } from "./ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export function GovPoliciesPage() {
+  const confirm = useConfirm();
   const crud = useGovCrud("gov_policies");
   const { user } = useAuth();
   const { workspaceId, projectId } = useCurrentContext();
@@ -110,7 +112,7 @@ export function GovPoliciesPage() {
                   <div className="flex shrink-0 gap-1">
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(p)}><Pencil className="h-3.5 w-3.5" /></Button>
                     <Button size="icon" variant="ghost" className="h-7 w-7"
-                      onClick={() => { if (confirm("Supprimer cette politique ?")) void crud.remove(p.id, { action: "policy.deleted", entityType: "policy", entityId: p.id, entityLabel: p.title }); }}>
+                      onClick={async () => { if ((await confirm("Supprimer cette politique ?"))) void crud.remove(p.id, { action: "policy.deleted", entityType: "policy", entityId: p.id, entityLabel: p.title }); }}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>

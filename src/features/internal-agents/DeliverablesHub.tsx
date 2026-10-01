@@ -21,6 +21,7 @@ import {
   FlaskIcon as FlaskConical,
   AtomIcon as Atom,
   PresentationChartIcon as Presentation,
+  FilePdfIcon as FilePdf,
 } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -37,11 +38,15 @@ import {
 import { ArtifactReport, ArtifactDeck } from "@/features/artifacts/BlockRenderer";
 import { parseDocument } from "@/features/artifacts/blocks";
 import { parseReportArtisan, ReportArtisanView } from "@/features/artifacts/ReportArtisanView";
+import { parsePdfDeliverable } from "@/lib/pdf/types";
+import { ArtifactPdfButton, PdfDeliverableView } from "@/features/pdf/PdfDeliverableView";
 import { CodingSession, tryParseCodingSession } from "./CodingSession";
 import {
   TestSession, SimulationSession, tryParseTestSession, tryParseSimulationSession,
 } from "./StudioSessions";
 import { PerspectiveBook } from "@/components/ui/perspective-book";
+import { LeadBoardView, tryParseLeadBoard } from "./leadsense/LeadBoardView";
+import { SocBoardView, tryParseSocBoard } from "./sentinel/SocBoardView";
 
 // Sober but defined book-cover palette (works on the dark odin theme). Each cover
 // is a muted "clothbound" jewel tone with white text on top.
@@ -75,7 +80,7 @@ const KIND_LABEL: Record<string, string> = {
   report: "Rapport", presentation: "Présentation", markdown: "Document",
   json: "Données", code: "Code", url: "Lien", file: "Fichier", csv: "Tableur",
   coding_session: "Session de code", test_session: "Session de test",
-  simulation_session: "Simulation",
+  simulation_session: "Simulation", pdf: "PDF", lead_board: "LeadSense", soc_board: "SentinelFlow",
 };
 
 const KIND_ICON: Record<string, any> = {
@@ -84,11 +89,14 @@ const KIND_ICON: Record<string, any> = {
   coding_session: GitPullRequest,
   test_session: FlaskConical,
   simulation_session: Atom,
+  lead_board: Target,
+  soc_board: FlaskConical,
   markdown: FileText,
   json: FileJson,
   code: FileCode,
   url: Link2,
   file: Paperclip,
+  pdf: FilePdf,
 };
 
 // Renders a deliverable's body by kind: structured report, markdown (with
@@ -102,6 +110,12 @@ function DeliverableBody({ d }: { d: Deliverable }) {
   if (test) return <TestSession session={test} />;
   const sim = tryParseSimulationSession(d.content);
   if (sim) return <SimulationSession session={sim} />;
+  // Le tableau LeadSense : une vue prédéfinie, construite par l'outil sur les
+  // prospects réellement qualifiés.
+  const board = tryParseLeadBoard(d.content);
+  if (board) return <LeadBoardView board={board} />;
+  const soc = tryParseSocBoard(d.content);
+  if (soc) return <SocBoardView board={soc} />;
 
   // Reports and decks are Editor.js documents now — one renderer, no
   // format sniffing. Anything that is not one of the session kinds above and
@@ -116,6 +130,10 @@ function DeliverableBody({ d }: { d: Deliverable }) {
   if (d.kind === "json" || d.kind === "code") {
     return <pre className="overflow-x-auto rounded-xl border border-border bg-muted/40 p-3 text-xs"><code>{d.content ?? "(no inline content)"}</code></pre>;
   }
+  // A generate_pdf deliverable is a spec: rendered to a PDF here, on open.
+  const pdf = parsePdfDeliverable(d.content);
+  if (pdf) return <PdfDeliverableView payload={pdf} title={d.name} fill={false} height="min(75vh, 820px)" />;
+
   // A Rédacteur report is a finished HTML file, not blocks — show the file.
   const built = parseReportArtisan(d.content);
   // Inside a scrolling list the frame cannot fill its parent — it gets a height
@@ -362,6 +380,13 @@ function DeliverableDetail({
   onTogglePin: () => void;
 }) {
   const Icon = KIND_ICON[d.kind] ?? FileText;
+  // A block report or deck can be exported as a PDF; the other kinds either are
+  // one already (pdf) or carry their own export (a Rédacteur report).
+  const blockDoc = useMemo(() => {
+    if ((d.kind !== "report" && d.kind !== "presentation") || parseReportArtisan(d.content)) return null;
+    const doc = parseDocument(d.content);
+    return doc.blocks.length ? doc : null;
+  }, [d.kind, d.content]);
   return (
     <div className="space-y-3">
       {/* Header bar */}
@@ -384,7 +409,8 @@ function DeliverableDetail({
               <Button size="sm" variant="outline"><ExternalLink className="mr-1 h-3.5 w-3.5" /> Open</Button>
             </a>
           )}
-          {d.content && (
+          {blockDoc && <ArtifactPdfButton doc={blockDoc} title={d.name} deck={d.kind === "presentation"} className="h-8 px-3 text-xs" />}
+          {d.content && d.kind !== "pdf" && (
             <Button size="sm" onClick={() => downloadDeliverable(d)}>
               <Download className="mr-1 h-3.5 w-3.5" /> Download
             </Button>

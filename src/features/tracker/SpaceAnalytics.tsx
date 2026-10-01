@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CaretDownIcon, ChartBarIcon, SuitcaseSimpleIcon } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { readEmoji } from "./LogoPicker";
+import { ProjectLogo } from "./LogoPicker";
 import { DashboardIllustration } from "./illustrations";
 import { EmptyState, PageHeader, Tabs } from "./ui";
 import { RadarChart, type RadarAxis } from "./analytics/RadarChart";
@@ -118,7 +118,7 @@ export function SpaceAnalytics({ dashboardId }: { dashboardId: string }) {
             {all.map((p) => (
               <ScopeOption
                 key={p.id} active={scope === p.id} onSelect={() => setScope(p.id)}
-                label={p.name} emoji={readEmoji(p.logo_props)}
+                label={p.name} logo={p.logo_props} identifier={p.identifier}
               />
             ))}
           </PopoverContent>
@@ -160,8 +160,11 @@ export function SpaceAnalytics({ dashboardId }: { dashboardId: string }) {
 }
 
 function ScopeOption({
-  active, onSelect, label, emoji,
-}: { active: boolean; onSelect: () => void; label: string; emoji?: string | null }) {
+  active, onSelect, label, logo, identifier,
+}: {
+  active: boolean; onSelect: () => void; label: string;
+  logo?: Record<string, unknown> | null; identifier?: string;
+}) {
   return (
     <button
       type="button"
@@ -171,7 +174,9 @@ function ScopeOption({
         active ? "bg-muted font-medium" : "hover:bg-muted",
       )}
     >
-      {emoji ? <span className="text-13 leading-none">{emoji}</span> : <span className="w-3" />}
+      {logo !== undefined
+        ? <ProjectLogo logo={logo} fallback={identifier} size={14} />
+        : <span className="w-3.5" />}
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
   );
@@ -325,14 +330,11 @@ function ActiveProjectRow({ project }: { project: PjProject }) {
   const total = progress?.total ?? 0;
   const percent = total ? Math.round(((progress?.completed ?? 0) / total) * 100) : 0;
   const health = HEALTH.find((h) => h.key === project.health);
-  const emoji = readEmoji(project.logo_props);
 
   return (
     <li className="flex items-center gap-2.5 rounded-md px-1.5 py-2 hover:bg-muted/50">
       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-muted text-13">
-        {emoji ?? <span className="font-mono text-10 text-muted-foreground">
-          {project.identifier.slice(0, 2)}
-        </span>}
+        <ProjectLogo logo={project.logo_props} fallback={project.identifier} size={16} />
       </span>
       <span className="min-w-0 flex-1 truncate text-13 font-medium">{project.name}</span>
       {health && (

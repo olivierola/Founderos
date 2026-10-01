@@ -1,17 +1,19 @@
 "use client";
 
-import { GrainGradient } from "@paper-design/shaders-react";
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowUpRightIcon as ArrowUpRight,
   CircleNotchIcon as Loader2,
+  HandPalmIcon,
+  SparkleIcon,
+  StackIcon,
 } from "@phosphor-icons/react";
-import { Logo } from "@/components/Logo";
+import { BrandLockup, TileField } from "@/features/marketing-site/atlas/AtlasKit";
 
-/* Split auth shell: form on the left, animated grain-gradient field on the
-   right. Purely presentational — the pages own the Supabase calls and pass the
+/* Split auth shell, in the site's Atlas register: the form on a white card
+   on the left, the black-to-violet hero ground on the right. Purely presentational — the pages own the Supabase calls and pass the
    submit handler, the pending flag and the messages back in. */
 
 export type AuthMode = "login" | "signup";
@@ -70,29 +72,31 @@ export function AuthSection({
   }
 
   return (
-    <section className="min-h-screen bg-white p-3 text-black antialiased [font-synthesis:none] dark:bg-[#050505] dark:text-white">
-      <div className="grid min-h-[calc(100vh-1.5rem)] gap-6 lg:grid-cols-[0.94fr_1.06fr]">
-        <div className="flex min-h-[760px] items-start rounded-md border border-black/20 bg-white px-6 py-12 sm:px-10 dark:border-white/10 dark:bg-[#0a0a0a] lg:min-h-0 lg:px-14 lg:py-20 xl:px-20">
-          <div className="mx-auto w-full max-w-[590px]">
-            <Link to="/" className="mb-10 inline-flex items-center gap-3">
-              <Logo size={32} />
-              <span className="text-lg font-medium tracking-[-0.02em]">Anduran</span>
+    <section className="min-h-screen bg-white p-2.5 text-[#111011] antialiased [font-synthesis:none] dark:bg-[#0b0a0b] dark:text-white">
+      <div className="grid min-h-[calc(100vh-1.25rem)] gap-2.5 lg:grid-cols-[0.94fr_1.06fr]">
+        <div className="flex min-h-[760px] items-start rounded-[28px] border border-[#f0f0f0] bg-white px-6 py-12 sm:rounded-[40px] sm:px-10 dark:border-white/[0.08] dark:bg-[#121112] lg:min-h-0 lg:px-14 lg:py-16 xl:px-20">
+          <div className="mx-auto w-full max-w-[520px]">
+            <Link to="/" className="mb-12 inline-flex" aria-label="Anduran — home">
+              <span className="dark:hidden">
+                <BrandLockup />
+              </span>
+              <span className="hidden dark:inline-flex">
+                <BrandLockup tone="white" />
+              </span>
             </Link>
 
             <div>
-              <h1 className="whitespace-nowrap text-3xl font-medium tracking-[-0.04em] sm:text-4xl lg:text-[42px] lg:leading-[1.05] xl:text-[50px]">
+              <h1 className="text-[38px] font-semibold leading-[1.02] tracking-[-0.045em] sm:text-[46px]">
                 {isSignup ? "Create an account" : "Welcome back"}
               </h1>
-              <p className="mt-3 text-lg leading-snug text-black/60 dark:text-white/55 sm:text-xl lg:text-2xl xl:text-3xl">
-                {isSignup
-                  ? "Hire your first agents in minutes"
-                  : "Sign in to your AI workforce"}
+              <p className="at-serif mt-2 text-[28px] leading-[1.1] text-[#111011] dark:text-white sm:text-[34px]">
+                {isSignup ? "hire your first agents in minutes." : "to your AI workforce."}
               </p>
             </div>
 
             {onSocial && (
               <>
-                <div className="mt-12 grid gap-5 sm:grid-cols-2">
+                <div className="mt-10 grid gap-2.5 sm:grid-cols-2">
                   <SocialButton
                     icon={<GoogleIcon />}
                     label={`${isSignup ? "Sign up" : "Sign in"} with Google`}
@@ -107,15 +111,17 @@ export function AuthSection({
                   />
                 </div>
 
-                <div className="my-10 text-center text-xl font-medium text-black/60 dark:text-white/50">
+                <div className="my-8 flex items-center gap-4 text-[14px] font-medium text-[#969696]">
+                  <span className="h-px flex-1 bg-[#ececec] dark:bg-white/10" />
                   or
+                  <span className="h-px flex-1 bg-[#ececec] dark:bg-white/10" />
                 </div>
               </>
             )}
 
-            <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+            <form className="space-y-2.5" onSubmit={handleSubmit} noValidate>
               {isSignup && (
-                <div className="grid gap-5 sm:grid-cols-2">
+                <div className="grid gap-2.5 sm:grid-cols-2">
                   <FieldBox
                     label="First Name"
                     name="given-name"
@@ -154,7 +160,7 @@ export function AuthSection({
               />
 
               {isSignup ? (
-                <div className="space-y-4 pt-2 text-sm leading-5 text-black/45 dark:text-white/45 sm:text-[15px]">
+                <div className="space-y-3 px-1 pt-3 text-[14px] leading-5 text-[#666666] dark:text-white/55">
                   <CheckboxLine
                     checked={marketingOptOut}
                     onCheckedChange={setMarketingOptOut}
@@ -165,25 +171,25 @@ export function AuthSection({
                     I agree to the{" "}
                     <Link
                       to="/docs"
-                      className="font-medium text-black/45 underline underline-offset-2 dark:text-white/45"
+                      className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-2 dark:text-white"
                     >
                       Terms and Services
                     </Link>{" "}
                     and{" "}
                     <Link
                       to="/docs"
-                      className="font-medium text-black/45 underline underline-offset-2 dark:text-white/45"
+                      className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-2 dark:text-white"
                     >
                       Privacy Policy
                     </Link>
                   </CheckboxLine>
                 </div>
               ) : (
-                <div className="pt-1 text-sm text-black/45 dark:text-white/45 sm:text-[15px]">
+                <div className="px-1 pt-2 text-[14px] text-[#666666] dark:text-white/55">
                   Trouble signing in? Contact{" "}
                   <Link
                     to="/contact"
-                    className="font-medium underline underline-offset-2"
+                    className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-2 dark:text-white"
                   >
                     support
                   </Link>
@@ -194,25 +200,31 @@ export function AuthSection({
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="mt-9 flex h-12 w-full items-center justify-center gap-2 rounded-[10px] border border-black/40 bg-black text-xl font-medium text-white transition-colors hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/40 dark:bg-white dark:text-black dark:hover:bg-white/85"
+                className="group !mt-7 flex h-[52px] w-full items-center justify-center gap-2.5 rounded-full bg-black text-[16px] font-semibold tracking-[-0.015em] text-white shadow-[0_14px_30px_-16px_rgba(0,0,0,0.7)] transition-colors hover:bg-[#1d1c1d] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-[#111011] dark:hover:bg-white/90"
               >
                 {submitting && <Loader2 className="size-5 animate-spin" />}
                 {isSignup ? "Create account" : "Sign in"}
+                {!submitting && (
+                  <ArrowUpRight
+                    weight="bold"
+                    className="size-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                  />
+                )}
               </button>
             </form>
 
             {info && (
-              <p className="mt-5 text-base text-emerald-600 dark:text-emerald-400">{info}</p>
+              <p className="mt-5 text-[15px] text-emerald-600 dark:text-emerald-400">{info}</p>
             )}
-            {error && <p className="mt-5 text-base text-red-600 dark:text-red-400">{error}</p>}
+            {error && <p className="mt-5 text-[15px] text-red-600 dark:text-red-400">{error}</p>}
 
-            <p className="mt-8 text-base text-black/50 dark:text-white/45">
+            <p className="mt-8 text-[15px] text-[#666666] dark:text-white/55">
               {isSignup ? (
                 <>
                   Already have an account?{" "}
                   <Link
                     to="/login"
-                    className="font-medium text-black underline underline-offset-2 dark:text-white"
+                    className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-4 dark:text-white"
                   >
                     Sign in
                   </Link>
@@ -222,7 +234,7 @@ export function AuthSection({
                   No account yet?{" "}
                   <Link
                     to="/signup"
-                    className="font-medium text-black underline underline-offset-2 dark:text-white"
+                    className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-4 dark:text-white"
                   >
                     Create one
                   </Link>
@@ -232,37 +244,50 @@ export function AuthSection({
           </div>
         </div>
 
-        <div className="relative hidden min-h-[720px] overflow-hidden rounded-md bg-black p-8 text-white sm:p-12 lg:flex lg:min-h-0">
-          <GrainGradient
-            speed={1}
-            scale={1}
-            rotation={0}
-            offsetX={0}
-            offsetY={0}
-            softness={0.5}
-            intensity={0.5}
-            noise={0.25}
-            shape="corners"
-            frame={2854.5}
-            colors={["#FFFFFF", "#4F6D7A", "#8FA3AD", "#FFFFFF"]}
-            colorBack="#00000000"
-            className="absolute inset-0 bg-black"
+        {/* ── The panel ──────────────────────────────────────────────────────
+            The site's hero ground — black into violet into white, the tile
+            field over it — so signing in feels like the same product. */}
+        <div className="at-grad-hero relative hidden min-h-[720px] overflow-hidden rounded-[40px] text-white lg:flex lg:min-h-0">
+          <TileField
+            lit={[[0, 0], [1, 1], [5, 0], [6, 1], [7, 2], [1, 6], [2, 7], [6, 5], [7, 6]]}
           />
+          <div className="relative z-10 flex h-full w-full flex-col justify-between p-10 xl:p-14">
+            <div className="pt-10">
+              <span className="inline-flex items-center gap-2.5 rounded-full border border-white/[0.14] bg-white/[0.08] px-4 py-2.5 text-[14px] font-semibold text-white backdrop-blur-md">
+                <SparkleIcon className="size-[18px]" />
+                The AI workforce that runs inside your tenant
+              </span>
+              <h2 className="mt-8 max-w-[560px] text-[52px] font-semibold leading-[1.0] tracking-[-0.045em] text-white xl:text-[64px]">
+                Hire agents,
+                <br />
+                <span className="at-serif text-[1.1em] font-normal">not headcount.</span>
+              </h2>
+            </div>
 
-          <div className="relative z-10 flex h-full w-full flex-col justify-between">
-            <h2 className="max-w-[620px] pt-0 text-5xl font-medium tracking-[-0.05em] text-white sm:text-6xl lg:pt-16 lg:text-[64px] lg:leading-[0.98] xl:text-[70px]">
-              Hire agents,
-              <br />
-              not headcount
-            </h2>
-
-            <Link
-              to="/features"
-              className="mb-0 inline-flex h-12 max-w-full items-center gap-3 self-start rounded-[10px] border border-white/25 px-5 text-base font-medium text-white/85 backdrop-blur-sm transition-colors hover:border-white/45 hover:text-white xl:mb-24 xl:px-6 xl:text-2xl"
-            >
-              <ArrowUpRight className="size-5 shrink-0 xl:size-7" />
-              <span className="truncate whitespace-nowrap">See what the workforce runs</span>
-            </Link>
+            <div className="space-y-2.5">
+              {[
+                { icon: StackIcon, text: "Runs inside your tenant" },
+                { icon: HandPalmIcon, text: "Every write waits for your approval" },
+              ].map(({ icon: Icon, text }) => (
+                <div
+                  key={text}
+                  className="flex w-fit items-center gap-3.5 rounded-full bg-white px-5 py-3 text-[15px] font-medium text-[#111011] shadow-[0_16px_40px_-24px_rgba(60,0,90,0.6)]"
+                >
+                  <Icon className="size-5" />
+                  {text}
+                </div>
+              ))}
+              <Link
+                to="/solutions"
+                className="group !mt-6 inline-flex h-12 items-center gap-2.5 rounded-full bg-black px-6 text-[15px] font-semibold text-white shadow-[0_14px_30px_-16px_rgba(0,0,0,0.7)] transition-colors hover:bg-[#1d1c1d]"
+              >
+                See what the workforce runs
+                <ArrowUpRight
+                  weight="bold"
+                  className="size-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                />
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -286,7 +311,7 @@ function SocialButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex h-10 items-center justify-center gap-2 rounded-[10px] border border-black/25 bg-white px-3 text-sm leading-none text-black transition-colors hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10 xl:text-[19px]"
+      className="flex h-12 items-center justify-center gap-2.5 rounded-full border border-[#e6e6e6] bg-white px-4 text-[14.5px] font-semibold leading-none tracking-[-0.01em] text-[#111011] shadow-[0_12px_30px_-20px_rgba(17,16,17,0.35)] transition-colors hover:border-[#d4d4d4] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/15 dark:bg-white/[0.06] dark:text-white dark:hover:bg-white/10"
     >
       <span className="shrink-0">{icon}</span>
       <span className="whitespace-nowrap">{label}</span>
@@ -319,7 +344,7 @@ function FieldBox({
   const showLabel = !focused && value.length === 0;
 
   return (
-    <label className="flex h-14 items-center justify-between gap-4 rounded-[10px] border border-black/25 bg-white px-5 text-lg leading-none focus-within:border-black/60 dark:border-white/15 dark:bg-white/5 dark:focus-within:border-white/45 xl:text-xl">
+    <label className="flex h-[52px] items-center justify-between gap-4 rounded-full border border-[#e6e6e6] bg-white px-6 text-[16px] leading-none transition-colors focus-within:border-[#d22eff] dark:border-white/15 dark:bg-white/[0.05] dark:focus-within:border-[#e27cff]">
       <input
         type={type}
         name={name}
@@ -331,10 +356,10 @@ function FieldBox({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onChange={(event) => onValueChange(event.target.value)}
-        className="min-w-0 flex-1 truncate bg-transparent text-black outline-none placeholder:text-black/30 dark:text-white dark:placeholder:text-white/35"
+        className="min-w-0 flex-1 truncate bg-transparent text-[#111011] outline-none placeholder:text-black/30 dark:text-white dark:placeholder:text-white/35"
       />
       {showLabel && (
-        <span className="shrink-0 text-black/45 dark:text-white/45">{label}</span>
+        <span className="shrink-0 text-[#969696] dark:text-white/45">{label}</span>
       )}
     </label>
   );
@@ -351,12 +376,12 @@ function CheckboxLine({
 }) {
   return (
     <label className="flex items-start gap-3">
-      <span className="relative mt-1 size-3.5 shrink-0">
+      <span className="relative mt-0.5 size-4 shrink-0">
         <input
           type="checkbox"
           checked={checked}
           onChange={(event) => onCheckedChange(event.target.checked)}
-          className="peer size-full appearance-none rounded-[2px] border border-black/25 bg-white checked:border-black checked:bg-black dark:border-white/30 dark:bg-white/5 dark:checked:border-white dark:checked:bg-white"
+          className="peer size-full appearance-none rounded-full border border-black/25 bg-white checked:border-black checked:bg-black dark:border-white/30 dark:bg-white/5 dark:checked:border-white dark:checked:bg-white"
         />
         <svg
           viewBox="0 0 12 12"

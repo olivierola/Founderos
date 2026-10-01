@@ -48,6 +48,7 @@ import {
   KANBAN_COLUMNS, MISSION_STATUS_META,
   type RoomMission, type RoomTask, type TaskStatus, type RoomMilestone,
 } from "./model";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 type Participant = { id: string; name: string; avatar_url: string | null; accent_color: string | null };
 
@@ -692,6 +693,7 @@ function StalledNotice({ mission, tasks, onDone }: {
 }
 
 function MissionActions({ mission, onDone, onDeleted }: { mission: RoomMission; onDone: () => void; onDeleted?: () => void }) {
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -723,8 +725,8 @@ function MissionActions({ mission, onDone, onDeleted }: { mission: RoomMission; 
       <IconAction
         title="Supprimer la mission"
         danger
-        onClick={() => {
-          if (!confirm(`Supprimer la mission « ${mission.title} » ? Ses jalons, tâches et historique seront effacés. Les livrables déjà produits sont conservés.`)) return;
+        onClick={async () => {
+          if (!(await confirm(`Supprimer la mission « ${mission.title} » ? Ses jalons, tâches et historique seront effacés. Les livrables déjà produits sont conservés.`))) return;
           void run(async () => { await deleteMission(mission.id); onDeleted?.(); });
         }}
       >

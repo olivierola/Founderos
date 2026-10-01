@@ -28,7 +28,8 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { TOOL_RESULT_CAP } from "./ai.ts";
-import { blockKey, blockSubstanceKey, REPEATABLE_BLOCKS } from "./report-artisan.ts";
+import { blockKey, sameSubstance, REPEATABLE_BLOCKS } from "./report-artisan.ts";
+import { invoiceTotal, normalizePdfSpec, PDF_BLOCK_CATALOGUE, PDF_THEMES } from "./pdf-spec.ts";
 import { removePreference, upsertPreference } from "./agent-context.ts";
 import { MEMORY_CAP, pickEvictions, planMemoryWrite, RELEVANCE_FLOOR, type MemoryRow } from "./agent-memory.ts";
 import { inferProvider, isSafeUrl } from "./external-artifacts.ts";
@@ -41,6 +42,13 @@ import type { ToolTier } from "./model-router.ts";
 import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
 import { defaultTimezone, parseRunAt, parseSchedule } from "./clock.ts";
 import { embedTexts, toVectorLiteral } from "./jina.ts";
+import type { Passage } from "./contextiq.ts";
+import { policyGate, type GateInput } from "./policyguard.ts";
+import {
+  judge as judgeTs, noul as noulTs, choice as choiceTs,
+  readNoul as readNoulTs, readChoice as readChoiceTs, ranked as rankedTs, qid as qidTs,
+  loadTypesafeConfig as loadTypesafeConfigTs,
+} from "./typesafe.ts";
 import { mcpCallTool, type McpTool } from "./mcp-client.ts";
 import { executeApprovalAction, approvalScope, approvalScopePrefix, approvalScopeLabel } from "./approval-exec.ts";
 import { runTrackerAction, trackerScope } from "./tracker-actions.ts";
@@ -59,6 +67,10 @@ export interface AgentToolRow {
     | "composio_toolkit"
     | "crm"
     | "tracker"
+    | "support"
+    | "governance"
+    | "leads"
+    | "soc"
     | "security_scan"
     | "vibe_code"
     | "testing"
@@ -289,6 +301,8 @@ async function awaitInlineApproval(
   ctx: InternalToolContext,
   req: ApprovalRequest,
   summary: string,
+  /** PolicyGuard : relie la décision journalisée à l'approbation créée. */
+  onApprovalId?: (id: string) => void,
 ): Promise<string> {
   // Already approved this EXACT call earlier in the conversation? Auto-run it so
   // we never re-ask for something the user already granted — a different action
@@ -319,6 +333,7 @@ async function awaitInlineApproval(
         action_kind: req.action_kind, payload: req.payload, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
       });
       const gid = await ctx.requestApproval(req); // audit trail for the auto-run
+      onApprovalId?.(gid);
       await ctx.admin.from("internal_agent_approvals").update({
         status: outcome.ok ? "executed" : "failed", decided_at: new Date().toISOString(),
         executed_at: new Date().toISOString(), result: { detail: outcome.detail },
@@ -332,6 +347,7 @@ async function awaitInlineApproval(
   }
 
   const id = await ctx.requestApproval(req);
+  onApprovalId?.(id);
   if (!ctx.conversationId) {
     return `⏳ Action « ${summary} » mise en attente d'approbation (id ${id}). Approuve-la depuis le chat direct de l'agent pour que je l'exécute.`;
   }
@@ -378,6 +394,16 @@ async function awaitInlineApproval(
     return `✅ Action « ${summary} » approuvée et exécutée. Résultat :\n${detail.slice(0, 6000) || "(ok)"}`;
   }
   return `⏳ Toujours en attente de ton approbation pour « ${summary} » — approuve/refuse au-dessus quand tu veux, puis dis-moi de continuer.`;
+}
+
+/** PolicyGuard, appelé à chaque point d'approbation. `legacyApproval` est la
+ *  décision d'avant : la porte peut la durcir, jamais l'assouplir. */
+function gate(ctx: InternalToolContext, input: GateInput) {
+  return policyGate({
+    admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId,
+    agentId: ctx.agentId, runId: ctx.runId, conversationId: ctx.conversationId ?? null,
+    serviceDashboardId: ctx.serviceDashboardId ?? null, autopilot: !!ctx.autopilot,
+  }, input);
 }
 
 // ---------------------------------------------------------------------------
@@ -470,6 +496,332 @@ async function writeRunMeta(ctx: InternalToolContext, meta: Record<string, unkno
 const WRITE_ACTION_RE = /\b(SEND|CREATE|DELETE|REMOVE|UPDATE|MODIFY|ADD|PUT|PATCH|POST|TRASH|ARCHIVE|MOVE|REPLY|FORWARD|DRAFT|SET|EDIT|INSERT|UPLOAD|MARK|WRITE|RENAME|CANCEL|MERGE|ASSIGN|INVITE|CLEAR|REVOKE|GRANT|ENABLE|DISABLE|SCHEDULE|PUBLISH|CLOSE|IMPORT|SNOOZE|LABEL|REACT|PIN|UNPIN|STAR|SUBSCRIBE|UNSUBSCRIBE|BLOCK|MUTE|APPROVE|REJECT|COMPLETE|SUBMIT|EXECUTE|TRIGGER|DUPLICATE|RESTORE|EMPTY|BATCH)\b/;
 export function isWriteAction(name: string): boolean {
   return WRITE_ACTION_RE.test(String(name ?? "").toUpperCase().replace(/[_.\-]+/g, " "));
+}
+
+/**
+ * Classer des agents contre un besoin exprimé en une phrase.
+ *
+ * Rend `null` — donc l'ordre d'avant — dès que l'usage est éteint, en shadow,
+ * ou que l'appel échoue.
+ */
+async function rankAgents(
+  ctx: InternalToolContext,
+  query: string,
+  agents: Array<{ id: string; name: string; role: string | null; skills: string[]; description: string | null }>,
+): Promise<Map<string, number> | null> {
+  try {
+    const byQid = new Map<string, string>();
+    const criteria: Record<string, string | null> = {};
+    for (const a of agents.slice(0, 120)) {
+      const key = qidTs(`${a.name}_${a.id.slice(0, 6)}`);
+      criteria[key] = [a.role, a.skills.join(", "), a.description].filter(Boolean).join(" — ").slice(0, 180) || null;
+      byQid.set(key, a.id);
+    }
+    const verdict = await judgeTs(
+      { admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId, runId: ctx.runId },
+      "agent_choice",
+      { besoin: query.slice(0, 1000) },
+      { agent: choiceTs("Quel agent est le mieux placé pour ce besoin ?", criteria) },
+      { subject: `équipe · ${agents.length} agent(s)` },
+    );
+    if (!verdict?.apply) return null;
+    const order = rankedTs(readChoiceTs(verdict, "agent"));
+    if (order.length === 0) return null;
+    const out = new Map<string, number>();
+    for (const { key, p } of order) {
+      const id = byQid.get(key);
+      if (id) out.set(id, p);
+    }
+    return out;
+  } catch { return null; }
+}
+
+// ── Piloter un navigateur : envoyer, attendre, choisir ───────────────────────
+
+/**
+ * Poser une commande dans la file de l'extension et attendre son compte rendu.
+ *
+ * Extrait du corps de `user_browser` parce que le ciblage par intention a
+ * besoin d'envoyer DEUX commandes (lister les éléments, puis agir) : une
+ * seconde copie de cette boucle d'attente aurait divergé au premier changement
+ * de délai.
+ */
+async function sendBrowserCommand(
+  ctx: InternalToolContext,
+  deviceId: string,
+  action: string,
+  params: Record<string, unknown>,
+): Promise<string> {
+  const { data: cmd, error } = await ctx.admin.from("browser_commands").insert({
+    workspace_id: ctx.workspaceId, device_id: deviceId,
+    agent_id: ctx.agentId, run_id: ctx.runId,
+    action, params,
+  }).select("id").single();
+  if (error || !cmd) return `ERROR: commande non enregistrée (${error?.message ?? "inconnu"})`;
+
+  // Attente du compte rendu. L'extension interroge toutes les ~1,5 s ; au pire
+  // elle dormait et son alarme la réveille sous 30 s. Au-delà, c'est que le
+  // navigateur est fermé — le dire vaut mieux que bloquer le run.
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1200));
+    const { data: row } = await ctx.admin.from("browser_commands")
+      .select("status, result, error").eq("id", (cmd as { id: string }).id).maybeSingle();
+    const st = (row as { status?: string; result?: unknown; error?: string } | null);
+    if (!st || st.status === "pending" || st.status === "running") continue;
+    if (st.status === "done") return JSON.stringify(st.result ?? {}).slice(0, 8000);
+    return `ERROR: ${st.error ?? "échec de l'action dans le navigateur"}`;
+  }
+
+  await ctx.admin.from("browser_commands")
+    .update({ status: "expired", error: "aucune réponse du navigateur" }).eq("id", (cmd as { id: string }).id);
+  return "ERROR: le navigateur n'a pas répondu (fermé, ou en veille). "
+    + "Demande à l'utilisateur de vérifier que son navigateur est ouvert et le pilotage toujours autorisé.";
+}
+
+/** Un élément de la page, tel que l'extension le décrit. Tous les champs sont
+ *  facultatifs : une page réelle contient des boutons sans label, des champs
+ *  sans nom, et des icônes sans rien du tout. */
+interface PageElement {
+  label?: string; role?: string; testid?: string; css?: string;
+  name?: string; placeholder?: string; text?: string; value?: string;
+  title?: string; href?: string; tag?: string;
+}
+
+/**
+ * Retrouver la liste des éléments dans ce que l'extension a renvoyé.
+ *
+ * Volontairement tolérant : le contrat exact de `elements` vit dans
+ * l'extension, pas ici. Un tableau à la racine, sous `elements`, sous `items`,
+ * sous `result` — on accepte les quatre plutôt que de casser le jour où
+ * l'extension enveloppe sa réponse.
+ */
+function readElements(raw: string): PageElement[] {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return []; }
+  const pick = (v: unknown): unknown[] | null => (Array.isArray(v) ? v : null);
+  const root = parsed as Record<string, unknown> | unknown[] | null;
+  const list = pick(root)
+    ?? pick((root as Record<string, unknown>)?.elements)
+    ?? pick((root as Record<string, unknown>)?.items)
+    ?? pick((root as Record<string, unknown>)?.result)
+    ?? [];
+  return list.filter((e): e is PageElement => !!e && typeof e === "object");
+}
+
+/** Comment un élément se LIT dans une liste de choix. Ce qui le distingue
+ *  d'abord : ce qui est écrit dessus. Le sélecteur CSS vient en dernier — c'est
+ *  ce qui sert à cliquer, pas ce qui sert à reconnaître. */
+function describeElement(e: PageElement): string {
+  const label = str(e.label) || str(e.text) || str(e.title) || str(e.placeholder) || str(e.name) || str(e.value);
+  const bits = [
+    label ? `« ${label.replace(/\s+/g, " ").slice(0, 80)} »` : "(sans texte)",
+    str(e.role) || str(e.tag) ? `[${str(e.role) || str(e.tag)}]` : "",
+    str(e.placeholder) && str(e.placeholder) !== label ? `placeholder « ${str(e.placeholder).slice(0, 40)} »` : "",
+    str(e.href) ? `vers ${str(e.href).slice(0, 60)}` : "",
+    str(e.testid) ? `testid=${str(e.testid).slice(0, 40)}` : "",
+  ].filter(Boolean);
+  return bits.join(" ").slice(0, 180);
+}
+
+/** Le sélecteur à transmettre : le plus STABLE d'abord. Un testid survit à une
+ *  refonte, un label survit à un changement de classes, un chemin CSS ne
+ *  survit à rien — mais il reste le dernier recours. */
+function targetOf(e: PageElement): Record<string, unknown> {
+  if (str(e.testid)) return { testid: str(e.testid) };
+  const label = str(e.label) || str(e.text) || str(e.title);
+  if (label) return { label: label.replace(/\s+/g, " ").slice(0, 120), ...(str(e.role) ? { role: str(e.role) } : {}) };
+  if (str(e.name)) return { name: str(e.name) };
+  if (str(e.placeholder)) return { placeholder: str(e.placeholder) };
+  return { css: str(e.css) };
+}
+
+/**
+ * Choisir l'élément qui répond à une intention, dans la page telle qu'elle est.
+ *
+ * Deux questions dans UN appel, selon le patron de la documentation : le
+ * classement lui-même, et une porte « aucun ne convient » posée d'avance. Sans
+ * cette porte, un `choice` rend toujours une option — et sur une page qui n'a
+ * pas encore fini de charger, cliquer « l'option la moins improbable » est
+ * précisément ce qu'on ne veut pas.
+ *
+ * Rend une chaîne quand il faut laisser la main à l'agent : l'usage est éteint,
+ * la page ne contient rien, ou la confiance ne suffit pas. Dans ce cas, le
+ * message dit quoi faire à la place.
+ */
+async function pickElementByIntent(
+  ctx: InternalToolContext,
+  deviceId: string,
+  intent: string,
+  action: string,
+  tabId?: number,
+): Promise<{ target: Record<string, unknown>; label: string; confidence: number; candidates: number } | string> {
+  const cfg = (await loadTypesafeConfigTs(ctx.admin, ctx.workspaceId)).browser_target;
+  if (!cfg || cfg.mode === "off") {
+    return "ERROR: le ciblage par intention n'est pas activé sur cet espace. "
+      + "Fais-le en deux temps : user_browser(action=\"elements\") pour voir la page, "
+      + "puis rappelle l'action avec un target précis ({label} ou {testid}).";
+  }
+
+  const raw = await sendBrowserCommand(ctx, deviceId, "elements", tabId ? { tab_id: tabId } : {});
+  if (raw.startsWith("ERROR")) return raw;
+  const all = readElements(raw);
+  if (all.length === 0) {
+    return "ERROR: aucun élément interactif n'a été trouvé sur cette page. "
+      + "Vérifie qu'elle est chargée (user_browser action=\"read\"), ou vise un autre onglet avec tab_id.";
+  }
+
+  // 255 options au maximum côté modèle, et une liste trop longue dilue l'état :
+  // au-delà, la page est de toute façon à re-cadrer (scroll, onglet, filtre).
+  const CAP = 120;
+  const elements = all.slice(0, CAP);
+  const byQid = new Map<string, PageElement>();
+  const criteria: Record<string, string> = {};
+  elements.forEach((e, i) => {
+    const key = `e${i}`;
+    byQid.set(key, e);
+    criteria[key] = describeElement(e);
+  });
+
+  const geste = action === "fill" ? "y saisir du texte"
+    : action === "select" ? "y choisir une valeur"
+    : action === "check" ? "le cocher"
+    : action === "press" ? "y presser une touche"
+    : "cliquer dessus";
+
+  const verdict = await judgeTs(
+    { admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId, runId: ctx.runId },
+    "browser_target",
+    { but: intent, geste, elements_de_la_page: elements.length },
+    {
+      element: choiceTs(
+        `Sur quel élément de la page faut-il agir pour : « ${intent} » (${geste}) ?`,
+        criteria,
+      ),
+      aucun: noulTs(
+        `Aucun élément de cette liste ne permet de « ${intent} ».`,
+        {
+          true: {
+            what: "La page ne contient pas ce qu'il faut : mauvaise page, contenu pas encore chargé, ou il faut d'abord faire défiler, fermer une bannière, ou ouvrir un menu.",
+            examples: ["la liste ne contient que la navigation du site", "aucun champ de saisie alors qu'on veut saisir"],
+          },
+          false: { what: "Un des éléments de la liste correspond bien à ce qu'on veut faire." },
+        },
+      ),
+    },
+    { subject: intent.slice(0, 120) },
+  );
+  if (!verdict?.apply) {
+    return "ERROR: le ciblage par intention est en observation, il ne décide pas encore. "
+      + "Fais-le en deux temps : user_browser(action=\"elements\"), puis rappelle l'action avec un target précis.";
+  }
+
+  const chosen = readChoiceTs(verdict, "element");
+  const none = readNoulTs(verdict, "aucun") ?? 0;
+  // « La confiance rapportée est le jugement le MOINS sûr de l'appel, pas le
+  // produit de tous » — un mauvais argument suffit à gâcher le résultat.
+  const confidence = Math.min(chosen?.confidence ?? 0, 1 - none);
+  const element = chosen ? byQid.get(chosen.choice) : null;
+
+  if (!element || confidence < verdict.threshold) {
+    const top = rankedTs(chosen).slice(0, 3)
+      .map((r) => `${describeElement(byQid.get(r.key) ?? {})} (${(r.p * 100).toFixed(0)} %)`)
+      .join(" · ");
+    return "ERROR: pas assez sûr de l'élément à viser"
+      + (none >= 0.5 ? " — la page ne semble pas contenir ce qu'il faut." : ".")
+      + (top ? ` Les plus proches : ${top}.` : "")
+      + " Regarde la page avec user_browser(action=\"elements\") et vise un target précis,"
+      + " ou fais d'abord défiler / fermer ce qui gêne.";
+  }
+
+  return {
+    target: targetOf(element),
+    label: describeElement(element),
+    confidence: Number(confidence.toFixed(3)),
+    candidates: all.length,
+  };
+}
+
+/**
+ * Le filet SOUS la liste : une action que le nom ne trahit pas.
+ *
+ * `isWriteAction` lit un nom d'action et y cherche des verbes connus. Ça marche
+ * pour `HUBSPOT_DELETE_CONTACT` et pas du tout pour `SLACK_CHAT_POST_MESSAGE`
+ * ou pour une action de connecteur maison au nom inventé — et ce qui passe à
+ * travers s'exécute sans que personne ne soit prévenu.
+ *
+ * Cette fonction ne peut QU'AJOUTER une approbation. Elle n'est jamais
+ * consultée pour en retirer une : une liste statique qui dit « écriture » a
+ * toujours raison, et un modèle qui dirait le contraire ouvrirait une porte que
+ * personne n'a demandé à ouvrir.
+ */
+export async function isRiskyAction(
+  ctx: InternalToolContext,
+  provider: string,
+  action: string,
+  params: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    // DEUX questions, pas une. « Modifie quelque chose ET ne peut pas être
+    // défait » demandait au modèle de juger deux choses à la fois, et la valeur
+    // rendue ne voulait plus dire grand-chose : un envoi de mail (écrit, mais
+    // trivialement « annulable » en envoyant un correctif) et un DELETE se
+    // retrouvaient au même endroit de l'échelle. On les pose séparément et on
+    // les combine ICI, où la règle est lisible et modifiable.
+    const verdict = await judgeTs(
+      { admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId, runId: ctx.runId },
+      "approval_risk",
+      { application: provider, action, parametres: params },
+      {
+        ecrit: noulTs(
+          {
+            action: `${provider} · ${action}`,
+            question: "Cette action produit-elle un effet hors du système — écriture, envoi, suppression, paiement ?",
+          },
+          {
+            true: {
+              what: "Elle crée, modifie, supprime, envoie ou paie.",
+              examples: ["envoyer un e-mail", "créer une facture", "supprimer un contact", "poster un message"],
+            },
+            false: {
+              what: "Elle ne fait que lire ou chercher.",
+              examples: ["lister des contacts", "récupérer une commande", "chercher un document"],
+            },
+          },
+        ),
+        irreversible: noulTs(
+          {
+            action: `${provider} · ${action}`,
+            question: "Son effet serait-il difficile à annuler si elle était lancée par erreur ?",
+          },
+          {
+            true: {
+              what: "Ce qui est fait ne se reprend pas : un tiers l'a vu, l'argent est parti, la donnée est perdue.",
+              examples: ["envoyer un message à un client", "effectuer un virement", "supprimer définitivement une ligne"],
+            },
+            false: {
+              what: "L'effet se défait par une action symétrique, sans que personne d'extérieur ne l'ait vu.",
+              examples: ["créer un brouillon", "ajouter une étiquette", "mettre à jour un champ interne"],
+            },
+          },
+        ),
+      },
+      { subject: `${provider} · ${action}` },
+    );
+    if (!verdict?.apply) return false;
+    const ecrit = readNoulTs(verdict, "ecrit");
+    const irreversible = readNoulTs(verdict, "irreversible");
+    if (ecrit === null || irreversible === null) return false;
+    // Une lecture n'est jamais risquée, quoi qu'on pense de sa réversibilité —
+    // la première question est donc éliminatoire. Au-delà, c'est l'une OU
+    // l'autre qui déclenche : une écriture franche suffit, et un effet
+    // difficile à défaire suffit aussi.
+    if (ecrit < 0.5) return false;
+    return ecrit >= verdict.threshold || irreversible >= verdict.threshold;
+  } catch {
+    // Une panne du jugement laisse la liste statique décider, comme avant.
+    return false;
+  }
 }
 
 // Best-effort embedding for a memory (Jina v3, 1024 dims — same pipeline as the
@@ -922,42 +1274,92 @@ export async function searchKnowledge(
     });
     if (vec) {
       const vecLiteral = toVectorLiteral(vec);
-      const hits: Array<{ similarity: number; text: string }> = [];
+      const ciq = await import("./contextiq.ts");
+      const ciqCtx = { admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId, runId: ctx.runId };
+      // On remonte large (deux fois la demande) : c'est ContextIQ qui trie
+      // ensuite. Éteint, on rend les `limit` premiers par similarité, comme avant.
+      const pool = Math.min(limit * 2, 20);
 
-      if (collectionIds.length > 0) {
-        // Single RPC across all activated collections.
-        const { data, error } = await ctx.admin.rpc("match_rag_collection_chunks", {
-          p_collection_ids: collectionIds,
-          p_query_embedding: vecLiteral,
-          p_match_count: limit,
-        });
-        if (!error && data) {
-          for (const d of data as Array<{ similarity?: number; content?: string }>) {
-            hits.push({ similarity: d.similarity ?? 0, text: (d.content ?? "").slice(0, 600) });
-          }
-        }
-      } else {
-        const { data: agents } = await ctx.admin
-          .from("rag_agents")
-          .select("id")
-          .eq("project_id", ctx.projectId)
-          .limit(10);
-        for (const a of agents ?? []) {
-          const { data, error } = await ctx.admin.rpc("match_rag_chunks", {
-            p_agent_id: (a as { id: string }).id,
-            p_query_embedding: vecLiteral,
-            p_match_count: limit,
+      const fetchHits = async (ids: string[], count: number): Promise<Passage[]> => {
+        const hits: Passage[] = [];
+        if (ids.length > 0) {
+          const { data, error } = await ctx.admin.rpc("match_rag_collection_chunks", {
+            p_collection_ids: ids, p_query_embedding: vecLiteral, p_match_count: count,
           });
           if (!error && data) {
-            for (const d of data as Array<{ similarity?: number; content?: string }>) {
-              hits.push({ similarity: d.similarity ?? 0, text: (d.content ?? "").slice(0, 600) });
+            for (const d of data as Array<{ id: string; similarity?: number; content?: string; collection_id?: string }>) {
+              hits.push({ id: d.id, similarity: d.similarity ?? 0, content: d.content ?? "", collection_id: d.collection_id ?? null });
+            }
+          }
+        } else {
+          const { data: agents } = await ctx.admin
+            .from("rag_agents").select("id").eq("project_id", ctx.projectId).limit(10);
+          for (const a of agents ?? []) {
+            const { data, error } = await ctx.admin.rpc("match_rag_chunks", {
+              p_agent_id: (a as { id: string }).id, p_query_embedding: vecLiteral, p_match_count: count,
+            });
+            if (!error && data) {
+              for (const d of data as Array<{ id: string; similarity?: number; content?: string; source_id?: string }>) {
+                hits.push({ id: d.id, similarity: d.similarity ?? 0, content: d.content ?? "", source_id: d.source_id ?? null });
+              }
             }
           }
         }
+        return hits.sort((x, y) => y.similarity - x.similarity);
+      };
+
+      // 1. Quelles collections interroger — seulement s'il y a à choisir.
+      let searched = collectionIds;
+      if (collectionIds.length > 1) {
+        const { data: cols } = await ctx.admin
+          .from("rag_collections").select("id, name, description").in("id", collectionIds);
+        const picked = await ciq.pickCollections(ciqCtx, query, (cols ?? []) as Array<{ id: string; name: string; description: string | null }>);
+        if (picked) searched = picked;
       }
-      if (hits.length) {
-        hits.sort((x, y) => y.similarity - x.similarity);
-        return JSON.stringify(hits.slice(0, limit));
+
+      // 2-3. Tri + couverture + contradiction.
+      let hits = await fetchHits(searched, pool);
+      let assessment = await ciq.assessPassages(ciqCtx, query, hits, { keep: limit });
+      let widened = false;
+
+      // 4. Couverture faible : on élargit une fois (toutes les collections,
+      // deux fois plus de passages) avant de renvoyer l'agent ailleurs.
+      if (ciq.needsDeeperSearch(assessment)) {
+        const wider = await fetchHits(collectionIds, Math.min(pool * 2, 30));
+        if (wider.length > hits.length || searched.length < collectionIds.length) {
+          const second = await ciq.assessPassages(ciqCtx, query, wider, { keep: limit });
+          widened = true;
+          if ((second.coverage ?? -1) >= (assessment.coverage ?? -1)) { hits = wider; assessment = second; }
+        }
+      }
+
+      void ciq.recordAssessment(ciqCtx, {
+        surface: "internal_agent", agentId: ctx.agentId, conversationId: ctx.conversationId ?? null,
+        question: query, assessment, retrieved: hits.length, collectionIds: searched, widened,
+      });
+
+      if (assessment.kept.length) {
+        const results = assessment.kept.map((h) => ({
+          similarity: h.similarity,
+          text: h.content.slice(0, 600),
+          ...(assessment.notes[h.id] != null && assessment.applied ? { relevance: assessment.notes[h.id] } : {}),
+        }));
+        // En shadow, la sortie reste STRICTEMENT celle d'avant : un tableau.
+        if (!assessment.applied || assessment.coverage == null) return JSON.stringify(results);
+        const advice: string[] = [];
+        if (assessment.coverage <= 1) {
+          advice.push(assessment.coverage === 0
+            ? "The knowledge base does not answer this. Do not answer from these passages: use web_search / deep research, or tell the user the information is missing."
+            : "Partial coverage: these passages answer only part of the question. Look for the missing part elsewhere (another query, web_search) before concluding.");
+        }
+        if ((assessment.contradiction ?? 0) >= ciq.CONTRADICTION_THRESHOLD) {
+          advice.push("Some passages contradict each other: report the discrepancy instead of picking one silently.");
+        }
+        return JSON.stringify({
+          results,
+          coverage: ciq.COVERAGE_LABEL[assessment.coverage],
+          ...(advice.length ? { advice: advice.join(" ") } : {}),
+        });
       }
     }
   } catch {
@@ -1312,6 +1714,12 @@ export function buildInternalToolset(
    *  mid-loop load_toolset / need_tools is visible on the very next round. */
   defsFor: (tier?: ToolTier) => ToolDef[];
   executor: ToolExecutor;
+  /** La famille d'un outil, et le vocabulaire des familles. Déclarés ici parce
+   *  que le classement par jugement rapide traduit « ce tour a besoin
+   *  d'EXECUTION » en noms d'outils, et qu'il ne peut pas recopier la table. */
+  familyOf: (name: string) => ToolFamily;
+  families: ToolFamily[];
+  familyRules: Record<ToolFamily, { label: string; rule: string }>;
   capabilitySummary: string;
 } {
   const tools = new Map<string, InternalTool>();
@@ -1620,8 +2028,7 @@ export function buildInternalToolset(
         }
         // Same figures, reworded: a correction, not a second block. There is no
         // way to edit a block already added, so take the newer version in place.
-        const substance = blockSubstanceKey(candidate);
-        const sameAt = substance ? rows.findIndex((b) => blockSubstanceKey(b) === substance) : -1;
+        const sameAt = rows.findIndex((b) => !REPEATABLE_BLOCKS.has(b.type) && sameSubstance(b, candidate));
         if (sameAt >= 0) {
           rows[sameAt] = candidate;
           await writeRunMeta(ctx, { ...meta, [key]: draft });
@@ -1702,6 +2109,91 @@ export function buildInternalToolset(
       return `${target === "presentation" ? "Présentation" : "Rapport"} « ${title} » publié (${blocks.length} blocs). Résume-le en deux phrases dans ta réponse — le document s'ouvre en carte.`;
     },
   });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // PDF — a file to send, print or file away
+  // ══════════════════════════════════════════════════════════════════════
+  // Not a report channel: a report still goes to Le Rédacteur. This is for the
+  // documents whose FORMAT is the point — an invoice, a quote, a one-page
+  // summary someone asked for "en PDF". The agent writes a spec (JSON), the app
+  // renders it with pdfcn on open (src/features/pdf); nothing binary is stored,
+  // so the user can re-theme it and re-download it without another model call.
+  const PDF_ASKED = /\b(pdf|factur\w*|invoice|devis|quote|imprim\w*|print\w*|attestation|certificat\w*|re[çc]u|bon de commande|proforma)\b/i;
+  tools.set("generate_pdf", {
+    incompressible: true,
+    family: "DELIVER",
+    def: {
+      name: "generate_pdf",
+      description:
+        "Produit un fichier PDF (vectoriel, paginé, texte sélectionnable) que l'utilisateur ouvre, re-thème et télécharge depuis une carte. "
+        + "UNIQUEMENT si l'utilisateur ou la mission demande un PDF, une facture, un devis, un reçu ou un document à imprimer. "
+        + "Ce n'est PAS la voie des rapports d'analyse" + (reportsDelegated ? " (ils passent par request_report)" : " (ils passent par add_block/publish_artifact)") + ". "
+        + 'kind="invoice" : remplis `invoice` — les totaux (HT, TVA, TTC) sont calculés par l\'application, ne les écris pas. '
+        + 'kind="document" : `title` + `blocks`, dans l\'ordre de lecture, en UN appel. ' + PDF_BLOCK_CATALOGUE,
+      parameters: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["document", "invoice"], description: "document (par défaut) ou invoice." },
+          title: { type: "string", description: "Titre du document (kind=document)." },
+          subtitle: { type: "string", description: "Une phrase sous le titre." },
+          eyebrow: { type: "string", description: "Surtitre court : « Compte rendu », « Proposition commerciale »." },
+          meta: { type: "array", items: { type: "object" }, description: 'Lignes d\'en-tête [{label:"Client", value:"Novaris"}], 6 au plus.' },
+          footer: { type: "string", description: "Texte en pied de chaque page (à gauche du numéro)." },
+          blocks: { type: "array", items: { type: "object" }, description: "Les blocs du document (voir le catalogue)." },
+          invoice: {
+            type: "object",
+            description:
+              "kind=invoice : {number, issueDate:\"AAAA-MM-JJ\", dueDate?, currency?:\"EUR\", "
+              + "seller:{name, tagline?, address?, email?, taxId?}, buyer:{name, address?, email?, phone?}, "
+              + "lines:[{description, quantity, unitPrice}], taxRate?:20, paymentMethod?, paymentDetails?:\"IBAN…\", notes?}",
+          },
+          theme: { type: "string", enum: [...PDF_THEMES], description: "Habillage par défaut (modifiable par l'utilisateur)." },
+          landscape: { type: "boolean", description: "Paysage — pour les tableaux larges (kind=document)." },
+        },
+        required: ["kind"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const { text } = await runOrigin();
+      if (text.trim() && !PDF_ASKED.test(text)) {
+        return "ERROR: personne n'a demandé de PDF. generate_pdf ne sert que si l'utilisateur (ou la mission) demande un PDF, une facture, un devis ou un document à imprimer. "
+          + (reportsDelegated ? "Pour un rapport, passe la matière au Rédacteur avec request_report." : "Pour un rapport, utilise add_block puis publish_artifact.")
+          + " Sinon, réponds dans le chat.";
+      }
+      const { spec, errors } = normalizePdfSpec(args);
+      if (!spec) {
+        return `ERROR: le PDF n'a PAS été créé — ${errors.slice(0, 8).join(" ")}${errors.length > 8 ? ` (+${errors.length - 8} autres)` : ""} Corrige et rappelle generate_pdf.`;
+      }
+      const theme = (PDF_THEMES as readonly string[]).includes(str(args.theme)) ? str(args.theme) : undefined;
+      const options = { ...(theme ? { theme } : {}), ...(args.landscape === true && spec.kind === "document" ? { landscape: true } : {}) };
+      const name = spec.kind === "invoice" ? `Facture ${spec.invoice.number}` : spec.doc.title;
+      let summary: string;
+      if (spec.kind === "invoice") {
+        const t = invoiceTotal(spec.invoice);
+        summary = `Facture ${spec.invoice.number} — ${spec.invoice.buyer.name} — ${t.total.toFixed(2)} ${spec.invoice.currency ?? "EUR"}`;
+      } else {
+        summary = [spec.doc.subtitle, `${spec.doc.blocks.length} blocs`].filter(Boolean).join(" · ");
+      }
+      try {
+        await ctx.createDeliverable({
+          kind: "pdf",
+          name: name.slice(0, 120),
+          content: JSON.stringify({ format: "pdfcn", version: 1, spec, ...(Object.keys(options).length ? { options } : {}) }),
+          summary: summary.slice(0, 200),
+        });
+      } catch (e) {
+        return `ERROR: le PDF n'a PAS été enregistré (${e instanceof Error ? e.message : "erreur inconnue"}). Réessaie generate_pdf, ou signale l'échec plutôt que d'affirmer que le fichier existe.`;
+      }
+      if (spec.kind === "invoice") {
+        const t = invoiceTotal(spec.invoice);
+        return `PDF « ${name} » créé : ${spec.invoice.lines.length} ligne(s), total ${t.total.toFixed(2)} ${spec.invoice.currency ?? "EUR"}`
+          + `${spec.invoice.taxRate ? ` TTC (dont TVA ${t.tax.toFixed(2)})` : ""}. Il s'ouvre en carte ; l'utilisateur le télécharge de là. Vérifie ce total dans ta réponse, ne recopie pas la facture.`;
+      }
+      return `PDF « ${name} » créé (${spec.doc.blocks.length} blocs). Il s'ouvre en carte, où l'utilisateur choisit le thème et le télécharge. Résume-le en une phrase, ne le recopie pas.`;
+    },
+  });
+  summaryLines.push("- generate_pdf: produire un fichier PDF (facture, devis, document à imprimer) — seulement quand un PDF est demandé.");
 
   if (reportsDelegated) {
     // ══════════════════════════════════════════════════════════════════════
@@ -3410,6 +3902,8 @@ export function buildInternalToolset(
         "Chaque action accepte tab_id pour viser un onglet précis (obtenu via 'tabs') ; sans lui, l'onglet actif est utilisé — " +
         "tu peux donc travailler sur plusieurs onglets en parallèle sans changer le focus de l'utilisateur. " +
         "Les cibles se décrivent par {label, role, testid, css, name, placeholder} — le même vocabulaire que les skills apprises par démonstration. " +
+        "RACCOURCI : au lieu de target, donne « intent » — ce que tu veux atteindre en français. L'élément est choisi dans la page et l'action part dans la foulée, " +
+        "sans que tu aies à lister les éléments ni à lire la liste. Si le choix n'est pas sûr, l'outil te le dit et te rend la main. " +
         "Nécessite que l'utilisateur ait autorisé le pilotage depuis l'extension.",
       parameters: { type: "object", properties: {
         action: { type: "string", description: "tabs | switch | open | close | navigate | elements | read | find | click | fill | select | check | press | scroll" },
@@ -3418,6 +3912,7 @@ export function buildInternalToolset(
         url: { type: "string", description: "URL pour navigate / open." },
         tab_id: { type: "number", description: "Onglet visé (voir l'action 'tabs'). Omis = onglet actif, ou onglet déjà ouvert sur le site pour navigate." },
         new_tab: { type: "boolean", description: "navigate : forcer l'ouverture d'un nouvel onglet au lieu de réutiliser un onglet existant." },
+        intent: { type: "string", description: "À la place de target : ce que tu veux atteindre, en français (« le bouton qui valide la commande », « le champ code promo »). L'élément est alors choisi dans la page pour toi — une seule action au lieu de lister puis viser. Ignoré si target est fourni." },
       }, required: ["action"], additionalProperties: false },
     },
     run: async (args) => {
@@ -3427,6 +3922,13 @@ export function buildInternalToolset(
         "elements", "read", "find", "click", "fill", "select", "check", "press", "scroll",
       ];
       if (!known.includes(action)) return `ERROR: action inconnue « ${action} ». Disponibles : ${known.join(", ")}.`;
+      const intent = str(args.intent).trim();
+      // Un but énoncé en français n'a de sens que pour une action QUI VISE
+      // quelque chose. Sur « read » ou « tabs », il n'y a rien à cibler.
+      const TARGETED = ["click", "fill", "select", "check", "press"];
+      if (intent && !TARGETED.includes(action)) {
+        return `ERROR: « intent » ne s'utilise qu'avec ${TARGETED.join(", ")} — pour « ${action} », il n'y a pas d'élément à choisir.`;
+      }
 
       // L'appareil éligible : appairé, armé, et vu récemment. Plusieurs postes
       // peuvent exister dans un workspace — on prend celui qui est réellement
@@ -3453,33 +3955,37 @@ export function buildInternalToolset(
       if (args.tab_id != null && Number.isFinite(Number(args.tab_id))) params.tab_id = Number(args.tab_id);
       if (args.new_tab === true) params.new_tab = true;
 
-      const { data: cmd, error } = await ctx.admin.from("browser_commands").insert({
-        workspace_id: ctx.workspaceId, device_id: device.id,
-        agent_id: ctx.agentId, run_id: ctx.runId,
-        action, params,
-      }).select("id").single();
-      if (error || !cmd) return `ERROR: commande non enregistrée (${error?.message ?? "inconnu"})`;
-
-      if (ctx.logEvent) await ctx.logEvent("browser_action", { action, target: args.target, url: args.url });
-
-      // Attente du compte rendu. L'extension interroge toutes les ~1,5 s ; au
-      // pire elle dormait et son alarme la réveille sous 30 s. Au-delà, c'est
-      // que le navigateur est fermé — le dire vaut mieux que bloquer le run.
-      const deadline = Date.now() + 45_000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 1200));
-        const { data: row } = await ctx.admin.from("browser_commands")
-          .select("status, result, error").eq("id", cmd.id).maybeSingle();
-        const st = (row as { status?: string; result?: unknown; error?: string } | null);
-        if (!st || st.status === "pending" || st.status === "running") continue;
-        if (st.status === "done") return JSON.stringify(st.result ?? {}).slice(0, 8000);
-        return `ERROR: ${st.error ?? "échec de l'action dans le navigateur"}`;
+      // ── Le but, plutôt que le sélecteur ─────────────────────────────────
+      //
+      // Sans ça, un clic coûte TROIS allers-retours : `elements` rapporte la
+      // page (parfois deux cents entrées), le modèle génératif lit tout ça et
+      // rédige un sélecteur, puis on clique. Le choix de l'élément n'est
+      // pourtant pas de la rédaction : c'est un classement dans une liste
+      // fermée — exactement ce qu'un modèle typé fait en 250 ms.
+      //
+      // Le `target` explicite reste prioritaire : quand l'agent SAIT où il va
+      // (une skill apprise par démonstration porte ses sélecteurs), rien ne
+      // justifie de redemander son avis à un modèle.
+      if (intent && !params.target) {
+        const picked = await pickElementByIntent(ctx, device.id, intent, action, params.tab_id as number | undefined);
+        if (typeof picked === "string") return picked;
+        params.target = picked.target;
+        if (ctx.logEvent) {
+          await ctx.logEvent("browser_action", {
+            action, intent, target: picked.target,
+            chosen: picked.label, confidence: picked.confidence, candidates: picked.candidates,
+          }).catch(() => {});
+        }
       }
 
-      await ctx.admin.from("browser_commands")
-        .update({ status: "expired", error: "aucune réponse du navigateur" }).eq("id", cmd.id);
-      return "ERROR: le navigateur n'a pas répondu (fermé, ou en veille). "
-        + "Demande à l'utilisateur de vérifier que son navigateur est ouvert et le pilotage toujours autorisé.";
+      const sent = await sendBrowserCommand(ctx, device.id, action, params);
+      if (!intent || typeof sent !== "string") return sent;
+      // Ce qui a été choisi VOYAGE avec le résultat : un agent qui lit « fait »
+      // sans savoir sur quoi ne peut pas se rattraper quand c'était le mauvais
+      // bouton.
+      return sent.startsWith("ERROR")
+        ? sent
+        : `${sent}\n[ciblé par intention : « ${intent} » → ${str((params.target as Record<string, unknown>)?.label) || JSON.stringify(params.target)}]`;
     },
   });
   summaryLines.push("- user_browser: act in the user's own browser (their tabs and sessions), when they have armed control in the extension.");
@@ -5140,7 +5646,19 @@ export function buildInternalToolset(
           // à traverser une frontière sans raison.
           .sort((a, b) => Number(b.same_service) - Number(a.same_service));
 
-        return JSON.stringify(described);
+        // Une question posée (« qui sait faire du SEO ? ») est un CLASSEMENT,
+        // pas un filtre : le filtre textuel ci-dessus ne retient que ce qui
+        // contient le mot, et laisse dans l'ordre alphabétique ce qu'il garde.
+        // Le jugement rapide remonte le bon en tête — et ne retire personne, un
+        // agent qui cherche un pair doit pouvoir voir toute la liste.
+        const ranking = needle && described.length > 2
+          ? await rankAgents(ctx, str(args.query), described)
+          : null;
+        const ordered = ranking
+          ? [...described].sort((a, b) => (ranking.get(b.id) ?? 0) - (ranking.get(a.id) ?? 0))
+          : described;
+
+        return JSON.stringify(ordered);
       },
     });
 
@@ -5622,14 +6140,20 @@ export function buildInternalToolset(
       run: async (args) => {
         const action = str(args.action);
         const params = (args.params && typeof args.params === "object") ? args.params : {};
-        // Write actions need human approval unless the agent is on autopilot.
-        if (writeNames.has(action) && !ctx.autopilot) {
+        // Write actions need human approval unless the agent is on autopilot —
+        // and PolicyGuard may tighten that per team and environment.
+        const g = await gate(ctx, {
+          tool: provider, action, params: params as Record<string, unknown>,
+          legacyApproval: writeNames.has(action) && !ctx.autopilot, knownWrite: writeNames.has(action),
+        });
+        if (g.decision === "block") return g.message!;
+        if (g.decision === "approve") {
           return await awaitInlineApproval(ctx, {
             tool_name: toolName,
             action_kind: "connector_action",
             payload: { provider, action, params },
             reason: str(args.reason) || null,
-          }, `${provider} · ${action}`);
+          }, `${provider} · ${action}`, g.linkApproval);
         }
         const base = Deno.env.get("SUPABASE_URL");
         const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -5710,7 +6234,12 @@ export function buildInternalToolset(
         }
         // Only WRITE / delete / send actions need approval — reads (fetch, list,
         // get, search…) run directly so simple lookups never nag the user.
-        if (!ctx.autopilot && isWriteAction(action)) {
+        // La liste statique d'abord (gratuite, immédiate) ; le jugement
+        // seulement pour ce qu'elle laisse passer — et jamais l'inverse.
+        const legacyApproval = !ctx.autopilot && (isWriteAction(action) || await isRiskyAction(ctx, toolkit, action, params as Record<string, unknown>));
+        const g = await gate(ctx, { tool: toolkit, action, params: params as Record<string, unknown>, legacyApproval, knownWrite: isWriteAction(action) });
+        if (g.decision === "block") return g.message!;
+        if (g.decision === "approve") {
           return await awaitInlineApproval(ctx, {
             tool_name: toolName,
             action_kind: "composio_action",
@@ -5718,7 +6247,7 @@ export function buildInternalToolset(
             // the SAME account the user approved, not whatever resolves later.
             payload: { toolkit, tool_slug: action, params, ...scopeBody },
             reason: str(args.reason) || null,
-          }, `${toolkit} · ${action}${asUserId ? " (compte personnel)" : ""}`);
+          }, `${toolkit} · ${action}${asUserId ? " (compte personnel)" : ""}`, g.linkApproval);
         }
         const res = await fetch(`${base}/functions/v1/composio-action`, {
           method: "POST",
@@ -5774,13 +6303,18 @@ export function buildInternalToolset(
       run: async (args) => {
         const action = str(args.action);
         const params = (args.params && typeof args.params === "object") ? args.params : {};
-        if (CRM_WRITE.has(action) && !ctx.autopilot) {
+        const g = await gate(ctx, {
+          tool: "crm", action, params: params as Record<string, unknown>,
+          legacyApproval: CRM_WRITE.has(action) && !ctx.autopilot, knownWrite: CRM_WRITE.has(action),
+        });
+        if (g.decision === "block") return g.message!;
+        if (g.decision === "approve") {
           return await awaitInlineApproval(ctx, {
             tool_name: "crm",
             action_kind: "crm_write",
             payload: { action, params },
             reason: str(args.reason) || null,
-          }, `CRM · ${action}`);
+          }, `CRM · ${action}`, g.linkApproval);
         }
         const base = Deno.env.get("SUPABASE_URL");
         const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -5813,11 +6347,507 @@ export function buildInternalToolset(
   //  · L'APPROBATION. Les lectures sont libres, les écritures passent par la
   //    file d'approbation tant que l'autopilote n'est pas armé. Le découpage
   //    suit celui du reste du produit — lire ne change rien, écrire engage.
+  if (hasKind("support")) {
+    // ResolveAI : la file des demandes reçues par les agents publics du projet.
+    // Lecture libre ; la mise à jour (statut, note, priorité, responsable) ne
+    // touche que la file interne — rien ne part vers le client — d'où l'absence
+    // d'approbation, comme le compte rendu d'un agent sur son propre work item.
+    tools.set("support_desk", {
+      family: "DATA",
+      def: {
+        name: "support_desk",
+        description:
+          "The support queue fed by the project's public agents (ResolveAI triage). " +
+          "action=queue lists requests (filters: status open|in_progress|closed|auto, priority low|normal|high|urgent, intent, agent_id, overdue, since_days). " +
+          "action=get returns one request with its full conversation transcript. " +
+          "action=update sets status/priority/assignee and/or appends a note. " +
+          "action=stats returns real period figures (volume, automation rate, SLA breaches, by intent/priority/route) — use them as-is in reports, never estimate.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["queue", "get", "update", "stats"] },
+            id: { type: "string", description: "Request id (get, update)." },
+            status: { type: "string", description: "queue filter, or new status for update (open, in_progress, closed)." },
+            priority: { type: "string", description: "queue filter, or new priority for update (low, normal, high, urgent)." },
+            intent: { type: "string", description: "queue filter: intent key (e.g. remboursement, bug)." },
+            agent_id: { type: "string", description: "Restrict to one public agent." },
+            overdue: { type: "boolean", description: "queue: only open requests past their SLA deadline." },
+            since_days: { type: "number", description: "Period in days (default 30, max 365)." },
+            limit: { type: "number", description: "queue: max rows (default 25, max 100)." },
+            note: { type: "string", description: "update: internal note to append (what was done, what's next)." },
+            assignee: { type: "string", description: "update: who owns the request now." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const { listTickets, getTicket, updateTicket, supportStats } = await import("./resolveai.ts");
+        const scope = { admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId };
+        const days = Math.min(Math.max(Number(args.since_days ?? 30) || 30, 1), 365);
+        const action = str(args.action);
+        if (action === "queue") {
+          const rows = await listTickets(scope, {
+            status: str(args.status) || undefined, priority: str(args.priority) || undefined,
+            intent: str(args.intent) || undefined, agent_id: str(args.agent_id) || undefined,
+            overdue: args.overdue === true, since_days: days, limit: Number(args.limit) || undefined,
+          });
+          return rows.length ? JSON.stringify(rows) : "No request matches these filters.";
+        }
+        if (action === "get") {
+          const id = str(args.id);
+          if (!id) return "ERROR: id is required.";
+          const t = await getTicket(scope, id);
+          return t ? JSON.stringify(t) : "ERROR: request not found in this project.";
+        }
+        if (action === "update") {
+          const id = str(args.id);
+          if (!id) return "ERROR: id is required.";
+          return await updateTicket(scope, id, {
+            status: str(args.status) || undefined, priority: str(args.priority) || undefined,
+            note: str(args.note) || undefined,
+            assignee: typeof args.assignee === "string" ? args.assignee : undefined,
+          }, ctx.agentName || "agent");
+        }
+        if (action === "stats") {
+          return JSON.stringify(await supportStats(scope, days, str(args.agent_id) || undefined));
+        }
+        return "ERROR: action must be queue, get, update or stats.";
+      },
+    });
+    summaryLines.push("- support_desk: the support queue triaged by ResolveAI (read requests and transcripts, update status/notes, real period stats).");
+  }
+
+  if (hasKind("leads")) {
+    // LeadSense : qualifier les prospects sur la grille de l'entreprise, repérer
+    // ceux à appeler tout de suite, les affecter, et publier le tableau
+    // prédéfini (livrable lead_board). Les écritures ne touchent que la base
+    // LeadSense ; mettre à jour le CRM ou prévenir un commercial passe par les
+    // outils crm / messagerie, avec leurs propres approbations.
+    tools.set("lead_sense", {
+      family: "DATA",
+      def: {
+        name: "lead_sense",
+        description:
+          "Qualify inbound prospects on the company's own grid (LeadSense). " +
+          "action=inbound lists NEW unqualified prospects (pre-sales requests from public agents, recent CRM people records). " +
+          "action=qualify scores ONE prospect: pass message + whatever you know (name, email, company, role, source, source_ref) and, if you researched the company, a short factual `context`; it returns type, per-criterion levels, score 0-100, tier A-D, HOT flag and the assigned sales rep, and suggests CRM field updates. " +
+          "action=queue lists qualified prospects (filters tier, hot, status, rep). action=update sets status/rep/note. " +
+          "action=publish_board saves the predefined LeadSense board deliverable from the REAL rows — you only provide title, headline and recommendations. " +
+          "A HOT prospect must be passed on right away: tell the assigned rep (email/Slack tool) or the user.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["inbound", "qualify", "queue", "update", "publish_board"] },
+            message: { type: "string", description: "qualify: the prospect's request, verbatim." },
+            name: { type: "string" }, email: { type: "string" }, company: { type: "string" }, role: { type: "string" },
+            source: { type: "string", description: "qualify: where it came from (public_agent, crm, form, email, …)." },
+            source_ref: { type: "string", description: "qualify: id of the source item (from action=inbound) — avoids qualifying it twice." },
+            context: { type: "string", description: "qualify: facts you found yourself (company size, sector, news). Never invent." },
+            fields: { type: "object", description: "qualify: other known fields (country, size, budget…)." },
+            id: { type: "string", description: "update: LeadSense prospect id." },
+            status: { type: "string", description: "queue filter, or new status: new, contacted, qualified, disqualified, won, lost." },
+            tier: { type: "string", description: "queue filter: A, B, C or D." },
+            hot: { type: "boolean", description: "queue filter: only hot prospects." },
+            rep: { type: "string", description: "queue filter / update: sales rep name." },
+            note: { type: "string", description: "update: note to append." },
+            since_days: { type: "number", description: "inbound / queue / publish_board period (default 14 / 30 / 30)." },
+            title: { type: "string", description: "publish_board: board title." },
+            headline: { type: "string", description: "publish_board: 1-2 sentence reading of the period, grounded in the figures." },
+            recommendations: { type: "array", items: { type: "string" }, description: "publish_board: concrete next actions." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const ls = await import("./leadsense.ts");
+        const action = str(args.action);
+        const days = (d: number) => Math.min(Math.max(Number(args.since_days ?? d) || d, 1), 365);
+        const sinceIso = (d: number) => new Date(Date.now() - days(d) * 86400_000).toISOString();
+
+        if (action === "inbound") {
+          const since = sinceIso(14);
+          const { data: done } = await ctx.admin.from("leadsense_leads").select("source, source_ref")
+            .eq("project_id", ctx.projectId).not("source_ref", "is", null).gte("created_at", new Date(Date.now() - 90 * 86400_000).toISOString());
+          const seen = new Set(((done ?? []) as Array<{ source: string; source_ref: string }>).map((d) => `${d.source}:${d.source_ref}`));
+          const out: Array<Record<string, unknown>> = [];
+          const { data: tickets } = await ctx.admin.from("resolve_tickets")
+            .select("id, first_message, last_message, created_at")
+            .eq("project_id", ctx.projectId).eq("intent", "avant_vente").eq("source", "widget")
+            .gte("created_at", since).order("created_at", { ascending: false }).limit(50);
+          for (const t of (tickets ?? []) as Array<{ id: string; first_message: string | null; last_message: string | null; created_at: string }>) {
+            if (seen.has(`public_agent:${t.id}`)) continue;
+            out.push({ source: "public_agent", source_ref: t.id, message: t.first_message, last_message: t.last_message, at: t.created_at });
+          }
+          const { data: objs } = await ctx.admin.from("crm_objects").select("id, slug")
+            .eq("project_id", ctx.projectId).in("slug", ["people", "leads", "contacts", "prospects"]);
+          const objIds = ((objs ?? []) as Array<{ id: string }>).map((o) => o.id);
+          if (objIds.length) {
+            const { data: recs } = await ctx.admin.from("crm_records").select("id, data, created_at")
+              .in("object_id", objIds).gte("created_at", since).order("created_at", { ascending: false }).limit(50);
+            for (const r of (recs ?? []) as Array<{ id: string; data: Record<string, unknown>; created_at: string }>) {
+              if (seen.has(`crm:${r.id}`)) continue;
+              out.push({ source: "crm", source_ref: r.id, fields: r.data, at: r.created_at });
+            }
+          }
+          return out.length
+            ? JSON.stringify(out.slice(0, 60))
+            : "No new unqualified prospect in this period.";
+        }
+
+        if (action === "qualify") {
+          const message = str(args.message).trim();
+          if (!message) return "ERROR: message is required (the prospect's request, verbatim).";
+          const config = await ls.loadLeadConfig(ctx.admin, ctx.projectId);
+          const email = str(args.email) || null;
+          const enrichment = await ls.enrichFromCrm(ctx.admin, ctx.projectId, email);
+          const lead = {
+            name: str(args.name) || undefined, email: email ?? undefined, company: str(args.company) || undefined,
+            role: str(args.role) || undefined, message, source: str(args.source) || undefined,
+            source_ref: str(args.source_ref) || undefined, context: str(args.context) || undefined,
+            fields: (args.fields && typeof args.fields === "object") ? args.fields as Record<string, unknown> : undefined,
+          };
+          const q = await ls.qualifyLead(
+            { admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId, runId: ctx.runId }, config, lead, enrichment,
+          );
+          if (q === "off") return "LeadSense is turned off for this workspace (Admin → Gouvernance IA → Jugement rapide → « LeadSense — qualification »). Do not score the prospect yourself; tell the user.";
+          if (!q) return "ERROR: the qualification service did not answer. Retry once later; do not invent a score.";
+
+          const row = {
+            workspace_id: ctx.workspaceId, project_id: ctx.projectId, agent_id: ctx.agentId, run_id: ctx.runId,
+            source: lead.source ?? "agent", source_ref: lead.source_ref ?? null,
+            name: lead.name ?? null, email: lead.email ?? null, company: lead.company ?? null, role: lead.role ?? null,
+            message: message.slice(0, 4000), context: lead.context?.slice(0, 2000) ?? null,
+            lead_type: q.type.key, lead_type_label: q.type.label, qualifies: q.type.qualify,
+            criteria: q.criteria, score: q.score, tier: q.tier, hot: q.hot, hot_p: Number(q.hotP.toFixed(3)),
+            rep_id: q.rep?.id ?? null, rep_name: q.rep?.name ?? null, enrichment, mode: q.mode,
+            updated_at: new Date().toISOString(),
+          };
+          let id: string | null = null;
+          if (row.source_ref) {
+            const { data: prev } = await ctx.admin.from("leadsense_leads").select("id")
+              .eq("project_id", ctx.projectId).eq("source", row.source).eq("source_ref", row.source_ref).maybeSingle();
+            if (prev) {
+              id = (prev as { id: string }).id;
+              await ctx.admin.from("leadsense_leads").update(row).eq("id", id);
+            }
+          }
+          if (!id) {
+            const { data: ins, error } = await ctx.admin.from("leadsense_leads").insert(row).select("id").maybeSingle();
+            if (error) return `ERROR: could not save the prospect: ${error.message}`;
+            id = (ins as { id?: string } | null)?.id ?? null;
+          }
+          return JSON.stringify({
+            id, type: q.type.label, is_prospect: q.type.qualify,
+            criteria: Object.fromEntries(config.criteria.map((c) => [c.label, `${q.criteria[c.key] ?? "?"}/3`])),
+            score: q.score, tier: q.tier, hot: q.hot,
+            assigned_rep: q.rep ? { name: q.rep.name, email: q.rep.email ?? null } : null,
+            rep_unsure: q.rep == null && config.reps.length > 1 && q.type.qualify,
+            already_in_crm: enrichment.crm_matches.map((m) => ({ object: m.object, title: m.title, id: m.id })),
+            suggested_crm_update: q.type.qualify ? { lead_score: q.score, lead_tier: q.tier, owner: q.rep?.name ?? null } : null,
+            observation_mode: q.mode === "shadow",
+            next: q.hot
+              ? `HOT — pass it on now${q.rep ? ` to ${q.rep.name}${q.rep.email ? ` (${q.rep.email})` : ""}` : " to the user (no rep assigned)"}.`
+              : q.type.qualify ? "Normal follow-up." : "Not a prospect — route it elsewhere or ignore.",
+          });
+        }
+
+        if (action === "queue") {
+          let q = ctx.admin.from("leadsense_leads")
+            .select("id, name, company, email, role, source, lead_type_label, score, tier, hot, rep_name, status, created_at")
+            .eq("project_id", ctx.projectId).eq("qualifies", true).gte("created_at", sinceIso(30))
+            .order("hot", { ascending: false }).order("score", { ascending: false, nullsFirst: false }).limit(50);
+          if (str(args.tier)) q = q.eq("tier", str(args.tier).toUpperCase());
+          if (args.hot === true) q = q.eq("hot", true);
+          if (str(args.status)) q = q.eq("status", str(args.status));
+          if (str(args.rep)) q = q.eq("rep_name", str(args.rep));
+          const { data } = await q;
+          return (data ?? []).length ? JSON.stringify(data) : "No prospect matches these filters.";
+        }
+
+        if (action === "update") {
+          const id = str(args.id);
+          if (!id) return "ERROR: id is required.";
+          const { data: cur } = await ctx.admin.from("leadsense_leads").select("id, notes")
+            .eq("id", id).eq("project_id", ctx.projectId).maybeSingle();
+          if (!cur) return "ERROR: prospect not found in this project.";
+          const upd: Record<string, unknown> = { updated_at: new Date().toISOString() };
+          const status = str(args.status);
+          if (status) {
+            if (!["new", "contacted", "qualified", "disqualified", "won", "lost"].includes(status)) return "ERROR: invalid status.";
+            upd.status = status;
+          }
+          if (str(args.rep)) upd.rep_name = str(args.rep).slice(0, 120);
+          if (str(args.note).trim()) {
+            const notes = Array.isArray((cur as { notes?: unknown }).notes) ? (cur as { notes: unknown[] }).notes : [];
+            upd.notes = [...notes, { at: new Date().toISOString(), by: ctx.agentName || "agent", text: str(args.note).trim().slice(0, 2000) }].slice(-50);
+          }
+          const { error } = await ctx.admin.from("leadsense_leads").update(upd).eq("id", id);
+          return error ? `ERROR: ${error.message}` : "OK";
+        }
+
+        if (action === "publish_board") {
+          const headline = str(args.headline).trim();
+          if (!headline) return "ERROR: headline is required — your 1-2 sentence reading of the figures (call action=queue first).";
+          const period = days(30);
+          const { data } = await ctx.admin.from("leadsense_leads")
+            .select("id, name, email, company, role, source, lead_type_label, qualifies, criteria, score, tier, hot, rep_name, status, message, created_at")
+            .eq("project_id", ctx.projectId).gte("created_at", sinceIso(30)).limit(1000);
+          const rows = (data ?? []) as Parameters<typeof ls.buildLeadBoard>[0];
+          if (!rows.length) return "No prospect in this period — nothing to publish. Qualify some prospects first.";
+          const config = await ls.loadLeadConfig(ctx.admin, ctx.projectId);
+          const title = str(args.title).trim() || `LeadSense — ${period} derniers jours`;
+          const recs = Array.isArray(args.recommendations) ? (args.recommendations as unknown[]).map((x) => String(x)).filter(Boolean) : [];
+          const board = ls.buildLeadBoard(rows, config, { title, headline, recommendations: recs, period_days: period });
+          await ctx.createDeliverable({ kind: "lead_board", name: title, content: JSON.stringify(board), summary: headline.slice(0, 280) });
+          return `Board « ${title} » published (${rows.length} prospects). It opens as the LeadSense view in the deliverables — do not re-list its content in your reply.`;
+        }
+
+        return "ERROR: action must be inbound, qualify, queue, update or publish_board.";
+      },
+    });
+    summaryLines.push("- lead_sense: LeadSense prospect qualification (inbound, qualify on the company grid, queue, update, publish the LeadSense board).");
+  }
+
+  if (hasKind("soc")) {
+    // SentinelFlow : la file des alertes de sécurité du projet, triée par Jev
+    // sur des critères vérifiables. L'agent enquête, corrèle, documente et
+    // PROPOSE — aucune remédiation ne part d'ici : elle devient une proposition
+    // qu'une personne valide dans l'écran SentinelFlow.
+    tools.set("sentinel", {
+      family: "DATA",
+      def: {
+        name: "sentinel",
+        description:
+          "SentinelFlow security alert triage for this project. " +
+          "action=queue lists alerts (filters status new|untriaged|triaged|escalated|investigating|closed_fp|closed_resolved, min_priority 0-3, host, category). " +
+          "action=get returns one alert with its raw payload, its asset, and CORRELATED alerts (same host, IP or user within 24 h). " +
+          "action=update sets status and a verdict note (closing as false positive requires a stated, checkable reason). " +
+          "action=propose_remediation records a remediation for HUMAN validation — it never executes anything. " +
+          "action=ingest pushes alerts you read from a connector (security mailbox, Slack channel, vendor tool) as JSON objects. " +
+          "action=triage_now triages pending alerts. action=publish_board saves the predefined SOC board deliverable from the REAL rows — you only write title, headline and recommendations.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["queue", "get", "update", "propose_remediation", "ingest", "triage_now", "publish_board"] },
+            id: { type: "string", description: "Alert id (get, update, propose_remediation)." },
+            status: { type: "string", description: "queue filter, or new status for update: investigating, escalated, closed_fp, closed_resolved." },
+            min_priority: { type: "number", description: "queue: minimum priority 0-3." },
+            host: { type: "string" }, category: { type: "string" },
+            note: { type: "string", description: "update: your verdict and the evidence behind it." },
+            playbook: { type: "string", description: "propose_remediation: playbook key (enqueter, isoler_poste, reinitialiser_compte, bloquer_ip, corriger, clore)." },
+            remediation: { type: "string", description: "propose_remediation: the exact action to take, on what target." },
+            justification: { type: "string", description: "propose_remediation: why, with the evidence." },
+            alerts: { type: "array", items: { type: "object" }, description: "ingest: alert objects (title, severity, host, source.ip, rule, timestamp…)." },
+            since_days: { type: "number", description: "queue / publish_board period (default 7)." },
+            title: { type: "string" }, headline: { type: "string" },
+            recommendations: { type: "array", items: { type: "string" } },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const sf = await import("./sentinel.ts");
+        const action = str(args.action);
+        const days = Math.min(Math.max(Number(args.since_days ?? 7) || 7, 1), 90);
+        const since = new Date(Date.now() - days * 86400_000).toISOString();
+        const cols = "id, title, severity, priority, gravity, category, status, host, src_ip, dst_ip, user_name, rule_id, rule_name, mitre, fp_verified, fp_hint_p, escalate, playbook, occurrences, occurred_at, source_id";
+
+        if (action === "queue") {
+          let q = ctx.admin.from("sentinel_alerts").select(cols)
+            .eq("project_id", ctx.projectId).gte("occurred_at", since)
+            .order("priority", { ascending: false, nullsFirst: false }).order("occurred_at", { ascending: false }).limit(50);
+          if (str(args.status)) q = q.eq("status", str(args.status));
+          else q = q.not("status", "in", "(closed_fp,closed_resolved)");
+          if (Number.isFinite(Number(args.min_priority))) q = q.gte("priority", Number(args.min_priority));
+          if (str(args.host)) q = q.eq("host", str(args.host));
+          if (str(args.category)) q = q.eq("category", str(args.category));
+          const { data } = await q;
+          return (data ?? []).length ? JSON.stringify(data) : "No alert matches these filters.";
+        }
+
+        if (action === "get") {
+          const id = str(args.id);
+          if (!id) return "ERROR: id is required.";
+          const { data: a } = await ctx.admin.from("sentinel_alerts").select("*").eq("id", id).eq("project_id", ctx.projectId).maybeSingle();
+          if (!a) return "ERROR: alert not found in this project.";
+          const alert = a as Record<string, unknown> & { host: string | null; src_ip: string | null; user_name: string | null; occurred_at: string };
+          const around = Date.parse(alert.occurred_at);
+          const ors = [
+            alert.host ? `host.eq.${alert.host.replace(/[,()]/g, "")}` : null,
+            alert.src_ip ? `src_ip.eq.${alert.src_ip.replace(/[,()]/g, "")}` : null,
+            alert.user_name ? `user_name.eq.${alert.user_name.replace(/[,()]/g, "")}` : null,
+          ].filter(Boolean).join(",");
+          const related = ors
+            ? (await ctx.admin.from("sentinel_alerts").select("id, title, priority, category, status, host, src_ip, user_name, occurred_at")
+                .eq("project_id", ctx.projectId).neq("id", id).or(ors)
+                .gte("occurred_at", new Date(around - 24 * 3600_000).toISOString())
+                .lte("occurred_at", new Date(around + 24 * 3600_000).toISOString()).limit(30)).data ?? []
+            : [];
+          const { data: assets } = await ctx.admin.from("sentinel_assets").select("name, ips, criticality, owner, tags").eq("project_id", ctx.projectId).limit(2000);
+          const asset = ((assets ?? []) as Array<{ name: string; ips: string[] }>).find((x) =>
+            (alert.host && x.name.toLowerCase() === alert.host.toLowerCase()) || (x.ips ?? []).includes(String(alert.src_ip ?? "")));
+          const { data: actions } = await ctx.admin.from("sentinel_actions").select("playbook, remediation, status, created_at").eq("alert_id", id);
+          return cap(JSON.stringify({ alert, asset: asset ?? null, correlated_24h: related, remediations: actions ?? [] }), 14000);
+        }
+
+        if (action === "update") {
+          const id = str(args.id);
+          const status = str(args.status);
+          const note = str(args.note).trim();
+          if (!id) return "ERROR: id is required.";
+          if (status && !["investigating", "escalated", "closed_fp", "closed_resolved", "triaged"].includes(status)) return "ERROR: invalid status.";
+          if (status === "closed_fp" && note.length < 20) return "ERROR: closing as a false positive needs a checkable reason in `note` (what makes it legitimate, and how you verified it).";
+          const { data: cur } = await ctx.admin.from("sentinel_alerts").select("id, notes").eq("id", id).eq("project_id", ctx.projectId).maybeSingle();
+          if (!cur) return "ERROR: alert not found in this project.";
+          const upd: Record<string, unknown> = { updated_at: new Date().toISOString() };
+          if (status) upd.status = status;
+          if (status.startsWith("closed")) { upd.closed_at = new Date().toISOString(); upd.resolution = note.slice(0, 2000) || null; }
+          if (note) {
+            const notes = Array.isArray((cur as { notes?: unknown }).notes) ? (cur as { notes: unknown[] }).notes : [];
+            upd.notes = [...notes, { at: new Date().toISOString(), by: ctx.agentName || "agent", text: note.slice(0, 2000) }].slice(-50);
+          }
+          const { error } = await ctx.admin.from("sentinel_alerts").update(upd).eq("id", id);
+          return error ? `ERROR: ${error.message}` : "OK";
+        }
+
+        if (action === "propose_remediation") {
+          const id = str(args.id);
+          const remediation = str(args.remediation).trim();
+          if (!id || !remediation) return "ERROR: id and remediation are required.";
+          const { data: a } = await ctx.admin.from("sentinel_alerts").select("id, workspace_id").eq("id", id).eq("project_id", ctx.projectId).maybeSingle();
+          if (!a) return "ERROR: alert not found in this project.";
+          const { error } = await ctx.admin.from("sentinel_actions").insert({
+            workspace_id: ctx.workspaceId, project_id: ctx.projectId, alert_id: id,
+            playbook: str(args.playbook) || null, remediation: remediation.slice(0, 2000),
+            justification: str(args.justification).slice(0, 4000) || null,
+            status: "pending", proposed_by_agent: ctx.agentId, run_id: ctx.runId,
+          });
+          if (error) return `ERROR: ${error.message}`;
+          return "Remediation recorded and WAITING FOR HUMAN VALIDATION in SentinelFlow. Do not perform it yourself; tell the user it needs their go-ahead.";
+        }
+
+        if (action === "ingest") {
+          const alerts = Array.isArray(args.alerts) ? (args.alerts as unknown[]) : [];
+          if (!alerts.length) return "ERROR: alerts must be a non-empty array of objects.";
+          let { data: src } = await ctx.admin.from("sentinel_sources").select("*")
+            .eq("project_id", ctx.projectId).eq("kind", "agent").limit(1).maybeSingle();
+          if (!src) {
+            const created = await ctx.admin.from("sentinel_sources").insert({
+              workspace_id: ctx.workspaceId, project_id: ctx.projectId, name: "Agents (connecteurs)", kind: "agent", vendor: "generic", enabled: true,
+            }).select("*").maybeSingle();
+            src = created.data;
+          }
+          if (!src) return "ERROR: could not create the agent source.";
+          const r = await sf.ingest(ctx.admin, src as import("./sentinel.ts").SourceRow, alerts.slice(0, 200));
+          return JSON.stringify({ ...r, note: "Triage runs within a minute (or call action=triage_now)." });
+        }
+
+        if (action === "triage_now") {
+          const n = await sf.triagePending(ctx.admin, { projectId: ctx.projectId, limit: 20, deadline: Date.now() + 40_000 });
+          return `${n} alert(s) triaged.`;
+        }
+
+        if (action === "publish_board") {
+          const headline = str(args.headline).trim();
+          if (!headline) return "ERROR: headline is required — your reading of the period, grounded in the figures (call action=queue first).";
+          const { data } = await ctx.admin.from("sentinel_alerts").select(cols)
+            .eq("project_id", ctx.projectId).gte("occurred_at", since).limit(5000);
+          const rows = (data ?? []) as Array<Record<string, unknown>>;
+          if (!rows.length) return "No alert in this period — nothing to publish.";
+          const { data: acts } = await ctx.admin.from("sentinel_actions").select("id, alert_id, playbook, remediation, status, created_at")
+            .eq("project_id", ctx.projectId).gte("created_at", since).limit(500);
+          const count = (key: (r: Record<string, unknown>) => unknown) => {
+            const m: Record<string, number> = {};
+            for (const r of rows) { const k = key(r); if (k != null && k !== "") m[String(k)] = (m[String(k)] ?? 0) + 1; }
+            return Object.fromEntries(Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 12));
+          };
+          const title = str(args.title).trim() || `SentinelFlow — ${days} derniers jours`;
+          const board = {
+            type: "soc_board", version: 1, title, generated_at: new Date().toISOString(), period_days: days,
+            headline, recommendations: (Array.isArray(args.recommendations) ? args.recommendations as unknown[] : []).map(String).slice(0, 8),
+            totals: {
+              alerts: rows.length,
+              occurrences: rows.reduce((n, r) => n + (Number(r.occurrences) || 1), 0),
+              escalated: rows.filter((r) => r.status === "escalated").length,
+              open: rows.filter((r) => !String(r.status).startsWith("closed")).length,
+              false_positives_proven: rows.filter((r) => Array.isArray(r.fp_verified) && (r.fp_verified as unknown[]).length).length,
+              closed_fp: rows.filter((r) => r.status === "closed_fp").length,
+              closed_resolved: rows.filter((r) => r.status === "closed_resolved").length,
+            },
+            by_priority: count((r) => r.priority),
+            by_category: count((r) => r.category ?? "non triée"),
+            by_status: count((r) => r.status),
+            top_hosts: count((r) => r.host),
+            top_rules: count((r) => r.rule_name ?? r.title),
+            escalations: rows.filter((r) => r.status === "escalated" || Number(r.priority) >= 3)
+              .sort((a, b) => Number(b.priority ?? 0) - Number(a.priority ?? 0)).slice(0, 25)
+              .map((r) => ({ id: r.id, title: r.title, priority: r.priority, category: r.category, host: r.host, src_ip: r.src_ip, user: r.user_name, status: r.status, playbook: r.playbook, at: r.occurred_at })),
+            remediations: (acts ?? []).slice(0, 30),
+          };
+          await ctx.createDeliverable({ kind: "soc_board", name: title, content: JSON.stringify(board), summary: headline.slice(0, 280) });
+          return `SOC board « ${title} » published (${rows.length} alerts). It opens as the SentinelFlow view in the deliverables — do not re-list its content.`;
+        }
+
+        return "ERROR: unknown action.";
+      },
+    });
+    summaryLines.push("- sentinel: SentinelFlow SOC triage (queue, investigate with correlation, update, propose remediations for human validation, ingest from connectors, publish the SOC board).");
+  }
+
+  if (hasKind("governance")) {
+    // PolicyGuard : ce que les politiques ont décidé sur les actions des agents
+    // du projet, et ce que les personnes ont validé. Lecture seule — un agent
+    // de conformité rédige à partir de ces chiffres, il ne les estime pas.
+    tools.set("policy_audit", {
+      family: "DATA",
+      def: {
+        name: "policy_audit",
+        description:
+          "Real figures from PolicyGuard for this project: actions evaluated, risk levels, decisions (allow/approve/block), " +
+          "cases stricter than the old rule, human validations (approved/rejected/pending) and the blocked actions. " +
+          "Use it as-is for compliance reports — never estimate.",
+        parameters: {
+          type: "object",
+          properties: { since_days: { type: "number", description: "Period in days (default 30, max 365)." } },
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const { policyAudit } = await import("./policyguard.ts");
+        const days = Math.min(Math.max(Number(args.since_days ?? 30) || 30, 1), 365);
+        return JSON.stringify(await policyAudit(ctx.admin, ctx.projectId, days));
+      },
+    });
+    summaryLines.push("- policy_audit: PolicyGuard figures (risk levels, decisions, human validations) for compliance reports.");
+  }
+
   if (hasKind("tracker")) {
     const READS = new Set([
-      "list_projects", "list_work_items", "get_work_item", "my_work",
+      "list_projects", "list_work_items", "get_work_item", "list_comments", "my_work",
       "list_cycles", "list_modules", "list_states", "search",
+      "list_assets", "get_asset",
     ]);
+    const WRITES = new Set([
+      "create_work_item", "update_work_item", "comment", "assign_self", "unassign_self",
+      "break_down", "plan_work_item", "create_cycle", "create_module",
+      "attach_asset", "create_asset",
+    ]);
+    // Les noms que les modèles inventent le plus souvent, ramenés à la vraie
+    // action. Sans ça, « get_work_item_comments » n'était pas une lecture
+    // CONNUE, passait donc pour une écriture, et une personne recevait une
+    // demande d'approbation pour une action qui n'existe pas (29/09).
+    const ALIASES: Record<string, string> = {
+      get_work_item_comments: "list_comments", get_comments: "list_comments", list_issue_comments: "list_comments",
+      get_issue_comments: "list_comments", read_comments: "list_comments",
+      list_issues: "list_work_items", get_issues: "list_work_items", get_issue: "get_work_item",
+      list_resources: "list_assets", get_resource: "get_asset", read_asset: "get_asset",
+      list_project_assets: "list_assets", attach_resource: "attach_asset",
+      read_work_item: "get_work_item", get_project_list: "list_projects", get_projects: "list_projects",
+      add_comment: "comment", create_comment: "comment", post_comment: "comment",
+    };
 
     /** Les projets où cet agent a le droit d'agir, et son rôle sur chacun. */
     const scope = async (): Promise<Map<string, string>> => {
@@ -5877,7 +6907,8 @@ export function buildInternalToolset(
     const isOwnProgressReport = async (
       action: string, params: Record<string, unknown>,
     ): Promise<boolean> => {
-      if (action !== "update_work_item" && action !== "comment") return false;
+      if (action !== "update_work_item" && action !== "comment"
+        && action !== "attach_asset" && action !== "create_asset") return false;
       const target = str(params.issue_id);
       if (!target) return false;
       if (action === "update_work_item"
@@ -5899,7 +6930,9 @@ export function buildInternalToolset(
           "assign_self pour agir. Tu peux aussi ORGANISER le travail, pas seulement l'exécuter : " +
           "break_down découpe un sujet en sous-tâches, plan_work_item le range dans un cycle, des " +
           "modules, sous un parent et lui pose des dates, create_cycle et create_module ouvrent les " +
-          "cadres qui manquent." +
+          "cadres qui manquent. Avant d'exécuter, REGARDE LA MATIÈRE : get_work_item liste les " +
+          "ressources de l'item, get_asset en donne le contenu ou l'adresse, list_assets montre " +
+          "la bibliothèque du projet. Ce que tu produis se range avec create_asset." +
           (!ctx.autopilot ? " Les écritures sont soumises à approbation humaine avant de partir." : ""),
         parameters: {
           type: "object",
@@ -5907,18 +6940,19 @@ export function buildInternalToolset(
             action: {
               type: "string",
               enum: [
-                "list_projects", "my_work", "list_work_items", "get_work_item", "search",
-                "list_states", "list_cycles", "list_modules",
+                "list_projects", "my_work", "list_work_items", "get_work_item", "list_comments", "search",
+                "list_states", "list_cycles", "list_modules", "list_assets", "get_asset",
                 "create_work_item", "update_work_item", "comment", "assign_self", "unassign_self",
                 "break_down", "plan_work_item", "create_cycle", "create_module",
+                "attach_asset", "create_asset",
               ],
-              description: "L'opération. Tout ce qui suit list_modules écrit.",
+              description: "L'opération. Tout ce qui suit get_asset écrit. Aucune autre valeur n'existe.",
             },
             params: {
               type: "object",
               description:
                 "list_work_items: {project_id, state_group?, priority?, assigned_to_me?, limit?}. " +
-                "get_work_item: {issue_id}. search: {query, limit?}. " +
+                "get_work_item: {issue_id}. list_comments: {issue_id, limit?} — tout le fil. search: {query, limit?}. " +
                 "list_states/list_cycles/list_modules: {project_id}. " +
                 "create_work_item: {project_id, name, description?, priority?, state_id?, target_date?}. " +
                 "update_work_item: {issue_id, name?, description?, priority?, state_id?, state_group?, start_date?, target_date?} — " +
@@ -5928,7 +6962,13 @@ export function buildInternalToolset(
                 "break_down: {issue_id, titles: [string]} — crée les sous-items d'un coup. " +
                 "plan_work_item: {issue_id, cycle_id?, module_ids?: [string], parent_id?, start_date?, target_date?} " +
                 "(chaîne vide = retirer). create_cycle: {project_id, name, description?, start_date?, end_date?}. " +
-                "create_module: {project_id, name, description?, status?, start_date?, target_date?}.",
+                "create_module: {project_id, name, description?, status?, start_date?, target_date?}. " +
+                "list_assets: {project_id, kind?, query?, limit?} — la bibliothèque du projet. " +
+                "get_asset: {asset_id} — rend l'adresse ET le contenu quand il y en a un : c'est là que tu " +
+                "lis la matière sur laquelle tu travailles. " +
+                "attach_asset: {issue_id, asset_id, role?} role vaut input|reference|output. " +
+                "create_asset: {project_id, name, kind?, url?, content?, description?, issue_id?, role?} — " +
+                "range ce que tu PRODUIS dans la bibliothèque ; avec issue_id il est rattaché à l'item.",
             },
             reason: {
               type: "string",
@@ -5940,10 +6980,18 @@ export function buildInternalToolset(
         },
       },
       run: async (args) => {
-        const action = str(args.action);
+        const rawAction = str(args.action);
+        const action = ALIASES[rawAction] ?? rawAction;
         const params = (args.params && typeof args.params === "object")
           ? args.params as Record<string, unknown>
           : {};
+
+        // Une action qui n'existe pas n'est ni une lecture ni une écriture :
+        // on le dit tout de suite, sans jamais la soumettre à approbation.
+        if (!READS.has(action) && !WRITES.has(action)) {
+          return `ERREUR : l'action « ${rawAction} » n'existe pas. Lectures : ${[...READS].join(", ")}. `
+            + `Écritures : ${[...WRITES].join(", ")}. Les commentaires d'un work item se lisent avec list_comments.`;
+        }
 
         const allowed = await trackerScope(ctx);
         if (allowed.size === 0) {
@@ -5964,13 +7012,18 @@ export function buildInternalToolset(
           if (role === "observer") {
             return "ERREUR : tu es observateur sur ce projet, tu peux lire mais pas écrire.";
           }
-          if (!ctx.autopilot && !(await isOwnProgressReport(action, params))) {
+          const g = await gate(ctx, {
+            tool: "tracker", action, params,
+            legacyApproval: !ctx.autopilot && !(await isOwnProgressReport(action, params)), knownWrite: true,
+          });
+          if (g.decision === "block") return g.message!;
+          if (g.decision === "approve") {
             return await awaitInlineApproval(ctx, {
               tool_name: "tracker",
               action_kind: "tracker_write",
               payload: { action, params, agent_id: ctx.agentId },
               reason: str(args.reason) || null,
-            }, `Suivi · ${action}`);
+            }, `Suivi · ${action}`, g.linkApproval);
           }
         }
 
@@ -6423,13 +7476,15 @@ export function buildInternalToolset(
       },
       run: async (args) => {
         const fnArgs = (args.args && typeof args.args === "object" ? args.args : {}) as Record<string, unknown>;
-        if (row.requires_approval) {
+        const g = await gate(ctx, { tool: toolName, action: slug, params: fnArgs, legacyApproval: !!row.requires_approval, knownWrite: false });
+        if (g.decision === "block") return g.message!;
+        if (g.decision === "approve") {
           return await awaitInlineApproval(ctx, {
             tool_name: toolName,
             action_kind: "edge_function",
             payload: { slug, args: fnArgs },
             reason: str(args.reason) || null,
-          }, row.name || toolName);
+          }, row.name || toolName, g.linkApproval);
         }
         return invokeEdgeFunction(slug, fnArgs);
       },
@@ -6467,13 +7522,18 @@ export function buildInternalToolset(
         parameters,
       },
       run: async (args) => {
-        if (row.requires_approval) {
+        const g = await gate(ctx, {
+          tool: toolName, action: `${method} ${row.name || "webhook"}`, params: args as Record<string, unknown>,
+          legacyApproval: !!row.requires_approval, knownWrite: method !== "GET",
+        });
+        if (g.decision === "block") return g.message!;
+        if (g.decision === "approve") {
           return await awaitInlineApproval(ctx, {
             tool_name: toolName,
             action_kind: "webhook",
             payload: { url, method, headers, args },
             reason: str(args.reason) || null,
-          }, row.name || toolName);
+          }, row.name || toolName, g.linkApproval);
         }
         return invokeWebhook(url, method, args, headers);
       },
@@ -6677,6 +7737,12 @@ export function buildInternalToolset(
     defs,
     defsFor,
     executor,
+    // La famille d'un outil, exposée : le classement par jugement rapide dit
+    // « ce tour a besoin d'EXECUTION », et il faut pouvoir traduire ça en noms
+    // d'outils sans recopier la table ici.
+    familyOf,
+    families: [...FAMILY_ORDER],
+    familyRules: FAMILY_META,
     capabilitySummary: buildCapabilityTree(tools, sandboxGuidance, summaryLines, DEFAULT_FAMILIES, CORE_TOOLS),
   };
 }
@@ -6718,7 +7784,7 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
   // alone, so the writing tools were being indexed under INTEGRATIONS — the one
   // family that does not ship by default. request_report is now the ONLY route
   // to a report, so an agent that cannot see it cannot produce one.
-  add_block: "DELIVER", publish_artifact: "DELIVER", request_report: "DELIVER",
+  add_block: "DELIVER", publish_artifact: "DELIVER", request_report: "DELIVER", generate_pdf: "DELIVER",
   save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY", search_past_work: "MEMORY",
   create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
   create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM", propose_mission: "TEAM", create_agent: "TEAM", create_workflow: "TEAM",

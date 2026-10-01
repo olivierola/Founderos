@@ -277,6 +277,7 @@ async function createMissionFromForm(admin: Admin, opts: {
 
   const { data: dash } = await admin.from("service_dashboards").select("name").eq("id", room.dashboard_id).maybeSingle();
   const decision = await routeTurn({
+    admin,
     room, dashboardName: (dash as { name?: string } | null)?.name ?? "workspace",
     assistant, roster, thread: [], openMissions: [], forceMission: true,
     userText: [opts.title, opts.objective].filter(Boolean).join("\n\n"),
@@ -363,6 +364,7 @@ async function orchestrateTurn(admin: Admin, opts: {
     }));
 
   const decision = await routeTurn({
+    admin,
     room, dashboardName: opts.dashboardName, assistant, roster, thread,
     userText: opts.userText,
     openMissions: (openRows ?? []) as Array<{ id: string; title: string }>,

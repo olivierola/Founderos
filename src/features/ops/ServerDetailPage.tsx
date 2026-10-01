@@ -29,6 +29,8 @@ import { cn } from "@/lib/utils";
 import { useOpsUrl } from "./hooks";
 import { RUNNER_IMPLEMENTED_JOB_TYPES } from "./types";
 import type { OpsServer, OpsJob, OpsJobType } from "./types";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 type ServerTab = "health" | "security" | "backups" | "env" | "actions" | "logs";
 
@@ -110,6 +112,7 @@ export function OpsServerDetailPage() {
 }
 
 function ServerActions({ server }: { server: OpsServer }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [probing, setProbing] = useState(false);
 
@@ -132,7 +135,7 @@ function ServerActions({ server }: { server: OpsServer }) {
   }
 
   async function remove() {
-    if (!confirm(`Disconnect ${server.name}? Encrypted credentials will be wiped. This is irreversible.`)) return;
+    if (!(await confirm(`Disconnect ${server.name}? Encrypted credentials will be wiped. This is irreversible.`))) return;
     await supabase.from("ops_servers").delete().eq("id", server.id);
     queryClient.invalidateQueries({ queryKey: ["ops_servers", server.project_id] });
     window.history.back();
@@ -307,12 +310,18 @@ function BackupsTab({ server: _server }: { server: OpsServer }) {
 }
 
 function EnvTab({ server }: { server: OpsServer }) {
+  // Le lien « Open Vault » pointait vers /app/:workspaceId/integrations/vault :
+  // un identifiant là où la route attend un slug, un segment projet manquant, et
+  // une page (integrations/vault) qui n'existe plus. Les connecteurs et leurs
+  // secrets vivent dans AI Workforce → Connecteurs.
+  const { workspaceSlug, projectSlug } = useParams();
+  void server;
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm">Environment variables</CardTitle>
-          <Link to={`/app/${server.workspace_id}/integrations/vault`}>
+          <Link to={`/app/${workspaceSlug}/${projectSlug}/agent/connectors`}>
             <Button size="sm" variant="outline" className="gap-1.5">
               <KeyRound className="h-3.5 w-3.5" /> Open Vault
             </Button>
@@ -329,6 +338,7 @@ function EnvTab({ server }: { server: OpsServer }) {
 }
 
 function ActionsTab({ server }: { server: OpsServer }) {
+  const toast = useToast();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState<string | null>(null);
 
@@ -355,7 +365,7 @@ function ActionsTab({ server }: { server: OpsServer }) {
       });
       queryClient.invalidateQueries({ queryKey: ["ops_jobs", server.project_id] });
     } catch (e: any) {
-      alert("Could not enqueue job: " + (e?.message ?? "edge function not deployed"));
+      toast.error("Could not enqueue job: " + (e?.message ?? "edge function not deployed"));
     } finally {
       setCreating(null);
     }

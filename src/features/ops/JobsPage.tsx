@@ -25,6 +25,8 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { JOB_TYPE_LABEL, RISK_COLOR } from "./types";
 import type { OpsJob, OpsJobLog, OpsJobStatus } from "./types";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const STATUS_FILTERS: { value: OpsJobStatus | "all" | "open"; label: string }[] = [
   { value: "open", label: "Open" },
@@ -159,6 +161,8 @@ function JobRow({ job, onOpen }: { job: OpsJob; onOpen: () => void }) {
 // ============================================================================
 
 function JobDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const logsEnd = useRef<HTMLDivElement>(null);
 
@@ -197,12 +201,12 @@ function JobDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ["ops_job", jobId] });
       queryClient.invalidateQueries({ queryKey: ["ops_jobs_list"] });
     } catch (e: any) {
-      alert("Could not approve: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not approve: " + (e?.message ?? "edge not deployed"));
     }
   }
 
   async function cancel() {
-    if (!confirm("Cancel this job?")) return;
+    if (!(await confirm("Cancel this job?"))) return;
     try {
       await callEdge("ops-approve-job", { job_id: jobId, decision: "cancel" });
       queryClient.invalidateQueries({ queryKey: ["ops_job", jobId] });

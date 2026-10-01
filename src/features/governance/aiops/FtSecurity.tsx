@@ -35,13 +35,14 @@ import {
 } from "../shared";
 import {
   COMPLIANCE_STATUS_META, AT_REST_LABELS, KEY_MGMT_LABELS, SECURITY_DEFAULTS,
-  newComplianceFramework, newFtRole, nextKeyRotation, timeAgo,
+  COMMON_FRAMEWORKS, newComplianceFramework, newFtRole, nextKeyRotation, timeAgo,
   type ComplianceFramework, type EncryptionPolicy, type FtRole,
 } from "./data";
 import {
   useFtRolesDb, useServersDb, useFtVersionsDb, useFtEndpointsDb, useSecurityConfigDb,
   endpointApprovalTitle, type FtRoleRow,
 } from "./db";
+import { useConfirm, usePromptText } from "@/components/ConfirmProvider";
 
 function Toggle({ on, onChange, disabled }: { on: boolean; onChange: () => void; disabled?: boolean }) {
   return (
@@ -75,6 +76,8 @@ function downloadFile(name: string, content: string, mime: string) {
 const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
 export function GovFtSecurityPage() {
+  const promptText = usePromptText();
+  const confirm = useConfirm();
   // Politique de sécurité persistée (chiffrement + programme de conformité).
   const { config, loading: cfgLoading, save: saveConfig } = useSecurityConfigDb();
   // Audit réel — chaque action du studio (train, deploy, approve, toggle…) écrit
@@ -137,8 +140,8 @@ export function GovFtSecurityPage() {
     const next = exists ? compliance.map((c) => (c.id === fw.id ? fw : c)) : [...compliance, fw];
     return guard(() => saveConfig({ ...config, compliance: next }, exists ? "compliance.updated" : "compliance.added", fw.name), "Référentiel enregistré");
   };
-  const removeFramework = (fw: ComplianceFramework) => {
-    if (!confirm(`Retirer « ${fw.name} » du programme de conformité ?`)) return;
+  const removeFramework = async (fw: ComplianceFramework) => {
+    if (!(await confirm(`Retirer « ${fw.name} » du programme de conformité ?`))) return;
     void guard(() => saveConfig({ ...config, compliance: compliance.filter((c) => c.id !== fw.id) }, "compliance.removed", fw.name), "Référentiel retiré");
   };
 
@@ -146,18 +149,18 @@ export function GovFtSecurityPage() {
     if (row) await updateRole(row.id, value);
     else await createRole(value);
   };
-  const deleteRole = (r: FtRoleRow) => {
-    if (!confirm(`Supprimer le rôle « ${r.role} » ?`)) return;
+  const deleteRole = async (r: FtRoleRow) => {
+    if (!(await confirm(`Supprimer le rôle « ${r.role} » ?`))) return;
     void guard(() => removeRole(r), "Rôle supprimé");
   };
 
-  const decideDeploy = (e: (typeof pendingDeploys)[number], approved: boolean) => {
-    const note = approved ? null : (prompt("Motif du rejet (optionnel) :") ?? "");
+  const decideDeploy = async (e: (typeof pendingDeploys)[number], approved: boolean) => {
+    const note = approved ? null : ((await promptText("Motif du rejet (optionnel) :")) ?? "");
     void guard(() => (approved ? approve(e, note) : reject(e, note || null)),
       approved ? "Déploiement approuvé" : "Déploiement rejeté");
   };
-  const decideRequest = (a: Approval, status: "approved" | "rejected" | "changes_requested") => {
-    const note = status === "approved" ? "" : (prompt("Motif de la décision (optionnel) :") ?? "");
+  const decideRequest = async (a: Approval, status: "approved" | "rejected" | "changes_requested") => {
+    const note = status === "approved" ? "" : ((await promptText("Motif de la décision (optionnel) :")) ?? "");
     void guard(() => govCrud.update(a.id, {
       status, decided_by: govCrud.userId, decided_at: new Date().toISOString(), decision_note: note || null,
     }, { action: `approval.${status}`, entityType: "approval", entityId: a.id, entityLabel: a.title }),
@@ -284,10 +287,25 @@ export function GovFtSecurityPage() {
           </Card>
         ))}
 
-        <Card className="flex items-center justify-center border-dashed p-4">
+        <Card className="flex flex-col items-center justify-center gap-2 border-dashed p-4">
           <Button variant="ghost" className="h-auto flex-col gap-1 py-3 text-xs text-muted-foreground" onClick={() => setEditingFw(newComplianceFramework())}>
             <Plus className="h-4 w-4" />Ajouter un référentiel
           </Button>
+          {/* Raccourci vers les référentiels courants. Le nom est pré-rempli,
+              le statut reste « non applicable » : c'est à l'équipe de l'établir. */}
+          {compliance.length === 0 && (
+            <div className="flex flex-wrap justify-center gap-1">
+              {COMMON_FRAMEWORKS.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => setEditingFw({ ...newComplianceFramework(), name, status: "non_applicable" })}
+                  className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                >
+                  + {name}
+                </button>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
 

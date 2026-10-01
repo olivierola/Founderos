@@ -139,6 +139,7 @@ export async function runTrackerAction(
       const { data: comments } = await db.from("pj_issue_comments")
         .select("comment_html, created_at").eq("issue_id", issueId)
         .order("created_at", { ascending: false }).limit(5);
+      const resources = await describeIssueAssets(db, issueId);
 
       return [
         `Nom : ${i.name}`,
@@ -147,11 +148,31 @@ export async function runTrackerAction(
         i.start_date ? `Début : ${i.start_date}` : null,
         i.target_date ? `Échéance : ${i.target_date}` : null,
         i.description_text ? `\nDescription :\n${String(i.description_text).slice(0, 2000)}` : null,
+        resources ? `\nRessources :\n${resources}` : null,
         (comments ?? []).length
           ? `\nDerniers commentaires :\n` + ((comments ?? []) as Array<Record<string, unknown>>)
               .map((c) => `- ${String(c.comment_html ?? "").replace(/<[^>]+>/g, "").slice(0, 200)}`).join("\n")
           : null,
       ].filter(Boolean).join("\n");
+    }
+
+    case "list_comments": {
+      if (!issueId) return "ERREUR : issue_id manquant.";
+      const { data: cur } = await db.from("pj_issues").select("pj_project_id").eq("id", issueId).maybeSingle();
+      if (!cur) return "Work item introuvable.";
+      if (!allowed.has(String((cur as { pj_project_id: string }).pj_project_id))) {
+        return "ERREUR : ce work item est hors de ton périmètre.";
+      }
+      const limit = Math.min(Math.max(Number(params.limit ?? 30) || 30, 1), 100);
+      const { data: comments } = await db.from("pj_issue_comments")
+        .select("comment_html, agent_name, created_at").eq("issue_id", issueId)
+        .order("created_at", { ascending: true }).limit(limit);
+      const rows = (comments ?? []) as Array<Record<string, unknown>>;
+      if (!rows.length) return "Aucun commentaire sur ce work item.";
+      return rows.map((c) =>
+        `- ${String(c.created_at ?? "").slice(0, 16).replace("T", " ")}${c.agent_name ? ` · ${c.agent_name}` : ""} : `
+        + String(c.comment_html ?? "").replace(/<[^>]+>/g, "").slice(0, 600),
+      ).join("\n");
     }
 
     case "search": {
@@ -469,6 +490,107 @@ export async function runTrackerAction(
       return "Commentaire publié.";
     }
 
+    case "list_assets": {
+      if (!pid) return "ERREUR : project_id manquant.";
+      if (!allowed.has(pid)) return "ERREUR : ce projet est hors de ton périmètre.";
+      let q = db.from("pj_assets")
+        .select("id, kind, name, description, url, storage_path, content, page_id, tags")
+        .eq("pj_project_id", pid).is("archived_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(Math.min(Number(params.limit) || 40, 100));
+      const kind = str(params.kind);
+      if (kind) q = q.eq("kind", kind);
+      const search = str(params.query);
+      if (search) q = q.ilike("name", `%${search}%`);
+      const { data } = await q;
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      if (!rows.length) return "Aucune ressource dans ce projet.";
+      return rows.map(assetLine).join("\n");
+    }
+
+    case "get_asset": {
+      const assetId = str(params.asset_id);
+      if (!assetId) return "ERREUR : asset_id manquant.";
+      const { data } = await db.from("pj_assets").select("*").eq("id", assetId).maybeSingle();
+      if (!data) return "Ressource introuvable.";
+      const a = data as Record<string, unknown>;
+      if (!allowed.has(String(a.pj_project_id))) {
+        return "ERREUR : cette ressource est hors de ton périmètre.";
+      }
+      // Une ressource « page » n'a ni adresse ni contenu propre : son texte est
+      // dans le wiki. Sans cette résolution, l'agent recevrait un titre seul et
+      // n'aurait aucun moyen de lire la spec qu'on lui a pourtant désignée.
+      let pageText = "";
+      if (a.page_id) {
+        const { data: page } = await db.from("pj_pages")
+          .select("name, description_html").eq("id", a.page_id).maybeSingle();
+        const html = String((page as { description_html?: string } | null)?.description_html ?? "");
+        pageText = html
+          .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+          .replace(/<[^>]+>/g, "")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+      }
+
+      return [
+        `${a.name} (${a.kind})`,
+        a.description ? String(a.description) : null,
+        a.url ? `Adresse : ${a.url}` : null,
+        a.storage_path ? `Fichier : ${a.storage_path}` : null,
+        // Le contenu en entier, ou presque : une ressource tronquée à deux
+        // lignes ne sert à rien, et 12 000 caractères tiennent dans un tour.
+        a.content ? `\nContenu${a.language ? ` (${a.language})` : ""} :\n${String(a.content).slice(0, 12000)}` : null,
+        pageText ? `\nPage du projet :\n${pageText.slice(0, 12000)}` : null,
+      ].filter(Boolean).join("\n");
+    }
+
+    case "create_asset": {
+      if (!pid) return "ERREUR : project_id manquant.";
+      if (!allowed.has(pid)) return "ERREUR : ce projet est hors de ton périmètre.";
+      const name = str(params.name);
+      if (!name) return "ERREUR : name manquant.";
+      const url = str(params.url);
+      const content = str(params.content);
+      if (!url && !content) return "ERREUR : une ressource sans url ni content ne pointe nulle part.";
+      const { data: proj } = await db.from("pj_projects")
+        .select("workspace_id").eq("id", pid).maybeSingle();
+      if (!proj) return "Projet introuvable.";
+      const { data, error } = await db.from("pj_assets").insert({
+        pj_project_id: pid, workspace_id: (proj as { workspace_id: string }).workspace_id,
+        kind: str(params.kind, "link"), name, description: str(params.description),
+        url: url || null, content: content || null, language: str(params.language) || null,
+      }).select("id, name, kind").single();
+      if (error) return `ERREUR : ${error.message}`;
+      const created = data as { id: string; name: string; kind: string };
+      // Rattachée dans la foulée quand l'agent dit à quel item elle se rapporte :
+      // une ressource produite et laissée dans la bibliothèque sans lien avec la
+      // tâche qui l'a produite est une ressource que personne ne retrouvera.
+      if (issueId) {
+        await attachAsset(db, issueId, created.id, str(params.role, "output"), ctx.agentId);
+      }
+      return `Ressource créée : ${created.name} (${created.kind}) — asset_id: ${created.id}`;
+    }
+
+    case "attach_asset": {
+      if (!issueId) return "ERREUR : issue_id manquant.";
+      const assetId = str(params.asset_id);
+      if (!assetId) return "ERREUR : asset_id manquant.";
+      const { data: cur } = await db.from("pj_issues")
+        .select("pj_project_id").eq("id", issueId).maybeSingle();
+      if (!cur) return "Work item introuvable.";
+      if (!allowed.has(String((cur as { pj_project_id: string }).pj_project_id))) {
+        return "ERREUR : ce work item est hors de ton périmètre.";
+      }
+      const { data: asset } = await db.from("pj_assets")
+        .select("pj_project_id, name").eq("id", assetId).maybeSingle();
+      if (!asset) return "Ressource introuvable.";
+      if (!allowed.has(String((asset as { pj_project_id: string }).pj_project_id))) {
+        return "ERREUR : cette ressource est hors de ton périmètre.";
+      }
+      const msg = await attachAsset(db, issueId, assetId, str(params.role, "input"), ctx.agentId);
+      return msg ?? `Ressource « ${(asset as { name: string }).name} » rattachée.`;
+    }
+
     case "assign_self":
     case "unassign_self": {
       if (!issueId) return "ERREUR : issue_id manquant.";
@@ -496,4 +618,73 @@ export async function runTrackerAction(
     default:
       return `ERREUR : action inconnue « ${action} ».`;
   }
+}
+
+// ── Ressources ──────────────────────────────────────────────────────────────
+
+/** Une ressource en une ligne : ce qu'elle est, où elle mène, comment la lire. */
+function assetLine(a: Record<string, unknown>): string {
+  const where = a.url ? String(a.url)
+    : a.storage_path ? "fichier déposé"
+    : a.content ? "contenu sur place"
+    : a.page_id ? "page du projet, à lire avec get_asset"
+    : "—";
+  const tags = Array.isArray(a.tags) && a.tags.length ? ` [${(a.tags as string[]).join(", ")}]` : "";
+  return `- ${a.name} (${a.kind}) — ${where}${tags}`
+    + (a.description ? ` · ${String(a.description).slice(0, 160)}` : "")
+    + ` (asset_id: ${a.id})`;
+}
+
+/**
+ * Les ressources d'un work item, groupées par rôle.
+ *
+ * Le rôle passe AVANT le nom parce que c'est lui qui dit quoi en faire :
+ * ouvrir et modifier, lire sans toucher, ou produire.
+ */
+export async function describeIssueAssets(
+  db: SupabaseClient, issueId: string,
+): Promise<string> {
+  const { data } = await db.from("pj_issue_assets")
+    .select("role, note, pj_assets(id, kind, name, description, url, storage_path, content, page_id, tags)")
+    .eq("issue_id", issueId);
+  // Le générateur type la jointure comme un TABLEAU là où elle rend un objet :
+  // on accepte les deux formes plutôt que de parier sur l'une.
+  const rows = ((data ?? []) as unknown as Array<{
+    role: string; note: string;
+    pj_assets: Record<string, unknown> | Record<string, unknown>[] | null;
+  }>).map((r) => ({
+    ...r,
+    pj_assets: Array.isArray(r.pj_assets) ? (r.pj_assets[0] ?? null) : r.pj_assets,
+  }));
+  if (!rows.length) return "";
+  const LABEL: Record<string, string> = {
+    input: "À travailler", reference: "Référence", output: "Produit",
+  };
+  const order = ["input", "reference", "output"];
+  return order.flatMap((role) => {
+    const group = rows.filter((r) => r.role === role && r.pj_assets);
+    if (!group.length) return [];
+    return [
+      `${LABEL[role]} :`,
+      ...group.map((r) => "  " + assetLine(r.pj_assets as Record<string, unknown>)
+        + (r.note ? ` · ${r.note}` : "")),
+    ];
+  }).join("\n");
+}
+
+/** Le rattachement, idempotent : le refaire n'est pas une erreur. */
+async function attachAsset(
+  db: SupabaseClient, issueId: string, assetId: string, role: string, agentId: string,
+): Promise<string | null> {
+  const { data: issue } = await db.from("pj_issues")
+    .select("workspace_id").eq("id", issueId).maybeSingle();
+  if (!issue) return "Work item introuvable.";
+  const { error } = await db.from("pj_issue_assets").insert({
+    issue_id: issueId, asset_id: assetId,
+    workspace_id: (issue as { workspace_id: string }).workspace_id,
+    role: ["input", "reference", "output"].includes(role) ? role : "input",
+    agent_id: agentId,
+  });
+  if (error && !/duplicate key/i.test(error.message)) return `ERREUR : ${error.message}`;
+  return null;
 }

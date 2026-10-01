@@ -6,6 +6,7 @@ import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { timingSafeEqual } from "../_shared/authz.ts";
 import { routeWorkflowEvent } from "../_shared/workflow-engine.ts";
+import { handleSentinel, isSentinelRequest } from "../_shared/sentinel-gateway.ts";
 
 async function sha256(text: string) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -19,6 +20,11 @@ Deno.serve(async (req) => {
   if (cors) return cors;
   try {
     const url0 = new URL(req.url);
+
+    // ── SentinelFlow : alertes de sécurité entrantes + écran d'administration ─
+    // Même raison que les événements Composio ci-dessous : le projet est au
+    // plafond des 100 fonctions, et cette fonction est la porte d'entrée.
+    if (isSentinelRequest(url0)) return await handleSentinel(req, url0);
 
     // ── Connected-tool events (Composio callback) ────────────────────────────
     // Folded in here rather than shipped as its own function: the project is

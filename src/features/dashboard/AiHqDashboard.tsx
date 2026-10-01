@@ -16,8 +16,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   RobotIcon as Bot,
-  KanbanIcon as FolderKanban,
-  CaretRightIcon as ChevronRight,
   SparkleIcon as Sparkles,
   PulseIcon as Activity,
   BuildingsIcon as Building2,
@@ -26,7 +24,6 @@ import { SuitcaseSimpleIcon, UserIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { MODULE_PROJECT_CONFIGS } from "@/lib/module-project-config";
 import type { RangeKey } from "@/features/crm/overview/crmStats";
 import { useHqData, useHqRefresh } from "./hq/useHqData";
 import { AgentHealthAlert } from "./AgentHealthAlert";
@@ -71,25 +68,6 @@ export function AiHqDashboard() {
 
   const running = raw.runs.filter((r) => r.status === "running" || r.status === "queued").length;
   const pending = raw.approvals.filter((a) => a.status === "pending").length;
-
-  const { data: moduleProjects } = useQuery({
-    queryKey: ["hq_module_projects", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const { data } = await supabase.from("module_projects")
-        .select("id, module_slug, project_type, name, status")
-        .eq("project_id", projectId!).neq("status", "archived")
-        .order("updated_at", { ascending: false }).limit(30);
-      return (data ?? []) as Array<{ id: string; module_slug: string; name: string; status: string }>;
-    },
-  });
-
-  const deptGroups = Object.entries(
-    (moduleProjects ?? []).reduce<Record<string, { id: string; name: string }[]>>((acc, mp) => {
-      (acc[mp.module_slug] ??= []).push(mp);
-      return acc;
-    }, {}),
-  );
 
   return (
     <div className="space-y-5 px-6 py-6">
@@ -161,27 +139,6 @@ export function AiHqDashboard() {
         </div>
       )}
 
-      {deptGroups.length > 0 && (
-        <div>
-          <h2 className="mb-2.5 flex items-center gap-1.5 text-sm font-semibold">
-            <FolderKanban className="h-4 w-4 text-muted-foreground" /> Projets par module
-          </h2>
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {deptGroups.map(([slug, projects]) => (
-              <button key={slug} onClick={() => navigate(`${base}/${slug}`)}
-                className="flex items-center gap-3 rounded-xl border border-border/70 bg-card p-3 text-left transition-colors hover:bg-secondary/30">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{MODULE_PROJECT_CONFIGS[slug]?.label ?? slug}</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {projects.length} projet{projects.length > 1 ? "s" : ""} actif{projects.length > 1 ? "s" : ""}
-                  </div>
-                </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

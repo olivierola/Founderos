@@ -4,6 +4,7 @@
 // the visitor will see — thinking-orbs and voice-glow — not a description of it.
 import { useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
+import { BotAvatar, botAvatarTypes } from "bot-avatars";
 import { VoiceBeam, voicePalettes } from "voice-glow";
 import { CheckIcon as Check, ImageIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -55,7 +56,22 @@ export function AvatarChoices({ cfg, set }: { cfg: WidgetConfig; set: SetFn }) {
   const second = (cfg.avatar_second as string) || accent;
   const shape = cfg.avatar_shape === "circle" ? "rounded-full" : cfg.avatar_shape === "square" ? "rounded-md" : "rounded-2xl";
   return (
-    <div className="grid gap-2.5 sm:grid-cols-3">
+    <div className="space-y-2.5">
+    <div className="grid gap-2.5 sm:grid-cols-4">
+      <ChoiceCard
+        active={cfg.avatar_type === "bot"}
+        onClick={() => set("avatar_type", "bot")}
+        title="Bot animé"
+        hint="Un petit corps qui regarde, saute quand l'agent répond"
+      >
+        <BotAvatar
+          type={(cfg.avatar_bot as (typeof botAvatarTypes)[number]) || "clover"}
+          size={56}
+          color={accent}
+          state="default"
+          interactive={false}
+        />
+      </ChoiceCard>
       <ChoiceCard
         active={cfg.avatar_type === "live"}
         onClick={() => set("avatar_type", "live")}
@@ -96,6 +112,43 @@ export function AvatarChoices({ cfg, set }: { cfg: WidgetConfig; set: SetFn }) {
           </span>
         )}
       </ChoiceCard>
+    </div>
+
+    {/* The body, when the bot is the face: eighteen shapes, or the agent's
+        name decides. Same hash on the widget side, so the preview is true. */}
+    {cfg.avatar_type === "bot" && (
+      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+        <div className="mb-2 flex items-center justify-between px-0.5">
+          <span className="text-[11px] font-medium text-muted-foreground">Corps du bot</span>
+          <button
+            type="button"
+            onClick={() => set("avatar_bot", "")}
+            className={cn(
+              "rounded-full px-2.5 py-1 text-[11px] transition-colors",
+              cfg.avatar_bot ? "text-muted-foreground hover:text-foreground" : "bg-primary/10 font-medium text-primary",
+            )}
+          >
+            Automatique
+          </button>
+        </div>
+        <div className="grid grid-cols-9 gap-1.5">
+          {botAvatarTypes.map((t) => (
+            <button
+              key={t}
+              type="button"
+              title={t}
+              onClick={() => set("avatar_bot", t)}
+              className={cn(
+                "flex aspect-square items-center justify-center rounded-lg border transition-colors",
+                cfg.avatar_bot === t ? "border-primary/60 bg-primary/5" : "border-border/60 hover:border-primary/40",
+              )}
+            >
+              <BotAvatar type={t} size={26} color={accent} interactive={false} seed={0.2} />
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
     </div>
   );
 }

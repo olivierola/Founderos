@@ -19,6 +19,8 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import type { InternalAgent } from "./shared";
 import { MESSAGING_BRANDS, MessagingBadge, MessagingConnectCards } from "./MessagingConnectCards";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface ChannelRow {
   id: string;
@@ -47,6 +49,8 @@ function ProviderBadge({ provider, size = "md" }: { provider: string; size?: "sm
 // Teams uses a Bot Framework bot the operator registers once in Azure; here we
 // bind the agent to a Teams tenant. The UI only reads channel metadata.
 export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   const [params, setParams] = useSearchParams();
   const qc = useQueryClient();
   const { user } = useAuth();
@@ -90,7 +94,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
     invalidate();
   };
   const disconnect = async (id: string) => {
-    if (!confirm("Disconnect this channel? The agent stops responding there.")) return;
+    if (!(await confirm("Disconnect this channel? The agent stops responding there."))) return;
     await supabase.from("internal_agent_channels").delete().eq("id", id);
     invalidate();
   };
@@ -110,7 +114,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
         provider: "teams", external_team_id: tenant, team_name: teamsLabel.trim() || null,
         enabled: true, created_by: user?.id ?? null,
       });
-      if (error) { alert(error.message); return; }
+      if (error) { toast.error(error.message); return; }
       setTeamsTenant(""); setTeamsLabel("");
       invalidate();
     } finally {

@@ -10,6 +10,7 @@ export const REASON_LABELS: Record<string, string> = {
   no_knowledge: "Rien dans la base",
   tool_failure: "Échec d'un outil",
   human_requested: "Humain demandé",
+  triage_handoff: "Confiée à l'équipe",
   error: "Panne technique",
   unspecified: "Non renseigné",
 };
@@ -21,6 +22,7 @@ export const REASON_HINTS: Record<string, string> = {
   no_knowledge: "Aucune source du corpus ni aucun outil n'a pu alimenter la réponse.",
   tool_failure: "Un appel d'outil a échoué pendant l'échange.",
   human_requested: "Le visiteur a explicitement demandé à parler à quelqu'un.",
+  triage_handoff: "ResolveAI a jugé que la demande relevait d'une personne : la réponse l'a annoncé et la demande est entrée dans la file.",
   error: "La réponse n'a jamais été rendue (erreur en amont).",
   unspecified: "Conversation antérieure à la mise en place du compteur.",
 };

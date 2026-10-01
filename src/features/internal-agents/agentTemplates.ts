@@ -119,10 +119,11 @@ export function autonomyToFlags(level: AutonomyLevel): { requires_approval: bool
   return { requires_approval: level !== "autopilot" };
 }
 
-// Each template gets a stable, unique portrait derived from its key — agents
-// and templates use avatars (never emojis) for a consistent premium look.
-export function templateAvatar(t: Pick<AgentTemplate, "key">): string {
-  return avatarUrl(t.key);
+// Templates no longer freeze a portrait into `avatar_url`: agents wear an
+// animated bot (AgentIdentity), whose body comes from their name — so an agent
+// renamed at creation gets ITS body, not the template's.
+export function templateAvatar(_t: Pick<AgentTemplate, "key">): string {
+  return "";
 }
 
 // A closing rule every template shares: the deliverable IS the work. Kept in

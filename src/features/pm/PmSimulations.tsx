@@ -36,6 +36,8 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { SimulationGraph, type GraphRelation } from "./SimulationGraph";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Sim {
   id: string; name: string; seed_text: string; question: string;
@@ -77,6 +79,8 @@ export function PmSimulationsPage() {
 
 // ───────────────────────────── List + create ────────────────────────────────
 function SimList({ onOpen }: { onOpen: (id: string) => void }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -135,7 +139,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
           persona_seeds: validSeeds.length > 0 ? validSeeds : undefined,
         },
       }).select("id").single();
-      if (error) { alert(error.message); return; }
+      if (error) { toast.error(error.message); return; }
       setForm({ name: "", question: "", seed: "", personas: "50", rounds: "8", webSearch: true, urls: "", ragIds: [], personaSeeds: [] });
       setOpen(false);
       queryClient.invalidateQueries({ queryKey: ["sims", projectId] });
@@ -146,7 +150,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
   }
 
   async function remove(id: string) {
-    if (!confirm("Delete this simulation?")) return;
+    if (!(await confirm("Delete this simulation?"))) return;
     await supabase.from("sim_simulations").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["sims", projectId] });
   }
@@ -319,6 +323,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
 
 // ───────────────────────────── Detail (wizard) ──────────────────────────────
 function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
+  const toast = useToast();
   const { projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState<string | null>(null);
@@ -414,7 +419,7 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
     try {
       await callEdge("simulation-prepare", { action: "enrich", simulation_id: simId });
       queryClient.invalidateQueries({ queryKey: ["sim", simId] });
-    } catch (e: any) { alert(e?.message ?? "Failed"); } finally { setBusy(null); }
+    } catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusy(null); }
   }
   async function generatePersonas() {
     setBusy("prepare");
@@ -423,7 +428,7 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
       queryClient.invalidateQueries({ queryKey: ["sim", simId] });
       queryClient.invalidateQueries({ queryKey: ["sim_personas", simId] });
       queryClient.invalidateQueries({ queryKey: ["sim_relations", simId] });
-    } catch (e: any) { alert(e?.message ?? "Failed"); } finally { setBusy(null); }
+    } catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusy(null); }
   }
   async function runSimulation() {
     setBusy("run");
@@ -766,6 +771,7 @@ function Section({ title, items }: { title: string; items: string[] }) {
 
 // ───────────────────────────── Persona chat ─────────────────────────────────
 function PersonaChat({ persona, onClose }: { persona: Persona; onClose: () => void }) {
+  const toast = useToast();
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -788,7 +794,7 @@ function PersonaChat({ persona, onClose }: { persona: Persona; onClose: () => vo
     try {
       await callEdge("simulation-prepare", { action: "chat", persona_id: persona.id, message: text });
       queryClient.invalidateQueries({ queryKey: ["sim_messages", persona.id] });
-    } catch (e: any) { alert(e?.message ?? "Failed"); } finally { setSending(false); }
+    } catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setSending(false); }
   }
 
   const t = persona.traits ?? {};

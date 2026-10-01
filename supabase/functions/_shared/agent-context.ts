@@ -289,6 +289,15 @@ export interface SkillSelectOptions {
   preloadMaxChars?: number;
   /** Inline the winner only when it beats the runner-up by this factor. */
   dominance?: number;
+  /**
+   * Un classement venu d'ailleurs — aujourd'hui le jugement rapide, qui note
+   * les 891 skills du catalogue en un appel là où la correspondance de mots ne
+   * sait rapprocher que ce qui partage un vocabulaire.
+   *
+   * Facteur multiplicatif : 1 = neutre. Absent = comportement d'avant, au mot
+   * près.
+   */
+  boost?: (s: SkillLike) => number;
 }
 
 /** Score a skill against the task. The NAME and the SLUG say what it is far
@@ -336,12 +345,21 @@ export function selectSkills(
   if (all.length === 0) return { index: [], preload: null, dropped: 0, body: "" };
 
   const terms = task ? queryTermsOf(task) : new Map<string, number>();
-  const ranked = terms.size
-    ? all.map((s) => ({ s, score: skillScore(s, task, terms) })).sort((a, b) => b.score - a.score)
-    : all.map((s) => ({ s, score: 0 }));
+  // Le classement externe (jugement rapide) MULTIPLIE le score lexical quand il
+  // y en a un, et le REMPLACE quand la tâche n'a pas de mots à comparer. Sans
+  // lui, tout se passe exactement comme avant : `boost` absent = facteur 1.
+  const boost = opts.boost;
+  const ranked = all
+    .map((s) => {
+      const lex = terms.size ? skillScore(s, task, terms) : 0;
+      if (!boost) return { s, score: lex };
+      const b = boost(s);
+      return { s, score: terms.size ? lex * b : b };
+    })
+    .sort((a, b) => b.score - a.score);
 
   // Few enough skills: naming them all IS the short answer.
-  const keepAll = all.length <= floorCount || terms.size === 0;
+  const keepAll = all.length <= floorCount || (terms.size === 0 && !boost);
   let index: SkillLike[] = [];
   if (keepAll) {
     index = ranked.map((r) => r.s);

@@ -17,8 +17,6 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { MODULE_PROJECT_CONFIGS, type ModuleProjectConfig } from "@/lib/module-project-config";
-import { fetchModuleProjects, type ModuleProject } from "@/features/module-projects/moduleProjectModel";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -46,17 +44,6 @@ export function SecondarySidebar() {
   // sidebar → eclipse the objects sidebar entirely.
   if (moduleSlug === "crm" && segments[appIdx + 4] === "workspace" && segments[appIdx + 6]) {
     return null;
-  }
-
-  // Module project detail view — has its own sidebar, like CRM records.
-  if (segments[appIdx + 4] === "project" && segments[appIdx + 5]) {
-    return null;
-  }
-
-  // Module with project-based navigation → show project list in sidebar.
-  const moduleProjectConfig = moduleSlug ? MODULE_PROJECT_CONFIGS[moduleSlug] : undefined;
-  if (moduleProjectConfig) {
-    return <ProjectsSidebar config={moduleProjectConfig} base={base} moduleSlug={moduleSlug!} />;
   }
 
   // AI Workforce module → show hired agents in sidebar. /agent/builder/* is a
@@ -198,76 +185,6 @@ export function SecondarySidebar() {
           );
         })}
       </nav>
-    </aside>
-  );
-}
-
-// ── Projects sidebar for project-based modules ──────────────────────────────
-
-function ProjectsSidebar({ config, base, moduleSlug }: { config: ModuleProjectConfig; base: string; moduleSlug: string }) {
-  const { projectId } = useCurrentContext();
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const { data: projects, isLoading } = useQuery({
-    queryKey: ["module_projects", projectId, moduleSlug],
-    enabled: !!projectId,
-    queryFn: () => fetchModuleProjects(projectId!, moduleSlug),
-    refetchInterval: 10000,
-  });
-
-  const currentProjectId = (() => {
-    const segments = location.pathname.split("/").filter(Boolean);
-    const projIdx = segments.indexOf("project");
-    return projIdx >= 0 ? segments[projIdx + 1] : undefined;
-  })();
-
-  return (
-    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
-      <div className="flex h-14 items-center justify-between border-b border-border px-4">
-        <div className="text-base font-semibold text-foreground">{config.label}</div>
-      </div>
-
-      <div className="scrollbar-slim flex-1 overflow-y-auto p-2">
-        {/* New project button */}
-        <button
-          onClick={() => navigate(`${base}/${moduleSlug}`)}
-          className="mb-2 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-primary hover:bg-sidebar-accent/60"
-        >
-          <Plus className="h-3.5 w-3.5" /> New project
-        </button>
-
-        {isLoading && (
-          <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-        )}
-
-        {/* Project list */}
-        {(projects ?? []).map((mp) => {
-          const typeDef = config.projectTypes.find((t) => t.key === mp.project_type);
-          const isActive = mp.id === currentProjectId;
-          return (
-            <button
-              key={mp.id}
-              onClick={() => navigate(`${base}/${moduleSlug}/project/${mp.id}`)}
-              className={cn(
-                "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                isActive
-                  ? "bg-sidebar-accent font-medium text-foreground"
-                  : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-              )}
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-white text-[10px]" style={{ backgroundColor: mp.color }}>
-                {(typeDef?.label ?? mp.project_type).charAt(0).toUpperCase()}
-              </span>
-              <span className="min-w-0 flex-1 truncate">{mp.name}</span>
-            </button>
-          );
-        })}
-
-        {!isLoading && (projects ?? []).length === 0 && (
-          <p className="px-3 py-4 text-xs text-muted-foreground">No projects yet.</p>
-        )}
-      </div>
     </aside>
   );
 }

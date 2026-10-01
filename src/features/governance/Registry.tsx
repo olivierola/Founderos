@@ -25,6 +25,7 @@ import {
   RISK_TIER_META, SYSTEM_STATUS_META, type RiskTier, type SystemStatus,
 } from "./shared";
 import { Pill, Field, Select, metaOptions } from "./ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const BLANK = {
   name: "", description: "", purpose: "", owner_name: "", model: "", provider: "",
@@ -33,6 +34,7 @@ const BLANK = {
 };
 
 export function GovRegistryPage() {
+  const confirm = useConfirm();
   useEnsureSystemsSynced();
   const { workspace, project } = useCurrentContext();
   const crud = useGovCrud("gov_ai_systems");
@@ -101,7 +103,7 @@ export function GovRegistryPage() {
                 <div className="flex shrink-0 gap-1">
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(s)}><Pencil className="h-3.5 w-3.5" /></Button>
                   <Button size="icon" variant="ghost" className="h-7 w-7"
-                    onClick={() => { if (confirm(`Supprimer « ${s.name} » du registre ?`)) void crud.remove(s.id, { action: "system.deleted", entityType: "system", entityId: s.id, entityLabel: s.name }); }}>
+                    onClick={async () => { if ((await confirm(`Supprimer « ${s.name} » du registre ?`))) void crud.remove(s.id, { action: "system.deleted", entityType: "system", entityId: s.id, entityLabel: s.name }); }}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>

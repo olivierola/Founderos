@@ -21,6 +21,8 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { Pill } from "./ui";
+import { useToast } from "@/components/ToastProvider";
+import { usePromptText } from "@/components/ConfirmProvider";
 
 type ActionStatus = "pending" | "approved" | "executing" | "succeeded" | "failed" | "rejected";
 type RiskLevel = "low" | "medium" | "high" | "critical";
@@ -56,6 +58,8 @@ const RISK_META: Record<RiskLevel, { label: string; tone: "red" | "orange" | "am
 };
 
 export function AdminActionsQueuePage() {
+  const promptText = usePromptText();
+  const toast = useToast();
   const { workspaceId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [deciding, setDeciding] = useState<string | null>(null);
@@ -85,12 +89,12 @@ export function AdminActionsQueuePage() {
   }, [actions]);
 
   const decide = async (a: AdminAction, decision: "approve" | "reject") => {
-    const reason = decision === "reject" ? (prompt("Motif du rejet (optionnel) :") ?? "") : undefined;
+    const reason = decision === "reject" ? ((await promptText("Motif du rejet (optionnel) :")) ?? "") : undefined;
     setDeciding(a.id);
     try {
       await callEdge("admin-action-approve", { workspace_id: workspaceId, action_id: a.id, decision, reason: reason || undefined });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "La décision a échoué");
+      toast.error(e instanceof Error ? e.message : "La décision a échoué");
     } finally {
       setDeciding(null);
       queryClient.invalidateQueries({ queryKey: ["admin_actions", workspaceId] });

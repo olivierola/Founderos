@@ -27,6 +27,8 @@ import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm, usePromptText } from "@/components/ConfirmProvider";
 
 const SKILL_MD = "SKILL.md";
 
@@ -46,6 +48,9 @@ function fileIcon(path: string) {
 }
 
 export function SkillEditorPage() {
+  const promptText = usePromptText();
+  const confirm = useConfirm();
+  const toast = useToast();
   const { skillId, workspaceSlug, projectSlug } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -106,23 +111,23 @@ export function SkillEditorPage() {
     setFiles((f) => [...f, { path, content: "" }]);
     setActive(path);
   }
-  function addFolder() {
-    const folder = prompt("Nom du dossier (ex. references)")?.trim().replace(/^\/+|\/+$/g, "");
+  async function addFolder() {
+    const folder = (await promptText({ title: "Nouveau dossier", label: "Nom du dossier", placeholder: "references" }))?.trim().replace(/^\/+|\/+$/g, "");
     if (!folder) return;
     addFile(`${folder}/`);
   }
-  function renameFile(oldPath: string) {
-    const next = prompt("Nouveau nom du fichier", oldPath)?.trim().replace(/^\/+/, "");
+  async function renameFile(oldPath: string) {
+    const next = (await promptText({ title: "Renommer le fichier", label: "Nouveau nom", initialValue: oldPath }))?.trim().replace(/^\/+/, "");
     if (!next || next === oldPath) return;
     if (next === SKILL_MD || files.some((f) => f.path === next)) {
-      alert("Ce nom de fichier est déjà utilisé.");
+      toast.error("Ce nom de fichier est déjà utilisé.");
       return;
     }
     setFiles((f) => f.map((x) => (x.path === oldPath ? { ...x, path: next } : x)));
     setActive((a) => (a === oldPath ? next : a));
   }
-  function deleteFile(path: string) {
-    if (!confirm(`Supprimer « ${path} » ?`)) return;
+  async function deleteFile(path: string) {
+    if (!(await confirm(`Supprimer « ${path} » ?`))) return;
     setFiles((f) => f.filter((x) => x.path !== path));
     setActive((a) => (a === path ? SKILL_MD : a));
   }
@@ -145,7 +150,7 @@ export function SkillEditorPage() {
           description: description.trim() || null,
           system_prompt_extension: skillMd.trim() || null,
         }).eq("id", skillId);
-        if (error) { alert(error.message); return; }
+        if (error) { toast.error(error.message); return; }
       } else {
         const { data, error } = await supabase.from("agent_skills").insert({
           workspace_id: workspaceId,
@@ -155,7 +160,7 @@ export function SkillEditorPage() {
           system_prompt_extension: skillMd.trim() || null,
           is_system: false,
         }).select("id").single();
-        if (error) { alert(error.message); return; }
+        if (error) { toast.error(error.message); return; }
         id = (data as { id: string }).id;
       }
       // Replace the bundled files (small counts → wipe + reinsert is simplest).
@@ -166,7 +171,7 @@ export function SkillEditorPage() {
           .map((f, i) => ({ skill_id: id, path: f.path.trim(), content: f.content, sort: i }));
         if (rows.length) {
           const { error } = await supabase.from("agent_skill_files").insert(rows);
-          if (error) { alert(error.message); return; }
+          if (error) { toast.error(error.message); return; }
         }
       }
       queryClient.invalidateQueries({ queryKey: ["agent_skills_all"] });

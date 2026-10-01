@@ -24,6 +24,9 @@ import {
   ArrowsClockwiseIcon as RefreshCw,
   XIcon as X,
   FileArrowDownIcon as FileDown,
+  FilePdfIcon as FilePdf,
+  ImageIcon,
+  CaretDownIcon as ChevronDown,
 } from "@phosphor-icons/react";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -43,6 +46,8 @@ import { WidgetConfigDialog } from "./WidgetConfigDialog";
 import { WidgetCatalogDialog } from "./WidgetCatalogDialog";
 import { WidgetLibraryDropdown } from "./WidgetLibraryDropdown";
 import { exportDashboardPdf } from "./exportPdf";
+import { buildDashboardPdf, type DashboardPdfResult } from "./dashboardPdf";
+import { PdfExportDialog } from "@/features/pdf/PdfStudio";
 import type { CatalogWidget } from "./widgetCatalog";
 import { moduleWidgetDefaultSize, type ModuleWidgetEntry } from "./moduleWidgetRegistry";
 import { GridFourIcon as LayoutGrid } from "@phosphor-icons/react";
@@ -78,6 +83,7 @@ export function DashboardBuilderPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [autoRefresh, setAutoRefresh] = useState(0); // seconds, 0 = off
   const [exporting, setExporting] = useState(false);
+  const [pdfExport, setPdfExport] = useState<DashboardPdfResult | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   async function handleExportPdf() {
@@ -88,6 +94,11 @@ export function DashboardBuilderPage() {
     } finally {
       setExporting(false);
     }
+  }
+
+  // Vector export: the figures on screen, read back from the widgets' cache.
+  function openVectorPdf() {
+    setPdfExport(buildDashboardPdf(queryClient, dashQuery.data ?? {}, widgets, crossFilter));
   }
 
   useEffect(() => {
@@ -258,9 +269,22 @@ export function DashboardBuilderPage() {
           <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)} title="Refresh data">
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting || widgets.length === 0} title="Export to PDF">
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" disabled={exporting || widgets.length === 0} title="Exporter en PDF">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF
+                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={openVectorPdf}>
+                <FilePdf className="h-4 w-4" /> PDF vectoriel (thèmes, texte sélectionnable)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPdf}>
+                <ImageIcon className="h-4 w-4" /> Capture d'écran (image, inclut les widgets module)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <WidgetLibraryDropdown onPick={addFromModule} />
           <Button variant="outline" size="sm" onClick={() => setCatalogOpen(true)} title="Browse pre-configured widgets">
             <LayoutGrid className="h-4 w-4" /> From catalog
@@ -382,6 +406,15 @@ export function DashboardBuilderPage() {
         open={catalogOpen}
         onOpenChange={setCatalogOpen}
         onPick={addFromCatalog}
+      />
+      <PdfExportDialog
+        open={!!pdfExport}
+        onOpenChange={(o) => { if (!o) setPdfExport(null); }}
+        spec={pdfExport ? { kind: "document", doc: pdfExport.doc } : null}
+        defaultOptions={{ theme: "modern", landscape: true }}
+        description={pdfExport && pdfExport.skipped.length > 0
+          ? `Non inclus : ${pdfExport.skipped.join(", ")} — utilisez la capture d'écran pour ces widgets.`
+          : "PDF vectoriel des widgets, avec les données affichées à l'écran."}
       />
     </div>
   );

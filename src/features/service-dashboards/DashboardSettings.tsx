@@ -25,6 +25,7 @@ import {
 import { DASHBOARD_ICONS, DASHBOARD_COLORS, DashboardTile } from "./dashboardIcons";
 import { THEMES } from "@/lib/themes";
 import { useTheme } from "@/lib/theme-context";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // The dashboard's own settings — deliberately scoped to THIS service. Org-wide
 // concerns (billing, members) stay in the Admin area; everything here changes
@@ -665,6 +666,7 @@ function Row({ icon: Icon, label, desc, checked, onChange }: {
 function DangerRow({ title, desc, action, confirmText, onConfirm }: {
   title: string; desc: string; action: string; confirmText: string; onConfirm: () => Promise<void>;
 }) {
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3">
@@ -676,7 +678,7 @@ function DangerRow({ title, desc, action, confirmText, onConfirm }: {
         size="sm" variant="outline" disabled={busy}
         className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
         onClick={async () => {
-          if (!confirm(confirmText)) return;
+          if (!(await confirm(confirmText))) return;
           setBusy(true);
           try { await onConfirm(); } finally { setBusy(false); }
         }}

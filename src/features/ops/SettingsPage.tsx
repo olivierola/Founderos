@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import type { OpsSettings, OpsAutonomyMode } from "./types";
+import { useToast } from "@/components/ToastProvider";
 
 const AUTONOMY_INFO: Record<OpsAutonomyMode, { label: string; description: string }> = {
   advisor: { label: "Advisor", description: "AI generates files and explains, but never applies anything." },
@@ -29,6 +30,7 @@ const AUTONOMY_INFO: Record<OpsAutonomyMode, { label: string; description: strin
 };
 
 export function OpsSettingsPage() {
+  const toast = useToast();
   const { projectId, workspaceId } = useCurrentContext();
   const queryClient = useQueryClient();
 
@@ -93,7 +95,7 @@ export function OpsSettingsPage() {
       setNewToken(result.token);
       queryClient.invalidateQueries({ queryKey: ["ops_settings", projectId] });
     } catch (e: any) {
-      alert("Could not rotate: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not rotate: " + (e?.message ?? "edge not deployed"));
     } finally {
       setRotatingToken(false);
     }

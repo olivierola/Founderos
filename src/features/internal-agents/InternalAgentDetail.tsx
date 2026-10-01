@@ -76,7 +76,7 @@ import {
   SlackLogoIcon, ChartBarIcon, GearSixIcon, SquaresFourIcon,
 } from "@phosphor-icons/react";
 import { AgentMarkdown } from "@/components/AgentMarkdown";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -99,7 +99,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { InstructionsEditor } from "./InstructionsEditor";
-import { AgentAvatar, AvatarPicker } from "./AvatarPicker";
+import { AvatarPicker } from "./AvatarPicker";
 import { AgentChannelsTab } from "./AgentChannelsTab";
 import { AgentHostedModelCard } from "./AgentHostedModel";
 import { AgentAutomationsTab } from "./AgentAutomationsTab";
@@ -107,6 +107,7 @@ import { RunTimeline } from "./RunTimeline";
 import { AgentActivityOrb } from "./AgentActivityOrb";
 import { SubAgentInstances } from "./SubAgentInstances";
 import { InterleavedMessage, type UiBlock, type ArtifactOpenTarget } from "./UiBlocks";
+import { LeadSenseSettings } from "./leadsense/LeadSenseSettings";
 import { WorkspaceTab } from "./WorkspaceTab";
 import { chatUserBubble } from "@/lib/chatStyles";
 import { AgentIdentity } from "@/components/AgentIdentity";
@@ -136,6 +137,8 @@ import {
   PRIORITY_META, MEMORY_KIND_META, BOARD_COLUMNS, loadWorkspaceMembers, memberLabel,
   dueDateMeta, downloadDeliverable, relativeDate,
 } from "./shared";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export type InternalAgentTab =
   | "chat"
@@ -451,6 +454,7 @@ const CONNECTOR_FILTERS = [
 ] as const;
 
 export function AgentConnectorsTab({ agent }: { agent: InternalAgent }) {
+  const toast = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { workspaceSlug, projectSlug } = useParams();
@@ -533,7 +537,7 @@ export function AgentConnectorsTab({ agent }: { agent: InternalAgent }) {
       config: { toolkit: slug },
       requires_approval: false,
     });
-    if (error) { alert(error.message); return; }
+    if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
   }
 
@@ -738,10 +742,13 @@ interface ChatMessage {
 // exactly these two.
 const AGENT_MODELS = CHAT_MODELS;
 
-// Dismissible-per-session reminder that some tools still need configuring. A
-// blocking tool (the worker skips it) is framed as a warning; a soft one (the
-// agent will just decide by itself) as a hint — so a Vibe Coder without a pinned
-// repo doesn't look broken next to a CRM agent that literally can't read.
+// Setup reminder — a notification BUBBLE, not a banner.
+//
+// It used to sit at the top of the conversation, pushing the agent's own hero
+// down and shouting before the user had said a word. It now floats in the
+// corner as a small pill ("2 réglages"), and unfolds into a card when clicked:
+// the same content, offered rather than imposed. Blocking gaps (the worker
+// skips the tool) wear amber and a quiet pulse; soft ones stay neutral.
 function ToolSetupReminder({
   items, onConfigure, ctaLabel = "Configurer les outils",
 }: {
@@ -750,38 +757,103 @@ function ToolSetupReminder({
   ctaLabel?: string;
 }) {
   const [dismissed, setDismissed] = useState(false);
+  const [open, setOpen] = useState(false);
   if (dismissed) return null;
   const hasBlocking = items.some((i) => i.blocking);
+  const tone = hasBlocking
+    ? { dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400", ring: "ring-amber-500/30", glow: "shadow-[0_10px_40px_-10px_rgba(245,158,11,0.45)]" }
+    : { dot: "bg-muted-foreground/60", text: "text-foreground", ring: "ring-border", glow: "shadow-[0_10px_40px_-12px_rgba(0,0,0,0.45)]" };
 
   return (
-    <div className={cn(
-      "mx-auto mt-3 w-full max-w-4xl rounded-xl border px-4 py-3",
-      hasBlocking ? "border-amber-500/40 bg-amber-500/[0.07]" : "border-border bg-muted/40",
-    )}>
-      <div className="flex items-start gap-3">
-        <AlertCircle className={cn("mt-0.5 h-4 w-4 shrink-0", hasBlocking ? "text-amber-500" : "text-muted-foreground")} />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium">
-            {hasBlocking
-              ? "Cet agent a besoin d'être configuré avant de travailler"
-              : "Quelques réglages rendraient cet agent plus efficace"}
-          </div>
-          <ul className="mt-1.5 space-y-1">
-            {items.map((t) => (
-              <li key={t.id ?? t.name} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-current" />
-                <span><span className="font-medium text-foreground">{t.name}</span> — {t.issue}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-2.5 flex items-center gap-2">
-            <Button size="sm" onClick={onConfigure}>{ctaLabel}</Button>
-            <button onClick={() => setDismissed(true)} className="text-xs text-muted-foreground hover:text-foreground">
-              Plus tard
-            </button>
-          </div>
-        </div>
-      </div>
+    <div className="pointer-events-none absolute right-5 top-16 z-30 flex justify-end">
+      <AnimatePresence initial={false} mode="popLayout">
+        {open ? (
+          <motion.div
+            key="card"
+            layout
+            initial={{ opacity: 0, y: -6, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 420, damping: 32 }}
+            className={cn(
+              "pointer-events-auto w-[340px] max-w-[calc(100vw-2.5rem)] overflow-hidden rounded-2xl border border-border/70",
+              "bg-popover/95 backdrop-blur-xl ring-1", tone.ring, tone.glow,
+            )}
+          >
+            <div className={cn("h-0.5 w-full", hasBlocking ? "bg-amber-500" : "bg-foreground/15")} />
+            <div className="p-4">
+              <div className="flex items-start gap-2.5">
+                <span className={cn(
+                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+                  hasBlocking ? "bg-amber-500/15 text-amber-500" : "bg-foreground/[0.07] text-muted-foreground",
+                )}>
+                  <AlertCircle className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold leading-snug">
+                    {hasBlocking
+                      ? "Cet agent a besoin d'être configuré avant de travailler"
+                      : "Quelques réglages rendraient cet agent plus efficace"}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setOpen(false)}
+                  aria-label="Replier"
+                  className="-mr-1 -mt-1 rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <ul className="mt-3 space-y-1.5">
+                {items.map((t) => (
+                  <li
+                    key={t.id ?? t.name}
+                    className="flex items-start gap-2 rounded-xl bg-foreground/[0.04] px-2.5 py-2 text-xs text-muted-foreground"
+                  >
+                    <span className={cn("mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full", t.blocking ? "bg-amber-500" : "bg-muted-foreground/50")} />
+                    <span className="min-w-0">
+                      <span className="font-medium text-foreground">{t.name}</span> — {t.issue}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-3.5 flex items-center gap-2">
+                <Button size="sm" className="rounded-full" onClick={onConfigure}>{ctaLabel}</Button>
+                <button
+                  onClick={() => setDismissed(true)}
+                  className="rounded-full px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Plus tard
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.button
+            key="bubble"
+            layout
+            type="button"
+            onClick={() => setOpen(true)}
+            initial={{ opacity: 0, y: -4, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 420, damping: 30 }}
+            className={cn(
+              "pointer-events-auto flex h-9 items-center gap-2 rounded-full border border-border/70 bg-background/85 pl-2.5 pr-3.5",
+              "text-xs font-medium backdrop-blur-xl transition-colors hover:bg-background", tone.glow, tone.text,
+            )}
+            title={hasBlocking ? "Cet agent a besoin d'être configuré" : "Quelques réglages rendraient cet agent plus efficace"}
+          >
+            <span className="relative flex h-2 w-2">
+              {hasBlocking && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500/60" />}
+              <span className={cn("relative inline-flex h-2 w-2 rounded-full", tone.dot)} />
+            </span>
+            {items.length} réglage{items.length > 1 ? "s" : ""}
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -829,6 +901,7 @@ export function ChatTab({
    *  (the dashboard's side panel posts the terminal's commands into it). */
   onConversationChange?: (conversationId: string | null) => void;
 }) {
+  const confirm = useConfirm();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -987,7 +1060,7 @@ export function ChatTab({
   }
 
   async function deleteConversation(id: string) {
-    if (!confirm("Delete this session and its messages?")) return;
+    if (!(await confirm("Delete this session and its messages?"))) return;
     await supabase.from("internal_agent_conversations").delete().eq("id", id);
     if (convoId === id) { setConvoId(null); setStartedFresh(true); }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_conversations", agent.id] });
@@ -1265,6 +1338,7 @@ export function ChatTab({
             seed={agent.name}
             size={88}
             accentColor={agent.accent_color}
+            state={isBusy ? "working" : agent.is_archived ? "sleeping" : "default"}
             className="mb-4"
           />
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">{agent.name}</h1>
@@ -1633,6 +1707,8 @@ function ArtifactCard({ artifact, onOpen }: { artifact: ChatArtifact; onOpen: ()
       : artifact.kind === "coding_session" ? GitPullRequest
         : artifact.kind === "test_session" ? FlaskConical
           : artifact.kind === "simulation_session" ? Atom
+            : artifact.kind === "lead_board" ? Target
+            : artifact.kind === "soc_board" ? ShieldCheck
             : artifact.kind === "json" ? Database
               : artifact.kind === "code" ? FileText
                 : artifact.kind === "url" ? Globe
@@ -1642,6 +1718,8 @@ function ArtifactCard({ artifact, onOpen }: { artifact: ChatArtifact; onOpen: ()
       : artifact.kind === "coding_session" ? "Session de code"
         : artifact.kind === "test_session" ? "Session de test"
           : artifact.kind === "simulation_session" ? "Simulation"
+            : artifact.kind === "lead_board" ? "Tableau LeadSense"
+            : artifact.kind === "soc_board" ? "Tableau SentinelFlow"
             : artifact.kind;
   return (
     <button
@@ -1677,6 +1755,7 @@ export function MissionTab({
   workspaceId: string | null;
   projectId: string | null;
 }) {
+  const toast = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1754,7 +1833,7 @@ export function MissionTab({
       .select("id")
       .single();
     if (error) {
-      alert(error.message);
+      toast.error(error.message);
       return;
     }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_missions", agent.id] });
@@ -1960,6 +2039,7 @@ function MissionDetail({
   agent: InternalAgent;
   members: WorkspaceMemberRow[];
 }) {
+  const toast = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState(mission.title);
@@ -2001,7 +2081,7 @@ function MissionDetail({
         updated_at: new Date().toISOString(),
       })
       .eq("id", mission.id);
-    if (error) { alert(error.message); return; }
+    if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_missions", agent.id] });
     setEditOpen(false);
   }
@@ -2247,6 +2327,7 @@ function DeliverablesEditor({
 }
 
 function RunCard({ run }: { run: MissionRun }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const isLive = run.status === "queued" || run.status === "running";
@@ -2282,7 +2363,7 @@ function RunCard({ run }: { run: MissionRun }) {
   });
 
   async function cancelRun() {
-    if (!confirm("Cancel this run? The agent stops before its next action.")) return;
+    if (!(await confirm("Cancel this run? The agent stops before its next action."))) return;
     await supabase
       .from("internal_agent_runs")
       .update({ status: "cancelled", finished_at: new Date().toISOString() })
@@ -2443,7 +2524,7 @@ function DeliverableItem({ d }: { d: Deliverable }) {
 interface AgentTool {
   id: string;
   agent_id: string;
-  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
+  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "support" | "governance" | "leads" | "soc" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
   name: string;
   description: string | null;
   config: Record<string, any>;
@@ -2456,6 +2537,10 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "web_fetch", label: "Fetch URL", icon: Globe, description: "Download and extract text from a URL." },
   { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed/ingested knowledge base." },
   { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM — contacts, deals, companies. Writes need approval unless the agent is on autopilot." },
+  { kind: "support", label: "Support desk", icon: Database, description: "The support queue triaged by ResolveAI from your public agents: read requests and transcripts, update their status, pull real figures for reports." },
+  { kind: "leads", label: "LeadSense", icon: Target, description: "Qualify inbound prospects on the company's own grid, spot the ones to call now, assign the right sales rep, and publish the LeadSense board." },
+  { kind: "soc", label: "SentinelFlow (SOC)", icon: ShieldCheck, description: "Triage security alerts from every connected source: investigate with correlation, close proven false positives, propose remediations for human validation, publish the SOC board." },
+  { kind: "governance", label: "Policy audit", icon: ShieldCheck, description: "Read-only PolicyGuard figures: risk levels of the agents' actions, decisions, human validations — for compliance reports." },
   { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Anduran function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
   { kind: "connector_action", label: "Integration", icon: Plug, description: "Read data from a connected integration (CRM, HR, data lake) via its official API." },
@@ -2505,6 +2590,8 @@ const EDGE_FUNCTION_CATALOGUE: Array<{ slug: string; label: string; description:
 ];
 
 export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; variant?: "full" | "tools" | "connectors" }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   // Which sections render. "connectors" = the agent's integrations only (used by
   // the Personnaliser → Connectors sub-tab); "tools" = generic capabilities only
   // (used by the configuration page's Outils tab); "full" = both.
@@ -2567,7 +2654,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
       config: { provider: slug },
       requires_approval: false,
     });
-    if (error) { alert(error.message); return; }
+    if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
     // If the integration isn't connected yet, open the config panel so the user
     // can drop in the credentials (reused project-wide afterwards).
@@ -2594,7 +2681,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
       // Action tools start approval-gated — safe by default; owners can relax it.
       requires_approval: kind === "edge_function" || kind === "custom",
     });
-    if (error) { alert(error.message); return; }
+    if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
     closeAdd();
   }
@@ -2605,7 +2692,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
   }
 
   async function remove(id: string) {
-    if (!confirm("Remove this tool?")) return;
+    if (!(await confirm("Remove this tool?"))) return;
     await supabase.from("internal_agent_tools").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["internal_agent_tools", agent.id] });
   }
@@ -2899,7 +2986,7 @@ function toolConfigIssue(t: AgentTool): string | null {
 function ToolConfigEditor({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<string, any>) => void }) {
   const [open, setOpen] = useState(false);
   const isStudio = tool.kind === "vibe_code" || tool.kind === "testing" || tool.kind === "simulation";
-  const hasConfig = isStudio || tool.kind === "db_read" || tool.kind === "edge_function" || tool.kind === "custom";
+  const hasConfig = isStudio || tool.kind === "db_read" || tool.kind === "edge_function" || tool.kind === "custom" || tool.kind === "leads";
   if (!hasConfig) return null;
 
   return (
@@ -2916,7 +3003,8 @@ function ToolConfigEditor({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
           {tool.kind === "db_read" && <DbReadConfig tool={tool} onSave={onSave} />}
           {tool.kind === "edge_function" && <EdgeFunctionConfig tool={tool} onSave={onSave} />}
           {tool.kind === "custom" && <CustomToolConfig tool={tool} onSave={onSave} />}
-          <RawJsonConfig tool={tool} onSave={onSave} />
+          {tool.kind === "leads" && <LeadSenseSettings />}
+          {tool.kind !== "leads" && <RawJsonConfig tool={tool} onSave={onSave} />}
         </div>
       )}
     </div>
@@ -3134,6 +3222,8 @@ function RawJsonConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<s
 const MEMORY_KINDS: MemoryKind[] = ["fact", "preference", "learning", "context"];
 
 export function MemoryTab({ agent }: { agent: InternalAgent }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [kindFilter, setKindFilter] = useState<MemoryKind | "all">("all");
@@ -3176,7 +3266,7 @@ export function MemoryTab({ agent }: { agent: InternalAgent }) {
         source: "user",
         created_by: user.id,
       });
-      if (error) { alert(error.message); return; }
+      if (error) { toast.error(error.message); return; }
       setNewContent("");
       invalidate();
     } finally {
@@ -3193,7 +3283,7 @@ export function MemoryTab({ agent }: { agent: InternalAgent }) {
   }
 
   async function removeMemory(id: string) {
-    if (!confirm("Forget this memory? The agent will no longer see it.")) return;
+    if (!(await confirm("Forget this memory? The agent will no longer see it."))) return;
     await supabase.from("internal_agent_memories").delete().eq("id", id);
     invalidate();
   }
@@ -3318,6 +3408,8 @@ interface AgentMember {
 
 
 function MembersTab({ agent }: { agent: InternalAgent }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isOwner = user?.id === agent.created_by;
@@ -3358,7 +3450,7 @@ function MembersTab({ agent }: { agent: InternalAgent }) {
     const { error } = await supabase
       .from("internal_agent_members")
       .insert({ agent_id: agent.id, user_id: userId, role, added_by: user.id });
-    if (error) { alert(error.message); return; }
+    if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["internal_agent_members", agent.id] });
     queryClient.invalidateQueries({ queryKey: ["internal_agent_candidates", agent.id] });
   }
@@ -3369,7 +3461,7 @@ function MembersTab({ agent }: { agent: InternalAgent }) {
   }
 
   async function removeMember(id: string) {
-    if (!confirm("Remove this member?")) return;
+    if (!(await confirm("Remove this member?"))) return;
     await supabase.from("internal_agent_members").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["internal_agent_members", agent.id] });
     queryClient.invalidateQueries({ queryKey: ["internal_agent_candidates", agent.id] });
@@ -3567,6 +3659,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 // ============================================================================
 
 export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedded?: boolean }) {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const location = useLocation();
   const { workspaceSlug, projectSlug } = useParams();
@@ -3699,7 +3792,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   }
 
   async function archive() {
-    if (!confirm("Archive this agent? Members will lose access. You can restore it later from the database.")) return;
+    if (!(await confirm("Archive this agent? Members will lose access. You can restore it later from the database."))) return;
     await supabase.from("internal_agents").update({ is_archived: true }).eq("id", agent.id);
     queryClient.invalidateQueries({ queryKey: ["internal_agents"] });
     // Back to the agent list of the service dashboard we're inside (the agent
@@ -3749,7 +3842,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
             <div className="flex items-start gap-3">
               <AgentIdentity url={avatarUrl} seed={agent.name} size={56} rounded="rounded-2xl" className="mt-0.5" />
               <div className="min-w-0 flex-1">
-                <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} />
+                <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} accentColor={agent.accent_color} name={agent.name} />
               </div>
             </div>
           </SoftField>
@@ -3984,6 +4077,7 @@ async function sha256HexWeb(input: string): Promise<string> {
 // Pair the agent with the mobile app: generate a random secret, store only its
 // SHA-256 hash, and reveal the plaintext once for the user to paste into the app.
 function MobileAccessSection({ agent }: { agent: InternalAgent }) {
+  const toast = useToast();
   const queryClient = useQueryClient();
   const a = agent as InternalAgent & { mobile_enabled?: boolean; mobile_secret_hash?: string | null };
   const [enabled, setEnabled] = useState(!!a.mobile_enabled);
@@ -4014,7 +4108,7 @@ function MobileAccessSection({ agent }: { agent: InternalAgent }) {
         .from("internal_agents")
         .update({ mobile_secret_hash: hash, mobile_enabled: true })
         .eq("id", agent.id);
-      if (error) { alert(error.message); return; }
+      if (error) { toast.error(error.message); return; }
       setGenerated(secret);
       setEnabled(true);
       queryClient.invalidateQueries({ queryKey: ["internal_agent", agent.id] });
@@ -4286,11 +4380,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
                       key={m.id}
                       className={cn("flex items-start gap-3", i === feed.length - 1 && "animate-message-appear")}
                     >
-                      <AgentAvatar
-                        url={from.avatar_url}
-                        seed={from.name}
-                        className="h-8 w-8 shrink-0 overflow-hidden rounded-full"
-                      />
+                      <AgentIdentity url={from.avatar_url} seed={from.name} size={32} rounded="rounded-full" interactive={false} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className={cn("text-sm font-medium", c.text)}>{from.name}</span>
@@ -4317,11 +4407,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
         {/* Overview */}
         <div className="rounded-xl border border-border bg-card/40 p-4">
           <div className="flex items-center gap-2">
-            <AgentAvatar
-              url={agent.avatar_url}
-              seed={agent.name}
-              className="h-9 w-9 shrink-0 overflow-hidden rounded-lg"
-            />
+            <AgentIdentity url={agent.avatar_url} seed={agent.name} size={36} rounded="rounded-lg" accentColor={agent.accent_color} />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">#{channelName}-collab</div>
               <div className="truncate text-[11px] text-muted-foreground">{agent.role ?? "Collaboration inter-agents"}</div>
@@ -4368,7 +4454,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
                 const isSelf = p.id === agent.id;
                 return (
                   <div key={p.id} className="flex items-center gap-2">
-                    <AgentAvatar url={p.avatar_url} seed={p.name} className="h-7 w-7 shrink-0 overflow-hidden rounded-md" />
+                    <AgentIdentity url={p.avatar_url} seed={p.name} size={28} rounded="rounded-md" interactive={false} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className={cn("truncate text-sm font-medium", c.text)}>{p.name}</span>
@@ -4394,7 +4480,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
               {peers.map((p) => (
                 <div key={p.id} className="rounded-lg border border-border/70 p-2.5">
                   <div className="flex items-center gap-2">
-                    <AgentAvatar url={p.avatar_url} seed={p.name} className="h-7 w-7 shrink-0 overflow-hidden rounded-md" />
+                    <AgentIdentity url={p.avatar_url} seed={p.name} size={28} rounded="rounded-md" interactive={false} />
                     <div className="min-w-0">
                       <div className={cn("truncate text-sm font-medium", a2aColor(p.id).text)}>{p.name}</div>
                       {p.role && <div className="truncate text-[10px] text-muted-foreground">{p.role}</div>}
@@ -4527,6 +4613,7 @@ function scoreSkill(s: SkillRow, terms: string[]): number {
 }
 
 export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnly?: boolean }) {
+  const confirm = useConfirm();
   const { workspaceId } = useCurrentContext();
   const { workspaceSlug, projectSlug } = useParams();
   const navigate = useNavigate();
@@ -4590,7 +4677,7 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
   }
 
   async function removeSkill(s: SkillRow) {
-    if (!confirm(`Supprimer le skill « ${s.name} » ? Cette action est irréversible.`)) return;
+    if (!(await confirm(`Supprimer le skill « ${s.name} » ? Cette action est irréversible.`))) return;
     await supabase.from("agent_skills").delete().eq("id", s.id);
     if (selected?.id === s.id) setSelected(null);
     queryClient.invalidateQueries({ queryKey: ["agent_skills_all"] });

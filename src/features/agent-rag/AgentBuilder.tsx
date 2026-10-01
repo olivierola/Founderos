@@ -1,3 +1,4 @@
+import { SupportTab, type SupportSubtab } from "./support/SupportTab";
 import { useState, useRef, useEffect, forwardRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -47,7 +48,7 @@ import { WidgetStudio, type StudioTab } from "@/features/agent-rag/widget/Widget
 // A public agent now lives in the service dashboard that owns it, exactly like
 // an internal one, so what is left here are the six tabs themselves — the
 // chrome around them belongs to the dashboard (PublicAgentInDashboard).
-export type PublicAgentTab = "knowledge" | "playground" | "widget" | "analytics" | "onboarding" | "ecommerce" | "settings";
+export type PublicAgentTab = "knowledge" | "playground" | "widget" | "analytics" | "support" | "onboarding" | "ecommerce" | "settings";
 
 export interface Agent {
   id: string; project_id: string; name: string; description: string | null; persona: string | null;
@@ -63,7 +64,7 @@ interface Source { id: string; type: string; title: string; status: string; chun
 // Onboarding is a conditional tab — only surfaced when the agent has the
 // onboarding feature toggled on (see SettingsTab). The base builder is
 // otherwise identical for every public agent.
-export const VALID_PUBLIC_AGENT_TABS: PublicAgentTab[] = ["knowledge", "playground", "widget", "analytics", "onboarding", "ecommerce", "settings"];
+export const VALID_PUBLIC_AGENT_TABS: PublicAgentTab[] = ["knowledge", "playground", "widget", "analytics", "support", "onboarding", "ecommerce", "settings"];
 
 /** The tab bodies, dispatched by slug. Fetching the agent and drawing BOTH tab
  *  bars is the host's job — `sub` is the sub-tab it has resolved (see
@@ -82,6 +83,7 @@ export function PublicAgentTabBody({ agent, tab, sub, workspaceId, projectId }: 
       {effectiveTab === "playground" && <PlaygroundTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
       {effectiveTab === "widget" && <WidgetStudio agent={agent} tab={(sub ?? "modele") as StudioTab} />}
       {effectiveTab === "analytics" && <PublicAnalyticsTab agent={agent} page={(sub ?? "performance") as AnalyticsPage} />}
+      {effectiveTab === "support" && <SupportTab agent={agent} sub={(sub ?? "queue") as SupportSubtab} />}
       {effectiveTab === "onboarding" && <OnboardingTab agent={agent} sub={(sub ?? "goals") as OnbSubtab} />}
       {effectiveTab === "ecommerce" && (
         <EcommerceTab agent={agent} sub={(sub ?? "servers") as EcomSubtab} workspaceId={workspaceId} projectId={projectId} />

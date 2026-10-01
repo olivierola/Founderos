@@ -22,6 +22,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { RUN_TONE, type RunStatus, type TestCase, type TestSuite } from "./TestingPage";
 import { ReportArtifactCard, ReportDialog, type RunReport } from "./TestReport";
+import { useToast } from "@/components/ToastProvider";
 
 const TERMINAL: RunStatus[] = ["passed", "failed", "error", "cancelled"];
 
@@ -60,6 +61,7 @@ export function LiveTab({
 function StartScreen({
   onSelectRun, onCreateInTests,
 }: { onSelectRun: (id: string) => void; onCreateInTests: () => void }) {
+  const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [starting, setStarting] = useState<string | null>(null);
@@ -108,7 +110,7 @@ function StartScreen({
       queryClient.invalidateQueries({ queryKey: ["test_runs_recent", projectId] });
       onSelectRun(res.run_id);
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally { setStarting(null); }
   }
 
@@ -171,6 +173,7 @@ function StartScreen({
 
 // ── The live run: app preview fixed left, agent chat full-height right ───────
 function LiveRun({ runId }: { runId: string }) {
+  const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState("");
@@ -226,7 +229,7 @@ function LiveRun({ runId }: { runId: string }) {
       queryClient.invalidateQueries({ queryKey: ["test_run", runId] });
       queryClient.invalidateQueries({ queryKey: ["test_run_steps", runId] });
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally { setSending(false); }
   }
 

@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { OnboardingFlow, OnboardingStep, FlowKind } from "./common";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Props {
   agentId: string;
@@ -32,6 +33,7 @@ interface Props {
 }
 
 export function FlowEditor({ agentId, workspaceId, projectId, kind, emptyTitle, emptyDescription }: Props) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [openFlowId, setOpenFlowId] = useState<string | null>(null);
 
@@ -69,7 +71,7 @@ export function FlowEditor({ agentId, workspaceId, projectId, kind, emptyTitle, 
   }
 
   async function deleteFlow(id: string) {
-    if (!confirm("Delete this flow and its steps?")) return;
+    if (!(await confirm("Delete this flow and its steps?"))) return;
     await supabase.from("rag_onboarding_flows").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["onb_flows", agentId, kind] });
   }

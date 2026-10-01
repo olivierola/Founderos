@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Pill, Field, Select } from "../ui";
 import { SELF_HOSTED_MODELS } from "./data";
 import { useProvidersDb, useInfraActions, type Provider, type ProviderKind, type RunpodGpu, type OvhFlavor } from "./infra";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // Visual identity per provider kind (badges, icons, connection cards).
 const KIND_META: Record<ProviderKind, { label: string; tone: "cyan" | "violet" | "blue"; Icon: typeof Cloud; bg: string; blurb: string }> = {
@@ -30,6 +31,7 @@ const KIND_META: Record<ProviderKind, { label: string; tone: "cyan" | "violet" |
 };
 
 export function ProvidersPanel() {
+  const confirm = useConfirm();
   const { providers, loading, connect, test, remove, runpodProviders, ovhProviders, awsProviders, listGpus } = useProvidersDb();
   const [connecting, setConnecting] = useState(false);
   const [renting, setRenting] = useState(false);
@@ -87,7 +89,7 @@ export function ProvidersPanel() {
         </div>
       ) : (
         <div className="divide-y divide-border/60">
-          {providers.map((p) => <ProviderRow key={p.id} p={p} onTest={() => test(p.id)} onRemove={() => { if (confirm(`Déconnecter ${p.name} ?`)) void remove(p.id); }} />)}
+          {providers.map((p) => <ProviderRow key={p.id} p={p} onTest={() => test(p.id)} onRemove={async () => { if ((await confirm(`Déconnecter ${p.name} ?`))) void remove(p.id); }} />)}
         </div>
       )}
 

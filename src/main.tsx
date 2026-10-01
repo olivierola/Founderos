@@ -6,6 +6,7 @@ import { router } from "@/app/router";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/lib/theme-context";
 import { ToastProvider } from "@/components/ToastProvider";
+import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { applySkinNow } from "@/lib/useSkin";
 import { captureAttribution } from "@/lib/attribution";
 import "@/styles/globals.css";
@@ -27,9 +28,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <ToastProvider>
-          <AuthProvider>
-            <RouterProvider router={router} />
-          </AuthProvider>
+          <ConfirmProvider>
+            <AuthProvider>
+              <RouterProvider router={router} />
+            </AuthProvider>
+          </ConfirmProvider>
         </ToastProvider>
       </ThemeProvider>
     </QueryClientProvider>

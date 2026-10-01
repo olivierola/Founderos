@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import {
-  CalendarBlankIcon, LinkIcon, PaperclipIcon, TreeStructureIcon,
+  CalendarBlankIcon, LinkIcon, PaperclipIcon, StackIcon, TreeStructureIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import type { DisplayProperties } from "../filters";
@@ -130,6 +130,15 @@ export function IssueMeta({ issue, properties }: { issue: PjIssue; properties: D
     bits.push(
       <span key="sub" className="flex items-center gap-1">
         <TreeStructureIcon className="h-3.5 w-3.5" />{issue.sub_issue_count}
+      </span>,
+    );
+  }
+  // Les ressources d'abord : elles disent SUR QUOI porte la carte, ce qui se
+  // lit avant de savoir combien de fichiers y sont accrochés.
+  if (properties.resource_count && issue.resource_count > 0) {
+    bits.push(
+      <span key="resources" className="flex items-center gap-1">
+        <StackIcon className="h-3.5 w-3.5" />{issue.resource_count}
       </span>,
     );
   }

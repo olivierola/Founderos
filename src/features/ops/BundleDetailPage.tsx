@@ -23,6 +23,7 @@ import { ArchitectureView, type Topology } from "./ArchitectureView";
 import { useOpsUrl } from "./hooks";
 import { RUNNER_IMPLEMENTED_JOB_TYPES, JOB_TYPE_LABEL } from "./types";
 import type { OpsGeneratedFile, OpsServer, OpsFileType, OpsJobType } from "./types";
+import { useToast } from "@/components/ToastProvider";
 
 const FILE_TYPE_LABEL: Record<OpsFileType, string> = {
   dockerfile: "Dockerfile",
@@ -40,6 +41,7 @@ const FILE_TYPE_LABEL: Record<OpsFileType, string> = {
 };
 
 export function OpsBundleDetailPage() {
+  const toast = useToast();
   const { bundleId } = useParams();
   const { projectId } = useCurrentContext();
   const queryClient = useQueryClient();
@@ -126,7 +128,7 @@ export function OpsBundleDetailPage() {
       await callEdge("ops-generate-topology", { bundle_id: bundleId });
       queryClient.invalidateQueries({ queryKey: ["ops_topology", bundleId] });
     } catch (e: any) {
-      alert("Could not regenerate: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not regenerate: " + (e?.message ?? "edge not deployed"));
     } finally {
       setRegenerating(false);
     }
@@ -149,7 +151,7 @@ export function OpsBundleDetailPage() {
 
       // Don't enqueue a job the runner can't execute — it would fail on pickup.
       if (!RUNNER_IMPLEMENTED_JOB_TYPES.has(jobType)) {
-        alert(`Le runner v1 ne sait pas encore exécuter « ${JOB_TYPE_LABEL[jobType] ?? jobType} ». Appliquez ce bundle manuellement (les fichiers sont téléchargeables), ou utilisez un bundle script/SSH.`);
+        toast.error(`Le runner v1 ne sait pas encore exécuter « ${JOB_TYPE_LABEL[jobType] ?? jobType} ». Appliquez ce bundle manuellement (les fichiers sont téléchargeables), ou utilisez un bundle script/SSH.`);
         return;
       }
 
@@ -162,10 +164,10 @@ export function OpsBundleDetailPage() {
         requires_approval: true,
         input: { bundle_id: bundleId },
       });
-      alert("Job created and awaiting approval. Review it in Jobs & Audit.");
+      toast.error("Job created and awaiting approval. Review it in Jobs & Audit.");
       navigate(url("/devops/jobs"));
     } catch (e: any) {
-      alert("Could not enqueue: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not enqueue: " + (e?.message ?? "edge not deployed"));
     } finally {
       setApplying(false);
     }
@@ -294,7 +296,7 @@ export function OpsBundleDetailPage() {
                         .update({ topology: next })
                         .eq("id", topologyRow.id);
                       if (error) {
-                        alert("Could not save topology change: " + error.message);
+                        toast.error("Could not save topology change: " + error.message);
                         return;
                       }
                       try {

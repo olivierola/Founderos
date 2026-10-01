@@ -67,7 +67,9 @@ export interface Outline {
  *  ainsi qu'on la lit, le corps indenté sous elle et la suite en dessous. Une
  *  décision a ses deux branches et sa suite sort du handle par défaut. */
 export function legsOfKind(kind: string | undefined): { legs: Array<{ handle: string; label: string }>; after: string | null } {
-  if (kind === "decision") {
+  // Une condition jugée se lit exactement comme une décision : deux branches,
+  // la suite sous celle qu'on prend. Seule la façon de trancher change.
+  if (kind === "decision" || kind === "judge") {
     return { legs: [{ handle: "true", label: "SI" }, { handle: "false", label: "SINON" }], after: null };
   }
   if (kind === "loop") return { legs: [{ handle: "body", label: "RÉPÉTER" }], after: "done" };
@@ -169,7 +171,12 @@ export function attachedTo(nodes: Node[], edges: Edge[], actionId: string): Node
 
 export interface Graph { nodes: Node[]; edges: Edge[] }
 
-const newId = (kind: string) => `${kind}-${Math.random().toString(36).slice(2, 9)}`;
+/** L'identifiant d'un bloc. Exporté : la vue graphe le tire AVANT d'insérer,
+ *  pour pouvoir ouvrir les réglages du bloc qu'elle vient de poser — une mise à
+ *  jour fonctionnelle ne rend rien, et attendre le rendu suivant pour retrouver
+ *  « le dernier bloc » désignerait le mauvais dès qu'il y en a deux. */
+export const newBlockId = (kind: string) => `${kind}-${Math.random().toString(36).slice(2, 9)}`;
+const newId = newBlockId;
 
 const attachEdgeBetween = (q: string, a: string): Edge => ({
   id: `a-${q}-${a}`, source: q, target: a,
@@ -216,17 +223,34 @@ function chainEnd(nodes: Node[], edges: Edge[]): string | null {
 export function insertBlock(
   g: Graph,
   kind: BlockKind,
-  at: { afterId?: string | null; legOf?: string | null; legHandle?: string | null } = {},
+  at: {
+    afterId?: string | null; legOf?: string | null; legHandle?: string | null;
+    /** Où le poser sur le canevas. Le document ne s'en sert pas — il empile —
+     *  mais la vue graphe pose le bloc là où la main l'a lâché. */
+    position?: { x: number; y: number };
+    /** Ne raccorder à rien. La vue graphe câble elle-même, au port d'où le fil
+     *  est parti : laisser en plus le raccordement automatique donnerait au
+     *  nouveau bloc deux parents, dont un que personne n'a demandé. */
+    detached?: boolean;
+    /** L'identifiant à donner, quand l'appelant a besoin de le connaître. */
+    id?: string;
+  } = {},
 ): { graph: Graph; id: string } {
   const def = BLOCK_BY_KIND.get(kind);
-  const id = newId(kind);
-  // La position n'a plus de sens dans un document, mais le graphe la stocke et
+  const id = at.id ?? newId(kind);
+  // Dans un document la position ne veut rien dire, mais le graphe la stocke et
   // un bloc sans position casse tout consommateur qui la lit sans garde.
   const lowest = g.nodes.reduce((m, n) => Math.max(m, n.position?.y ?? 0), 60);
-  const node = { id, type: kind, position: { x: 260, y: lowest + 120 }, data: { ...(def?.defaults ?? {}) } } as Node;
+  const position = at.position ?? { x: 260, y: lowest + 120 };
+  const node = { id, type: kind, position, data: { ...(def?.defaults ?? {}) } } as Node;
 
   const nodes = [...g.nodes, node];
   let edges = [...g.edges];
+
+  // Une note ne se RACCORDE à rien, jamais : elle commente, elle ne s'exécute
+  // pas. Posée dans la chaîne, elle mettrait un commentaire sur le chemin de
+  // l'exécution et le moteur devrait décider quoi en faire.
+  if (at.detached || kind === "note") return { graph: { nodes, edges }, id };
 
   if (at.legOf && at.legHandle) {
     const existing = flowOut(edges, at.legOf, at.legHandle)[0];
@@ -399,6 +423,47 @@ export function setLegTarget(g: Graph, fromId: string, handle: string, targetId:
   const edges = g.edges.filter((e) => !(e.source === fromId && (e.sourceHandle ?? null) === handle && !isAttachEdge(e)));
   edges.push(flowEdgeBetween(fromId, targetId, handle));
   return { nodes: g.nodes, edges };
+}
+
+// ── Câbler à la main (vue graphe) ────────────────────────────────────────────
+// Le document câble tout seul : écrire une ligne sous une autre SIGNIFIE
+// « ensuite ». Sur un canevas c'est la main qui relie, donc il faut les trois
+// gestes qui n'ont pas d'équivalent dans un texte : relier, déconnecter,
+// déplacer.
+
+/**
+ * Relier deux blocs par le FLUX.
+ *
+ * Une sortie mène à un seul bloc : rebrancher remplace, sans quoi une branche
+ * partirait dans deux directions et le plan lirait la première au hasard. Les
+ * attachements, eux, sont plusieurs-à-plusieurs — ils passent par
+ * `attachQualifier`, jamais par ici.
+ */
+export function connectBlocks(
+  g: Graph, source: string, sourceHandle: string | null, target: string,
+): Graph {
+  if (source === target) return g;
+  const edges = g.edges.filter((e) =>
+    isAttachEdge(e) || e.source !== source || (e.sourceHandle ?? null) !== (sourceHandle ?? null));
+  edges.push(flowEdgeBetween(source, target, sourceHandle ?? null));
+  return { nodes: g.nodes, edges };
+}
+
+/** Couper un lien, sans recoudre. C'est le geste explicite de quelqu'un qui
+ *  regarde le graphe : contrairement à la suppression d'un bloc, il VEUT le
+ *  trou — c'est ainsi qu'on détache une branche pour la rebrancher ailleurs. */
+export function disconnect(g: Graph, edgeId: string): Graph {
+  return { nodes: g.nodes, edges: g.edges.filter((e) => e.id !== edgeId) };
+}
+
+/** Enregistrer les positions après un déplacement. Écrites en une fois, à la
+ *  fin du glissé : une écriture par pixel parcouru recompilerait le playbook
+ *  des dizaines de fois par seconde. */
+export function setPositions(g: Graph, positions: Record<string, { x: number; y: number }>): Graph {
+  return {
+    nodes: g.nodes.map((n) => (positions[n.id] ? { ...n, position: positions[n.id] } : n)),
+    edges: g.edges,
+  };
 }
 
 export function patchBlock(g: Graph, id: string, patch: Record<string, unknown>): Graph {

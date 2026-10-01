@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { useToast } from "@/components/ToastProvider";
-import { formatCredits, usageTone } from "@/lib/billing";
+import { formatCredits, usageTone, type Entitlements } from "@/lib/billing";
 
 // The workspace's credit consumption for the current period, in the sidebar.
 //
@@ -39,17 +39,23 @@ export function UsageMeter({ expanded }: {
   const { entitlements: ent, workspaceId } = useEntitlements();
   const toast = useToast();
 
-  const credits = ent?.credits;
-  const included = credits?.included ?? 0;
-  const used = credits?.used ?? 0;
+  // Everything below is optional: this meter sits in the app shell, so a
+  // billing payload of an unexpected shape must NEVER take the page down with
+  // it (it did: reading .subscription.period_end on a payload without a
+  // subscription threw, the error boundary swallowed the whole shell, and the
+  // page — scrolling included — was gone).
+  const credits = (ent?.credits ?? null) as Entitlements["credits"] | null;
+  const sub = (ent?.subscription ?? null) as Partial<Entitlements["subscription"]> | null;
+  const included = Number(credits?.included) || 0;
+  const used = Number(credits?.used) || 0;
   const pct = included > 0 ? Math.min(100, Math.round((used / included) * 100)) : 0;
   const tone = usageTone(used, included > 0 ? included : -1);
-  const resetDays = daysUntil(ent?.subscription.period_end);
-  const blocked = !!ent?.subscription.hard_blocked;
+  const resetDays = daysUntil(sub?.period_end);
+  const blocked = !!sub?.hard_blocked;
 
   // One toast per period and threshold (80 %, 100 %), remembered locally so
   // it does not come back on every page load.
-  const periodStart = ent?.subscription.period_start;
+  const periodStart = sub?.period_start;
   useEffect(() => {
     if (!workspaceId || !periodStart || included <= 0) return;
     const threshold = pct >= 100 ? 100 : pct >= 80 ? 80 : 0;
@@ -62,20 +68,21 @@ export function UsageMeter({ expanded }: {
     if (threshold === 100) {
       toast.error(
         "Crédits du mois épuisés",
-        ent?.subscription.overage_enabled
+        sub?.overage_enabled
           ? "Le dépassement est activé : vos agents continuent, facturés à l'usage."
           : "Vos agents sont en pause jusqu'au renouvellement — rechargez ou changez d'offre.",
       );
     } else {
       toast.info("80 % de vos crédits consommés", `Il reste ${formatCredits(credits?.remaining ?? 0)} crédits jusqu'au renouvellement.`);
     }
-  }, [workspaceId, periodStart, pct, included, toast, ent?.subscription.overage_enabled, credits?.remaining]);
+  }, [workspaceId, periodStart, pct, included, toast, sub?.overage_enabled, credits?.remaining]);
 
   const base = workspaceSlug && projectSlug ? `/app/${workspaceSlug}/${projectSlug}/admin` : null;
   const openLimits = () => { if (base) navigate(`${base}/usage`); };
   const openPlans = () => { if (base) navigate(`${base}/subscription`); };
 
-  if (!ent) return null;
+  // Nothing to show without real numbers — an empty gauge teaches nothing.
+  if (!ent || !credits || included <= 0) return null;
 
   const resetLabel = resetDays == null ? null : resetDays === 0 ? "Renouvelé aujourd'hui" : `Réinitialisé dans ${resetDays} jour${resetDays > 1 ? "s" : ""}`;
 
@@ -143,7 +150,7 @@ export function UsageMeter({ expanded }: {
         className="flex w-full items-center justify-between gap-3 border-t border-border px-3 py-2.5 text-left transition-colors hover:bg-sidebar-accent/60"
       >
         <span className="text-sm font-semibold text-foreground">
-          {tone === "ok" ? `Offre ${ent.plan.name}` : "Recharger ou changer d'offre"}
+          {tone === "ok" ? `Offre ${ent.plan?.name ?? "actuelle"}` : "Recharger ou changer d'offre"}
         </span>
         <span className="h-5 w-8 shrink-0 rounded-md" style={{ backgroundImage: PAY_GRADIENT }} aria-hidden />
       </button>

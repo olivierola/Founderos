@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface WorkflowRow {
   id: string;
@@ -45,6 +46,7 @@ const TRIGGER_EVENTS = [
 const STEP_TYPES = ["log", "webhook", "create_alert", "create_incident"];
 
 export function AiWorkflowsPage() {
+  const confirm = useConfirm();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [openCreate, setOpenCreate] = useState(false);
@@ -64,7 +66,7 @@ export function AiWorkflowsPage() {
   });
 
   async function deleteWorkflow(id: string) {
-    if (!confirm("Delete workflow?")) return;
+    if (!(await confirm("Delete workflow?"))) return;
     await supabase.from("workflows").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["workflows", projectId] });
   }

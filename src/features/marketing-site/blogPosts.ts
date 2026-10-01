@@ -42,8 +42,6 @@ export const CATEGORIES = [
 ] as const;
 
 const OLIVIER = { name: "Olivier Kamga", role: "Founder & AI Architect", initials: "OK" };
-const LEA = { name: "Léa Verrier", role: "Adoption Lead", initials: "LV" };
-const MARC = { name: "Marc Tissot", role: "Principal Consultant", initials: "MT" };
 
 export const POSTS: Post[] = [
   {
@@ -72,8 +70,8 @@ export const POSTS: Post[] = [
       },
       {
         type: "callout",
-        title: "The uncomfortable finding",
-        text: "In the assessments we ran this year, the median gap between the first unsanctioned AI use inside a company and the first written AI policy was eleven months.",
+        title: "The uncomfortable pattern",
+        text: "Unsanctioned AI use almost always starts long before the first written AI policy — and nobody can say exactly when, because nobody was looking.",
       },
       { type: "h2", text: "What to do in the first month" },
       {
@@ -142,13 +140,13 @@ export const POSTS: Post[] = [
   },
   {
     slug: "eight-percent-adoption-problem",
-    title: "The eight percent problem",
+    title: "The licence nobody uses",
     excerpt:
-      "The median assistant usage rate we measure is eight percent of licensed seats. The technology was never the hard part.",
+      "Licences get bought for everyone and used by a few. The technology was never the hard part.",
     category: "Adoption",
     date: "2026-07-09",
     readMinutes: 6,
-    author: LEA,
+    author: OLIVIER,
     cover: ["#7c83d8", "#17171a"],
     body: [
       {
@@ -189,7 +187,7 @@ export const POSTS: Post[] = [
     category: "Security",
     date: "2026-06-27",
     readMinutes: 8,
-    author: MARC,
+    author: OLIVIER,
     cover: ["#12574a", "#08120f"],
     body: [
       {
@@ -264,7 +262,7 @@ export const POSTS: Post[] = [
     category: "Governance",
     date: "2026-05-28",
     readMinutes: 10,
-    author: MARC,
+    author: OLIVIER,
     cover: ["#a1a1aa", "#1e1e22"],
     body: [
       {

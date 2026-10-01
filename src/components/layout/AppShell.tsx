@@ -12,6 +12,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { PermissionsProvider } from "@/lib/permissions";
 import { AssistantProvider } from "@/lib/assistant-context";
 import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
+import { CoachHandoff } from "@/features/auth/CoachHandoff";
 import { cn } from "@/lib/utils";
 import { useLockDocumentScroll } from "@/hooks/useLockDocumentScroll";
 

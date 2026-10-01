@@ -14,5 +14,7 @@ export default defineConfig({
   optimizeDeps: {
     include: ["@splinetool/react-spline", "@splinetool/runtime"],
   },
+  // The PDF renderer runs in a module worker (features/pdf/pdf.worker.ts).
+  worker: { format: "es" },
   server: { port: 5173 },
 });

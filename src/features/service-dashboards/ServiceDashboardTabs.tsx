@@ -56,6 +56,7 @@ import {
 } from "./agentFolders";
 import type { RangeKey } from "@/features/crm/overview/crmStats";
 import { firstOccurrenceLocal, toAlignment, type Cadence, type Cadenced } from "./scheduleCadence";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // Agents scoped to this dashboard drive every other tab (rooms, schedules,
 // activity, artifacts are all their conversations / missions / runs / outputs).
@@ -449,6 +450,7 @@ function PublicAgentGallery({ agents, dashboardId, onOpen }: {
   dashboardId: string;
   onOpen: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const ids = agents.map((a) => a.id);
   const { data: counts } = useQuery({
@@ -470,7 +472,7 @@ function PublicAgentGallery({ agents, dashboardId, onOpen }: {
   // Deleting cascades to its sources, chunks and conversations (0016 FKs), so
   // it is confirmed by name rather than by a bare "are you sure".
   async function remove(a: DashboardPublicAgent) {
-    if (!confirm(`Supprimer l'agent public « ${a.name} » ? Sa base de connaissances et ses conversations partent avec lui.`)) return;
+    if (!(await confirm(`Supprimer l'agent public « ${a.name} » ? Sa base de connaissances et ses conversations partent avec lui.`))) return;
     await supabase.from("rag_agents").delete().eq("id", a.id);
     queryClient.invalidateQueries({ queryKey: ["sd_public_agents", dashboardId] });
     queryClient.invalidateQueries({ queryKey: ["sd_panel_public_agents", dashboardId] });
@@ -545,6 +547,7 @@ function FolderDialog({ open, folder, onClose, onSave, onDelete }: {
   onSave: (name: string, color: string) => Promise<void>;
   onDelete?: () => Promise<void>;
 }) {
+  const confirm = useConfirm();
   const [name, setName] = useState("");
   const [color, setColor] = useState(FOLDER_COLORS[0]);
   const [busy, setBusy] = useState(false);
@@ -579,7 +582,7 @@ function FolderDialog({ open, folder, onClose, onSave, onDelete }: {
               <Button
                 variant="ghost" className="mr-auto text-destructive hover:text-destructive"
                 onClick={async () => {
-                  if (!confirm("Supprimer ce dossier ? Ses agents ne sont pas supprimés, ils sortent du dossier.")) return;
+                  if (!(await confirm("Supprimer ce dossier ? Ses agents ne sont pas supprimés, ils sortent du dossier."))) return;
                   setBusy(true);
                   try { await onDelete(); onClose(); } finally { setBusy(false); }
                 }}
@@ -988,6 +991,7 @@ function selectionFromRow(m: ScheduleRow): Cadenced {
 export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
   dashboardId: string; workspaceId: string; projectId: string;
 }) {
+  const confirm = useConfirm();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: agents } = useDashboardAgents(dashboardId);
@@ -1017,7 +1021,7 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
     invalidate();
   }
   async function remove(m: ScheduleRow) {
-    if (!confirm(`Supprimer la planification « ${m.title} » ?`)) return;
+    if (!(await confirm(`Supprimer la planification « ${m.title} » ?`))) return;
     await supabase.from("internal_agent_missions").delete().eq("id", m.id);
     invalidate();
   }

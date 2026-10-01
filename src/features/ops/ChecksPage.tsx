@@ -25,6 +25,8 @@ import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import type { OpsCheckDefinition, OpsCheckRun, OpsCheckCategory, OpsProbeType, OpsServer } from "./types";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const CATEGORY_INFO: Record<OpsCheckCategory, { icon: any; label: string; description: string }> = {
   technical: { icon: Activity, label: "Technical", description: "HTTP, SSL, container, disk, memory." },
@@ -46,6 +48,8 @@ const PROBE_TYPES: Array<{ value: OpsProbeType; label: string; configHint: strin
 ];
 
 export function OpsChecksPage() {
+  const confirm = useConfirm();
+  const toast = useToast();
   const { projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -99,7 +103,7 @@ export function OpsChecksPage() {
       await callEdge("ops-run-checks", { project_id: projectId, scope: "all" });
       queryClient.invalidateQueries({ queryKey: ["ops_check_runs_latest", projectId] });
     } catch (e: any) {
-      alert("Could not run checks: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not run checks: " + (e?.message ?? "edge not deployed"));
     } finally {
       setRunningAll(false);
     }
@@ -162,7 +166,7 @@ export function OpsChecksPage() {
                       def={d}
                       lastRun={latestRuns?.get(d.id) ?? null}
                       onDelete={async () => {
-                        if (!confirm("Delete this check?")) return;
+                        if (!(await confirm("Delete this check?"))) return;
                         await supabase.from("ops_check_definitions").delete().eq("id", d.id);
                         queryClient.invalidateQueries({ queryKey: ["ops_check_definitions", projectId] });
                       }}
@@ -266,6 +270,7 @@ function CheckRow({
 // ============================================================================
 
 function CreateCheckDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
@@ -289,7 +294,7 @@ function CreateCheckDialog({ open, onOpenChange }: { open: boolean; onOpenChange
     if (!workspaceId || !projectId || !name.trim()) return;
     let config;
     try { config = JSON.parse(configText); }
-    catch (e: any) { alert("Invalid JSON config: " + e.message); return; }
+    catch (e: any) { toast.error("Invalid JSON config: " + e.message); return; }
     setSaving(true);
     try {
       const { error } = await supabase.from("ops_check_definitions").insert({
@@ -309,7 +314,7 @@ function CreateCheckDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       onOpenChange(false);
       setName(""); setServerId("");
     } catch (e: any) {
-      alert(e?.message ?? "Failed");
+      toast.error(e?.message ?? "Failed");
     } finally {
       setSaving(false);
     }

@@ -35,9 +35,13 @@ import {
   ArrowsOutSimpleIcon as Maximize2,
   ArrowsInSimpleIcon as Minimize2,
   PrinterIcon as Printer,
+  FilePdfIcon as FilePdf,
   WarningIcon as TriangleAlert,
 } from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
+import { PdfExportDialog } from "@/features/pdf/PdfStudio";
+import { pdfFromReportArtisan, type ReportArtisanDoc } from "@/features/pdf/adapters";
+import { dedupeReportBlocks } from "./reportDedupe";
 
 export interface ReportArtisanPayload {
   format: "report-artisan";
@@ -88,6 +92,20 @@ const screenSkin = `
     box-shadow: none !important;
   }
   .ra-bar { display: none !important; }
+  /* Files built before engine 0254 keep the edit bar IN the flow (hidden by
+     opacity only): two or three lines of empty space above every block. Float
+     it above the block, as the current engine does. */
+  .ra-tool { position: relative; }
+  .ra-tool-bar {
+    position: absolute !important; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 30;
+    margin: 0 !important; padding: 8px; border-radius: 12px;
+    border: 1px solid var(--hairline); background: var(--surface);
+    box-shadow: 0 12px 32px rgba(0,0,0,.14);
+    pointer-events: none; transform: translateY(4px);
+    transition: opacity .15s ease, transform .15s ease;
+  }
+  .ra-tool-bar::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 8px; }
+  .ce-block:hover .ra-tool-bar, .ra-tool-bar:focus-within { pointer-events: auto; transform: none; }
 }
 `;
 
@@ -121,6 +139,10 @@ export function forDisplay(html: string, dark: boolean): string {
       try {
         const doc = JSON.parse(out.slice(start, end).split("<\\/").join("</")) as Record<string, unknown>;
         doc.theme = dark ? "dark" : "light";
+        // Reports built before the engine's duplicate guard learnt to read
+        // KPI rows by their figures still carry the rewritten copies — clean
+        // them here, from the embedded document, without regenerating.
+        if (Array.isArray(doc.blocks)) doc.blocks = dedupeReportBlocks(doc.blocks as Array<{ type?: string; data?: Record<string, unknown> }>);
         out = out.slice(0, start) + JSON.stringify(doc).replace(/<\//g, "<\\/") + out.slice(end);
       } catch { /* leave the payload alone rather than corrupt it */ }
     }
@@ -158,6 +180,15 @@ export function ReportArtisanView({ payload, title, fill = true, height, onBack 
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  // The content document travels with the file: the PDF is rebuilt from it with
+  // pdfcn (vector, paginated) rather than printed from the HTML.
+  const pdfSpec = useMemo(
+    () => (payload.doc?.blocks?.length
+      ? { kind: "document" as const, doc: pdfFromReportArtisan(payload.doc as ReportArtisanDoc, title || "Rapport") }
+      : null),
+    [payload.doc, title],
+  );
   const frameRef = useRef<HTMLIFrameElement>(null);
   const dark = useIsDark();
 
@@ -236,8 +267,13 @@ export function ReportArtisanView({ payload, title, fill = true, height, onBack 
         · non enregistré
       </span>
       <span className="flex-1" />
-      <button type="button" onClick={print} className={btn} title="Imprimer ou enregistrer en PDF">
-        <Printer className="h-3.5 w-3.5" /> PDF
+      {pdfSpec && (
+        <button type="button" onClick={() => setPdfOpen(true)} className={btn} title="PDF vectoriel paginé, avec choix du thème">
+          <FilePdf className="h-3.5 w-3.5" /> PDF
+        </button>
+      )}
+      <button type="button" onClick={print} className={btn} title="Imprimer le rapport tel qu'il est mis en page">
+        <Printer className="h-3.5 w-3.5" /> Imprimer
       </button>
       <button type="button" onClick={() => setExpanded((v) => !v)} className={btn}>
         {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -273,11 +309,22 @@ export function ReportArtisanView({ payload, title, fill = true, height, onBack 
         />
       );
 
+  const pdfDialog = pdfSpec && (
+    <PdfExportDialog
+      open={pdfOpen}
+      onOpenChange={setPdfOpen}
+      spec={pdfSpec}
+      defaultOptions={{ theme: "professional" }}
+      description="Le rapport du Rédacteur recomposé en PDF vectoriel — bannières et animations en moins, contenu intégral."
+    />
+  );
+
   if (expanded) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-background">
         {bar}
         <div className="min-h-0 flex-1">{body}</div>
+        {pdfDialog}
       </div>
     );
   }
@@ -289,6 +336,7 @@ export function ReportArtisanView({ payload, title, fill = true, height, onBack 
     >
       {bar}
       <div className="min-h-0 flex-1">{body}</div>
+      {pdfDialog}
     </div>
   );
 }

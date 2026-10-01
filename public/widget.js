@@ -132,7 +132,8 @@
     header_style: "minimal",      // minimal | accent | gradient
     text_subtitle: "",
     status_dot: true,
-    avatar_type: "live",          // live (orbe animée) | orb (pastille dégradée) | image
+    avatar_type: "bot",           // bot (avatar animé) | live (orbe) | orb (pastille) | image
+    avatar_bot: "",               // corps du bot ; vide = déduit du nom de l'agent
     avatar_shape: "rounded",      // circle | rounded | square
     avatar_first: "",             // vide → l'accent, pour un orbe on-brand
     avatar_second: "",            // vide → avatar_first (orbe plat)
@@ -596,32 +597,67 @@
 .fosw-brand a { color: inherit; text-decoration: none; border-radius: 6px; padding: 1px 4px; transition: color 140ms ease; }
 .fosw-brand a:hover { color: var(--fosw-text); }
 .fosw-brand a:hover strong { text-decoration: underline; text-underline-offset: 2px; }
-.fosw-composer {
-  display: flex; align-items: flex-end; gap: 8px; padding: 11px 12px;
-  border-top: 1px solid var(--fosw-border); background: transparent;
+/* ── Composeur commun ───────────────────────────────────────────────────
+   Une carte en verre : le texte en haut, une rangée de boutons ronds dessous.
+   Même forme dans tous les modèles — seuls sa place et son fond changent. */
+.fosw-vc {
+  position: relative; flex: none;
+  display: flex; flex-direction: column; gap: 4px;
+  margin: 0 12px 10px; padding: 12px 10px 10px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--fosw-text) 11%, transparent);
+  background: color-mix(in srgb, var(--fosw-text) 4%, var(--fosw-base));
+  box-shadow: 0 10px 28px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
-.fosw-composer textarea {
-  flex: 1; min-width: 0; min-height: 40px; max-height: 118px; resize: none;
-  border: 1px solid var(--fosw-border);
-  background: var(--fosw-softer); color: var(--fosw-text);
-  padding: 10px 14px; border-radius: var(--fosw-input-radius);
-  font: inherit; line-height: 1.4; outline: none; overflow-y: auto;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+.fosw-vc:focus-within {
+  border-color: color-mix(in srgb, var(--fosw-accent) 55%, transparent);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.12), 0 0 0 3px var(--fosw-accent-soft);
 }
-.fosw-composer textarea:focus { border-color: var(--fosw-accent); box-shadow: 0 0 0 3px var(--fosw-accent-soft); }
-.fosw-composer textarea::placeholder { color: var(--fosw-subtle); }
-.fosw-send {
-  height: 40px; min-width: 40px; padding: 0 13px; flex: none;
-  border: 0; border-radius: var(--fosw-button-radius);
-  background: var(--fosw-accent); color: var(--fosw-accent-text);
-  cursor: pointer; font-weight: 600; font-size: 13px;
+.fosw-vc textarea {
+  display: block; width: 100%; min-height: 44px; max-height: 118px; resize: none;
+  border: 0; outline: none; background: transparent; box-shadow: none;
+  color: var(--fosw-text); font: inherit; font-size: 14.5px; line-height: 1.45;
+  padding: 2px 6px 4px; overflow-y: auto;
+}
+.fosw-vc textarea:focus-visible { outline: none; }
+.fosw-vc textarea::placeholder { color: color-mix(in srgb, var(--fosw-text) 40%, transparent); }
+.fosw-vc-row { display: flex; align-items: center; gap: 8px; }
+.fosw-vc-spacer { flex: 1; }
+.fosw-vc .fosw-vc-btn {
+  flex: none; width: 38px; height: 38px; padding: 0;
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  transition: filter 140ms ease, transform 120ms ease;
+  border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--fosw-text) 12%, transparent);
+  background: color-mix(in srgb, var(--fosw-text) 6%, transparent);
+  color: color-mix(in srgb, var(--fosw-text) 82%, transparent);
+  font-size: 13px; font-weight: 600;
+  transition: background 140ms ease, color 140ms ease, transform 120ms ease, border-color 140ms ease;
 }
-.fosw-send:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
-.fosw-send svg { width: 16px; height: 16px; }
-.fosw-send:disabled { opacity: 0.45; cursor: not-allowed; }
-.fosw-composer-actions { display: flex; align-items: flex-end; gap: 8px; flex: none; }
+.fosw-vc .fosw-vc-btn:hover { background: color-mix(in srgb, var(--fosw-text) 11%, transparent); color: var(--fosw-text); }
+.fosw-vc .fosw-vc-btn:active { transform: scale(0.95); }
+.fosw-vc .fosw-vc-btn svg { width: 17px; height: 17px; }
+.fosw-vc .fosw-vc-send.fosw-has-label { width: auto; padding: 0 14px 0 12px; }
+.fosw-vc .fosw-vc-send.fosw-ready { background: var(--fosw-accent); color: var(--fosw-accent-text); border-color: transparent; }
+.fosw-vc .fosw-vc-send.fosw-ready:hover { filter: brightness(1.08); }
+.fosw-vc .fosw-vc-send:disabled { opacity: 0.45; cursor: not-allowed; }
+.fosw-vc .fosw-rec { color: #ef4444; border-color: rgba(239,68,68,0.5); background: rgba(239,68,68,0.10); }
+/* Menu du « + » — posé au-dessus de la carte. */
+.fosw-vc-menu {
+  position: absolute; left: 8px; bottom: calc(100% + 8px); z-index: 5;
+  min-width: 220px; max-width: calc(100% - 16px); padding: 5px;
+  display: flex; flex-direction: column;
+  border-radius: 16px; border: 1px solid var(--fosw-border);
+  background: var(--fosw-base); box-shadow: 0 16px 40px rgba(0,0,0,0.22);
+  animation: fosw-pop 180ms cubic-bezier(.16,1,.3,1);
+}
+.fosw-vc-item {
+  text-align: left; border: 0; background: transparent; color: var(--fosw-text);
+  font: inherit; font-size: 13px; line-height: 1.35; padding: 8px 10px; border-radius: 10px; cursor: pointer;
+}
+.fosw-vc-item:hover { background: var(--fosw-soft); }
+.fosw-vc-item-muted { color: var(--fosw-subtle); }
+.fosw-vc-sep { height: 1px; margin: 4px 6px; background: var(--fosw-border); }
 
 
 /* ── Modèles ──────────────────────────────────────────────────────────────
@@ -639,19 +675,11 @@
 /* Détaché — la barre de saisie flotte sous la fenêtre, comme une surface à
    part entière. Le composeur n'est plus « dans » la conversation : il en est
    l'outil, posé à côté. */
-.fosw-lay-detached .fosw-composer {
-  flex: none; align-items: center;
-  border: 1px solid var(--fosw-border); border-radius: 999px;
-  background: var(--fosw-panel-bg);
+.fosw-lay-detached .fosw-vc {
+  margin: 0; background: var(--fosw-panel-bg);
   backdrop-filter: var(--fosw-panel-blur); -webkit-backdrop-filter: var(--fosw-panel-blur);
-  box-shadow: var(--fosw-shadow); padding: 7px 7px 7px 6px;
+  box-shadow: var(--fosw-shadow);
 }
-.fosw-lay-detached .fosw-composer textarea {
-  border: 1px solid transparent; background: transparent; padding: 9px 12px; min-height: 38px;
-}
-.fosw-lay-detached .fosw-composer textarea:focus { border-color: transparent; box-shadow: none; }
-.fosw-lay-detached .fosw-send, .fosw-lay-detached .fosw-mic { border-radius: 999px; }
-.fosw-lay-detached .fosw-mic { border-color: transparent; }
 
 /* Volet latéral — collé au bord, pleine hauteur. Pour une aide qui accompagne
    la navigation au lieu de la recouvrir. */
@@ -725,12 +753,9 @@
 .fosw-dock-btn.fosw-primary .fosw-kbd { background: rgba(255,255,255,0.22); }
 .fosw-dock-field { position: relative; display: none; }
 .fosw-dock.fosw-composing .fosw-dock-field { display: block; animation: fosw-grow 240ms cubic-bezier(.16,1,.3,1); }
-.fosw-dock-field textarea {
-  width: 100%; min-height: 78px; max-height: 150px; resize: none;
-  border: 0; outline: none; background: transparent; color: var(--fosw-text);
-  font: inherit; line-height: 1.5; padding: 8px 32px 6px 10px;
-}
-.fosw-dock-field textarea::placeholder { color: var(--fosw-subtle); }
+.fosw-dock-field .fosw-vc { margin: 0 0 4px; }
+.fosw-dock-field .fosw-vc textarea { min-height: 64px; padding-right: 30px; }
+.fosw-dock.fosw-composing .fosw-dock-actions { display: none; }
 .fosw-dock-x {
   position: absolute; top: 4px; right: 4px; width: 24px; height: 24px;
   display: flex; align-items: center; justify-content: center;
@@ -768,24 +793,7 @@
 .fosw-hero-note { margin-top: 9px; font-size: 13px; line-height: 1.55; color: var(--fosw-subtle); }
 .fosw-lay-hero .fosw-chips { justify-content: center; }
 .fosw-lay-hero .fosw-chip { border-radius: 8px; font-size: 12px; padding: 5px 10px; }
-.fosw-lay-hero .fosw-composer {
-  flex-direction: column; align-items: stretch; gap: 0; padding: 0; overflow: hidden;
-  margin: 0 var(--fosw-pad) var(--fosw-pad);
-  border: 1px solid var(--fosw-border); border-radius: var(--fosw-input-radius);
-}
-.fosw-lay-hero .fosw-composer textarea {
-  border: 0; border-radius: 0; background: transparent;
-  min-height: 86px; max-height: 160px; padding: 12px 14px;
-}
-.fosw-lay-hero .fosw-composer textarea:focus { box-shadow: none; }
-.fosw-lay-hero .fosw-composer-actions {
-  align-items: center; padding: 7px 8px;
-  border-top: 1px solid var(--fosw-border); background: var(--fosw-softer);
-}
-/* Le vide à gauche pousse les outils à droite sans nœud supplémentaire. */
-.fosw-lay-hero .fosw-composer-actions::before { content: ""; flex: 1; }
-.fosw-lay-hero .fosw-mic { height: 30px; width: 30px; border: 0; }
-.fosw-lay-hero .fosw-send { height: 30px; min-width: 30px; padding: 0 11px; }
+.fosw-lay-hero .fosw-vc textarea { min-height: 64px; }
 
 /* Aperçu — les modèles posés par rapport au viewport gardent leurs plafonds :
    la règle générique de l'aperçu réserve la place d'un lanceur qu'ils n'ont
@@ -797,17 +805,7 @@
    champ nu : dans une pilule ou une barre d'outils, un liseré autour du seul
    textarea déborde du dessin — et le supprimer sans le remplacer laisserait un
    visiteur au clavier sans repère. */
-.fosw-lay-detached .fosw-composer textarea:focus-visible,
-.fosw-lay-hero .fosw-composer textarea:focus-visible,
-.fosw-dock-field textarea:focus-visible { outline: none; }
-.fosw-lay-detached .fosw-composer:focus-within,
-.fosw-dock.fosw-composing:focus-within {
-  border-color: var(--fosw-accent);
-  box-shadow: var(--fosw-shadow), 0 0 0 3px var(--fosw-accent-soft);
-}
-.fosw-lay-hero .fosw-composer:focus-within {
-  border-color: var(--fosw-accent); box-shadow: 0 0 0 3px var(--fosw-accent-soft);
-}
+/* Le témoin de focus est porté par la carte du composeur (.fosw-vc). */
 
 /* Superpositions d'onboarding (niveau page) */
 .fosw-highlight {
@@ -842,6 +840,11 @@
 
 /* Avatar « orbe animée » : une pastille à peine teintée de l'accent, pour que
    l'orbe monochrome reste à la marque sans se colorer elle-même. */
+.fosw-bot { display: inline-block; flex: none; opacity: 0; transition: opacity 280ms ease; }
+.fosw-bot.fosw-bot-ready { opacity: 1; }
+.fosw-bot.fosw-bot-failed { display: none; }
+/* Le bot porte sa propre matière : pas de pastille derrière lui. */
+.fosw-avatar-bot { background: none; box-shadow: none; overflow: visible; }
 .fosw-avatar-live {
   background: radial-gradient(120% 120% at 28% 18%, var(--fosw-accent-soft), var(--fosw-softer) 72%);
   box-shadow: inset 0 0 0 1px var(--fosw-border);
@@ -1359,7 +1362,10 @@
     var a = el("div", "fosw-avatar");
     var box = size || 32;
     if (size) { a.style.width = size + "px"; a.style.height = size + "px"; }
-    if (c.avatar_type === "live") {
+    if (c.avatar_type === "bot") {
+      a.className = "fosw-avatar fosw-avatar-bot";
+      a.appendChild(botNode(Math.round(box * 1.15)));
+    } else if (c.avatar_type === "live") {
       // Orbe animée (thinking-orbs) : l'identité de l'agent EST son état. Elle
       // respire au repos, écoute pendant la dictée, cherche puis rédige pendant
       // la réponse. L'encre suit la surface : claire sur un fond sombre ou sur
@@ -1402,7 +1408,11 @@
       b.appendChild(img);
     } else {
       var main;
-      if (c.launcher_icon === "orb") {
+      if (c.launcher_icon === "bot") {
+        var pxb = parseInt(state.theme.launcher, 10) || 58;
+        main = el("span", "fosw-ico fosw-ico-main fosw-ico-orb");
+        main.appendChild(botNode(Math.round(pxb * 0.72)));
+      } else if (c.launcher_icon === "orb") {
         // L'orbe vit sur l'accent : son encre est celle qui s'y lit.
         var t = state.theme;
         var px = parseInt(t.launcher, 10) || 58;
@@ -1560,12 +1570,22 @@
     return wrap;
   }
 
-  /* Composeur classique — dans la fenêtre (modèles Classique, Volet,
-     Projecteur) ou détaché sous elle (modèle Détaché) : même nœud, la feuille
-     de style fait le reste. */
-  function renderComposer() {
+  /* ── Composeur ─────────────────────────────────────────────────────────
+     UN seul champ pour tous les modèles (dans la fenêtre, détaché dessous, ou
+     déplié du Dock) : une carte en verre, le texte en haut et une rangée de
+     boutons ronds dessous — « + » (raccourcis et nouvelle conversation), le
+     micro, l'envoi. C'est la surface que la lueur voice-glow enveloppe : elle
+     y respire au repos, suit la voix, balaie pendant la réponse.
+
+     Les modèles ne changent plus la forme du champ, seulement sa place. */
+  var PLUS_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+  var ARROW_UP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+
+  function renderComposer(opts) {
     var c = state.cfg;
-    var composer = el("div", "fosw-composer");
+    opts = opts || {};
+    var card = el("div", "fosw-composer fosw-vc");
+
     dom.input = document.createElement("textarea");
     dom.input.rows = 1;
     dom.input.placeholder = c.text_placeholder || DEFAULTS.text_placeholder;
@@ -1574,30 +1594,95 @@
     // messageries, et la raison pour laquelle un <input> ne suffisait plus.
     dom.input.onkeydown = function (e) {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+      if (e.key === "Escape") { closeComposerMenu(); if (opts.onEscape) { e.stopPropagation(); opts.onEscape(); } }
     };
-    dom.input.oninput = autoGrow;
-    composer.appendChild(dom.input);
+    dom.input.oninput = function () { autoGrow(); syncSendReady(); };
+    card.appendChild(dom.input);
 
-    // Micro et envoi vivent dans un même groupe : le modèle Accueil en fait
-    // une barre d'outils sous le champ, les autres les laissent côte à côte.
-    var actions = el("div", "fosw-composer-actions");
+    var row = el("div", "fosw-vc-row");
+
+    var plus = el("button", "fosw-vc-btn fosw-vc-plus", PLUS_SVG);
+    plus.type = "button";
+    plus.title = "Raccourcis";
+    plus.setAttribute("aria-label", "Raccourcis et nouvelle conversation");
+    plus.setAttribute("aria-haspopup", "menu");
+    plus.onclick = function (e) { e.stopPropagation(); toggleComposerMenu(card, plus); };
+    row.appendChild(plus);
+
+    row.appendChild(el("span", "fosw-vc-spacer"));
+
     var mic = renderMic(false);
-    if (mic) actions.appendChild(mic);
+    if (mic) { mic.className = "fosw-vc-btn fosw-mic"; row.appendChild(mic); }
 
     var style = c.send_button_style || "icon";
     var sendLabel = (c.text_send || "").trim();
-    dom.sendBtn = el("button", "fosw-send", style === "label" ? "" : SEND_SVG);
-    dom.sendBtn.type = "button";
-    dom.sendBtn.setAttribute("aria-label", sendLabel || "Envoyer");
-    if (sendLabel && style !== "icon") {
+    var labelled = !!sendLabel && style !== "icon";
+    var btn = el("button", "fosw-vc-btn fosw-vc-send" + (labelled ? " fosw-has-label" : ""), style === "label" ? "" : ARROW_UP_SVG);
+    btn.type = "button";
+    btn.setAttribute("aria-label", sendLabel || "Envoyer");
+    if (labelled) {
       var l = document.createElement("span");
       l.textContent = sendLabel;
-      dom.sendBtn.appendChild(l);
+      btn.appendChild(l);
     }
-    dom.sendBtn.onclick = send;
-    actions.appendChild(dom.sendBtn);
-    composer.appendChild(actions);
-    return composer;
+    btn.onclick = send;
+    row.appendChild(btn);
+    card.appendChild(row);
+
+    // Dans le Dock, la barre garde son propre bouton principal (dom.sendBtn) ;
+    // ailleurs, c'est celui de la carte.
+    card._sendBtn = btn;
+    if (!opts.dock) dom.sendBtn = btn;
+    dom.composer = card;
+    return card;
+  }
+
+  /* L'envoi s'allume quand il y a quelque chose à envoyer : un bouton plein
+     sur un champ vide promet un geste qui ne fait rien. */
+  function syncSendReady() {
+    var card = dom.composer;
+    if (!card || !card._sendBtn || !dom.input) return;
+    card._sendBtn.classList.toggle("fosw-ready", !!(dom.input.value || "").trim());
+  }
+
+  /* Menu du « + » : les questions suggérées (celles du studio) et un départ à
+     neuf. Il s'ouvre au-dessus du champ et se ferme au premier clic ailleurs. */
+  function closeComposerMenu() {
+    if (dom.composerMenu) { dom.composerMenu.remove(); dom.composerMenu = null; }
+    document.removeEventListener("mousedown", onMenuOutside, true);
+  }
+  function onMenuOutside(e) {
+    if (dom.composerMenu && !dom.composerMenu.contains(e.target) && !(e.target.closest && e.target.closest(".fosw-vc-plus"))) closeComposerMenu();
+  }
+  function toggleComposerMenu(card, anchor) {
+    if (dom.composerMenu) { closeComposerMenu(); return; }
+    var menu = el("div", "fosw-vc-menu");
+    menu.setAttribute("role", "menu");
+    var qs = String(state.cfg.suggested_questions || "")
+      .split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 5);
+    qs.forEach(function (q) {
+      var it = el("button", "fosw-vc-item");
+      it.type = "button";
+      it.setAttribute("role", "menuitem");
+      it.textContent = q;
+      it.onclick = function () {
+        closeComposerMenu();
+        if (!state.open) openPanel();
+        if (dom.input) { dom.input.value = q; send(); }
+      };
+      menu.appendChild(it);
+    });
+    if (qs.length) menu.appendChild(el("div", "fosw-vc-sep"));
+    var reset = el("button", "fosw-vc-item fosw-vc-item-muted");
+    reset.type = "button";
+    reset.setAttribute("role", "menuitem");
+    reset.textContent = "Nouvelle conversation";
+    reset.onclick = function () { closeComposerMenu(); resetConversation(); };
+    menu.appendChild(reset);
+    card.appendChild(menu);
+    dom.composerMenu = menu;
+    setTimeout(function () { document.addEventListener("mousedown", onMenuOutside, true); }, 0);
+    void anchor;
   }
 
   /* ── Modèle Dock ──────────────────────────────────────────────────────
@@ -1613,19 +1698,11 @@
     var d = el("div", "fosw-dock");
     dom.dock = d;
 
+    // Le champ déplié est LE composeur commun (même carte, même lueur).
+    // Échap replie la saisie sans fermer la conversation : on n'annule pas une
+    // lecture en cours parce qu'on renonce à écrire.
     var field = el("div", "fosw-dock-field");
-    dom.input = document.createElement("textarea");
-    dom.input.rows = 1;
-    dom.input.placeholder = c.text_placeholder || DEFAULTS.text_placeholder;
-    dom.input.setAttribute("aria-label", c.text_placeholder || "Message");
-    dom.input.onkeydown = function (e) {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-      // Échap replie la saisie sans fermer la conversation : on n'annule pas
-      // une lecture en cours parce qu'on renonce à écrire.
-      if (e.key === "Escape") { e.stopPropagation(); setComposing(false); }
-    };
-    dom.input.oninput = autoGrow;
-    field.appendChild(dom.input);
+    field.appendChild(renderComposer({ dock: true, onEscape: function () { setComposing(false); } }));
 
     var x = el("button", "fosw-dock-x", CLOSE_SVG);
     x.type = "button";
@@ -1964,6 +2041,76 @@
     return THINKING_LABELS[activity] || THINKING_LABELS.breathing;
   }
 
+  /* ── Avatar animé (bot-avatars) ────────────────────────────────────────
+     Le visage de l'agent : un petit corps 3D qui regarde autour de lui, saute
+     pendant qu'il répond et dort quand il est hors ligne. Même moteur que dans
+     l'app (widget-bot.js, bot-avatars + Preact, ~30 ko gzip), et MÊME corps
+     pour un agent donné : le hash du nom est identique des deux côtés. */
+  var bots = { loading: null, live: [] };
+
+  function loadBots() {
+    if (window.FounderOSWidgetBot) return Promise.resolve(window.FounderOSWidgetBot);
+    if (bots.loading) return bots.loading;
+    if (!SCRIPT_BASE) return Promise.reject(new Error("no base"));
+    bots.loading = new Promise(function (resolve, reject) {
+      var sc = document.createElement("script");
+      sc.src = SCRIPT_BASE + "/widget-bot.js";
+      sc.async = true;
+      sc.onload = function () { window.FounderOSWidgetBot ? resolve(window.FounderOSWidgetBot) : reject(new Error("no api")); };
+      sc.onerror = function () { bots.loading = null; reject(new Error("load failed")); };
+      document.head.appendChild(sc);
+    });
+    return bots.loading;
+  }
+
+  /* L'état du bot suit celui de l'agent : il travaille pendant la réponse. */
+  function botState() {
+    return state.busy ? "working" : "default";
+  }
+
+  function botNode(size) {
+    var host = el("span", "fosw-bot");
+    host.style.width = size + "px";
+    host.style.height = size + "px";
+    var rec = { host: host, handle: null, size: size };
+    bots.live.push(rec);
+    loadBots().then(function (api) {
+      rec.handle = api.mount(host, {
+        type: (state.cfg.avatar_bot || "") || undefined,
+        name: agentName(),
+        state: botState(),
+        size: size,
+        color: (state.cfg.avatar_first || "") || state.theme.accent,
+        dark: !!state.theme.dark,
+      });
+      host.classList.add("fosw-bot-ready");
+    }, function () { host.classList.add("fosw-bot-failed"); });
+    return host;
+  }
+
+  function pruneBots() {
+    bots.live = bots.live.filter(function (r) {
+      if (r.host.isConnected) return true;
+      if (r.handle) { try { r.handle.unmount(); } catch (e) {} }
+      return false;
+    });
+  }
+
+  function refreshBots() {
+    pruneBots();
+    bots.live.forEach(function (r) {
+      if (!r.handle) return;
+      r.handle.update({
+        type: (state.cfg.avatar_bot || "") || undefined,
+        name: agentName(),
+        state: botState(),
+        size: r.size,
+        color: (state.cfg.avatar_first || "") || state.theme.accent,
+        dark: !!state.theme.dark,
+      });
+    });
+  }
+
   function loadOrbs() {
     if (window.FounderOSWidgetOrb) return Promise.resolve(window.FounderOSWidgetOrb);
     if (orbs.loading) return orbs.loading;
@@ -2011,6 +2158,7 @@
 
   function setActivity(a) {
     orbs.activity = a;
+    refreshBots();
     pruneOrbs();
     orbs.live.forEach(function (r) { if (!r.fixed && r.handle) r.handle.update({ state: a }); });
     if (dom.thinkingLabel && dom.thinkingLabel.isConnected) dom.thinkingLabel.textContent = thinkingLabel(a);
@@ -2516,6 +2664,7 @@
     dom.root.innerHTML = "";
     dom.launcher = null; dom.unread = null; dom.teaser = null;
     dom.win = null; dom.dock = null; dom.dockStatus = null; dom.mic = null; dom.backdrop = null;
+    closeComposerMenu(); dom.composer = null;
 
     var layout = layoutOf();
     // En aperçu « panel » la fenêtre est posée dans le cadre, ouverte, sans
@@ -2563,6 +2712,7 @@
     // repartent sur l'activité courante.
     dom.thinkingLabel = null;
     pruneOrbs();
+    pruneBots();
     refreshGlow();
   }
 
@@ -2660,6 +2810,7 @@
     if (!v || dom.sendBtn.disabled) return;
     dom.input.value = "";
     autoGrow();
+    syncSendReady();
     stopDictation();
     clearHero();
     appendMessage("user", v);

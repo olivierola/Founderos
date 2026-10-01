@@ -20,8 +20,6 @@ import {
   ArrowUpRightIcon as ArrowUpRight,
   XIcon as X,
   WrenchIcon as Wrench,
-  CodeIcon as Code2,
-  ArrowLineRightIcon as ArrowRightToLine,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +31,21 @@ import {
   BLOCK_BY_KIND, blockColorClass, blockSummary, isBlockEmpty,
   KNOWN_TOOLS, DELIVERABLE_FORMATS,
 } from "./blocks";
+// Le nom et la teinte d'un bloc vivent à part depuis qu'il y a deux vues : la
+// pastille dans une phrase et la carte sur le canevas doivent dire la même
+// chose du même bloc.
+import { hueOf, chipLabelOf, chipInfoOf } from "./look";
+// Les champs d'une automatisation (code, variable de sortie, paramètres,
+// politique d'échec, condition) vivent à part : la vue graphe les ouvre dans
+// son panneau, et un bloc qui ne serait réglable que dans le document ferait de
+// la carte une consultation plutôt qu'un éditeur.
+import {
+  CodeEditor, OutputVarPill, ArgPills, ErrorPolicy, TestEditor,
+} from "./block-fields";
+import { WorkflowCanvas } from "./WorkflowCanvas";
+import { RunConsole, useRunLog, readPayload } from "./RunConsole";
+import type { Ctx } from "./editor-ctx";
 import { roleOf } from "./graph";
-import { Picker } from "./inspector-ui";
 import { BlockForm } from "./BlockForm";
 import { EventTriggers } from "./EventTriggers";
 import { RichLine, chipToken, type ChipInfo, type SlashOption } from "./RichLine";
@@ -48,11 +59,12 @@ import {
   fetchWorkflow, saveWorkflowContent, updateWorkflow, startRun, cancelRun,
   fetchLatestRun, fetchRunSteps, syncSchedule,
   WORKFLOW_STATUS_META, WORKFLOW_KIND_META, chipIdsIn, contextSourceOf,
-  codeToolOf, outputVarOf,
+  codeToolOf, outputVarOf, varNamesOf,
   nextCronRun, buildCron, parseCron, describeCron, parseNaturalCron,
   DEFAULT_CRON_SPEC, CRON_FREQUENCIES, CRON_WEEKDAYS, type CronSpec,
   type BlockKind, type ContextRef, type RunStep, type WorkflowRun, type WorkflowStatus, type WorkflowKind,
 } from "./model";
+import { useToast } from "@/components/ToastProvider";
 
 // L'éditeur de procédure : un document qu'on écrit, pas un schéma qu'on câble.
 //
@@ -101,58 +113,15 @@ function dropUnknown(g: Graph): { graph: Graph; removed: number } {
 }
 
 // ── Vocabulaire d'affichage ──────────────────────────────────────────────────
-
-/** La teinte d'un bloc pour un `style` inline — les classes Tailwind du
- *  catalogue n'y servent à rien. */
-const HUE: Record<string, string> = {
-  emerald: "#34d399", indigo: "#818cf8", rose: "#fb7185", sky: "#38bdf8",
-  amber: "#fbbf24", purple: "#c084fc", cyan: "#22d3ee", teal: "#2dd4bf",
-  orange: "#fb923c", slate: "#94a3b8", violet: "#a78bfa", lime: "#a3e635",
-  fuchsia: "#e879f9", blue: "#60a5fa",
-};
-const hueOf = (kind: string | undefined) => HUE[BLOCK_BY_KIND.get((kind ?? "step") as BlockKind)?.color ?? "slate"] ?? HUE.slate;
-
-/** Le nom court d'un bloc dans une pastille. Un bloc sans titre affiche ce
- *  qu'il CONTIENT : une pastille « sans titre » au milieu d'une phrase ne dit
- *  rien de ce qu'elle fait là. */
-function chipLabelOf(n: Node): string {
-  const d = (n.data ?? {}) as Record<string, unknown>;
-  const label = String(d.label ?? "").trim();
-  if (label) return label;
-  if (n.type === "tool") {
-    const provider = String(d.provider ?? "").trim();
-    const action = String(d.action ?? "").trim();
-    if (provider && action) return `${provider} → ${action}`;
-    const tool = String(d.tool ?? "").trim();
-    // Le nom lisible plutôt que le slug : une pastille au milieu d'une phrase
-    // doit se lire, et `deep_research` n'est pas du français.
-    return KNOWN_TOOLS.find((t) => t.value === tool)?.label ?? tool ?? "à choisir";
-  }
-  if (n.type === "context") {
-    const cols = (Array.isArray(d.refs) ? (d.refs as ContextRef[]) : []).filter((r) => r.kind === "collection");
-    if (cols.length) return cols.map((r) => r.label).join(" · ");
-    return contextSourceOf(d) === "collections" ? "à choisir" : "à rédiger";
-  }
-  if (n.type === "deliverable") {
-    const fmt = String(d.format ?? "report");
-    return DELIVERABLE_FORMATS.find((f) => f.value === fmt)?.label ?? fmt;
-  }
-  return BLOCK_BY_KIND.get((n.type ?? "step") as BlockKind)?.label ?? "Bloc";
-}
-
-const chipInfoOf = (n: Node): ChipInfo => ({
-  id: n.id,
-  verb: BLOCK_BY_KIND.get((n.type ?? "context") as BlockKind)?.attachLabel ?? "Cadrage",
-  label: chipLabelOf(n),
-  color: hueOf(n.type),
-});
+// Teintes et noms courts vivent dans ./look, parce que la carte du canevas doit
+// nommer et colorer un bloc exactement comme la pastille posée dans une phrase.
 
 /** Ce qu'on écrit dans la procédure. Volontairement court : « ressource » et
  *  « exemple » existent toujours dans le langage — d'anciennes procédures en
  *  contiennent et compilent — mais ils ne sont plus proposés. Une ressource se
  *  dit dans un contexte, un exemple dans l'objectif, et un menu de quinze
  *  entrées oblige à connaître le vocabulaire avant d'écrire la première ligne. */
-const PROCEDURE_KINDS: BlockKind[] = ["step", "decision", "loop", "approval", "handoff", "section"];
+const PROCEDURE_KINDS: BlockKind[] = ["step", "decision", "loop", "approval", "handoff", "section", "stop"];
 
 /**
  * Ce qu'une AUTOMATISATION sait enchaîner. Court, et c'est la définition même :
@@ -161,7 +130,7 @@ const PROCEDURE_KINDS: BlockKind[] = ["step", "decision", "loop", "approval", "h
  * rédigée — n'a de sens que pour quelqu'un qui la lit ; la proposer ici
  * produirait un bloc que le moteur sauterait en silence.
  */
-const AUTOMATION_KINDS: BlockKind[] = ["tool", "decision", "handoff"];
+const AUTOMATION_KINDS: BlockKind[] = ["tool", "decision", "judge", "set", "wait", "stop", "handoff"];
 
 const kindsFor = (kind: WorkflowKind): BlockKind[] =>
   (kind === "automation" ? AUTOMATION_KINDS : PROCEDURE_KINDS);
@@ -194,16 +163,38 @@ function hintsFor(kind: BlockKind): string[] {
 }
 
 /** Ce qu'on pose DANS une phrase, ou qui cadre toute la procédure. */
-const FRAME_KINDS: BlockKind[] = ["goal", "input"];
+const FRAME_KINDS: BlockKind[] = ["goal", "input", "variables", "note"];
+/**
+ * Le cadre d'une AUTOMATISATION. Court, parce qu'il n'y a rien à cadrer pour
+ * un moteur : pas d'objectif à lire, pas de règle à respecter. Restent les deux
+ * choses dont la chaîne a besoin pour tourner — ce qu'elle reçoit, et les
+ * valeurs qu'elle réutilise.
+ */
+const AUTOMATION_FRAME_KINDS: BlockKind[] = ["variables", "input", "note"];
 const QUALIFIER_KINDS: BlockKind[] = ["tool", "context", "rule", "deliverable", "memory"];
 
 // ── L'écran ──────────────────────────────────────────────────────────────────
 
 export function WorkflowDocument({ workflowId, onBack }: { workflowId: string; onBack: () => void }) {
+  const toast = useToast();
   const qc = useQueryClient();
   const [graph, setGraph] = useState<Graph>({ nodes: [], edges: [] });
   const [openBlock, setOpenBlock] = useState<string | null>(null);
   const [docOpen, setDocOpen] = useState(false);
+  /**
+   * Document ou graphe — deux lectures du MÊME modèle.
+   *
+   * Le choix est gardé par workflow, pas globalement : une procédure écrite se
+   * relit comme un texte, une automatisation de douze appels se relit comme une
+   * carte, et imposer la même vue aux deux oblige à rebasculer à chaque
+   * ouverture.
+   */
+  const [view, setView] = useState<"document" | "graph">(() => {
+    try { return localStorage.getItem(`wf-view-${workflowId}`) === "graph" ? "graph" : "document"; }
+    catch { return "document"; }
+  });
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [externalChange, setExternalChange] = useState(false);
@@ -331,6 +322,27 @@ export function WorkflowDocument({ workflowId, onBack }: { workflowId: string; o
     [workflow, graph, agentName],
   );
 
+  // La trace de la dernière exécution, ramenée à une seule forme quelle que
+  // soit la nature du workflow. Lue à deux endroits : la console l'affiche, le
+  // canevas s'en sert pour allumer les blocs parcourus.
+  const log = useRunLog(run ?? null, workflow?.kind ?? "procedure", graph);
+
+  const chooseView = (v: "document" | "graph") => {
+    setView(v);
+    try { localStorage.setItem(`wf-view-${workflowId}`, v); } catch { /* le choix vaut pour cette session */ }
+  };
+
+  /** Lancer, avec la donnée de déclenchement qu'on veut éprouver. */
+  const runTest = async (payload: Record<string, unknown>) => {
+    setRunning(true);
+    try {
+      await startRun(workflowId, payload);
+      qc.invalidateQueries({ queryKey: ["workflow_run", workflowId] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Lancement impossible");
+    } finally { setRunning(false); }
+  };
+
   if (isLoading) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   }
@@ -344,24 +356,31 @@ export function WorkflowDocument({ workflowId, onBack }: { workflowId: string; o
     openBlock, setOpenBlock,
     sections: graph.nodes.filter((n) => n.type === "section"),
     kind: workflow.kind,
-    vars: [...new Set(graph.nodes
-      .map((n) => outputVarOf((n.data ?? {}) as Record<string, unknown>))
-      .filter(Boolean))],
+    // Déclarées dans un bloc « Variables » ET rangées par un bloc qui nomme sa
+    // sortie : c'est le moteur qui résout les deux, donc l'éditeur doit
+    // proposer les deux.
+    vars: varNamesOf(cleanGraph(graph)),
   };
 
   return (
-    // Le document défile dans le conteneur de la page, pas dans une boîte à
-    // lui. Un conteneur interne en `h-full` + `overflow-y-auto` dépend d une
-    // hauteur résolue par le parent ; quand elle ne l est pas, la boîte grandit
-    // sans jamais défiler. Un document qui coule normalement, en-tête collant,
-    // n a pas ce problème — et c est de toute façon la façon dont un document
-    // se comporte.
-    <div className="flex min-h-full flex-col">
+    /**
+     * L'éditeur porte SA hauteur, et distribue le défilement.
+     *
+     * Le document coulait dans le conteneur de la page, ce qui lui allait très
+     * bien — mais un canevas infini et une console ancrée en bas ne peuvent pas
+     * couler : il leur faut une hauteur bornée. Donc la page ne défile plus
+     * (voir SELF_SCROLLING dans ServiceDashboardShell) et c'est la zone du
+     * milieu qui défile, elle seule.
+     */
+    <div className="flex h-full min-h-0 flex-col">
       <DocHeader
         workflow={workflow}
         saving={saving} savedAt={savedAt}
         run={run ?? null}
         canRun={graph.nodes.some((n) => n.type !== "trigger")}
+        view={view} onView={chooseView}
+        busy={running}
+        onTest={() => { setConsoleOpen(true); void runTest(readPayload(workflowId)); }}
         onBack={onBack}
         onDocument={() => setDocOpen(true)}
         onChanged={() => {
@@ -385,16 +404,38 @@ export function WorkflowDocument({ workflowId, onBack }: { workflowId: string; o
         </button>
       )}
 
-      {/* Pas de feuille flottante : le document EST la page. Une carte posée sur
-          un fond gris ajoute une bordure et une ombre qui ne délimitent rien —
-          on lit déjà où le texte commence. */}
-      <div className="mx-auto w-full max-w-[60rem] px-10 py-10">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        {view === "graph" ? (
+          <WorkflowCanvas
+            ctx={ctx}
+            status={log.statusByBlock}
+            kinds={kindsFor(ctx.kind)}
+            frameKinds={ctx.kind === "automation" ? AUTOMATION_FRAME_KINDS : FRAME_KINDS}
+            qualifierKinds={QUALIFIER_KINDS}
+          />
+        ) : (
+          /* Pas de feuille flottante : le document EST la page. Une carte posée
+             sur un fond gris ajoute une bordure et une ombre qui ne délimitent
+             rien — on lit déjà où le texte commence. */
+          <div className="h-full overflow-y-auto">
+            <div className="mx-auto w-full max-w-[60rem] px-10 py-10">
             <WhenToUse
               workflow={workflow} trigger={outline.trigger} ctx={ctx}
               onChanged={() => qc.invalidateQueries({ queryKey: ["workflow", workflowId] })}
             />
 
-            {ctx.kind === "procedure" && <PropertyStrip outline={outline} ctx={ctx} />}
+            {/* Une automatisation n'a pas de cadrage à lire, mais elle a des
+                valeurs nommées et des entrées — et sans cet accès, un bloc
+                « Variables » n'était visible nulle part dans cette vue. */}
+            {ctx.kind === "procedure" ? (
+              <PropertyStrip outline={outline} ctx={ctx} addKinds={[...FRAME_KINDS, ...QUALIFIER_KINDS]} />
+            ) : (
+              <PropertyStrip
+                outline={outline} ctx={ctx}
+                addKinds={AUTOMATION_FRAME_KINDS} only={AUTOMATION_FRAME_KINDS}
+                addLabel="Variables et entrées"
+              />
+            )}
 
             <div className="mt-8 border-t border-border/60 pt-7">
               <Procedure outline={outline} ctx={ctx} />
@@ -420,7 +461,30 @@ export function WorkflowDocument({ workflowId, onBack }: { workflowId: string; o
                 </div>
               </div>
             )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* La console : repliée, c'est une barre ; dépliée, c'est ce qui se passe
+          en ce moment. Elle vit SOUS les deux vues parce qu'elle ne parle ni du
+          texte ni de la carte, mais de l'exécution. */}
+      <RunConsole
+        ctx={ctx}
+        run={run ?? null}
+        log={log}
+        open={consoleOpen}
+        onOpenChange={setConsoleOpen}
+        onTest={(payload) => void runTest(payload)}
+        onCancel={async () => {
+          if (!run) return;
+          setRunning(true);
+          try { await cancelRun(run.id); qc.invalidateQueries({ queryKey: ["workflow_run", workflowId] }); }
+          finally { setRunning(false); }
+        }}
+        busy={running}
+        canRun={graph.nodes.some((n) => n.type !== "trigger")}
+      />
 
       <Dialog open={docOpen} onOpenChange={setDocOpen}>
         <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">
@@ -442,28 +506,9 @@ export function WorkflowDocument({ workflowId, onBack }: { workflowId: string; o
 }
 
 // ── Contexte ─────────────────────────────────────────────────────────────────
-
-interface Ctx {
-  graph: Graph;
-  apply: (fn: (g: Graph) => Graph) => void;
-  agents: Array<{ id: string; name: string }>;
-  collections: Array<{ id: string; name: string }>;
-  agentName: Map<string, string>;
-  workflowId: string;
-  workspaceId: string | null;
-  projectId: string | null;
-  openBlock: string | null;
-  setOpenBlock: (id: string | null) => void;
-  /** Les intertitres — les seules cibles d'un « aller à ». */
-  sections: Node[];
-  /** Procédure ou automatisation. Décide des blocs offerts, de la façon dont une
-   *  condition s'écrit, et de qui exécutera au déclenchement. */
-  kind: WorkflowKind;
-  /** Les variables nommées par les blocs du workflow. Calculées une fois ici :
-   *  chaque endroit qui les recalculait aurait fini par en connaître un jeu
-   *  différent. */
-  vars: string[];
-}
+// Le type vit dans ./editor-ctx : les deux vues (document et graphe) écrivent
+// dans le même modèle par la même fonction `apply`, et un second contexte pour
+// la seconde vue aurait été un second modèle en germe.
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 
@@ -716,10 +761,15 @@ const RUN_META: Record<string, { label: string; tone: string }> = {
   stopped: { label: "Arrêté par une condition", tone: "text-amber-500" },
 };
 
-function DocHeader({ workflow, saving, savedAt, run, canRun, onBack, onDocument, onChanged }: {
+function DocHeader({
+  workflow, saving, savedAt, run, canRun, view, onView, busy: testing, onTest,
+  onBack, onDocument, onChanged,
+}: {
   workflow: { id: string; name: string; status: WorkflowStatus; kind: WorkflowKind };
   saving: boolean; savedAt: number | null;
   run: WorkflowRun | null; canRun: boolean;
+  view: "document" | "graph"; onView: (v: "document" | "graph") => void;
+  busy: boolean; onTest: () => void;
   onBack: () => void; onDocument: () => void; onChanged: () => void;
 }) {
   const [name, setName] = useState(workflow.name);
@@ -774,7 +824,14 @@ function DocHeader({ workflow, saving, savedAt, run, canRun, onBack, onDocument,
         </span>
       )}
 
-      <span className="ml-auto flex w-24 items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+      {/* Les deux lectures du même workflow. Une bascule, pas deux pages : ce
+          n'est pas un changement de document, c'est un changement d'angle. */}
+      <div className="ml-auto flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
+        <ViewTab active={view === "document"} onClick={() => onView("document")} icon={FileText} label="Document" />
+        <ViewTab active={view === "graph"} onClick={() => onView("graph")} icon={GitBranch} label="Graphe" />
+      </div>
+
+      <span className="flex w-24 items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
         {saving ? <><Loader2 className="h-3 w-3 animate-spin" /> Enregistre…</>
           : savedAt && Date.now() - savedAt < 3000 ? <><Check className="h-3 w-3 text-emerald-500" /> Enregistré</>
           : null}
@@ -789,21 +846,19 @@ function DocHeader({ workflow, saving, savedAt, run, canRun, onBack, onDocument,
         </Button>
       )}
 
+      {/* Le test passe par la console : c'est elle qui porte la donnée de
+          déclenchement et qui montre ce qui se passe. Un bouton qui lancerait
+          sans rien ouvrir laisserait exactement le vide qu'on vient de combler. */}
       {live && run ? (
         <Button size="sm" variant="outline" disabled={busy}
           onClick={async () => { setBusy(true); try { await cancelRun(run.id); onChanged(); } finally { setBusy(false); } }}>
           <Square className="mr-1.5 h-3.5 w-3.5" /> Arrêter
         </Button>
       ) : (
-        <Button size="sm" variant="outline" disabled={busy || !canRun}
-          title={canRun ? "Exécuter maintenant" : "Écrivez au moins une étape"}
-          onClick={async () => {
-            setBusy(true);
-            try { await startRun(workflow.id); onChanged(); }
-            catch (e) { alert(e instanceof Error ? e.message : "Lancement impossible"); }
-            finally { setBusy(false); }
-          }}>
-          {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />} Tester
+        <Button size="sm" variant="outline" disabled={busy || testing || !canRun}
+          title={canRun ? "Exécuter maintenant, et suivre dans la console" : "Écrivez au moins une étape"}
+          onClick={onTest}>
+          {testing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />} Tester
         </Button>
       )}
       {/* Activer ne veut pas dire la même chose des deux côtés : une
@@ -821,6 +876,22 @@ function DocHeader({ workflow, saving, savedAt, run, canRun, onBack, onDocument,
           : (workflow.kind === "automation" ? "Activer" : "Donner aux agents")}
       </Button>
     </header>
+  );
+}
+
+function ViewTab({ active, onClick, icon: Icon, label }: {
+  active: boolean; onClick: () => void; icon: typeof FileText; label: string;
+}) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] transition-colors",
+        active ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" /> {label}
+    </button>
   );
 }
 
@@ -1158,8 +1229,17 @@ function CronPicker({ value, onChange }: { value: string; onChange: (expr: strin
 /** Le cadre de la procédure : objectif, entrées, et ce qui vaut partout.
  *  Réduit à une rangée de pastilles — c'est un préambule, il ne doit pas
  *  occuper le haut de l'écran devant les étapes. */
-function PropertyStrip({ outline, ctx }: { outline: ReturnType<typeof buildOutline>; ctx: Ctx }) {
-  const blocks = [...outline.frames, ...outline.globals];
+function PropertyStrip({ outline, ctx, addKinds, addLabel = "Cadre", only }: {
+  outline: ReturnType<typeof buildOutline>;
+  ctx: Ctx;
+  /** Ce que le « + » propose. */
+  addKinds: BlockKind[];
+  addLabel?: string;
+  /** Les types à montrer. Sans filtre, tout le cadre. */
+  only?: BlockKind[];
+}) {
+  const blocks = [...outline.frames, ...outline.globals]
+    .filter((n) => !only || only.includes((n.type ?? "step") as BlockKind));
   const openNode = blocks.find((n) => n.id === ctx.openBlock) ?? null;
   const [adding, setAdding] = useState(false);
 
@@ -1192,9 +1272,9 @@ function PropertyStrip({ outline, ctx }: { outline: ReturnType<typeof buildOutli
           <button
             type="button" onClick={() => setAdding((v) => !v)}
             className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-[12px] text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-          ><Plus className="h-3 w-3" /> Cadre</button>
+          ><Plus className="h-3 w-3" /> {addLabel}</button>
           <Menu open={adding} onClose={() => setAdding(false)}>
-            {[...FRAME_KINDS, ...QUALIFIER_KINDS].map((k) => (
+            {addKinds.map((k) => (
               <MenuRow key={k} kind={k} onClick={() => {
                 const { graph, id } = insertBlock(ctx.graph, k, {});
                 ctx.apply(() => graph);
@@ -1325,7 +1405,11 @@ function BlockRow({ item, ordinal, depth, ctx }: {
   // une phrase : c'est l'action elle-même, la ligne entière. La rendre comme
   // une pastille au bout d'un texte laisserait croire qu'un agent lit la phrase
   // et décide d'y recourir — alors que c'est exactement ce qui n'arrivera pas.
-  if (ctx.kind === "automation" && kind === "tool") {
+  // Les blocs que le MOTEUR exécute : un appel, une affectation, une pause, une
+  // fin. Une fin se lit pareil dans une procédure — « arrête-toi là » n'est pas
+  // une phrase qu'on enrichit de pastilles.
+  const executed = (ctx.kind === "automation" && ["tool", "set", "wait"].includes(kind)) || kind === "stop";
+  if (executed) {
     return <ActionRow node={node} ordinal={ordinal} ctx={ctx} />;
   }
 
@@ -1698,182 +1782,6 @@ function HandoffPills({ node, ctx }: { node: Node; ctx: Ctx }) {
  * peut désigner ce que celle-ci a produit qu'en citant l'identifiant du bloc,
  * qui ne veut rien dire. Avec, elle écrit `{{deals}}`.
  */
-/**
- * Écrire le code d'une étape, sur la ligne.
- *
- * Un outil se CHOISIT ; du code s'ÉCRIT. Un champ « paramètres » n'a aucun sens
- * pour lui — le paramètre, c'est le programme. Et le mettre dans un panneau
- * qu'il faut ouvrir masquerait ce que l'étape fait réellement, alors que c'est
- * la seule chose qu'on veut relire.
- *
- * Les variables déjà nommées plus haut sont proposées au-dessus : le vrai
- * obstacle n'est pas d'écrire `{{deals}}`, c'est de se rappeler que `deals`
- * existe sans aller relire les étapes précédentes.
- */
-function CodeEditor({ node, ctx, vars }: { node: Node; ctx: Ctx; vars: string[] }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const d = (node.data ?? {}) as Record<string, unknown>;
-  const lang = codeToolOf(d);
-  const code = String(d.code ?? "");
-  if (!lang) return null;
-
-  const write = (next: string) => ctx.apply((g) => patchBlock(g, node.id, { code: next }));
-
-  /** Poser `{{nom}}` au curseur, pas à la fin : on insère une variable au
-   *  milieu d'une ligne qu'on est en train d'écrire. */
-  const insertVar = (name: string) => {
-    const el = ref.current;
-    const token = `{{${name}}}`;
-    if (!el) { write(code + token); return; }
-    const a = el.selectionStart ?? code.length;
-    const b = el.selectionEnd ?? a;
-    const next = code.slice(0, a) + token + code.slice(b);
-    write(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(a + token.length, a + token.length);
-    });
-  };
-
-  return (
-    <div className="mt-1.5 overflow-hidden rounded-xl border border-border bg-muted/20">
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5">
-        <Code2 className="h-3.5 w-3.5 text-blue-400" />
-        <span className="text-[11px] font-medium">{lang.label}</span>
-        {vars.length > 0 && (
-          <>
-            <span className="ml-1 text-[11px] text-muted-foreground">insérer</span>
-            {vars.map((v) => (
-              <button
-                key={v} type="button" onClick={() => insertVar(v)}
-                title={`Insérer {{${v}}}`}
-                className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
-              >{v}</button>
-            ))}
-          </>
-        )}
-        <span className="ml-auto">
-          <OutputVarPill node={node} ctx={ctx} />
-        </span>
-      </div>
-      <textarea
-        ref={ref}
-        value={code}
-        onChange={(e) => write(e.target.value)}
-        onKeyDown={(e) => {
-          // Tab indente au lieu de quitter le champ : dans un éditeur de code,
-          // perdre le focus sur Tab rend l'indentation impossible.
-          if (e.key !== "Tab") return;
-          e.preventDefault();
-          const el = e.currentTarget;
-          const a = el.selectionStart, b = el.selectionEnd;
-          write(code.slice(0, a) + "  " + code.slice(b));
-          requestAnimationFrame(() => el.setSelectionRange(a + 2, a + 2));
-        }}
-        rows={Math.max(3, Math.min(code.split("\n").length + 1, 20))}
-        spellCheck={false}
-        placeholder={lang.language === "python"
-          ? "deals = {{deals}}\nretenus = [d for d in deals if d['amount'] > 1000]\nretenus"
-          : "// La dernière expression est le résultat."}
-        className="w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[12.5px] leading-relaxed outline-none placeholder:text-muted-foreground/40"
-      />
-    </div>
-  );
-}
-
-function OutputVarPill({ node, ctx }: { node: Node; ctx: Ctx }) {
-  const d = (node.data ?? {}) as Record<string, unknown>;
-  const raw = String(d.output_var ?? "");
-  const [editing, setEditing] = useState(false);
-
-  if (!raw && !editing) {
-    return (
-      <button
-        type="button" onClick={() => setEditing(true)}
-        title="Ranger le résultat dans une variable"
-        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-      ><ArrowRightToLine className="h-3 w-3" /> variable</button>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[12px]">
-      <ArrowRightToLine className="h-3 w-3 text-muted-foreground" />
-      <input
-        autoFocus={editing}
-        value={raw}
-        onChange={(e) => ctx.apply((g) => patchBlock(g, node.id, { output_var: e.target.value }))}
-        onBlur={() => setEditing(false)}
-        placeholder="nom"
-        size={Math.max(6, Math.min(raw.length + 1, 24))}
-        className="bg-transparent font-mono text-[12px] outline-none placeholder:text-muted-foreground/50"
-      />
-    </span>
-  );
-}
-
-function ArgPills({ node, ctx }: { node: Node; ctx: Ctx }) {
-  const d = (node.data ?? {}) as Record<string, unknown>;
-  if (node.type !== "tool") return null;
-  // Un outil qui exécute du code n'a pas de paramètres : son paramètre EST le
-  // programme, écrit sur la ligne.
-  if (codeToolOf(d)) return <OutputVarPill node={node} ctx={ctx} />;
-  const args = (d.args ?? {}) as Record<string, unknown>;
-  const entries = Object.entries(args);
-
-  /**
-   * Réécrire la table ENTIÈRE à partir des paires.
-   *
-   * Deux raisons. Renommer une clé autrement la déplacerait à la fin, alors que
-   * l'ordre est celui dans lequel on les a écrites. Et une paire dont la clé
-   * n'est pas encore tapée doit SURVIVRE : la filtrer ici ferait disparaître le
-   * paramètre à l'instant où on l'ajoute. Ce sont `toolCall` et le moteur qui
-   * écartent les paires incomplètes, au moment où elles comptent vraiment.
-   */
-  const write = (pairs: Array<[string, unknown]>) =>
-    ctx.apply((g) => patchBlock(g, node.id, { args: Object.fromEntries(pairs) }));
-
-  const grow = (v: string, min = 3, max = 24) => Math.max(min, Math.min(v.length + 1, max));
-
-  return (
-    <>
-      {entries.map(([name, value], i) => (
-        <span
-          key={i}
-          className="group/arg inline-flex items-center gap-0.5 rounded-md bg-muted/60 px-1.5 py-0.5 text-[12px]"
-        >
-          <input
-            value={name}
-            onChange={(e) => write(entries.map((p, j) => (j === i ? [e.target.value, p[1]] : p)))}
-            size={grow(name)}
-            placeholder="param"
-            className="bg-transparent font-mono text-[11px] text-muted-foreground outline-none"
-          />
-          <span className="text-muted-foreground/60">=</span>
-          <input
-            value={String(value ?? "")}
-            onChange={(e) => write(entries.map((p, j) => (j === i ? [p[0], e.target.value] : p)))}
-            size={grow(String(value ?? ""), 4, 28)}
-            placeholder="valeur"
-            className="bg-transparent font-mono text-[12px] outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => write(entries.filter((_, j) => j !== i))}
-            title="Retirer ce paramètre"
-            className="ml-0.5 rounded text-muted-foreground/60 opacity-0 transition-opacity hover:text-destructive group-hover/arg:opacity-100"
-          ><X className="h-3 w-3" /></button>
-        </span>
-      ))}
-      <button
-        type="button"
-        onClick={() => write([...entries, ["", ""]])}
-        title="Ajouter un paramètre"
-        className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
-      ><Plus className="h-3 w-3" /></button>
-      <OutputVarPill node={node} ctx={ctx} />
-    </>
-  );
-}
 
 function Pill({ color, verb, label, onClick }: {
   color: string; verb: string; label: string; onClick: () => void;
@@ -1938,12 +1846,20 @@ function BranchHead({ node, ctx }: { node: Node; ctx: Ctx }) {
  * qu'on puisse lire ce qui va se passer AVANT que ça se passe, et une ligne de
  * prose ne le permet pas.
  */
+/**
+ * Une ligne d'ACTION EXÉCUTÉE — un appel, une affectation, une pause, une fin.
+ *
+ * Elle ne s'écrit pas comme une phrase : il n'y a personne pour la lire. Ce que
+ * la ligne doit montrer, c'est ce qui sera fait, en clair, sans avoir à ouvrir
+ * quoi que ce soit — et les réglages s'ouvrent dessous.
+ */
 function ActionRow({ node, ordinal, ctx }: { node: Node; ordinal: string; ctx: Ctx }) {
   const d = (node.data ?? {}) as Record<string, unknown>;
-  const provider = String(d.provider ?? "").trim();
-  const action = String(d.action ?? "").trim();
+  const kind = (node.type ?? "tool") as BlockKind;
+  const def = BLOCK_BY_KIND.get(kind)!;
   const open = ctx.openBlock === node.id;
-  const ready = !!provider && !!action;
+  const empty = isBlockEmpty(kind, d);
+  const summary = blockSummary(kind, d);
 
   return (
     <div className="group/row">
@@ -1957,18 +1873,19 @@ function ActionRow({ node, ordinal, ctx }: { node: Node; ordinal: string; ctx: C
             open ? "border-primary/50 bg-primary/5" : "border-border hover:bg-muted/40",
           )}
         >
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-400/15 text-blue-500">
-            <Wrench className="h-3.5 w-3.5" />
+          <span
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+            style={{ background: `${hueOf(kind)}26`, color: hueOf(kind) }}
+          >
+            <def.icon className="h-3.5 w-3.5" weight="bold" />
           </span>
-          {ready ? (
-            <span className="min-w-0 flex-1 truncate font-mono text-[13px]">
-              {provider} <span className="text-muted-foreground">→</span> {action}
-            </span>
-          ) : (
-            <span className="min-w-0 flex-1 truncate text-[13px] text-amber-500">
-              Choisir l'application et l'action
-            </span>
-          )}
+          <span className={cn(
+            "min-w-0 flex-1 truncate text-[13px]",
+            kind === "tool" && !empty ? "font-mono" : "",
+            empty ? "text-amber-500" : "",
+          )}>
+            {empty ? `À compléter — ${def.hint.toLowerCase()}` : summary}
+          </span>
           {String(d.label ?? "").trim() && (
             <span className="shrink-0 truncate text-[12px] text-muted-foreground">{String(d.label)}</span>
           )}
@@ -1977,7 +1894,9 @@ function ActionRow({ node, ordinal, ctx }: { node: Node; ordinal: string; ctx: C
       </div>
       {open && (
         <div className="ml-9">
-          <ErrorPolicy node={node} ctx={ctx} />
+          {/* La politique d'échec ne vaut que pour ce qui peut échouer chez un
+              tiers. Une affectation ou une pause n'appellent personne. */}
+          {kind === "tool" && <ErrorPolicy node={node} ctx={ctx} />}
           <Panel ctx={ctx} node={node} />
         </div>
       )}
@@ -1985,170 +1904,6 @@ function ActionRow({ node, ordinal, ctx }: { node: Node; ordinal: string; ctx: C
   );
 }
 
-/**
- * Ce que fait la chaîne quand CETTE étape échoue.
- *
- * Par défaut, elle s'arrête : continuer sur une valeur qui n'existe pas est
- * pire qu'un arrêt. Mais une étape accessoire (prévenir Slack, écrire un
- * journal) ne devrait pas coûter toute l'automatisation — celle-là peut
- * continuer, et les étapes suivantes testent `steps.<id>.error`.
- * Les nouveaux essais ne concernent que les pannes passagères ; une écriture
- * n'est rejouée que si elle a été refusée avant d'être exécutée (le moteur y
- * veille, l'écran n'a pas à le demander).
- */
-function ErrorPolicy({ node, ctx }: { node: Node; ctx: Ctx }) {
-  const d = (node.data ?? {}) as Record<string, unknown>;
-  const onError = d.on_error === "continue" ? "continue" : "stop";
-  const retries = d.retries == null || d.retries === "" ? "2" : String(d.retries);
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
-      <span>En cas d'échec</span>
-      <div className="w-56">
-        <Picker
-          value={onError}
-          onChange={(v) => ctx.apply((g) => patchBlock(g, node.id, { on_error: v === "continue" ? "continue" : undefined }))}
-          options={[
-            { value: "stop", label: "Arrêter l'automatisation" },
-            { value: "continue", label: "Continuer (étape accessoire)" },
-          ]}
-        />
-      </div>
-      <span>nouveaux essais</span>
-      <div className="w-20">
-        <Picker
-          value={retries}
-          onChange={(v) => ctx.apply((g) => patchBlock(g, node.id, { retries: Number(v) }))}
-          options={["0", "1", "2", "3"].map((n) => ({ value: n, label: n }))}
-        />
-      </div>
-    </div>
-  );
-}
-
-/** Les opérateurs, repris du moteur — c'est lui qui les évalue, et une liste
- *  recopiée ici proposerait tôt ou tard un test que le moteur ne connaît pas. */
-const TEST_OPS: Array<{ id: string; label: string; needsRight: boolean }> = [
-  { id: "equals", label: "est égal à", needsRight: true },
-  { id: "not_equals", label: "est différent de", needsRight: true },
-  { id: "contains", label: "contient", needsRight: true },
-  { id: "not_contains", label: "ne contient pas", needsRight: true },
-  { id: "gt", label: "est supérieur à", needsRight: true },
-  { id: "lt", label: "est inférieur à", needsRight: true },
-  { id: "exists", label: "existe", needsRight: false },
-  { id: "empty", label: "est vide", needsRight: false },
-];
-
-type TestValue = { left?: string; op?: string; right?: string };
-
-/**
- * Une condition en trois cases : une donnée, un opérateur, une valeur — et,
- * au besoin, plusieurs conditions reliées par « toutes » ou « au moins une ».
- *
- * Pauvre exprès. Le moteur n'interprète pas d'expression et n'appelle aucun
- * modèle : ce qui n'entre pas dans ces trois cases ne serait pas évaluable, et
- * un champ libre qui accepte tout produirait des conditions qui échouent
- * silencieusement à l'exécution.
- *
- * Écrit `tests` + `match`, et recopie la première dans `test` : tout ce qui
- * lisait une condition unique (revue de l'assistant, anciens runs) continue
- * de la trouver.
- */
-function TestEditor({ node, ctx }: { node: Node; ctx: Ctx }) {
-  const d = (node.data ?? {}) as Record<string, unknown>;
-  const tests: TestValue[] = Array.isArray(d.tests) && (d.tests as TestValue[]).length
-    ? (d.tests as TestValue[])
-    : [((d.test ?? {}) as TestValue)];
-  const match = d.match === "any" ? "any" : "all";
-  const write = (next: TestValue[], m: string = match) =>
-    ctx.apply((g) => patchBlock(g, node.id, { tests: next, test: next[0] ?? {}, match: m }));
-
-  return (
-    <div className="space-y-1.5">
-      {tests.map((t, i) => (
-        <div key={i} className="flex items-center gap-1.5">
-          {tests.length > 1 && (
-            <span className="w-14 shrink-0 text-right text-[11px] text-muted-foreground">
-              {i === 0 ? "si" : match === "any" ? "ou" : "et"}
-            </span>
-          )}
-          <TestRow
-            node={node} ctx={ctx} test={t}
-            onChange={(patch) => write(tests.map((x, j) => (j === i ? { ...x, ...patch } : x)))}
-          />
-          {tests.length > 1 && (
-            <button
-              type="button" title="Retirer cette condition"
-              onClick={() => write(tests.filter((_, j) => j !== i))}
-              className="shrink-0 rounded-md p-1 text-muted-foreground/60 hover:bg-muted hover:text-foreground"
-            ><X className="h-3.5 w-3.5" /></button>
-          )}
-        </div>
-      ))}
-      <div className="flex items-center gap-2 pl-0.5">
-        <button
-          type="button"
-          onClick={() => write([...tests, { op: "contains" }])}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
-        ><Plus className="h-3 w-3" /> condition</button>
-        {tests.length > 1 && (
-          <div className="w-52">
-            <Picker
-              value={match}
-              onChange={(v) => write(tests, v)}
-              options={[
-                { value: "all", label: "Toutes doivent être vraies" },
-                { value: "any", label: "Au moins une suffit" },
-              ]}
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TestRow({ node, ctx, test, onChange }: {
-  node: Node; ctx: Ctx; test: TestValue; onChange: (patch: TestValue) => void;
-}) {
-  const op = TEST_OPS.find((o) => o.id === (test.op ?? "contains")) ?? TEST_OPS[2];
-  return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 rounded-xl border border-border bg-background p-2">
-      {/* Le champ reste libre — une condition porte souvent sur un sous-champ
-          (`trigger.from`, `deals.total`) qu'aucune liste ne peut deviner. Mais
-          les variables déjà nommées sont proposées : le vrai obstacle est de se
-          rappeler qu'elles existent, pas de taper un point. */}
-      <span className="flex min-w-[9rem] flex-1 items-center gap-1 rounded-lg bg-muted/50 px-2.5 py-1.5 focus-within:bg-muted">
-        <input
-          value={test.left ?? ""}
-          onChange={(e) => onChange({ left: e.target.value })}
-          list={`vars-${node.id}`}
-          placeholder="trigger.from"
-          title="Le chemin d'une donnée : trigger.<champ>, une variable, steps.<bloc>.<champ> ou liste[0].champ"
-          className="min-w-0 flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-muted-foreground/50"
-        />
-        <datalist id={`vars-${node.id}`}>
-          {ctx.vars.map((v) => <option key={v} value={v} />)}
-          <option value="trigger" />
-        </datalist>
-      </span>
-      <div className="w-40 shrink-0">
-        <Picker
-          value={op.id}
-          onChange={(v) => onChange({ op: v })}
-          options={TEST_OPS.map((o) => ({ value: o.id, label: o.label }))}
-        />
-      </div>
-      {op.needsRight && (
-        <input
-          value={test.right ?? ""}
-          onChange={(e) => onChange({ right: e.target.value })}
-          placeholder="@acme.com"
-          className="min-w-[7rem] flex-1 rounded-lg bg-muted/50 px-2.5 py-1.5 text-[13px] outline-none placeholder:text-muted-foreground/50 focus:bg-muted"
-        />
-      )}
-    </div>
-  );
-}
 
 function Leg({ node, leg, depth, ctx }: { node: Node; leg: OutlineLeg; depth: number; ctx: Ctx }) {
   const isElse = leg.handle === "false";

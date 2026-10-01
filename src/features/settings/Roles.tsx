@@ -28,6 +28,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useToast } from "@/components/ToastProvider";
 import { Can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface RoleRow {
   id: string;
@@ -49,6 +50,7 @@ interface PermissionRow {
 }
 
 export function SettingsRolesPage() {
+  const confirm = useConfirm();
   const { workspaceId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [editorRole, setEditorRole] = useState<RoleRow | null>(null);
@@ -105,7 +107,7 @@ export function SettingsRolesPage() {
 
   async function deleteRole(role: RoleRow) {
     if (role.is_system) return;
-    if (!confirm(`Delete custom role "${role.name}"? Members holding this role will need to be reassigned.`)) return;
+    if (!(await confirm(`Delete custom role "${role.name}"? Members holding this role will need to be reassigned.`))) return;
     try {
       // Direct SQL via service is not possible from the client. Use a tiny
       // RPC-or-edge route. Here we leverage the upsert edge with an empty

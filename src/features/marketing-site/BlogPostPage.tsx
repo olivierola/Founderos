@@ -35,7 +35,7 @@ function BlockView({ block, accent }: { block: Block; accent: string }) {
     case "h2":
       return (
         <h2
-          className="mt-14 text-balance text-[26px] font-normal leading-[1.18] tracking-[-0.03em] sm:text-[31px]"
+          className="mt-14 text-balance text-[26px] font-semibold leading-[1.18] tracking-[-0.045em] sm:text-[31px]"
           style={{ color: INK }}
         >
           {block.text}
@@ -85,7 +85,7 @@ function BlockView({ block, accent }: { block: Block; accent: string }) {
 
     case "callout":
       return (
-        <aside className="relative mt-12 bg-[#F7F7F7] px-7 py-7">
+        <aside className="rounded-[28px] relative mt-12 bg-[#F7F7F7] px-7 py-7">
           <CornerMarks />
           <MonoLabel>{block.title}</MonoLabel>
           <p className="mt-3 text-[16.5px] leading-[1.65]" style={{ color: INK }}>
@@ -110,7 +110,7 @@ function RelatedPlate({ post }: { post: Post }) {
         </span>
       </span>
       <h3
-        className="mt-4 flex-1 text-balance text-[19px] font-normal leading-[1.25] tracking-[-0.022em]"
+        className="mt-4 flex-1 text-balance text-[19px] font-semibold leading-[1.25] tracking-[-0.035em]"
         style={{ color: INK }}
       >
         {post.title}
@@ -131,8 +131,8 @@ function RelatedPlate({ post }: { post: Post }) {
 
 export function BlogPostPage() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
   }, []);
 
   const { slug } = useParams();
@@ -153,7 +153,7 @@ export function BlogPostPage() {
     .slice(0, 3);
 
   return (
-    <div className="amplify min-h-screen text-white" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
 
       <ToneCanvas initial="paper">
@@ -187,7 +187,7 @@ export function BlogPostPage() {
               </div>
 
               <h1
-                className="mt-6 text-pretty text-[36px] font-normal leading-[1.06] tracking-[-0.035em] sm:text-[52px]"
+                className="mt-6 text-pretty text-[36px] font-semibold leading-[1.06] tracking-[-0.045em] sm:text-[52px]"
                 style={{ color: INK }}
               >
                 {post.title}
@@ -264,7 +264,7 @@ export function BlogPostPage() {
 
         <LandingClose />
 
-        <ToneSection tone="ink">
+        <ToneSection tone="paper">
           <LandingFooter band="transparent" />
         </ToneSection>
       </ToneCanvas>

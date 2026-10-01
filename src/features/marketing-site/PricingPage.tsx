@@ -57,7 +57,6 @@ const COMPARE_GROUPS = [
   {
     label: "Security & support",
     rows: [
-      { feature: "SSO / SAML", individual: "—", pro: "—", agencies: "✓", ent: "✓" },
       { feature: "Bring your own provider keys", individual: "—", pro: "—", agencies: "—", ent: "✓" },
       { feature: "SLA", individual: "99%", pro: "99%", agencies: "99.5%", ent: "99.9%" },
       { feature: "Support", individual: "Email", pro: "Priority", agencies: "Priority", ent: "Dedicated CSM" },
@@ -132,13 +131,13 @@ function MatrixCell({ value, highlight }: { value: string; highlight?: boolean }
 
 export function PricingPage() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
   }, []);
 
   return (
     <div
-      className="amplify min-h-screen text-white"
+      className="amplify atlas min-h-screen"
       /* Same two reasons as the landing page: `.amplify` would paint over the
          tone canvas, and an `overflow-x-hidden` root kills sticky. */
       style={{ backgroundColor: "transparent" }}
@@ -152,10 +151,11 @@ export function PricingPage() {
             left-aligned table reads as two pages stapled together. */}
         <ToneSection tone="paper">
           <PaperHero
-            align="left"
+            plain
             tiles={[]}
-            frame={[]}
-            claim="One subscription for a fleet of agents that does the work"
+            label="Pricing"
+            frame={["One subscription for a fleet of agents"]}
+            claim="that does the work."
             note={
               <>
                 <Check className="h-3.5 w-3.5 text-[#0E0E0E]" weight="bold" />
@@ -189,7 +189,7 @@ export function PricingPage() {
                 <Plate key={a.name} accent={a.accent} delay={i * 90}>
                   <div className="flex h-full flex-col px-7 py-8">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                      <h3 className="text-[22px] font-normal leading-none tracking-[-0.025em]">{a.name}</h3>
+                      <h3 className="text-[22px] font-semibold leading-none tracking-[-0.035em]">{a.name}</h3>
                       {a.tag && (
                         <span className="flex items-center gap-2 text-[13.5px] text-[#4A4A4A]">
                           <span aria-hidden className="h-[7px] w-[7px]" style={{ background: PAPER_ACCENT }} />
@@ -203,7 +203,7 @@ export function PricingPage() {
                         prose still line their prices up on one row. */}
                     <div className="mt-auto pt-12">
                       <div className="flex items-baseline gap-1.5">
-                        <span className="text-[26px] font-normal leading-none tracking-[-0.03em]">
+                        <span className="text-[26px] font-semibold leading-none tracking-[-0.045em]">
                           {a.price}
                         </span>
                         <span className="text-[14px] text-[#6E6E6E]">{a.unit}</span>
@@ -295,7 +295,7 @@ export function PricingPage() {
             <div className="mt-12 grid gap-5 lg:grid-cols-2">
               <Plate accent delay={80}>
                 <div className="px-8 py-10">
-                  <h3 className="max-w-[16ch] text-balance text-[26px] font-normal leading-[1.15] tracking-[-0.03em] sm:text-[32px]">
+                  <h3 className="max-w-[16ch] text-balance text-[26px] font-semibold leading-[1.15] tracking-[-0.045em] sm:text-[32px]">
                     Find the right plan for your team
                   </h3>
                   <p className="mt-5 max-w-[46ch] text-[15px] leading-[1.6] text-[#5A5A5A]">
@@ -313,7 +313,7 @@ export function PricingPage() {
 
               <Plate delay={160}>
                 <div className="px-8 py-10">
-                  <h3 className="max-w-[16ch] text-balance text-[26px] font-normal leading-[1.15] tracking-[-0.03em] sm:text-[32px]">
+                  <h3 className="max-w-[16ch] text-balance text-[26px] font-semibold leading-[1.15] tracking-[-0.045em] sm:text-[32px]">
                     See what the work costs you today
                   </h3>
                   <p className="mt-5 max-w-[46ch] text-[15px] leading-[1.6] text-[#5A5A5A]">
@@ -400,7 +400,7 @@ export function PricingPage() {
 
         <LandingClose />
 
-        <ToneSection tone="ink">
+        <ToneSection tone="paper">
           <LandingFooter band="transparent" />
         </ToneSection>
       </ToneCanvas>

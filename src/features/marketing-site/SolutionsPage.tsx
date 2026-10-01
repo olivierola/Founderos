@@ -54,9 +54,9 @@ const METHOD = [
 
 const OUTCOMES = [
   { to: 8, prefix: "4–", unit: "wks", label: "to the first secured milestone" },
-  { to: 98, unit: "%", label: "of writes behind an approval gate" },
-  { to: 57, unit: "", label: "systems connected, zero migrations" },
-  { to: 100, unit: "%", label: "of the resulting IP stays yours" },
+  { to: 4, unit: "", label: "phases, and you can stop after any of them" },
+  { to: 6, unit: "", label: "building blocks, in the order they happen" },
+  { to: 256, prefix: "AES-", unit: "", label: "encryption of connector credentials at rest" },
 ];
 
 /* ── Anchor rail ────────────────────────────────────────────────────────────
@@ -87,16 +87,16 @@ function AnchorRail() {
   return (
     /* Transparent and click-through so it never covers the bands it floats
        over; only the rail itself takes pointer events. */
-    <div className="pointer-events-none sticky top-[62px] z-30 hidden justify-center py-3 lg:flex">
+    <div className="pointer-events-none sticky top-[70px] z-30 hidden justify-center py-3 lg:flex">
       <nav
-        className="pointer-events-auto flex items-center border bg-white/95 p-1.5 backdrop-blur-xl"
+        className="pointer-events-auto flex items-center rounded-full border bg-white/95 p-1.5 shadow-[0_12px_40px_-24px_rgba(17,16,17,0.35)] backdrop-blur-xl"
         style={{ borderColor: RULE }}
       >
         {SOLUTIONS.map((s) => (
           <a
             key={s.slug}
             href={`#${s.slug}`}
-            className="px-4 py-2 text-[13.5px] transition-colors"
+            className="rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors"
             style={active === s.slug ? { background: INK, color: "#FFFFFF" } : { color: GREY }}
           >
             {s.nav}
@@ -185,7 +185,7 @@ function OfferRow({
           </div>
 
           <h2
-            className="mt-7 max-w-[19ch] text-balance text-[30px] font-normal leading-[1.08] tracking-[-0.035em] sm:text-[40px]"
+            className="mt-7 max-w-[19ch] text-balance text-[30px] font-semibold leading-[1.08] tracking-[-0.045em] sm:text-[40px]"
             style={{ color: INK }}
           >
             {solution.menu.label}
@@ -254,8 +254,8 @@ function OfferRow({
 
 export function SolutionsPage() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
   }, []);
 
   const { hash } = useLocation();
@@ -271,7 +271,7 @@ export function SolutionsPage() {
   }, [hash]);
 
   return (
-    <div className="amplify min-h-screen text-white" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
 
       <ToneCanvas initial="paper">
@@ -290,8 +290,7 @@ export function SolutionsPage() {
               </Link>
               <a
                 href="#readiness"
-                className="text-[15px] underline underline-offset-4 decoration-transparent transition-colors hover:decoration-current"
-                style={{ color: PAPER_ACCENT }}
+                className="text-[15px] font-semibold text-white underline underline-offset-4 decoration-white/40 transition-colors hover:decoration-white"
               >
                 Start with the assessment
               </a>
@@ -355,7 +354,7 @@ export function SolutionsPage() {
                         {m.step}
                       </div>
                       <h3
-                        className="mt-2 text-[21px] font-normal tracking-[-0.025em]"
+                        className="mt-2 text-[21px] font-semibold tracking-[-0.035em]"
                         style={{ color: INK }}
                       >
                         {m.title}
@@ -383,7 +382,7 @@ export function SolutionsPage() {
                     style={{ borderColor: RULE }}
                   >
                     <div
-                      className="text-[38px] font-normal leading-none tracking-[-0.03em] tabular-nums"
+                      className="text-[38px] font-semibold leading-none tracking-[-0.045em] tabular-nums"
                       style={{ color: INK }}
                     >
                       <CountUp to={o.to} prefix={o.prefix} />
@@ -414,7 +413,7 @@ export function SolutionsPage() {
 
         <LandingClose />
 
-        <ToneSection tone="ink">
+        <ToneSection tone="paper">
           <LandingFooter band="transparent" />
         </ToneSection>
       </ToneCanvas>

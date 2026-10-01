@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import {
   ArrowLeftIcon, ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, ChartBarIcon, CompassIcon,
-  GearSixIcon, RobotIcon, StorefrontIcon, type Icon as PhosphorIcon,
+  GearSixIcon, RobotIcon, StorefrontIcon, TrayIcon, type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -27,6 +27,7 @@ const TABS: { key: PublicAgentTab; label: string; icon: PhosphorIcon }[] = [
   { key: "knowledge", label: "Knowledge", icon: BookOpenIcon },
   { key: "widget", label: "Widget", icon: PuzzlePieceIcon },
   { key: "analytics", label: "Analytics", icon: ChartBarIcon },
+  { key: "support", label: "Demandes", icon: TrayIcon },
   { key: "onboarding", label: "Onboarding", icon: CompassIcon },
   { key: "ecommerce", label: "E-commerce", icon: StorefrontIcon },
   { key: "settings", label: "Settings", icon: GearSixIcon },
@@ -142,10 +143,23 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
       )}
 
       {/* Offset by the bar's measured height: it wraps to two lines when the
-          window is narrow, so a fixed padding would overlap it. */}
+          window is narrow, so a fixed padding would overlap it.
+          Content scrolled up fades out under the floating bars instead of
+          sliding visibly behind them, and the offset is exposed as
+          --float-offset so sticky elements (the widget preview) park BELOW
+          the bars rather than under them. */}
       <div
         className="min-h-0 flex-1 overflow-y-auto px-6 pb-10"
-        style={{ paddingTop: barHeight + 28 + (subs ? subHeight + 8 : 0) }}
+        style={(() => {
+          const offset = barHeight + 28 + (subs ? subHeight + 8 : 0);
+          const fade = `linear-gradient(to bottom, transparent 0px, transparent ${Math.max(0, offset - 36)}px, black ${offset - 4}px)`;
+          return {
+            paddingTop: offset,
+            ["--float-offset" as string]: `${offset}px`,
+            maskImage: fade,
+            WebkitMaskImage: fade,
+          } as CSSProperties;
+        })()}
       >
         <PublicAgentTabBody
           agent={agent} tab={tab} sub={sub}

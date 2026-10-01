@@ -24,9 +24,11 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import {
-  cleanArgs, codeToolOf, flowEdges, outputVarOf,
+  cleanArgs, codeToolOf, declaredVars, flowEdges, normalizeVarName, outputVarOf,
+  roleOf, varsOf,
   type WfGraph, type WfNode,
 } from "./workflow-doc.ts";
+import { judge as judgeTs, noul as noulTs, readNoul as readNoulTs } from "./typesafe.ts";
 
 type Admin = SupabaseClient;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -34,10 +36,24 @@ const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String
 /** Les blocs qu'une automatisation sait exécuter. Tout le reste appartient à
  *  une procédure : une « étape » est une consigne rédigée, et une consigne
  *  rédigée n'a de sens que pour quelqu'un qui la lit. */
-export const AUTOMATION_KINDS = ["trigger", "tool", "decision", "handoff"] as const;
+export const AUTOMATION_KINDS = [
+  "trigger", "tool", "decision", "handoff", "set", "wait", "stop", "judge",
+] as const;
+
+/**
+ * Ce qu'une automatisation PORTE sans l'exécuter.
+ *
+ * Les variables sont lues avant le premier pas, les entrées décrivent ce que le
+ * déclencheur apporte, une note ne parle qu'à nous. Aucune ne s'exécute, et
+ * aucune ne doit être refusée à l'écriture pour autant : les interdire
+ * obligerait à écrire l'identifiant d'un canal Slack dans six blocs plutôt que
+ * de le poser une fois.
+ */
+export const AUTOMATION_FRAMES = ["variables", "input", "note"] as const;
 
 export const isAutomationBlock = (kind: string | undefined): boolean =>
-  AUTOMATION_KINDS.includes((kind ?? "") as typeof AUTOMATION_KINDS[number]);
+  AUTOMATION_KINDS.includes((kind ?? "") as typeof AUTOMATION_KINDS[number])
+  || AUTOMATION_FRAMES.includes((kind ?? "") as typeof AUTOMATION_FRAMES[number]);
 
 // ── Gabarits ─────────────────────────────────────────────────────────────────
 
@@ -197,6 +213,15 @@ interface RunCtx {
   /** Le contexte de données : `trigger` et `steps`. */
   data: Record<string, unknown>;
   position: number;
+}
+
+/** L'état envoyé à un jugement, plafonné. Un contexte trop large fait baisser
+ *  la précision (limite documentée de Jev 1.13), et le bloc a un champ « ce
+ *  qu'il faut regarder » précisément pour éviter d'en arriver là. */
+function clipState(v: unknown): unknown {
+  const s = JSON.stringify(v ?? null);
+  if (!s || s.length <= 8000) return v ?? null;
+  return { tronque: true, extrait: s.slice(0, 8000) };
 }
 
 /** Ce qu'on garde d'une réponse d'API. Un listing complet dans un journal
@@ -399,6 +424,26 @@ export async function runAutomation(admin: Admin, opts: {
     position: 0,
   };
 
+  /**
+   * Les variables déclarées, posées AVANT la première étape.
+   *
+   * Dans l'ordre de déclaration, et résolues au fur et à mesure : une variable
+   * peut se construire sur celles qui la précèdent (`{{base_url}}/deals`) et
+   * sur le déclencheur (`{{trigger.from}}`). Une variable qui pourrait lire
+   * celles d'après ferait dépendre le résultat d'un ordre que personne ne voit.
+   *
+   * Rangées deux fois, comme les résultats d'étape : sous leur nom (`{{canal}}`)
+   * et sous `vars.` (`{{vars.canal}}`), pour qu'un nom qui entrerait en
+   * collision avec un résultat d'étape reste atteignable.
+   */
+  const vars: Record<string, unknown> = {};
+  for (const v of declaredVars(g)) {
+    const value = resolveTemplates(str(v.value), rc.data);
+    vars[v.name] = value;
+    rc.data[v.name] = value;
+  }
+  rc.data.vars = vars;
+
   const trigger = g.nodes.find((n) => n.type === "trigger");
   let cursor = trigger ? outFrom(g, trigger.id, null) : null;
   // Garde-fou : une automatisation dont la chaîne reboucle tournerait sans fin
@@ -414,7 +459,15 @@ export async function runAutomation(admin: Admin, opts: {
     ...(tolerated.length ? { error: `${tolerated.length} étape(s) en échec ignorée(s) : ${tolerated.join(", ")}` } : {}),
   });
 
+  // Deux compteurs, et ils ne comptent pas la même chose : `position` numérote
+  // les ÉTAPES exécutées (un bloc de cadre traversé n'en est pas une), `visits`
+  // compte les blocs PARCOURUS. Sans le second, une boucle qui ne passerait que
+  // par des blocs non exécutables tournerait sans jamais atteindre le plafond.
+  let visits = 0;
   while (cursor && rc.position < MAX) {
+    if (++visits > MAX * 3) {
+      return { status: "failed", steps: rc.position, error: "La chaîne reboucle sur elle-même." };
+    }
     const node = byId.get(cursor);
     if (!node) break;
     if (Date.now() - started > RUN_BUDGET_MS) {
@@ -491,6 +544,105 @@ export async function runAutomation(admin: Admin, opts: {
         continue;
       }
 
+      if (node.type === "judge") {
+        // La seule étape de ce moteur qui ne soit pas strictement
+        // reproductible, et c'est assumé : elle tranche une question écrite en
+        // français. Ce qui la rend défendable, c'est que la PROBABILITÉ obtenue
+        // est journalisée avec l'étape — un run parti dans la mauvaise branche
+        // s'explique en relisant le journal, au lieu de se deviner.
+        const question = str(d.question).trim() || str(d.label).trim();
+        if (!question) throw new Error("Condition jugée sans question : écrivez ce qu'il faut trancher.");
+        const focus = str(d.over).trim();
+        // « La précision baisse à mesure que l'état grossit avec ce qui n'a rien
+        // à voir avec la décision » — donc on envoie le chemin demandé, et à
+        // défaut un contexte PLAFONNÉ. Sans ce plafond, une automatisation qui
+        // a récolté trois listes d'API noyait la question sous 60 ko.
+        const raw = focus ? readPath(rc.data, focus) : rc.data;
+        const state = { question, donnee: clipState(raw) };
+        const lines = (v: unknown) =>
+          str(v).split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 8);
+        const yes = lines(d.yes_examples);
+        const no = lines(d.no_examples);
+        const verdict = await judgeTs(
+          { admin, workspaceId: rc.workspaceId, projectId: rc.projectId },
+          "workflow_judge",
+          state,
+          {
+            reponse: noulTs(question, {
+              true: yes.length ? { what: "Oui.", examples: yes } : "Oui.",
+              false: no.length ? { what: "Non.", examples: no } : "Non.",
+            }),
+          },
+          { subject: str(d.label) || question.slice(0, 80) },
+        );
+        if (!verdict?.apply) {
+          // Ni branche par défaut, ni « on continue quand même » : une
+          // condition qui ne peut pas être tranchée doit ARRÊTER la chaîne en
+          // le disant. Prendre une branche au hasard ferait exécuter des
+          // actions réelles sur une décision que personne n'a prise.
+          throw new Error(
+            "Jugement indisponible : activez « Condition jugée » dans Admin → Gouvernance → Jugement rapide (mode « Actif »), ou remplacez ce bloc par une condition exacte.",
+          );
+        }
+        const p = readNoulTs(verdict, "reponse") ?? 0;
+        const seuil = Number(d.threshold) > 0 ? Number(d.threshold) : verdict.threshold;
+        const pass = p >= seuil;
+        await logStep(rc, node, "succeeded",
+          { question, seuil, ...(focus ? { donnee: focus } : {}) },
+          { probabilite: Number(p.toFixed(3)), resultat: pass });
+        const next = outFrom(g, node.id, pass ? "true" : "false");
+        if (!next) return finish(pass ? "succeeded" : "stopped");
+        cursor = next;
+        continue;
+      }
+
+      if (node.type === "set") {
+        // Une affectation, résolue dans l'ordre : une valeur peut s'appuyer sur
+        // celle qui la précède, jamais sur celle qui la suit.
+        const rows = varsOf(d)
+          .map((v) => ({ ...v, name: normalizeVarName(v.name) }))
+          .filter((v) => v.name);
+        const written: Record<string, unknown> = {};
+        for (const v of rows) {
+          const value = resolveTemplates(str(v.value), rc.data);
+          written[v.name] = value;
+          rc.data[v.name] = value;
+          (rc.data.vars as Record<string, unknown>)[v.name] = value;
+        }
+        await logStep(rc, node, "succeeded", { assignations: rows.map((v) => v.name) }, written);
+        cursor = outFrom(g, node.id, null);
+        continue;
+      }
+
+      if (node.type === "wait") {
+        // Plafonnée, et pour une raison de fond : ce moteur tourne EN LIGNE.
+        // « Attendre deux jours » n'est pas une pause, c'est une seconde
+        // planification — et le dire vaut mieux que dormir jusqu'au couperet.
+        const asked = Number(d.seconds);
+        const secs = Math.max(0, Math.min(60, Number.isFinite(asked) ? asked : 0));
+        const left = RUN_BUDGET_MS - (Date.now() - started);
+        if (secs * 1000 > left) {
+          throw new Error(`Pause de ${secs} s impossible : il ne reste que ${Math.max(0, Math.round(left / 1000))} s de budget. Une attente longue relève d'un second workflow planifié.`);
+        }
+        await sleep(secs * 1000);
+        await logStep(rc, node, "succeeded", { secondes: secs, demandé: asked }, null);
+        cursor = outFrom(g, node.id, null);
+        continue;
+      }
+
+      if (node.type === "stop") {
+        // Une fin EXPLICITE. Sans elle, une branche qui s'arrête ne se
+        // distingue pas d'une branche qu'on a oublié de câbler.
+        const outcome = str(d.outcome) || "succeeded";
+        const why = str(resolveTemplates(str(d.body) || str(d.label), rc.data)).trim();
+        await logStep(rc, node, outcome === "failed" ? "failed" : "succeeded",
+          { outcome }, null, outcome === "failed" ? (why || "Arrêt demandé") : undefined);
+        if (outcome === "failed") {
+          return { status: "failed", steps: rc.position, error: why || "Arrêt demandé par un bloc « Fin »." };
+        }
+        return finish(outcome === "stopped" ? "stopped" : "succeeded");
+      }
+
       if (node.type === "handoff") {
         // Le point de sortie vers le jugement. Une automatisation qui a besoin
         // d'apprécier quelque chose passe la main ici, avec ce qu'elle a
@@ -533,6 +685,15 @@ export async function runAutomation(admin: Admin, opts: {
         }
         await logStep(rc, node, "succeeded", { agents: agentIds }, { missions: missionIds });
         return finish("succeeded");
+      }
+
+      // Un bloc de CADRE — les variables, les entrées. Il ne s'exécute pas :
+      // il a déjà été lu avant le premier pas. Le journaliser comme une étape
+      // sautée ferait passer pour un problème ce qui a parfaitement marché.
+      if (roleOf(node.type) === "frame") {
+        rc.position -= 1;
+        cursor = outFrom(g, node.id, null);
+        continue;
       }
 
       // Un bloc de procédure dans une automatisation : on ne devine pas ce

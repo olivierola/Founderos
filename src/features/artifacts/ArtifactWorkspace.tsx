@@ -22,12 +22,14 @@ import { cn } from "@/lib/utils";
 import { ArtifactEditor } from "./ArtifactEditor";
 import { ArtifactReport, ArtifactDeck } from "./BlockRenderer";
 import { parseDocument, type ArtifactDocument, type ArtifactTarget } from "./blocks";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Row { id: string; title: string; kind: ArtifactTarget; content: unknown }
 
 export function ArtifactWorkspace({ docId, onBack, onDeleted }: {
   docId: string; onBack: () => void; onDeleted?: () => void;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
@@ -61,7 +63,7 @@ export function ArtifactWorkspace({ docId, onBack, onDeleted }: {
   };
 
   async function remove() {
-    if (!confirm(`Supprimer « ${title || "Sans titre"} » ? Définitif.`)) return;
+    if (!(await confirm(`Supprimer « ${title || "Sans titre"} » ? Définitif.`))) return;
     const { error } = await supabase.from("office_documents").delete().eq("id", docId);
     if (error) { toast.error(error.message); return; }
     qc.invalidateQueries({ queryKey: ["room_office_docs"] });

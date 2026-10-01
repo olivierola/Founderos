@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "verify:editor": "node scripts/verify-editor.mjs",
     "build:widget-orb": "vite build --config vite.widget-orb.config.ts",
-    "build:widget-assets": "npm run build:widget-voice && npm run build:widget-orb"
+    "build:widget-assets": "npm run build:widget-voice && npm run build:widget-orb && npm run build:widget-bot",
+    "build:widget-bot": "vite build --config vite.widget-bot.config.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.206",
@@ -108,6 +109,7 @@
     "@udecode/cn": "^52.3.4",
     "@uploadthing/react": "^7.3.3",
     "ai": "^6.0.204",
+    "bot-avatars": "^0.1.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

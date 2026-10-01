@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /* Brand mark — the chevron drawn bare, on any surface, in the brand's
-   red-orange. It carries its own colour rather than inheriting the ink around
+   violet. It carries its own colour rather than inheriting the ink around
    it: a mark that repaints itself per context is a shape, not a logo, and this
    one now has to hold on a nav that flips between paper and near-black within a
    single scroll. Pass `color` to override it — "currentColor" for the places
@@ -11,15 +11,15 @@ import { cn } from "@/lib/utils";
    the mark. */
 const RATIO = 246 / 240;
 
-/* The accent's two cuts. #2893CC is 3.4:1 on white — fine for a large mark,
-   thin for a small one — so the default is the deepened #176995, which clears
-   6.0:1 on white and 4.4:1 on the darkest ground and therefore holds anywhere
-   the logo is dropped without knowing its surface.
+/* The accent's two cuts — the violet of the site (Atlas register, 01/10/2026).
+   #D22EFF is 3.8:1 on white: fine for a large mark, thin for a small one, so
+   the default is the deepened #8B16C4, which clears 7:1 on white and still
+   reads as the same violet.
 
-   Somewhere with a known dark ground — the nav once the canvas has gone
-   near-black — pass `BRAND_MARK_BRIGHT` and get the true blue. */
-export const BRAND_MARK = "#176995";
-export const BRAND_MARK_BRIGHT = "#2893CC";
+   Somewhere with a known dark ground, pass `BRAND_MARK_BRIGHT` and get the
+   true violet. */
+export const BRAND_MARK = "#8b16c4";
+export const BRAND_MARK_BRIGHT = "#d22eff";
 
 export function Logo({
   className,

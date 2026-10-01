@@ -25,11 +25,13 @@ import {
 import { actionsForSlug } from "./objectActions";
 import { AgentTabContent, INTERNAL_AGENT_TABS, type InternalAgentTab } from "@/features/internal-agents/InternalAgentDetail";
 import { useRegisterTopbarBreadcrumb, type Crumb } from "@/components/layout/TopbarBreadcrumb";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // Full-screen Attio-style record view: left = grouped fields + clickable
 // relations, center = tabs (Content / Timeline / Tasks / Notes). Route:
 // crm/workspace/:objectSlug/:recordId. Relations navigate to the target record.
 export function RecordViewPage() {
+  const confirm = useConfirm();
   const { workspaceSlug = "", projectSlug = "", objectSlug = "", recordId = "" } = useParams();
   const { projectId } = useCurrentContext();
   const navigate = useNavigate();
@@ -171,7 +173,7 @@ export function RecordViewPage() {
         </Group>
 
         <div className="mt-auto p-3">
-          <button onClick={async () => { if (confirm("Delete this record?")) { await deleteRecords([record.id]); navigate(`${base}/${object.slug}`); } }}
+          <button onClick={async () => { if ((await confirm("Delete this record?"))) { await deleteRecords([record.id]); navigate(`${base}/${object.slug}`); } }}
             className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
         </div>
       </aside>

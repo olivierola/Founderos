@@ -25,12 +25,13 @@ const STORAGE_KEY = "fos-skin";
 
 function read(): Skin {
   try {
-    // Apple par DÉFAUT : c'est le système visuel retenu. L'ancienne peau reste
-    // installée pour comparer, mais elle ne s'affiche que si on la demande.
-    return localStorage.getItem(STORAGE_KEY) === "founderos" ? "founderos" : "apple";
+    // La peau du produit par DÉFAUT depuis le 01/10/2026 : elle porte désormais
+    // le registre Atlas du site (noir, blanc, violet). Apple reste installée
+    // et ne s'affiche que si on la choisit explicitement.
+    return localStorage.getItem(STORAGE_KEY) === "apple" ? "apple" : "founderos";
   } catch {
     // Navigation privée, stockage bloqué : on sert le système retenu.
-    return "apple";
+    return "founderos";
   }
 }
 

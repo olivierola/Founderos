@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // Company-registered models: bring-your-own cloud API (key) or a custom
 // OpenAI-compatible endpoint. Backed by aiops_providers (kind cloud_endpoint) —
@@ -51,6 +52,7 @@ const CLOUD_PRESETS: CloudPreset[] = [
 ];
 
 export function RegisteredModels() {
+  const confirm = useConfirm();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
@@ -69,7 +71,7 @@ export function RegisteredModels() {
   });
 
   async function remove(id: string) {
-    if (!confirm("Supprimer ce modèle ? Les agents qui l'utilisent repasseront au modèle par défaut.")) return;
+    if (!(await confirm("Supprimer ce modèle ? Les agents qui l'utilisent repasseront au modèle par défaut."))) return;
     await supabase.from("aiops_providers").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["aiops_registered_models", projectId] });
   }

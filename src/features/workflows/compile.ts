@@ -26,6 +26,10 @@ const ATTACH_ANCHOR_RE = /^<!--\s*a:([A-Za-z0-9_-]+)>([A-Za-z0-9_-]+)\s*-->\s*$/
  *  with no anchor above it. */
 const SECTION_KIND: Array<[RegExp, BlockKind]> = [
   [/^entr[ée]es?/i, "input"],
+  // Les variables sont entièrement structurées : la section est reconnue pour
+  // qu'elle ferme la précédente, mais rien n'y est lu — le bloc survit par son
+  // ancre, et ses lignes tombent dans GENERATED_LINE.
+  [/^variables?/i, "variables"],
   [/^objectif/i, "goal"],
   [/^r[èe]gles?/i, "rule"],
   [/^contexte/i, "context"],
@@ -142,10 +146,18 @@ export function parseWorkflow(md: string, previous: WorkflowGraph): WorkflowGrap
         : /^🔁|^boucle/i.test(t) ? "loop"
         : /^➜|^passation/i.test(t) ? "handoff"
         : /^décision/i.test(t) ? "decision"
+        // Les blocs exécutables ajoutés ensuite. Sans eux, un aller-retour
+        // par le document transformait une pause en étape rédigée, que le
+        // moteur aurait sautée en silence.
+        : /^📌|^valeurs/i.test(t) ? "set"
+        : /^⏱|^pause/i.test(t) ? "wait"
+        : /^⛔|^fin\b/i.test(t) ? "stop"
+        : /^🎲|^condition jug/i.test(t) ? "judge"
         : "step";
       const label = t
-        .replace(/^[⏸🔁➜]\s*/, "")
-        .replace(/^(validation humaine|décision|boucle|passation)\s*—\s*/i, "")
+        .replace(/^[⏸🔁➜📌⏱⛔]\s*/, "")
+        .replace(/^🎲\s*/, "")
+        .replace(/^(validation humaine|décision|condition jugée|boucle|passation|valeurs|pause|fin)\s*—\s*/i, "")
         .replace(/^\d+\.\s*/, "")
         .trim();
       cur = { id: pendingId ?? newId(kind), kind, label, body: [] };

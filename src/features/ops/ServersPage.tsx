@@ -26,6 +26,8 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { useOpsUrl } from "./hooks";
 import type { OpsServer, OpsServerEnv, OpsServerProvider } from "./types";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const PROVIDERS: { value: OpsServerProvider; label: string }[] = [
   { value: "vps", label: "Generic VPS" },
@@ -108,6 +110,8 @@ export function OpsServersPage() {
 }
 
 function ServerCard({ server }: { server: OpsServer }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const env = ENVS.find((e) => e.value === server.environment);
   const isManaged = server.target_kind === "managed";
@@ -125,7 +129,7 @@ function ServerCard({ server }: { server: OpsServer }) {
     e.preventDefault();
     e.stopPropagation();
     if (!isManaged) return;
-    if (!confirm(`Trigger a deploy on ${server.managed_provider}?`)) return;
+    if (!(await confirm(`Trigger a deploy on ${server.managed_provider}?`))) return;
     setDeploying(true);
     try {
       const result = await callEdge<{ ok: boolean; message?: string; url?: string }>(
@@ -134,9 +138,9 @@ function ServerCard({ server }: { server: OpsServer }) {
       );
       if (!result.ok) throw new Error(result.message ?? "Deploy failed");
       queryClient.invalidateQueries({ queryKey: ["ops_servers", server.project_id] });
-      alert(`Deploy queued${result.url ? ` → ${result.url}` : ""}`);
+      toast.error(`Deploy queued${result.url ? ` → ${result.url}` : ""}`);
     } catch (err: any) {
-      alert("Deploy failed: " + (err?.message ?? "unknown"));
+      toast.error("Deploy failed: " + (err?.message ?? "unknown"));
     } finally {
       setDeploying(false);
     }

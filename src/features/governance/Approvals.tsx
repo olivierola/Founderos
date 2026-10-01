@@ -17,8 +17,11 @@ import {
   APPROVAL_KIND_META, APPROVAL_STATUS_META, RISK_TIER_META, type RiskTier,
 } from "./shared";
 import { Pill, FormDialog, type FieldDef } from "./ui";
+import { useConfirm, usePromptText } from "@/components/ConfirmProvider";
 
 export function GovApprovalsPage() {
+  const promptText = usePromptText();
+  const confirm = useConfirm();
   const crud = useGovCrud("gov_approvals");
   const { data: approvals, isLoading } = useApprovals();
   const { data: systems } = useAiSystems();
@@ -36,7 +39,7 @@ export function GovApprovalsPage() {
   }, [approvals]);
 
   const decide = async (a: Approval, status: "approved" | "rejected" | "changes_requested") => {
-    const note = status !== "approved" ? (prompt("Motif de la décision (optionnel) :") ?? "") : "";
+    const note = status !== "approved" ? ((await promptText("Motif de la décision (optionnel) :")) ?? "") : "";
     await crud.update(a.id, {
       status, decided_by: crud.userId, decided_at: new Date().toISOString(), decision_note: note || null,
     }, { action: `approval.${status}`, entityType: "approval", entityId: a.id, entityLabel: a.title });
@@ -121,7 +124,7 @@ export function GovApprovalsPage() {
                     {a.decision_note && <p className="mt-0.5 truncate text-xs text-muted-foreground">« {a.decision_note} »</p>}
                   </div>
                   <Button size="icon" variant="ghost" className="h-7 w-7"
-                    onClick={() => { if (confirm("Supprimer cette demande ?")) void crud.remove(a.id, { action: "approval.deleted", entityType: "approval", entityId: a.id, entityLabel: a.title }); }}>
+                    onClick={async () => { if ((await confirm("Supprimer cette demande ?"))) void crud.remove(a.id, { action: "approval.deleted", entityType: "approval", entityId: a.id, entityLabel: a.title }); }}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </Card>

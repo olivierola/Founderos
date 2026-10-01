@@ -26,16 +26,24 @@ import {
   type Guardrail, type Enforcement, type GuardrailScope,
 } from "./data";
 import { useGuardrailsDb } from "./db";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export function GovGuardrailsPage() {
-  const { items, loading, save, toggle: toggleDb, remove: removeDb } = useGuardrailsDb();
+  const confirm = useConfirm();
+  const { items, loading, save, toggle: toggleDb, remove: removeDb, installRecommended } = useGuardrailsDb();
   const [editing, setEditing] = useState<Guardrail | null>(null);
   const [sel, setSel] = useState<Guardrail | null>(null);
+  const [installing, setInstalling] = useState(false);
+
+  const install = async () => {
+    setInstalling(true);
+    try { await installRecommended(); } finally { setInstalling(false); }
+  };
 
   const upsert = (g: Guardrail) => { void save(g, !items.some((x) => x.id === g.id)); };
-  const remove = (id: string) => {
+  const remove = async (id: string) => {
     const g = items.find((x) => x.id === id);
-    if (g && confirm("Supprimer ce guardrail ?")) void removeDb(g);
+    if (g && (await confirm("Supprimer ce guardrail ?"))) void removeDb(g);
   };
   const toggle = (id: string) => { const g = items.find((x) => x.id === id); if (g) void toggleDb(g); };
 
@@ -66,8 +74,18 @@ export function GovGuardrailsPage() {
       </div>
 
       {items.length === 0 ? (
-        <EmptyState icon={ShieldCheck} title="Aucun guardrail" description="Définissez les règles que vos agents doivent respecter — protection des données, actions sous approbation, budgets…"
-          action={<Button onClick={() => setEditing(newGuardrail())}><Plus className="mr-1.5 h-4 w-4" />Créer un guardrail</Button>} />
+        <EmptyState icon={ShieldCheck} title="Aucun guardrail" description="Définissez les règles que vos agents doivent respecter — protection des données, actions sous approbation, budgets… Ou partez de la base recommandée et ajustez-la."
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={() => void install()} disabled={installing}>
+                <ShieldCheckIcon weight="duotone" className="mr-1.5 h-4 w-4" />
+                {installing ? "Installation…" : "Installer les garde-fous recommandés"}
+              </Button>
+              <Button variant="outline" onClick={() => setEditing(newGuardrail())}>
+                <Plus className="mr-1.5 h-4 w-4" />Créer un guardrail
+              </Button>
+            </div>
+          } />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((g) => (
@@ -167,7 +185,7 @@ function GuardrailEditor({ initial, onClose, onSave }: { initial: Guardrail; onC
 
         <div className="mt-2 grid gap-3 md:grid-cols-2">
           <Field label="Motif de détection (regex)">
-            <Input value={g.matchPattern ?? ""} onChange={(e) => set("matchPattern", e.target.value || undefined)} placeholder="\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b — vide = documentaire" className="font-mono text-[12px]" />
+            <Input value={g.matchPattern ?? ""} onChange={(e) => set("matchPattern", e.target.value || undefined)} placeholder="\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b — vide = jugée par le sens" className="font-mono text-[12px]" />
           </Field>
           <Field label="Surface de contrôle">
             <Select value={g.matchScope ?? "all"} onChange={(e) => set("matchScope", e.target.value as GuardrailScope)}>
@@ -175,14 +193,28 @@ function GuardrailEditor({ initial, onClose, onSave }: { initial: Guardrail; onC
             </Select>
           </Field>
         </div>
-        {g.matchPattern?.trim() && (
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Le motif est testé en runtime sur les {GUARDRAIL_SCOPE_META[g.matchScope ?? "all"].label.toLowerCase()} pendant chaque exécution d'agent ({g.enforcement === "block" ? "l'action est bloquée" : g.enforcement === "warn" ? "un avertissement est enregistré" : "le passage est journalisé"}).
-          </p>
-        )}
+        {/* Une règle SANS motif n'est plus documentaire : elle est évaluée par
+            le sens dès que le Jugement rapide est actif. Le dire ici évite la
+            surprise dans les deux sens — croire qu'une règle dort alors qu'elle
+            bloque, ou croire qu'elle protège alors que rien ne la lit. */}
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {g.matchPattern?.trim() ? (
+            <>
+              Le motif est testé en runtime sur les {GUARDRAIL_SCOPE_META[g.matchScope ?? "all"].label.toLowerCase()} pendant
+              chaque exécution d'agent ({g.enforcement === "block" ? "l'action est bloquée" : g.enforcement === "warn" ? "un avertissement est enregistré" : "le passage est journalisé"}).
+              Le contenu ci-dessous sert en plus au jugement par le sens.
+            </>
+          ) : (
+            <>
+              Sans motif, cette règle est évaluée <strong>par le sens</strong> — à partir du contenu écrit ci-dessous, et
+              seulement si « Jugement rapide » est actif (Gouvernance IA). Sans contenu, elle ne peut pas l'être :
+              un titre seul ne suffit pas à juger.
+            </>
+          )}
+        </p>
 
         <div className="mt-2 grid gap-3 md:grid-cols-2">
-          <Field label="Contenu (markdown)">
+          <Field label="Contenu (markdown) — c'est ce qui est jugé">
             <Textarea value={g.body} onChange={(e) => set("body", e.target.value)} className="min-h-[280px] font-mono text-[13px] leading-relaxed" />
           </Field>
           <div className="space-y-1.5">

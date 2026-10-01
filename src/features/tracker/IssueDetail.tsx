@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChatCircleIcon, ClockCounterClockwiseIcon, DotsThreeIcon, LinkSimpleIcon,
-  PaperclipIcon, PlusIcon, TrashIcon, TreeStructureIcon, XIcon,
+  PaperclipIcon, PlusIcon, StackIcon, TrashIcon, TreeStructureIcon, XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,14 +22,16 @@ import {
   AssigneePicker, CyclePicker, DatePicker, IssueKey, LABEL_COLORS, LabelPicker, MemberAvatar,
   ModulePicker, PriorityPicker, StateIcon, StatePicker, formatDate, memberName,
 } from "./pickers";
+import { AssetKindIcon, AssetPickerDialog, assetHref } from "./AssetsPage";
 import {
   RELATION_LABEL, RELATION_TYPES, attachmentUrl,
   addComment, addRelation, createIssue, createLabel, deleteAttachment, deleteComment, deleteIssue,
   fetchActivity, fetchAttachments, fetchComments, fetchIssues, fetchRelations,
   removeRelation, setAssignees, setIssueCycle, setIssueModules, setLabels,
   setIssueAgents, updateIssue, uploadAttachment, assignMission, fetchTrackerAgents,
-  type Member, type PjCycle, type PjIssue, type PjLabel, type PjModule,
-  type PjProject, type PjState, type RelationType,
+  attachAssetToIssue, detachAssetFromIssue, fetchIssueAssets, setIssueAssetRole,
+  type AssetRole, type Member, type PjCycle, type PjIssue, type PjIssueAsset, type PjLabel,
+  type PjModule, type PjProject, type PjState, type RelationType,
 } from "./model";
 
 /**
@@ -225,6 +227,11 @@ export function IssueDetailPanel({
             issue={issue} project={project} relations={relations ?? []}
             states={states} onOpenIssue={onOpenIssue} onChanged={invalidate}
           />
+
+          {/* Les ressources AVANT les missions : on ne confie un travail — à
+              quelqu'un ou à un agent — qu'une fois dit sur QUOI il porte.
+              L'ordre de la fiche est l'ordre de la pensée. */}
+          <Resources issue={issue} project={project} />
 
           {/* Les missions AVANT les pièces jointes : ce qu'on a confié à une
               machine se relit plus souvent qu'un fichier déposé, et la question
@@ -592,6 +599,112 @@ function Relations({
   );
 }
 
+// ── Ressources ──────────────────────────────────────────────────────────────
+
+const ROLE_LABEL: Record<AssetRole, string> = {
+  input: "à travailler",
+  reference: "référence",
+  output: "produit",
+};
+
+/**
+ * La matière du work item : ce sur quoi on travaille.
+ *
+ * Le rôle n'est pas décoratif. « À travailler » désigne ce qu'il faut ouvrir et
+ * modifier, « référence » ce qu'on lit sans y toucher, « produit » ce qui est
+ * sorti du travail. Sans cette distinction, un agent à qui l'on donne cinq
+ * ressources en modifie une au hasard.
+ */
+function Resources({ issue, project }: { issue: PjIssue; project: PjProject }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [picking, setPicking] = useState(false);
+
+  const { data: rows } = useQuery({
+    queryKey: ["pj_issue_assets", issue.id],
+    queryFn: () => fetchIssueAssets(issue.id),
+  });
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ["pj_issue_assets", issue.id] });
+  const attached = (rows ?? []) as PjIssueAsset[];
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-2">
+        <StackIcon className="h-4 w-4 text-muted-foreground" />
+        <span className="text-12 font-medium">Ressources</span>
+        <span className="text-11 text-muted-foreground">sur quoi travailler</span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Ajouter une ressource"
+        >
+          <PlusIcon className="h-4 w-4" />
+        </button>
+      </div>
+
+      {attached.map((r) => {
+        const href = assetHref(r.asset);
+        return (
+          <div key={r.id} className="flex items-center gap-2 rounded border border-border/50 px-2 py-1.5 text-13">
+            <span className="text-muted-foreground"><AssetKindIcon kind={r.asset.kind} /></span>
+            {href ? (
+              <a href={href} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline">
+                {r.asset.name}
+              </a>
+            ) : (
+              <span className="min-w-0 flex-1 truncate">{r.asset.name}</span>
+            )}
+            <Select
+              value={r.role}
+              onChange={(role) => setIssueAssetRole(r.id, role).then(refresh)}
+              options={(["input", "reference", "output"] as AssetRole[]).map((k) => ({
+                key: k, label: ROLE_LABEL[k],
+              }))}
+              size="xs"
+              className="w-32"
+            />
+            <button
+              type="button"
+              onClick={() => detachAssetFromIssue(r.id).then(refresh)}
+              className="text-muted-foreground hover:text-red-600"
+              title="Retirer de cet item"
+            >
+              <XIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        );
+      })}
+
+      {!attached.length && (
+        <p className="text-12 text-muted-foreground">
+          Aucune ressource. Rattachez le dépôt, le document ou les données sur lesquels porte cet
+          item — les agents s'en serviront.
+        </p>
+      )}
+
+      {picking && (
+        <AssetPickerDialog
+          project={project}
+          excludeIds={new Set(attached.map((r) => r.asset_id))}
+          onClose={() => setPicking(false)}
+          onPick={async (asset) => {
+            await attachAssetToIssue({
+              issueId: issue.id, assetId: asset.id, workspaceId: project.workspace_id,
+              addedBy: user?.id ?? null,
+            });
+            setPicking(false);
+            refresh();
+            qc.invalidateQueries({ queryKey: ["pj_assets", project.id] });
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
 // ── Pièces jointes ──────────────────────────────────────────────────────────
 
 function Attachments({ issue, project }: { issue: PjIssue; project: PjProject }) {
@@ -801,7 +914,7 @@ function Activity({ issue, members }: { issue: PjIssue; members: Member[] }) {
             <MemberAvatar member={actor} size={18} />
             <span className="flex-1">
               <span className="font-medium text-foreground">{memberName(actor)}</span>{" "}
-              {a.comment || describe(a.field, a.new_value)}
+              {a.comment || describe(a.field, a.new_value, a.old_value, a.verb)}
             </span>
             <span className="shrink-0">{formatDate(a.created_at)}</span>
           </li>
@@ -812,8 +925,17 @@ function Activity({ issue, members }: { issue: PjIssue; members: Member[] }) {
 }
 
 /** Une phrase lisible à partir d'un champ modifié, faute de mieux. */
-function describe(field: string | null, value: string | null): string {
+function describe(
+  field: string | null, value: string | null, oldValue?: string | null, verb?: string,
+): string {
   if (!field) return "a modifié le work item";
+  // Une ressource se RATTACHE ou se RETIRE ; « a modifié resource → X » ne dit
+  // ni ce qui s'est passé ni sur quoi.
+  if (field === "resource") {
+    return verb === "deleted"
+      ? `a retiré la ressource ${oldValue ?? ""}`.trim()
+      : `a rattaché la ressource ${value ?? ""}`.trim();
+  }
   const names: Record<string, string> = {
     name: "le titre", state_id: "l'état", priority: "la priorité",
     target_date: "l'échéance", start_date: "la date de début",

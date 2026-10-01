@@ -13,6 +13,7 @@ import {
   fetchProjectAgents, fetchTrackerAgents,
   type PjCycle, type PjProject, type PjState, type Priority,
 } from "./model";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 /**
  * La barre d'actions en lot, qui apparaît dès qu'une ligne est cochée.
@@ -38,6 +39,7 @@ export function BulkActionBar({
   project: PjProject;
   dashboardId?: string | null;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
@@ -159,10 +161,14 @@ export function BulkActionBar({
           type="button"
           title="Supprimer"
           disabled={busy}
-          onClick={() => {
+          onClick={async () => {
             // Confirmation explicite : contrairement à l'archivage, la
             // suppression emporte le journal et les commentaires.
-            if (!window.confirm(`Supprimer définitivement ${selected.length} work item(s) ? Le journal et les commentaires seront perdus.`)) return;
+            if (!(await confirm({
+              title: `Supprimer définitivement ${selected.length} work item(s) ?`,
+              description: "Le journal et les commentaires seront perdus.",
+              confirmText: "Supprimer",
+            }))) return;
             run(async () => { for (const id of selected) await deleteIssue(id); });
           }}
           className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-red-600"

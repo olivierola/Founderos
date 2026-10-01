@@ -16,8 +16,10 @@ import {
   FRAMEWORK_META, CONTROL_STATUS_META,
 } from "./shared";
 import { Pill, Select, FormDialog, metaOptions, type FieldDef } from "./ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export function GovControlsPage() {
+  const confirm = useConfirm();
   const crud = useGovCrud("gov_controls");
   const { data: controls, isLoading } = useControls();
   const { data: systems } = useAiSystems();
@@ -95,7 +97,7 @@ export function GovControlsPage() {
               <div className="flex shrink-0 gap-1">
                 <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(c)}><Pencil className="h-3.5 w-3.5" /></Button>
                 <Button size="icon" variant="ghost" className="h-7 w-7"
-                  onClick={() => { if (confirm("Supprimer ce contrôle ?")) void crud.remove(c.id, { action: "control.deleted", entityType: "control", entityId: c.id, entityLabel: c.title }); }}>
+                  onClick={async () => { if ((await confirm("Supprimer ce contrôle ?"))) void crud.remove(c.id, { action: "control.deleted", entityType: "control", entityId: c.id, entityLabel: c.title }); }}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>

@@ -1,9 +1,6 @@
 import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { MODULE_PROJECT_CONFIGS } from "@/lib/module-project-config";
-import { ModuleProjectList } from "@/features/module-projects/ModuleProjectList";
-import { ModuleProjectDetail } from "@/features/module-projects/ModuleProjectDetail";
 import { AiHqDashboard } from "@/features/dashboard/AiHqDashboard";
 import { CompanyContextPage } from "@/features/company/CompanyContextPage";
 import { CompanyObjectivesPage } from "@/features/company/CompanyObjectivesPage";
@@ -120,7 +117,6 @@ import { AdminUsagePage } from "@/features/admin/AdminUsage";
 import { BillingSuccessPage } from "@/features/settings/BillingSuccess";
 import { ADMIN_ITEMS, ADMIN_LANDING } from "@/lib/admin-navigation";
 
-import { GenericSubPage } from "@/features/GenericSubPage";
 import { MODULES, HIDDEN_MODULES } from "@/lib/navigation";
 
 // Governance
@@ -138,6 +134,11 @@ import { GovDataAssetsPage } from "@/features/governance/DataAssets";
 import { GovAuditPage } from "@/features/governance/AuditTrail";
 // AI Ops & Governance — onglet "AI Governance"
 import { GovGuardrailsPage } from "@/features/governance/aiops/Guardrails";
+import { GovTypeSafePage } from "@/features/governance/aiops/TypeSafe";
+import { GovContextIQPage } from "@/features/governance/aiops/ContextIQ";
+import { GovAgentPilotPage } from "@/features/governance/aiops/AgentPilot";
+import { GovPolicyGuardPage } from "@/features/governance/aiops/PolicyGuard";
+import { GovSentinelFlowPage } from "@/features/governance/aiops/SentinelFlow";
 import { GovAccessLogsPage } from "@/features/governance/aiops/AccessLogs";
 import { GovPromptMonitoringPage } from "@/features/governance/aiops/PromptMonitoring";
 import { GovCostsPage } from "@/features/governance/aiops/Costs";
@@ -165,14 +166,14 @@ import { GovFtSettingsPage } from "@/features/governance/aiops/FtSettings";
 
 // Marketing site
 import { HomePage } from "@/features/marketing-site/HomePage";
-import {
-  IntegrationsPage,
-  ChangelogPage,
-  DocsPage,
-} from "@/features/marketing-site/OtherPages";
+import { IntegrationsPage } from "@/features/marketing-site/IntegrationsPage";
+import { ChangelogPage } from "@/features/marketing-site/ChangelogPage";
+import { DocsPage } from "@/features/marketing-site/DocsPage";
 import { ContactPage } from "@/features/marketing-site/ContactPage";
-// Ces pages partagent le chrome de la landing (sa navbar, son hero animé, son
-// footer sombre) au lieu du MarketingShell hérité — d'où leurs fichiers séparés.
+// Toutes les pages marketing partagent le même chrome : LandingNav, PaperHero,
+// LandingKit/PaperKit et LandingFooter. L'ancienne coque (MarketingShell) est partie
+// avec les trois dernières pages qui la portaient.
+
 import { PricingPage } from "@/features/marketing-site/PricingPage";
 import { SolutionsPage } from "@/features/marketing-site/SolutionsPage";
 import { SolutionPage } from "@/features/marketing-site/SolutionPage";
@@ -277,6 +278,11 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   billing: <SettingsBillingPage />,
   // ── Gouvernance IA ──
   "gov-guardrails": <GovGuardrailsPage />,
+  "gov-typesafe": <GovTypeSafePage />,
+  "gov-contextiq": <GovContextIQPage />,
+  "gov-agentpilot": <GovAgentPilotPage />,
+  "gov-policyguard": <GovPolicyGuardPage />,
+  "gov-sentinelflow": <GovSentinelFlowPage />,
   "gov-access": <GovAccessLogsPage />,
   "gov-prompts": <GovPromptMonitoringPage />,
   "gov-costs": <GovCostsPage />,
@@ -285,71 +291,10 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   "gov-pentest-scope": <PentestScopePage />,
 };
 
-/** Old settings/* routes → the admin dashboard tab that replaced them. Tabs that
- *  no longer exist in the admin sidebar fall back to the landing tab. */
-const SETTINGS_TO_ADMIN: Record<string, string> = {
-  workspace: "organisation",
-  projects: "workspaces",
-  team: "members",
-  roles: "access",
-  billing: "billing",
-  security: "security",
-};
-
-/** Admin panel cockpit was merged into CRM. Redirect old /actions/* links to
- *  /app/:ws/:proj/crm/admin-* using an absolute, slug-based path (relative
- *  ../.. math across two dynamic segments is fragile and could drop to the root). */
-function AdminMergeRedirect({ to }: { to: string }) {
-  const { workspaceSlug, projectSlug } = useParams();
-  return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/crm/${to}`} replace />;
-}
-
 /** Absolute redirect to /app/:ws/:proj/<to> (slug-based, robust). */
 function AbsRedirect({ to }: { to: string }) {
   const { workspaceSlug, projectSlug } = useParams();
   return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/${to}`} replace />;
-}
-
-/** The Settings module moved into the Admin dashboard — remap old settings/:sub
- *  deep links to their new admin/* tab (falling back to the admin landing tab). */
-function SettingsRedirect() {
-  const { workspaceSlug, projectSlug, sub } = useParams();
-  const target = (sub && SETTINGS_TO_ADMIN[sub]) || ADMIN_LANDING;
-  return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/admin/${target}`} replace />;
-}
-
-/** Absolute redirect whose suffix is built from the route params. */
-function ParamRedirect({ build }: { build: (p: Record<string, string | undefined>) => string }) {
-  const params = useParams();
-  const { workspaceSlug, projectSlug } = params;
-  return <Navigate to={`/app/${workspaceSlug}/${projectSlug}/${build(params)}`} replace />;
-}
-
-/** Ops deep links map to /devops/:sub, except the Ops overview which was renamed. */
-function LegacyOpsRedirect() {
-  const { sub } = useParams();
-  const target = sub === "overview" ? "ops-overview" : sub;
-  return <Navigate to={`../../devops/${target}`} replace />;
-}
-/** Ops detail pages: /ops/<kind>/:id → /devops/<kind>/:id (three segments up). */
-function LegacyOpsDetailRedirect({ kind }: { kind: "servers" | "workflows" | "infra" }) {
-  const { id } = useParams();
-  return <Navigate to={`../../../devops/${kind}/${id}`} replace />;
-}
-
-/** Overview was merged into the Admin panel. Kept tabs map 1:1 to actions/*;
- *  dropped tabs (daily-briefing, activity-feed, multi-projects) fall back to the
- *  dashboard. */
-const KEPT_OVERVIEW = new Set(["dashboard", "custom-dashboards", "alerts"]);
-function LegacyOverviewRedirect() {
-  const { sub } = useParams();
-  const target = sub && KEPT_OVERVIEW.has(sub) ? sub : "dashboard";
-  return <Navigate to={`../../actions/${target}`} replace />;
-}
-/** Old /overview/dashboard-builder/:id → /actions/dashboard-builder/:id (3 up). */
-function LegacyBuilderRedirect() {
-  const { dashboardId } = useParams();
-  return <Navigate to={`../../../actions/dashboard-builder/${dashboardId}`} replace />;
 }
 
 function buildModuleRoutes() {
@@ -358,24 +303,16 @@ function buildModuleRoutes() {
   // HIDDEN_MODULES (devops/simulations/test-runs/repos…) stay routed without appearing in
   // the nav — deep links, CRM record actions and breadcrumbs keep working.
   return [...MODULES, ...HIDDEN_MODULES].filter((m) => m.slug !== "test-runs" && m.slug !== "vibe-code").flatMap((mod) => {
-    const hasProjectConfig = MODULE_PROJECT_CONFIGS[mod.slug] != null;
-
-    const subRoutes = mod.subItems.map((sub) => {
-      const key = `${mod.slug}/${sub.slug}`;
-      const element = PAGES[key] ?? <GenericSubPage moduleSlug={mod.slug} subSlug={sub.slug} />;
-      return { path: `${mod.slug}/${sub.slug}`, element: <ErrorBoundary>{element}</ErrorBoundary> };
+    // Every sub-item of every routed module has a page in PAGES — the diff is
+    // enforced by the nav itself. A missing one is a wiring bug, not a "coming
+    // soon", so it falls through to the catch-all instead of a placeholder.
+    const subRoutes = mod.subItems.flatMap((sub) => {
+      const element = PAGES[`${mod.slug}/${sub.slug}`];
+      if (!element) return [];
+      return [{ path: `${mod.slug}/${sub.slug}`, element: <ErrorBoundary>{element}</ErrorBoundary> }];
     });
     return [
-      {
-        path: mod.slug,
-        element: hasProjectConfig
-          ? <ErrorBoundary><ModuleProjectList /></ErrorBoundary>
-          : <Navigate to={mod.subItems[0]!.slug} replace />,
-      },
-      ...(hasProjectConfig ? [
-        { path: `${mod.slug}/project/:moduleProjectId`, element: <ErrorBoundary><ModuleProjectDetail /></ErrorBoundary> },
-        { path: `${mod.slug}/project/:moduleProjectId/:tabSlug`, element: <ErrorBoundary><ModuleProjectDetail /></ErrorBoundary> },
-      ] : []),
+      { path: mod.slug, element: <Navigate to={mod.subItems[0]!.slug} replace /> },
       ...subRoutes,
     ];
   });
@@ -469,21 +406,6 @@ export const router = createBrowserRouter([
       // Le module de travail (Plane) est la page d’arrivée : c’est là qu’on passe
       // la journée. Sans tableau de service, PlaneLanding retombe sur hq.
       { index: true, element: <PlaneLanding /> },
-      // The Admin panel was merged into CRM — old /actions/* cockpit links
-      // redirect (absolute, slug-based) to the new crm/* locations. The
-      // crm/admin-dashboard tab was retired, so its former targets land on the
-      // CRM Overview instead.
-      { path: "actions", element: <AdminMergeRedirect to="overview" /> },
-      { path: "actions/dashboard", element: <AdminMergeRedirect to="overview" /> },
-      { path: "actions/custom-dashboards", element: <AdminMergeRedirect to="admin-custom-dashboards" /> },
-      { path: "actions/alerts", element: <AdminMergeRedirect to="admin-alerts" /> },
-      // The Projects super-module was folded into CRM.
-      { path: "projects", element: <AdminMergeRedirect to="overview" /> },
-      { path: "projects/all", element: <AdminMergeRedirect to="overview" /> },
-      // App Testing split into Test runs / Dépôts / Vibe Code modules (Outils IA).
-      { path: "crm/testing", element: <AbsRedirect to="test-runs/tests" /> },
-      { path: "crm/simulations", element: <AbsRedirect to="simulations/workspace" /> },
-      { path: "simulations/list", element: <AbsRedirect to="simulations/workspace" /> },
       // Test runs module (tabs as onglets via :sub) + its run detail.
       { path: "test-runs", element: <AbsRedirect to="test-runs/tests" /> },
       { path: "test-runs/:sub", element: <ErrorBoundary><TestRunsPage /></ErrorBoundary> },
@@ -493,14 +415,9 @@ export const router = createBrowserRouter([
       // Vibe Code module (tabs as onglets via :sub).
       { path: "vibe-code", element: <AbsRedirect to="vibe-code/chat" /> },
       { path: "vibe-code/:sub", element: <ErrorBoundary><VibeCodePage /></ErrorBoundary> },
-      // Back-compat for the old testing/* links.
-      { path: "testing/workspace", element: <AbsRedirect to="test-runs/tests" /> },
-      { path: "testing/repositories", element: <AbsRedirect to="repos/list" /> },
-      { path: "testing/vibe-code", element: <AbsRedirect to="vibe-code/chat" /> },
-      { path: "testing/repositories/:repoId", element: <ParamRedirect build={(p) => `repos/repo/${p.repoId}`} /> },
-      { path: "testing/run/:runId", element: <ParamRedirect build={(p) => `test-runs/run/${p.runId}`} /> },
       {
-        path: "actions/dashboard-builder/:dashboardId",
+        // Le constructeur de dashboards vit à côté de sa liste (crm/admin-custom-dashboards).
+        path: "crm/dashboard-builder/:dashboardId",
         element: (
           <ErrorBoundary>
             <DashboardBuilderPage />
@@ -591,11 +508,6 @@ export const router = createBrowserRouter([
       },
       // Old Office deep links → the artifact editor that replaced them; every
       // other office/* page is gone, so it lands on the CRM.
-      { path: "office/document/:docId", element: <ParamRedirect build={(p) => `artifact/document/${p.docId}`} /> },
-      { path: "office/spreadsheet/:docId", element: <ParamRedirect build={(p) => `artifact/spreadsheet/${p.docId}`} /> },
-      { path: "office/presentation/:docId", element: <ParamRedirect build={(p) => `artifact/presentation/${p.docId}`} /> },
-      { path: "office", element: <AbsRedirect to="crm/workspace" /> },
-      { path: "office/:sub", element: <AbsRedirect to="crm/workspace" /> },
       {
         path: "devops/servers/:serverId",
         element: (
@@ -628,46 +540,12 @@ export const router = createBrowserRouter([
           </ErrorBoundary>
         ),
       },
-      // Any other old /actions/* cockpit link → CRM Overview.
-      { path: "actions/:sub", element: <AdminMergeRedirect to="overview" /> },
-      // PM & Support modules deleted (2026-07-17); the whiteboard they had
-      // passed to Office went with the Office module itself (2026-08-10).
-      // Simulations have their own module, everything else lives as CRM records.
-      { path: "pm/whiteboard", element: <AbsRedirect to="crm/workspace" /> },
-      { path: "pm/simulations", element: <AbsRedirect to="simulations/workspace" /> },
-      { path: "pm/:sub", element: <AbsRedirect to="crm/workspace" /> },
-      { path: "support/:sub", element: <AbsRedirect to="crm/workspace" /> },
-      // Legacy redirects: Ops deep links map to DevOps detail routes.
-      { path: "ops", element: <Navigate to="../devops/ops-overview" replace /> },
-      { path: "ops/servers/:id", element: <LegacyOpsDetailRedirect kind="servers" /> },
-      { path: "ops/workflows/:id", element: <LegacyOpsDetailRedirect kind="workflows" /> },
-      { path: "ops/infra/:id", element: <LegacyOpsDetailRedirect kind="infra" /> },
-      { path: "ops/:sub", element: <LegacyOpsRedirect /> },
-      // Legacy redirects: Overview was merged into the Admin panel.
-      { path: "overview", element: <Navigate to="../actions/dashboard" replace /> },
-      { path: "overview/dashboard-builder/:dashboardId", element: <LegacyBuilderRedirect /> },
-      { path: "overview/:sub", element: <LegacyOverviewRedirect /> },
       // ── Admin dashboard (single sidebar) — explicit routes, not module-generated ──
       { path: "admin", element: <AbsRedirect to={`admin/${ADMIN_LANDING}`} /> },
       ...ADMIN_ITEMS.map((it) => ({
         path: `admin/${it.slug}`,
         element: <ErrorBoundary>{ADMIN_PAGES[it.slug] ?? <Navigate to={ADMIN_LANDING} replace />}</ErrorBoundary>,
       })),
-      // The Settings module was folded into the Admin dashboard.
-      { path: "settings", element: <AbsRedirect to={`admin/${ADMIN_LANDING}`} /> },
-      { path: "settings/:sub", element: <SettingsRedirect /> },
-      // The Integrations module was folded into a single "Connecteurs" tab,
-      // which now lives in AI Workforce — every old link lands there.
-      { path: "integrations", element: <AbsRedirect to="agent/connectors" /> },
-      { path: "integrations/:sub", element: <AbsRedirect to="agent/connectors" /> },
-      { path: "admin/connectors", element: <AbsRedirect to="agent/connectors" /> },
-      // The "Agentic Onboarding" module became a conditional tab on public
-      // agents — its old deep links land on the public agents list.
-      { path: "onboarding", element: <AbsRedirect to="agent/agents" /> },
-      { path: "onboarding/:sub", element: <AbsRedirect to="agent/agents" /> },
-      // "Agents publics" became the unified "Agents" roster (internal + public
-      // in one list), so its old slug redirects rather than 404-ing.
-      { path: "agent/public-agents", element: <AbsRedirect to="agent/agents" /> },
       ...buildModuleRoutes(),
     ],
   },

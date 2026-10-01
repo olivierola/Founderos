@@ -16,8 +16,10 @@ import {
   RISK_CATEGORY_META, RISK_STATUS_META, riskScore, riskScoreTone,
 } from "./shared";
 import { Pill, FormDialog, type FieldDef } from "./ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export function GovRisksPage() {
+  const confirm = useConfirm();
   const crud = useGovCrud("gov_risks");
   const { data: risks, isLoading } = useRisks();
   const { data: systems } = useAiSystems();
@@ -99,7 +101,7 @@ export function GovRisksPage() {
                 <div className="flex shrink-0 gap-1">
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(r)}><Pencil className="h-3.5 w-3.5" /></Button>
                   <Button size="icon" variant="ghost" className="h-7 w-7"
-                    onClick={() => { if (confirm("Supprimer ce risque ?")) void crud.remove(r.id, { action: "risk.deleted", entityType: "risk", entityId: r.id, entityLabel: r.title }); }}>
+                    onClick={async () => { if ((await confirm("Supprimer ce risque ?"))) void crud.remove(r.id, { action: "risk.deleted", entityType: "risk", entityId: r.id, entityLabel: r.title }); }}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>

@@ -35,6 +35,7 @@ import { buildInternalToolset, type AgentToolRow, type InternalToolContext } fro
 import { classifyTier, modelForTier, resolveProvider, cheapProvider } from "./model-router.ts";
 import { compileSystemPrompt, type SectionInput } from "./prompt-compiler.ts";
 import { renderSoul, selectPreferences } from "./agent-context.ts";
+import { judge, choice, readChoice, qid } from "./typesafe.ts";
 import { loadCompanyContext, renderCompanySection, type CompanyContext } from "./company-context.ts";
 import { ORCHESTRATOR_PROACTIVITY } from "./proactivity.ts";
 import { deriveContract } from "./agent-loop.ts";
@@ -158,8 +159,26 @@ export async function routeTurn(opts: {
    * would otherwise sometimes decide the brief was "just a question".
    */
   forceMission?: boolean;
+  /** Le client de service, pour le jugement rapide. Absent = routage génératif,
+   *  comme avant. */
+  admin?: Admin;
 }): Promise<RouteDecision> {
   const roster = opts.roster.filter((a) => !a.is_orchestrator);
+
+  // ── Le chemin rapide ──────────────────────────────────────────────────────
+  //
+  // Router coûte aujourd'hui un appel génératif de 2 200 tokens sur CHAQUE
+  // message non adressé d'une room. Or la question est un classement : « je
+  // réponds, je passe à quelqu'un, ou c'est un chantier ? » puis « à qui ? ».
+  //
+  // Une planification de mission n'y passe jamais : elle demande d'ÉCRIRE un
+  // découpage, ce qu'un modèle System One ne fait pas. Et un doute, ici, coûte
+  // cher — un message routé au mauvais agent se voit — donc on n'agit qu'au
+  // dessus du seuil de confiance, sinon on laisse le routeur génératif trancher.
+  if (!opts.forceMission && opts.admin) {
+    const fast = await fastRoute(opts.admin, opts, roster).catch(() => null);
+    if (fast) return normalizeDecision(fast, roster, false);
+  }
   const system = opts.forceMission ? [
     `Tu es « ${opts.assistant.name} », l'assistant-chef d'orchestre du service « ${opts.dashboardName} ».`,
     `Un humain te demande de PLANIFIER une mission collective. Tu ne fais pas le travail : tu le DÉCOUPES et tu le RÉPARTIS.`,
@@ -223,6 +242,105 @@ export async function routeTurn(opts: {
   }
   if (opts.forceMission) parsed.mode = "mission";
   return normalizeDecision(parsed, roster, opts.forceMission === true);
+}
+
+/**
+ * Le routage en une passe typée : le mode, et le destinataire.
+ *
+ * Les deux questions partent ensemble — c'est le même état, et une seule
+ * requête. Le mode « mission » n'est jamais tranché ici : s'il ressort, on rend
+ * la main au routeur génératif, seul capable d'écrire le découpage qui doit
+ * suivre.
+ */
+async function fastRoute(
+  admin: Admin,
+  opts: {
+    room: RoomRef; dashboardName: string; assistant: RosterAgent;
+    thread: Array<{ who: string; text: string }>; userText: string;
+    openMissions: Array<{ id: string; title: string }>;
+  },
+  roster: RosterAgent[],
+): Promise<RouteDecision | null> {
+  const byQid = new Map<string, RosterAgent>();
+  const agentCriteria: Record<string, string | null> = {};
+  for (const a of roster.slice(0, 100)) {
+    const key = qid(a.name);
+    if (agentCriteria[key] !== undefined) continue;
+    agentCriteria[key] = [a.role, a.persona].filter(Boolean).join(" — ").slice(0, 180) || null;
+    byQid.set(key, a);
+  }
+
+  // Les trois modes se ressemblent — c'est précisément le cas où la
+  // documentation demande de dire ce que chaque option NE couvre PAS, et de
+  // donner des exemples. Sans `not_for`, « répondre » et « router » se
+  // disputent chaque message un peu technique.
+  const questions: Record<string, ReturnType<typeof choice>> = {
+    mode: choice("Que faut-il faire de ce message ?", {
+      answer: {
+        what: "L'assistant répond lui-même : question, information, avis, précision, salutation, ou suivi d'un travail déjà lancé.",
+        not_for: "Un vrai travail à produire, même court, qui appartient à un spécialiste de l'équipe.",
+        examples: [
+          "Où en est la mission sur le catalogue ?",
+          "Merci, c'est parfait.",
+          "Qu'est-ce que tu me conseilles entre les deux ?",
+        ],
+      },
+      route: {
+        what: "Un seul agent spécialisé de l'équipe est manifestement le bon exécutant, pour un seul livrable.",
+        not_for: "Une question à laquelle l'assistant peut répondre, ou un travail qui demande plusieurs compétences.",
+        examples: [
+          "Rédige la fiche produit de la nouvelle référence.",
+          "Analyse les tickets de la semaine et sors les trois irritants principaux.",
+        ],
+      },
+      mission: {
+        what: "Le travail demande plusieurs interventions, plusieurs compétences, ou des étapes qui dépendent les unes des autres.",
+        not_for: "Une demande qu'un seul agent traite d'un bout à l'autre.",
+        examples: [
+          "Lance le plan de lancement du produit pour septembre.",
+          "Refais toute la documentation client et mets à jour le site.",
+        ],
+      },
+    }),
+  };
+  if (byQid.size > 0) {
+    questions.agent = choice("Quel agent de l'équipe est le bon exécutant ?", agentCriteria);
+  }
+
+  const verdict = await judge(
+    { admin, workspaceId: opts.room.workspace_id, projectId: opts.room.project_id },
+    "agent_choice",
+    {
+      service: opts.dashboardName,
+      fil: opts.thread.slice(-8).map((m) => `[${m.who}] ${m.text.slice(0, 400)}`),
+      missions_en_cours: opts.openMissions.map((m) => m.title),
+      message: opts.userText.slice(0, 2000),
+    },
+    questions,
+    { subject: `room ${opts.room.title}` },
+  );
+  if (!verdict?.apply) return null;
+
+  const mode = readChoice(verdict, "mode");
+  if (!mode || mode.confidence < verdict.threshold) return null;
+  // Un chantier se DÉCOUPE, et ça s'écrit. Ce modèle ne rédige pas : la main
+  // repasse au routeur génératif, qui fera les deux d'un coup.
+  if (mode.choice === "mission") return null;
+
+  if (mode.choice === "answer") {
+    return { mode: "answer", reason: `Question directe (confiance ${mode.confidence.toFixed(2)}).` };
+  }
+
+  const who = readChoice(verdict, "agent");
+  const target = who ? byQid.get(who.choice) : null;
+  // Router sans savoir vers qui n'est pas router : on répond soi-même plutôt
+  // que d'envoyer le message au hasard.
+  if (!target || !who || who.confidence < verdict.threshold) return null;
+  return {
+    mode: "route",
+    agent: target.name,
+    reason: `${target.name} est le bon exécutant (confiance ${who.confidence.toFixed(2)}).`,
+  };
 }
 
 /** Trust nothing the model wrote about names, refs or dependencies — a bad ref

@@ -1,0 +1,139 @@
+{
+  "inputs": {
+    "_shared/cors.ts": {
+      "bytes": 657,
+      "imports": [],
+      "format": "esm"
+    },
+    "_shared/supabase-admin.ts": {
+      "bytes": 1138,
+      "imports": [
+        {
+          "path": "https://esm.sh/@supabase/supabase-js@2.45.4",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "_shared/crypto.ts": {
+      "bytes": 2039,
+      "imports": [],
+      "format": "esm"
+    },
+    "_shared/github.ts": {
+      "bytes": 12900,
+      "imports": [],
+      "format": "esm"
+    },
+    "_shared/ai.ts": {
+      "bytes": 59027,
+      "imports": [],
+      "format": "esm"
+    },
+    "_shared/model-router.ts": {
+      "bytes": 15300,
+      "imports": [],
+      "format": "esm"
+    },
+    "_shared/mcp-client.ts": {
+      "bytes": 7676,
+      "imports": [],
+      "format": "esm"
+    },
+    "_shared/mcp-oauth.ts": {
+      "bytes": 9342,
+      "imports": [],
+      "format": "esm"
+    },
+    "vibe-code/index.ts": {
+      "bytes": 39256,
+      "imports": [
+        {
+          "path": "_shared/cors.ts",
+          "kind": "import-statement",
+          "original": "../_shared/cors.ts"
+        },
+        {
+          "path": "_shared/supabase-admin.ts",
+          "kind": "import-statement",
+          "original": "../_shared/supabase-admin.ts"
+        },
+        {
+          "path": "_shared/crypto.ts",
+          "kind": "import-statement",
+          "original": "../_shared/crypto.ts"
+        },
+        {
+          "path": "_shared/github.ts",
+          "kind": "import-statement",
+          "original": "../_shared/github.ts"
+        },
+        {
+          "path": "_shared/ai.ts",
+          "kind": "import-statement",
+          "original": "../_shared/ai.ts"
+        },
+        {
+          "path": "_shared/model-router.ts",
+          "kind": "import-statement",
+          "original": "../_shared/model-router.ts"
+        },
+        {
+          "path": "_shared/mcp-client.ts",
+          "kind": "import-statement",
+          "original": "../_shared/mcp-client.ts"
+        },
+        {
+          "path": "_shared/mcp-oauth.ts",
+          "kind": "import-statement",
+          "original": "../_shared/mcp-oauth.ts"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "nul": {
+      "imports": [
+        {
+          "path": "https://esm.sh/@supabase/supabase-js@2.45.4",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "exports": [],
+      "entryPoint": "vibe-code/index.ts",
+      "inputs": {
+        "_shared/cors.ts": {
+          "bytesInOutput": 564
+        },
+        "_shared/supabase-admin.ts": {
+          "bytesInOutput": 772
+        },
+        "_shared/crypto.ts": {
+          "bytesInOutput": 939
+        },
+        "_shared/github.ts": {
+          "bytesInOutput": 6156
+        },
+        "_shared/ai.ts": {
+          "bytesInOutput": 22703
+        },
+        "_shared/model-router.ts": {
+          "bytesInOutput": 2713
+        },
+        "_shared/mcp-client.ts": {
+          "bytesInOutput": 3754
+        },
+        "_shared/mcp-oauth.ts": {
+          "bytesInOutput": 2180
+        },
+        "vibe-code/index.ts": {
+          "bytesInOutput": 30272
+        }
+      },
+      "bytes": 70266
+    }
+  }
+}

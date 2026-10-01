@@ -203,6 +203,77 @@ export function blockSubstanceKey(b: ReportBlock): string | null {
   }
 }
 
+/** A KPI tile's figure as a reader sees it: value + unit, with the typography
+ *  a rewrite changes freely (spaces, NBSP, dash flavour, decimal comma) folded
+ *  away. « 312–900 Md$ » and « 312 - 900 Md$ » are the same figure. */
+function kpiFigure(k: Record<string, unknown>): string {
+  return `${String(k?.value ?? "")}${String(k?.unit ?? "")}`
+    .toLowerCase()
+    .replace(/[\s  ]+/g, "")
+    .replace(/[‐‑‒–—−]/g, "-")
+    .replace(/,/g, ".");
+}
+
+/** The figures of a KPI row, or null for any other block. */
+export function kpiFigures(b: ReportBlock): string[] | null {
+  if (String(b?.type ?? "") !== "kpis") return null;
+  const items = list((b?.data as Record<string, unknown> | undefined)?.items) as Array<Record<string, unknown>>;
+  return items.map(kpiFigure).filter(Boolean);
+}
+
+/**
+ * Do two blocks say the same thing to a reader?
+ *
+ * For KPI rows the FIGURES are the identity — not the labels. The strip that
+ * reached readers three times was one row whose labels the author reworded on
+ * each pass (« Marché IA mondial 2026 » → « Marché IA 2026 », « centres de
+ * données » → « data centers ») over the very same four numbers, and the
+ * label-based key let every rewording through. Two rows are the same when most
+ * of their figures coincide: at least two shared, covering 60 % of the shorter
+ * row. A one-tile row keeps the strict label+figure identity — a lone « 15 % »
+ * can honestly appear twice about two different things.
+ *
+ * Other blocks: the exact substance key (charts, tables).
+ */
+export function sameSubstance(a: ReportBlock, b: ReportBlock): boolean {
+  const fa = kpiFigures(a), fb = kpiFigures(b);
+  if (fa && fb) {
+    const small = fa.length <= fb.length ? fa : fb;
+    const big = new Set(fa.length <= fb.length ? fb : fa);
+    if (small.length >= 2) {
+      const shared = small.filter((f) => big.has(f)).length;
+      if (shared >= 2 && shared >= Math.ceil(small.length * 0.6)) return true;
+    }
+  }
+  const ka = blockSubstanceKey(a);
+  return !!ka && ka === blockSubstanceKey(b);
+}
+
+/**
+ * Layout hygiene before building: what makes a report feel full of holes.
+ * Drops paragraphs / headings / quotes left empty, never opens or closes on a
+ * delimiter, and collapses delimiters that follow one another — a run of them
+ * reads as the document having lost a page.
+ */
+export function tidyBlocks(blocks: ReportBlock[]): ReportBlock[] {
+  const blank = (b: ReportBlock) => {
+    const d = (b?.data ?? {}) as Record<string, unknown>;
+    const t = String(b?.type ?? "");
+    if (t === "paragraph" || t === "header" || t === "quote") {
+      return !String(d.text ?? "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+    }
+    return false;
+  };
+  const out: ReportBlock[] = [];
+  for (const b of blocks) {
+    if (blank(b)) continue;
+    if (b.type === "delimiter" && (out.length === 0 || out[out.length - 1].type === "delimiter")) continue;
+    out.push(b);
+  }
+  while (out.length && out[out.length - 1].type === "delimiter") out.pop();
+  return out;
+}
+
 /** One block, checked on its own — so `report_add_block` can refuse a malformed
  *  block on the spot. A block accepted now and dropped at build time is a
  *  paragraph the author believes they wrote. */

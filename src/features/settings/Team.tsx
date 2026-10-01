@@ -25,6 +25,7 @@ import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useToast } from "@/components/ToastProvider";
 import { Can } from "@/lib/permissions";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface Member {
   id: string;
@@ -54,6 +55,7 @@ interface Invitation {
 }
 
 export function SettingsTeamPage() {
+  const confirm = useConfirm();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -129,7 +131,7 @@ export function SettingsTeamPage() {
   }
 
   async function removeMember(member: Member) {
-    if (!confirm(`Remove this member from the project?`)) return;
+    if (!(await confirm(`Remove this member from the project?`))) return;
     await toast.run(
       () =>
         callEdge("project-update-member-role", {
@@ -166,7 +168,7 @@ export function SettingsTeamPage() {
         updateRole={updateRole}
         removeMember={removeMember}
         onRevoke={async (inv) => {
-          if (!confirm(`Revoke invitation to ${inv.email}?`)) return;
+          if (!(await confirm(`Revoke invitation to ${inv.email}?`))) return;
           await toast.run(
             () =>
               callEdge("project-revoke-invitation", {

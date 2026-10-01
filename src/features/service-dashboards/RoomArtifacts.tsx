@@ -42,6 +42,11 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { ArtifactDeck, ArtifactHeader } from "@/features/artifacts/BlockRenderer";
 import { parseDocument, type ArtifactDocument } from "@/features/artifacts/blocks";
 import { parseReportArtisan, ReportArtisanView } from "@/features/artifacts/ReportArtisanView";
+import { parsePdfDeliverable } from "@/lib/pdf/types";
+import { ArtifactPdfButton, PdfDeliverableView } from "@/features/pdf/PdfDeliverableView";
+import { LeadBoardView, tryParseLeadBoard } from "@/features/internal-agents/leadsense/LeadBoardView";
+import { SocBoardView, tryParseSocBoard } from "@/features/internal-agents/sentinel/SocBoardView";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const KIND_ICON: Record<string, typeof FileText> = {
   document: FileText, presentation: Presentation, spreadsheet: TableIcon, image: ImageIcon, text: Type,
@@ -286,6 +291,11 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
   // A report written by Le Rédacteur is a finished HTML file, not blocks: it is
   // shown as itself, with no editor and no app header (it carries its own).
   const built = parseReportArtisan(data?.content);
+  // A generate_pdf deliverable: a spec the app renders into the PDF on open.
+  const pdf = parsePdfDeliverable(data?.content);
+  // A LeadSense board: a predefined view over real rows, not an editable document.
+  const leadBoard = tryParseLeadBoard(data?.content);
+  const socBoard = tryParseSocBoard(data?.content);
 
   // The header is system chrome now, so a `banner` block an older document still
   // carries would render a second title under the real one. Drop it from the
@@ -314,7 +324,7 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
     <div className="relative flex h-full flex-col">
       {/* The only chrome left. A toolbar of one button is a toolbar that costs a
           strip of the document for nothing; this floats over the header instead. */}
-      {!built && !isDeck && (
+      {!built && !pdf && !isDeck && (
         <button
           type="button" onClick={onBack} aria-label="Retour aux artifacts"
           className="absolute left-3 top-3 z-30 flex h-8 w-8 items-center justify-center rounded-full bg-black/20 text-white backdrop-blur transition-colors hover:bg-black/35"
@@ -322,9 +332,15 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
           <ArrowLeft className="h-4 w-4" />
         </button>
       )}
-      <div className={built || isDeck ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-y-auto"}>
+      <div className={built || pdf || isDeck ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-y-auto"}>
         {isLoading
           ? <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          : leadBoard
+          ? <LeadBoardView board={leadBoard} />
+          : socBoard
+          ? <SocBoardView board={socBoard} />
+          : pdf
+          ? <PdfDeliverableView payload={pdf} title={data?.name || title} onBack={onBack} />
           : built
           ? <ReportArtisanView payload={built} title={data?.name || title} onBack={onBack} />
           : isDeck
@@ -342,6 +358,7 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
                 </button>
                 <span className="truncate font-medium text-foreground">{data?.name || title}</span>
                 <span className="hidden sm:inline">· présentation</span>
+                <ArtifactPdfButton doc={body} title={data?.name || title} deck className="ml-auto" />
               </div>
               <div className="min-h-0 flex-1"><ArtifactDeck doc={body} fill title={data?.name || title} subtitle={subtitle} /></div>
             </div>
@@ -357,7 +374,16 @@ function DeliverableViewer({ id, title, onBack }: { id?: string; title: string; 
                 // The cover lives in the document JSON, so it rides the same
                 // debounced write as the blocks — no column, no second request.
                 onCoverChange={(cover) => persist({ ...body, cover })}
-                aside={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-white/70" /> : null}
+                aside={(
+                  <span className="flex items-center gap-2">
+                    {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-white/70" />}
+                    <ArtifactPdfButton
+                      doc={body}
+                      title={data?.name || title}
+                      className="border-white/30 bg-black/20 normal-case tracking-normal text-white hover:bg-black/35"
+                    />
+                  </span>
+                )}
               />
               {/* A report IS the editor: click anywhere and the caret is there,
                   with the block toolbar. No mode to switch, nothing to discover. */}
@@ -408,6 +434,7 @@ function ArtifactGallery({
   onOpen: (t: ArtifactOpenTarget) => void;
   dense?: boolean;
 }) {
+  const confirm = useConfirm();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -708,7 +735,7 @@ function ArtifactGallery({
   // Delete an artifact whatever table it lives in. Confirmed, because there is
   // no undo: a deliverable holds the only copy of a report's content.
   async function deleteCard(c: Card) {
-    if (!confirm(`Supprimer « ${c.title || "Sans titre"} » ? Cette action est définitive.`)) return;
+    if (!(await confirm(`Supprimer « ${c.title || "Sans titre"} » ? Cette action est définitive.`))) return;
     const table = c.table === "deliverable" ? "internal_agent_deliverables"
       : c.table === "external" ? "external_artifacts"
       : c.table;

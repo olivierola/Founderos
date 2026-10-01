@@ -287,7 +287,7 @@ export function AgentsPage() {
                 key={a.id}
                 className={cn(a.studio && "studio-border")}
                 onClick={() => openInternal(a)}
-                glyph={<AgentIdentity style={a.avatar_style} url={a.avatar_url} seed={a.name} size={54} rounded="rounded-xl" />}
+                glyph={<AgentIdentity url={a.avatar_url} seed={a.name} size={54} rounded="rounded-xl" />}
                 name={a.name}
                 tools={c?.tools ?? null}
                 extras={c?.skills ?? null}

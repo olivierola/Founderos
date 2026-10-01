@@ -168,7 +168,7 @@ export function LogoPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"emoji" | "icon">(
-    (value as LogoProps | undefined)?.in_use === "icon" ? "icon" : "emoji",
+    (value as LogoProps | undefined)?.in_use === "emoji" ? "emoji" : "icon",
   );
   const [color, setColor] = useState(
     (value as LogoProps | undefined)?.icon?.color ?? ICON_COLORS[7],
@@ -192,7 +192,7 @@ export function LogoPicker({
 
       <PopoverContent className="w-80 p-2" align="start">
         <nav className="mb-2 inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
-          {(["emoji", "icon"] as const).map((t) => (
+          {(["icon", "emoji"] as const).map((t) => (
             <button
               key={t}
               type="button"

@@ -220,6 +220,8 @@ export interface PjIssue {
   module_ids: string[];
   sub_issue_count: number;
   attachment_count: number;
+  /** Combien de ressources du projet cet item désigne (migration 0264). */
+  resource_count: number;
   link_count: number;
 }
 
@@ -545,7 +547,7 @@ const ISSUE_COLS =
   "*";
 
 type RawIssue = Omit<PjIssue,
-  "assignee_ids" | "label_ids" | "cycle_id" | "module_ids" | "sub_issue_count" | "attachment_count" | "link_count">;
+  "assignee_ids" | "label_ids" | "cycle_id" | "module_ids" | "sub_issue_count" | "attachment_count" | "link_count" | "resource_count">;
 
 /**
  * Recolle les liaisons d'un lot d'items en 5 requêtes constantes, quel que soit
@@ -556,7 +558,7 @@ async function attachRelations(rows: RawIssue[]): Promise<PjIssue[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
 
-  const [assignees, agents, labels, cycles, modules, children, attachments] = await Promise.all([
+  const [assignees, agents, labels, cycles, modules, children, attachments, resources] = await Promise.all([
     supabase.from("pj_issue_assignees").select("issue_id, user_id").in("issue_id", ids),
     // Les agents voyagent AVEC les personnes, dans le même aller-retour : les
     // charger à part doublerait le nombre de requêtes d'un board pour une
@@ -567,6 +569,7 @@ async function attachRelations(rows: RawIssue[]): Promise<PjIssue[]> {
     supabase.from("pj_module_issues").select("issue_id, module_id").in("issue_id", ids),
     supabase.from("pj_issues").select("parent_id").in("parent_id", ids),
     supabase.from("pj_issue_attachments").select("issue_id").in("issue_id", ids),
+    supabase.from("pj_issue_assets").select("issue_id").in("issue_id", ids),
   ]);
 
   const group = <T, K extends keyof T>(rowsIn: T[] | null, key: K, val: keyof T) => {
@@ -593,6 +596,10 @@ async function attachRelations(rows: RawIssue[]): Promise<PjIssue[]> {
   for (const r of (attachments.data ?? []) as Array<{ issue_id: string }>) {
     attachCount.set(r.issue_id, (attachCount.get(r.issue_id) ?? 0) + 1);
   }
+  const resourceCount = new Map<string, number>();
+  for (const r of (resources.data ?? []) as Array<{ issue_id: string }>) {
+    resourceCount.set(r.issue_id, (resourceCount.get(r.issue_id) ?? 0) + 1);
+  }
 
   return rows.map((r) => ({
     ...r,
@@ -603,6 +610,7 @@ async function attachRelations(rows: RawIssue[]): Promise<PjIssue[]> {
     module_ids: byModule.get(r.id) ?? [],
     sub_issue_count: childCount.get(r.id) ?? 0,
     attachment_count: attachCount.get(r.id) ?? 0,
+    resource_count: resourceCount.get(r.id) ?? 0,
     link_count: 0,
   }));
 }
@@ -2850,4 +2858,184 @@ export async function fetchIssueMissions(issueId: string): Promise<Array<{
     run_id: latest.get(m.id)?.id ?? null,
     run_status: latest.get(m.id)?.status ?? null,
   }));
+}
+
+// ── Ressources du projet (migration 0264) ───────────────────────────────────
+
+/**
+ * Le genre d'une ressource. Il ne sert pas qu'à choisir une icône : il dit
+ * comment on l'OUVRE (visiter, télécharger, lire sur place) et ce qu'un agent
+ * peut en faire.
+ */
+export type AssetKind =
+  | "link" | "file" | "code" | "doc" | "page" | "dataset" | "repo" | "design" | "api" | "other";
+
+export interface PjAsset {
+  id: string;
+  pj_project_id: string;
+  workspace_id: string;
+  kind: AssetKind;
+  name: string;
+  description: string;
+  url: string | null;
+  storage_path: string | null;
+  content: string | null;
+  page_id: string | null;
+  language: string | null;
+  mime_type: string | null;
+  size_bytes: number;
+  tags: string[];
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+/** Le rôle d'une ressource sur un item : la matière, l'appui, ou le produit. */
+export type AssetRole = "input" | "reference" | "output";
+
+export interface PjIssueAsset {
+  id: string;
+  issue_id: string;
+  asset_id: string;
+  role: AssetRole;
+  note: string;
+  created_at: string;
+  asset: PjAsset;
+}
+
+const ASSET_COLS =
+  "id, pj_project_id, workspace_id, kind, name, description, url, storage_path, content, " +
+  "page_id, language, mime_type, size_bytes, tags, created_by, created_at, updated_at, archived_at";
+
+export async function fetchAssets(
+  pjProjectId: string,
+  opts: { includeArchived?: boolean } = {},
+): Promise<PjAsset[]> {
+  let q = supabase.from("pj_assets").select(ASSET_COLS)
+    .eq("pj_project_id", pjProjectId)
+    .order("updated_at", { ascending: false });
+  if (!opts.includeArchived) q = q.is("archived_at", null);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as unknown as PjAsset[];
+}
+
+export async function createAsset(input: {
+  pjProjectId: string; workspaceId: string; kind: AssetKind; name: string;
+  description?: string; url?: string | null; content?: string | null;
+  storagePath?: string | null; pageId?: string | null; language?: string | null;
+  mimeType?: string | null; sizeBytes?: number; tags?: string[]; createdBy: string | null;
+}): Promise<PjAsset> {
+  const { data, error } = await supabase.from("pj_assets").insert({
+    pj_project_id: input.pjProjectId, workspace_id: input.workspaceId,
+    kind: input.kind, name: input.name, description: input.description ?? "",
+    url: input.url ?? null, content: input.content ?? null,
+    storage_path: input.storagePath ?? null, page_id: input.pageId ?? null,
+    language: input.language ?? null, mime_type: input.mimeType ?? null,
+    size_bytes: input.sizeBytes ?? 0, tags: input.tags ?? [], created_by: input.createdBy,
+  }).select(ASSET_COLS).single();
+  if (error) throw new Error(error.message);
+  return data as unknown as PjAsset;
+}
+
+export async function updateAsset(id: string, patch: Partial<{
+  name: string; description: string; kind: AssetKind; url: string | null;
+  content: string | null; language: string | null; tags: string[];
+  archived_at: string | null;
+}>): Promise<void> {
+  const { error } = await supabase.from("pj_assets").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Le fichier part dans le même seau que les pièces jointes, sous un préfixe
+ * `assets/` : un second seau demanderait ses propres règles d'accès pour la
+ * même population, et deux jeux de règles finissent toujours par diverger.
+ */
+export async function uploadAssetFile(input: {
+  file: File; pjProjectId: string; workspaceId: string; createdBy: string | null;
+  description?: string;
+}): Promise<PjAsset> {
+  const path = `${input.pjProjectId}/assets/${crypto.randomUUID()}-${input.file.name}`;
+  const { error: upErr } = await supabase.storage
+    .from(ATTACHMENT_BUCKET).upload(path, input.file, { upsert: false });
+  if (upErr) throw new Error(upErr.message);
+  return createAsset({
+    pjProjectId: input.pjProjectId, workspaceId: input.workspaceId,
+    kind: "file", name: input.file.name, description: input.description,
+    storagePath: path, mimeType: input.file.type || null, sizeBytes: input.file.size,
+    createdBy: input.createdBy,
+  });
+}
+
+export function assetFileUrl(storagePath: string): string {
+  return supabase.storage.from(ATTACHMENT_BUCKET).getPublicUrl(storagePath).data.publicUrl;
+}
+
+/**
+ * Archiver plutôt que supprimer : une ressource est citée par des items, et
+ * parfois par le travail déjà rendu d'un agent. La faire disparaître ferait
+ * mentir l'historique — on la retire des listes, on garde le fil.
+ */
+export async function archiveAsset(id: string, archived: boolean): Promise<void> {
+  await updateAsset(id, { archived_at: archived ? new Date().toISOString() : null });
+}
+
+export async function deleteAsset(id: string, storagePath: string | null): Promise<void> {
+  if (storagePath) await supabase.storage.from(ATTACHMENT_BUCKET).remove([storagePath]);
+  const { error } = await supabase.from("pj_assets").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchIssueAssets(issueId: string): Promise<PjIssueAsset[]> {
+  const { data, error } = await supabase.from("pj_issue_assets")
+    .select(`id, issue_id, asset_id, role, note, created_at, asset:pj_assets(${ASSET_COLS})`)
+    .eq("issue_id", issueId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  // La jointure remonte l'objet lié ; une ressource supprimée entre-temps
+  // laisserait une ligne sans matière, qu'on n'affiche pas.
+  return ((data ?? []) as unknown as PjIssueAsset[]).filter((r) => !!r.asset);
+}
+
+/** Combien de ressources chaque item porte — pour la pastille des listes. */
+export async function fetchIssueAssetCounts(issueIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!issueIds.length) return out;
+  const { data } = await supabase.from("pj_issue_assets")
+    .select("issue_id").in("issue_id", issueIds);
+  for (const r of (data ?? []) as Array<{ issue_id: string }>) {
+    out.set(r.issue_id, (out.get(r.issue_id) ?? 0) + 1);
+  }
+  return out;
+}
+
+export async function attachAssetToIssue(input: {
+  issueId: string; assetId: string; workspaceId: string;
+  role?: AssetRole; note?: string; addedBy: string | null;
+}): Promise<void> {
+  const { error } = await supabase.from("pj_issue_assets").insert({
+    issue_id: input.issueId, asset_id: input.assetId, workspace_id: input.workspaceId,
+    role: input.role ?? "input", note: input.note ?? "", added_by: input.addedBy,
+  });
+  // Rattacher deux fois la même ressource n'est pas une erreur à montrer :
+  // c'est le résultat voulu, déjà en place.
+  if (error && !/duplicate key/i.test(error.message)) throw new Error(error.message);
+}
+
+export async function setIssueAssetRole(id: string, role: AssetRole): Promise<void> {
+  const { error } = await supabase.from("pj_issue_assets").update({ role }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function detachAssetFromIssue(id: string): Promise<void> {
+  const { error } = await supabase.from("pj_issue_assets").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** UNE page, par son identifiant : la ressource « page du wiki » n'a que ça. */
+export async function fetchPageById(id: string): Promise<PjPage | null> {
+  const { data } = await supabase.from("pj_pages").select(PAGE_COLS).eq("id", id).maybeSingle();
+  return (data as PjPage | null) ?? null;
 }

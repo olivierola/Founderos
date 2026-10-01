@@ -24,6 +24,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { formatCompact, cn } from "@/lib/utils";
 import { AgentPicker } from "./AgentPicker";
 import { FlowEditor } from "./FlowEditor";
+import { useToast } from "@/components/ToastProvider";
 
 // The selected agent stays in sync across the module's onglets (and survives a
 // refresh) because AgentPicker mirrors the selection to the URL (`?a=`) and
@@ -34,6 +35,7 @@ import { FlowEditor } from "./FlowEditor";
 /* ============================================================ */
 
 export function OnboardingOverviewPage() {
+  const toast = useToast();
   const { workspaceId, projectId, workspace, project } = useCurrentContext();
   const queryClient = useQueryClient();
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -91,7 +93,7 @@ export function OnboardingOverviewPage() {
       });
       await queryClient.invalidateQueries({ queryKey: ["onb_enrichment_status", projectId] });
     } catch (e) {
-      alert("Enrichment failed: " + (e instanceof Error ? e.message : String(e)));
+      toast.error("Enrichment failed: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setEnriching(false);
     }

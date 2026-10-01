@@ -56,8 +56,8 @@ function Tile({ name }: { name: string }) {
 const SKINS = [
   {
     key: "founderos" as const,
-    label: "FounderOS",
-    hint: "Dense. Corps de 13, gris froids, filets marqués.",
+    label: "Anduran",
+    hint: "Le style du site : noir, blanc, violet, angles arrondis.",
   },
   {
     key: "apple" as const,

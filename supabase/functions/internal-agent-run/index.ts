@@ -21,6 +21,7 @@
 //     scheduler authenticates with the service-role key.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
+import { describeIssueAssets } from "../_shared/tracker-actions.ts";
 import { timingSafeEqual } from "../_shared/authz.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { decryptSecret } from "../_shared/crypto.ts";
@@ -38,8 +39,16 @@ import {
   assertCredits, assertQuota, checkQuota, checkRunBudget, isQuotaError, quotaErrorResponse,
 } from "../_shared/metering.ts";
 import { estimateCostUsd } from "../_shared/llm-pricing.ts";
-import { loadGuardrails, checkGuardrails, strongestEnforcement, type GuardrailViolation } from "../_shared/guardrails.ts";
+import {
+  loadGuardrails, checkGuardrails, judgeGuardrails, mergeViolations, strongestEnforcement,
+  type GuardrailViolation,
+} from "../_shared/guardrails.ts";
+import {
+  judge, choice, noul, readChoice, readNoul, ranked, qid, loadTypesafeConfig,
+  type JudgeContext,
+} from "../_shared/typesafe.ts";
 import { recordRunIncident, recordGuardrailIncident } from "../_shared/governance-incidents.ts";
+import { judgeModelTier, judgeSemanticLoop, judgeNeedsHuman, recordDecision } from "../_shared/agentpilot.ts";
 import {
   buildInternalToolset, RunCancelledError, AwaitingInputError, embedMemoryVector,
   writeAgentMemory, touchAgentMemories,
@@ -255,6 +264,130 @@ const ORCHESTRATOR_DOCTRINE = [
   "Confirm each action plainly once done (\"Agent X créé\", \"Brief quotidien planifié à 6h\"). Ask a brief clarifying question only when the request is genuinely ambiguous (e.g. a schedule with no time).",
 ].join("\n");
 
+/**
+ * Classer les skills d'un agent contre la tâche — en un appel.
+ *
+ * Le catalogue système en compte plusieurs centaines ; celles ACTIVÉES sur un
+ * agent sont moins nombreuses, mais la correspondance de mots ne sait
+ * rapprocher que ce qui partage un vocabulaire : une demande « le client
+ * conteste sa facture » ne réveille pas une skill « recouvrement » tant que le
+ * mot n'y est pas écrit. Un `choice` rend la distribution COMPLÈTE sur toutes
+ * les options : c'est un classement entier au prix d'une seule question.
+ *
+ * Rend `undefined` quand l'usage est éteint, en shadow, ou quand l'appel
+ * échoue — et la sélection lexicale reprend la main, inchangée.
+ */
+async function rankSkills(
+  judgeCtx: JudgeContext,
+  skills: SkillLike[],
+  taskText: string,
+): Promise<((s: SkillLike) => number) | undefined> {
+  // En dessous de cinq, la sélection les garde toutes : classer ne changerait
+  // rien et coûterait un appel.
+  if (skills.length < 5 || !taskText.trim()) return undefined;
+  const criteria: Record<string, string | null> = {};
+  const bySlug = new Map<string, SkillLike>();
+  for (const s of skills.slice(0, 200)) {
+    const key = qid(s.slug);
+    if (criteria[key] !== undefined) continue;
+    criteria[key] = `${s.name ?? s.slug} — ${String(s.description ?? "").replace(/\s+/g, " ").slice(0, 180)}`;
+    bySlug.set(key, s);
+  }
+  if (Object.keys(criteria).length < 5) return undefined;
+
+  const verdict = await judge(
+    judgeCtx, "skill_ranking",
+    { tache: taskText.slice(0, 2000) },
+    {
+      skill: choice(
+        "Quelle expertise documentée sert le plus à traiter cette tâche ?",
+        criteria,
+      ),
+    },
+    { subject: `${bySlug.size} skill(s)` },
+  ).catch(() => null);
+  if (!verdict?.apply) return undefined;
+
+  const answer = readChoice(verdict, "skill");
+  const order = ranked(answer);
+  if (order.length === 0) return undefined;
+  // La probabilité devient un FACTEUR, pas un score : elle pondère la
+  // correspondance lexicale au lieu de l'écraser. Un plancher à 1 évite qu'une
+  // skill jugée inutile disparaisse alors que la tâche la nomme en toutes
+  // lettres.
+  const top = order[0].p || 1;
+  const factor = new Map<string, number>();
+  for (const { key, p } of order) {
+    const slug = bySlug.get(key)?.slug;
+    if (slug) factor.set(slug, 1 + (p / top) * 3);
+  }
+  return (s: SkillLike) => factor.get(s.slug) ?? 1;
+}
+
+/**
+ * Ce que chaque famille d'outils COUVRE, et ce qui appartient à sa voisine.
+ *
+ * `FAMILY_META[].rule` ne pouvait pas servir ici : ces phrases sont écrites à
+ * la deuxième personne pour l'agent (« Your hands. REAL work happens here »),
+ * c'est une consigne, pas une définition. Demander à un modèle de classer une
+ * tâche avec ça revient à lui donner le mode d'emploi au lieu de l'étiquette.
+ *
+ * Le `not_for` fait le vrai travail : EXECUTION et WEB se disputent tout ce
+ * qui « va chercher puis fabrique », DATA et WEB tout ce qui « consulte ».
+ */
+const FAMILY_CRITERIA: Record<string, { what: string; not_for: string; examples: string[] }> = {
+  EXECUTION: {
+    what: "Fabriquer, transformer, exécuter : fichiers, code, commandes, navigateur du sandbox.",
+    not_for: "Aller chercher une information sans rien produire.",
+    examples: ["écrire un script qui nettoie le fichier", "lancer les tests", "générer le rapport à partir des données"],
+  },
+  WEB: {
+    what: "Chercher à l'EXTÉRIEUR : recherche web, lecture d'une page, recherche approfondie.",
+    not_for: "Les données internes du projet, qui appartiennent à DATA.",
+    examples: ["comparer les tarifs des concurrents", "trouver la documentation de cette API", "vérifier si l'entreprise existe encore"],
+  },
+  DATA: {
+    what: "Lire ce que l'entreprise possède déjà : tables du projet, bases de connaissances, documents indexés.",
+    not_for: "Ce qui n'existe que dehors, sur le web.",
+    examples: ["combien de contacts créés ce mois-ci", "que dit notre procédure de remboursement", "ressortir les commandes en retard"],
+  },
+  PLAN: {
+    what: "Organiser le travail : checklist, découpage, chargement d'une skill, question à l'utilisateur.",
+    not_for: "Le travail lui-même.",
+    examples: ["poser le plan avant de commencer", "demander une précision avant d'agir"],
+  },
+  DELIVER: {
+    what: "Poser le résultat final : livrable, rapport, artefact.",
+    not_for: "Les étapes intermédiaires qui mènent au résultat.",
+    examples: ["enregistrer la synthèse comme livrable", "produire le rapport demandé"],
+  },
+  MEMORY: {
+    what: "Retenir ou retrouver un fait durable, d'un run à l'autre.",
+    not_for: "Ce qui ne vaut que pour la tâche en cours.",
+    examples: ["retenir le fournisseur retenu et son prix", "retrouver ce qu'on avait décidé la dernière fois"],
+  },
+  TEAM: {
+    what: "Passer la main : déléguer, créer une mission, écrire à un autre agent.",
+    not_for: "Un travail que l'agent peut faire lui-même.",
+    examples: ["confier l'analyse juridique au spécialiste", "demander son avis à un collègue"],
+  },
+  INTEGRATIONS: {
+    what: "Agir sur une application connectée : CRM, messagerie, facturation, connecteurs.",
+    not_for: "Ce qui se passe entièrement dans le sandbox ou dans le projet.",
+    examples: ["créer la fiche dans le CRM", "envoyer le message sur Slack", "émettre la facture"],
+  },
+};
+
+/** Les outils dont le seul rôle est d'aller chercher une information. Nommés
+ *  ici parce que la décision « faut-il chercher ? » ne sait rien des familles :
+ *  `search_memory` est de la famille MEMORY, `query_table` de DATA, et toutes
+ *  deux répondent pourtant à la même question. */
+const SEARCH_TOOLS = new Set([
+  "web_search", "deep_research", "read_url", "browse_web",
+  "rag_search", "search_memory", "search_context", "query_table",
+  "search_past_work", "search_past_sessions", "search_skills",
+]);
+
 /** Per-section char budgets for the knowledge blocks. They are re-selected
  *  against the CURRENT task on every build, so a tight budget costs relevance,
  *  not reach: everything omitted stays reachable via search_memory /
@@ -300,6 +433,9 @@ function buildSystemPrompt(
   /** L'entreprise pour laquelle l'agent travaille (0212). Absent = projet sans
    *  profil ni objectif : la section disparaît, tout le reste est identique. */
   company: CompanyContext | null = null,
+  /** Le classement des skills par jugement rapide (TypeSafe), quand l'usage est
+   *  allumé. Absent = classement lexical, comportement d'avant au mot près. */
+  skillBoost?: (s: SkillLike) => number,
 ): { prompt: string; budget: PromptBudget } {
   const sections: SectionInput[] = [];
   const push = (id: SectionInput["id"], body: string, meta?: { dropped: number; offered: number }) => {
@@ -348,7 +484,7 @@ function buildSystemPrompt(
   // the one decisive match arrives already loaded. What isn't named is one
   // list_skills() away — the heading says so.
   if (Array.isArray(skillPrompts)) {
-    const sel = selectSkills(skillPrompts, taskText, { budget: SECTION_BUDGET.skills });
+    const sel = selectSkills(skillPrompts, taskText, { budget: SECTION_BUDGET.skills, boost: skillBoost });
     push("skills", sel.body, { dropped: sel.dropped, offered: skillPrompts.length });
   } else {
     const skills = selectLines(skillPrompts, taskText, SECTION_BUDGET.skills);
@@ -1255,10 +1391,17 @@ async function initChatRun(
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
 
+  // Le run de CE chat s'appelle `chatRunId` dans cette fonction — `runId` n'y
+  // existe pas, et l'y nommer faisait échouer tous les chats sur un
+  // « runId is not defined ».
+  const chatJudge: JudgeContext = {
+    admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId: chatRunId,
+  };
   const chatPrompt = buildSystemPrompt(
     agent, capabilitySummary + sandboxDownNote, "chat", memorySection, teamMemorySection,
     chatSkills, recentWorkSection, isSecurityAgent(chatSkills), lastUserText,
     undefined, false, company,
+    await rankSkills(chatJudge, chatSkills, lastUserText),
   );
   await ctx.logEvent("prompt", budgetEventPayload(chatPrompt.budget, null)).catch(() => {});
   const messages: ChatMessage[] = [
@@ -1363,7 +1506,15 @@ async function initChatRun(
     continuation: isContinuation,
     hasToolHistory: (history ?? []).some((m) => Array.isArray((m as { tool_calls?: unknown[] }).tool_calls) && ((m as { tool_calls?: unknown[] }).tool_calls!.length > 0)),
   });
-  await ctx.logEvent("status", { message: `Contexte : ${requestClass.tools} · modèle ${requestClass.model}.` }).catch(() => {});
+  // AgentPilot : le raisonneur seulement quand la tâche l'exige. Inutile de
+  // demander quand le modèle est déjà imposé (composer ou variable d'env).
+  const chatTier = (!pickedModel && !Deno.env.get("AGENT_MODEL_CHAT")
+    ? await judgeModelTier(
+        { admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId: chatRunId, agentId: agent.id },
+        lastUserMsg, requestClass.model, "chat",
+      ).catch(() => null)
+    : null) ?? requestClass.model;
+  await ctx.logEvent("status", { message: `Contexte : ${requestClass.tools} · modèle ${chatTier}${chatTier !== requestClass.model ? " (AgentPilot)" : ""}.` }).catch(() => {});
 
   await admin.from("internal_agent_run_state").upsert({
     run_id: chatRunId,
@@ -1383,7 +1534,7 @@ async function initChatRun(
     // AGENT_MODEL_CHAT override, then the cost tier (see classifyRequest).
     // Sanitised either way — a banned id here is a 413 three rounds later.
     model: pickedModel
-      ?? sanitizeModel(Deno.env.get("AGENT_MODEL_CHAT"), provider, agentModelForTier(agent, requestClass.model)),
+      ?? sanitizeModel(Deno.env.get("AGENT_MODEL_CHAT"), provider, agentModelForTier(agent, chatTier)),
     processing_until: null,
     // The triggering message is already in `messages`; only fold in turns that
     // arrive AFTER this point (mid-run steering).
@@ -1615,6 +1766,10 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
       // la seule partie qui lui est adressée.
       const brief = (i.agent_brief ?? "").trim();
       const briefAlreadyGiven = !!brief && (mission.brief ?? "").includes(brief);
+      // La MATIÈRE : les ressources rattachées à l'item. Sans elles, l'agent
+      // sait quoi faire et pas sur quoi — il repart du web ou de son idée du
+      // sujet, et rend un travail hors-sol qu'il faut jeter.
+      const resources = await describeIssueAssets(admin, i.id);
       workItemSection = [
         "",
         "## Work item served by this mission",
@@ -1628,6 +1783,12 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
         // tâche ; un agent qui n'a que la commande la mène hors sujet.
         brief && !briefAlreadyGiven ? "\nWork to do (written for you):\n" + brief.slice(0, 4000) : "",
         i.description_text ? "\nDescription (context for the team):\n" + i.description_text.slice(0, 2000) : "",
+        resources
+          ? "\nResources attached to this item — this is the material you work ON.\n"
+            + "Open them before anything else with the tracker tool (action=get_asset,\n"
+            + "params={asset_id}); it returns the address and the content when there is one.\n"
+            + resources.slice(0, 3000)
+          : "",
         "",
         "This mission exists to move " + ref + " forward. The WORK TO DO is your",
         "instruction; the description is background. When they disagree, follow the",
@@ -1712,6 +1873,10 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     agent, capabilitySummary, "mission", memorySection, teamMemorySection,
     missionSkills, recentWorkSection, isSecurityAgent(missionSkills), missionTaskText,
     undefined, false, company,
+    await rankSkills(
+      { admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId },
+      missionSkills, missionTaskText,
+    ),
   );
   await ctx.logEvent("prompt", budgetEventPayload(missionPrompt.budget, null)).catch(() => {});
   const initialMessages: ChatMessage[] = [
@@ -1719,6 +1884,14 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     { role: "user", content: userPrompt },
     ...(planned ? planMessages(planned.markdown, "mission") : []),
   ];
+  // AgentPilot : même décision qu'en chat, sur le titre + brief de la mission.
+  const heuristicTier = classifyTier(missionTaskText, { mode: "mission" });
+  const missionTier = (!Deno.env.get("AGENT_MODEL_MISSION")
+    ? await judgeModelTier(
+        { admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId, agentId: agent.id },
+        missionTaskText, heuristicTier, "mission",
+      ).catch(() => null)
+    : null) ?? heuristicTier;
   await admin.from("internal_agent_run_state").upsert({
     run_id: runId,
     mode: "mission",
@@ -1738,7 +1911,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     // Cost-tiered from the mission's nature (title + brief). AGENT_MODEL_MISSION
     // still overrides if set. A run that keeps failing is escalated to the heavy
     // model in runMissionTick (see the replan branch).
-    model: Deno.env.get("AGENT_MODEL_MISSION") || agentModelForTier(agent, classifyTier(missionTaskText, { mode: "mission" })),
+    model: Deno.env.get("AGENT_MODEL_MISSION") || agentModelForTier(agent, missionTier),
     processing_until: null,
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
@@ -2560,10 +2733,18 @@ async function runMissionTick(runId: string, msgId: number | null) {
   ctx.skills = await loadActivatedSkills(admin, agent.id);
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
   // ── Guardrails (runtime enforcement) ──────────────────────────────────────
-  // Loaded once per tick. Only guardrails carrying a match_pattern are enforced;
-  // documentation-only rules are never evaluated. Best-effort: a load failure
-  // means "no guardrails" rather than a broken run.
-  const guardrails = await loadGuardrails(admin, agent.workspace_id, agent.project_id);
+  // Loaded once per tick. Two passes, and elles ne couvrent pas les mêmes
+  // règles : l'expression régulière attrape ce qui s'écrit (un numéro de carte),
+  // le jugement sémantique attrape ce qui se comprend (« ne promets jamais un
+  // délai »). La seconde ne tourne que si l'usage « guardrails » est allumé
+  // dans les réglages de l'espace. Best-effort des deux côtés : une panne de
+  // chargement vaut « aucun garde-fou », pas un run cassé.
+  const guardrails = await loadGuardrails(admin, agent.workspace_id, agent.project_id, {
+    teamId: (agent as { service_dashboard_id?: string | null }).service_dashboard_id ?? null, surface: "internal",
+  });
+  const judgeCtx: JudgeContext = {
+    admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId,
+  };
   // Le contexte d'entreprise des enfants, mémoïsé : il n'est lu que si un
   // fan-out a effectivement lieu, et une seule fois pour toute la vague.
   let childCompany: Promise<CompanyContext | null> | null = null;
@@ -2615,7 +2796,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
     else loadedFamilies.add(family);
   };
 
-  const { defs, defsFor, executor } = buildInternalToolset(tools, ctx);
+  const { defs, defsFor, executor, familyOf, families, familyRules } = buildInternalToolset(tools, ctx);
 
   // ── Per-round tool selection (prompt compiler) ─────────────────────────────
   // Tool schemas are re-sent on EVERY round, so on a wide agent (connectors +
@@ -2658,6 +2839,12 @@ async function runMissionTick(runId: string, msgId: number | null) {
     await prevOnToolsetLoaded?.(family);
   };
   let toolStats = { sent: defs.length, omitted: 0, chars: 0 };
+  /**
+   * Ce que le jugement rapide a dit de CE tick — rempli une fois, plus bas,
+   * quand la tâche du tick est connue. Vide tant qu'il n'a rien dit (usage
+   * éteint, shadow, panne) : la sélection reste alors strictement lexicale.
+   */
+  const tickHints: { toolBoost?: (name: string) => number } = {};
   /** Schemas for the current round — re-evaluated every round so a mid-loop
    *  need_tools / load_toolset is honoured immediately, not next tick. */
   const liveTools = () => {
@@ -2671,6 +2858,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
       keep: [...PINNED_TOOLS, ...recentlyUsedTools(state.messages)],
       budget: TOOL_SCHEMA_BUDGET,
       floorCount: 14,
+      boost: tickHints.toolBoost,
     });
     toolStats = { sent: sel.defs.length, omitted: sel.omitted.length, chars: sel.chars };
     return sel.defs;
@@ -2855,7 +3043,10 @@ async function runMissionTick(runId: string, msgId: number | null) {
     // model receives an explanatory ERROR as its result), warn/log just trace.
     if (guardrails.length > 0) {
       const probe = `${name}\n${JSON.stringify(args ?? {})}`;
-      const hits = checkGuardrails(guardrails, "tool_call", probe);
+      const hits = mergeViolations(
+        checkGuardrails(guardrails, "tool_call", probe),
+        await judgeGuardrails(judgeCtx, guardrails, "tool_call", probe),
+      );
       if (hits.length > 0) {
         const block = strongestEnforcement(hits) === "block";
         for (const v of hits) {
@@ -2882,7 +3073,10 @@ async function runMissionTick(runId: string, msgId: number | null) {
     if (ok && name !== "update_todos" && ctx.loopEvidence) ctx.loopEvidence.results++;
     // ── Guardrails — tool_result scope ───────────────────────────────────────
     if (guardrails.length > 0 && text) {
-      const hits = checkGuardrails(guardrails, "tool_result", text.slice(0, 4000));
+      const hits = mergeViolations(
+        checkGuardrails(guardrails, "tool_result", text.slice(0, 4000)),
+        await judgeGuardrails(judgeCtx, guardrails, "tool_result", text.slice(0, 4000)),
+      );
       if (hits.length > 0) {
         const block = strongestEnforcement(hits) === "block";
         for (const v of hits) {
@@ -3070,6 +3264,95 @@ async function runMissionTick(runId: string, msgId: number | null) {
       });
     }
   } catch { /* focus header is best-effort */ }
+  // ── Jugement rapide du tick ───────────────────────────────────────────────
+  //
+  // Deux questions, un seul appel, avant que quoi que ce soit ne soit envoyé au
+  // modèle génératif :
+  //
+  //   famille — de quelles MAINS ce tour a besoin (exécuter ? chercher ? lire
+  //             des données ? déléguer ?). La réponse remonte les schémas de
+  //             cette famille devant les autres.
+  //   chercher — faut-il aller chercher une information, ou tout est-il déjà
+  //             dans le contexte. Une réponse franche dans un sens ou dans
+  //             l'autre déplace les outils de recherche du même coup.
+  //
+  // Les deux ne font que PONDÉRER une sélection qui existait déjà, et aucun
+  // outil n'est jamais retiré : l'index du prompt les liste tous, load_toolset
+  // les rouvre. Le pire cas est un round de plus, jamais une capacité perdue.
+  try {
+    // DEUX usages réglés séparément, UNE requête. Chacun est lu avec SON mode
+    // et SON seuil : coupler les deux ferait qu'éteindre le classement d'outils
+    // éteindrait en silence la décision de recherche, alors que ce sont deux
+    // décisions différentes prises sur le même état.
+    const cfgAll = await loadTypesafeConfig(admin, agent.workspace_id);
+    const toolMode = cfgAll.tool_ranking?.mode ?? "off";
+    const searchCfg = cfgAll.search_decision;
+    const searchMode = searchCfg?.mode ?? "off";
+    if (toolMode === "off" && searchMode === "off") throw new Error("skip");
+
+    const famCriteria: Record<string, { what: string; not_for: string; examples: string[] } | string | null> = {};
+    for (const f of families) {
+      famCriteria[f] = FAMILY_CRITERIA[f] ?? familyRules[f]?.rule?.slice(0, 180) ?? null;
+    }
+    void familyRules;
+    const questions: Record<string, ReturnType<typeof choice> | ReturnType<typeof noul>> = {};
+    if (toolMode !== "off") {
+      questions.famille = choice("De quelle famille d'outils ce travail a-t-il besoin MAINTENANT ?", famCriteria);
+    }
+    if (searchMode !== "off") {
+      questions.chercher = noul(
+        "Traiter cette tâche exige-t-il d'aller chercher une information qu'on n'a pas encore sous la main ?",
+        {
+          true: {
+            what: "Il manque un fait, un chiffre ou un document qu'il faut aller chercher (web, base de connaissances, données du projet) avant de pouvoir avancer.",
+            examples: [
+              "comparer les tarifs des trois fournisseurs",
+              "vérifier ce que dit notre procédure de remboursement",
+              "combien de tickets ont été ouverts la semaine dernière",
+            ],
+          },
+          false: {
+            what: "Tout ce qu'il faut est déjà écrit dans la tâche ou déjà acquis : il reste à fabriquer, rédiger, organiser ou décider.",
+            examples: [
+              "mets ce tableau en forme et enregistre-le",
+              "écris le message à partir de ce qu'on vient de dire",
+              "découpe ce travail en étapes",
+            ],
+          },
+        },
+      );
+    }
+    const verdict = await judge(
+      { admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId },
+      // L'appel est attribué à l'usage qui l'a déclenché — c'est lui qu'on
+      // relira dans le journal pour décider de l'activer pour de bon.
+      toolMode !== "off" ? "tool_ranking" : "search_decision",
+      { tache: tickTaskText.slice(0, 2000) },
+      questions,
+      { subject: `tick · ${tickTaskText.slice(0, 80)}` },
+    );
+    const fam = toolMode === "on" ? readChoice(verdict, "famille") : null;
+    const searchP = searchMode === "on" ? readNoul(verdict, "chercher") : null;
+    if (verdict && (fam || searchP !== null)) {
+      const famThreshold = cfgAll.tool_ranking?.threshold ?? 0.5;
+      const wanted = fam && fam.confidence >= famThreshold ? fam.choice : null;
+      const searchNeeded = searchP !== null ? searchP >= (searchCfg?.threshold ?? 0.6) : null;
+      if (wanted || searchNeeded !== null) {
+        tickHints.toolBoost = (name: string) => {
+          let f = 1;
+          if (wanted && familyOf(name) === wanted) f *= 2.5;
+          if (searchNeeded !== null && SEARCH_TOOLS.has(name)) f *= searchNeeded ? 2.5 : 0.4;
+          return f;
+        };
+        await ctx.logEvent("prompt", {
+          kind: "typesafe_tick",
+          famille: wanted, famille_confiance: fam?.confidence ?? null,
+          chercher: searchP, chercher_applique: searchNeeded,
+        }).catch(() => {});
+      }
+    }
+  } catch { /* le jugement rapide est optionnel : la sélection lexicale suffit */ }
+
   // Prime the selection so the notice below is accurate from the first round.
   liveTools();
 
@@ -3117,7 +3400,10 @@ async function runMissionTick(runId: string, msgId: number | null) {
     );
     const promptProbe = lastUser ? String(lastUser.content ?? "") : "";
     if (promptProbe) {
-      const hits = checkGuardrails(guardrails, "prompt", promptProbe);
+      const hits = mergeViolations(
+        checkGuardrails(guardrails, "prompt", promptProbe),
+        await judgeGuardrails(judgeCtx, guardrails, "prompt", promptProbe),
+      );
       if (hits.length > 0) {
         const block = strongestEnforcement(hits) === "block";
         for (const v of hits) {
@@ -3275,6 +3561,18 @@ async function runMissionTick(runId: string, msgId: number | null) {
     }
     // Half the calls in this tick were already made recently → it is cycling.
     if (result.toolCalls.length >= 4 && cycleHits >= Math.ceil(result.toolCalls.length / 2)) loopDetected = true;
+    // AgentPilot : les boucles DÉGUISÉES — la même tentative reformulée, que
+    // les signatures ne voient pas. Seulement quand rien d'autre n'a sonné et
+    // que le tick a vraiment travaillé ; le résultat n'est qu'un signal de plus.
+    const pilotCtx = { admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId, agentId: agent.id };
+    const recentToolErrors = result.messages.slice(-24)
+      .filter((m) => m.role === "tool" && typeof m.content === "string" && m.content.startsWith("ERROR"))
+      .map((m) => String(m.content));
+    let loopSource: "signature" | "semantic" | null = loopDetected ? "signature" : null;
+    if (!loopDetected && !result.finished && result.toolCalls.length >= 2) {
+      const semantic = await judgeSemanticLoop(pilotCtx, tickTaskText, recentSigs, recentToolErrors).catch(() => false);
+      if (semantic) { loopDetected = true; loopSource = "semantic"; }
+    }
     // Circuit breaker: a specific tool that failed ≥3 times in a row (even with
     // varying args) is broken/unavailable — stop hammering it, adapt or skip.
     const brokenTools = Object.entries(toolFails).filter(([, n]) => (n as number) >= 3).map(([t]) => t);
@@ -3310,6 +3608,28 @@ async function runMissionTick(runId: string, msgId: number | null) {
       replans, maxReplans: 3,
     };
     let decision = decideNext(signals);
+    // AgentPilot : avant de replanifier, se demander si ce qui manque est hors
+    // de portée de l'agent. Le contrôleur est rappelé avec ce signal en plus —
+    // il reste la seule source de décision.
+    if (decision.action === "replan") {
+      const needsHuman = await judgeNeedsHuman(
+        pilotCtx, tickTaskText, decision.reason, recentToolErrors, result.content ?? "",
+      ).catch(() => false);
+      if (needsHuman) {
+        signals.needsHuman = true;
+        decision = decideNext(signals);
+      }
+    }
+    if (decision.action !== "continue") {
+      void recordDecision(pilotCtx, {
+        kind: "controller", applied: true, decision: decision.action,
+        detail: {
+          reason: decision.reason, loop: loopSource, needs_human: !!signals.needsHuman,
+          escalated_model: decision.escalateModel, stagnant_ticks: stagnation,
+          errors: errorCount, rounds: newRound, cost_usd: Number(cost.toFixed(4)),
+        },
+      });
+    }
 
     // ── Budget IA : le contrôleur de boucle raisonne en tours et en dollars
     // estimés ; le quota raisonne en crédits réellement facturés. Les deux
@@ -3515,7 +3835,10 @@ async function runMissionTick(runId: string, msgId: number | null) {
         let hints: string[] = [];
         const contract = state.contract ?? null;
         if (contract) {
-          verdict = await evaluateContract({ admin, runId, contract, finalOutput, probe: loopProbe }).catch(() => null);
+          verdict = await evaluateContract({
+            admin, runId, contract, finalOutput, probe: loopProbe,
+            workspaceId: agent.workspace_id, projectId: agent.project_id,
+          }).catch(() => null);
           if (verdict) { gaps = verdict.gaps; hints = verdict.soft; }
         } else if (!isChat) {
           // No contract (mission without criteria, or a run started before the

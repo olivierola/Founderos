@@ -208,6 +208,9 @@ export interface ToolSelectOptions {
   max?: number;
   /** Below this many tools, selection is a no-op (the whole set is cheap). */
   floorCount?: number;
+  /** Un classement venu d'ailleurs (jugement rapide) : facteur multiplicatif
+   *  appliqué au score lexical, 1 = neutre. Absent = comportement d'avant. */
+  boost?: (name: string) => number;
 }
 
 export interface ToolSelection {
@@ -241,19 +244,23 @@ export function selectTools(defs: ToolDef[], opts: ToolSelectOptions): ToolSelec
   const pinned: ToolDef[] = [];
   const scored: Array<{ def: ToolDef; score: number }> = [];
 
+  const boost = opts.boost;
   for (const d of all) {
     const name = d.function?.name ?? "";
     if (keep.has(name)) { pinned.push(d); continue; }
-    if (terms.size === 0) { scored.push({ def: d, score: 1 }); continue; }
+    if (terms.size === 0) { scored.push({ def: d, score: boost ? boost(name) : 1 }); continue; }
     // The NAME is the strongest signal a tool matches an intent — weight it 3×.
     // Names are snake_case, so split them into words before scoring.
     const nameText = name.replace(/_/g, " ");
-    const score =
+    const lexical =
       relevanceScore(nameText, terms, opts.task) * 3 +
       relevanceScore(d.function?.description ?? "", terms, opts.task);
-    scored.push({ def: d, score });
+    // Le classement externe ne REMPLACE pas le lexical, il le pondère : un outil
+    // nommé dans la demande reste devant, et la famille jugée utile remonte le
+    // reste de sa famille avec elle.
+    scored.push({ def: d, score: boost ? lexical * boost(name) : lexical });
   }
-  if (terms.size) scored.sort((a, b) => b.score - a.score);
+  if (terms.size || boost) scored.sort((a, b) => b.score - a.score);
 
   const out: ToolDef[] = [];
   let chars = 0;

@@ -32,6 +32,7 @@ const COLUMNS: Column[] = [
   { key: "modules", label: "Modules", width: 150 },
   { key: "sub_issue_count", label: "Sous-tâches", width: 110 },
   { key: "attachment_count", label: "Pièces jointes", width: 120 },
+  { key: "resource_count", label: "Ressources", width: 110 },
   { key: "created_on", label: "Créé le", width: 120 },
   { key: "updated_on", label: "Modifié le", width: 120 },
 ];
@@ -165,6 +166,8 @@ function Cell({
       return <ReadOnly value={issue.sub_issue_count || "—"} />;
     case "attachment_count":
       return <ReadOnly value={issue.attachment_count || "—"} />;
+    case "resource_count":
+      return <ReadOnly value={issue.resource_count || "—"} />;
     case "created_on":
       return <ReadOnly value={formatDate(issue.created_at)} />;
     case "updated_on":

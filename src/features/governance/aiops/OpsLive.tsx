@@ -19,7 +19,7 @@ import { Card } from "@/components/ui/card";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { Pill } from "../ui";
-import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
+import { AgentIdentity } from "@/components/AgentIdentity";
 import { DetailSheet, DetailSection, DetailRow } from "./DetailSheet";
 import {
   modelById, usd,
@@ -44,7 +44,7 @@ function AgentNode({ data }: NodeProps) {
     <div className="w-[170px] rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
       <Handle type="target" position={Position.Left} className="!h-1.5 !w-1.5 !bg-muted-foreground" />
       <div className="flex items-center gap-2">
-        <AgentAvatar url={data.avatarUrl} seed={data.label} className="h-7 w-7 shrink-0 overflow-hidden rounded-md" />
+        <AgentIdentity url={data.avatarUrl} seed={data.label} size={28} rounded="rounded-md" interactive={false} />
         <div className="min-w-0">
           <div className="truncate text-xs font-medium">{data.label}</div>
           <div className="truncate text-[10px] text-muted-foreground">{data.sub}</div>

@@ -14,6 +14,11 @@ import {
   SirenIcon,
   SealCheckIcon,
   CrosshairIcon,
+  ScalesIcon,
+  FunnelIcon,
+  SteeringWheelIcon,
+  ShieldCheckeredIcon,
+  ShieldWarningIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -69,6 +74,13 @@ export const ADMIN_SECTIONS: AdminNavSection[] = [
     label: "Gouvernance IA",
     items: [
       { label: "Guardrails", slug: "gov-guardrails", icon: ShieldCheckIcon },
+      // Juste sous les Guardrails, parce que c'est ce qui les rend applicables :
+      // une règle écrite en français n'était jusqu'ici qu'une documentation.
+      { label: "Jugement rapide", slug: "gov-typesafe", icon: ScalesIcon },
+      { label: "ContextIQ", slug: "gov-contextiq", icon: FunnelIcon },
+      { label: "AgentPilot", slug: "gov-agentpilot", icon: SteeringWheelIcon },
+      { label: "PolicyGuard", slug: "gov-policyguard", icon: ShieldCheckeredIcon },
+      { label: "SentinelFlow", slug: "gov-sentinelflow", icon: ShieldWarningIcon },
       { label: "Accès agents", slug: "gov-access", icon: FingerprintIcon },
       { label: "Prompts", slug: "gov-prompts", icon: EyeIcon },
       { label: "Dépenses", slug: "gov-costs", icon: WalletIcon },

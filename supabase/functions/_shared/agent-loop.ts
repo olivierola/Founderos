@@ -29,6 +29,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { callAi, safeParseJson, type ChatMessage } from "./ai.ts";
 import { cheapProvider } from "./model-router.ts";
+import { judge, noul, readNoul, qid } from "./typesafe.ts";
 
 // ---------------------------------------------------------------------------
 // Success contract
@@ -218,6 +219,10 @@ export async function evaluateContract(opts: {
   contract: SuccessContract;
   finalOutput: string;
   probe?: LoopProbe;
+  /** L'espace de travail, pour le jugement rapide. Absent = on garde le
+   *  reviewer génératif, comme avant. */
+  workspaceId?: string | null;
+  projectId?: string | null;
 }): Promise<ContractVerdict> {
   const { admin, runId, contract, finalOutput } = opts;
   const results: CheckResult[] = [];
@@ -354,9 +359,19 @@ export async function evaluateContract(opts: {
     }
   }
 
-  // ── LLM reviewer, batched, LAST resort ────────────────────────────────────
+  // ── Le verdict sur les critères « à juger » ───────────────────────────────
+  //
+  // Deux chemins pour la même question. Le RAPIDE (Jev) pose un `noul` par
+  // critère dans un seul appel typé : « ce critère est-il réellement rempli ? »
+  // — une seconde, une fraction de centime, et une probabilité calibrée plutôt
+  // qu'un "true" écrit par un modèle qui voulait faire plaisir. Le GÉNÉRATIF
+  // reste le chemin par défaut et le repli : usage éteint, mode shadow, API
+  // muette, il reprend la main sans que personne ne s'en aperçoive.
   if (judgeQueue.length > 0) {
-    const verdicts = await judgeChecks(judgeQueue, contract, finalOutput, deliverables).catch(() => null);
+    const verdicts = (opts.workspaceId
+      ? await judgeChecksFast(opts, judgeQueue, contract, finalOutput, deliverables).catch(() => null)
+      : null)
+      ?? await judgeChecks(judgeQueue, contract, finalOutput, deliverables).catch(() => null);
     for (const c of judgeQueue) {
       const v = verdicts?.[c.id];
       results.push({
@@ -394,6 +409,77 @@ async function probeUrl(url: string): Promise<{ pass: boolean; detail: string; s
   } catch (e) {
     return { pass: false, detail: `injoignable (${e instanceof Error ? e.message.slice(0, 80) : "erreur réseau"})` };
   }
+}
+
+/**
+ * Le même verdict, en une passe typée.
+ *
+ * Un critère de contrat est exactement ce que TypeSafe appelle un jugement
+ * atomique : « quelqu'un de compétent pourrait trancher en quelques secondes ».
+ * Toute la batterie part dans UN appel, et chaque réponse est une probabilité —
+ * ce qui donne un détail honnête (« p=0,42 ») là où le reviewer génératif
+ * écrivait une phrase d'autant plus assurée qu'elle était fausse.
+ *
+ * Rend `null` dès que le jugement n'est pas applicable : le chemin d'avant
+ * reprend alors la main, y compris en mode shadow où l'appel a bien eu lieu et
+ * a été journalisé pour comparaison.
+ */
+async function judgeChecksFast(
+  opts: { admin: SupabaseClient; runId: string; workspaceId?: string | null; projectId?: string | null },
+  checks: SuccessCheck[],
+  contract: SuccessContract,
+  finalOutput: string,
+  deliverables: Array<{ kind: string; name: string; content: string | null; file_url: string | null }>,
+): Promise<Record<string, { pass: boolean; detail: string }> | null> {
+  if (!opts.workspaceId) return null;
+  const byQid = new Map<string, SuccessCheck>();
+  const questions: Record<string, ReturnType<typeof noul>> = {};
+  for (const c of checks.slice(0, 20)) {
+    let id = qid(c.id);
+    while (byQid.has(id)) id += "_";
+    byQid.set(id, c);
+    questions[id] = noul(
+      `Critère : ${String(c.args?.criterion ?? c.label)}`,
+      {
+        true: "Le rapport final et les livrables montrent que le critère est réellement rempli.",
+        false: "Le critère n'est pas rempli, ou n'est affirmé que par le rapport sans preuve.",
+      },
+    );
+  }
+  if (byQid.size === 0) return null;
+
+  const verdict = await judge(
+    { admin: opts.admin, workspaceId: opts.workspaceId, projectId: opts.projectId ?? null, runId: opts.runId },
+    "run_end",
+    {
+      objectif: contract.goal,
+      livrables: deliverables.map((d) => ({
+        type: d.kind, nom: d.name,
+        taille: d.content ? String(d.content).length : 0,
+        fichier: d.file_url ?? null,
+      })),
+      rapport_final: finalOutput.slice(0, 6000),
+    },
+    questions,
+    { subject: `contrat · ${byQid.size} critère(s)` },
+  );
+  if (!verdict?.apply) return null;
+
+  const out: Record<string, { pass: boolean; detail: string }> = {};
+  for (const [id, c] of byQid) {
+    const p = readNoul(verdict, id);
+    if (p === null) continue;
+    out[c.id] = {
+      pass: p >= verdict.threshold,
+      detail: p >= verdict.threshold
+        ? `jugé rempli (p=${p.toFixed(2)})`
+        : `jugé non rempli (p=${p.toFixed(2)}) — la preuve manque dans le rapport ou les livrables`,
+    };
+  }
+  // Une batterie qui ne rend rien d'exploitable n'est pas un verdict : on
+  // laisse le reviewer génératif faire son travail plutôt que de déclarer
+  // tous les critères remplis par défaut.
+  return Object.keys(out).length ? out : null;
 }
 
 async function judgeChecks(
@@ -506,6 +592,11 @@ export interface LoopSignals {
   stagnantTicks: number;
   replans: number;
   maxReplans: number;
+  /** AgentPilot : ce blocage dépend d'une chose que seul l'humain peut donner
+   *  (accès, document, décision). Calculé HORS du contrôleur, et seulement
+   *  quand il s'apprête à replanifier — il reste donc une entrée comme les
+   *  autres, et le contrôleur reste pur. */
+  needsHuman?: boolean;
 }
 
 export type LoopAction = "continue" | "replan" | "finalize" | "abort";
@@ -566,6 +657,21 @@ export function decideNext(s: LoopSignals): LoopDecision {
   // 4. Stuck: looping, drowning in errors, or producing nothing for N ticks.
   const stagnating = s.stagnantTicks >= STAGNATION_LIMIT;
   if ((s.loopDetected || s.errorCount >= ERROR_FLOOD || stagnating) && s.replans < s.maxReplans) {
+    // Ce qui manque est hors de portée de l'agent : une replanification de plus
+    // ne ferait que brûler des tours. On lui fait poser la question — il la
+    // formule, ask_user met le run en pause. Pas d'escalade de modèle : le
+    // raisonneur ne fabrique pas un accès manquant. Consomme un crédit de
+    // replanification, pour qu'une escalade ne puisse pas se répéter à l'infini.
+    if (s.needsHuman) {
+      interventions.push({
+        tag: "escalate_human",
+        content: "STOP — what blocks you is something only the USER can provide (an access, a missing document or data, or a decision that is theirs to make). Do not retry and do not re-plan around it. Call ask_user NOW with ONE precise question: say what you already did, what exactly is missing, and what you will do once you have it. If part of the work can be delivered without it, say so in the question.",
+      });
+      return {
+        action: "replan", escalateModel: false, consumesReplan: true, interventions,
+        reason: "Blocage qui dépend de l'utilisateur — question posée plutôt qu'une replanification.",
+      };
+    }
     const why = s.loopDetected
       ? "Boucle détectée (même appel répété)"
       : stagnating
@@ -635,6 +741,7 @@ export function loopEventPayload(opts: {
       stagnant_ticks: opts.signals.stagnantTicks,
       replans: `${opts.signals.replans}/${opts.signals.maxReplans}`,
       broken_tools: opts.signals.brokenTools,
+      ...(opts.signals.needsHuman ? { needs_human: true } : {}),
     },
     progress: opts.progress
       ? { steps: `${opts.progress.todos_done}/${opts.progress.todos_total}`, deliverables: opts.progress.deliverables, approaches: opts.progress.tool_sigs }

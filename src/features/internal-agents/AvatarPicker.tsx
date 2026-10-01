@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { BotAvatar, botAvatarTypes } from "bot-avatars";
 
 /* ------------------------------------------------------------------ *
  * Illustrated agent portraits via the DiceBear library. Agents keep a
@@ -56,59 +56,63 @@ const styleFromUrl = (url: string | null | undefined): string => {
   return m && (AVATAR_STYLES as readonly string[]).includes(m[1]) ? m[1] : AVATAR_STYLE;
 };
 
-/** Portrait picker — a styles list (DiceBear gallery) + a grid of seeds. */
+/**
+ * Body picker — the eighteen animated bodies of bot-avatars.
+ *
+ * It replaced the DiceBear portrait gallery: agents are living bots now, and a
+ * picker that still handed out frozen portraits would put them straight back.
+ * The choice is stored in `avatar_url` as `bot:<type>`, so nothing migrates;
+ * « Automatique » clears it and the agent's name picks the body again.
+ */
 export function AvatarPicker({
   value,
   onChange,
+  accentColor,
+  name,
 }: {
   value: string | null;
   onChange: (url: string) => void;
+  /** Tints the previews like the real avatar. */
+  accentColor?: string | null;
+  /** The agent's name — drives the automatic body. */
+  name?: string;
 }) {
-  const [style, setStyle] = useState<string>(() => styleFromUrl(value));
-
+  const chosen = value?.startsWith("bot:") ? value.slice(4) : null;
   return (
-    <div className="flex h-72 overflow-hidden rounded-xl border border-border">
-      {/* Styles list */}
-      <div className="w-40 shrink-0 overflow-y-auto border-r border-border bg-muted/30 p-1.5 scrollbar-slim">
-        <div className="px-1.5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Styles</div>
-        {AVATAR_STYLES.map((s) => (
+    <div className="rounded-xl border border-border p-2">
+      <div className="mb-2 flex items-center justify-between px-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Corps de l'agent</span>
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className={cn(
+            "rounded-full px-2.5 py-1 text-[11px] transition-colors",
+            chosen ? "text-muted-foreground hover:text-foreground" : "bg-primary/10 font-medium text-primary",
+          )}
+        >
+          Automatique
+        </button>
+      </div>
+      <div className="grid max-h-60 grid-cols-6 gap-2 overflow-y-auto scrollbar-slim p-1">
+        {botAvatarTypes.map((t) => (
           <button
-            key={s}
+            key={t}
             type="button"
-            onClick={() => setStyle(s)}
+            title={t}
+            onClick={() => onChange(`bot:${t}`)}
             className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left text-xs transition-colors",
-              style === s ? "bg-primary/10 font-medium text-foreground" : "text-muted-foreground hover:bg-muted",
+              "flex aspect-square items-center justify-center rounded-xl border transition-all",
+              chosen === t ? "border-primary ring-2 ring-primary" : "border-border hover:border-primary/50",
             )}
           >
-            <img src={avatarUrl("Preview", s)} alt="" className="h-5 w-5 shrink-0 rounded" loading="lazy" draggable={false} />
-            <span className="truncate">{prettyStyle(s)}</span>
+            <BotAvatar type={t} size={40} color={accentColor || undefined} interactive={false} seed={0.13} />
           </button>
         ))}
       </div>
-
-      {/* Seed grid for the selected style */}
-      <div className="flex-1 overflow-y-auto p-2 scrollbar-slim">
-        <div className="grid grid-cols-6 gap-2">
-          {AVATAR_SEEDS.map((seed) => {
-            const url = avatarUrl(seed, style);
-            const active = value === url;
-            return (
-              <button
-                key={seed}
-                type="button"
-                onClick={() => onChange(url)}
-                className={cn(
-                  "aspect-square overflow-hidden rounded-xl border bg-muted transition-all hover:brightness-110",
-                  active ? "border-primary ring-2 ring-primary" : "border-border hover:border-primary/50",
-                )}
-              >
-                <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" draggable={false} />
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <p className="px-1 pt-2 text-[11px] text-muted-foreground">
+        Chaque corps a sa couleur ; celle de l'agent la remplace quand elle est définie.
+        {name ? " En automatique, le nom de l'agent décide." : ""}
+      </p>
     </div>
   );
 }

@@ -11,8 +11,8 @@ import { PaperHero, type TileKey } from "./PaperHero";
     background, and returns the page wrapper class the landing uses. */
 export function useLandingSkin() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
   }, []);
 }
 
@@ -150,22 +150,18 @@ export function PageHero({
   tiles?: TileKey[];
 }) {
   return (
-    <section className="relative overflow-hidden bg-white">
-      <PaperHero label={label} frame={frame} claim={claim} lead={lead} tiles={tiles}>
-        {children}
-      </PaperHero>
-    </section>
+    <PaperHero label={label} frame={frame} claim={claim} lead={lead} tiles={tiles}>
+      {children}
+    </PaperHero>
   );
 }
 
 /* ── Closing CTA ────────────────────────────────────────────────────────────
-   The home page's floating dark slab, extracted so every page ends the same
-   way. Left orb takes the page's hue, right orb is always graphite. The wash is
-   reused verbatim as the mask for the vertical bands, so the bands fade out
-   exactly where the colour does, never over bare black. */
+   The Atlas close, as on the home page: an eyebrow, the title, one line, the
+   actions, on white — the violet footer slab lands right under it. `hue` is
+   accepted for the pages that still pass one; the register has one colour. */
 export function ctaWash(hue: HeroHue | HueSpec) {
-  return `radial-gradient(ellipse 50% 120% at 8% 50%, ${resolveHue(hue).glow}, transparent 62%),
-                  radial-gradient(ellipse 55% 120% at 92% 50%, rgba(161,161,170,0.30), transparent 62%)`;
+  return `radial-gradient(ellipse 50% 120% at 8% 50%, ${resolveHue(hue).glow}, transparent 62%)`;
 }
 
 export function ClosingCta({
@@ -173,7 +169,6 @@ export function ClosingCta({
   title,
   lead,
   actions,
-  hue = "orange",
 }: {
   eyebrow?: string;
   title: string;
@@ -181,34 +176,16 @@ export function ClosingCta({
   actions: ReactNode;
   hue?: HeroHue | HueSpec;
 }) {
-  const CTA_WASH = ctaWash(hue);
-
   return (
-    /* Shares the footer's grey canvas and gutter, so the page ends on one light
-       field carrying two floating slabs. */
-    <div className="relative px-3 py-3 sm:px-5 sm:py-5" style={{ background: "#e4e4e4" }}>
-      <section className="amp-dark relative overflow-hidden rounded-[28px] bg-[#08080a] sm:rounded-[36px]">
-        <div
-          aria-hidden
-          className="amp-grain amp-wash-drift pointer-events-none absolute inset-0"
-          style={{ background: CTA_WASH }}
-        />
-        <div
-          aria-hidden
-          className="amp-bands pointer-events-none absolute inset-0"
-          style={{ WebkitMaskImage: CTA_WASH, maskImage: CTA_WASH }}
-        />
-        <div className="relative mx-auto max-w-[1280px] px-4 sm:px-8">
-          <div className="amp-rails relative flex flex-col items-center py-28 text-center">
-            <Eyebrow>{eyebrow}</Eyebrow>
-            <h2 className="mt-7 max-w-3xl text-balance text-[34px] font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[48px]">
-              {title}
-            </h2>
-            <p className="mt-6 max-w-2xl text-[16.5px] leading-[1.6] text-[var(--amp-muted)]">{lead}</p>
-            <div className="mt-10 flex flex-col items-center gap-3.5 sm:flex-row">{actions}</div>
-          </div>
-        </div>
-      </section>
-    </div>
+    <section className="relative py-20 sm:py-28">
+      <div className="mx-auto flex max-w-[1200px] flex-col items-center px-5 text-center sm:px-8">
+        <Eyebrow>{eyebrow}</Eyebrow>
+        <h2 className="mt-8 max-w-[22ch] text-balance text-[32px] font-semibold leading-[1.02] tracking-[-0.045em] text-[#111011] sm:text-[40px]">
+          {title}
+        </h2>
+        <p className="mt-5 max-w-[46ch] text-[16px] font-light leading-[1.45] text-[#666666] sm:text-[17px]">{lead}</p>
+        <div className="mt-8 flex flex-col items-center gap-2.5 sm:flex-row">{actions}</div>
+      </div>
+    </section>
   );
 }

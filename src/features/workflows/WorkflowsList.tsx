@@ -21,6 +21,7 @@ import {
   WORKFLOW_STATUS_META, WORKFLOW_KIND_META, describeCron,
   type Workflow, type BlockKind, type WorkflowKind,
 } from "./model";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export function WorkflowsList({ dashboardId, workspaceId, projectId, onOpen }: {
   dashboardId: string;
@@ -28,6 +29,7 @@ export function WorkflowsList({ dashboardId, workspaceId, projectId, onOpen }: {
   projectId: string | null;
   onOpen: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
 
@@ -37,7 +39,7 @@ export function WorkflowsList({ dashboardId, workspaceId, projectId, onOpen }: {
   });
 
   async function remove(w: Workflow) {
-    if (!confirm(`Supprimer le workflow « ${w.name} » ? Cette action est définitive.`)) return;
+    if (!(await confirm(`Supprimer le workflow « ${w.name} » ? Cette action est définitive.`))) return;
     await deleteWorkflow(w.id);
     qc.invalidateQueries({ queryKey: ["workflows", dashboardId] });
   }

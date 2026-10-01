@@ -452,7 +452,15 @@ function RoomMessageRow({ m, grouped, me, name, avatarUrl, colorOf, mission, sho
         ) : isUser ? (
           <UserAvatar name={me.name} url={me.avatar} />
         ) : (
-          <AgentIdentity url={avatarUrl} seed={name} size={36} rounded="rounded-full" />
+          <AgentIdentity
+            url={avatarUrl}
+            seed={name}
+            size={36}
+            rounded="rounded-full"
+            accentColor={accent}
+            // The bot works while this turn is still being written.
+            state={m.status === "thinking" ? "working" : "default"}
+          />
         )}
       </div>
 

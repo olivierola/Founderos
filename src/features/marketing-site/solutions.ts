@@ -157,7 +157,6 @@ export const SOLUTIONS: Solution[] = [
       "An exportable audit trail, retained for as long as your policy requires",
       "A written data-flow document per agent: residency, retention, scope, evidence",
     ],
-    proof: { figure: "98", unit: "%", label: "of write actions sitting behind an approval gate" },
     faq: [
       {
         q: "Do agents run on our own infrastructure?",
@@ -191,7 +190,7 @@ export const SOLUTIONS: Solution[] = [
     title: "Foundation & Process Automation",
     lead: "AI amplifies whatever is underneath it. If that is a fragmented process, you have just bought faster chaos.",
     meta: [
-      { label: "Integrations", value: "57 providers" },
+      { label: "Integrations", value: "Your existing stack" },
       { label: "Migration required", value: "None" },
       { label: "Typical scope", value: "6 to 12 weeks" },
     ],
@@ -211,7 +210,7 @@ export const SOLUTIONS: Solution[] = [
         { t: "One meaning per concept", b: "A canonical model for the entities agents read and write, reconciled across the systems that currently disagree about them." },
         { t: "Redesign, then automate", b: "Automating a broken process makes it break faster. We fix the sequence first, and only then hand steps to a machine." },
         { t: "Rules, not habits", b: "Approvals and hand-offs written as rules a runtime can evaluate, which is also the first time most teams see them written at all." },
-        { t: "Wire the existing stack", b: "57 providers, plus anything speaking MCP or HTTP. Nothing gets replaced; the layer between things gets built." },
+        { t: "Wire the existing stack", b: "The connector catalogue, plus anything speaking MCP or HTTP. Nothing gets replaced; the layer between things gets built." },
       ],
     },
     deliverables: [
@@ -221,7 +220,6 @@ export const SOLUTIONS: Solution[] = [
       "Documents consolidated into one retrievable, permission-aware place",
       "Integration layer across your stack, with no platform migration",
     ],
-    proof: { figure: "57", unit: "", label: "systems connected without a single migration" },
     faq: [
       {
         q: "Can we skip this and go straight to agents?",
@@ -249,7 +247,7 @@ export const SOLUTIONS: Solution[] = [
     viz: "amp-viz-deep",
     visual: AdoptionGrid,
     title: "Adoption & Change Enablement",
-    lead: "The median assistant usage rate we measure is eight percent of licensed seats. The technology was never the hard part.",
+    lead: "Licences get bought for everyone and used by a few. The technology was never the hard part.",
     meta: [
       { label: "Measured", value: "Per team, monthly" },
       { label: "Format", value: "A journey, not a training" },
@@ -281,7 +279,6 @@ export const SOLUTIONS: Solution[] = [
       "A monthly measurement framework: tasks completed and hours displaced",
       "A visible request path, so people who want more do not go around you",
     ],
-    proof: { figure: "8", unit: "%", label: "median usage we find on arrival, and what we exist to move" },
     faq: [
       {
         q: "Is this just change management with a new label?",

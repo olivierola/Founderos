@@ -13,6 +13,17 @@ import { callAi, callAiWithTools } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import { loadPublicAgentTools } from "../_shared/public-agent-mcp.ts";
 import { judgeTurn, visitorContext } from "../_shared/public-agent-telemetry.ts";
+import { assessPassages, promptNote, recordAssessment } from "../_shared/contextiq.ts";
+import { normalizeSupportConfig, recordTicket, triageMessage, triagePrompt } from "../_shared/resolveai.ts";
+import {
+  loadGuardrails, judgeGuardrails, strongestEnforcement,
+} from "../_shared/guardrails.ts";
+
+/** Ce qu'on REMONTE de la base vectorielle, et ce qui part vraiment dans le
+ *  prompt. Remonter plus large ne coûte qu'une requête un peu plus grosse ;
+ *  c'est le tri qui décide ensuite, ou la similarité seule quand il est éteint. */
+const RETRIEVE_COUNT = 12;
+const CONTEXT_COUNT = 6;
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -111,14 +122,29 @@ Deno.serve(async (req) => {
       project_id: agent.project_id ?? null,
       feature: "rag-chat",
     });
+    // On en demande DEUX FOIS plus que ce qui partira dans le prompt. La
+    // similarité vectorielle sait rapprocher un SUJET ; elle ne sait pas dire
+    // si un passage RÉPOND à la question. Le tri qui suit fait ce second
+    // travail — et quand il est éteint, il rend les six premiers par
+    // similarité, c'est-à-dire exactement ce qu'on envoyait avant.
     const { data: matches } = await admin.rpc("match_rag_chunks", {
       p_agent_id: agent.id,
       p_query_embedding: toVectorLiteral(queryVec ?? []),
-      p_match_count: 6,
+      p_match_count: RETRIEVE_COUNT,
     });
     const chunks = (matches ?? []) as { id: string; content: string; source_id: string; similarity: number }[];
 
-    const context = chunks.map((c, i) => `[${i + 1}] ${c.content}`).join("\n\n");
+    // ContextIQ : tri des passages + couverture + contradiction. Éteint, il
+    // rend les six premiers par similarité — le comportement d'avant.
+    const ciqCtx = { admin, workspaceId: agent.workspace_id as string, projectId: agent.project_id ?? null };
+    const assessment = await assessPassages(
+      ciqCtx, String(message),
+      chunks.map((c) => ({ id: c.id, content: c.content, similarity: c.similarity, source_id: c.source_id })),
+      { keep: CONTEXT_COUNT, evaluate: RETRIEVE_COUNT },
+    );
+    const kept = assessment.kept;
+    const ciqNote = promptNote(assessment);
+    const context = kept.map((c, i) => `[${i + 1}] ${c.content}`).join("\n\n");
 
     // The conversation is opened BEFORE the model runs: a tool call made during
     // this turn is audited against it, and an audit row that can't say which
@@ -145,6 +171,28 @@ Deno.serve(async (req) => {
       turnIndex = (prev?.user_message_count ?? 0) + 1;
     }
     telemetryConvId = convId ?? null;
+    void recordAssessment(ciqCtx, {
+      surface: "public_agent", agentId: agent.id, conversationId: convId ?? null,
+      question: String(message), assessment, retrieved: chunks.length,
+    });
+
+    // ResolveAI : intention, urgence, besoin d'une personne — avant la réponse,
+    // pour que la consigne propre à la demande entre dans le prompt. L'historique
+    // court sert à comprendre « et pour le remboursement ? » au 3e tour.
+    const supportConfig = normalizeSupportConfig(agent.support_config);
+    let triage: Awaited<ReturnType<typeof triageMessage>> = null;
+    try {
+      const { data: past } = turnIndex > 1 && convId
+        ? await admin.from("rag_messages").select("role, content")
+            .eq("conversation_id", convId).order("created_at", { ascending: false }).limit(6)
+        : { data: [] };
+      triage = await triageMessage(
+        ciqCtx, supportConfig, String(message),
+        ((past ?? []) as Array<{ role: string; content: string }>).reverse(),
+        assessment.coverage,
+      );
+    } catch { triage = null; }
+    const triageNote = triagePrompt(triage, supportConfig);
 
     // MCP tools the merchant has granted this agent (catalogue search, cart,
     // whatever the attached servers expose). Empty for a plain RAG agent, which
@@ -170,9 +218,36 @@ Never perform an action that changes the customer's cart or data unless they cle
   : `Answer ONLY using the context below. If the answer isn't in the context, say you don't have that information and suggest where the user might look.`}
 Be concise and helpful.${agent.onboarding_enabled ? " When relevant, guide the user step by step through the product UI (pages, buttons)." : ""}
 ${agent.instructions ? "\nExtra instructions: " + agent.instructions : ""}
-
+${ciqNote ? "\n" + ciqNote + "\n" : ""}${triageNote ? "\n" + triageNote + "\n" : ""}
 Context:
 ${context || "(no knowledge indexed yet)"}`;
+
+    // ── Garde-fous d'un agent PUBLIC ──────────────────────────────────────
+    //
+    // C'est ici qu'ils manquaient le plus : un agent interne parle à ses
+    // collègues, celui-ci parle à des inconnus sur le site d'un client. Les
+    // règles écrites dans la Gouvernance (« ne promets jamais un délai », « pas
+    // de conseil médical ») sont évaluées par le sens, en un appel, avant ET
+    // après le modèle. Éteint, rien ne change.
+    const publicGuard = {
+      admin, workspaceId: agent.workspace_id as string,
+      projectId: (agent.project_id ?? null) as string | null,
+    };
+    const guardRules = await loadGuardrails(admin, agent.workspace_id, agent.project_id, {
+      teamId: agent.service_dashboard_id ?? null, surface: "public",
+    }).catch(() => []);
+    if (guardRules.length > 0) {
+      const inbound = await judgeGuardrails(publicGuard, guardRules, "prompt", String(message)).catch(() => []);
+      if (strongestEnforcement(inbound) === "block") {
+        // On ne renvoie PAS la règle enfreinte : elle est interne, et
+        // l'expliquer à un visiteur lui apprend surtout comment la contourner.
+        return jsonResponse({
+          answer: "Je ne peux pas répondre à cette demande. Si vous avez besoin d'aide, reformulez votre question ou contactez l'équipe.",
+          conversation_id: convId ?? null,
+          blocked: true,
+        });
+      }
+    }
 
     let answer: string;
     let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
@@ -217,6 +292,13 @@ ${context || "(no knowledge indexed yet)"}`;
       model = ai.model;
     }
 
+    if (guardRules.length > 0 && answer) {
+      const outbound = await judgeGuardrails(publicGuard, guardRules, "tool_result", answer).catch(() => []);
+      if (strongestEnforcement(outbound) === "block") {
+        answer = "Je préfère ne pas répondre sur ce point. L'équipe peut vous aider directement si vous le souhaitez.";
+      }
+    }
+
     await logLlmUsage({
       workspace_id: agent.workspace_id, project_id: agent.project_id,
       provider, model, task: "rag_chat", feature: "rag-agent", usage,
@@ -226,7 +308,7 @@ ${context || "(no knowledge indexed yet)"}`;
       // ceux rendus au visiteur : les chunks réellement cités, les outils
       // réellement joués. Un échec d'écriture ici ne doit jamais coûter la
       // réponse au visiteur, d'où le catch silencieux.
-      const verdict = judgeTurn({
+      const judged = judgeTurn({
         message: String(message),
         groundedChunks: chunks.length,
         toolCalls: mcp?.stats.calls ?? 0,
@@ -234,6 +316,12 @@ ${context || "(no knowledge indexed yet)"}`;
         turnIndex,
         firstResponseMs: Date.now() - startedAt,
       });
+      // Une demande confiée à l'équipe par ResolveAI est une escalade RÉELLE
+      // (la réponse l'annonce, la demande entre dans la file) — pas une
+      // estimation. Seulement quand le tri est appliqué.
+      const verdict = triage?.applied && !triage.autoEligible && judged.outcome !== "escalated"
+        ? { outcome: "escalated" as const, reason: "triage_handoff" }
+        : judged;
       await admin.rpc("rag_conversation_record_turn", {
         p_conversation: convId,
         p_grounded: chunks.length > 0,
@@ -243,6 +331,9 @@ ${context || "(no knowledge indexed yet)"}`;
         p_outcome_reason: verdict.reason,
       }).then(() => {}, (e: unknown) => console.error("[rag-chat] telemetry", e));
 
+      if (triage) {
+        void recordTicket(admin, agent, convId, triage, String(message), supportConfig, source);
+      }
       await admin.from("rag_messages").insert([
         { conversation_id: convId, agent_id: agent.id, role: "user", content: String(message) },
         {

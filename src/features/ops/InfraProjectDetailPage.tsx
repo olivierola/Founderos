@@ -32,6 +32,8 @@ import { useOpsUrl } from "./hooks";
 import { RUNNER_IMPLEMENTED_JOB_TYPES, JOB_TYPE_LABEL } from "./types";
 import type { OpsGeneratedFile, OpsServer, OpsJobType } from "./types";
 import type { Plan } from "./NewInfraDialog";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm, usePromptText } from "@/components/ConfirmProvider";
 
 interface InfraProject {
   id: string;
@@ -70,6 +72,9 @@ const TOOL_COLOR: Record<string, string> = {
 };
 
 export function OpsInfraProjectDetailPage() {
+  const promptText = usePromptText();
+  const confirm = useConfirm();
+  const toast = useToast();
   const { infraId } = useParams();
   const { projectId } = useCurrentContext();
   const queryClient = useQueryClient();
@@ -190,7 +195,7 @@ export function OpsInfraProjectDetailPage() {
 
   async function saveSnapshot() {
     if (!infraId) return;
-    const message = window.prompt("Optional message for this snapshot:") ?? null;
+    const message = (await promptText({ title: "Nouveau snapshot", label: "Message (optionnel)", placeholder: "Avant la migration…" })) ?? null;
     setSavingSnapshot(true);
     try {
       const result = await callEdge<{ ok: boolean; version: number; message?: string }>("ops-snapshot-create", {
@@ -200,14 +205,14 @@ export function OpsInfraProjectDetailPage() {
       if (!result.ok) throw new Error(result.message ?? "Snapshot failed");
       queryClient.invalidateQueries({ queryKey: ["ops_infra_snapshots", infraId] });
     } catch (e: any) {
-      alert("Could not save snapshot: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not save snapshot: " + (e?.message ?? "edge not deployed"));
     } finally {
       setSavingSnapshot(false);
     }
   }
 
   async function restoreSnapshot(snapshotId: string, version: number) {
-    if (!confirm(`Restore snapshot v${version}? Current state will be auto-checkpointed first.`)) return;
+    if (!(await confirm(`Restore snapshot v${version}? Current state will be auto-checkpointed first.`))) return;
     setRestoringId(snapshotId);
     try {
       await callEdge("ops-snapshot-restore", { snapshot_id: snapshotId });
@@ -218,7 +223,7 @@ export function OpsInfraProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["ops_layer_topology"] });
       setHistoryOpen(false);
     } catch (e: any) {
-      alert("Could not restore: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not restore: " + (e?.message ?? "edge not deployed"));
     } finally {
       setRestoringId(null);
     }
@@ -288,7 +293,7 @@ export function OpsInfraProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["ops_infra_layers", infraId] });
       queryClient.invalidateQueries({ queryKey: ["ops_infra_project", infraId] });
     } catch (e: any) {
-      alert("Could not regenerate: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not regenerate: " + (e?.message ?? "edge not deployed"));
     } finally {
       setRegeneratingLayerId(null);
     }
@@ -310,7 +315,7 @@ export function OpsInfraProjectDetailPage() {
 
       // Don't enqueue a job the runner can't execute — it would fail on pickup.
       if (!RUNNER_IMPLEMENTED_JOB_TYPES.has(jobType)) {
-        alert(`Le runner v1 ne sait pas encore exécuter « ${JOB_TYPE_LABEL[jobType] ?? jobType} » (couche ${activeLayer.tool}). Appliquez cette couche manuellement, ou utilisez une couche script/SSH.`);
+        toast.error(`Le runner v1 ne sait pas encore exécuter « ${JOB_TYPE_LABEL[jobType] ?? jobType} » (couche ${activeLayer.tool}). Appliquez cette couche manuellement, ou utilisez une couche script/SSH.`);
         return;
       }
 
@@ -323,10 +328,10 @@ export function OpsInfraProjectDetailPage() {
         requires_approval: true,
         input: { bundle_id: activeLayer.bundle_id, layer: activeLayer.layer_key },
       });
-      alert("Job created and awaiting approval. Review it in Jobs & Audit.");
+      toast.error("Job created and awaiting approval. Review it in Jobs & Audit.");
       navigate(url("/devops/jobs"));
     } catch (e: any) {
-      alert("Could not enqueue: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not enqueue: " + (e?.message ?? "edge not deployed"));
     } finally {
       setApplying(false);
     }
@@ -605,7 +610,7 @@ export function OpsInfraProjectDetailPage() {
                               .update({ topology: next })
                               .eq("id", topologyRow.id);
                             if (error) {
-                              alert("Could not save topology change: " + error.message);
+                              toast.error("Could not save topology change: " + error.message);
                               return;
                             }
                             // Patch the bundle files in the background; failure

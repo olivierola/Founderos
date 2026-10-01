@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // Write a procedure straight into a collection, in markdown.
 //
@@ -42,6 +43,7 @@ export function ProcedureEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const confirm = useConfirm();
   const [title, setTitle] = useState(source?.title ?? "");
   const [body, setBody] = useState(source?.metadata?.body ?? "");
   const [saving, setSaving] = useState(false);
@@ -81,7 +83,7 @@ export function ProcedureEditor({
   }
 
   async function remove() {
-    if (!source || !confirm(`Supprimer la procédure « ${source.title} » ?`)) return;
+    if (!source || !(await confirm(`Supprimer la procédure « ${source.title} » ?`))) return;
     await supabase.from("rag_sources").delete().eq("id", source.id);
     onSaved();
     onClose();

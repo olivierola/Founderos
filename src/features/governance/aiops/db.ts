@@ -1,10 +1,14 @@
 // Real persistence + real telemetry for the AI Ops & Governance module.
 // Every entity lives in Supabase (migration 0107_aiops_studio.sql, members RLS).
-// First open of a project seeds each table from the deterministic generators in
-// data.ts so the UX starts populated; afterwards everything you do (create a
-// job, deploy, validate labels, approve, toggle…) is a real DB write.
+//
+// A project starts EMPTY. Nothing here fabricates rows to make a tab look
+// populated: a table fills only from what the user actually does (upload a
+// dataset, launch a job, provision a server, deploy). Where a sane starting set
+// exists — the recommended guardrails, the standard role matrix — it is offered
+// as an explicit one-click install, never written behind the user's back.
+//
 // Telemetry tabs read the REAL internal_agent_runs / internal_agent_run_events
-// tables and fall back to sample data only when the project has no runs yet.
+// tables; with no runs they show an empty state, not invented history.
 // Compute (GPU training, model inference) is simulated by client-side tickers
 // that advance the real rows — the lifecycle state machine is genuine.
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -15,9 +19,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { logAudit } from "../shared";
 import { usePostgresChanges } from "./realtime";
 import {
-  genServers, genDeployments, genInfraIncidents, genFinetunes, genTunedVersions,
-  genExperiments, genFtEvals, genFtEndpoints, genFtDatasets, genLabelTasks,
-  genAccessLogs, genPrompts, genIncidents, agentsOrSample, useProjectAgents,
+  useProjectAgents,
   CLOUD_MODELS, modelById, FT_SETTINGS_DEFAULTS, DEFAULT_FT_ROLES,
   DEFAULT_GUARDRAILS_EXPORT, GPU_RATE_PER_HOUR, SECURITY_DEFAULTS,
   type Guardrail, type PrivateServer, type Deployment, type InfraIncident,
@@ -35,15 +37,12 @@ export function useAiopsCtx() {
 }
 
 /**
- * Project-scoped query over an aiops table. Real data only — tables are NOT
- * pre-seeded with sample/mock rows; they populate solely from real user actions
- * (create a job, upload a dataset, deploy, provision a server…). The `seeds`
- * argument is kept for signature compatibility but intentionally ignored.
+ * Project-scoped, live query over one aiops table. Rows come from real user
+ * actions only; there is no seeding path at all.
  */
-export function useSeededTable<T>(opts: {
+export function useAiopsTable<T>(opts: {
   table: string;
   map: (row: Record<string, unknown>) => T;
-  seeds?: (() => Record<string, unknown>[] | null) | null;
   orderBy?: string;
   ascending?: boolean;
 }) {
@@ -114,10 +113,9 @@ const str = (v: unknown) => String(v ?? "");
 // ── Guardrails ───────────────────────────────────────────────────────────────
 export function useGuardrailsDb() {
   const crud = useAiopsCrud("aiops_guardrails");
-  const { rows, loading } = useSeededTable<Guardrail>({
+  const { rows, loading } = useAiopsTable<Guardrail>({
     table: "aiops_guardrails",
     map: (r) => ({ id: str(r.id), title: str(r.title), category: str(r.category), enforcement: r.enforcement as Guardrail["enforcement"], enabled: Boolean(r.enabled), body: str(r.body), updatedAt: str(r.updated_at), matchPattern: str(r.match_pattern) || undefined, matchScope: (r.match_scope as Guardrail["matchScope"]) ?? "all" }),
-    seeds: () => DEFAULT_GUARDRAILS_EXPORT().map((g) => ({ title: g.title, category: g.category, enforcement: g.enforcement, enabled: g.enabled, body: g.body, match_pattern: g.matchPattern ?? null, match_scope: g.matchScope ?? "all" })),
   });
   return {
     items: rows, loading,
@@ -126,6 +124,26 @@ export function useGuardrailsDb() {
       : crud.update(g.id, { title: g.title, category: g.category, enforcement: g.enforcement, enabled: g.enabled, body: g.body, match_pattern: g.matchPattern?.trim() || null, match_scope: g.matchScope ?? "all" }, "guardrail.updated", g.title),
     toggle: (g: Guardrail) => crud.update(g.id, { enabled: !g.enabled }, "guardrail.toggled", g.title),
     remove: (g: Guardrail) => crud.remove(g.id, "guardrail.deleted", g.title),
+    ready: crud.ready,
+    /** Installe la base recommandée, à la demande. Rien ne s'écrit tant que
+     *  personne n'a cliqué : un garde-fou qu'on n'a pas choisi est un garde-fou
+     *  qu'on ne relit jamais. Les titres déjà présents sont ignorés. */
+    async installRecommended() {
+      if (!crud.ready) return 0;
+      const existing = new Set(rows.map((g) => g.title));
+      const missing = DEFAULT_GUARDRAILS_EXPORT().filter((g) => !existing.has(g.title));
+      if (missing.length === 0) return 0;
+      const { error } = await supabase.from("aiops_guardrails").insert(missing.map((g) => ({
+        workspace_id: crud.workspaceId, project_id: crud.projectId,
+        title: g.title, category: g.category, enforcement: g.enforcement,
+        enabled: g.enabled, body: g.body,
+        match_pattern: g.matchPattern ?? null, match_scope: g.matchScope ?? "all",
+      })));
+      if (error) throw new Error(error.message);
+      crud.invalidate();
+      crud.audit("guardrails.recommended_installed", `${missing.length} garde-fou(s)`);
+      return missing.length;
+    },
   };
 }
 
@@ -151,15 +169,7 @@ function rowToServer(r: Record<string, unknown>): PrivateServer {
 }
 export function useServersDb() {
   const { projectId } = useAiopsCtx();
-  const seeds = useCallback(() => {
-    if (!projectId) return null;
-    return genServers(projectId).map((s) => ({
-      name: s.name, region: s.region, status: s.status, gpu: s.gpu,
-      cpu_pct: s.cpuPct, ram_pct: s.ramPct, gpu_pct: s.gpuPct,
-      req_per_min: s.reqPerMin, uptime_pct: s.uptimePct, cost_per_day: s.costPerDay,
-    }));
-  }, [projectId]);
-  const { rows, loading } = useSeededTable<PrivateServer>({ table: "aiops_servers", map: rowToServer, seeds, orderBy: "name", ascending: true });
+  const { rows, loading } = useAiopsTable<PrivateServer>({ table: "aiops_servers", map: rowToServer, orderBy: "name", ascending: true });
   const { installs } = useModelStateDb(rows);
   const servers = useMemo(() => rows.map((s) => ({
     ...s,
@@ -173,20 +183,9 @@ export interface ModelStateRow { id: string; modelId: string; kind: "cloud_enabl
 export function useModelStateDb(servers: PrivateServer[]) {
   const { projectId } = useAiopsCtx();
   const crud = useAiopsCrud("aiops_model_state");
-  const seeds = useCallback(() => {
-    if (!projectId || servers.length === 0) return null;
-    const gen = genServers(projectId);
-    const rows: Record<string, unknown>[] = CLOUD_MODELS.slice(0, 4).map((m) => ({ model_id: m.id, kind: "cloud_enabled", status: "enabled" }));
-    for (const s of servers) {
-      const g = gen.find((x) => x.name === s.name);
-      for (const modelId of g?.installedModels ?? []) rows.push({ model_id: modelId, kind: "install", server_id: s.id, status: "installed", progress_pct: 100 });
-    }
-    return rows;
-  }, [projectId, servers]);
-  const { rows, loading } = useSeededTable<ModelStateRow>({
+  const { rows, loading } = useAiopsTable<ModelStateRow>({
     table: "aiops_model_state",
     map: (r) => ({ id: str(r.id), modelId: str(r.model_id), kind: r.kind as ModelStateRow["kind"], serverId: r.server_id ? str(r.server_id) : null, status: r.status as ModelStateRow["status"], progressPct: num(r.progress_pct) }),
-    seeds,
   });
   const enabledCloud = useMemo(() => new Set(rows.filter((r) => r.kind === "cloud_enabled").map((r) => r.modelId)), [rows]);
   const installs = useMemo(() => rows.filter((r) => r.kind === "install"), [rows]);
@@ -223,16 +222,9 @@ export function useAgentDeploymentsDb(servers: PrivateServer[]) {
   const { data: agents } = useProjectAgents();
   const crud = useAiopsCrud("aiops_agent_deployments");
   const realAgents = agents ?? [];
-  const seeds = useCallback(() => {
-    if (!projectId || realAgents.length === 0 || servers.length === 0) return null;
-    return genDeployments(realAgents, servers, projectId).map((d) => ({
-      agent_id: d.agentId, server_id: d.target === "cloud" ? null : d.target, model: d.model, env: d.env,
-    }));
-  }, [projectId, realAgents, servers]);
-  const { rows, loading } = useSeededTable<{ id: string; agentId: string; serverId: string | null; model: string; env: "prod" | "staging" }>({
+  const { rows, loading } = useAiopsTable<{ id: string; agentId: string; serverId: string | null; model: string; env: "prod" | "staging" }>({
     table: "aiops_agent_deployments",
     map: (r) => ({ id: str(r.id), agentId: str(r.agent_id), serverId: r.server_id ? str(r.server_id) : null, model: str(r.model), env: r.env as "prod" | "staging" }),
-    seeds,
   });
   const deployments: Deployment[] = useMemo(() => rows.map((r) => {
     const a = realAgents.find((x) => x.id === r.agentId);
@@ -252,17 +244,9 @@ export function useAgentDeploymentsDb(servers: PrivateServer[]) {
 export function useInfraIncidentsDb(servers: PrivateServer[]) {
   const { projectId } = useAiopsCtx();
   const crud = useAiopsCrud("aiops_infra_incidents");
-  const seeds = useCallback(() => {
-    if (!projectId || servers.length === 0) return null;
-    return genInfraIncidents(servers, projectId).map((i) => ({
-      server_id: i.serverId, server_name: i.serverName, kind: i.kind, severity: i.severity,
-      status: i.status, cause: i.cause, impact: i.impact, occurred_at: i.ts,
-    }));
-  }, [projectId, servers]);
-  const { rows, loading } = useSeededTable<InfraIncident>({
+  const { rows, loading } = useAiopsTable<InfraIncident>({
     table: "aiops_infra_incidents", orderBy: "occurred_at",
     map: (r) => ({ id: str(r.id), ts: str(r.occurred_at), serverId: str(r.server_id), serverName: str(r.server_name), kind: r.kind as InfraIncident["kind"], severity: r.severity as InfraIncident["severity"], status: r.status as InfraIncident["status"], cause: str(r.cause), impact: str(r.impact) }),
-    seeds,
   });
   return { incidents: rows, loading, setStatus: (i: InfraIncident, status: InfraIncident["status"]) => crud.update(i.id, { status }, "infra_incident.updated", i.serverName) };
 }
@@ -300,8 +284,7 @@ export function useFtDatasetsDb() {
   const { projectId } = useAiopsCtx();
   const { config: security } = useSecurityConfigDb();
   const crud = useAiopsCrud("aiops_ft_datasets");
-  const seeds = useCallback(() => (projectId ? genFtDatasets(projectId).map((d) => datasetToRow(d)) : null), [projectId]);
-  const { rows, loading } = useSeededTable<FtDataset>({ table: "aiops_ft_datasets", map: rowToDataset, seeds });
+  const { rows, loading } = useAiopsTable<FtDataset>({ table: "aiops_ft_datasets", map: rowToDataset });
   return {
     datasets: rows, loading, crud,
     remove: (d: FtDataset) => crud.remove(d.id, "dataset.deleted", d.name),
@@ -393,17 +376,9 @@ export function useCleaningTicker(datasets: FtDataset[], updateCleaning: (d: FtD
 export function useLabelTasksDb() {
   const { projectId } = useAiopsCtx();
   const crud = useAiopsCrud("aiops_ft_label_tasks");
-  const seeds = useCallback(() => {
-    if (!projectId) return null;
-    return genLabelTasks(projectId).map((t) => ({
-      dataset: t.dataset, label_sets: t.labelSets, total: t.total, ai_suggested: t.aiSuggested,
-      human_validated: t.humanValidated, agreement_pct: t.agreementPct, started_at: t.startedAt,
-    }));
-  }, [projectId]);
-  const { rows, loading } = useSeededTable<LabelTask>({
+  const { rows, loading } = useAiopsTable<LabelTask>({
     table: "aiops_ft_label_tasks", orderBy: "started_at",
     map: (r) => ({ id: str(r.id), dataset: str(r.dataset), labelSets: (r.label_sets as string[]) ?? [], total: num(r.total), aiSuggested: num(r.ai_suggested), humanValidated: num(r.human_validated), agreementPct: num(r.agreement_pct), startedAt: str(r.started_at) }),
-    seeds,
   });
   const taskById = (id: string) => rows.find((t) => t.id === id);
   return {
@@ -411,10 +386,19 @@ export function useLabelTasksDb() {
     /** Crée une tâche de labeling réelle sur un dataset + jeux de labels choisis. */
     createTask: (input: { dataset: string; labelSets: string[]; total: number }) =>
       crud.create({
+        // Une tâche neuve n'a RIEN de proposé ni de validé : ces deux compteurs
+        // n'avancent que quand le modèle a effectivement labellisé un document
+        // (noteSuggested) et qu'un humain a tranché (validateOne).
         dataset: input.dataset, label_sets: input.labelSets, total: input.total,
-        ai_suggested: Math.round(input.total * 0.6), human_validated: 0, agreement_pct: 0,
+        ai_suggested: 0, human_validated: 0, agreement_pct: 0,
         started_at: new Date().toISOString(),
       }, "labeling.task_created", input.dataset),
+    /** Le modèle vient de proposer des labels pour un document de plus. */
+    noteSuggested: (taskId: string) => {
+      const t = taskById(taskId);
+      if (!t) return;
+      void crud.update(t.id, { ai_suggested: t.aiSuggested + 1 });
+    },
     validateOne: (taskId: string, agreed: boolean) => {
       const t = taskById(taskId);
       if (!t) return;
@@ -444,16 +428,7 @@ export function useFtJobsDb(servers: PrivateServer[]) {
   const { projectId, workspaceId, email } = useAiopsCtx();
   const crud = useAiopsCrud("aiops_ft_jobs");
   const versionsCrud = useAiopsCrud("aiops_ft_versions");
-  const seeds = useCallback(() => {
-    if (!projectId || servers.length === 0) return null;
-    return genFinetunes(servers, projectId).map((j) => ({
-      name: j.name, base_model: j.baseModel, dataset: j.dataset, status: j.status,
-      progress_pct: j.progressPct, epochs: j.epochs, loss: j.loss, gpu_hours: j.gpuHours,
-      cost_usd: j.costUsd, server_id: j.serverId || null, gpu: j.gpu, time_h: j.timeH,
-      accuracy: j.accuracy, hp: j.hp, started_at: j.startedAt,
-    }));
-  }, [projectId, servers]);
-  const { rows, loading, invalidate } = useSeededTable<FinetuneJob>({ table: "aiops_ft_jobs", map: rowToJob, seeds, orderBy: "started_at" });
+  const { rows, loading, invalidate } = useAiopsTable<FinetuneJob>({ table: "aiops_ft_jobs", map: rowToJob, orderBy: "started_at" });
 
   // Returns the created row so a real (RunPod) job can be launched right after.
   const createJob = (j: Omit<FinetuneJob, "id">, opts?: { runtime?: "sim" | "runpod"; hfRepo?: string }) => crud.create({
@@ -530,15 +505,7 @@ export function useFtVersionsDb(servers: PrivateServer[]) {
   const { projectId, email } = useAiopsCtx();
   const crud = useAiopsCrud("aiops_ft_versions");
   const jobsCrud = useAiopsCrud("aiops_ft_jobs");
-  const seeds = useCallback(() => {
-    if (!projectId || servers.length === 0) return null;
-    const jobs = genFinetunes(servers, projectId);
-    return genTunedVersions(jobs, projectId).map((v) => ({
-      name: v.name, version: v.version, base_model: v.baseModel, dataset: v.dataset, status: v.status,
-      win_rate: v.winRate, accuracy: v.accuracy, size_gb: v.sizeGB, job_name: v.jobName, author: v.author,
-    }));
-  }, [projectId, servers]);
-  const { rows, loading } = useSeededTable<TunedVersion>({ table: "aiops_ft_versions", map: rowToVersion, seeds });
+  const { rows, loading } = useAiopsTable<TunedVersion>({ table: "aiops_ft_versions", map: rowToVersion });
   return {
     versions: rows, loading,
     rollback: (v: TunedVersion) => crud.update(v.id, { status: "deployed" }, "model.rollback", `${v.name} ${v.version}`),
@@ -575,17 +542,7 @@ export function useFtEndpointsDb(servers: PrivateServer[], versions: TunedVersio
   const qc = useQueryClient();
   const { config: security } = useSecurityConfigDb();
   const crud = useAiopsCrud("aiops_ft_endpoints");
-  const seeds = useCallback(() => {
-    if (!projectId || servers.length === 0 || versions.length === 0) return null;
-    return genFtEndpoints(versions, servers, projectId).map((e) => ({
-      version_name: e.versionName, version: e.version,
-      server_id: servers.some((s) => s.id === e.serverId) ? e.serverId : servers[0].id,
-      env: e.env, surface: e.surface, traffic_pct: e.trafficPct, auto_rollback: e.autoRollback,
-      status: "active", since: e.since,
-      metrics: { reqPerMin: e.reqPerMin, p95Ms: e.p95Ms, errRatePct: e.errRatePct, driftScore: e.driftScore, hallucinationPct: e.hallucinationPct, satisfactionPct: e.satisfactionPct, tokensPerDay: e.tokensPerDay, daily: e.daily },
-    }));
-  }, [projectId, servers, versions]);
-  const { rows, loading, invalidate } = useSeededTable<FtEndpoint>({ table: "aiops_ft_endpoints", map: rowToEndpoint, seeds, orderBy: "since" });
+  const { rows, loading, invalidate } = useAiopsTable<FtEndpoint>({ table: "aiops_ft_endpoints", map: rowToEndpoint, orderBy: "since" });
 
   const deploy = async (v: TunedVersion, opts: { serverId: string; env: FtEndpoint["env"]; surface: FtEndpoint["surface"]; trafficPct: number; autoRollback: boolean }) => {
     // Production requires an approval when la politique de sécurité l'exige (onglet Security).
@@ -665,14 +622,9 @@ export function useFtEndpointsDb(servers: PrivateServer[], versions: TunedVersio
 export function useFtExperimentsDb() {
   const { projectId } = useAiopsCtx();
   const crud = useAiopsCrud("aiops_ft_experiments");
-  const seeds = useCallback(() => {
-    if (!projectId) return null;
-    return genExperiments(projectId).map((e) => ({ name: e.name, dataset: e.dataset, goal: e.goal, status: e.status, runs: e.runs, winner: e.winner }));
-  }, [projectId]);
-  const { rows, loading } = useSeededTable<FtExperiment>({
+  const { rows, loading } = useAiopsTable<FtExperiment>({
     table: "aiops_ft_experiments",
     map: (r) => ({ id: str(r.id), name: str(r.name), dataset: str(r.dataset), goal: str(r.goal), status: r.status as FtExperiment["status"], runs: (r.runs as FtExperiment["runs"]) ?? [], winner: str(r.winner), ts: str(r.created_at) }),
-    seeds,
   });
   // Running experiments finish after a while: compute winner from runs.
   const running = rows.filter((e) => e.status === "running" && Date.now() - new Date(e.ts).getTime() > 20_000);
@@ -708,18 +660,9 @@ export function useFtExperimentsDb() {
 export function useFtEvalsDb(servers: PrivateServer[]) {
   const { projectId } = useAiopsCtx();
   const crud = useAiopsCrud("aiops_ft_evals");
-  const seeds = useCallback(() => {
-    if (!projectId || servers.length === 0) return null;
-    const jobs = genFinetunes(servers, projectId);
-    return genFtEvals(jobs, projectId).map((e) => ({
-      name: e.name, tuned_model: e.tunedModel, base_model: e.baseModel, status: e.status,
-      win_rate: e.winRate, criteria: e.criteria, benchmark: e.benchmark, samples: e.samples,
-    }));
-  }, [projectId, servers]);
-  const { rows, loading } = useSeededTable<EvalRun>({
+  const { rows, loading } = useAiopsTable<EvalRun>({
     table: "aiops_ft_evals",
     map: (r) => ({ id: str(r.id), name: str(r.name), tunedModel: str(r.tuned_model), baseModel: str(r.base_model), status: r.status as EvalRun["status"], winRate: num(r.win_rate), criteria: (r.criteria as EvalRun["criteria"]) ?? [], benchmark: (r.benchmark as EvalRun["benchmark"]) ?? { questions: 0, baseCorrect: 0, tunedCorrect: 0, baseAvgMs: 0, tunedAvgMs: 0, baseHalluc: 0, tunedHalluc: 0 }, samples: num(r.samples), ts: str(r.created_at) }),
-    seeds,
   });
   return {
     evals: rows, loading,
@@ -737,15 +680,9 @@ export function useFtEvalsDb(servers: PrivateServer[]) {
 export interface AlertRuleRow { id: string; rule: string; slack: boolean; email: boolean; sms: boolean }
 export function useAlertRulesDb() {
   const crud = useAiopsCrud("aiops_alert_rules");
-  const { rows, loading } = useSeededTable<AlertRuleRow>({
+  const { rows, loading } = useAiopsTable<AlertRuleRow>({
     table: "aiops_alert_rules", orderBy: "created_at", ascending: true,
     map: (r) => ({ id: str(r.id), rule: str(r.rule), slack: Boolean(r.slack), email: Boolean(r.email), sms: Boolean(r.sms) }),
-    seeds: () => [
-      { rule: "Accuracy < 90%", slack: true, email: true, sms: false },
-      { rule: "Hallucinations > 5%", slack: true, email: false, sms: false },
-      { rule: "Erreurs > 2% (5 min)", slack: true, email: true, sms: true },
-      { rule: "Dérive data > 5", slack: true, email: false, sms: false },
-    ],
   });
   return { rules: rows, loading, toggle: (r: AlertRuleRow, ch: "slack" | "email" | "sms") => crud.update(r.id, { [ch]: !r[ch] }) };
 }
@@ -758,10 +695,9 @@ const roleToRow = (r: FtRole) => ({
 });
 export function useFtRolesDb() {
   const crud = useAiopsCrud("aiops_ft_roles");
-  const { rows, loading } = useSeededTable<FtRoleRow>({
+  const { rows, loading } = useAiopsTable<FtRoleRow>({
     table: "aiops_ft_roles", orderBy: "created_at", ascending: true,
     map: (r) => ({ id: str(r.id), role: str(r.role), members: num(r.members), canTrain: Boolean(r.can_train), canDeleteModel: Boolean(r.can_delete_model), canDeploy: Boolean(r.can_deploy), canEditDatasets: Boolean(r.can_edit_datasets) }),
-    seeds: () => DEFAULT_FT_ROLES.map(roleToRow),
   });
   const colMap = { canTrain: "can_train", canDeleteModel: "can_delete_model", canDeploy: "can_deploy", canEditDatasets: "can_edit_datasets" } as const;
   return {
@@ -884,7 +820,7 @@ const classifyTool = (tool: string): AccessAction => {
 const requesterLabel = (via: string | null, hasUser: boolean) =>
   via === "schedule" ? "scheduler (cron)" : via === "api" ? "API externe" : via === "chat" ? (hasUser ? "chat utilisateur" : "chat") : "déclenchement manuel";
 
-/** Access logs from real run events; sample data when the project has no runs. */
+/** Access logs derived from real run events. No runs → no logs. */
 export function useRealAccessLogs(agents: AgentLite[]) {
   const { projectId } = useAiopsCtx();
   const qc = useQueryClient();
@@ -958,7 +894,7 @@ export function useRealAccessLogs(agents: AgentLite[]) {
       } as AccessLog;
     });
   }, [q.data, agents]);
-  return { logs: real, isSample: false, loading: q.isLoading };
+  return { logs: real, loading: q.isLoading };
 }
 
 // ── "What was actually asked?" ───────────────────────────────────────────────
@@ -1133,7 +1069,7 @@ export function useRealPrompts(agents: AgentLite[]) {
       tokensIn: r.tokens_in, tokensOut: r.tokens_out, costUsd: Number(r.cost_usd), runId: `run_${r.id.slice(0, 6)}`,
     };
   }), [runs, requests, agents, modelsQ.data, toolsQ.data]);
-  return { prompts: real, isSample: false, loading: runsQ.isLoading };
+  return { prompts: real, loading: runsQ.isLoading };
 }
 
 /** The full request behind ONE run, for the detail panel. Unlike the batch
@@ -1246,7 +1182,7 @@ export function useRealRunIncidents(agents: AgentLite[]) {
         status: "open" as const, cause: msg.slice(0, 220), runId: `run_${r.id.slice(0, 6)}`, durationMs: Math.max(0, dur),
       };
     }), [runsQ.data, agents]);
-  return { incidents: real, isSample: false, loading: runsQ.isLoading };
+  return { incidents: real, loading: runsQ.isLoading };
 }
 
 /** Governance spend computed from real runs + real servers. */
@@ -1265,7 +1201,7 @@ export function useRealGovCosts(agents: AgentLite[], servers: PrivateServer[]) {
       .reduce((s, e) => s + e.usd, 0);
     const seedUsd = servers.reduce((s, x) => s + (x.source === "seed" ? x.costPerDay : 0), 0) * 30;
     const infraUsd = Math.round((ledgerUsd + seedUsd) * 100) / 100;
-    // No real runs yet → return null; the page falls back to the sample breakdown.
+    // No real runs yet → null, and the page shows its empty state.
     if (runs.length === 0) return null;
     const apiUsd = Math.round(runs.reduce((s, r) => s + Number(r.cost_usd), 0) * 100) / 100;
     const byAgentMap = new Map<string, { usd: number; runs: number }>();
@@ -1313,7 +1249,7 @@ export function useRealGovCosts(agents: AgentLite[], servers: PrivateServer[]) {
       daily,
     };
   }, [projectId, runsQ.data, agents, servers, prompts, ledger]);
-  return { costs, isSample: false, hasData: !!costs, loading: runsQ.isLoading };
+  return { costs, hasData: !!costs, loading: runsQ.isLoading };
 }
 
 // ═══ REAL infra cost ledger + project budget ═══════════════════════════════════

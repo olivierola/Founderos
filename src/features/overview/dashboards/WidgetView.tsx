@@ -19,31 +19,9 @@ import {
   CartesianGrid,
 } from "recharts";
 import { callEdge } from "@/lib/edge";
-import { formatCurrency } from "@/lib/utils";
 import { CHART_COLORS, type Widget } from "./types";
 import { getModuleWidget } from "./moduleWidgetRegistry";
-
-function applyFormula(value: number, formula?: string): number {
-  if (!formula) return value;
-  try {
-    // very small safe evaluator: only `value`, numbers and + - * / ( )
-    if (!/^[\d\s+\-*/().value]+$/.test(formula)) return value;
-    // eslint-disable-next-line no-new-func
-    const fn = new Function("value", `return (${formula});`);
-    const r = fn(value);
-    return typeof r === "number" && isFinite(r) ? r : value;
-  } catch {
-    return value;
-  }
-}
-
-function fmt(value: number, cfg: Widget["config"]): string {
-  const v = applyFormula(value, cfg.formula);
-  if (cfg.format === "currency") return formatCurrency(v, "EUR");
-  if (cfg.format === "percent") return `${(v * 100).toFixed(1)}%`;
-  const s = Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
-  return `${cfg.prefix ?? ""}${s}${cfg.suffix ?? ""}`;
-}
+import { formatWidgetValue as fmt, widgetChartKeys, widgetKpi } from "./widgetData";
 
 export interface CrossFilter {
   column: string;
@@ -189,19 +167,7 @@ export function WidgetView({
   const cfg = widget.config;
 
   if (widget.type === "kpi") {
-    const value = Number((rows[0] as any)?.value ?? (rows[0] ? Object.values(rows[0])[0] : 0) ?? 0);
-    // Delta: compare last vs previous point of a time series (when available)
-    let delta: number | null = null;
-    if (cfg.showDelta && rows.length >= 2 && "value" in (rows[rows.length - 1] as any)) {
-      const last = Number((rows[rows.length - 1] as any).value ?? 0);
-      const prev = Number((rows[rows.length - 2] as any).value ?? 0);
-      if (prev !== 0) delta = ((last - prev) / Math.abs(prev)) * 100;
-    }
-    // For metrics series, the KPI value should be the latest point, not the first.
-    const kpiValue =
-      cfg.source?.kind === "metrics" && rows.length > 0
-        ? Number((rows[rows.length - 1] as any).value ?? 0)
-        : value;
+    const { value: kpiValue, delta } = widgetKpi(rows, cfg);
     return (
       <div className="flex h-full flex-col justify-center">
         <div className="font-stat-number text-3xl font-semibold tracking-tight">{fmt(kpiValue, cfg)}</div>
@@ -240,8 +206,7 @@ export function WidgetView({
   }
 
   // Charts
-  const xKey = cfg.xKey ?? (rows[0] && ("date" in rows[0] ? "date" : "label" in rows[0] ? "label" : Object.keys(rows[0])[0]!)) ?? "label";
-  const yKey = cfg.yKey ?? (rows[0] && "value" in rows[0] ? "value" : Object.keys(rows[0] ?? {})[1] ?? "value");
+  const { xKey, yKey } = widgetChartKeys(rows, cfg);
 
   if (rows.length === 0) return <Empty />;
 

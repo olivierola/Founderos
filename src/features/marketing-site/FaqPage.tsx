@@ -218,7 +218,7 @@ export function FaqPage() {
     /* No overflow clamp on the root: `overflow-x: hidden` would make this a
        scroll container, and a scroll container that never scrolls kills the
        sticky contents rail below. */
-    <div className="amplify amp-light min-h-screen bg-white">
+    <div className="amplify amp-light atlas min-h-screen bg-white">
       <LandingNav />
 
       <PageHero

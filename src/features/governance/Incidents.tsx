@@ -17,8 +17,10 @@ import {
   INCIDENT_CATEGORY_META, SEVERITY_META, INCIDENT_STATUS_META,
 } from "./shared";
 import { Pill, FormDialog, type FieldDef } from "./ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export function GovIncidentsPage() {
+  const confirm = useConfirm();
   const crud = useGovCrud("gov_incidents");
   const { data: incidents, isLoading } = useIncidents();
   const { data: systems } = useAiSystems();
@@ -96,7 +98,7 @@ export function GovIncidentsPage() {
               <div className="flex shrink-0 gap-1">
                 <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(i)}><Pencil className="h-3.5 w-3.5" /></Button>
                 <Button size="icon" variant="ghost" className="h-7 w-7"
-                  onClick={() => { if (confirm("Supprimer cet incident ?")) void crud.remove(i.id, { action: "incident.deleted", entityType: "incident", entityId: i.id, entityLabel: i.title }); }}>
+                  onClick={async () => { if ((await confirm("Supprimer cet incident ?"))) void crud.remove(i.id, { action: "incident.deleted", entityType: "incident", entityId: i.id, entityLabel: i.title }); }}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>

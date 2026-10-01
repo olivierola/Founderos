@@ -53,6 +53,7 @@ import {
 } from '@/components/discussion-kit';
 
 import { Editor, EditorContainer } from './editor';
+import { useToast } from "@/components/ToastProvider";
 
 export type TComment = {
   id: string;
@@ -303,6 +304,7 @@ function CommentMoreDropdown(props: {
   onCloseAutoFocus?: () => void;
   onRemoveComment?: () => void;
 }) {
+  const toast = useToast();
   const {
     comment,
     dropdownOpen,
@@ -318,7 +320,7 @@ function CommentMoreDropdown(props: {
 
   const onDeleteComment = React.useCallback(() => {
     if (!comment.id)
-      return alert('You are operating too quickly, please try again later.');
+      return toast.error('You are operating too quickly, please try again later.');
 
     // Find and update the discussion
     const updatedDiscussions = editor
@@ -353,7 +355,7 @@ function CommentMoreDropdown(props: {
     selectedEditCommentRef.current = true;
 
     if (!comment.id)
-      return alert('You are operating too quickly, please try again later.');
+      return toast.error('You are operating too quickly, please try again later.');
 
     setEditingId(comment.id);
   }, [comment.id, setEditingId]);

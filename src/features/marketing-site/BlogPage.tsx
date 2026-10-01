@@ -72,12 +72,12 @@ function PostPlate({ post }: { post: Post }) {
   return (
     <Link
       to={`/blog/${post.slug}`}
-      className="group relative flex h-full flex-col bg-[#F7F7F7] p-8 transition-colors duration-300 hover:bg-[#F1F1F1]"
+      className="rounded-[28px] group relative flex h-full flex-col bg-[#F7F7F7] p-8 transition-colors duration-300 hover:bg-[#F1F1F1]"
     >
       <CornerMarks />
       <CategoryMark post={post} />
       <h3
-        className="mt-5 text-balance text-[24px] font-normal leading-[1.15] tracking-[-0.028em] sm:text-[27px]"
+        className="mt-5 text-balance text-[24px] font-semibold leading-[1.15] tracking-[-0.035em] sm:text-[27px]"
         style={{ color: INK }}
       >
         {post.title}
@@ -115,7 +115,7 @@ function PostRow({ post }: { post: Post }) {
       <span className="min-w-0">
         <CategoryMark post={post} />
         <span
-          className="mt-2.5 block text-balance text-[20px] font-normal leading-[1.25] tracking-[-0.022em]"
+          className="mt-2.5 block text-balance text-[20px] font-semibold leading-[1.25] tracking-[-0.035em]"
           style={{ color: INK }}
         >
           {post.title}
@@ -134,8 +134,8 @@ function PostRow({ post }: { post: Post }) {
 
 export function BlogPage() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
   }, []);
 
   const [category, setCategory] = useState<string>("all");
@@ -166,7 +166,7 @@ export function BlogPage() {
   const index = filtering ? matches : rest;
 
   return (
-    <div className="amplify min-h-screen text-white" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
 
       <ToneCanvas initial="paper">
@@ -190,7 +190,7 @@ export function BlogPage() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search the journal…"
                 aria-label="Search the journal"
-                className="h-12 w-full border bg-white pl-11 pr-4 text-[15px] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#176995]"
+                className="h-12 w-full rounded-full border bg-white pl-11 pr-4 text-[15px] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#8b16c4]"
                 style={{ borderColor: RULE, color: INK }}
               />
             </div>
@@ -202,7 +202,7 @@ export function BlogPage() {
           <ToneSection tone="paper">
             <div className="mx-auto max-w-[1420px] px-5 pb-24 sm:px-9 sm:pb-28" style={{ color: INK }}>
               <Reveal>
-                <Link to={`/blog/${lead.slug}`} className="group relative block bg-[#F7F7F7] p-8 sm:p-12">
+                <Link to={`/blog/${lead.slug}`} className="rounded-[28px] group relative block bg-[#F7F7F7] p-8 sm:p-12">
                   {/* The one accent-marked surface on the page: the lead piece
                       is the only thing here being pointed at. */}
                   <CornerMarks accent />
@@ -210,7 +210,7 @@ export function BlogPage() {
                     <div>
                       <MonoLabel>Latest · {lead.category}</MonoLabel>
                       <h2
-                        className="mt-6 max-w-[18ch] text-balance text-[34px] font-normal leading-[1.06] tracking-[-0.035em] sm:text-[46px] lg:text-[54px]"
+                        className="mt-6 max-w-[18ch] text-balance text-[34px] font-semibold leading-[1.06] tracking-[-0.045em] sm:text-[46px] lg:text-[54px]"
                         style={{ color: INK }}
                       >
                         {lead.title}
@@ -335,12 +335,12 @@ export function BlogPage() {
         <ToneSection tone="paper">
           <div className="mx-auto max-w-[1420px] px-5 pb-24 sm:px-9 sm:pb-28" style={{ color: INK }}>
             <Reveal>
-              <div className="relative grid items-end gap-10 bg-[#F7F7F7] p-8 sm:p-12 lg:grid-cols-[1fr_420px]">
+              <div className="rounded-[28px] relative grid items-end gap-10 bg-[#F7F7F7] p-8 sm:p-12 lg:grid-cols-[1fr_420px]">
                 <CornerMarks />
                 <div>
                   <MonoLabel>Subscribe</MonoLabel>
                   <h2
-                    className="mt-5 max-w-[22ch] text-balance text-[28px] font-normal leading-[1.1] tracking-[-0.03em] sm:text-[36px]"
+                    className="mt-5 max-w-[22ch] text-balance text-[28px] font-semibold leading-[1.1] tracking-[-0.045em] sm:text-[36px]"
                     style={{ color: INK }}
                   >
                     One note a month, when we have learned something worth sending
@@ -355,7 +355,7 @@ export function BlogPage() {
                     required
                     placeholder="you@company.com"
                     aria-label="Email address"
-                    className="h-12 flex-1 border bg-white px-4 text-[15px] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#176995]"
+                    className="h-12 flex-1 rounded-full border bg-white px-4 text-[15px] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#8b16c4]"
                     style={{ borderColor: RULE, color: INK }}
                   />
                   <button
@@ -372,7 +372,7 @@ export function BlogPage() {
 
         <LandingClose />
 
-        <ToneSection tone="ink">
+        <ToneSection tone="paper">
           <LandingFooter band="transparent" />
         </ToneSection>
       </ToneCanvas>

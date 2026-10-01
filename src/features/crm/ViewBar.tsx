@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { FILTER_OPS, type CrmProperty, type CrmView, type ViewConfig } from "./objectModel";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // View tabs + filter / sort / group controls, shown above the records area.
 export function ViewBar({
@@ -29,6 +30,7 @@ export function ViewBar({
   config: ViewConfig;
   onConfigChange: (c: ViewConfig) => void;
 }) {
+  const confirm = useConfirm();
   const [menu, setMenu] = useState<null | "filter" | "sort" | "group" | "add">(null);
   const activeView = views.find((v) => v.id === activeViewId);
   const filters = config.filters ?? [];
@@ -48,7 +50,7 @@ export function ViewBar({
             {v.kind === "kanban" ? <Columns3 className="h-3.5 w-3.5" /> : <Table2 className="h-3.5 w-3.5" />}
             {v.name}
             {views.length > 1 && (
-              <span onClick={(e) => { e.stopPropagation(); if (confirm(`Delete view "${v.name}"?`)) onDeleteView(v.id); }}
+              <span onClick={async (e) => { e.stopPropagation(); if ((await confirm(`Delete view "${v.name}"?`))) onDeleteView(v.id); }}
                 className="hidden rounded p-0.5 hover:text-destructive group-hover/v:inline-flex"><X className="h-3 w-3" /></span>
             )}
           </button>

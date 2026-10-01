@@ -30,6 +30,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { callEdge } from "@/lib/edge";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // ─────────────────────────────────────────────────────────────────── types
 interface Collection {
@@ -135,6 +136,7 @@ function CollectionCard({ c, onOpen }: { c: Collection; onOpen: () => void }) {
 
 // ───────────────────────────────────────────────────────────── detail page
 export function RagCollectionDetailPage() {
+  const confirm = useConfirm();
   const { collectionId } = useParams();
   const navigate = useNavigate();
   const { workspaceSlug, projectSlug } = useParams();
@@ -157,7 +159,7 @@ export function RagCollectionDetailPage() {
     queryClient.invalidateQueries({ queryKey: ["rag_collection", collectionId] });
   }
   async function remove() {
-    if (!confirm("Delete this collection and all its sources? Agents using it will lose this knowledge.")) return;
+    if (!(await confirm("Delete this collection and all its sources? Agents using it will lose this knowledge."))) return;
     await supabase.from("rag_collections").delete().eq("id", collection!.id);
     navigate(`/app/${workspaceSlug}/${projectSlug}/agent/collections`);
   }

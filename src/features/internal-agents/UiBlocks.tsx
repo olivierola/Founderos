@@ -28,6 +28,7 @@ import {
   ChartBarIcon as ChartBar,
   BracketsCurlyIcon as Braces,
   CodeIcon as Code2,
+  FilePdfIcon as FilePdf,
 } from "@phosphor-icons/react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -218,7 +219,7 @@ const DELIVERABLE_LABELS: Record<string, string> = {
   report: "Rapport", presentation: "Présentation", document: "Document",
   markdown: "Document", json: "Données", file: "Fichier",
   url: "Lien", code: "Code", csv: "Tableur", spreadsheet: "Tableur",
-  image: "Image", text: "Note",
+  image: "Image", text: "Note", pdf: "PDF",
 };
 
 // ── artifact (document/presentation/spreadsheet/image/text, created by
@@ -238,7 +239,7 @@ export interface ArtifactOpenTarget {
 const ARTIFACT_ICONS: Record<string, typeof FileText> = {
   document: FileText, text: Type, presentation: Presentation, spreadsheet: TableIcon, image: ImageIcon,
   // Deliverable kinds share the registry — one produced object, one visual language.
-  report: ChartBar, markdown: FileText, json: Braces, code: Code2, csv: TableIcon, url: ExternalLink, file: FileText,
+  report: ChartBar, markdown: FileText, json: Braces, code: Code2, csv: TableIcon, url: ExternalLink, file: FileText, pdf: FilePdf,
 };
 
 // Per-kind tone for the card's header (real photo only for a ready image;

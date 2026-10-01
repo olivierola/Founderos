@@ -12,12 +12,18 @@ import {
   RepeatIcon as Repeat,
   TextHIcon as Heading,
   TrayIcon as Inbox,
+  BracketsCurlyIcon as Braces,
+  NoteIcon as Note,
+  EqualsIcon as Equals,
+  TimerIcon as Timer,
+  StopCircleIcon as StopCircle,
+  ScalesIcon as Scales,
   WrenchIcon as Wrench,
   UsersIcon as Users,
   BrainIcon as BrainCircuit,
   type Icon as LucideIcon,
 } from "@phosphor-icons/react";
-import { contextBodyOf, contextSourceOf, paramsOf, agentIdsOf } from "./context";
+import { contextBodyOf, contextSourceOf, paramsOf, agentIdsOf, varsOf, normalizeVarName } from "./context";
 import type { ContextRef, BlockKind } from "./context";
 import {
   BLOCK_DOC, BLOCK_KINDS, type BlockDoc,
@@ -61,6 +67,7 @@ interface Look { label: string; hint: string; icon: LucideIcon; color: string }
 const LOOK: Record<BlockKind, Look> = {
   trigger: { label: "Déclencheur", hint: "Quand la procédure se lance", icon: Play, color: "emerald" },
   input: { label: "Entrée", hint: "Ce qu'il faut connaître pour démarrer", icon: Inbox, color: "lime" },
+  variables: { label: "Variables", hint: "Des valeurs nommées, réutilisées partout", icon: Braces, color: "amber" },
   goal: { label: "Objectif", hint: "Ce qui est visé, et à quoi on voit que c'est fait", icon: Target, color: "indigo" },
   rule: { label: "Règle", hint: "Une contrainte à ne jamais enfreindre", icon: ShieldAlert, color: "rose" },
   context: { label: "Contexte", hint: "Des connaissances à charger ici", icon: Brain, color: "violet" },
@@ -75,6 +82,11 @@ const LOOK: Record<BlockKind, Look> = {
   deliverable: { label: "Livrable", hint: "Ce qui doit être produit, et sous quelle forme", icon: FileOutput, color: "teal" },
   memory: { label: "Mémoire", hint: "Ce qui doit servir aux runs suivants", icon: BrainCircuit, color: "violet" },
   example: { label: "Exemple", hint: "Un cas traité de bout en bout", icon: Lightbulb, color: "slate" },
+  note: { label: "Note", hint: "Un commentaire pour l'équipe — jamais transmis", icon: Note, color: "slate" },
+  set: { label: "Valeurs", hint: "Ranger un résultat sous un nom lisible", icon: Equals, color: "amber" },
+  wait: { label: "Pause", hint: "Attendre quelques secondes avant la suite", icon: Timer, color: "cyan" },
+  stop: { label: "Fin", hint: "Terminer ici, en disant pourquoi", icon: StopCircle, color: "rose" },
+  judge: { label: "Condition jugée", hint: "Trancher une question écrite en français", icon: Scales, color: "purple" },
 };
 
 export interface BlockDef extends Look, BlockDoc { kind: BlockKind }
@@ -111,6 +123,25 @@ export function blockSummary(kind: BlockKind, data: Record<string, unknown>): st
     const p = paramsOf(data);
     return p.length ? p.map((x) => x.name || "?").join(" · ") : s(data.body) || "Aucun paramètre";
   }
+  if (kind === "variables" || kind === "set") {
+    const v = varsOf(data).filter((x) => normalizeVarName(x.name));
+    return v.length ? v.map((x) => normalizeVarName(x.name)).join(" · ") : "Aucune variable";
+  }
+  if (kind === "wait") {
+    const secs = Math.max(0, Math.min(60, Number(data.seconds) || 0));
+    return `Attendre ${secs} seconde${secs > 1 ? "s" : ""}`;
+  }
+  if (kind === "judge") {
+    const q = s(data.question) || s(data.label);
+    return q || "Question à écrire";
+  }
+  if (kind === "stop") {
+    const outcome = s(data.outcome) || "succeeded";
+    const verdict = outcome === "failed" ? "en échec"
+      : outcome === "stopped" ? "sans suite — ce n'est pas un échec"
+      : "avec succès";
+    return `Terminer ${verdict}${s(data.body) ? ` — ${s(data.body)}` : ""}`;
+  }
   if (kind === "tool") {
     // Une action nommée se lit « app → action » ; une capacité, par son seul
     // nom. Afficher l'un pour l'autre laisserait croire qu'un appel précis est
@@ -131,8 +162,8 @@ export function blockSummary(kind: BlockKind, data: Record<string, unknown>): st
   return `À rédiger — ${def?.hint.toLowerCase() ?? ""}`;
 }
 
-export { paramsOf, agentIdsOf } from "./context";
-export type { InputParam } from "./context";
+export { paramsOf, agentIdsOf, varsOf, normalizeVarName } from "./context";
+export type { InputParam, WorkflowVar } from "./context";
 
 export const refsOf = (data: Record<string, unknown>): ContextRef[] =>
   Array.isArray(data.refs) ? (data.refs as ContextRef[]) : [];
@@ -143,6 +174,13 @@ export function isBlockEmpty(kind: BlockKind, data: Record<string, unknown>): bo
   if (kind === "trigger") return false;
   if (kind === "loop") return !String(data.over ?? "").trim() && !String(data.until ?? "").trim();
   if (kind === "input") return paramsOf(data).every((p) => !p.name?.trim()) && !String(data.body ?? "").trim();
+  if (kind === "variables" || kind === "set") return !varsOf(data).some((v) => normalizeVarName(v.name));
+  // Une pause et une fin sont complètes dès qu'elles existent : leur réglage a
+  // une valeur par défaut qui veut dire quelque chose.
+  if (kind === "wait" || kind === "stop") return false;
+  // Une condition jugée sans question ne peut rien trancher : le moteur
+  // arrêterait la chaîne au premier passage, autant le dire dans l'éditeur.
+  if (kind === "judge") return !String(data.question ?? "").trim() && !String(data.label ?? "").trim();
   if (kind === "tool") {
     const isAction = !!String(data.provider ?? "").trim() && !!String(data.action ?? "").trim();
     return !isAction && !String(data.tool ?? "").trim();

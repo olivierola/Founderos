@@ -27,6 +27,7 @@ import {
   type FtDataset, type CleanStepStatus,
 } from "./data";
 import { useFtDatasetsDb, useCleaningTicker } from "./db";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const STEP_ICON: Record<CleanStepStatus, typeof CheckCircle2> = {
   done: CheckCircle2, running: Loader2, pending: Circle, flagged: CircleAlert,
@@ -38,6 +39,7 @@ const STEP_COLOR: Record<CleanStepStatus, string> = {
 const fmtK = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)} M` : n >= 1000 ? `${(n / 1000).toFixed(1)} k` : String(n));
 
 export function GovFtDatasetsPage() {
+  const confirm = useConfirm();
   const { datasets, createFromUpload, remove, updateCleaning, updateMeta, merge } = useFtDatasetsDb();
   // Advance the cleaning pipeline of freshly imported datasets (real row updates).
   useCleaningTicker(datasets, updateCleaning);
@@ -199,7 +201,7 @@ export function GovFtDatasetsPage() {
               <Button size="icon" variant="ghost" className="h-8 w-8" title="Modifier" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /></Button>
               <Button size="icon" variant="ghost" className="h-8 w-8" title="Fusionner avec…" onClick={() => setMerging(true)}><GitMerge className="h-4 w-4" /></Button>
               <Button size="icon" variant="ghost" className="h-8 w-8" title="Supprimer"
-                onClick={() => { if (confirm("Supprimer ce dataset ?")) { void remove(sel); setSelId(null); } }}>
+                onClick={async () => { if ((await confirm("Supprimer ce dataset ?"))) { void remove(sel); setSelId(null); } }}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>

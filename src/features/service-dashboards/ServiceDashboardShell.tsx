@@ -59,6 +59,7 @@ import { DashboardTile } from "./dashboardIcons";
 import { ThemeMenu } from "@/components/ThemeMenu";
 import { AssistantProvider, useAssistant } from "@/lib/assistant-context";
 import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // ── Structure ────────────────────────────────────────────────────────────────
 // Two rails, like the reference: a narrow icon rail holding the top-level
@@ -226,7 +227,12 @@ export function ServiceDashboardPage() {
    * avoir été vérifié.
    */
   const SELF_SCROLLING = ["projects", "memory", "room", "agent", "agent-config", "public"];
-  const mainScrolls = !SELF_SCROLLING.includes(activeTab);
+  // L'éditeur de workflow rejoint la seconde famille depuis qu'il porte une vue
+  // graphe et une console ancrée en bas : les deux ont besoin d'une hauteur
+  // bornée, qu'un conteneur qui s'étire avec son contenu ne donne jamais. La
+  // LISTE des workflows, elle, coule toujours normalement — d'où le test sur
+  // l'éditeur et pas sur l'onglet.
+  const mainScrolls = !SELF_SCROLLING.includes(activeTab) && !isWorkflowEditor;
 
   // Panel (second sidebar) can be folded away; the rail always stays.
   const [collapsed, setCollapsed] = useState(() => {
@@ -1176,6 +1182,7 @@ function AssistantLauncher({ base, dashboard, workspaceId, projectId }: {
 
 // A recent-room row with a hover ⋯ menu to rename or delete the room.
 function RoomRow({ r, active, base, dashboardId }: { r: Room; active: boolean; base: string; dashboardId: string }) {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1188,7 +1195,7 @@ function RoomRow({ r, active, base, dashboardId }: { r: Room; active: boolean; b
     setRenaming(false);
   }
   async function doDelete() {
-    if (!confirm("Supprimer cette room et tous ses messages ?")) return;
+    if (!(await confirm("Supprimer cette room et tous ses messages ?"))) return;
     await deleteRoom(r.id);
     queryClient.invalidateQueries({ queryKey: ["service_rooms", dashboardId] });
     if (active) navigate(`${base}/home`);
@@ -1237,6 +1244,7 @@ function RoomRow({ r, active, base, dashboardId }: { r: Room; active: boolean; b
 
 // Dashboard selector — the coloured tile at the top of the rail.
 function DashboardSelector({ current, dashboards }: { current: ServiceDashboard | null; dashboards: ServiceDashboard[] }) {
+  const confirm = useConfirm();
   const { workspaceSlug, projectSlug } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
   const { user } = useAuth();
@@ -1258,7 +1266,7 @@ function DashboardSelector({ current, dashboards }: { current: ServiceDashboard 
     } finally { setSaving(false); }
   }
   async function remove(id: string) {
-    if (!confirm("Supprimer ce dashboard de service ? Les agents qu'il contient ne seront pas supprimés (juste dissociés).")) return;
+    if (!(await confirm("Supprimer ce dashboard de service ? Les agents qu'il contient ne seront pas supprimés (juste dissociés)."))) return;
     await deleteServiceDashboard(id);
     queryClient.invalidateQueries({ queryKey: ["service_dashboards", projectId] });
     navigate(`${base}/${dashboardLandingSlug("workforce")}`);

@@ -29,6 +29,8 @@ import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { MCP_CATALOG, catalogReadyCount, type McpCatalogEntry } from "./mcpCatalog";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 interface McpTool { name: string; description?: string }
 type AuthMode = "none" | "header" | "oauth";
@@ -49,6 +51,8 @@ interface McpServer {
 }
 
 export function McpServersPage() {
+  const confirm = useConfirm();
+  const toast = useToast();
   const { workspaceId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<McpServer | null | "new">(null);
@@ -68,7 +72,7 @@ export function McpServersPage() {
   });
 
   async function remove(s: McpServer) {
-    if (!confirm(`Supprimer le serveur MCP « ${s.name} » ? Il sera retiré de tous les agents.`)) return;
+    if (!(await confirm(`Supprimer le serveur MCP « ${s.name} » ? Il sera retiré de tous les agents.`))) return;
     await supabase.from("mcp_servers").delete().eq("id", s.id);
     queryClient.invalidateQueries({ queryKey: ["mcp_servers", workspaceId] });
   }
@@ -83,10 +87,10 @@ export function McpServersPage() {
     try {
       const res = await callEdge<{ ok: boolean; error?: string; count?: number }>("mcp-gateway", { action: "discover", server_id: s.id });
       queryClient.invalidateQueries({ queryKey: ["mcp_servers", workspaceId] });
-      if (!res.ok) alert(`Échec de la connexion : ${res.error ?? "inconnu"}`);
+      if (!res.ok) toast.error(`Échec de la connexion : ${res.error ?? "inconnu"}`);
       else setExpanded(s.id);
     } catch (e) {
-      alert(`Erreur : ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Erreur : ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setTesting(null);
     }
@@ -98,19 +102,19 @@ export function McpServersPage() {
     try {
       const redirectUri = `${window.location.origin}/mcp/callback`;
       const res = await callEdge<{ ok: boolean; authorize_url?: string; error?: string }>("mcp-oauth", { action: "start", server_id: s.id, redirect_uri: redirectUri });
-      if (!res.ok || !res.authorize_url) { alert(`Échec : ${res.error ?? "impossible de démarrer OAuth"}`); return; }
+      if (!res.ok || !res.authorize_url) { toast.error(`Échec : ${res.error ?? "impossible de démarrer OAuth"}`); return; }
       const popup = window.open(res.authorize_url, "mcp-oauth", "width=520,height=700");
-      if (!popup) { alert("Le popup a été bloqué — autorisez les popups pour ce site."); return; }
+      if (!popup) { toast.error("Le popup a été bloqué — autorisez les popups pour ce site."); return; }
       const onMsg = (e: MessageEvent) => {
         if (e.origin !== window.location.origin || (e.data as { type?: string })?.type !== "mcp-oauth") return;
         window.removeEventListener("message", onMsg);
         queryClient.invalidateQueries({ queryKey: ["mcp_servers", workspaceId] });
         const d = e.data as { ok?: boolean; error?: string };
-        if (!d.ok) alert(`Connexion échouée : ${d.error ?? ""}`);
+        if (!d.ok) toast.error(`Connexion échouée : ${d.error ?? ""}`);
       };
       window.addEventListener("message", onMsg);
     } catch (e) {
-      alert(`Erreur : ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Erreur : ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -365,6 +369,7 @@ function McpServerDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const toast = useToast();
   const [name, setName] = useState(server?.name ?? preset?.name ?? "");
   const [description, setDescription] = useState(server?.description ?? "");
   const [transport, setTransport] = useState<"http" | "sse">(server?.transport ?? preset?.transport ?? "http");
@@ -420,11 +425,11 @@ function McpServerDialog({
       let serverId = server?.id;
       if (server) {
         const { error } = await supabase.from("mcp_servers").update(payload).eq("id", server.id);
-        if (error) { alert(error.message); return; }
+        if (error) { toast.error(error.message); return; }
       } else {
         const { data, error } = await supabase.from("mcp_servers")
           .insert({ ...payload, workspace_id: workspaceId }).select("id").single();
-        if (error) { alert(error.message); return; }
+        if (error) { toast.error(error.message); return; }
         serverId = (data as { id: string }).id;
       }
       if (serverId) {

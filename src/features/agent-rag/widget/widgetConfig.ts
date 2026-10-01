@@ -74,14 +74,16 @@ export const WIDGET_DEFAULTS = {
   header_style: "minimal" as "minimal" | "accent" | "gradient",
   text_subtitle: "",
   status_dot: true,
-  avatar_type: "live" as "live" | "orb" | "image",
+  avatar_type: "bot" as "bot" | "live" | "orb" | "image",
+  // Corps du bot (bot-avatars) ; vide = déduit du nom de l'agent.
+  avatar_bot: "",
   avatar_shape: "rounded" as "circle" | "rounded" | "square",
   avatar_first: "",
   avatar_second: "",
   avatar_url: "",
 
   // Lanceur
-  launcher_icon: "chat" as "chat" | "bubble" | "help" | "sparkle" | "bolt" | "orb",
+  launcher_icon: "chat" as "chat" | "bubble" | "help" | "sparkle" | "bolt" | "orb" | "bot",
   launcher_image_url: "",
   launcher_size: "md" as "sm" | "md" | "lg",
   launcher_pulse: false,

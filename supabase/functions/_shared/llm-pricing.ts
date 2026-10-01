@@ -17,6 +17,10 @@ const PRICING: Record<string, ModelPrice> = {
   "gemma2-9b": { inputCentsPerM: 20, outputCentsPerM: 20 },
   "qwen-2.5-coder-32b": { inputCentsPerM: 80, outputCentsPerM: 80 },
   "gpt-oss-20b": { inputCentsPerM: 40, outputCentsPerM: 40 },
+  // TypeSafe (Jev) — 42 $/milliard de tokens d'ENTRÉE, sortie gratuite. Soit
+  // ~3,9 c€ le million : six fois moins que notre modèle le moins cher, et il
+  // n'émet quasiment pas de sortie puisqu'il ne rédige pas.
+  "jev": { inputCentsPerM: 4, outputCentsPerM: 0 },
   // DeepSeek
   "deepseek-chat": { inputCentsPerM: 25, outputCentsPerM: 100 },
   "deepseek-reasoner": { inputCentsPerM: 50, outputCentsPerM: 200 },

@@ -34,6 +34,9 @@ function view(p: VoiceGlowProps) {
     colorVariant: p.palette || "colorful",
     borderRadius: p.radius,
     sensitivity: 3.6,
+    // Same presence as the app composers (VoiceComposer in AgentChatInput).
+    idle: 0.42,
+    reach: 1.5,
     style: { position: "absolute", inset: 0, width: "100%", height: "100%" },
   }, h("div", { style: { width: "100%", height: "100%", borderRadius: p.radius } }));
 }

@@ -34,8 +34,8 @@ const RULE = "rgba(17,17,17,0.12)";
 
 export function SolutionPage() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
   }, []);
 
   const { slug } = useParams();
@@ -53,7 +53,7 @@ export function SolutionPage() {
   const others = SOLUTIONS.filter((s) => s.slug !== solution.slug);
 
   return (
-    <div className="amplify min-h-screen text-white" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
 
       <ToneCanvas initial="paper">
@@ -66,8 +66,7 @@ export function SolutionPage() {
             <div className="relative mx-auto max-w-[1420px] px-5 pb-16 pt-[124px] sm:px-9 sm:pt-[142px]">
               <Link
                 to="/solutions"
-                className="inline-flex items-center gap-2 text-[14px] transition-colors hover:text-[#111111]"
-                style={{ color: GREY }}
+                className="inline-flex items-center gap-2 rounded-full border border-[#e3e3e3] bg-white px-4 py-2.5 text-[14px] font-semibold text-[#111011] shadow-[0_10px_30px_-18px_rgba(17,16,17,0.35)] transition-colors hover:border-[#d4d4d4]"
               >
                 <ArrowLeft className="h-4 w-4" />
                 All solutions
@@ -77,18 +76,16 @@ export function SolutionPage() {
                 <div>
                   <div className="flex items-center gap-3">
                     <span
-                      className="flex h-[34px] w-[34px] items-center justify-center text-[12.5px] font-medium tabular-nums text-white"
-                      style={{ background: PAPER_ACCENT }}
+                      className="at-orb flex h-[36px] w-[36px] items-center justify-center rounded-full text-[12.5px] font-semibold tabular-nums text-white"
                     >
                       {solution.num}
                     </span>
                     {/* The solution's own key, kept to one mark. */}
-                    <span aria-hidden className="h-[7px] w-[7px]" style={{ background: solution.key }} />
-                    <MonoLabel>{solution.nav}</MonoLabel>
+                                        <MonoLabel>{solution.nav}</MonoLabel>
                   </div>
 
                   <h1
-                    className="mt-7 text-pretty text-[36px] font-normal leading-[1.05] tracking-[-0.035em] sm:text-[50px]"
+                    className="mt-7 text-pretty text-[36px] font-semibold leading-[1.05] tracking-[-0.045em] sm:text-[50px]"
                     style={{ color: INK }}
                   >
                     {solution.title}
@@ -143,7 +140,7 @@ export function SolutionPage() {
               <Reveal>
                 <MonoLabel>The problem</MonoLabel>
                 <h2
-                  className="mt-6 text-balance text-[28px] font-normal leading-[1.12] tracking-[-0.03em] sm:text-[36px]"
+                  className="mt-6 text-balance text-[28px] font-semibold leading-[1.12] tracking-[-0.045em] sm:text-[36px]"
                   style={{ color: INK }}
                 >
                   {solution.problem.title}
@@ -176,7 +173,7 @@ export function SolutionPage() {
             <Reveal className="max-w-2xl">
               <MonoLabel>How we do it</MonoLabel>
               <h2
-                className="mt-6 text-balance text-[30px] font-normal leading-[1.08] tracking-[-0.035em] sm:text-[42px]"
+                className="mt-6 text-balance text-[30px] font-semibold leading-[1.08] tracking-[-0.045em] sm:text-[42px]"
                 style={{ color: INK }}
               >
                 {solution.approach.title}
@@ -199,7 +196,7 @@ export function SolutionPage() {
                     >
                       {String(i + 1).padStart(2, "0")}
                     </span>
-                    <h3 className="text-[20px] font-normal tracking-[-0.022em]" style={{ color: INK }}>
+                    <h3 className="text-[20px] font-semibold tracking-[-0.035em]" style={{ color: INK }}>
                       {s.t}
                     </h3>
                     <p className="max-w-2xl text-[15px] leading-[1.65]" style={{ color: GREY }}>
@@ -219,7 +216,7 @@ export function SolutionPage() {
               <Reveal>
                 <MonoLabel>What lands</MonoLabel>
                 <h2
-                  className="mt-6 max-w-lg text-balance text-[28px] font-normal leading-[1.12] tracking-[-0.03em] sm:text-[36px]"
+                  className="mt-6 max-w-lg text-balance text-[28px] font-semibold leading-[1.12] tracking-[-0.045em] sm:text-[36px]"
                   style={{ color: INK }}
                 >
                   Everything on this list is yours to keep
@@ -240,10 +237,10 @@ export function SolutionPage() {
 
               {solution.proof && (
                 <Reveal delay={110}>
-                  <div className="relative bg-[#F7F7F7] p-9">
+                  <div className="rounded-[28px] relative bg-[#F7F7F7] p-9">
                     <CornerMarks accent />
                     <div
-                      className="text-[64px] font-normal leading-none tracking-[-0.04em] tabular-nums"
+                      className="text-[64px] font-semibold leading-none tracking-[-0.045em] tabular-nums"
                       style={{ color: INK }}
                     >
                       {solution.proof.figure}
@@ -318,7 +315,7 @@ export function SolutionPage() {
                       </span>
                     </span>
                     <span
-                      className="mt-4 flex-1 text-[16px] font-normal leading-[1.25] tracking-[-0.02em]"
+                      className="mt-4 flex-1 text-[16px] font-semibold leading-[1.25] tracking-[-0.035em]"
                       style={{ color: INK }}
                     >
                       {o.nav}
@@ -339,7 +336,7 @@ export function SolutionPage() {
 
         <LandingClose />
 
-        <ToneSection tone="ink">
+        <ToneSection tone="paper">
           <LandingFooter band="transparent" />
         </ToneSection>
       </ToneCanvas>

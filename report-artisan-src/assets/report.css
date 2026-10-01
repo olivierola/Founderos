@@ -629,12 +629,23 @@ a.ra-src:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 [data-theme="dark"] .ra-btn--primary { color: #10100f; }
 
 /* block settings popovers inside custom tools */
+/* The bar FLOATS above its block. Hidden with opacity alone it still took its
+   place in the flow — a KPI row's eight fields wrapped over two or three lines
+   of empty space above every block, which read as holes all over the report. */
+.ra-tool { position: relative; }
 .ra-tool-bar {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 30;
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-  margin-bottom: 10px; opacity: 0; transition: opacity .15s ease;
+  padding: 8px; border-radius: 12px;
+  border: 1px solid var(--hairline); background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0,0,0,.14);
+  opacity: 0; pointer-events: none; transform: translateY(4px);
+  transition: opacity .15s ease, transform .15s ease;
   font-family: var(--font-ui);
 }
-.ce-block:hover .ra-tool-bar, .ra-tool-bar:focus-within { opacity: 1; }
+/* Bridge over the 6px gap so the pointer can travel from the block to the bar. */
+.ra-tool-bar::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 8px; }
+.ce-block:hover .ra-tool-bar, .ra-tool-bar:focus-within { opacity: 1; pointer-events: auto; transform: none; }
 .ra-chip {
   font-family: var(--font-ui); font-size: 11.5px; font-weight: 550;
   border: 1px solid var(--hairline); background: var(--surface);

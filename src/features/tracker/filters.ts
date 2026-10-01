@@ -99,6 +99,7 @@ export interface DisplayProperties {
   estimate: boolean;
   sub_issue_count: boolean;
   attachment_count: boolean;
+  resource_count: boolean;
   link: boolean;
   cycle: boolean;
   modules: boolean;
@@ -130,7 +131,7 @@ export const DEFAULT_DISPLAY_FILTERS: DisplayFilters = {
 export const DEFAULT_DISPLAY_PROPERTIES: DisplayProperties = {
   key: true, state: true, priority: true, assignee: true, labels: true,
   start_date: false, due_date: true, estimate: false,
-  sub_issue_count: true, attachment_count: true, link: false,
+  sub_issue_count: true, attachment_count: true, resource_count: true, link: false,
   cycle: false, modules: false, created_on: false, updated_on: false,
 };
 
@@ -138,7 +139,7 @@ export const DISPLAY_PROPERTY_LABELS: Record<keyof DisplayProperties, string> = 
   key: "Référence", state: "État", priority: "Priorité", assignee: "Assignés",
   labels: "Labels", start_date: "Date de début", due_date: "Échéance",
   estimate: "Estimation", sub_issue_count: "Sous-tâches",
-  attachment_count: "Pièces jointes", link: "Liens", cycle: "Cycle",
+  attachment_count: "Pièces jointes", resource_count: "Ressources", link: "Liens", cycle: "Cycle",
   modules: "Modules", created_on: "Créé le", updated_on: "Modifié le",
 };
 

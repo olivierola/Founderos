@@ -43,7 +43,7 @@ export function GovFtCostsPage() {
   const totalH = entries.reduce((s, e) => s + e.gpuHours, 0);
   const { current, forecast } = forecastMonthly(entries);
   const { today, eom } = forecastToday(entries);
-  const shares = useMemo(() => (projectId ? costShares(entries, projectId) : null), [entries, projectId]);
+  const shares = useMemo(() => costShares(entries), [entries]);
 
   const byKind = useMemo(() => {
     const kinds: FtCostKind[] = ["training", "inference", "storage", "api"];
@@ -147,10 +147,10 @@ export function GovFtCostsPage() {
         </Card>
       </div>
 
-      {/* Ventilation par département / agent / utilisateur */}
-      {shares && (
-        <div className="grid gap-4 lg:grid-cols-3">
-          {([["Par département", shares.byDepartment], ["Par agent", shares.byAgent], ["Par utilisateur", shares.byUser]] as const).map(([title, list]) => (
+      {/* Ventilation par poste facturé — serveurs, entraînements, endpoints. */}
+      {shares.length > 0 && (
+        <div className="grid gap-4">
+          {([["Où part l'argent", shares.slice(0, 12)]] as const).map(([title, list]) => (
             <Card key={title} className="p-5">
               <div className="mb-3 text-sm font-medium">{title}</div>
               <div className="space-y-2.5">

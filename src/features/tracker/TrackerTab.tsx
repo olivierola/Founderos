@@ -24,6 +24,7 @@ import { PagesPage } from "./PagesPage";
 import { IntakePage } from "./IntakePage";
 import { CrewPage } from "./CrewPage";
 import { DeliverablesPage } from "./DeliverablesPage";
+import { AssetsPage } from "./AssetsPage";
 import { AnalyticsPage } from "./AnalyticsPage";
 import { ProjectSettings } from "./ProjectSettings";
 import { NotificationsBell } from "./Notifications";
@@ -68,7 +69,7 @@ import {
 
 type Section =
   | "overview" | "issues" | "cycles" | "modules" | "epics" | "views" | "pages" | "intake"
-  | "crew" | "deliverables"
+  | "crew" | "deliverables" | "assets"
   | "drafts" | "analytics" | "archives" | "settings";
 
 /** Les destinations d'espace, par opposition à un identifiant de projet. */
@@ -389,6 +390,10 @@ function ProjectWorkspace({
       // permet d'en autoriser un.
       { key: "crew", label: "Équipage", icon: UsersThreeIcon, on: true },
       { key: "deliverables", label: "Livrables", icon: PackageIcon, on: true },
+      // Les ressources sont la MATIÈRE du projet — le dépôt, la maquette, les
+      // données. Elles se rangent à côté de l'équipage et des livrables : qui
+      // travaille, sur quoi, et ce qui en sort.
+      { key: "assets", label: "Ressources", icon: StackIcon, on: true },
       { key: "drafts", label: "Brouillons", icon: NotePencilIcon, on: true },
       { key: "archives", label: "Archives", icon: ArchiveIcon, on: true },
       { key: "analytics", label: "Analytics", icon: ChartBarIcon, on: true },
@@ -465,6 +470,7 @@ function ProjectWorkspace({
           {active === "intake" && <IntakePage project={project} />}
           {active === "crew" && <CrewPage project={project} dashboardId={dashboardId} />}
           {active === "deliverables" && <DeliverablesPage project={project} />}
+          {active === "assets" && <AssetsPage project={project} />}
           {active === "analytics" && <AnalyticsPage project={project} />}
           {active === "settings" && <ProjectSettings project={project} onChanged={onChanged} />}
         </div>

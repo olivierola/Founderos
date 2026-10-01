@@ -1,0 +1,314 @@
+/* ══ The Atlas register ══════════════════════════════════════════════════════
+   The marketing site's skin: white paper, Inter set tight, Source Serif 4 in
+   italic for the second half of every heading, and one colour — the violet —
+   poured through black into white inside large rounded panels.
+
+   Scoped to `.atlas` so nothing here reaches the product. The pages that wear
+   it still carry `.amplify` for the shared animation classes, which is why the
+   root selectors below are doubled: they have to win over `.amplify`'s dark
+   canvas and Geist stack whatever order the two sheets load in.              */
+
+.atlas,
+.amplify.atlas {
+  --at-ink: #111011;
+  --at-body: #3d3c3d;
+  --at-muted: #666666;
+  --at-faint: #969696;
+  --at-line: #e3e3e3;
+  --at-line-soft: #f0f0f0;
+  --at-soft: #f7f7f7;
+  --at-cream: #f4f2ef;
+  --at-lilac: #e5dbeb;
+  --at-sky: #dce4ea;
+  --at-mint: #d2e8c8;
+  --at-accent: #d22eff;
+  /* The violet as type on white. #d22eff is 3.8:1 there — fine for a 40px
+     numeral, thin for a 14px label — so anything small that is DRAWN in the
+     colour takes this cut instead (7.0:1). */
+  --at-accent-deep: #8b16c4;
+  --at-plum: #5b0d78;
+
+  /* The amp tokens the interior pages still read, re-pointed at this palette
+     so a component written for the old register lands in the new one. */
+  --amp-accent: #8b16c4;
+  --amp-orange: #8b16c4;
+  --amp-accent-bright: #d22eff;
+  --amp-accent-deep: #8b16c4;
+  --amp-cyan: #d22eff;
+  --amp-on-accent: #ffffff;
+  --amp-muted: #666666;
+  --amp-faint: #969696;
+  --amp-line: #e3e3e3;
+  --amp-line-soft: #f0f0f0;
+  --amp-panel: #f7f7f7;
+  --amp-panel-hi: #f0f0f0;
+
+  background-color: #ffffff;
+  color: var(--at-ink);
+  color-scheme: light;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Overscroll and the mobile URL bar paint the document, not the page. */
+html.at-root,
+html.at-root body,
+html.at-root.amp-root,
+html.at-root.amp-root body {
+  background-color: #ffffff;
+}
+
+.atlas ::selection {
+  background: rgba(210, 46, 255, 0.22);
+}
+
+/* ── Type ────────────────────────────────────────────────────────────────── */
+
+/* The second voice of every heading. Italic only — the upright cut is never
+   used, so the one family reads as punctuation rather than as a second font. */
+.at-serif {
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.035em;
+}
+
+/* The accent words in an eyebrow pill and a few labels: plum into violet.
+   Both ends clear 5:1 on white, so it holds at 14px. */
+.at-grad-text {
+  background-image: linear-gradient(90deg, #5b0d78 0%, #b01fe0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Large figures only (the calculator): the true violet fading to lilac. */
+.at-grad-figure {
+  background-image: linear-gradient(90deg, #d22eff 0%, #e27cff 45%, #b25fd6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Grounds ─────────────────────────────────────────────────────────────── */
+
+/* The hero ramp: black at the head, violet through the middle, white at the
+   foot so the panel dissolves into the page instead of ending on an edge. */
+.at-grad-hero {
+  background:
+    radial-gradient(ellipse 55% 38% at 50% 100%, rgba(255, 255, 255, 0.9), transparent 70%),
+    linear-gradient(
+      180deg,
+      #000000 0%,
+      #050007 12%,
+      #26033a 26%,
+      #7d11ad 40%,
+      #c122f2 52%,
+      #d63fff 62%,
+      #e79bff 76%,
+      #f7e1ff 88%,
+      #ffffff 100%
+    );
+}
+
+/* The hero ramp held in the violet longer, so white type on cards laid over
+   its middle keeps its contrast; it only lets go to white at the very foot. */
+.at-grad-steps {
+  background: linear-gradient(
+    180deg,
+    #000000 0%,
+    #12001b 12%,
+    #4a0768 28%,
+    #9a18cf 44%,
+    #b523e6 62%,
+    #c43af2 76%,
+    #e9a6ff 90%,
+    #ffffff 100%
+  );
+}
+
+/* The same ramp, shorter at the head — for interior page heroes, which have
+   less to say above the violet. */
+.at-grad-page {
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 58%, rgba(0, 0, 0, 0.92), rgba(40, 3, 58, 0.6) 45%, transparent 75%),
+    linear-gradient(180deg, #ffffff 0%, #f3cfff 14%, #d63fff 36%, #b41ee6 56%, #d63fff 78%, #f5dcff 92%, #ffffff 100%);
+}
+
+/* Violet at the head, a dark pool behind the title, white at the foot. The
+   "work" and "promise" panels. */
+.at-grad-accent {
+  background:
+    radial-gradient(ellipse 34% 30% at 50% 0%, rgba(8, 0, 12, 0.9), transparent 75%),
+    radial-gradient(ellipse 70% 40% at 50% 100%, #ffffff, transparent 70%),
+    linear-gradient(180deg, #c526f7 0%, #d22eff 30%, #dc67ff 58%, #f2c9ff 82%, #ffffff 100%);
+}
+
+/* The closing slab behind the footer card. */
+.at-grad-footer {
+  background:
+    radial-gradient(ellipse 48% 42% at 50% 36%, rgba(14, 0, 20, 0.95), rgba(60, 6, 86, 0.7) 50%, transparent 78%),
+    radial-gradient(ellipse 80% 30% at 50% 100%, #ffffff, transparent 72%),
+    linear-gradient(180deg, #b01fe0 0%, #7d11ad 22%, #a31bd6 50%, #d22eff 70%, #efb8ff 88%, #ffffff 100%);
+}
+
+/* ── The tile field ──────────────────────────────────────────────────────────
+   Rounded keys laid in a grid over the dark and violet grounds. One SVG tile
+   repeated, so the field costs a single background whatever its size. The
+   lit keys are separate elements on the same 93×48 pitch (see TileField). */
+.at-tiles {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='93' height='48'%3E%3Crect x='3' y='3' width='87' height='42' rx='10' fill='white' fill-opacity='0.065'/%3E%3C/svg%3E");
+  background-size: 93px 48px;
+}
+
+@keyframes at-tile {
+  0%, 100% { opacity: 0; }
+  45%, 60% { opacity: 1; }
+}
+.at-tile {
+  animation: at-tile 6s ease-in-out infinite both;
+}
+
+/* ── Marks ───────────────────────────────────────────────────────────────── */
+
+/* The check disc: black, with the violet rising from its lower edge. */
+.at-check {
+  background: radial-gradient(120% 120% at 70% 105%, #d22eff 0%, #7d11ad 38%, #0b0b0b 72%);
+  box-shadow: 0 6px 14px -6px rgba(125, 17, 173, 0.7);
+}
+
+/* The icon orb, bright cut. */
+.at-orb {
+  background: radial-gradient(circle at 50% 100%, #f9d6ff 0%, #d22eff 34%, #8b16c4 66%, #3d0757 100%);
+  box-shadow:
+    0 16px 32px -12px rgba(210, 46, 255, 0.75),
+    inset 0 1px 1px rgba(255, 255, 255, 0.35);
+}
+
+/* The icon orb, dark cut — for the step cards on the violet ground. */
+.at-orb-dark {
+  background: radial-gradient(circle at 50% 110%, #d22eff 0%, #6d10a0 34%, #0b0b0b 68%);
+  box-shadow:
+    0 18px 36px -14px rgba(0, 0, 0, 0.8),
+    inset 0 1px 1px rgba(255, 255, 255, 0.18);
+}
+
+/* The soft plate the graphics sit on inside a feature card. */
+.at-graphic {
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 0%, rgba(210, 46, 255, 0.10), transparent 70%),
+    linear-gradient(180deg, #faf6fc 0%, #f6f0f9 100%);
+}
+
+/* The solution diagrams (LandingVisuals) are drawn for a dark ground, so they
+   keep one — rounded, black poured into violet, and every variant re-tinted
+   from its greys to the violet so six plates read as one family. Doubled
+   class so it wins over the per-offer `.amp-viz-*` modifiers. */
+.atlas .amp-viz {
+  border-radius: 32px;
+  background-image: linear-gradient(180deg, #000000 0%, #0d0014 42%, #3d0757 80%, #7d11ad 100%);
+  --vz-accent: #f5e1ff;
+  --vz-neon: #e27cff;
+  --vz-line: rgba(226, 124, 255, 0.45);
+  --vz-fill: rgba(226, 124, 255, 0.08);
+  --vz-tile: rgba(226, 124, 255, 0.14);
+  --vz-glow: rgba(210, 46, 255, 0.6);
+  --vz-ink: #12001b;
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────── */
+
+@keyframes at-wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.at-wave > span {
+  display: block;
+  transform-origin: center;
+  animation: at-wave 1.4s ease-in-out infinite;
+}
+
+@keyframes at-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.at-float { animation: at-float 5s ease-in-out infinite; }
+
+@keyframes at-dash {
+  to { stroke-dashoffset: -24; }
+}
+.at-dash { animation: at-dash 1.6s linear infinite; }
+
+@keyframes at-spin-slow {
+  to { transform: rotate(360deg); }
+}
+.at-spin-slow { animation: at-spin-slow 18s linear infinite; }
+
+@keyframes at-pulse-ring {
+  0% { transform: scale(0.92); opacity: 0.55; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+.at-pulse-ring { animation: at-pulse-ring 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+
+/* Range sliders in the calculator: the filled part of the track is painted
+   through a custom property the component keeps in step with the value. */
+.at-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e27cff 0%, #5b0d78 var(--at-fill, 50%), #dedede var(--at-fill, 50%));
+  outline: none;
+}
+.at-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #111011;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+.at-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #111011;
+  cursor: pointer;
+}
+.at-range:focus-visible {
+  box-shadow: 0 0 0 3px rgba(210, 46, 255, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .at-tile,
+  .at-wave > span,
+  .at-float,
+  .at-dash,
+  .at-spin-slow,
+  .at-pulse-ring {
+    animation: none !important;
+  }
+  .at-tile { opacity: 0.5; }
+}
+
+/* ── Older markup inside the register ───────────────────────────────────────
+   The interior pages were written for the paper register. Two of its devices
+   are translated here rather than rewritten in every page: the upright
+   Instrument Serif lead becomes the Source Serif italic, and the small
+   monospace uppercase labels become Inter semibold, as in the reference. */
+.atlas .font-instrument-serif {
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-style: italic;
+  letter-spacing: -0.02em;
+}
+.atlas .font-mono.uppercase {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}

@@ -50,8 +50,9 @@ export const WORKFLOW_KIND_META: Record<WorkflowKind, {
 export {
   contextSourceOf, contextBodyOf, chipToken, chipIdsIn, cleanArgs,
   CODE_TOOLS, codeToolOf, outputVarOf,
+  varsOf, declaredVars, varNamesOf, normalizeVarName,
 } from "./context";
-export type { BlockKind, ContextRef, ContextSourceKind } from "./context";
+export type { BlockKind, ContextRef, ContextSourceKind, WorkflowVar } from "./context";
 
 // Le cron : une seule implémentation, partagée avec le planificateur. L'éditeur
 // en a besoin pour montrer la prochaine échéance AVANT d'enregistrer.
@@ -93,6 +94,10 @@ export interface WorkflowRun {
   agent_id: string | null;
   status: RunStatus;
   trigger: string;
+  /** Ce que le déclencheur a apporté. Relu par la console : une exécution qui
+   *  n'a pas fait ce qu'on attendait s'explique le plus souvent par la donnée
+   *  qu'elle a reçue, et la deviner de mémoire fait perdre une demi-heure. */
+  trigger_payload: Record<string, unknown>;
   document: string | null;
   error_message: string | null;
   started_at: string;
@@ -205,9 +210,22 @@ export async function deleteWorkflow(id: string) {
 
 // ── Execution ────────────────────────────────────────────────────────────────
 
-export async function startRun(workflowId: string): Promise<string | null> {
+/**
+ * Lancer une exécution, éventuellement avec une charge de déclenchement.
+ *
+ * Le `payload` est ce qu'un vrai déclencheur aurait apporté — le mail reçu, la
+ * ligne créée, le corps du webhook. C'est ce qui rend un test honnête : sans
+ * lui, on n'éprouve qu'une moitié du workflow, celle qui ne lit rien de
+ * `{{trigger.…}}`, et la première exécution réelle découvre les autres.
+ */
+export async function startRun(
+  workflowId: string, payload?: Record<string, unknown>,
+): Promise<string | null> {
   const res = await callEdge<{ run_id?: string }>("run-workflow", {
-    workflow_id: workflowId, trigger_payload: { trigger: "manual" },
+    workflow_id: workflowId,
+    // `trigger` d'abord : une charge de test qui porterait sa propre clé
+    // `trigger` doit pouvoir la remplacer, c'est précisément ce qu'on teste.
+    trigger_payload: { trigger: "manual", ...(payload ?? {}) },
   });
   return res?.run_id ?? null;
 }
@@ -295,7 +313,7 @@ export async function fetchEventDeliveries(workflowId: string, limit = 20) {
 export async function fetchLatestRun(workflowId: string): Promise<WorkflowRun | null> {
   const { data } = await supabase
     .from("agent_workflow_runs")
-    .select("id, workflow_id, agent_run_id, agent_id, status, trigger, document, error_message, started_at, finished_at")
+    .select("id, workflow_id, agent_run_id, agent_id, status, trigger, trigger_payload, document, error_message, started_at, finished_at")
     .eq("workflow_id", workflowId)
     .order("started_at", { ascending: false })
     .limit(1).maybeSingle();
@@ -328,10 +346,42 @@ export async function fetchRunSteps(runId: string): Promise<RunStep[]> {
   return (data ?? []) as RunStep[];
 }
 
+/**
+ * Ce que l'agent d'une PROCÉDURE a réellement fait, dans l'ordre.
+ *
+ * Une automatisation tient son propre journal (`fetchRunSteps`) ; une procédure
+ * n'en a pas, parce que son exécutant est un agent et que sa trace est celle de
+ * son run. Les deux alimentent la même console : sans ça, « voir ce qui se
+ * passe » ne marcherait que pour une des deux natures.
+ */
+export interface RunEvent {
+  id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export async function fetchRunEvents(agentRunId: string, limit = 300): Promise<RunEvent[]> {
+  const { data } = await supabase.from("internal_agent_run_events")
+    .select("id, kind, payload, created_at")
+    .eq("run_id", agentRunId)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  return (data ?? []) as RunEvent[];
+}
+
+/** L'état du run de l'agent — une procédure se termine côté agent, et la ligne
+ *  de workflow ne se referme qu'au tick suivant. */
+export async function fetchAgentRunStatus(agentRunId: string): Promise<string | null> {
+  const { data } = await supabase.from("internal_agent_runs")
+    .select("status").eq("id", agentRunId).maybeSingle();
+  return (data as { status?: string } | null)?.status ?? null;
+}
+
 export async function fetchWorkflowRuns(workflowId: string, limit = 20): Promise<WorkflowRun[]> {
   const { data } = await supabase
     .from("agent_workflow_runs")
-    .select("id, workflow_id, agent_run_id, agent_id, status, trigger, document, error_message, started_at, finished_at")
+    .select("id, workflow_id, agent_run_id, agent_id, status, trigger, trigger_payload, document, error_message, started_at, finished_at")
     .eq("workflow_id", workflowId)
     .order("started_at", { ascending: false })
     .limit(limit);

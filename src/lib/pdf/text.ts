@@ -57,7 +57,8 @@ export function markdownToText(md: string): string {
 export function toNumber(v: unknown): number {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   if (typeof v === "string") {
-    const n = Number(v.replace(/[\s  ]/g, "").replace(",", "."));
+    // \s covers the no-break spaces fr-FR puts between thousands.
+    const n = Number(v.replace(/\s/g, "").replace(",", "."));
     return Number.isFinite(n) ? n : 0;
   }
   return 0;

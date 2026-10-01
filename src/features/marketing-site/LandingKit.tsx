@@ -224,17 +224,16 @@ export function CountUp({
   );
 }
 
-/* ── Solid accent badge that opens every section. ───────────────────────── */
+/* ── The eyebrow pill that opens a section (Atlas register). ────────────── */
 export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md px-2.5 py-1.5 text-[11px] font-semibold uppercase leading-none tracking-[0.03em]",
+        "inline-flex items-center gap-2 rounded-full border border-[#e3e3e3] bg-white px-4 py-2.5 text-[14px] font-semibold leading-none tracking-[-0.01em] text-[#111011] shadow-[0_10px_30px_-18px_rgba(17,16,17,0.35)]",
         className,
       )}
-      style={{ background: ACCENT, color: ON_ACCENT }}
     >
-      {children}
+      <span className="at-grad-text">{children}</span>
     </span>
   );
 }
@@ -267,28 +266,21 @@ export function SectionHead({
 }
 
 /* ── Call-to-action buttons ─────────────────────────────────────────────────
-   Primary: an accent slab with a white tile on the right holding the arrow.
-   Ghost: the neutral panel surface, so it works on both dark and light bands. */
+   The Atlas pair: primary is the black pill, ghost the white one with a
+   hairline, both with the up-right arrow riding along. */
 export function CtaPrimary({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-4 rounded-xl py-2 pl-6 pr-2 text-[15px] font-medium transition-opacity hover:opacity-90",
+        "group inline-flex h-[46px] items-center gap-2.5 rounded-full bg-black px-6 text-[15px] font-semibold tracking-[-0.015em] text-white shadow-[0_12px_26px_-14px_rgba(0,0,0,0.7)] transition-colors hover:bg-[#1d1c1d]",
         className,
       )}
-      style={{ background: ACCENT, color: ON_ACCENT }}
     >
       {children}
-      {/* The tile inverts the slab rather than going white. The accent is a
-          bright lime at 0.80 luminance: a lime arrow on a white tile is 1.2:1
-          and disappears, where the same arrow on the near-black tile is 15:1
-          and is the one spot of colour inside the button. */}
-      <span
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
-        style={{ background: ON_ACCENT }}
-      >
-        <ArrowUpRight className="h-4 w-4" style={{ color: ACCENT }} />
-      </span>
+      <ArrowUpRight
+        weight="bold"
+        className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+      />
     </span>
   );
 }
@@ -313,11 +305,15 @@ export function CtaGhost({ children, className }: { children: ReactNode; classNa
   return (
     <span
       className={cn(
-        "amp-panel amp-panel-hover inline-flex items-center gap-2 rounded-xl px-6 py-4 text-[15px] font-medium leading-none",
+        "group inline-flex h-[46px] items-center gap-2.5 rounded-full border border-[#e6e6e6] bg-white px-6 text-[15px] font-semibold tracking-[-0.015em] text-[#111011] shadow-[0_12px_30px_-16px_rgba(17,16,17,0.3)] transition-colors hover:border-[#d4d4d4]",
         className,
       )}
     >
       {children}
+      <ArrowUpRight
+        weight="bold"
+        className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+      />
     </span>
   );
 }
@@ -388,13 +384,13 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-[13.5px] font-medium leading-none transition-colors duration-300",
+        "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-[14px] font-semibold leading-none tracking-[-0.015em] transition-colors duration-300",
         // Solid is the black button: it belongs on the light sections.
-        variant === "solid" && "bg-[#0E0E0E] text-white hover:bg-[#2B2B2B]",
-        variant === "ghost" && "border border-white/20 text-white hover:border-white/45 hover:bg-white/[0.06]",
+        variant === "solid" && "bg-black text-white shadow-[0_12px_26px_-14px_rgba(0,0,0,0.7)] hover:bg-[#1d1c1d]",
+        variant === "ghost" && "border border-white/30 bg-white/[0.12] text-white backdrop-blur-md hover:bg-white/[0.2]",
         // Its inverse, for the dark canvas — a black pill on a #121212 ground
         // is a hole, not a call to action.
-        variant === "light" && "bg-[#F5F5F5] text-[#0E0E0E] hover:bg-white",
+        variant === "light" && "border border-[#e6e6e6] bg-white text-[#111011] shadow-[0_12px_30px_-16px_rgba(17,16,17,0.3)] hover:border-[#d4d4d4]",
         className,
       )}
     >

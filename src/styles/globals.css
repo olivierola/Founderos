@@ -88,8 +88,8 @@
        L'échelle sombre : canvas 5,9 % → surface 8 % → élevé 10-12 % →
        bordure 14 %. Quatre plans en huit points de luminosité, ce qui suffit
        parce que la teinte commune les fait lire comme une famille. */
-    --background: 201 5% 6%;           /* neutral-black — la page */
-    --foreground: 201 4% 90%;          /* neutral-1200 */
+    --background: 300 3% 4%;           /* neutral-black — la page */
+    --foreground: 0 0% 93%;          /* neutral-1200 */
 
     /* ── Hiérarchie de texte de Plane ─────────────────────────────────────
        Quatre crans, pas deux. C'est ce qui donne à leur interface son aspect
@@ -102,12 +102,12 @@
        `secondary` sert aux libellés qui accompagnent une valeur, `tertiary`
        aux métadonnées (dates, compteurs), `placeholder` au texte qui n'est
        pas encore saisi. */
-    --text-secondary: 201 4% 80%;
-    --text-tertiary: 201 4% 70%;
-    --text-placeholder: 201 4% 60%;
+    --text-secondary: 0 0% 80%;
+    --text-tertiary: 0 0% 66%;
+    --text-placeholder: 0 0% 52%;
 
-    --card: 201 4% 8%;                 /* neutral-100 — cartes, champs */
-    --card-foreground: 201 4% 90%;
+    --card: 300 2% 7%;                 /* neutral-100 — cartes, champs */
+    --card-foreground: 0 0% 93%;
 
     /* Catalogue card stage — the plate the agent portrait sits on. Deliberately
        darker than the card AND than the page: the 3D template icons are gold
@@ -116,8 +116,8 @@
        wherever it is shown. */
     --catalog-stage: 30 4% 3%;         /* #080807 — still the darkest plane */
 
-    --popover: 201 4% 12%;             /* neutral-300 — flotte au-dessus de la carte */
-    --popover-foreground: 201 4% 90%;
+    --popover: 300 2% 10%;             /* neutral-300 — flotte au-dessus de la carte */
+    --popover-foreground: 0 0% 93%;
 
     /* ── Accent system ────────────────────────────────────────────────────
        Lime  #C6F91F → 74 95% 55%   (the accent — CTAs, focus, active states)
@@ -127,70 +127,74 @@
        `--accent-coral` keeps its name and points at the lime: it is referenced
        across the app as "the warm pop" slot, and repointing one value is safer
        than renaming a token in every component that reads it. */
+    /* ── Palette Atlas (01/10/2026) ─────────────────────────────────────────
+       L'app reprend le registre du site : noir, blanc, gris neutres, et UN
+       accent — le violet #D22EFF (287° 100 % 59 %). Les valeurs ci-dessous
+       remplacent la palette Plane (gris froids à 201°, bleu de marque) ; les
+       commentaires plus bas qui parlent de bleu ou de lime décrivent l'ancien
+       réglage et l'ordre des plans, pas les valeurs.
+
+       `--primary` est l'encre des boutons pleins : blanc sur fond noir ici,
+       noir sur fond blanc en clair — les pilules noires/blanches du site.
+       La couleur vit dans `--accent-coral` (remplissages), `--primary-soft`
+       (texte et icônes dessinés dans l'accent) et
+       `--ring` (focus). */
     /* `--accent-coral` garde son nom (il est lu dans toute l'app comme « le
-       créneau accent ») mais pointe désormais sur le bleu de marque : Plane est
-       une interface quasi monochrome avec UN accent, et faire cohabiter deux
-       accents distincts reviendrait à en avoir aucun. */
-    --accent-coral: 201 67% 48%;
+       créneau accent ») et porte le violet, descendu à #B01FE0 pour tenir du
+       blanc dessus (5,1:1). */
+    --accent-coral: 285 76% 50%;
     --accent-coral-foreground: 0 0% 100%;
-    --accent-teal: 201 67% 40%;
+    --accent-teal: 280 70% 40%;
     --accent-teal-foreground: 0 0% 100%;
-    --accent-aqua: 201 67% 82%;
-    --accent-aqua-foreground: 201 67% 18%;
+    --accent-aqua: 287 100% 88%;
+    --accent-aqua-foreground: 280 80% 18%;
 
-    /* Lime is the PRIMARY accent — buttons, CTAs, active states, links, focus.
-       Teal is the secondary anchor; aqua the soft info tint. */
-    /* Le bleu de marque de Plane. Il partage la teinte des gris (201°), d'où
-       une interface qui se lit comme un seul matériau plutôt que comme un gris
-       plus un accent rapporté. */
-    --primary: 201 67% 48%;             /* brand-default */
-    /* Blanc dessus, et non un bleu très sombre : à 48 % de luminosité le fond
-       est assez foncé pour porter du blanc (4,6:1), ce que ne permettrait pas
-       un accent clair. */
-    --primary-foreground: 0 0% 100%;
+    /* Les boutons pleins en sombre : la pilule blanche du site. */
+    --primary: 0 0% 96%;             /* brand-default */
+    /* Encre noire sur la pilule blanche. */
+    --primary-foreground: 300 3% 7%;
 
-    /* Le même bleu, ouvert, pour le texte et les icônes DESSINÉS dans l'accent
-       sur le fond sombre : à 48 % il tomberait à 3,2:1 sur la page, sous le
-       seuil. À 64 % il passe à 7,1:1. */
-    --primary-soft: 201 67% 64%;        /* brand-700 (sombre) */
+    /* Le violet ouvert (#E27CFF) pour le texte et les icônes DESSINÉS dans
+       l'accent sur le fond sombre. */
+    --primary-soft: 287 100% 74%;
     /* Secondary accent — soft sage green (success badges). */
     --accent-2: 140 40% 65%;
     --accent-2-foreground: 140 35% 18%;
 
-    --secondary: 201 4% 10%;           /* neutral-200 */
-    --secondary-foreground: 201 4% 90%;
+    --secondary: 300 2% 10%;           /* neutral-200 */
+    --secondary-foreground: 0 0% 93%;
 
-    --muted: 201 4% 10%;
-    --muted-foreground: 201 4% 70%;    /* = --text-tertiary */
+    --muted: 300 2% 10%;
+    --muted-foreground: 0 0% 66%;    /* = --text-tertiary */
 
-    --accent: 201 4% 12%;
-    --accent-foreground: 201 4% 90%;
+    --accent: 300 2% 13%;
+    --accent-foreground: 0 0% 93%;
 
     /* Info accent — pale aqua #AFE9F0 for highlights, links, info badges */
-    --info: 187 68% 81%;
-    --info-foreground: 187 60% 15%;
+    --info: 287 100% 88%;
+    --info-foreground: 280 80% 18%;
 
     /* Deep teal surface for emphasis panels (harmonises with the accent trio). */
-    --surface-deep: 186 46% 15%;
+    --surface-deep: 280 60% 12%;
 
     --destructive: 0 72% 51%;          /* red-500 */
     --destructive-foreground: 240 5% 96%;
 
-    --border: 201 4% 14%;              /* neutral-400 — le filet reste lisible sur la carte */
-    --input: 201 4% 14%;
+    --border: 300 2% 15%;              /* neutral-400 — le filet reste lisible sur la carte */
+    --input: 300 2% 15%;
     /* Focus dans l'accent plutôt qu'en gris : sur un fond aussi sombre, c'est
        le seul anneau qu'on voie réellement. */
-    --ring: 201 67% 48%;
+    --ring: 287 100% 62%;
 
-    --sidebar: 201 4% 8%;              /* neutral-100 — s'efface derrière le contenu */
-    --sidebar-foreground: 201 4% 70%;
-    --sidebar-accent: 201 4% 14%;      /* élément actif */
+    --sidebar: 300 3% 6%;              /* neutral-100 — s'efface derrière le contenu */
+    --sidebar-foreground: 0 0% 66%;
+    --sidebar-accent: 285 40% 14%;      /* élément actif */
 
     /* Service-dashboard shell: three planes that get LIGHTER left to right —
        the ground under the icon rail (darkest), the contextual panel, then the
        content (--background, lightest). Every skin keeps that ordering. */
-    --sd-ground: 201 5% 4%;
-    --sd-panel: 201 4% 6%;
+    --sd-ground: 300 3% 3%;
+    --sd-panel: 300 3% 5%;
 
     /* Le rayon de TOUTE l'app. Il valait 0,3 rem — des angles presque droits,
        choisis « sobres », qui donnaient surtout des boîtes coupées au carré.
@@ -203,7 +207,7 @@
        ce qu'ils contiennent. L'échelle Tailwind en dérive entièrement
        (sm/md/lg/xl/2xl — voir tailwind.config.ts), donc une seule ligne suffit
        à resserrer toute l'interface. */
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
     /* ── Échelle typographique de Plane ───────────────────────────────────
        Elle est nommée par la TAILLE en pixels, pas par un rang abstrait
@@ -254,11 +258,11 @@
 
        La teinte 41/47/61 n'est pas un gris neutre : c'est un bleu-gris, assorti
        aux surfaces. Une ombre noire pure sur ces fonds paraît sale. */
-    --shadow-raised-100: 0px 1px 6px -1px rgb(41 47 61 / 0.03), 0px 1px 4px 0px rgb(41 47 61 / 0.04);
-    --shadow-raised-200: 0px 1px 2px -1px rgb(41 47 61 / 0.06), 0px 1px 3px 0px rgb(41 47 61 / 0.05);
-    --shadow-raised-300: 0px 2px 4px -1px rgb(41 47 61 / 0.04), 0px 4px 6px -1px rgb(41 47 61 / 0.05);
-    --shadow-overlay-100: 0px 10px 10px -5px rgb(41 47 61 / 0.04), 0px 10px 40px -5px rgb(41 47 61 / 0.04);
-    --shadow-overlay-200: 0px 10px 10px -10px rgb(41 47 61 / 0.04), 0px 30px 60px -12px rgb(41 47 61 / 0.1);
+    --shadow-raised-100: 0px 1px 2px 0px rgb(17 16 17 / 0.05);
+    --shadow-raised-200: 0px 1px 2px 0px rgb(17 16 17 / 0.05), 0px 10px 24px -16px rgb(17 16 17 / 0.28);
+    --shadow-raised-300: 0px 2px 4px 0px rgb(17 16 17 / 0.05), 0px 18px 36px -20px rgb(17 16 17 / 0.35);
+    --shadow-overlay-100: 0px 20px 50px -24px rgb(17 16 17 / 0.35);
+    --shadow-overlay-200: 0px 40px 90px -40px rgb(17 16 17 / 0.5), 0px 12px 30px -18px rgb(17 16 17 / 0.25);
 
     /* Épaisseurs de filet et gabarits. */
     --border-width-sm: 1px;
@@ -278,79 +282,75 @@
        95 % pour le fond de barre, 92 % pour le filet. Un écart plus large
        donnerait des zones grises qui se disputent l'attention du contenu. */
     --background: 0 0% 100%;           /* neutral-white — la zone de contenu */
-    --foreground: 195 4% 20%;          /* neutral-1100, pas neutral-1200 */
+    --foreground: 300 3% 7%;          /* neutral-1100, pas neutral-1200 */
 
     /* Le texte principal est le cran SECONDARY et non le plus sombre : sur
        blanc, un quasi-noir donne un contraste dur et un gris de lecture à
        20 % reste à 12,6:1. Le cran le plus sombre est réservé aux titres, où
        la densité de texte est faible. */
-    --text-secondary: 206 5% 30%;
-    --text-tertiary: 202 4% 38%;
-    --text-placeholder: 200 4% 46%;
+    --text-secondary: 300 1% 24%;
+    --text-tertiary: 0 0% 40%;
+    --text-placeholder: 0 0% 59%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 3% 6%;
+    --card-foreground: 300 3% 7%;
 
     /* Same dark stage on white cards — lifted a touch so it reads as a tile
        rather than a hole punched through the card. */
     --catalog-stage: 30 4% 11%;        /* #1d1b19 */
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 3% 6%;
+    --popover-foreground: 300 3% 7%;
 
-    /* Accent system on white. The fill stays the true #C6F91F — a lime slab
-       with near-black text on it is 15:1 and is the point of the colour. What
-       changes is anything DRAWN in the accent: see --primary-soft. */
-    --accent-coral: 201 100% 30%;
+    /* L'accent sur blanc : le violet profond #8B16C4, 7:1 avec du blanc
+       dessus. La version vive #D22EFF reste celle des grands aplats du site. */
+    --accent-coral: 280 80% 43%;
     --accent-coral-foreground: 0 0% 100%;
-    --accent-teal: 201 100% 26%;
+    --accent-teal: 280 80% 36%;
     --accent-teal-foreground: 0 0% 100%;
-    --accent-aqua: 201 100% 92%;
-    --accent-aqua-foreground: 201 100% 22%;
+    --accent-aqua: 287 100% 96%;
+    --accent-aqua-foreground: 280 80% 30%;
 
-    /* Le bleu de marque, version claire : plus sombre que sur fond noir
-       (30 % contre 48 %), ce qui lui donne 8,6:1 sur blanc et permet du blanc
-       dessus à 8,4:1. Un même bleu pour les deux thèmes tomberait forcément
-       sous le seuil d'un des deux côtés. */
-    --primary: 201 100% 30%;            /* brand-default (clair) */
+    /* Les boutons pleins en clair : la pilule noire du site, texte blanc. */
+    --primary: 300 3% 7%;            /* brand-default (clair) */
     --primary-foreground: 0 0% 100%;
 
-    /* Assez sombre pour être écrit tel quel : pas de cut séparé nécessaire ici,
-       le remplissage et le tracé partagent la même valeur. */
-    --primary-soft: 201 100% 30%;
+    /* Le violet profond pour ce qui est DESSINÉ dans l'accent (liens,
+       icônes) : 7:1 sur blanc. */
+    --primary-soft: 280 80% 43%;
     --accent-2: 140 40% 42%;            /* sage green (success) */
     --accent-2-foreground: 0 0% 100%;
 
-    --secondary: 240 4% 95%;           /* neutral-300 */
-    --secondary-foreground: 240 3% 6%;
+    --secondary: 0 0% 96.5%;           /* neutral-300 */
+    --secondary-foreground: 300 3% 7%;
 
-    --muted: 240 4% 95%;
-    --muted-foreground: 206 5% 30%;    /* = --text-secondary */
+    --muted: 0 0% 96.5%;
+    --muted-foreground: 0 0% 40%;    /* = --text-secondary */
 
-    --accent: 210 5% 92%;              /* neutral-400 */
-    --accent-foreground: 240 3% 6%;
+    --accent: 0 0% 94%;              /* neutral-400 */
+    --accent-foreground: 300 3% 7%;
 
-    --info: 187 66% 84%;               /* aqua */
-    --info-foreground: 187 55% 22%;
+    --info: 287 100% 95%;               /* aqua */
+    --info-foreground: 280 80% 28%;
 
-    --surface-deep: 186 46% 20%;       /* deep teal */
+    --surface-deep: 280 70% 14%;       /* deep teal */
 
     --destructive: 0 65% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 210 5% 92%;              /* neutral-400 */
-    --input: 210 5% 92%;
-    --ring: 201 100% 30%;
+    --border: 0 0% 92%;              /* neutral-400 */
+    --input: 0 0% 92%;
+    --ring: 287 100% 59%;
 
     /* Le canvas de Plane : la barre latérale est le gris, le contenu est le
        blanc. C'est l'inverse de beaucoup d'interfaces, et c'est ce qui fait que
        le contenu paraît posé DEVANT plutôt que creusé dedans. */
-    --sidebar: 240 4% 95%;             /* neutral-300 */
-    --sidebar-foreground: 206 5% 30%;
-    --sidebar-accent: 210 5% 92%;      /* neutral-400 — élément actif */
+    --sidebar: 0 0% 97.5%;             /* neutral-300 */
+    --sidebar-foreground: 0 0% 30%;
+    --sidebar-accent: 287 100% 96%;      /* neutral-400 — élément actif */
 
-    --sd-ground: 210 3% 89%;
-    --sd-panel: 240 4% 95%;
+    --sd-ground: 0 0% 93%;
+    --sd-panel: 0 0% 97.5%;
   }
 
   * {
@@ -369,11 +369,11 @@
   }
   :root {
     --highlight: oklch(0.852 0.199 91.936);
-    --brand: oklch(0.623 0.214 259.815);
+    --brand: oklch(0.62 0.27 315);
   }
   .dark {
     --highlight: oklch(0.852 0.199 91.936);
-    --brand: oklch(0.707 0.165 254.624);
+    --brand: oklch(0.72 0.22 315);
   }
 }
 
@@ -1986,4 +1986,16 @@ html.mkt-no-scrollbar::-webkit-scrollbar {
   writing-mode: vertical-lr;
   transform: rotate(180deg);
   white-space: nowrap;
+}
+
+/* ── La seconde voix du registre Atlas, dans l'app ──────────────────────────
+   Le site répond à chaque titre en Source Serif 4 italique. Dans l'app, on la
+   garde pour quelques mots (un prénom dans le salut, la fin d'un titre de
+   page) — jamais pour un paragraphe. Défini ici plutôt que dans la feuille du
+   site pour que l'app ne dépende pas d'un fichier marketing. */
+.serif-accent {
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.03em;
 }

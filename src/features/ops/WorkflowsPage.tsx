@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { useOpsUrl } from "./hooks";
 import { NewInfraDialog } from "./NewInfraDialog";
 import type { OpsGeneratedFile, OpsFileType } from "./types";
+import { useToast } from "@/components/ToastProvider";
 
 const FILE_TYPE_LABEL: Record<OpsFileType, string> = {
   dockerfile: "Dockerfile",
@@ -278,6 +279,7 @@ function GenerateDialog({
   workspaceId: string;
   projectId: string;
 }) {
+  const toast = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [target, setTarget] = useState<TargetKind>("docker_compose");
@@ -302,7 +304,7 @@ function GenerateDialog({
       onOpenChange(false);
       setLabel(""); setDomain(""); setEnvHints("");
     } catch (e: any) {
-      alert("Could not generate: " + (e?.message ?? "edge not deployed"));
+      toast.error("Could not generate: " + (e?.message ?? "edge not deployed"));
     } finally {
       setGenerating(false);
     }

@@ -1627,11 +1627,15 @@ const AGENT_TOOL_CONFIG_HINTS: Record<string, string> = {
   testing: '{"suite_id": "<uuid>"} — the test suite to pin (see options.test_suites).',
   security_scan: '{"target": "https://app.example.com"} — the explicitly authorised scope.',
   simulation: '{"max_rounds": 8} — model calls per simulation; above 8 the cost climbs fast.',
+  support: '{} — no config: the ResolveAI support queue of this project (requests received by public agents).',
+  governance: '{} — no config: read-only PolicyGuard audit figures (risk levels, decisions, human validations).',
+  leads: '{} — no config on the tool: the qualification grid, lead types and sales reps are shared by the project (LeadSense settings).',
+  soc: '{} — no config on the tool: SentinelFlow sources, assets and rules are set in Admin → Gouvernance IA → SentinelFlow.',
 };
 
 const CONFIGURABLE_TOOL_KINDS = [
   "web_search", "web_fetch", "db_read", "rag_search", "edge_function",
-  "vault_connector", "connector_action", "composio_toolkit", "crm",
+  "vault_connector", "connector_action", "composio_toolkit", "crm", "support", "governance", "leads", "soc",
   "security_scan", "vibe_code", "testing", "simulation", "custom",
 ];
 

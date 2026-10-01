@@ -7,7 +7,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { readEmoji } from "./LogoPicker";
+import { ProjectLogo } from "./LogoPicker";
 import { MemberAvatar, memberName } from "./pickers";
 import {
   fetchIssues, fetchMembers, fetchProjectMembers, fetchStates, updateProject,
@@ -62,7 +62,6 @@ export function ProjectCard({
 
   const total = issues?.length ?? 0;
   const percent = total ? Math.round((done / total) * 100) : 0;
-  const emoji = readEmoji(project.logo_props);
   const cover = coverFor(project);
 
   const members = (memberRows ?? [])
@@ -126,9 +125,7 @@ export function ProjectCard({
           className="absolute inset-x-0 bottom-0 flex items-end gap-2.5 px-4 pb-4 text-left"
         >
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white/15 text-16 backdrop-blur">
-            {emoji ?? <span className="font-mono text-11 font-semibold text-white">
-              {project.identifier.slice(0, 2)}
-            </span>}
+            <ProjectLogo logo={project.logo_props} fallback={project.identifier} size={20} />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-14 font-semibold text-white">{project.name}</span>

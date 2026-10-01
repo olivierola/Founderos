@@ -23,6 +23,8 @@ import {
 } from "./data";
 import { useServersDb, useFtJobsDb } from "./db";
 import { useProvidersDb, useInfraActions } from "./infra";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 /** Tiny single-hue loss sparkline (one series → one color, line encodes). */
 function LossSpark({ loss, w = 96, h = 28 }: { loss: number[]; w?: number; h?: number }) {
@@ -42,6 +44,8 @@ const DOT: Record<FtStatus, string> = {
 };
 
 export function GovOpsFinetuningPage() {
+  const confirm = useConfirm();
+  const toast = useToast();
   const { servers } = useServersDb();
   // Real rows: creating a job inserts it; the ticker advances SIM jobs and
   // publishes a version into the registry when one succeeds. RunPod jobs are
@@ -110,7 +114,7 @@ export function GovOpsFinetuningPage() {
     const row = await createJobDb(job, { runtime, hfRepo: hfRepoFor(baseModel) });
     if (runtime === "runpod" && row?.id && runpodProviders[0]) {
       try { await infra.launchJob(String(row.id), runpodProviders[0].id); }
-      catch (e) { alert(`Lancement RunPod échoué : ${e instanceof Error ? e.message : e}`); }
+      catch (e) { toast.error(`Lancement RunPod échoué : ${e instanceof Error ? e.message : e}`); }
     }
   };
 
@@ -192,7 +196,7 @@ export function GovOpsFinetuningPage() {
           subtitle={`Fine-tuning · ${timeAgo(sel.startedAt)}`}
           icon={<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground"><GraduationCap className="h-[18px] w-[18px]" /></div>}
           actions={sel.runtime === "runpod" && (sel.status === "running" || sel.status === "queued")
-            ? <Button size="sm" variant="outline" className="h-8 text-red-500" onClick={() => { if (confirm("Annuler l'entraînement et terminer le pod ?")) void infra.cancelJob(sel.id); }}><XCircle className="mr-1.5 h-3.5 w-3.5" />Annuler</Button>
+            ? <Button size="sm" variant="outline" className="h-8 text-red-500" onClick={async () => { if ((await confirm("Annuler l'entraînement et terminer le pod ?"))) void infra.cancelJob(sel.id); }}><XCircle className="mr-1.5 h-3.5 w-3.5" />Annuler</Button>
             : undefined}
         >
           <DetailSection title="Configuration">

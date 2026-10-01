@@ -21,6 +21,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { timingSafeEqual } from "../_shared/authz.ts";
 import { startWorkflowRun, syncWorkflowSchedule } from "../_shared/workflow-engine.ts";
 
 const MAX_LAUNCHES_PER_TICK = 3;
@@ -77,8 +78,14 @@ function computeNextRun(from: Date, cadence: Cadence, a: Alignment): Date {
 function authorized(req: Request): boolean {
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (token && token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) return true;
+  // Le secret interne dédié, comme l'envoi des tâches d'agents (0096). La
+  // correspondance exacte de la clé de service ci-dessus a cessé de tenir
+  // début août (clé du coffre ≠ clé des fonctions) : tous les appels de
+  // pg_cron recevaient 401 et plus aucune mission planifiée ne partait.
+  const tickSecret = Deno.env.get("AGENT_TICK_SECRET");
+  if (tickSecret && timingSafeEqual(req.headers.get("x-tick-secret") ?? "", tickSecret)) return true;
   const secret = Deno.env.get("INTERNAL_CRON_SECRET");
-  return !!secret && req.headers.get("x-cron-secret") === secret;
+  return !!secret && timingSafeEqual(req.headers.get("x-cron-secret") ?? "", secret);
 }
 
 async function invokeWorker(agentId: string, runId: string): Promise<boolean> {
@@ -132,12 +139,19 @@ Deno.serve(async (req) => {
     launched: [] as string[], rescued: [] as string[], timed_out: [] as string[], a2a: [] as string[],
     workflows: [] as string[], workflow_errors: [] as string[],
     issue_runs: [] as string[], issue_errors: [] as string[],
+    query_errors: [] as string[],
   };
 
   // 1. Due scheduled missions.
-  const { data: due } = await admin
+  //
+  // La jointure NOMME sa clé étrangère : internal_agent_missions en a trois vers
+  // internal_agents (agent_id, delegated_by_agent, report_back_to_agent). Sans
+  // le nom, PostgREST répond PGRST201 (jointure ambiguë), `due` vaut null, et
+  // plus aucune mission ne part — sans une ligne d'erreur. Les erreurs de ces
+  // requêtes remontent désormais dans le rapport (query_errors).
+  const { data: due, error: dueError } = await admin
     .from("internal_agent_missions")
-    .select("id, agent_id, workspace_id, project_id, schedule, schedule_minute, schedule_hour, schedule_dow, schedule_dom, internal_agents!inner(id, mission_enabled, is_archived)")
+    .select("id, agent_id, workspace_id, project_id, schedule, schedule_minute, schedule_hour, schedule_dow, schedule_dom, internal_agents!internal_agent_missions_agent_id_fkey!inner(id, mission_enabled, is_archived)")
     .eq("status", "active")
     .not("schedule", "is", null)
     .lte("next_run_at", now.toISOString())
@@ -184,15 +198,18 @@ Deno.serve(async (req) => {
   //     _shared/internal-agent-tools.ts) marks them, so a stale next_run_at left
   //     on a row whose schedule was removed never fires. next_run_at is cleared
   //     by a conditional update first — only the tick that clears it launches.
-  const { data: dueOnce } = await admin
+  if (dueError) report.query_errors.push(`missions planifiées : ${dueError.message}`);
+
+  const { data: dueOnce, error: dueOnceError } = await admin
     .from("internal_agent_missions")
-    .select("id, agent_id, workspace_id, project_id, next_run_at, internal_agents!inner(id, mission_enabled, is_archived)")
+    .select("id, agent_id, workspace_id, project_id, next_run_at, internal_agents!internal_agent_missions_agent_id_fkey!inner(id, mission_enabled, is_archived)")
     .eq("status", "active")
     .is("schedule", null)
     .contains("tags", ["run_once"])
     .lte("next_run_at", now.toISOString())
     .order("next_run_at", { ascending: true })
     .limit(MAX_LAUNCHES_PER_TICK);
+  if (dueOnceError) report.query_errors.push(`missions ponctuelles : ${dueOnceError.message}`);
 
   for (const m of dueOnce ?? []) {
     const agentMeta = (m as Record<string, unknown>).internal_agents as

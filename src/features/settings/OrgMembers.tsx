@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // Roles an organisation membership can hold (matches the CHECK on
 // workspace_members.role and on team_invitations.role).
@@ -38,6 +39,7 @@ const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString() : "�
  * SettingsTeamPage) narrows access once they're already in the org.
  */
 export function OrgMembersPage() {
+  const confirm = useConfirm();
   const { workspaceId, workspace } = useCurrentContext();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -125,7 +127,7 @@ export function OrgMembersPage() {
   }
 
   async function revoke(inv: Invitation) {
-    if (!confirm(`Révoquer l'invitation de ${inv.email} ?`)) return;
+    if (!(await confirm(`Révoquer l'invitation de ${inv.email} ?`))) return;
     const { error } = await supabase.from("team_invitations").update({ status: "revoked" }).eq("id", inv.id);
     if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["workspace_invitations", workspaceId] });
@@ -139,7 +141,7 @@ export function OrgMembersPage() {
 
   async function remove(m: Membership) {
     const who = emails?.get(m.user_id) ?? "ce membre";
-    if (!confirm(m.user_id === user?.id ? "Quitter cette organisation ?" : `Retirer ${who} de l'organisation ?`)) return;
+    if (!(await confirm(m.user_id === user?.id ? "Quitter cette organisation ?" : `Retirer ${who} de l'organisation ?`))) return;
     const { error } = await supabase.from("workspace_members").delete().eq("id", m.id);
     if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["workspace_roster", workspaceId] });

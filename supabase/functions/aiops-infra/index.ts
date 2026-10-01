@@ -11,6 +11,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { encryptSecret, decryptSecret } from "../_shared/crypto.ts";
+import { callAi, safeParseJson } from "../_shared/ai.ts";
 
 const RUNPOD_GQL = "https://api.runpod.io/graphql";
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
@@ -540,6 +541,57 @@ Deno.serve(async (req) => {
     };
 
     switch (action) {
+      // ── Labeling: suggest labels for ONE real document ─────────────────────
+      // The Labeling tab used to show three hard-coded support messages with
+      // invented confidences. It now reads actual rows out of the dataset the
+      // task points at, and asks a model for a label per set. Nothing is
+      // fabricated: no model reachable → the tab says so and the human labels
+      // unaided.
+      case "label.suggest": {
+        const { text, label_sets } = body as {
+          text?: string;
+          label_sets?: Array<{ name: string; values: string[] }>;
+        };
+        if (!text || !Array.isArray(label_sets) || label_sets.length === 0) {
+          return jsonResponse({ error: "text et label_sets requis" }, { status: 400 });
+        }
+        const sets = label_sets
+          .filter((s) => s?.name && Array.isArray(s.values) && s.values.length > 0)
+          .slice(0, 6);
+        if (sets.length === 0) return jsonResponse({ error: "aucun jeu de labels exploitable" }, { status: 400 });
+
+        const catalogue = sets.map((s) => `- ${s.name} : ${s.values.join(" | ")}`).join("\n");
+        let parsed: { suggestions?: Array<{ set?: string; value?: string; confidence?: number }> } | null = null;
+        try {
+          const { content } = await callAi({
+            task: "classification",
+            jsonMode: true,
+            maxTokens: 400,
+            temperature: 0,
+            systemPrompt:
+              "Tu classes un document selon des jeux de labels imposés. " +
+              "Pour CHAQUE jeu, choisis exactement une valeur de la liste — jamais une valeur inventée. " +
+              "La confiance est un entier 0-100 qui reflète ta certitude réelle : sois bas quand le document ne tranche pas. " +
+              'Réponds UNIQUEMENT en JSON : {"suggestions":[{"set":"nom du jeu","value":"valeur choisie","confidence":87}]}',
+            userPrompt: `Jeux de labels :\n${catalogue}\n\nDocument :\n"""${String(text).slice(0, 4000)}"""`,
+          });
+          parsed = safeParseJson(content);
+        } catch (e) {
+          return jsonResponse({ error: e instanceof Error ? e.message : "Classification indisponible" }, { status: 502 });
+        }
+
+        // Keep only suggestions that name a real set AND a value from that set.
+        const suggestions = (parsed?.suggestions ?? []).flatMap((s) => {
+          const set = sets.find((x) => x.name === s?.set);
+          if (!set) return [];
+          const value = set.values.find((v) => v.toLowerCase() === String(s?.value ?? "").toLowerCase());
+          if (!value) return [];
+          const confidence = Math.max(0, Math.min(100, Math.round(Number(s?.confidence) || 0)));
+          return [{ set: set.name, value, confidence }];
+        });
+        return jsonResponse({ suggestions });
+      }
+
       // ── Connect / test a provider ──────────────────────────────────────────
       case "provider.connect": {
         const { kind, name, config, api_key, hf_token } = body as { kind: string; name: string; config: Record<string, unknown>; api_key?: string; hf_token?: string };

@@ -26,6 +26,7 @@ import {
 import { useServersDb, useAgentDeploymentsDb } from "./db";
 import { ProvidersPanel } from "./ProvidersPanel";
 import { useInfraActions, useCostReconciler } from "./infra";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 /** Load bar — the fill color IS the state: calm below 60%, amber to 85%, red above. */
 function LoadBar({ label, pct }: { label: string; pct: number }) {
@@ -101,6 +102,7 @@ function ServerCard({ s, onClick }: { s: PrivateServer; onClick: () => void }) {
 }
 
 export function GovOpsServersPage() {
+  const confirm = useConfirm();
   const { servers } = useServersDb();
   const { deployments, hasAgents } = useAgentDeploymentsDb(servers);
   const infra = useInfraActions();
@@ -203,7 +205,7 @@ export function GovOpsServersPage() {
                 {selServer.status === "offline"
                   ? <Button size="sm" variant="outline" disabled={podBusy} onClick={async () => { setPodBusy(true); try { await infra.start(selServer.id); } finally { setPodBusy(false); } }}><Play className="mr-1 h-3.5 w-3.5" />Start</Button>
                   : <Button size="sm" variant="outline" disabled={podBusy} onClick={async () => { setPodBusy(true); try { await infra.stop(selServer.id); } finally { setPodBusy(false); } }}><Square className="mr-1 h-3.5 w-3.5" />Stop</Button>}
-                <Button size="sm" variant="outline" className="col-span-2 text-red-500" disabled={podBusy} onClick={async () => { if (!confirm("Terminer et supprimer ce pod ? (facturation arrêtée)")) return; setPodBusy(true); try { await infra.terminate(selServer.id); setSel(null); } finally { setPodBusy(false); } }}><Trash2 className="mr-1 h-3.5 w-3.5" />Terminer</Button>
+                <Button size="sm" variant="outline" className="col-span-2 text-red-500" disabled={podBusy} onClick={async () => { if (!(await confirm("Terminer et supprimer ce pod ? (facturation arrêtée)"))) return; setPodBusy(true); try { await infra.terminate(selServer.id); setSel(null); } finally { setPodBusy(false); } }}><Trash2 className="mr-1 h-3.5 w-3.5" />Terminer</Button>
               </div>
             </DetailSection>
           )}

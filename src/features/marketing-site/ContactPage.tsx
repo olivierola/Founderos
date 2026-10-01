@@ -102,12 +102,12 @@ function Field({
 }
 
 const inputClass =
-  "h-11 w-full border bg-white px-3.5 text-[15px] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#176995] focus-visible:ring-2 focus-visible:ring-[#176995]/25";
+  "h-11 w-full rounded-full border bg-white px-4 text-[15px] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#8b16c4] focus-visible:ring-2 focus-visible:ring-[#8b16c4]/25";
 
 export function ContactPage() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
   }, []);
 
   const [reason, setReason] = useState("sales");
@@ -169,7 +169,7 @@ export function ContactPage() {
   }
 
   return (
-    <div className="amplify min-h-screen text-white" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
 
       <ToneCanvas initial="paper">
@@ -177,8 +177,9 @@ export function ContactPage() {
           <PaperHero
             align="left"
             tiles={[]}
-            frame={[]}
-            claim="Tell us what you are trying to put an agent on"
+            label="Contact"
+            frame={["Tell us what you are trying"]}
+            claim="to put an agent on."
             note={
               <>
                 <Check className="h-3.5 w-3.5" style={{ color: PAPER_ACCENT }} weight="bold" />
@@ -198,7 +199,7 @@ export function ContactPage() {
                 <form
                   onSubmit={handleSubmit}
                   noValidate
-                  className="relative bg-[#F7F7F7] p-7 sm:p-10"
+                  className="relative rounded-[32px] bg-[#F7F7F7] p-7 sm:p-10"
                 >
                   <CornerMarks accent />
 
@@ -219,7 +220,7 @@ export function ContactPage() {
                             tabIndex={on ? 0 : -1}
                             onKeyDown={(e) => onReasonKey(e, i)}
                             onClick={() => setReason(r.value)}
-                            className="border px-4 py-2.5 text-[13.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#176995]/35"
+                            className="rounded-full border px-4 py-2.5 text-[13.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b16c4]/35"
                             style={
                               on
                                 ? { background: INK, borderColor: INK, color: "#FFFFFF" }
@@ -293,7 +294,7 @@ export function ContactPage() {
                           rows={6}
                           aria-invalid={invalid || undefined}
                           aria-describedby={describedBy}
-                          className="w-full border bg-white px-3.5 py-3 text-[15px] leading-[1.6] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#176995] focus-visible:ring-2 focus-visible:ring-[#176995]/25"
+                          className="w-full rounded-[18px] border bg-white px-4 py-3 text-[15px] leading-[1.6] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#8b16c4] focus-visible:ring-2 focus-visible:ring-[#8b16c4]/25"
                           style={{ borderColor: invalid ? "#B42318" : RULE, color: INK }}
                         />
                       )}
@@ -304,8 +305,8 @@ export function ContactPage() {
                     <button
                       type="submit"
                       disabled={status === "sending"}
-                      className="inline-flex items-center gap-2.5 px-6 py-3 text-[14.5px] font-medium text-white transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#176995]/40 focus-visible:ring-offset-2 disabled:opacity-50"
-                      style={{ background: PAPER_ACCENT }}
+                      className="inline-flex h-[46px] items-center gap-2.5 rounded-full px-6 text-[14.5px] font-semibold text-white transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b16c4]/40 focus-visible:ring-offset-2 disabled:opacity-50"
+                      style={{ background: "#000000" }}
                     >
                       {status === "sending" ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -332,7 +333,7 @@ export function ContactPage() {
               {/* ── The sidecar ──────────────────────────────────────────── */}
               <div className="space-y-5">
                 <Reveal delay={90}>
-                  <div className="relative bg-white p-7" style={{ boxShadow: `inset 0 0 0 1px ${RULE}` }}>
+                  <div className="relative rounded-[28px] bg-white p-7" style={{ boxShadow: `inset 0 0 0 1px ${RULE}` }}>
                     <CornerMarks />
                     <MonoLabel>Reach us directly</MonoLabel>
                     <ul className="mt-5 space-y-3.5">
@@ -346,7 +347,7 @@ export function ContactPage() {
                               style={{ color: INK }}
                             >
                               <I className="h-4 w-4 shrink-0" style={{ color: GREY }} />
-                              <span className="underline decoration-transparent underline-offset-4 transition-colors group-hover:decoration-[#176995]">
+                              <span className="underline decoration-transparent underline-offset-4 transition-colors group-hover:decoration-[#8b16c4]">
                                 {d.label}
                               </span>
                             </a>
@@ -358,7 +359,7 @@ export function ContactPage() {
                 </Reveal>
 
                 <Reveal delay={150}>
-                  <div className="relative bg-white p-7" style={{ boxShadow: `inset 0 0 0 1px ${RULE}` }}>
+                  <div className="relative rounded-[28px] bg-white p-7" style={{ boxShadow: `inset 0 0 0 1px ${RULE}` }}>
                     <CornerMarks />
                     <MonoLabel>Where we are</MonoLabel>
                     <ul className="mt-5 space-y-3">
@@ -379,7 +380,7 @@ export function ContactPage() {
                 </Reveal>
 
                 <Reveal delay={210}>
-                  <div className="relative bg-[#F7F7F7] p-7">
+                  <div className="relative rounded-[28px] bg-[#F7F7F7] p-7">
                     <CornerMarks />
                     <MonoLabel>Not sure yet?</MonoLabel>
                     <p className="mt-4 text-[14.5px] leading-[1.6]" style={{ color: INK }}>
@@ -403,7 +404,7 @@ export function ContactPage() {
           </div>
         </ToneSection>
 
-        <ToneSection tone="ink">
+        <ToneSection tone="paper">
           <LandingFooter band="transparent" />
         </ToneSection>
       </ToneCanvas>

@@ -210,26 +210,6 @@ add_action("wp_footer", function () {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,520px)]">
       <div className="min-w-0">
-        {/* La navigation est montée dans la barre de la coque ; il ne reste ici
-            que l'enregistrement, qui doit rester à portée sur toute la page. */}
-        <div className="sticky top-0 z-10 -mx-1 mb-1 flex flex-wrap items-center justify-end gap-2 bg-background/85 px-1 py-2 backdrop-blur">
-          {dirty && (
-            <>
-              <span className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                Modifications non enregistrées — l'aperçu les montre, vos visiteurs pas encore
-              </span>
-              <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setCfg(JSON.parse(baseline))}>
-                Annuler
-              </Button>
-            </>
-          )}
-          <Button onClick={save} disabled={saving || (!dirty && !saved)} className="rounded-full">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            {saved ? "Enregistré" : "Enregistrer"}
-          </Button>
-        </div>
-
         {tab === "modele" && (
           <>
             <Group
@@ -836,6 +816,40 @@ add_action("wp_footer", function () {
             </Group>
           </>
         )}
+
+        {/* Save bar — a pill that floats at the BOTTOM of the settings column
+            and only shows up when there is something to save. At the top it
+            parked under the shell's floating tab bars and overlapped them. */}
+        <div className="pointer-events-none sticky bottom-4 z-20 mt-6 flex justify-center">
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-full border border-border/70 bg-background/90 py-1.5 pl-4 pr-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.25)] backdrop-blur-xl transition-all duration-300",
+              dirty || saved || saving ? "pointer-events-auto translate-y-0 opacity-100" : "translate-y-3 opacity-0",
+            )}
+            aria-hidden={!(dirty || saved || saving)}
+          >
+            {dirty ? (
+              <>
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  <span className="hidden sm:inline">Modifications non enregistrées</span>
+                  <span className="sm:hidden">Non enregistré</span>
+                </span>
+                <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setCfg(JSON.parse(baseline))}>
+                  Annuler
+                </Button>
+                <Button size="sm" onClick={save} disabled={saving} className="rounded-full">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  Enregistrer
+                </Button>
+              </>
+            ) : (
+              <span className="flex items-center gap-2 py-1.5 pr-3 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                <Check className="h-3.5 w-3.5" weight="bold" /> Enregistré — vos visiteurs le voient
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       <WidgetPreview agent={agent} cfg={cfg} />
@@ -895,54 +909,73 @@ type PreviewState = "open" | "thinking" | "launcher";
 type PreviewDevice = "desktop" | "mobile";
 
 /** Page hôte factice derrière le widget. Sans elle, on juge des couleurs sur du
- *  vide : la question réelle est « est-ce que ça tient sur MON site », et un
- *  fond à pois n'y répond pas. */
-function mockPage(dark: boolean): string {
-  const bg = dark ? "#0b0b0d" : "#f6f7f9";
-  const card = dark ? "#141417" : "#ffffff";
-  const line = dark ? "#26262b" : "#e7e9ee";
-  const ink = dark ? "#3a3a42" : "#dcdfe6";
-  const inkSoft = dark ? "#2a2a30" : "#eceef2";
+ *  vide : la question réelle est « est-ce que ça tient sur MON site ». Une
+ *  boutique crédible (marque, héros, fiches produit) plutôt que des barres
+ *  grises : un widget se juge sur une vraie page, pas sur un schéma. */
+function mockPage(dark: boolean, mobile: boolean): string {
+  const bg = dark ? "#0b0b0e" : "#f7f7f5";
+  const card = dark ? "#141418" : "#ffffff";
+  const line = dark ? "#24242b" : "#e8e6e1";
+  const ink = dark ? "#f4f4f5" : "#1c1917";
+  const soft = dark ? "#a1a1aa" : "#78716c";
+  const tint = dark ? "#1c1c22" : "#efece6";
+  const products = [
+    ["Lin lavé — Écru", "89 €", "linear-gradient(135deg,#e7d8c3,#c9b08e)"],
+    ["Plaid alpaga", "129 €", "linear-gradient(135deg,#b9c4c9,#7f929b)"],
+    ["Céramique sable", "34 €", "linear-gradient(135deg,#e9c9b1,#c98f6a)"],
+  ];
   return `
   <style>
-    html,body{margin:0;padding:0;background:${bg};overflow:hidden;
-      font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-    .nav{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid ${line};background:${card}}
-    .logo{width:26px;height:26px;border-radius:8px;background:${ink}}
-    .navline{height:8px;border-radius:99px;background:${inkSoft}}
-    .wrap{padding:26px 20px}
-    .h1{height:20px;width:52%;border-radius:99px;background:${ink};margin-bottom:12px}
-    .p{height:9px;border-radius:99px;background:${inkSoft};margin-bottom:8px}
-    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:22px}
-    .card{background:${card};border:1px solid ${line};border-radius:14px;height:104px;padding:12px}
-    .thumb{height:44px;border-radius:9px;background:${inkSoft};margin-bottom:10px}
-    .cl{height:7px;border-radius:99px;background:${inkSoft}}
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:${bg};color:${ink};overflow:hidden;
+      font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+    .nav{display:flex;align-items:center;gap:${mobile ? 12 : 22}px;padding:${mobile ? "16px 18px" : "16px 28px"};border-bottom:1px solid ${line}}
+    .brand{font-weight:700;letter-spacing:.14em;font-size:12px;text-transform:uppercase}
+    .links{display:${mobile ? "none" : "flex"};gap:18px;font-size:12.5px;color:${soft}}
+    .sp{flex:1}
+    .cart{font-size:12px;white-space:nowrap;border:1px solid ${line};border-radius:999px;padding:6px 12px;color:${ink};background:${card}}
+    .hero{margin:${mobile ? "16px" : "22px 28px"};border-radius:18px;overflow:hidden;position:relative;
+      height:${mobile ? 190 : 230}px;background:linear-gradient(120deg,#d9c7ae 0%,#b89b7a 45%,#8a7058 100%)}
+    .hero:after{content:"";position:absolute;inset:0;background:radial-gradient(80% 90% at 85% 20%,rgba(255,255,255,.35),transparent 60%)}
+    .htext{position:absolute;left:${mobile ? 18 : 28}px;bottom:${mobile ? 18 : 26}px;z-index:1;color:#fff;max-width:70%}
+    .eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;opacity:.85}
+    .h1{font-size:${mobile ? 22 : 30}px;font-weight:650;line-height:1.08;margin-top:6px;letter-spacing:-.01em}
+    .btn{display:inline-block;margin-top:12px;font-size:12px;background:#fff;color:#1c1917;border-radius:999px;padding:7px 14px;font-weight:600}
+    .row{display:flex;align-items:baseline;justify-content:space-between;margin:${mobile ? "4px 16px 10px" : "6px 28px 12px"}}
+    .row b{font-size:14px}.row span{font-size:12px;color:${soft}}
+    .grid{display:grid;grid-template-columns:repeat(${mobile ? 2 : 3},1fr);gap:14px;margin:0 ${mobile ? 16 : 28}px}
+    .p{background:${card};border:1px solid ${line};border-radius:14px;overflow:hidden}
+    .img{height:${mobile ? 96 : 118}px}
+    .meta{padding:10px 12px;display:flex;justify-content:space-between;gap:8px;font-size:12px}
+    .meta i{font-style:normal;color:${soft}}
+    .band{margin:16px ${mobile ? 16 : 28}px 0;background:${tint};border-radius:14px;height:60px}
   </style>
   <div class="nav">
-    <div class="logo"></div>
-    <div class="navline" style="width:74px"></div>
-    <div class="navline" style="width:52px"></div>
-    <div class="navline" style="width:60px"></div>
-    <div style="flex:1"></div>
-    <div class="navline" style="width:88px;height:24px;border-radius:8px"></div>
+    <div class="brand">Maison Aurore</div>
+    <div class="links"><span>Nouveautés</span><span>Maison</span><span>Linge</span><span>Journal</span></div>
+    <div class="sp"></div>
+    <div class="cart">Panier · 2</div>
   </div>
-  <div class="wrap">
-    <div class="h1"></div>
-    <div class="p" style="width:78%"></div>
-    <div class="p" style="width:62%"></div>
-    <div class="cards">
-      <div class="card"><div class="thumb"></div><div class="cl" style="width:80%"></div></div>
-      <div class="card"><div class="thumb"></div><div class="cl" style="width:64%"></div></div>
-      <div class="card"><div class="thumb"></div><div class="cl" style="width:72%"></div></div>
-    </div>
-  </div>`;
+  <div class="hero"><div class="htext">
+    <div class="eyebrow">Collection automne</div>
+    <div class="h1">La douceur des matières naturelles</div>
+    <span class="btn">Découvrir</span>
+  </div></div>
+  <div class="row"><b>Sélection du moment</b><span>Voir tout</span></div>
+  <div class="grid">
+    ${products.slice(0, mobile ? 2 : 3).map(([n, p, g]) => `<div class="p"><div class="img" style="background:${g}"></div><div class="meta"><span>${n}</span><i>${p}</i></div></div>`).join("")}
+  </div>
+  <div class="band"></div>`;
 }
 
 /**
  * Aperçu en direct : le VRAI public/widget.js, dans une iframe, posé sur une
- * page factice. Deux états (fenêtre ouverte / lanceur au repos) parce que la
- * moitié des réglages — taille du bouton, anneau, accroche, décalages — ne se
- * voient que fermé, et n'étaient donc jamais vérifiables avant la mise en ligne.
+ * page factice. Trois états (conversation, réflexion, au repos) parce que la
+ * moitié des réglages — lanceur, anneau, accroche, indicateur de réflexion,
+ * lueur — ne se voient que dans l'un d'eux.
+ *
+ * Il se colle SOUS les barres flottantes de la coque (--float-offset), jamais
+ * dessous : en haut à 16 px, il passait derrière elles au défilement.
  */
 function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: WidgetConfig }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -950,15 +983,16 @@ function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: WidgetConfig }) {
   const [state, setState] = useState<PreviewState>("open");
   const [device, setDevice] = useState<PreviewDevice>("desktop");
   const [hostDark, setHostDark] = useState(false);
+  const mobile = device === "mobile";
 
   const src = `${window.location.origin}/widget.js`;
   const srcDoc = useMemo(
     () =>
       `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
-      `</head><body>${mockPage(hostDark)}` +
+      `</head><body>${mockPage(hostDark, mobile)}` +
       `<script src="${src}" data-agent="${agent.public_key}" data-preview="1" data-onboarding="off"><\/script>` +
       `</body></html>`,
-    [src, agent.public_key, hostDark],
+    [src, agent.public_key, hostDark, mobile],
   );
 
   // Remonter l'iframe (changement de page hôte) invalide la poignée de main :
@@ -981,66 +1015,90 @@ function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: WidgetConfig }) {
     );
   }, [cfg, ready, state]);
 
-  const frameH = device === "mobile" ? 720 : 620;
+  const frameH = mobile ? 700 : 600;
 
   return (
-    <div className="xl:sticky xl:top-4 xl:self-start">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <Sparkles className="h-3.5 w-3.5" />
+    <div className="xl:sticky xl:self-start" style={{ top: "var(--float-offset, 16px)" }}>
+      {/* One control bar: what the visitor sees (state), on what (device), on
+          which kind of site (host theme). */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs font-medium text-foreground/80">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
           Aperçu en direct
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Pills
-            value={state}
-            onChange={setState}
-            options={[
-              { value: "open", label: "Conversation" },
-              { value: "thinking", label: "Réflexion" },
-              { value: "launcher", label: "Au repos" },
-            ]}
-          />
-          <div className="inline-flex gap-1 rounded-full bg-muted/50 p-1">
-            <IconToggle active={device === "desktop"} onClick={() => setDevice("desktop")} title="Ordinateur"><Monitor className="h-3.5 w-3.5" /></IconToggle>
-            <IconToggle active={device === "mobile"} onClick={() => setDevice("mobile")} title="Mobile"><Smartphone className="h-3.5 w-3.5" /></IconToggle>
-          </div>
-          <div className="inline-flex gap-1 rounded-full bg-muted/50 p-1">
-            <IconToggle active={!hostDark} onClick={() => setHostDark(false)} title="Site clair"><Sun className="h-3.5 w-3.5" /></IconToggle>
-            <IconToggle active={hostDark} onClick={() => setHostDark(true)} title="Site sombre"><Moon className="h-3.5 w-3.5" /></IconToggle>
-          </div>
+        <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card/80 p-1 shadow-sm backdrop-blur">
+          {([
+            ["open", "Conversation"],
+            ["thinking", "Réflexion"],
+            ["launcher", "Au repos"],
+          ] as [PreviewState, string][]).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setState(v)}
+              aria-pressed={state === v}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs transition-colors",
+                state === v ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="mx-1 h-4 w-px bg-border" />
+          <IconToggle active={!mobile} onClick={() => setDevice("desktop")} title="Ordinateur"><Monitor className="h-3.5 w-3.5" /></IconToggle>
+          <IconToggle active={mobile} onClick={() => setDevice("mobile")} title="Mobile"><Smartphone className="h-3.5 w-3.5" /></IconToggle>
+          <span className="mx-1 h-4 w-px bg-border" />
+          <IconToggle active={!hostDark} onClick={() => setHostDark(false)} title="Site clair"><Sun className="h-3.5 w-3.5" /></IconToggle>
+          <IconToggle active={hostDark} onClick={() => setHostDark(true)} title="Site sombre"><Moon className="h-3.5 w-3.5" /></IconToggle>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/60 bg-muted/30 p-3">
-        {device === "desktop" ? (
-          <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
-            <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" />
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
-              <span className="ml-2 flex-1 truncate rounded-md bg-muted/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-                votre-site.com
+      {/* Stage: a quiet dotted ground with a soft halo, so the device reads as
+          an object placed on a surface rather than a box in a box. */}
+      <div
+        className="relative overflow-hidden rounded-[28px] border border-border/60 p-5"
+        style={{
+          backgroundColor: "hsl(var(--muted) / 0.35)",
+          backgroundImage:
+            "radial-gradient(60% 50% at 50% 0%, hsl(var(--primary) / 0.10), transparent 70%), radial-gradient(hsl(var(--foreground) / 0.07) 1px, transparent 1px)",
+          backgroundSize: "100% 100%, 16px 16px",
+        }}
+      >
+        {!mobile ? (
+          <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_24px_60px_-12px_rgba(0,0,0,0.35)] ring-1 ring-black/5">
+            <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3.5 py-2.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+              <span className="mx-auto flex min-w-0 max-w-[60%] items-center gap-1.5 truncate rounded-full bg-background/80 px-3 py-1 text-[10.5px] text-muted-foreground ring-1 ring-border/60">
+                <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+                maison-aurore.fr
               </span>
+              <span className="w-[42px]" />
             </div>
             <iframe
               key={`d-${hostDark}`}
               ref={frameRef}
               title="Aperçu du widget"
               srcDoc={srcDoc}
-              className="w-full border-0"
+              className="block w-full border-0"
               style={{ height: frameH, colorScheme: hostDark ? "dark" : "light" }}
             />
           </div>
         ) : (
-          <div className="mx-auto w-[344px] max-w-full rounded-[2rem] border-[7px] border-foreground/85 bg-foreground/85 shadow-xl">
-            <div className="relative overflow-hidden rounded-[1.5rem] bg-card">
-              <div className="absolute left-1/2 top-1.5 z-10 h-4 w-20 -translate-x-1/2 rounded-full bg-foreground/85" />
+          <div className="mx-auto w-[340px] max-w-full rounded-[2.9rem] bg-neutral-900 p-[10px] shadow-[0_30px_70px_-15px_rgba(0,0,0,0.5)] ring-1 ring-white/10">
+            <div className="relative overflow-hidden rounded-[2.3rem] bg-card">
+              <div className="absolute left-1/2 top-2.5 z-10 h-[22px] w-[92px] -translate-x-1/2 rounded-full bg-neutral-900" />
               <iframe
                 key={`m-${hostDark}`}
                 ref={frameRef}
                 title="Aperçu du widget (mobile)"
                 srcDoc={srcDoc}
-                className="w-full border-0"
+                className="block w-full border-0"
                 style={{ height: frameH, colorScheme: hostDark ? "dark" : "light" }}
               />
             </div>
@@ -1048,7 +1106,7 @@ function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: WidgetConfig }) {
         )}
       </div>
 
-      <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="mt-2.5 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
         C'est le widget réel, branché sur l'agent : les messages envoyés ici comptent comme de vraies conversations
         et apparaissent dans l'onglet Analytics.

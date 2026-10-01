@@ -21,6 +21,8 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // ── Types (mirror the 0042 migration) ───────────────────────────────────────
 export interface TestSuite {
@@ -105,6 +107,8 @@ export const RUN_TONE: Record<RunStatus, { label: string; variant: "success" | "
 
 // The "Tests" tab: author suites & test cases, run them, see recent runs.
 export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [suiteOpen, setSuiteOpen] = useState(false);
@@ -207,14 +211,14 @@ export function TestsTab({ onOpenRun }: { onOpenRun: (runId: string) => void }) 
       openRun(res.run_id);
       queryClient.invalidateQueries({ queryKey: ["test_runs", projectId] });
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setStarting(null);
     }
   }
 
   async function deleteSuite(id: string) {
-    if (!confirm("Delete this suite and all its tests?")) return;
+    if (!(await confirm("Delete this suite and all its tests?"))) return;
     await supabase.from("test_suites").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["test_suites", projectId] });
     queryClient.invalidateQueries({ queryKey: ["test_cases", projectId] });

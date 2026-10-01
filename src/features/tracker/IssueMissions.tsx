@@ -329,6 +329,8 @@ export const TRACKER_ACTION_LABEL: Record<string, string> = {
   plan_work_item: "planifier un work item (cycle, modules, dates)",
   create_cycle: "créer un cycle",
   create_module: "créer un module",
+  attach_asset: "rattacher une ressource à un work item",
+  create_asset: "ajouter une ressource au projet",
 };
 
 function describeApproval(a: IssueApproval): { what: string; detail: string | null } {

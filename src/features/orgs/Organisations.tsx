@@ -90,14 +90,25 @@ export function OrganisationsPage() {
             <Loader2 className="h-4 w-4 animate-spin" /> Loading…
           </div>
         ) : !workspaces || workspaces.length === 0 ? (
+          /* Un compte sans aucune organisation n'a rien à faire ici : c'est un
+             arrivant qui a quitté le parcours en route, ou qui revient après. Le
+             bouton « nouvelle organisation » le laisserait recréer à la main ce
+             que le parcours fait — contexte d'entreprise et premier agent
+             compris. On le renvoie donc là, sans boucle possible : le parcours
+             ne renvoie ici QUE lorsqu'une organisation existe. */
           <EmptyState
             icon={Boxes}
-            title="No organisations yet"
-            description="Create your first organisation to start building your cockpit."
+            title="Votre espace n'est pas encore créé"
+            description="Reprenez le parcours d'arrivée : il crée votre organisation, écrit le contexte que vos agents liront et embauche votre premier agent."
             action={
-              <Button onClick={() => setCreateOpen(true)}>
-                <Plus className="h-4 w-4" /> New organisation
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button onClick={() => navigate("/onboarding")}>
+                  Reprendre le parcours
+                </Button>
+                <Button variant="outline" onClick={() => setCreateOpen(true)}>
+                  <Plus className="h-4 w-4" /> Créer à la main
+                </Button>
+              </div>
             }
           />
         ) : (

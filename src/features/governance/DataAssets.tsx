@@ -14,8 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useDataAssets, useGovCrud, type DataAsset, CLASSIFICATION_META } from "./shared";
 import { Pill, FormDialog, type FieldDef } from "./ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export function GovDataAssetsPage() {
+  const confirm = useConfirm();
   const crud = useGovCrud("gov_data_assets");
   const { data: assets, isLoading } = useDataAssets();
   const [editing, setEditing] = useState<DataAsset | null>(null);
@@ -86,7 +88,7 @@ export function GovDataAssetsPage() {
                 <div className="flex shrink-0 gap-1">
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(a)}><Pencil className="h-3.5 w-3.5" /></Button>
                   <Button size="icon" variant="ghost" className="h-7 w-7"
-                    onClick={() => { if (confirm("Supprimer cet actif ?")) void crud.remove(a.id, { action: "data_asset.deleted", entityType: "data_asset", entityId: a.id, entityLabel: a.name }); }}>
+                    onClick={async () => { if ((await confirm("Supprimer cet actif ?"))) void crud.remove(a.id, { action: "data_asset.deleted", entityType: "data_asset", entityId: a.id, entityLabel: a.name }); }}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>

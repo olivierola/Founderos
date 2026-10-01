@@ -17,7 +17,10 @@ import {
 } from "@/features/internal-agents/connectorActionProviders";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { BLOCK_BY_KIND, blockColorClass, KNOWN_TOOLS, DELIVERABLE_FORMATS } from "./blocks";
-import { paramsOf, agentIdsOf, contextSourceOf, contextBodyOf, type InputParam, type ContextRef } from "./context";
+import {
+  paramsOf, agentIdsOf, contextSourceOf, contextBodyOf, varsOf, normalizeVarName,
+  type InputParam, type ContextRef, type WorkflowVar,
+} from "./context";
 import { roleOf, targetsOfQualifier, attachmentsByTarget } from "./graph";
 import { Field, TextField, TextArea, Segmented, Picker, Switch, Stepper, ChipPicker, Section } from "./inspector-ui";
 import { EventTriggers } from "./EventTriggers";
@@ -105,6 +108,10 @@ export function BlockForm({
     handoff: {
       label: "Le brief remis au destinataire", rows: 8, rich: true,
       placeholder: "Analyse le marché des moteurs 2D open source.\n\nCompare licences, communauté et maturité. Ne conclus pas sur un moteur sans avoir vu son dépôt.",
+    },
+    note: {
+      label: "La note", rows: 5,
+      placeholder: "Pourquoi cette branche existe, ce qu'on a essayé avant, ce qu'il reste à faire.\n\nCe texte n'est transmis à personne : il reste dans l'éditeur.",
     },
     memory: {
       label: "Ce qu'il faut retenir", rows: 4,
@@ -212,6 +219,98 @@ export function BlockForm({
               params={paramsOf(d)}
               onChange={(params) => onPatch({ params })}
             />
+          )}
+
+          {(kind === "variables" || kind === "set") && (
+            <VarList vars={varsOf(d)} onChange={(vars) => onPatch({ vars })} />
+          )}
+
+          {kind === "judge" && (
+            <>
+              <Field
+                label="La question à trancher"
+                hint="UNE seule chose à la fois : « le client est en colère ET demande un remboursement » se juge mal — posez deux conditions successives. Écrivez-la pour que « oui » soit la réponse qui déclenche la branche du haut."
+              >
+                <TextArea
+                  value={str(d.question)}
+                  onChange={(v) => onPatch({ question: v })}
+                  placeholder="Ce message est-il une réclamation d'un client mécontent ?"
+                  minRows={2}
+                />
+              </Field>
+              <Field
+                label="Ce qu'il faut regarder"
+                hint="Vide = tout ce que le run a récolté. Sinon un chemin : trigger.body, deals.0.notes…"
+              >
+                <TextField mono value={str(d.over)} onChange={(v) => onPatch({ over: v })} placeholder="trigger.body" />
+              </Field>
+              <Field
+                label="Seuil"
+                hint="La probabilité à partir de laquelle la réponse compte comme « oui ». Montez-le quand partir à tort dans la branche « oui » coûte cher, baissez-le quand c'est de rater un vrai « oui » qui coûte. 0 = le seuil réglé dans l'Admin."
+              >
+                <TextField
+                  value={str(d.threshold)}
+                  onChange={(v) => onPatch({ threshold: Number(v) || 0 })}
+                  placeholder="0,6"
+                />
+              </Field>
+
+              {/* Les exemples ne sont pas une décoration : sur une frontière
+                  floue, ce sont eux qui déplacent la réponse. Deux ou trois cas
+                  LIMITES valent mieux que dix cas évidents. */}
+              <Field
+                label="Exemples de « oui »"
+                hint="Un par ligne. Les cas limites d'abord — ceux dont vous hésiteriez vous-même."
+              >
+                <TextArea
+                  value={str(d.yes_examples)}
+                  onChange={(v) => onPatch({ yes_examples: v })}
+                  placeholder={"Le colis est arrivé cassé, je veux être remboursé\nÇa fait trois fois que je vous écris sans réponse"}
+                  minRows={3}
+                />
+              </Field>
+              <Field
+                label="Exemples de « non »"
+                hint="Ceux qui ressemblent à un « oui » sans en être un."
+              >
+                <TextArea
+                  value={str(d.no_examples)}
+                  onChange={(v) => onPatch({ no_examples: v })}
+                  placeholder={"Est-ce que vous livrez en Belgique ?\nMerci beaucoup, tout est bien arrivé"}
+                  minRows={3}
+                />
+              </Field>
+            </>
+          )}
+
+          {kind === "wait" && (
+            <Field
+              label="Durée de la pause"
+              hint="Plafonnée à 60 s : une automatisation s'exécute en une fois. Pour attendre des heures, il faut un second workflow planifié."
+            >
+              <Stepper
+                value={Math.max(0, Math.min(60, Number(d.seconds) || 0))}
+                onChange={(v) => onPatch({ seconds: v })}
+                min={0} max={60} suffix="secondes"
+              />
+            </Field>
+          )}
+
+          {kind === "stop" && (
+            <Field
+              label="Comment ça se termine"
+              hint="Les trois issues ne se valent pas : une alerte se déclenche sur un échec, jamais sur un arrêt volontaire."
+            >
+              <Segmented
+                value={str(d.outcome) || "succeeded"}
+                onChange={(v) => onPatch({ outcome: v })}
+                options={[
+                  { value: "succeeded", label: "Terminé", hint: "Le travail est fait." },
+                  { value: "stopped", label: "Sans suite", hint: "Rien à faire cette fois — ce n'est pas un échec." },
+                  { value: "failed", label: "En échec", hint: "Quelque chose ne va pas, et il faut le savoir." },
+                ]}
+              />
+            </Field>
           )}
 
           {kind === "tool" && (
@@ -684,6 +783,84 @@ function ParamList({ params, onChange }: {
   );
 }
 
+
+/**
+ * Les variables du workflow — des valeurs posées une fois, relues partout.
+ *
+ * Une liste, pas un champ libre : le moteur résout `{{nom}}` par le nom exact,
+ * et un texte où l'on aurait écrit « le canal est #ventes » ne serait résolu
+ * par personne. Le nom est NORMALISÉ à la frappe (mêmes règles que le moteur) :
+ * accepter « Mon Canal » dans l'éditeur pour ne jamais le résoudre à
+ * l'exécution serait un piège posé à l'avance.
+ */
+function VarList({ vars, onChange }: {
+  vars: WorkflowVar[];
+  onChange: (v: WorkflowVar[]) => void;
+}) {
+  const patch = (i: number, p: Partial<WorkflowVar>) =>
+    onChange(vars.map((x, j) => (j === i ? { ...x, ...p } : x)));
+
+  return (
+    <Field
+      label="Valeurs nommées"
+      hint="Un identifiant de canal, un seuil, une URL de base — écrits ici, lus partout ailleurs avec {{nom}}."
+    >
+      <div className="space-y-1.5">
+        {vars.map((v, i) => {
+          const clean = normalizeVarName(v.name);
+          return (
+            <div key={i} className="space-y-1 rounded-lg border border-border/60 bg-background p-2">
+              <div className="flex items-center gap-1.5">
+                <div className="min-w-0 flex-1">
+                  <TextField mono
+                    value={v.name ?? ""} onChange={(val) => patch(i, { name: val })}
+                    placeholder="canal_slack"
+                  />
+                </div>
+                <button
+                  type="button" onClick={() => patch(i, { secret: !v.secret })}
+                  title={v.secret
+                    ? "Valeur masquée : elle n'est pas imprimée dans le playbook"
+                    : "Masquer la valeur dans le playbook"}
+                  className={cn(
+                    "shrink-0 rounded px-1.5 py-1 text-[10px] font-medium",
+                    v.secret ? "bg-amber-400/15 text-amber-500" : "bg-muted text-muted-foreground",
+                  )}
+                >{v.secret ? "secrète" : "visible"}</button>
+                <button
+                  type="button" onClick={() => onChange(vars.filter((_, j) => j !== i))}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                ><X className="h-3 w-3" /></button>
+              </div>
+              <TextField mono
+                value={v.value ?? ""} onChange={(val) => patch(i, { value: val })}
+                placeholder="#ventes — ou {{trigger.canal}} pour la prendre au déclenchement"
+              />
+              <TextField
+                value={v.description ?? ""} onChange={(val) => patch(i, { description: val })}
+                placeholder="À quoi elle sert"
+              />
+              {v.name?.trim() && !clean && (
+                <p className="text-[10.5px] text-amber-600 dark:text-amber-400">
+                  Ce nom ne peut pas être résolu. Lettres, chiffres et « _ » seulement, et pas « trigger » ni « steps ».
+                </p>
+              )}
+              {clean && clean !== v.name?.trim() && (
+                <p className="text-[10.5px] text-muted-foreground">
+                  Sera lue comme <code className="rounded bg-muted px-1 font-mono">{`{{${clean}}}`}</code>.
+                </p>
+              )}
+            </div>
+          );
+        })}
+        <button
+          type="button" onClick={() => onChange([...vars, { name: "", value: "", description: "" }])}
+          className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border/70 py-1.5 text-[11px] text-muted-foreground hover:border-primary/50 hover:text-foreground"
+        ><Plus className="h-3 w-3" /> Ajouter une variable</button>
+      </div>
+    </Field>
+  );
+}
 
 /**
  * The context block's editor: ONE source, chosen explicitly.

@@ -43,6 +43,7 @@ import {
   actionsForSlug, assignMission, fetchAgentDeliverables, fetchMissionDeliverables,
   type ObjectAction, type Deliverable,
 } from "./objectActions";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 // The object list lives in the secondary sidebar (CrmObjectsItem) — this page
 // renders only the table for the object in the route (crm/workspace/:objectSlug).
@@ -107,6 +108,7 @@ export function CrmWorkspacePage() {
 
 // ───────────────────────────────────────────────────────── records table
 function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObject[] }) {
+  const confirm = useConfirm();
   const { workspaceId, projectId } = useCurrentContext();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -218,7 +220,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
           </div>
           {!object.is_system && (
             <Button size="sm" variant="ghost" className="h-8 text-muted-foreground hover:text-destructive"
-              onClick={async () => { if (confirm(`Delete the "${object.label}" object and all its records?`)) { await deleteObject(object.id); queryClient.invalidateQueries({ queryKey: ["crm_objects", projectId] }); } }}>
+              onClick={async () => { if ((await confirm(`Delete the "${object.label}" object and all its records?`))) { await deleteObject(object.id); queryClient.invalidateQueries({ queryKey: ["crm_objects", projectId] }); } }}>
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -292,15 +294,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
                           {(() => { const TI = iconByName(object.icon); return <TI className={cn("h-3.5 w-3.5 shrink-0 opacity-70", object.color)} />; })()}
                           <span className="truncate font-medium">{String(rec.data[p.key] ?? "Untitled")}</span>
                         </button>
-                        <button onClick={() => {
-                          if (object.source_table === "module_projects" && rec.source_id) {
-                            const mp = rec.data as any;
-                            const slug = mp?.module_slug ?? "";
-                            navigate(`/app/${workspaceSlug}/${projectSlug}/${slug}/project/${rec.source_id}`);
-                          } else {
-                            navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`);
-                          }
-                        }}
+                        <button onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/crm/workspace/${object.slug}/${rec.id}`)}
                           className="ml-auto mr-1 hidden shrink-0 items-center gap-1 rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground group-hover/r:flex">
                           <Maximize2 className="h-3 w-3" /> Open
                         </button>
@@ -419,6 +413,7 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
   onDelete: () => void;
   onOpenFull?: () => void;
 }) {
+  const confirm = useConfirm();
   const Icon = iconByName(object.icon);
   const titleProp = properties.find((p) => p.is_title);
   const title = titleProp ? String(record.data[titleProp.key] ?? "Untitled") : "Untitled";
@@ -493,7 +488,7 @@ function RecordPanel({ object, record, properties, relations, relationChips, onC
 
         {/* Footer actions */}
         <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
-          <Button size="sm" variant="ghost" className="h-8 text-destructive" onClick={() => { if (confirm("Delete this record?")) onDelete(); }}>
+          <Button size="sm" variant="ghost" className="h-8 text-destructive" onClick={async () => { if ((await confirm("Delete this record?"))) onDelete(); }}>
             <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
           </Button>
           <div className="ml-auto flex items-center gap-2">
