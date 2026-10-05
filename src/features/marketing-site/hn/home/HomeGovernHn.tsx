@@ -139,7 +139,7 @@ export function HomeGovernHn() {
               <ProductMark word={p.short} size={20} />
             </span>
             <P tone="dim" className="mt-8 max-w-[30ch]">Registry, policies, approvals and an exportable audit trail, for every Cloud collaborator.</P>
-            <Btn to={`/product/${p.slug}`} className="mt-6">Learn more</Btn>
+            <Btn to={`/product/${p.slug}`} variant="white" className="mt-6">Learn more</Btn>
           </div>
         </div>
         <div className="relative px-6 sm:px-12 lg:px-24">

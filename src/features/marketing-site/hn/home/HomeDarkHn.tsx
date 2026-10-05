@@ -72,7 +72,7 @@ export function HomeAgentsHn() {
           title="Specialised Cloud collaborators for every team."
           lead="Each Cloud collaborator works inside your systems, follows the rules you set, and hands back finished work, ready for your approval."
         >
-          <Btn to="/contact">Book a live demo</Btn>
+          <Btn to="/contact" variant="white">Book a live demo</Btn>
         </Head>
 
         <div ref={track} className="mt-14 flex snap-x gap-6 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

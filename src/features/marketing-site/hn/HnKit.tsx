@@ -357,10 +357,15 @@ export function Head({
    Small radius, medium weight, a chevron riding along. `primary` is the blue
    slab, `secondary` the white one with a hairline, `link` the bare blue text
    the reference uses under every card, `ghost` the outline on dark bands. */
-type BtnVariant = "primary" | "secondary" | "link" | "link-light" | "ghost" | "white";
+// The tri-colour system: black is the primary CTA (highest contrast on the
+// white ground), blue the accent for secondary actions and inline links, white
+// the one used on dark bands. `blue` keeps a full-colour button where the
+// accent should lead rather than the black slab.
+type BtnVariant = "primary" | "blue" | "secondary" | "link" | "link-light" | "ghost" | "white";
 
 const BTN: Record<BtnVariant, string> = {
-  primary: "h-11 rounded-full bg-[#006edd] px-5 text-white hover:bg-[#0057c2]",
+  primary: "h-11 rounded-full bg-[#0f1728] px-5 text-white hover:bg-[#1c2740]",
+  blue: "h-11 rounded-full bg-[#006edd] px-5 text-white hover:bg-[#0057c2]",
   secondary: "h-11 rounded-full border border-[#e6e9ef] bg-white px-5 text-[#0f1728] hover:border-[#cfd5df]",
   white: "h-11 rounded-full bg-white px-5 text-[#0f1728] hover:bg-white/90",
   ghost: "h-11 rounded-full border border-white/20 bg-white/[0.04] px-5 text-white hover:bg-white/[0.08]",

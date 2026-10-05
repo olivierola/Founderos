@@ -262,7 +262,7 @@ function PlanCard({ plan, yearly }: { plan: Plan; yearly: boolean }) {
         </div>
       )}
       <div className="mt-6 flex flex-wrap items-center gap-2">
-        <Btn to={plan.href} variant={hot ? "primary" : "secondary"}>
+        <Btn to={plan.href} variant={hot ? "blue" : "secondary"}>
           {plan.buttonText}
         </Btn>
         {plan.secondary && (

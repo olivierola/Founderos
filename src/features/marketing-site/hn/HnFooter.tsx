@@ -92,7 +92,7 @@ export function HnCta({
               </a>
             ))}
           </div>
-          <Btn to={to}>{button}</Btn>
+          <Btn to={to} variant="white">{button}</Btn>
         </div>
       </div>
     </section>
