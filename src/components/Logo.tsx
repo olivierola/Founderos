@@ -1,25 +1,17 @@
 import { cn } from "@/lib/utils";
 
-/* Brand mark — the chevron drawn bare, on any surface, in the brand's
-   violet. It carries its own colour rather than inheriting the ink around
-   it: a mark that repaints itself per context is a shape, not a logo, and this
-   one now has to hold on a nav that flips between paper and near-black within a
-   single scroll. Pass `color` to override it — "currentColor" for the places
-   that genuinely want the surrounding ink, such as a monochrome print or a
-   disabled state. The artwork is a touch wider than tall, so `size` is read as
-   its height and the width follows — squashing it into a square would deform
-   the mark. */
+/* Brand mark — the chevron drawn bare. Since the Hunar register (04/10/2026)
+   it is monochrome, like the site's navbar logo: the navy ink on light
+   grounds, white on dark ones (the app's top bar, the site's dark bands).
+   Pass `color` for the dark case — BRAND_MARK_ON_DARK — or "currentColor"
+   where the surrounding ink should decide. The artwork is a touch wider than
+   tall, so `size` is read as its height and the width follows — squashing it
+   into a square would deform the mark. */
 const RATIO = 246 / 240;
 
-/* The accent's two cuts — the violet of the site (Atlas register, 01/10/2026).
-   #D22EFF is 3.8:1 on white: fine for a large mark, thin for a small one, so
-   the default is the deepened #8B16C4, which clears 7:1 on white and still
-   reads as the same violet.
-
-   Somewhere with a known dark ground, pass `BRAND_MARK_BRIGHT` and get the
-   true violet. */
-export const BRAND_MARK = "#8b16c4";
-export const BRAND_MARK_BRIGHT = "#d22eff";
+/* The site's ink (#0F1728) and its white. */
+export const BRAND_MARK = "#0f1728";
+export const BRAND_MARK_ON_DARK = "#ffffff";
 
 export function Logo({
   className,

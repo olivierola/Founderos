@@ -27,7 +27,7 @@ export const DEFAULT_SUPPORT_CONFIG: SupportConfig = {
   intents: [
     {
       key: "information", label: "Question produit", auto_reply: true, route: "Support",
-      what: "Une question sur le fonctionnement, les fonctionnalités, les prix publics, les horaires ou les conditions — la réponse est dans la documentation.",
+      what: "Une question sur le fonctionnement, les fonctionnalités, les prix publics, les horaires ou les conditions, la réponse est dans la documentation.",
       not_for: "Un problème rencontré sur son compte ou sa commande (c'est un bug ou une commande).",
       examples: ["est-ce que vous livrez en Belgique ?", "comment exporter mes données en CSV ?", "quels sont vos tarifs ?"],
     },
@@ -45,7 +45,7 @@ export const DEFAULT_SUPPORT_CONFIG: SupportConfig = {
     },
     {
       key: "facturation", label: "Facturation", auto_reply: true, route: "Facturation",
-      what: "Factures, moyens de paiement, changement d'offre, TVA, adresse de facturation — sans demande de remboursement.",
+      what: "Factures, moyens de paiement, changement d'offre, TVA, adresse de facturation, sans demande de remboursement.",
       not_for: "Récupérer de l'argent (c'est un remboursement). Arrêter l'abonnement (c'est une résiliation).",
       examples: ["où trouver ma facture de mars ?", "je veux changer de carte bancaire", "passer à l'offre annuelle"],
     },

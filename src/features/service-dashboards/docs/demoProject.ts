@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import {
-  createCycle, createIntakeItem, createIssue, createLabel, createModule,
+  createIssue, createLabel,
   createPage, createProject, createSticky, createView, fetchStates,
   updateSticky,
   type PjIssue, type PjState,
@@ -46,7 +46,7 @@ function stateOf(states: PjState[], group: PjState["group"]): string | null {
 export interface DemoResult {
   projectId: string;
   identifier: string;
-  counts: { issues: number; cycles: number; modules: number; intake: number; pages: number; stickies: number };
+  counts: { issues: number; pages: number; stickies: number };
 }
 
 export async function seedDemoProject(input: {
@@ -64,7 +64,7 @@ export async function seedDemoProject(input: {
     name: "Refonte du portail client",
     identifier: `DEMO${Math.floor(Math.random() * 90 + 10)}`,
     description:
-      "Projet de démonstration. Il contient de quoi parcourir chaque écran du module avec des données réelles : work items répartis sur tous les états, deux cycles, trois modules, des demandes non triées et des pages.",
+      "Projet de démonstration. Il contient de quoi parcourir chaque écran du module avec des données réelles : work items répartis sur tous les états, des pages et des notes.",
     logo_props: { in_use: "emoji", emoji: { value: "🛠️" } },
     createdBy: userId,
   });
@@ -90,42 +90,6 @@ export async function seedDemoProject(input: {
     labels[spec.name] = l.id;
   }
 
-  // ── Cycles ────────────────────────────────────────────────────────────────
-  // Un cycle EN COURS et un À VENIR : c'est le minimum pour que la page Cycles
-  // ait quelque chose à séparer, et pour que le burndown ait une pente.
-  const sprint12 = await createCycle({
-    pjProjectId: project.id, workspaceId, name: "Sprint 12 — Fondations",
-    start_date: day(-9), end_date: day(5),
-    description: "Socle technique : authentification, design system, squelette du portail.",
-    createdBy: userId,
-  });
-  const sprint13 = await createCycle({
-    pjProjectId: project.id, workspaceId, name: "Sprint 13 — Parcours d'achat",
-    start_date: day(6), end_date: day(20),
-    description: "Panier, facturation, relances.",
-    createdBy: userId,
-  });
-
-  // ── Modules ───────────────────────────────────────────────────────────────
-  const modAuth = await createModule({
-    pjProjectId: project.id, workspaceId, name: "Authentification",
-    description: "Connexion, mot de passe oublié, sessions.",
-    status: "in-progress", start_date: day(-9), target_date: day(4),
-    lead_id: userId, createdBy: userId,
-  });
-  const modDash = await createModule({
-    pjProjectId: project.id, workspaceId, name: "Tableau de bord client",
-    description: "La page d'accueil du portail : usage, factures, contacts.",
-    status: "in-progress", start_date: day(-4), target_date: day(14),
-    lead_id: userId, createdBy: userId,
-  });
-  const modBilling = await createModule({
-    pjProjectId: project.id, workspaceId, name: "Facturation",
-    description: "Historique, téléchargement PDF, moyens de paiement.",
-    status: "planned", start_date: day(6), target_date: day(28),
-    createdBy: userId,
-  });
-
   // ── Work items ────────────────────────────────────────────────────────────
   // La répartition est volontairement DÉSÉQUILIBRÉE : du travail terminé, du
   // travail en cours, une file d'attente plus grosse que le reste, un item
@@ -137,76 +101,60 @@ export async function seedDemoProject(input: {
     state: string | null;
     priority?: PjIssue["priority"];
     labels?: string[];
-    cycle?: string;
-    modules?: string[];
     start?: string;
     target?: string;
     description?: string;
-    epic?: boolean;
     children?: string[];
   }> = [
     {
-      name: "Refonte complète de l'espace client",
-      state: doing, priority: "high", epic: true,
-      description: "L'epic qui porte la refonte. Les work items des trois modules s'y rattachent.",
-    },
-    {
       name: "Connexion par lien magique",
-      state: done, priority: "high", labels: ["Backend"], cycle: sprint12.id,
-      modules: [modAuth.id], start: day(-9), target: day(-3),
+      state: done, priority: "high", labels: ["Backend"], start: day(-9), target: day(-3),
       description: "Remplacer le couple identifiant/mot de passe par un lien à usage unique envoyé par courriel.",
       children: ["Envoi du courriel transactionnel", "Expiration du lien après 15 minutes"],
     },
     {
       name: "Écran « mot de passe oublié » inaccessible au clavier",
-      state: doing, priority: "urgent", labels: ["Bug", "Frontend"], cycle: sprint12.id,
-      modules: [modAuth.id], target: day(-1),
+      state: doing, priority: "urgent", labels: ["Bug", "Frontend"], target: day(-1),
       description: "Le piège de focus de la modale enferme la navigation au clavier. Signalé par deux clients.",
     },
     {
       name: "Design system : jetons de couleur et typographie",
-      state: done, priority: "medium", labels: ["Design"], cycle: sprint12.id,
+      state: done, priority: "medium", labels: ["Design"],
       start: day(-9), target: day(-5),
     },
     {
       name: "Squelette du tableau de bord",
-      state: doing, priority: "high", labels: ["Frontend"], cycle: sprint12.id,
-      modules: [modDash.id], start: day(-4), target: day(3),
+      state: doing, priority: "high", labels: ["Frontend"], start: day(-4), target: day(3),
       children: ["Grille responsive", "États de chargement"],
     },
     {
       name: "Widget « consommation du mois »",
-      state: todo, priority: "medium", labels: ["Frontend", "Design"], cycle: sprint12.id,
-      modules: [modDash.id], target: day(4),
+      state: todo, priority: "medium", labels: ["Frontend", "Design"], target: day(4),
     },
     {
       name: "Endpoint d'agrégation de l'usage",
-      state: doing, priority: "high", labels: ["Backend"], cycle: sprint12.id,
-      modules: [modDash.id], target: day(2),
+      state: doing, priority: "high", labels: ["Backend"], target: day(2),
     },
     {
       name: "Historique des factures",
-      state: todo, priority: "medium", labels: ["Frontend"], cycle: sprint13.id,
-      modules: [modBilling.id], start: day(6), target: day(12),
+      state: todo, priority: "medium", labels: ["Frontend"], start: day(6), target: day(12),
     },
     {
       name: "Téléchargement du PDF de facture",
-      state: todo, priority: "medium", labels: ["Backend"], cycle: sprint13.id,
-      modules: [modBilling.id], start: day(8), target: day(15),
+      state: todo, priority: "medium", labels: ["Backend"], start: day(8), target: day(15),
     },
     {
       name: "Ajouter un moyen de paiement",
-      state: todo, priority: "high", labels: ["Frontend", "Backend"], cycle: sprint13.id,
-      modules: [modBilling.id], start: day(10), target: day(19),
+      state: todo, priority: "high", labels: ["Frontend", "Backend"], start: day(10), target: day(19),
     },
     {
       name: "Relance automatique des impayés",
-      state: backlog, priority: "low", labels: ["Backend"], modules: [modBilling.id],
+      state: backlog, priority: "low", labels: ["Backend"],
       description: "À cadrer avec le juridique avant d'être planifié.",
     },
     {
-      name: "Entretiens utilisateurs — 5 clients grands comptes",
-      state: done, priority: "high", labels: ["Recherche utilisateur"], cycle: sprint12.id,
+      name: "Entretiens utilisateurs, 5 clients grands comptes",
+      state: done, priority: "high", labels: ["Recherche utilisateur"],
       start: day(-14), target: day(-7),
     },
     {
@@ -224,7 +172,7 @@ export async function seedDemoProject(input: {
     },
     {
       name: "Migration vers la nouvelle API de facturation",
-      state: backlog, priority: "medium", labels: ["Backend"], modules: [modBilling.id],
+      state: backlog, priority: "medium", labels: ["Backend"],
     },
     {
       name: "Notifications par SMS",
@@ -250,10 +198,7 @@ export async function seedDemoProject(input: {
       start_date: s.start ?? null,
       target_date: s.target ?? null,
       label_ids: (s.labels ?? []).map((n) => labels[n]).filter(Boolean),
-      cycle_id: s.cycle ?? null,
-      module_ids: s.modules ?? [],
       assignee_ids: userId ? [userId] : [],
-      is_epic: s.epic ?? false,
       createdBy: userId,
     });
     issueCount += 1;
@@ -268,32 +213,6 @@ export async function seedDemoProject(input: {
       });
       issueCount += 1;
     }
-  }
-
-  // ── Intake ────────────────────────────────────────────────────────────────
-  // Des demandes NON TRIÉES : c'est tout l'objet de la page, et elle ne se
-  // comprend qu'avec quelque chose en attente dedans.
-  const intake = [
-    {
-      name: "Le filtre par date ne garde pas ma sélection",
-      description_html: "<p>Quand je reviens sur l'historique, la période repasse à « 30 derniers jours ».</p>",
-      source: "in-app",
-    },
-    {
-      name: "Pouvoir inviter un comptable en lecture seule",
-      description_html: "<p>Demandé par trois clients cette semaine. Un rôle sans accès aux moyens de paiement.</p>",
-      source: "email",
-    },
-    {
-      name: "Le PDF de facture s'ouvre vide sur Safari",
-      description_html: "<p>Reproduit sur Safari 17. Fonctionne sur Chrome et Firefox.</p>",
-      source: "in-app",
-    },
-  ];
-  for (const i of intake) {
-    await createIntakeItem({
-      pjProjectId: project.id, workspaceId, ...i, createdBy: userId,
-    });
   }
 
   // ── Pages ─────────────────────────────────────────────────────────────────
@@ -324,7 +243,7 @@ export async function seedDemoProject(input: {
   // du tableau, pas un champ du projet.
   const notes = [
     { text: "Relancer le juridique sur les relances d'impayés", color: "#fef3c7" },
-    { text: "Démo portail — jeudi 14 h avec l'équipe support", color: "#dbeafe" },
+    { text: "Démo portail, jeudi 14 h avec l'équipe support", color: "#dbeafe" },
     { text: "Vérifier le budget SMS avant de rouvrir le sujet", color: "#fce7f3" },
   ];
   let stickyCount = 0;
@@ -339,8 +258,7 @@ export async function seedDemoProject(input: {
     projectId: project.id,
     identifier: project.identifier,
     counts: {
-      issues: issueCount, cycles: 2, modules: 3,
-      intake: intake.length, pages: pages.length, stickies: stickyCount,
+      issues: issueCount, pages: pages.length, stickies: stickyCount,
     },
   };
 }

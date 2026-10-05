@@ -91,7 +91,7 @@ export function MissionsBoard({ roomId, dashboardId, onOpen }: {
         <Target className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
         <p className="text-sm font-medium">Aucune mission dans cette room</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Demandez à l'assistant un travail qui demande plusieurs compétences — il le découpe en jalons et tâches,
+          Demandez à l'assistant un travail qui demande plusieurs compétences, il le découpe en jalons et tâches,
           les répartit entre les agents, et pilote l'exécution ici. Ou créez-en une directement.
         </p>
         <Button className="mt-5" onClick={() => setCreating(true)}>
@@ -284,7 +284,7 @@ export function NewMissionPanel({
           <p className="mt-2 text-[11px] text-muted-foreground">
             {mode === "auto"
               ? "L'assistant planifie la mission et lance les tâches prêtes dès la création."
-              : "La mission est créée vide — vous ajoutez les tâches depuis le kanban."}
+              : "La mission est créée vide, vous ajoutez les tâches depuis le kanban."}
           </p>
         </footer>
       </aside>
@@ -674,7 +674,7 @@ function StalledNotice({ mission, tasks, onDone }: {
     <div className="ml-8 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5">
       <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
       <span className="min-w-0 flex-1 text-[11px] text-amber-700 dark:text-amber-300">
-        Mission à l'arrêt — plus aucun run actif{inflight.length > 0 ? ` sur « ${inflight[0].title} »` : ""}.
+        Mission à l'arrêt, plus aucun run actif{inflight.length > 0 ? ` sur « ${inflight[0].title} »` : ""}.
         Relancez : l'orchestrateur clôture les tâches mortes et replanifie.
       </span>
       <button

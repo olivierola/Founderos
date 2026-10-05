@@ -43,7 +43,7 @@ export function GovFtVersionsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Versions"
-        description="Historique de vos modèles fine-tunés : lignée par modèle, dataset et hyperparamètres d'origine, résultats, auteur — rollback, clone, deploy."
+        description="Historique de vos modèles fine-tunés : lignée par modèle, dataset et hyperparamètres d'origine, résultats, auteur, rollback, clone, deploy."
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">

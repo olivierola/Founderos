@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCategorical, useContextGreys, foldToSlots } from "@/features/crm/overview/vizPalette";
 import { cn } from "@/lib/utils";
 import { Tabs } from "./ui";
-import { PRIORITIES, fetchCycles, fetchIssues, fetchLabels, fetchMembers, fetchStates, type PjIssue, type PjProject, type PjState } from "./model";
+import { PRIORITIES, fetchIssues, fetchLabels, fetchMembers, fetchStates, type PjIssue, type PjProject, type PjState } from "./model";
 import { memberName } from "./pickers";
 
 /**
@@ -17,14 +17,13 @@ import { memberName } from "./pickers";
  * 3:1 en thème clair, la couleur seule ne peut donc jamais porter la valeur.
  */
 
-type Dimension = "state" | "priority" | "assignee" | "label" | "cycle";
+type Dimension = "state" | "priority" | "assignee" | "label";
 
 const DIMENSIONS: { key: Dimension; label: string }[] = [
   { key: "state", label: "État" },
   { key: "priority", label: "Priorité" },
   { key: "assignee", label: "Assigné" },
   { key: "label", label: "Label" },
-  { key: "cycle", label: "Cycle" },
 ];
 
 export function AnalyticsPage({ project }: { project: PjProject }) {
@@ -36,7 +35,6 @@ export function AnalyticsPage({ project }: { project: PjProject }) {
   });
   const { data: states } = useQuery({ queryKey: ["pj_states", project.id], queryFn: () => fetchStates(project.id) });
   const { data: labels } = useQuery({ queryKey: ["pj_labels", project.id], queryFn: () => fetchLabels(project.id) });
-  const { data: cycles } = useQuery({ queryKey: ["pj_cycles", project.id], queryFn: () => fetchCycles(project.id) });
   const { data: members } = useQuery({
     queryKey: ["pj_members", project.workspace_id],
     queryFn: () => fetchMembers(project.workspace_id),
@@ -69,14 +67,11 @@ export function AnalyticsPage({ project }: { project: PjProject }) {
             bump((labels ?? []).find((x) => x.id === l)?.name ?? "Label");
           }
           break;
-        case "cycle":
-          bump((cycles ?? []).find((c) => c.id === i.cycle_id)?.name ?? "Hors cycle");
-          break;
       }
     }
     // foldToSlots empêche qu'une 9e catégorie invente une 9e teinte.
     return foldToSlots([...counts.entries()].map(([label, count]) => ({ label, count })));
-  }, [all, dimension, states, labels, members, cycles]);
+  }, [all, dimension, states, labels, members]);
 
   return (
     <div className="h-full overflow-y-auto px-4 py-4">

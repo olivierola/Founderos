@@ -80,7 +80,7 @@ export function AiHqDashboard() {
         <div className="rounded-2xl border border-dashed border-border py-16 text-center">
           <Bot className="mx-auto h-10 w-10 text-muted-foreground/30" />
           <p className="mt-3 text-sm font-medium">Aucun agent pour l'instant</p>
-          <p className="mt-1 text-xs text-muted-foreground">Créez votre première équipe IA — les statistiques se remplissent dès le premier run.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Créez votre première équipe IA, les statistiques se remplissent dès le premier run.</p>
           <Button size="sm" className="mt-4" onClick={() => navigate(`${base}/agent`)}>Créer un agent</Button>
         </div>
       ) : (
@@ -156,7 +156,7 @@ function HqHero({ running, pending, agents, onHire }: {
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold tracking-tight">AI Headquarters</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Votre force de travail IA en un coup d'œil — agents, services, outils, connaissances et décisions.
+            Votre force de travail IA en un coup d'œil, agents, services, outils, connaissances et décisions.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

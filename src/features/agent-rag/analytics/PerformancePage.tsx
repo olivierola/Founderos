@@ -38,7 +38,7 @@ export function PerformancePage({ data, agentName }: { data: AgentAnalytics; age
     const byScore = new Map(data.ratings.map((r) => [r.score, r.n]));
     return [5, 4, 3, 2, 1].map((score) => ({
       key: `r${score}`,
-      label: `${score} — ${RATING_LABELS[score]}`,
+      label: `${score}, ${RATING_LABELS[score]}`,
       value: byScore.get(score) ?? 0,
       color: ratingScale[score - 1],
     }));
@@ -166,7 +166,7 @@ export function PerformancePage({ data, agentName }: { data: AgentAnalytics; age
 
       <SectionCard
         title="Entonnoir de performance"
-        subtitle="Du canal d'entrée jusqu'au vote — chaque flux est un comptage, jamais une répartition au prorata."
+        subtitle="Du canal d'entrée jusqu'au vote, chaque flux est un comptage, jamais une répartition au prorata."
       >
         {t.total === 0
           ? <Empty label="Aucune conversation sur la période." />

@@ -11,7 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import {
-  PRIORITIES, type Member, type PjCycle, type PjLabel, type PjModule, type PjState,
+  PRIORITIES, type Member, type PjLabel, type PjState,
   type Priority, type StateGroup,
 } from "./model";
 
@@ -454,90 +454,6 @@ export function DatePicker({
 /** Le vide d'un sélecteur : ce qu'il faut faire, pas ce qui manque. */
 function PickerHint({ children }: { children: ReactNode }) {
   return <p className="px-3 py-3 text-11 leading-snug text-tertiary">{children}</p>;
-}
-
-export function CyclePicker({
-  cycles, value, onChange, compact,
-}: { cycles: PjCycle[]; value: string | null; onChange: (id: string | null) => void; compact?: boolean }) {
-  const [open, setOpen] = useState(false);
-  const current = cycles.find((c) => c.id === value);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <PickerTrigger active={!!current} title="Cycle">
-          <CaretDownIcon className="h-3 w-3" />
-          {!compact && <span className="truncate">{current?.name ?? "Cycle"}</span>}
-        </PickerTrigger>
-      </PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Chercher un cycle…" />
-          <CommandList>
-            <CommandEmpty>
-              <PickerHint>
-                Aucun cycle dans ce projet. Ils se créent dans l&apos;onglet
-                Cycles — un cycle borne une itération par ses dates.
-              </PickerHint>
-            </CommandEmpty>
-            <CommandGroup>
-              <CommandItem value="__none__" onSelect={() => { onChange(null); setOpen(false); }}>
-                <span className="flex-1 text-muted-foreground">Hors cycle</span>
-                {!value && <CheckIcon className="h-4 w-4" />}
-              </CommandItem>
-              {cycles.map((c) => (
-                <CommandItem key={c.id} value={c.name} onSelect={() => { onChange(c.id); setOpen(false); }}>
-                  <span className="flex-1 truncate">{c.name}</span>
-                  {c.id === value && <CheckIcon className="h-4 w-4" />}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-export function ModulePicker({
-  modules, value, onChange, compact,
-}: { modules: PjModule[]; value: string[]; onChange: (ids: string[]) => void; compact?: boolean }) {
-  const [open, setOpen] = useState(false);
-  const toggle = (id: string) =>
-    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
-  const selected = modules.filter((m) => value.includes(m.id));
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <PickerTrigger active={value.length > 0} title="Modules">
-          <CaretDownIcon className="h-3 w-3" />
-          {!compact && (selected.length
-            ? <span className="truncate">{selected.map((m) => m.name).join(", ")}</span>
-            : <span>Modules</span>)}
-        </PickerTrigger>
-      </PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Chercher un module…" />
-          <CommandList>
-            <CommandEmpty>
-              <PickerHint>
-                Aucun module dans ce projet. Ils se créent dans l&apos;onglet
-                Modules — un module regroupe le travail d&apos;un chantier.
-              </PickerHint>
-            </CommandEmpty>
-            <CommandGroup>
-              {modules.map((m) => (
-                <CommandItem key={m.id} value={m.name} onSelect={() => toggle(m.id)}>
-                  <span className="flex-1 truncate">{m.name}</span>
-                  {value.includes(m.id) && <CheckIcon className="h-4 w-4" />}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 // ── Référence ───────────────────────────────────────────────────────────────

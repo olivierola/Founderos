@@ -301,7 +301,7 @@ export function ToolkitCard({
         unsupported
           ? "Schéma d'authentification non supporté"
           : customOAuth
-            ? "Nécessite votre propre app OAuth — client id/secret demandés à la connexion"
+            ? "Nécessite votre propre app OAuth, client id/secret demandés à la connexion"
             : t.description || undefined
       }
       className={cn(
@@ -369,7 +369,7 @@ export function ToolkitCard({
           )}
           {managed && (
             <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Authentification gérée par Composio">
-              <title>Authentification gérée par Composio — aucune app à créer</title>
+              <title>Authentification gérée par Composio, aucune app à créer</title>
             </ShieldCheck>
           )}
           {t.version && (
@@ -474,7 +474,7 @@ function ToolkitDetailsDialog({
                 })}
                 {managed && (
                   <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <ShieldCheck className="h-3.5 w-3.5" /> gérée par Composio — aucune app à créer
+                    <ShieldCheck className="h-3.5 w-3.5" /> gérée par Composio, aucune app à créer
                   </span>
                 )}
               </div>
@@ -488,7 +488,7 @@ function ToolkitDetailsDialog({
           )}
           {customOAuth && (
             <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-              Nécessite votre propre application OAuth — le client id et le secret vous seront demandés à l'étape suivante.
+              Nécessite votre propre application OAuth, le client id et le secret vous seront demandés à l'étape suivante.
             </p>
           )}
 
@@ -622,7 +622,7 @@ export function ComposioConnectDialog({
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               {popupBlocked
-                ? "Le navigateur a bloqué l'ouverture automatique — ouvrez la page ci-dessus."
+                ? "Le navigateur a bloqué l'ouverture automatique, ouvrez la page ci-dessus."
                 : "En attente de l'autorisation dans l'onglet ouvert…"}
             </div>
           </div>

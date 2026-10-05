@@ -103,7 +103,7 @@ export function WorldDotMap({
               opacity={active && !on ? 0.45 : 1}
               style={{ transition: "opacity 150ms" }}
             >
-              <title>{`${m.name} — ${m.visitors} visiteur${m.visitors > 1 ? "s" : ""}, ${m.conversations} conversation${m.conversations > 1 ? "s" : ""}`}</title>
+              <title>{`${m.name}, ${m.visitors} visiteur${m.visitors > 1 ? "s" : ""}, ${m.conversations} conversation${m.conversations > 1 ? "s" : ""}`}</title>
             </circle>
             {on && (
               <text

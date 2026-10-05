@@ -45,7 +45,7 @@ export function GovIncidentsPage() {
     { key: "status", label: "Statut", type: "select", options: INCIDENT_STATUS_META, half: true },
     { key: "occurred_at", label: "Survenu le", type: "date", half: true },
     { key: "system_id", label: "Système concerné", type: "select",
-      options: [{ value: "", label: "— Aucun —" }, ...(systems ?? []).map((s) => ({ value: s.id, label: s.name }))] },
+      options: [{ value: "", label: "Aucun" }, ...(systems ?? []).map((s) => ({ value: s.id, label: s.name }))] },
     { key: "description", label: "Description", type: "textarea" },
     { key: "resolution", label: "Résolution", type: "textarea" },
   ];
@@ -66,7 +66,7 @@ export function GovIncidentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Incidents IA"
-        description="Journal des incidents et quasi-incidents : biais, sorties nuisibles, fuites, pannes — gravité et résolution."
+        description="Journal des incidents et quasi-incidents : biais, sorties nuisibles, fuites, pannes, gravité et résolution."
         actions={<Button onClick={() => setCreating(true)}><Plus className="mr-1.5 h-4 w-4" />Incident</Button>} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

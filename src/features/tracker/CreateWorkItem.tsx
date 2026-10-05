@@ -13,12 +13,12 @@ import { useAuth } from "@/lib/auth-context";
 import { ProjectLogo } from "./LogoPicker";
 import { TextAreaField } from "./ui";
 import {
-  AssigneePicker, CyclePicker, DatePicker, IssueKey, LabelPicker, ModulePicker,
+  AssigneePicker, DatePicker, IssueKey, LabelPicker,
   PriorityPicker, StatePicker,
 } from "./pickers";
 import {
-  createIssue, fetchCycles, fetchIssueTypes, fetchIssues, fetchLabels, fetchMembers,
-  fetchModules, fetchProject, fetchProjects, fetchStates,
+  createIssue, fetchIssueTypes, fetchIssues, fetchLabels, fetchMembers,
+  fetchProject, fetchProjects, fetchStates,
   type PjIssue, type PjProject, type Priority,
 } from "./model";
 
@@ -53,10 +53,7 @@ export function CreateWorkItemModal({
   defaults?: {
     stateId?: string | null;
     priority?: Priority;
-    cycleId?: string | null;
-    moduleIds?: string[];
     parentId?: string | null;
-    isEpic?: boolean;
   };
   onClose: () => void;
   onCreated: (issue: PjIssue) => void;
@@ -241,10 +238,7 @@ function CreateForm({
   defaults?: {
     stateId?: string | null;
     priority?: Priority;
-    cycleId?: string | null;
-    moduleIds?: string[];
     parentId?: string | null;
-    isEpic?: boolean;
   };
   createdBy: string | null;
   onClose: () => void;
@@ -252,8 +246,6 @@ function CreateForm({
 }) {
   const statesQ = useQuery({ queryKey: ["pj_states", project.id], queryFn: () => fetchStates(project.id) });
   const labelsQ = useQuery({ queryKey: ["pj_labels", project.id], queryFn: () => fetchLabels(project.id) });
-  const cyclesQ = useQuery({ queryKey: ["pj_cycles", project.id], queryFn: () => fetchCycles(project.id) });
-  const modulesQ = useQuery({ queryKey: ["pj_modules", project.id], queryFn: () => fetchModules(project.id) });
   const membersQ = useQuery({
     queryKey: ["pj_members", project.workspace_id],
     queryFn: () => fetchMembers(project.workspace_id),
@@ -261,8 +253,6 @@ function CreateForm({
 
   const states = statesQ.data ?? [];
   const labels = labelsQ.data ?? [];
-  const cycles = cyclesQ.data ?? [];
-  const modules = modulesQ.data ?? [];
   const members = membersQ.data ?? [];
 
   const [name, setName] = useState("");
@@ -273,8 +263,6 @@ function CreateForm({
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [start, setStart] = useState<string | null>(null);
   const [target, setTarget] = useState<string | null>(null);
-  const [cycleId, setCycleId] = useState<string | null>(defaults?.cycleId ?? null);
-  const [moduleIds, setModuleIds] = useState<string[]>(defaults?.moduleIds ?? []);
   const [parentId, setParentId] = useState<string | null>(defaults?.parentId ?? null);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -312,10 +300,7 @@ function CreateForm({
         label_ids: labelIds,
         start_date: start,
         target_date: target,
-        cycle_id: cycleId,
-        module_ids: moduleIds,
         parent_id: parentId,
-        is_epic: defaults?.isEpic ?? false,
         createdBy,
       });
       onCreated(issue);
@@ -369,8 +354,6 @@ function CreateForm({
           <LabelPicker labels={labels} value={labelIds} onChange={setLabelIds} />
           <DatePicker value={start} onChange={setStart} placeholder="Date de début" />
           <DatePicker value={target} onChange={setTarget} placeholder="Échéance" min={start} />
-          <CyclePicker cycles={cycles} value={cycleId} onChange={setCycleId} />
-          <ModulePicker modules={modules} value={moduleIds} onChange={setModuleIds} />
           <ParentPicker
             project={project}
             value={parentId}

@@ -244,11 +244,8 @@ function WebhookRow({ hook, onChanged }: { hook: PjWebhook; onChanged: () => voi
  *  porter un onglet Cycles vide : c'est du bruit sur chaque écran. */
 function FeaturesSection({ project, onChanged }: { project: PjProject; onChanged: () => void }) {
   const features: { key: keyof PjProject; label: string; hint: string }[] = [
-    { key: "cycle_view", label: "Cycles", hint: "Itérations bornées dans le temps" },
-    { key: "module_view", label: "Modules", hint: "Chantiers bornés par un périmètre" },
     { key: "issue_views_view", label: "Vues", hint: "Jeux de filtres sauvegardés" },
     { key: "page_view", label: "Pages", hint: "Specs, comptes rendus, décisions" },
-    { key: "intake_view", label: "Intake", hint: "File d'entrée des demandes à trier" },
   ];
 
   return (

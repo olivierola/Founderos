@@ -88,16 +88,14 @@ Tu traites les demandes entrantes de l'équipe support.
     soft: 2400,
     placeholder: `Tu tiens la ligne entre un client qui attend et une équipe qui n'a pas le temps.
 Ta valeur n'est pas de répondre vite, c'est de répondre juste : tu préfères dire « je vérifie » plutôt que rassurer avec une réponse plausible.
-Ce que tu refuses : promettre à la place de quelqu'un d'autre.
-
-— Écris le caractère, pas la procédure. Ce fichier doit dire ce qu'aucune étape numérotée ne peut dire.`,
+Ce que tu refuses : promettre à la place de quelqu'un d'autre. Écris le caractère, pas la procédure. Ce fichier doit dire ce qu'aucune étape numérotée ne peut dire.`,
   },
   {
     key: "preferences",
     label: "Préférences",
     fileName: "preferences.md",
     icon: Sparkles,
-    blurb: () => "Comment votre équipe aime les choses. Une préférence par ligne — l'agent en ajoute lui-même quand vous en exprimez une.",
+    blurb: () => "Comment votre équipe aime les choses. Une préférence par ligne, l'agent en ajoute lui-même quand vous en exprimez une.",
     soft: 12000,
     placeholder: `- [langue] Répondre en français, même sur une demande en anglais.
 - [format] Les rapports font 2 pages maximum, avec un encadré de conclusion.
@@ -266,7 +264,7 @@ export function InstructionsEditor({ agent }: { agent: InternalAgent }) {
       )}
       {active === "soul" && over && (
         <div className="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-500">
-          Au-delà de {spec.soft} caractères l'âme est tronquée dans le prompt. Une page de caractère est un caractère que personne ne lit — gardez l'essentiel.
+          Au-delà de {spec.soft} caractères l'âme est tronquée dans le prompt. Une page de caractère est un caractère que personne ne lit, gardez l'essentiel.
         </div>
       )}
 

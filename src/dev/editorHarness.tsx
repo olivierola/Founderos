@@ -18,7 +18,7 @@ import "@/styles/globals.css";
 /** One block of every type an agent can emit, in the shapes the skill teaches. */
 const FIXTURE: ArtifactDocument = {
   blocks: [
-    { type: "banner", data: { title: "Marchés affectés par l'IA", subtitle: "Analyse — août 2026" } },
+    { type: "banner", data: { title: "Marchés affectés par l'IA", subtitle: "Analyse, août 2026" } },
     { type: "kpi", data: { items: [
       { label: "Marché 2026", value: "4,4 T$", delta: "+18 %", trend: "up" },
       { label: "Acteurs > 1 Md$", value: 7 },

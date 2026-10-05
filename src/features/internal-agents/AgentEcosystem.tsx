@@ -113,7 +113,7 @@ export function AgentEcosystemPage() {
           <EmptyState
             icon={Network}
             title="No collaborating agents yet"
-            description="Create autonomous agents and enable collaboration on them — they'll be able to message, delegate and share knowledge here."
+            description="Create autonomous agents and enable collaboration on them, they'll be able to message, delegate and share knowledge here."
           />
         </div>
       ) : (

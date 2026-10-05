@@ -281,7 +281,7 @@ export function ReportArtisanView({ payload, title, fill = true, height, onBack 
       </button>
       <button
         type="button" onClick={download} className={btn}
-        title="Version figée, sans éditeur — c'est celle qu'on envoie à un client."
+        title="Version figée, sans éditeur, c'est celle qu'on envoie à un client."
       >
         <Download className="h-3.5 w-3.5" /> Télécharger
       </button>
@@ -315,7 +315,7 @@ export function ReportArtisanView({ payload, title, fill = true, height, onBack 
       onOpenChange={setPdfOpen}
       spec={pdfSpec}
       defaultOptions={{ theme: "professional" }}
-      description="Le rapport du Rédacteur recomposé en PDF vectoriel — bannières et animations en moins, contenu intégral."
+      description="Le rapport du Rédacteur recomposé en PDF vectoriel, bannières et animations en moins, contenu intégral."
     />
   );
 

@@ -23,9 +23,9 @@ export interface ThemeDef {
 }
 
 export const THEMES: ThemeDef[] = [
-  { key: "system", label: "Système", base: null, swatch: "linear-gradient(135deg,#fafafa 50%,#1c1b1a 50%)" },
+  { key: "system", label: "Système", base: null, swatch: "linear-gradient(135deg,#ffffff 50%,#0a101c 50%)" },
   { key: "light", label: "Light", base: "light", swatch: "#ffffff" },
-  { key: "dark", label: "Dark", base: "dark", swatch: "#171615" },
+  { key: "dark", label: "Dark", base: "dark", swatch: "#0a101c" },
   { key: "carbon", label: "Carbon", base: "dark", swatch: "#121212" },
   { key: "purple", label: "Purple", base: "dark", swatch: "#231a3d" },
   { key: "plum", label: "Plum", base: "dark", swatch: "#271a26" },

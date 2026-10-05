@@ -427,7 +427,7 @@ function ApprovalBlock({ props }: { props: Record<string, unknown> }) {
       {decided ? (
         <div className={cn("flex items-center gap-1.5 text-sm font-medium", status === "rejected" ? "text-rose-500" : status === "failed" ? "text-amber-500" : "text-emerald-500")}>
           {status === "rejected" ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-          {status === "rejected" ? "Refusé" : status === "failed" ? "Approuvé — l'exécution a échoué" : "Approuvé et exécuté"}
+          {status === "rejected" ? "Refusé" : status === "failed" ? "Approuvé, l'exécution a échoué" : "Approuvé et exécuté"}
         </div>
       ) : (
         <>

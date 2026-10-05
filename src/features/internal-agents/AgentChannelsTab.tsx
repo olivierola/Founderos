@@ -131,8 +131,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
       <div>
         <h3 className="text-lg font-semibold">Channels</h3>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Connectez <span className="font-medium text-foreground">{agent.name}</span> à Slack, Microsoft Teams, Telegram, Discord ou WhatsApp —
-          votre équipe lui écrit là où elle travaille et reçoit la réponse sur place, avec le contexte des échanges. Il peut y
+          Connectez <span className="font-medium text-foreground">{agent.name}</span> à Slack, Microsoft Teams, Telegram, Discord ou WhatsApp, votre équipe lui écrit là où elle travaille et reçoit la réponse sur place, avec le contexte des échanges. Il peut y
           faire avancer le travail : quand il veut modifier un work item, il demande l'autorisation dans la conversation, et
           seule la personne qui lui a écrit peut la donner.
         </p>
@@ -171,7 +170,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
           <ProviderBadge provider="teams" />
           <div className="flex-1">
             <div className="font-medium">Microsoft Teams</div>
-            <div className="text-xs text-muted-foreground">Bot Framework — mention &amp; réponse dans les canaux Teams.</div>
+            <div className="text-xs text-muted-foreground">Bot Framework, mention &amp; réponse dans les canaux Teams.</div>
           </div>
         </div>
         <div className="mt-4 space-y-3">
@@ -245,7 +244,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
             <li>Cliquez <span className="font-medium text-foreground">Add to Slack</span> et autorisez l'app.</li>
             <li>Ajoutez le bot à un canal (<span className="font-mono text-foreground">/invite @bot</span>).</li>
-            <li>@mentionnez le bot — il répond dans le fil en tant que <span className="font-medium text-foreground">{agent.name}</span>.</li>
+            <li>@mentionnez le bot, il répond dans le fil en tant que <span className="font-medium text-foreground">{agent.name}</span>.</li>
             <li><span className="font-mono text-foreground">@bot mission: …</span> crée une mission suivie et poste le rapport ici.</li>
           </ol>
         </div>

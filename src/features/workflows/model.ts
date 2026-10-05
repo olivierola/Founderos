@@ -29,13 +29,13 @@ export const WORKFLOW_KIND_META: Record<WorkflowKind, {
   procedure: {
     label: "Procédure",
     short: "Un agent lit et décide",
-    long: "Des instructions écrites pour un agent. Il les lit au déclenchement et décide comment faire — utile quand le travail demande du jugement.",
+    long: "Des instructions écrites pour un agent. Il les lit au déclenchement et décide comment faire, utile quand le travail demande du jugement.",
     tone: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
   },
   automation: {
     label: "Automatisation",
     short: "Le moteur exécute",
-    long: "Une suite d'actions exécutées telles quelles, sans modèle. Identique à chaque fois — utile quand il n'y a rien à juger.",
+    long: "Une suite d'actions exécutées telles quelles, sans modèle. Identique à chaque fois, utile quand il n'y a rien à juger.",
     tone: "bg-violet-500/15 text-violet-600 dark:text-violet-400",
   },
 };

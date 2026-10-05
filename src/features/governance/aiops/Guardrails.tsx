@@ -74,7 +74,7 @@ export function GovGuardrailsPage() {
       </div>
 
       {items.length === 0 ? (
-        <EmptyState icon={ShieldCheck} title="Aucun guardrail" description="Définissez les règles que vos agents doivent respecter — protection des données, actions sous approbation, budgets… Ou partez de la base recommandée et ajustez-la."
+        <EmptyState icon={ShieldCheck} title="Aucun guardrail" description="Définissez les règles que vos agents doivent respecter, protection des données, actions sous approbation, budgets… Ou partez de la base recommandée et ajustez-la."
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <Button onClick={() => void install()} disabled={installing}>
@@ -185,7 +185,7 @@ function GuardrailEditor({ initial, onClose, onSave }: { initial: Guardrail; onC
 
         <div className="mt-2 grid gap-3 md:grid-cols-2">
           <Field label="Motif de détection (regex)">
-            <Input value={g.matchPattern ?? ""} onChange={(e) => set("matchPattern", e.target.value || undefined)} placeholder="\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b — vide = jugée par le sens" className="font-mono text-[12px]" />
+            <Input value={g.matchPattern ?? ""} onChange={(e) => set("matchPattern", e.target.value || undefined)} placeholder="\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b, vide = jugée par le sens" className="font-mono text-[12px]" />
           </Field>
           <Field label="Surface de contrôle">
             <Select value={g.matchScope ?? "all"} onChange={(e) => set("matchScope", e.target.value as GuardrailScope)}>
@@ -206,7 +206,7 @@ function GuardrailEditor({ initial, onClose, onSave }: { initial: Guardrail; onC
             </>
           ) : (
             <>
-              Sans motif, cette règle est évaluée <strong>par le sens</strong> — à partir du contenu écrit ci-dessous, et
+              Sans motif, cette règle est évaluée <strong>par le sens</strong>, à partir du contenu écrit ci-dessous, et
               seulement si « Jugement rapide » est actif (Gouvernance IA). Sans contenu, elle ne peut pas l'être :
               un titre seul ne suffit pas à juger.
             </>
@@ -214,7 +214,7 @@ function GuardrailEditor({ initial, onClose, onSave }: { initial: Guardrail; onC
         </p>
 
         <div className="mt-2 grid gap-3 md:grid-cols-2">
-          <Field label="Contenu (markdown) — c'est ce qui est jugé">
+          <Field label="Contenu (markdown), c'est ce qui est jugé">
             <Textarea value={g.body} onChange={(e) => set("body", e.target.value)} className="min-h-[280px] font-mono text-[13px] leading-relaxed" />
           </Field>
           <div className="space-y-1.5">

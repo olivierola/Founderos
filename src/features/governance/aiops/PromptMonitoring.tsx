@@ -57,7 +57,7 @@ export function GovPromptMonitoringPage() {
     <div className="space-y-6">
       <PageHeader
         title="Surveillance des prompts"
-        description="Chaque demande faite à un agent : qui l'a émise, sa catégorie, son résultat et les accès mobilisés — lue depuis vos runs réels."
+        description="Chaque demande faite à un agent : qui l'a émise, sa catégorie, son résultat et les accès mobilisés, lue depuis vos runs réels."
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">

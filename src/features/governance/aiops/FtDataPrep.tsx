@@ -62,7 +62,7 @@ export function GovFtDataPrepPage() {
     <div className="space-y-6">
       <PageHeader
         title="Data Preparation"
-        description="Avant tout entraînement : déduplication, nettoyage IA, anonymisation et détection — pipeline automatique du brut au prêt-à-entraîner."
+        description="Avant tout entraînement : déduplication, nettoyage IA, anonymisation et détection, pipeline automatique du brut au prêt-à-entraîner."
       />
 
       {/* Dataset selector + run */}

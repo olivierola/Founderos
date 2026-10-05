@@ -218,7 +218,7 @@ export function FaqPage() {
     /* No overflow clamp on the root: `overflow-x: hidden` would make this a
        scroll container, and a scroll container that never scrolls kills the
        sticky contents rail below. */
-    <div className="amplify amp-light atlas min-h-screen bg-white">
+    <div className="amplify hn min-h-screen bg-white">
       <LandingNav />
 
       <PageHero
@@ -261,7 +261,7 @@ export function FaqPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="mt-8 rounded-[24px] bg-[#f7f7f7] px-8 py-16 text-center">
+                  <div className="mt-8 rounded-[28px] bg-[#f7f7f7] px-8 py-16 text-center">
                     <p className="text-[19px] font-medium text-[#000007]">
                       Nothing matches that yet.
                     </p>
@@ -288,7 +288,7 @@ export function FaqPage() {
             <div className="mx-auto max-w-[1280px] px-4 sm:px-8">
               <div className="amp-rails relative pb-20">
                 <Reveal>
-                  <div className="overflow-hidden rounded-[24px] bg-[#f7f7f7]">
+                  <div className="overflow-hidden rounded-[28px] bg-[#f7f7f7]">
                     {HEADLINE.map((it, i) => (
                       <div
                         key={it.q}

@@ -50,7 +50,7 @@ export function GovOpsInfraIncidentsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Incidents infrastructure"
-        description="Santé de vos serveurs d'inférence : OOM GPU, disques, réseau, surchauffe — avec cause et impact sur le service."
+        description="Santé de vos serveurs d'inférence : OOM GPU, disques, réseau, surchauffe, avec cause et impact sur le service."
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -96,7 +96,7 @@ export function GovOpsInfraIncidentsPage() {
       {sel && (
         <DetailSheet
           onClose={() => setSel(null)}
-          title={`${sel.serverName} — ${INFRA_KIND_META[sel.kind].label}`}
+          title={`${sel.serverName}, ${INFRA_KIND_META[sel.kind].label}`}
           subtitle={timeAgo(sel.ts)}
         >
           <DetailSection title="Incident">

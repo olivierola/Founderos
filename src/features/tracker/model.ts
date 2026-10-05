@@ -203,8 +203,6 @@ export interface PjIssue {
   completed_at: string | null;
   sort_order: number;
   is_draft: boolean;
-  /** Marque un epic : un work item qui en porte d'autres (0224). */
-  is_epic: boolean;
   archived_at: string | null;
   created_by: string | null;
   updated_by: string | null;
@@ -216,8 +214,6 @@ export interface PjIssue {
   /** Les agents assignés (0232), lus à côté des personnes. */
   agent_ids: string[];
   label_ids: string[];
-  cycle_id: string | null;
-  module_ids: string[];
   sub_issue_count: number;
   attachment_count: number;
   /** Combien de ressources du projet cet item désigne (migration 0264). */
@@ -225,41 +221,11 @@ export interface PjIssue {
   link_count: number;
 }
 
-export interface PjCycle {
-  id: string;
-  pj_project_id: string;
-  workspace_id: string;
-  name: string;
-  description: string;
-  start_date: string | null;
-  end_date: string | null;
-  owned_by: string | null;
-  sort_order: number;
-  progress_snapshot: Record<string, unknown>;
-  archived_at: string | null;
-  created_at: string;
-}
-
 /** Le statut d'un module est DÉCLARÉ, contrairement à la phase d'un cycle qui se
  *  déduit de ses dates : un module peut être en pause sans que ses dates le
  *  disent. */
 export type ModuleStatus =
   | "backlog" | "planned" | "in-progress" | "paused" | "completed" | "cancelled";
-
-export interface PjModule {
-  id: string;
-  pj_project_id: string;
-  workspace_id: string;
-  name: string;
-  description: string;
-  status: ModuleStatus;
-  start_date: string | null;
-  target_date: string | null;
-  lead_id: string | null;
-  sort_order: number;
-  archived_at: string | null;
-  created_at: string;
-}
 
 export interface PjView {
   id: string;
@@ -337,17 +303,6 @@ export interface PjAttachment {
   size_bytes: number;
   mime_type: string | null;
   created_by: string | null;
-  created_at: string;
-}
-
-export interface PjIntakeItem {
-  id: string;
-  pj_project_id: string;
-  issue_id: string;
-  status: -2 | -1 | 0 | 1 | 2;
-  snoozed_till: string | null;
-  duplicate_to: string | null;
-  source: string;
   created_at: string;
 }
 
@@ -547,7 +502,7 @@ const ISSUE_COLS =
   "*";
 
 type RawIssue = Omit<PjIssue,
-  "assignee_ids" | "label_ids" | "cycle_id" | "module_ids" | "sub_issue_count" | "attachment_count" | "link_count" | "resource_count">;
+  "assignee_ids" | "label_ids" | "sub_issue_count" | "attachment_count" | "link_count" | "resource_count">;
 
 /**
  * Recolle les liaisons d'un lot d'items en 5 requêtes constantes, quel que soit
@@ -558,15 +513,13 @@ async function attachRelations(rows: RawIssue[]): Promise<PjIssue[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
 
-  const [assignees, agents, labels, cycles, modules, children, attachments, resources] = await Promise.all([
+  const [assignees, agents, labels, children, attachments, resources] = await Promise.all([
     supabase.from("pj_issue_assignees").select("issue_id, user_id").in("issue_id", ids),
     // Les agents voyagent AVEC les personnes, dans le même aller-retour : les
     // charger à part doublerait le nombre de requêtes d'un board pour une
     // information qui s'affiche sur la même ligne.
     supabase.from("pj_issue_agents").select("issue_id, agent_id").in("issue_id", ids),
     supabase.from("pj_issue_labels").select("issue_id, label_id").in("issue_id", ids),
-    supabase.from("pj_cycle_issues").select("issue_id, cycle_id").in("issue_id", ids),
-    supabase.from("pj_module_issues").select("issue_id, module_id").in("issue_id", ids),
     supabase.from("pj_issues").select("parent_id").in("parent_id", ids),
     supabase.from("pj_issue_attachments").select("issue_id").in("issue_id", ids),
     supabase.from("pj_issue_assets").select("issue_id").in("issue_id", ids),
@@ -585,8 +538,6 @@ async function attachRelations(rows: RawIssue[]): Promise<PjIssue[]> {
   const byAssignee = group(assignees.data as Array<{ issue_id: string; user_id: string }> | null, "issue_id", "user_id");
   const byAgent = group(agents.data as Array<{ issue_id: string; agent_id: string }> | null, "issue_id", "agent_id");
   const byLabel = group(labels.data as Array<{ issue_id: string; label_id: string }> | null, "issue_id", "label_id");
-  const byModule = group(modules.data as Array<{ issue_id: string; module_id: string }> | null, "issue_id", "module_id");
-  const cycleOf = new Map((cycles.data ?? []).map((r: { issue_id: string; cycle_id: string }) => [r.issue_id, r.cycle_id]));
 
   const childCount = new Map<string, number>();
   for (const r of (children.data ?? []) as Array<{ parent_id: string | null }>) {
@@ -606,8 +557,6 @@ async function attachRelations(rows: RawIssue[]): Promise<PjIssue[]> {
     assignee_ids: byAssignee.get(r.id) ?? [],
     agent_ids: byAgent.get(r.id) ?? [],
     label_ids: byLabel.get(r.id) ?? [],
-    cycle_id: cycleOf.get(r.id) ?? null,
-    module_ids: byModule.get(r.id) ?? [],
     sub_issue_count: childCount.get(r.id) ?? 0,
     attachment_count: attachCount.get(r.id) ?? 0,
     resource_count: resourceCount.get(r.id) ?? 0,
@@ -617,38 +566,16 @@ async function attachRelations(rows: RawIssue[]): Promise<PjIssue[]> {
 
 export interface IssueScope {
   pjProjectId: string;
-  /** Restreint aux items d'un cycle / d'un module / de la file d'intake. */
-  cycleId?: string;
-  moduleId?: string;
+  /** Restreint aux demandes de la file d'intake. */
   intake?: boolean;
   includeArchived?: boolean;
   includeDrafts?: boolean;
   /** Les sous-tâches d'un item donné, pour l'arbre du panneau de détail. */
   parentId?: string;
-  /** Ne renvoyer QUE les epics. Par défaut ils sont exclus : ils ont leur
-   *  propre onglet, et les mêler aux work items compterait leur avancement
-   *  deux fois. */
-  onlyEpics?: boolean;
 }
 
 export async function fetchIssues(scope: IssueScope): Promise<PjIssue[]> {
-  let ids: string[] | null = null;
-
-  // Cycle et module passent par leur table de liaison : filtrer côté client
-  // ferait tirer tout le projet pour n'en afficher qu'une itération.
-  if (scope.cycleId) {
-    const { data } = await supabase.from("pj_cycle_issues").select("issue_id").eq("cycle_id", scope.cycleId);
-    ids = (data ?? []).map((r: { issue_id: string }) => r.issue_id);
-  }
-  if (scope.moduleId) {
-    const { data } = await supabase.from("pj_module_issues").select("issue_id").eq("module_id", scope.moduleId);
-    const modIds = (data ?? []).map((r: { issue_id: string }) => r.issue_id);
-    ids = ids ? ids.filter((i) => modIds.includes(i)) : modIds;
-  }
-  if (ids && !ids.length) return [];
-
   let q = supabase.from("pj_issues").select(ISSUE_COLS).eq("pj_project_id", scope.pjProjectId);
-  if (ids) q = q.in("id", ids);
   if (!scope.includeArchived) q = q.is("archived_at", null);
   if (!scope.includeDrafts) q = q.eq("is_draft", false);
   if (scope.parentId !== undefined) q = q.eq("parent_id", scope.parentId);
@@ -656,13 +583,7 @@ export async function fetchIssues(scope: IssueScope): Promise<PjIssue[]> {
   const { data, error } = await q.order("sort_order", { ascending: true });
   if (error) throw new Error(error.message);
 
-  // Les epics ont leur propre onglet : les laisser dans la liste des work items
-  // mélangerait deux niveaux et compterait leur avancement deux fois. Le filtre
-  // est côté client et non en `.eq("is_epic", false)` parce que la colonne
-  // n'existe qu'après 0224 — absente, la valeur est `undefined`, donc fausse, et
-  // tout s'affiche comme avant plutôt que de faire échouer la requête.
-  const wantEpics = scope.onlyEpics === true;
-  const rows = ((data ?? []) as RawIssue[]).filter((r) => Boolean(r.is_epic) === wantEpics);
+  const rows = (data ?? []) as RawIssue[];
   return attachRelations(rows);
 }
 
@@ -688,11 +609,7 @@ export interface CreateIssueInput {
   type_id?: string | null;
   assignee_ids?: string[];
   label_ids?: string[];
-  cycle_id?: string | null;
-  module_ids?: string[];
   is_draft?: boolean;
-  /** Un epic est un work item marqué, pas une entité à part (0224). */
-  is_epic?: boolean;
   sort_order?: number;
   createdBy: string | null;
 }
@@ -721,7 +638,6 @@ export async function createIssue(input: CreateIssueInput): Promise<PjIssue> {
     estimate_point_id: input.estimate_point_id ?? null,
     type_id: input.type_id ?? null,
     is_draft: input.is_draft ?? false,
-    is_epic: input.is_epic ?? false,
     sort_order: input.sort_order ?? 65535,
     created_by: input.createdBy,
     updated_by: input.createdBy,
@@ -735,8 +651,6 @@ export async function createIssue(input: CreateIssueInput): Promise<PjIssue> {
   await Promise.all([
     setAssignees(issue.id, input.pjProjectId, input.workspaceId, input.assignee_ids ?? []),
     setLabels(issue.id, input.pjProjectId, input.workspaceId, input.label_ids ?? []),
-    input.cycle_id ? setIssueCycle(issue.id, input.workspaceId, input.cycle_id) : Promise.resolve(),
-    setIssueModules(issue.id, input.workspaceId, input.module_ids ?? []),
   ]);
 
   const [full] = await attachRelations([issue]);
@@ -745,7 +659,7 @@ export async function createIssue(input: CreateIssueInput): Promise<PjIssue> {
 
 export async function updateIssue(
   id: string,
-  patch: Partial<Omit<PjIssue, "assignee_ids" | "label_ids" | "cycle_id" | "module_ids">>,
+  patch: Partial<Omit<PjIssue, "assignee_ids" | "label_ids">>,
   actorId?: string | null,
 ): Promise<void> {
   const { error } = await supabase.from("pj_issues")
@@ -934,23 +848,6 @@ export async function setLabels(
   })));
 }
 
-export async function setIssueCycle(
-  issueId: string, workspaceId: string, cycleId: string | null,
-): Promise<void> {
-  await supabase.from("pj_cycle_issues").delete().eq("issue_id", issueId);
-  if (cycleId) {
-    await supabase.from("pj_cycle_issues").insert({ issue_id: issueId, cycle_id: cycleId, workspace_id: workspaceId });
-  }
-}
-
-export async function setIssueModules(
-  issueId: string, workspaceId: string, moduleIds: string[],
-): Promise<void> {
-  await replaceLinks("pj_module_issues", issueId, moduleIds.map((module_id) => ({
-    issue_id: issueId, module_id, workspace_id: workspaceId,
-  })));
-}
-
 // ── Relations, commentaires, activité, pièces jointes ────────────────────────
 
 export async function fetchRelations(issueId: string): Promise<PjRelation[]> {
@@ -1044,93 +941,6 @@ export async function fetchAttachments(issueId: string): Promise<PjAttachment[]>
   return (data ?? []) as PjAttachment[];
 }
 
-// ── Cycles ──────────────────────────────────────────────────────────────────
-
-const CYCLE_COLS =
-  "id, pj_project_id, workspace_id, name, description, start_date, end_date, owned_by, sort_order, progress_snapshot, archived_at, created_at";
-
-export async function fetchCycles(pjProjectId: string): Promise<PjCycle[]> {
-  const { data, error } = await supabase.from("pj_cycles").select(CYCLE_COLS)
-    .eq("pj_project_id", pjProjectId).is("archived_at", null)
-    .order("start_date", { ascending: true, nullsFirst: false });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as PjCycle[];
-}
-
-export async function createCycle(input: {
-  pjProjectId: string; workspaceId: string; name: string;
-  start_date?: string | null; end_date?: string | null; description?: string;
-  createdBy: string | null;
-}): Promise<PjCycle> {
-  const { data, error } = await supabase.from("pj_cycles").insert({
-    pj_project_id: input.pjProjectId, workspace_id: input.workspaceId, name: input.name,
-    description: input.description ?? "", start_date: input.start_date ?? null,
-    end_date: input.end_date ?? null, owned_by: input.createdBy, created_by: input.createdBy,
-  }).select(CYCLE_COLS).single();
-  if (error) throw new Error(error.message);
-  return data as PjCycle;
-}
-
-export async function updateCycle(id: string, patch: Partial<PjCycle>): Promise<void> {
-  const { error } = await supabase.from("pj_cycles")
-    .update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-export async function deleteCycle(id: string): Promise<void> {
-  await supabase.from("pj_cycles").delete().eq("id", id);
-}
-
-/**
- * Un cycle est passé / en cours / à venir selon ses dates, jamais selon un
- * champ de statut : un statut saisi à la main finit toujours par mentir sur un
- * sprint que personne n'a pensé à clore.
- */
-export function cyclePhase(c: PjCycle, today = new Date()): "draft" | "upcoming" | "current" | "completed" {
-  if (!c.start_date || !c.end_date) return "draft";
-  const d = today.toISOString().slice(0, 10);
-  if (d < c.start_date) return "upcoming";
-  if (d > c.end_date) return "completed";
-  return "current";
-}
-
-// ── Modules ─────────────────────────────────────────────────────────────────
-
-const MODULE_COLS =
-  "id, pj_project_id, workspace_id, name, description, status, start_date, target_date, lead_id, sort_order, archived_at, created_at";
-
-export async function fetchModules(pjProjectId: string): Promise<PjModule[]> {
-  const { data, error } = await supabase.from("pj_modules").select(MODULE_COLS)
-    .eq("pj_project_id", pjProjectId).is("archived_at", null).order("sort_order");
-  if (error) throw new Error(error.message);
-  return (data ?? []) as PjModule[];
-}
-
-export async function createModule(input: {
-  pjProjectId: string; workspaceId: string; name: string; description?: string;
-  status?: PjModule["status"]; start_date?: string | null; target_date?: string | null;
-  lead_id?: string | null; createdBy: string | null;
-}): Promise<PjModule> {
-  const { data, error } = await supabase.from("pj_modules").insert({
-    pj_project_id: input.pjProjectId, workspace_id: input.workspaceId, name: input.name,
-    description: input.description ?? "", status: input.status ?? "planned",
-    start_date: input.start_date ?? null, target_date: input.target_date ?? null,
-    lead_id: input.lead_id ?? null, created_by: input.createdBy,
-  }).select(MODULE_COLS).single();
-  if (error) throw new Error(error.message);
-  return data as PjModule;
-}
-
-export async function updateModule(id: string, patch: Partial<PjModule>): Promise<void> {
-  const { error } = await supabase.from("pj_modules")
-    .update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-export async function deleteModule(id: string): Promise<void> {
-  await supabase.from("pj_modules").delete().eq("id", id);
-}
-
 // ── Vues sauvegardées ───────────────────────────────────────────────────────
 
 const VIEW_COLS =
@@ -1206,33 +1016,6 @@ export async function fetchAnalytics(dashboardId: string): Promise<AnalyticsRow[
   const { data, error } = await supabase.rpc("pj_analytics", { p_dashboard: dashboardId });
   if (error) throw new Error(error.message);
   return (data ?? []) as AnalyticsRow[];
-}
-
-export interface AnalyticsCycle {
-  cycle_id: string; name: string; project_name: string;
-  project_logo: Record<string, unknown>; lead_id: string | null;
-  start_date: string | null; end_date: string | null;
-  total: number; completed: number; percent: number;
-  phase: "draft" | "upcoming" | "current" | "completed";
-}
-
-export async function fetchAnalyticsCycles(dashboardId: string): Promise<AnalyticsCycle[]> {
-  const { data, error } = await supabase.rpc("pj_analytics_cycles", { p_dashboard: dashboardId });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as AnalyticsCycle[];
-}
-
-export interface AnalyticsModule {
-  module_id: string; name: string; project_name: string;
-  project_logo: Record<string, unknown>; lead_id: string | null;
-  start_date: string | null; target_date: string | null;
-  total: number; completed: number; percent: number; status: ModuleStatus;
-}
-
-export async function fetchAnalyticsModules(dashboardId: string): Promise<AnalyticsModule[]> {
-  const { data, error } = await supabase.rpc("pj_analytics_modules", { p_dashboard: dashboardId });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as AnalyticsModule[];
 }
 
 export interface AnalyticsMember {
@@ -1486,111 +1269,6 @@ export async function deletePage(id: string): Promise<void> {
   await supabase.from("pj_pages").delete().eq("id", id);
 }
 
-// ── Intake ──────────────────────────────────────────────────────────────────
-
-export async function fetchIntake(pjProjectId: string): Promise<PjIntakeItem[]> {
-  const { data } = await supabase.from("pj_intake_issues")
-    .select("id, pj_project_id, issue_id, status, snoozed_till, duplicate_to, source, created_at")
-    .eq("pj_project_id", pjProjectId).order("created_at", { ascending: false });
-  return (data ?? []) as PjIntakeItem[];
-}
-
-/**
- * Les portes d'entrée d'une demande. Elles ne changent rien au traitement —
- * c'est bien le point de l'intake, avoir UNE file quelle que soit l'origine —
- * mais elles restent affichées : une demande arrivée par formulaire et une
- * remontée par mail ne se lisent pas avec la même attente de contexte.
- */
-export const INTAKE_SOURCES: { key: string; label: string }[] = [
-  { key: "in-app", label: "In-App" },
-  { key: "email", label: "Mail" },
-  { key: "forms", label: "Formulaire" },
-];
-
-/**
- * Le second paramètre accepte la date de veille directement : repousser une
- * demande est le seul cas où le statut et une date changent ensemble, et les
- * séparer laisserait passer une veille sans échéance — c'est-à-dire un oubli.
- */
-export async function setIntakeStatus(
-  id: string,
-  status: PjIntakeItem["status"],
-  snoozedTill?: string | null,
-  extra?: { duplicate_to?: string | null },
-): Promise<void> {
-  await supabase.from("pj_intake_issues").update({
-    status,
-    snoozed_till: status === 0 ? (snoozedTill ?? null) : null,
-    ...extra,
-    updated_at: new Date().toISOString(),
-  }).eq("id", id);
-}
-
-/**
- * Consigner une demande à la main. Le work item est créé SANS état : c'est ce
- * qui le tient hors des boards et des compteurs tant qu'il n'est pas accepté.
- */
-export async function createIntakeItem(input: {
-  pjProjectId: string; workspaceId: string; name: string;
-  description_html?: string; source: string; createdBy: string | null;
-}): Promise<void> {
-  const { data, error } = await supabase.from("pj_issues").insert({
-    pj_project_id: input.pjProjectId,
-    workspace_id: input.workspaceId,
-    name: input.name,
-    description_html: input.description_html ?? "",
-    // Le texte plat alimente la recherche : le laisser vide rendrait la
-    // demande introuvable par son contenu.
-    description_text: (input.description_html ?? "").replace(/<[^>]*>/g, " ").trim(),
-    state_id: null,
-    created_by: input.createdBy,
-  }).select("id").single();
-  if (error) throw new Error(error.message);
-
-  const { error: intakeError } = await supabase.from("pj_intake_issues").insert({
-    pj_project_id: input.pjProjectId,
-    workspace_id: input.workspaceId,
-    issue_id: (data as { id: string }).id,
-    source: input.source,
-    created_by: input.createdBy,
-  });
-  if (intakeError) throw new Error(intakeError.message);
-}
-
-// ── Archivage des cycles et des modules ─────────────────────────────────────
-//
-// Un cycle terminé et un module livré encombrent les listes autant qu'un work
-// item clos : au bout d'un an, la page Cycles compte cinquante entrées dont
-// deux servent encore. Les archiver les retire des listes et des sélecteurs
-// sans toucher aux work items qu'ils portaient — c'est ce qui distingue
-// l'archivage de la suppression, qui, elle, dénouerait tous les rattachements.
-
-export async function archiveCycle(id: string, archived = true): Promise<void> {
-  const { error } = await supabase.from("pj_cycles")
-    .update({ archived_at: archived ? new Date().toISOString() : null }).eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-export async function archiveModule(id: string, archived = true): Promise<void> {
-  const { error } = await supabase.from("pj_modules")
-    .update({ archived_at: archived ? new Date().toISOString() : null }).eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-export async function fetchArchivedCycles(pjProjectId: string): Promise<PjCycle[]> {
-  const { data } = await supabase.from("pj_cycles").select(CYCLE_COLS)
-    .eq("pj_project_id", pjProjectId).not("archived_at", "is", null)
-    .order("archived_at", { ascending: false });
-  return (data ?? []) as PjCycle[];
-}
-
-export async function fetchArchivedModules(pjProjectId: string): Promise<PjModule[]> {
-  const { data } = await supabase.from("pj_modules").select(MODULE_COLS)
-    .eq("pj_project_id", pjProjectId).not("archived_at", "is", null)
-    .order("archived_at", { ascending: false });
-  return (data ?? []) as PjModule[];
-}
-
 // ── Favoris ─────────────────────────────────────────────────────────────────
 
 export async function fetchFavorites(workspaceId: string, userId: string) {
@@ -1639,13 +1317,6 @@ export async function fetchProgress(
   return ((data ?? [])[0] as Progress) ?? null;
 }
 
-export interface BurndownPoint { day: string; remaining: number; completed: number }
-
-export async function fetchBurndown(cycleId: string): Promise<BurndownPoint[]> {
-  const { data, error } = await supabase.rpc("pj_burndown", { p_cycle: cycleId });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as BurndownPoint[];
-}
 
 export interface SearchHit {
   kind: "issue" | "cycle" | "module" | "page";
@@ -1805,92 +1476,6 @@ export async function deleteAttachment(id: string, storagePath: string): Promise
   // orphelin que plus rien ne référence, donc que personne ne nettoiera.
   await supabase.storage.from(ATTACHMENT_BUCKET).remove([storagePath]);
   await supabase.from("pj_issue_attachments").delete().eq("id", id);
-}
-
-// ── Initiatives (migration 0223) ────────────────────────────────────────────
-
-export interface PjInitiative {
-  id: string;
-  workspace_id: string;
-  dashboard_id: string | null;
-  name: string;
-  description: string;
-  logo_props: Record<string, unknown>;
-  status: "planned" | "active" | "paused" | "completed" | "cancelled";
-  lead_id: string | null;
-  start_date: string | null;
-  target_date: string | null;
-  sort_order: number;
-  archived_at: string | null;
-  /** Santé déclarée (0224), null tant que personne ne s'est prononcé. */
-  health: Health | null;
-  health_updated_at: string | null;
-  created_at: string;
-}
-
-export interface InitiativeProgress {
-  total: number; completed: number; started: number; overdue: number; projects: number;
-}
-
-/** `*` pour la même raison que PROJECT_COLS : `health` n'existe qu'après 0224. */
-const INITIATIVE_COLS = "*";
-
-export async function fetchInitiatives(dashboardId: string): Promise<PjInitiative[]> {
-  const { data, error } = await supabase.from("pj_initiatives").select(INITIATIVE_COLS)
-    .eq("dashboard_id", dashboardId).is("archived_at", null).order("sort_order");
-  if (error) throw new Error(error.message);
-  return (data ?? []) as PjInitiative[];
-}
-
-export async function createInitiative(input: {
-  workspaceId: string; dashboardId: string; name: string; description?: string;
-  status?: PjInitiative["status"]; start_date?: string | null; target_date?: string | null;
-  createdBy: string | null;
-}): Promise<PjInitiative> {
-  const { data, error } = await supabase.from("pj_initiatives").insert({
-    workspace_id: input.workspaceId, dashboard_id: input.dashboardId,
-    name: input.name, description: input.description ?? "",
-    status: input.status ?? "active",
-    start_date: input.start_date ?? null, target_date: input.target_date ?? null,
-    created_by: input.createdBy, lead_id: input.createdBy,
-  }).select(INITIATIVE_COLS).single();
-  if (error) throw new Error(error.message);
-  return data as PjInitiative;
-}
-
-export async function updateInitiative(id: string, patch: Partial<PjInitiative>): Promise<void> {
-  const { error } = await supabase.from("pj_initiatives")
-    .update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-export async function deleteInitiative(id: string): Promise<void> {
-  await supabase.from("pj_initiatives").delete().eq("id", id);
-}
-
-export async function fetchInitiativeProjects(initiativeId: string): Promise<string[]> {
-  const { data } = await supabase.from("pj_initiative_projects")
-    .select("pj_project_id").eq("initiative_id", initiativeId);
-  return (data ?? []).map((r: { pj_project_id: string }) => r.pj_project_id);
-}
-
-export async function setInitiativeProjects(
-  initiativeId: string, workspaceId: string, projectIds: string[],
-): Promise<void> {
-  await supabase.from("pj_initiative_projects").delete().eq("initiative_id", initiativeId);
-  if (projectIds.length) {
-    await supabase.from("pj_initiative_projects").insert(
-      projectIds.map((pj_project_id) => ({
-        initiative_id: initiativeId, pj_project_id, workspace_id: workspaceId,
-      })),
-    );
-  }
-}
-
-export async function fetchInitiativeProgress(id: string): Promise<InitiativeProgress | null> {
-  const { data, error } = await supabase.rpc("pj_initiative_progress", { p_initiative: id });
-  if (error) throw new Error(error.message);
-  return ((data ?? [])[0] as InitiativeProgress) ?? null;
 }
 
 // ── Votre travail ───────────────────────────────────────────────────────────
@@ -2091,7 +1676,7 @@ export interface PjDashboard {
 }
 
 export type WidgetKind =
-  | "count" | "distribution" | "progress" | "burndown" | "issue_list" | "overdue";
+  | "count" | "distribution" | "progress" | "issue_list" | "overdue";
 
 export interface PjWidget {
   id: string;
@@ -2250,35 +1835,6 @@ export async function addStatusUpdate(input: {
 
 export async function deleteStatusUpdate(id: string): Promise<void> {
   await supabase.from("pj_status_updates").delete().eq("id", id);
-}
-
-// ── Epics ───────────────────────────────────────────────────────────────────
-
-export async function fetchEpics(pjProjectId: string): Promise<PjIssue[]> {
-  // Passe par `fetchIssues` pour hériter du filtre résilient : sur une base sans
-  // 0224, `.eq("is_epic", true)` ferait échouer la requête au lieu de rendre
-  // une liste vide.
-  return fetchIssues({ pjProjectId, onlyEpics: true });
-}
-
-export async function fetchEpicChildren(epicId: string): Promise<PjIssue[]> {
-  const { data: links } = await supabase.from("pj_epic_issues")
-    .select("issue_id").eq("epic_id", epicId);
-  const ids = (links ?? []).map((r: { issue_id: string }) => r.issue_id);
-  if (!ids.length) return [];
-  const { data } = await supabase.from("pj_issues").select(ISSUE_COLS).in("id", ids);
-  return attachRelations((data ?? []) as RawIssue[]);
-}
-
-export async function setEpicChildren(
-  epicId: string, workspaceId: string, issueIds: string[],
-): Promise<void> {
-  await supabase.from("pj_epic_issues").delete().eq("epic_id", epicId);
-  if (issueIds.length) {
-    await supabase.from("pj_epic_issues").insert(
-      issueIds.map((issue_id) => ({ epic_id: epicId, issue_id, workspace_id: workspaceId })),
-    );
-  }
 }
 
 // ── Teamspaces ──────────────────────────────────────────────────────────────

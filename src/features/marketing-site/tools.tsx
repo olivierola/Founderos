@@ -1,5 +1,6 @@
 import {
   siConfluence,
+  siGoogle,
   siGithub,
   siGitlab,
   siGooglebigquery,
@@ -37,6 +38,11 @@ export type Tool = {
   path?: string;
   /** Overrides the initial for the monogram fallback. */
   mono?: string;
+  /** The brand's own full-colour logo, served from /public/logos — for the
+      brands simple-icons dropped over trademark (Slack, Salesforce, Microsoft,
+      AWS). Official artwork from Wikimedia Commons, shown to say "works with",
+      never to imply a customer relationship. */
+  logo?: string;
 };
 
 export type ToolGroup = { title: string; items: Tool[] };
@@ -53,18 +59,18 @@ export const TOOL_GROUPS: ToolGroup[] = [
   {
     title: "Work & identity",
     items: [
-      { name: "Microsoft 365", hex: "D83B01", mono: "M" },
-      { name: "Google Workspace", hex: "4285F4", mono: "G" },
-      { name: "Entra ID", hex: "0078D4", mono: "E" },
+      { name: "Microsoft 365", hex: "D83B01", mono: "M", logo: "/logos/microsoft365.svg" },
+      { ...si(siGoogle, "Google Workspace") },
+      { name: "Entra ID", hex: "0078D4", mono: "E", logo: "/logos/entra.svg" },
       si(siOkta, "Okta"),
-      { name: "Slack", hex: "611F69", mono: "S" },
-      { name: "Teams", hex: "6264A7", mono: "T" },
+      { name: "Slack", hex: "611F69", mono: "S", logo: "/logos/slack.svg" },
+      { name: "Teams", hex: "6264A7", mono: "T", logo: "/logos/teams.svg" },
     ],
   },
   {
     title: "Business systems",
     items: [
-      { name: "Salesforce", hex: "00A1E0", mono: "S" },
+      { name: "Salesforce", hex: "00A1E0", mono: "S", logo: "/logos/salesforce.svg" },
       si(siHubspot, "HubSpot"),
       si(siSap, "SAP"),
       si(siSage, "Sage"),
@@ -89,8 +95,8 @@ export const TOOL_GROUPS: ToolGroup[] = [
       si(siSnowflake, "Snowflake"),
       si(siGooglebigquery, "BigQuery"),
       si(siPostgresql, "PostgreSQL"),
-      { name: "SharePoint", hex: "038387", mono: "S" },
-      { name: "S3", hex: "569A31", mono: "S3" },
+      { name: "SharePoint", hex: "038387", mono: "S", logo: "/logos/sharepoint.svg" },
+      { name: "Amazon S3", hex: "FF9900", mono: "S3", logo: "/logos/aws.svg" },
       si(siGoogledrive, "Drive"),
     ],
   },
@@ -110,6 +116,17 @@ export const ALL_TOOLS: Tool[] = TOOL_GROUPS.flatMap((g) => g.items);
    hovered; a mark that hard-codes its brand colour cannot be asked to go quiet.
    The brand hue reaches it through the `--brand` custom property instead. */
 export function ToolMark({ tool, size = 18 }: { tool: Tool; size?: number }) {
+  if (tool.logo) {
+    return (
+      <img
+        src={tool.logo}
+        alt=""
+        aria-hidden
+        className="shrink-0 object-contain"
+        style={{ height: size, width: tool.name === "Amazon S3" || tool.name === "Salesforce" ? size * 1.45 : size }}
+      />
+    );
+  }
   if (!tool.path) {
     return (
       <span

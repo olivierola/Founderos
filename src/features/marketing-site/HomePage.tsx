@@ -1,52 +1,45 @@
-import { AtlasPage } from "./atlas/AtlasPage";
-import { LandingClose } from "./LandingClose";
-import { HomeHero } from "./home/HomeHero";
-import { HomePrinciple } from "./home/HomePrinciple";
-import { HomeProblem } from "./home/HomeProblem";
-import { HomeWorkforce } from "./home/HomeWorkforce";
-import { HomeWork } from "./home/HomeWork";
-import { HomeCommitments } from "./home/HomeCommitments";
-import { HomeCompare } from "./home/HomeCompare";
-import { HomeHowItWorks } from "./home/HomeHowItWorks";
-import { HomePricing } from "./home/HomePricing";
-import { HomeNoLockIn } from "./home/HomeNoLockIn";
-import { HomeCalculator } from "./home/HomeCalculator";
-import { HomeServices } from "./home/HomeServices";
-import { HomeIntegrations } from "./home/HomeIntegrations";
-import { HomeFaq } from "./home/HomeFaq";
+import { HnPage } from "./hn/HnPage";
+import { HomeHeroHn } from "./hn/home/HomeHeroHn";
+import { HomeProductsHn, HomeUseCasesHn } from "./hn/home/HomeProductsHn";
+import { HomeCompareHn } from "./hn/home/HomeCompareHn";
+import { HomeAgentsHn, HomeDifferentHn } from "./hn/home/HomeDarkHn";
+import { HomeAgentsBandHn, HomeFeaturesHn, HomeHowHn } from "./hn/home/HomeHowHn";
+import { HomeBlogHn, HomeGovernHn, HomePrincipleHn, HomeTrustHn } from "./hn/home/HomeGovernHn";
+import { HomeTestimonialsHn } from "./hn/home/HomeTestimonialsHn";
 
 /* ══ The landing page ════════════════════════════════════════════════════════
-   Built on the Atlas register (see atlas/): white paper, Inter set tight with a
-   Source Serif italic answer in every heading, and the violet poured through
-   black into white inside rounded panels inset from the viewport.
+   Built on the Hunar register (see hn/): Geist, one blue, cool off-white bands
+   alternating with deep navy ones, gradient artwork and product vignettes
+   instead of photographs; cards flood blue on hover and fade up on scroll.
 
-   The order follows the reference, section for section, with our own content
-   in each slot — and where the reference shows proof we do not have yet
-   (endorsements, customer results, testimonials, a performance guarantee), the
-   slot carries a mechanism the product actually runs instead:
+   The order follows hunar.ai section for section, with our content in each
+   slot. Where the reference shows proof we do not have yet — customer logos,
+   customer stories with figures, testimonials, certifications — the slot
+   carries something we can stand behind instead (connectors, illustrative
+   workflows, the product's own rule, the security measures in place):
 
-     hero → facts & stack → the principle → the problem → the workforce (six
-     offers) → the work an agent takes on → commitments → old way vs. new →
-     how it works → pricing → no lock-in → calculator → services →
-     integrations → FAQ → get started → footer.                               */
+     hero & marks → solution cards → products → use cases → why it holds up →
+     meet the agents → what makes us different → product band → built for real
+     work → how it works → the principle → Anduran Govern & solution blocks →
+     built for scrutiny & integrations → testimonials (only once real ones
+     exist; a labelled preview in development) → from the blog → CTA → footer.        */
 export function HomePage() {
   return (
-    <AtlasPage>
-      <HomeHero />
-      <HomePrinciple />
-      <HomeProblem />
-      <HomeWorkforce />
-      <HomeWork />
-      <HomeCommitments />
-      <HomeCompare />
-      <HomeHowItWorks />
-      <HomePricing />
-      <HomeNoLockIn />
-      <HomeCalculator />
-      <HomeServices />
-      <HomeIntegrations />
-      <HomeFaq />
-      <LandingClose />
-    </AtlasPage>
+    <HnPage>
+      <HomeHeroHn />
+      <HomeProductsHn />
+      <HomeUseCasesHn />
+      <HomeCompareHn />
+      <HomeAgentsHn />
+      <HomeDifferentHn />
+      <HomeAgentsBandHn />
+      <HomeFeaturesHn />
+      <HomeHowHn />
+      <HomePrincipleHn />
+      <HomeGovernHn />
+      <HomeTrustHn />
+      <HomeTestimonialsHn />
+      <HomeBlogHn />
+    </HnPage>
   );
 }

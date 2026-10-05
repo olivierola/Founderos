@@ -273,7 +273,7 @@ export async function ensureOrchestrator(
   const { data, error } = await supabase.from("internal_agents").insert({
     workspace_id: workspaceId, project_id: projectId, service_dashboard_id: dashboard.id,
     is_orchestrator: true, name: "Assistant",
-    persona: `L'assistant du service « ${dashboard.name} » — il répond, coordonne, crée des agents et planifie le travail à la demande.`,
+    persona: `L'assistant du service « ${dashboard.name} », il répond, coordonne, crée des agents et planifie le travail à la demande.`,
     chat_enabled: true, mission_enabled: true, created_by: userId,
   }).select("id").single();
   if (error) throw new Error(error.message);

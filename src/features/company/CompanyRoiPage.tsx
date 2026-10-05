@@ -350,7 +350,7 @@ export function CompanyRoiPage() {
                     <td className="py-2 pr-3">
                       {e.rule_id
                         ? <span className="text-muted-foreground">{e.rule_label}</span>
-                        : <span className="italic text-amber-600 dark:text-amber-400">aucune — compte pour zéro</span>}
+                        : <span className="italic text-amber-600 dark:text-amber-400">aucune, compte pour zéro</span>}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
                       {e.minutes_saved ? `${e.minutes_saved} min` : "—"}
@@ -362,7 +362,7 @@ export function CompanyRoiPage() {
             </table>
             {(data?.events ?? []).length > 60 && (
               <p className="mt-2 text-[11px] text-muted-foreground">
-                60 premiers livrables affichés sur {(data?.events ?? []).length} — les totaux ci-dessus portent sur l'ensemble.
+                60 premiers livrables affichés sur {(data?.events ?? []).length}, les totaux ci-dessus portent sur l'ensemble.
               </p>
             )}
           </div>

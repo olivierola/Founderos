@@ -594,7 +594,7 @@ function CaseDialog({
           <Field label="Expected outcome (optional)">
             <Input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="Onboarding screen is visible" />
           </Field>
-          <Field label="Test data (optional) — key / value the agent can use to fill forms">
+          <Field label="Test data (optional), key / value the agent can use to fill forms">
             <div className="space-y-2">
               {fixtures.map((row, i) => (
                 <div key={i} className="flex items-center gap-2">

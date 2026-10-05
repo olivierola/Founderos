@@ -49,9 +49,9 @@ export function GovApprovalsPage() {
     { key: "title", label: "Objet de la demande", required: true, placeholder: "Déploiement de l'agent support en production" },
     { key: "kind", label: "Type", type: "select", options: APPROVAL_KIND_META, half: true },
     { key: "risk_tier", label: "Niveau de risque", type: "select",
-      options: [{ value: "", label: "— Non défini —" }, ...Object.entries(RISK_TIER_META).map(([v, x]) => ({ value: v, label: x.label }))], half: true },
+      options: [{ value: "", label: "Non défini" }, ...Object.entries(RISK_TIER_META).map(([v, x]) => ({ value: v, label: x.label }))], half: true },
     { key: "system_id", label: "Système concerné", type: "select",
-      options: [{ value: "", label: "— Aucun —" }, ...(systems ?? []).map((s) => ({ value: s.id, label: s.name }))] },
+      options: [{ value: "", label: "Aucun" }, ...(systems ?? []).map((s) => ({ value: s.id, label: s.name }))] },
     { key: "requested_by_name", label: "Demandeur" },
     { key: "description", label: "Contexte", type: "textarea" },
   ];

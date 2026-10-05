@@ -255,7 +255,7 @@ function LiveFrame({
         <span className="flex-1" />
         <span
           className="flex shrink-0 items-center gap-1 text-10 font-medium uppercase tracking-wide"
-          title={connected ? "Mis à jour en temps réel" : "Relu à intervalle régulier — le temps réel n'est pas connecté"}
+          title={connected ? "Mis à jour en temps réel" : "Relu à intervalle régulier, le temps réel n'est pas connecté"}
         >
           <span className={cn("relative flex h-1.5 w-1.5")}>
             {connected && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-70" />}

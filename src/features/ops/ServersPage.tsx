@@ -431,7 +431,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
               >
                 <div className="text-sm font-semibold">Managed PaaS</div>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  Vercel / Netlify / Render / Fly. Zero-config — deploys via connector.
+                  Vercel / Netlify / Render / Fly. Zero-config, deploys via connector.
                 </p>
                 {availableConnectors.length === 0 && (
                   <p className="mt-1 text-[10px] text-amber-500">

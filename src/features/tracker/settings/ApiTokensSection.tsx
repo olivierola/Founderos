@@ -63,7 +63,7 @@ export function ApiTokensSection({ workspaceId }: { workspaceId: string }) {
         <div className="space-y-2 rounded-lg border border-amber-500/50 bg-amber-500/5 p-3">
           <p className="flex items-center gap-1.5 text-12 font-medium text-amber-700 dark:text-amber-500">
             <WarningIcon className="h-4 w-4" />
-            Copiez-le maintenant — il ne sera plus jamais affiché.
+            Copiez-le maintenant, il ne sera plus jamais affiché.
           </p>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1.5 font-mono text-12">

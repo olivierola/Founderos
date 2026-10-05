@@ -733,8 +733,6 @@ const TRACKER_PERSONAL: { slug: string; label: string; icon: PhosphorIcon }[] = 
 const TRACKER_NAV: { slug: string; label: string; icon: PhosphorIcon }[] = [
   { slug: "all-projects", label: "Projets", icon: KanbanIcon },
   { slug: "agents", label: "Agents", icon: RobotIcon },
-  { slug: "initiatives", label: "Initiatives", icon: FlagIcon },
-  { slug: "active-cycles", label: "Cycles", icon: ArrowsClockwiseIcon },
   { slug: "analytics", label: "Analytics", icon: ChartBarIcon },
   { slug: "views", label: "Vues", icon: EyeIcon },
   { slug: "archives", label: "Archives", icon: ArchiveIcon },

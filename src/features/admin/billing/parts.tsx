@@ -91,7 +91,7 @@ export function CreditsSummary({ ent }: { ent: Entitlements }) {
       )}
       {credits.overage_used > 0 && (
         <p className="mt-2 text-xs text-amber-600 dark:text-amber-500">
-          {formatCredits(credits.overage_used)} crédits en dépassement — facturés en fin de période.
+          {formatCredits(credits.overage_used)} crédits en dépassement, facturés en fin de période.
         </p>
       )}
       {subscription.hard_blocked && (
@@ -140,7 +140,7 @@ export function SubscriptionNotice({
     ? {
         tone: "warn" as const,
         title: "Abonnement résilié",
-        body: `Votre offre reste active jusqu'au ${until}. Ensuite, l'espace repasse sur l'offre Découverte — vos données et vos crédits prépayés sont conservés.`,
+        body: `Votre offre reste active jusqu'au ${until}. Ensuite, l'espace repasse sur l'offre Découverte, vos données et vos crédits prépayés sont conservés.`,
       }
     : s.status === "paused"
     ? {

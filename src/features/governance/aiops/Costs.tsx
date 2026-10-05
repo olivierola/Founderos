@@ -88,7 +88,7 @@ export function GovCostsPage() {
 
       {!costs && (
         <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
-          Aucun run d'agent pour l'instant — la dépense API s'affichera ici dès la première exécution. Le suivi infra ci-dessous fonctionne déjà.
+          Aucun run d'agent pour l'instant, la dépense API s'affichera ici dès la première exécution. Le suivi infra ci-dessous fonctionne déjà.
         </div>
       )}
 
@@ -100,7 +100,7 @@ export function GovCostsPage() {
             <span className="text-[11px] text-muted-foreground">+ {usd(openTotal)} / h en cours</span>
           </div>
           <p className="mb-4 text-[11px] text-muted-foreground">
-            Segments de facturation écrits par le pod (hours × tarif horaire) — mis à jour en direct.
+            Segments de facturation écrits par le pod (hours × tarif horaire), mis à jour en direct.
           </p>
           <div className="space-y-3">
             {servers.filter((s) => s.source !== "seed" || s.costPerDay > 0).map((s) => <ServerCostRow key={s.id} s={s} now={now} />)}

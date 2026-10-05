@@ -116,7 +116,7 @@ function ObjectiveDialog({
               value={d.parent_id ?? ""}
               onChange={(e) => set({ parent_id: e.target.value || null })}
             >
-              <option value="">— Objectif d'entreprise (racine)</option>
+              <option value="">Objectif d'entreprise (racine)</option>
               {parents.filter((p) => p.id !== d.id).map((p) => (
                 <option key={p.id} value={p.id}>{p.title}</option>
               ))}
@@ -128,7 +128,7 @@ function ObjectiveDialog({
 
           <div className="rounded-lg border border-border/70 p-3">
             <p className="mb-3 text-xs font-medium text-muted-foreground">
-              Mesure — facultative. Sans métrique, l'objectif reste un cadre mais ne compte dans aucun avancement.
+              Mesure, facultative. Sans métrique, l'objectif reste un cadre mais ne compte dans aucun avancement.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -183,7 +183,7 @@ function ObjectiveDialog({
                 value={d.owner_dashboard_id ?? ""}
                 onChange={(e) => set({ owner_dashboard_id: e.target.value || null, owner_agent_id: null })}
               >
-                <option value="">— Toute l'entreprise</option>
+                <option value="">Toute l'entreprise</option>
                 {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
@@ -194,7 +194,7 @@ function ObjectiveDialog({
                 value={d.owner_agent_id ?? ""}
                 onChange={(e) => set({ owner_agent_id: e.target.value || null })}
               >
-                <option value="">— Personne en particulier</option>
+                <option value="">Personne en particulier</option>
                 {eligibleAgents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
@@ -342,7 +342,7 @@ export function CompanyObjectivesPage() {
         <EmptyState
           icon={Target}
           title="Aucun objectif défini"
-          description="Sans objectif, vos agents exécutent des demandes sans savoir ce qu'elles servent — et ne peuvent rien arbitrer seuls. Commencez par le plus large : ce que l'entreprise veut atteindre ce trimestre."
+          description="Sans objectif, vos agents exécutent des demandes sans savoir ce qu'elles servent, et ne peuvent rien arbitrer seuls. Commencez par le plus large : ce que l'entreprise veut atteindre ce trimestre."
           action={<Button onClick={() => openNew(null)}><Plus className="mr-1.5 h-4 w-4" />Premier objectif</Button>}
         />
       ) : (
@@ -386,7 +386,7 @@ export function CompanyObjectivesPage() {
                           mesuré par {o.measured_by === "agent" ? "un agent" : "un humain"} le {o.measured_at.slice(0, 10)}
                         </span>
                       )}
-                      {!o.metric && <span className="italic">non mesuré — ne compte dans aucun avancement</span>}
+                      {!o.metric && <span className="italic">non mesuré, ne compte dans aucun avancement</span>}
                     </div>
 
                     {pct != null && (

@@ -77,7 +77,7 @@ export function MissionFlow({ roomId, participants }: { roomId: string; particip
       <div className="px-4 py-6">
         <AiRoutingIndicatorEmpty>
           Aucune mission dans cette room. Demandez à l'assistant un travail qui
-          demande plusieurs compétences — le routage et l'exécution s'afficheront ici.
+          demande plusieurs compétences, le routage et l'exécution s'afficheront ici.
         </AiRoutingIndicatorEmpty>
       </div>
     );
@@ -196,7 +196,7 @@ function MissionCard({ mission, participants, defaultOpen }: {
                 <TaskRow key={t.id} task={t} agent={t.agent_id ? byId.get(t.agent_id) : undefined} tasks={tasks ?? []} />
               ))}
               {(tasks ?? []).length === 0 && (
-                <p className="px-0.5 text-[11px] text-muted-foreground">Aucune tâche — l'assistant planifie encore.</p>
+                <p className="px-0.5 text-[11px] text-muted-foreground">Aucune tâche, l'assistant planifie encore.</p>
               )}
             </div>
           </section>

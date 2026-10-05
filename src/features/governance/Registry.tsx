@@ -61,7 +61,7 @@ export function GovRegistryPage() {
     <div className="space-y-6">
       <PageHeader
         title="AI Registry"
-        description="Inventaire des systèmes d'IA — model cards : finalité, propriétaire, données, niveau de risque et statut."
+        description="Inventaire des systèmes d'IA, model cards : finalité, propriétaire, données, niveau de risque et statut."
         actions={<Button onClick={() => setCreating(true)}><Plus className="mr-1.5 h-4 w-4" />Système IA</Button>}
       />
 

@@ -1,8 +1,8 @@
-import { AtlasFooter } from "./atlas/AtlasFooter";
+import { HnFooter } from "./hn/HnFooter";
 
-/* The marketing footer is the Atlas slab now (see atlas/AtlasFooter). `band`
-   used to be the ground the old dark slab floated on; the Atlas footer paints
-   its own white margin, so the prop is accepted and ignored. */
+/* The marketing footer is the Hunar close now (see hn/HnFooter): the sky band
+   with its CTA card, then the ruled footer. `band` was the ground the old slab
+   floated on; it is accepted and ignored. */
 export function LandingFooter(_: { band?: string }) {
-  return <AtlasFooter />;
+  return <HnFooter />;
 }

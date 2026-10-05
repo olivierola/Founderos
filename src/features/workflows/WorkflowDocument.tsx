@@ -400,7 +400,7 @@ export function WorkflowDocument({ workflowId, onBack }: { workflowId: string; o
           }}
           className="shrink-0 border-b border-sky-500/40 bg-sky-500/10 px-4 py-1.5 text-left text-[11px] text-sky-600 dark:text-sky-400"
         >
-          Modifiée ailleurs — <span className="font-medium underline">recharger</span>
+          Modifiée ailleurs, <span className="font-medium underline">recharger</span>
         </button>
       )}
 
@@ -933,7 +933,7 @@ function WhenToUse({ workflow, trigger, ctx, onChanged }: {
         rows={2}
         placeholder={auto
           ? "Poster chaque lundi les deals gagnés de la semaine dans #revenue."
-          : "Quand un client signale une commande abîmée — nourriture écrasée, sac percé, fuite…"}
+          : "Quand un client signale une commande abîmée, nourriture écrasée, sac percé, fuite…"}
         className="resize-y rounded-xl text-[14px] leading-relaxed"
       />
       {!auto && (
@@ -1123,7 +1123,7 @@ function NaturalCron({ onChange }: { onChange: (expr: string) => void }) {
         <p className={cn("mt-1 text-[11px]", parsed ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")}>
           {parsed
             ? <>→ {describeCron(parsed)} · ⏎ pour appliquer</>
-            : "Pas compris — reformulez, ou réglez avec les boutons ci-dessous."}
+            : "Pas compris, reformulez, ou réglez avec les boutons ci-dessous."}
         </p>
       )}
     </div>
@@ -1219,7 +1219,7 @@ function CronPicker({ value, onChange }: { value: string; onChange: (expr: strin
             <span className="text-muted-foreground/70">(votre heure)</span>
           </>
         ) : (
-          "Cette expression n'est pas valide — rien ne se déclenchera."
+          "Cette expression n'est pas valide, rien ne se déclenchera."
         )}
       </p>
     </div>
@@ -1884,7 +1884,7 @@ function ActionRow({ node, ordinal, ctx }: { node: Node; ordinal: string; ctx: C
             kind === "tool" && !empty ? "font-mono" : "",
             empty ? "text-amber-500" : "",
           )}>
-            {empty ? `À compléter — ${def.hint.toLowerCase()}` : summary}
+            {empty ? `À compléter, ${def.hint.toLowerCase()}` : summary}
           </span>
           {String(d.label ?? "").trim() && (
             <span className="shrink-0 truncate text-[12px] text-muted-foreground">{String(d.label)}</span>

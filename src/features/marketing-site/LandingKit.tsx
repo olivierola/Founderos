@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import NumberFlow from "@number-flow/react";
 import {
   ArrowRightIcon as ArrowRight,
-  ArrowUpRightIcon as ArrowUpRight,
+  CaretRightIcon as CaretRight,
+  SealCheckIcon as SealCheck,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
@@ -229,11 +230,12 @@ export function Eyebrow({ children, className }: { children: ReactNode; classNam
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border border-[#e3e3e3] bg-white px-4 py-2.5 text-[14px] font-semibold leading-none tracking-[-0.01em] text-[#111011] shadow-[0_10px_30px_-18px_rgba(17,16,17,0.35)]",
+        "inline-flex items-center gap-1.5 text-[16px] font-medium leading-none tracking-[-0.01em] text-[#006edd]",
         className,
       )}
     >
-      <span className="at-grad-text">{children}</span>
+      <SealCheck weight="fill" className="h-[18px] w-[18px] shrink-0" />
+      {children}
     </span>
   );
 }
@@ -266,21 +268,18 @@ export function SectionHead({
 }
 
 /* ── Call-to-action buttons ─────────────────────────────────────────────────
-   The Atlas pair: primary is the black pill, ghost the white one with a
-   hairline, both with the up-right arrow riding along. */
+   The Hunar pair: primary is the blue slab, ghost the white one with a
+   hairline, both with a chevron riding along. */
 export function CtaPrimary({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={cn(
-        "group inline-flex h-[46px] items-center gap-2.5 rounded-full bg-black px-6 text-[15px] font-semibold tracking-[-0.015em] text-white shadow-[0_12px_26px_-14px_rgba(0,0,0,0.7)] transition-colors hover:bg-[#1d1c1d]",
+        "group inline-flex h-11 items-center gap-1.5 rounded-full bg-[#006edd] px-3.5 text-[16px] font-medium tracking-[-0.01em] text-white transition-colors hover:bg-[#0057c2]",
         className,
       )}
     >
       {children}
-      <ArrowUpRight
-        weight="bold"
-        className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-      />
+      <CaretRight weight="bold" className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5" />
     </span>
   );
 }
@@ -305,15 +304,12 @@ export function CtaGhost({ children, className }: { children: ReactNode; classNa
   return (
     <span
       className={cn(
-        "group inline-flex h-[46px] items-center gap-2.5 rounded-full border border-[#e6e6e6] bg-white px-6 text-[15px] font-semibold tracking-[-0.015em] text-[#111011] shadow-[0_12px_30px_-16px_rgba(17,16,17,0.3)] transition-colors hover:border-[#d4d4d4]",
+        "group inline-flex h-11 items-center gap-1.5 rounded-full border border-[#e6e9ef] bg-white px-3 text-[16px] font-medium tracking-[-0.01em] text-[#0f1728] transition-colors hover:border-[#cfd5df]",
         className,
       )}
     >
       {children}
-      <ArrowUpRight
-        weight="bold"
-        className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-      />
+      <CaretRight weight="bold" className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5" />
     </span>
   );
 }
@@ -339,7 +335,7 @@ export function Display({
   return (
     <Tag
       className={cn(
-        "text-balance text-[31px] font-medium leading-[1.08] tracking-[-0.028em] text-white sm:text-[40px] lg:text-[46px]",
+        "text-balance text-[30px] font-medium leading-[1.15] tracking-[-0.04em] text-white sm:text-[36px] lg:text-[40px]",
         className,
       )}
     >
@@ -384,13 +380,12 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-[14px] font-semibold leading-none tracking-[-0.015em] transition-colors duration-300",
-        // Solid is the black button: it belongs on the light sections.
-        variant === "solid" && "bg-black text-white shadow-[0_12px_26px_-14px_rgba(0,0,0,0.7)] hover:bg-[#1d1c1d]",
-        variant === "ghost" && "border border-white/30 bg-white/[0.12] text-white backdrop-blur-md hover:bg-white/[0.2]",
-        // Its inverse, for the dark canvas — a black pill on a #121212 ground
-        // is a hole, not a call to action.
-        variant === "light" && "border border-[#e6e6e6] bg-white text-[#111011] shadow-[0_12px_30px_-16px_rgba(17,16,17,0.3)] hover:border-[#d4d4d4]",
+        "inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full px-3.5 text-[16px] font-medium leading-none tracking-[-0.01em] transition-colors duration-200",
+        // Solid is the blue slab of the Hunar register.
+        variant === "solid" && "bg-[#006edd] text-white hover:bg-[#0057c2]",
+        variant === "ghost" && "border border-white/20 bg-white/[0.04] text-white hover:bg-white/[0.08]",
+        // The white one with a hairline, for light grounds.
+        variant === "light" && "border border-[#e6e9ef] bg-white text-[#0f1728] hover:border-[#cfd5df]",
         className,
       )}
     >

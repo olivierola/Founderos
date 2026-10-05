@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+import { MagnifyingGlassIcon as Search, CheckCircleIcon as CheckCircle } from "@phosphor-icons/react";
 import { LandingNav } from "./LandingNav";
 import { LandingFooter } from "./LandingFooter";
 import { LandingClose } from "./LandingClose";
@@ -7,7 +7,7 @@ import { Reveal } from "./LandingKit";
 import { PaperHero } from "./PaperHero";
 import { MonoLabel, SectionTitle } from "./PaperKit";
 import { ToneCanvas, ToneSection } from "./LandingTone";
-import { Btn, CheckBadge, useAtlasSkin } from "./atlas/AtlasKit";
+import { Btn, useHnSkin } from "./hn/HnKit";
 
 /* ═══ Documentation ══════════════════════════════════════════════════════════
    L'ancienne page était une façade. Un champ de recherche qui n'était relié à
@@ -44,7 +44,7 @@ const TOPICS: Topic[] = [
       "A workspace carries billing, members and roles. It contains projects, and a project contains services. A service is the unit that matters day to day: an agent-centred dashboard with its own rooms, schedules, connections and knowledge base. An agency usually keeps one service per client.",
     points: [
       "Quotas (agents, services, seats, storage) apply to the workspace, not to the project",
-      "A connection to an external tool belongs to ONE service — or to one person within that service",
+      "A connection to an external tool belongs to ONE service, or to one person within that service",
     ],
   },
   {
@@ -52,7 +52,7 @@ const TOPICS: Topic[] = [
     section: "The objects",
     title: "Internal and public agents",
     body:
-      "An internal agent works for your team: it has tools, missions, a schedule, and it hands in deliverables. A public agent faces your customers — it is the one behind a website widget, a Slack or a Teams channel. Both appear in the same directory, told apart by a badge; you configure them in the dashboard of the service that employs them.",
+      "An internal agent works for your team: it has tools, missions, a schedule, and it hands in deliverables. A public agent faces your customers, it is the one behind a website widget, a Slack or a Teams channel. Both appear in the same directory, told apart by a badge; you configure them in the dashboard of the service that employs them.",
   },
   {
     id: "three-files",
@@ -68,7 +68,7 @@ const TOPICS: Topic[] = [
     section: "Getting started",
     title: "Create your first agent",
     body:
-      "Start from an agent template rather than a blank page: it comes with instructions, a coherent set of tools and typical missions you adjust. Then describe your company's context — what you do, for whom, in what vocabulary. That context feeds every agent's system prompt, so you fill it in once and it serves everywhere.",
+      "Start from an agent template rather than a blank page: it comes with instructions, a coherent set of tools and typical missions you adjust. Then describe your company's context, what you do, for whom, in what vocabulary. That context feeds every agent's system prompt, so you fill it in once and it serves everywhere.",
     points: [
       "An agent without substantial instructions stays flagged “to configure” until it has something to work with",
       "Skills are added as you go: you can record one by doing the task yourself",
@@ -90,7 +90,7 @@ const TOPICS: Topic[] = [
     section: "Getting started",
     title: "Give it knowledge",
     body:
-      "A knowledge collection groups documents your agents can search. Drop in PDFs, Word documents, spreadsheets; the content is chunked and indexed. The same collection can be attached to several agents — you build it once.",
+      "A knowledge collection groups documents your agents can search. Drop in PDFs, Word documents, spreadsheets; the content is chunked and indexed. The same collection can be attached to several agents, you build it once.",
   },
 
   // ── Day to day ────────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ const TOPICS: Topic[] = [
     body:
       "When an agent wants to do something that writes, sends, deletes or pays, it stops and asks you, in the conversation. The run stays alive while it waits. You can approve once, allow repeats of the same action up front, or allow everything for a given tool.",
     points: [
-      "Reads — searching, listing, looking something up — run without asking",
+      "Reads, searching, listing, looking something up, run without asking",
       "Two checks decide: a list of verbs, then a judgement on what the list lets through. The second can only add an approval",
       "An agent you switch to autonomous mode no longer waits: an explicit, reversible choice",
     ],
@@ -134,7 +134,7 @@ const TOPICS: Topic[] = [
     section: "Governance",
     title: "Guardrails",
     body:
-      "A guardrail is a written rule agents must follow. It can be documentary — read by the agent in its context — or enforced at runtime, with a detection pattern tested against the traffic: prompts, tool calls, results, or all of them. Three levels: log, warn, block.",
+      "A guardrail is a written rule agents must follow. It can be documentary, read by the agent in its context, or enforced at runtime, with a detection pattern tested against the traffic: prompts, tool calls, results, or all of them. Three levels: log, warn, block.",
     points: ["A new project has no guardrails: install the recommended baseline in one click, then adjust it"],
   },
   {
@@ -142,7 +142,7 @@ const TOPICS: Topic[] = [
     section: "Governance",
     title: "Log and traceability",
     body:
-      "Every tool call records the arguments passed, the start of what came back, whether it succeeded, how long it took and the run it belongs to — which you open to replay the whole sequence. The log exports. Long values are truncated in storage: you read enough to judge, not a copy of your data.",
+      "Every tool call records the arguments passed, the start of what came back, whether it succeeded, how long it took and the run it belongs to, which you open to replay the whole sequence. The log exports. Long values are truncated in storage: you read enough to judge, not a copy of your data.",
   },
   {
     id: "registry",
@@ -158,14 +158,14 @@ const TOPICS: Topic[] = [
     section: "Models & costs",
     title: "Which model runs an agent",
     body:
-      "By default an agent runs on the platform's model. You can instead point it at an OpenAI-compatible endpoint you host — vLLM on your network, a GPU pod of your own — and your prompts then never leave your infrastructure. The choice is made agent by agent.",
+      "By default an agent runs on the platform's model. You can instead point it at an OpenAI-compatible endpoint you host, vLLM on your network, a GPU pod of your own, and your prompts then never leave your infrastructure. The choice is made agent by agent.",
   },
   {
     id: "credits",
     section: "Models & costs",
     title: "Credits and quotas",
     body:
-      "Usage is measured in credits, consumed by what agents actually do. Each plan includes a monthly volume and sets limits: agents, services, seats, storage, concurrent runs. Overage never switches itself on — you allow it and you cap it.",
+      "Usage is measured in credits, consumed by what agents actually do. Each plan includes a monthly volume and sets limits: agents, services, seats, storage, concurrent runs. Overage never switches itself on, you allow it and you cap it.",
     points: [
       "An alert fires at 80% of the included volume, before you hit the wall",
       "There is no free trial: the subscription is billed when you subscribe",
@@ -185,7 +185,7 @@ const SECTION_TITLE: Record<string, { frame: string; claim: string }> = {
 };
 
 export function DocsPage() {
-  useAtlasSkin();
+  useHnSkin();
   const [query, setQuery] = useState("");
 
   const shown = useMemo(() => {
@@ -199,7 +199,7 @@ export function DocsPage() {
   const sections = SECTIONS.filter((s) => shown.some((t) => t.section === s));
 
   return (
-    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify hn min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
       <ToneCanvas initial="paper">
         <PaperHero
@@ -209,30 +209,30 @@ export function DocsPage() {
           lead={
             <>
               The product's objects, getting started, what happens day to day and what governance covers.
-              Everything is here — the search only filters what is written.
+              Everything is here, the search only filters what is written.
             </>
           }
           align="left"
         />
 
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1200px] px-5 pb-10 sm:px-8">
+          <div className="px-5 pb-10 sm:px-8 lg:px-12">
             {/* ── Search ───────────────────────────────────────────────────── */}
             <Reveal>
               <div className="relative max-w-md">
                 <Search
                   aria-hidden
-                  className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#969696]"
+                  className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a94a6]"
                 />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   aria-label="Search the documentation"
-                  placeholder="Search — approval, credits, MCP…"
-                  className="h-12 w-full rounded-full border border-[#e6e6e6] bg-white pl-11 pr-4 text-[14.5px] text-[#111011] shadow-[0_10px_30px_-20px_rgba(17,16,17,0.35)] outline-none transition-colors placeholder:text-[#969696] focus:border-[#8b16c4]"
+                  placeholder="Search, approval, credits, MCP…"
+                  className="h-12 w-full rounded-full border border-[#e6e9ef] bg-white pl-11 pr-4 text-[14.5px] text-[#0f1728]  outline-none transition-colors placeholder:text-[#8a94a6] focus:border-[#006edd]"
                 />
               </div>
-              <p className="mt-3 pl-1 text-[13px] text-[#666666]" role="status">
+              <p className="mt-3 pl-1 text-[13px] text-[#4b5567]" role="status">
                 {query.trim()
                   ? `${shown.length} topic${shown.length > 1 ? "s" : ""} out of ${TOPICS.length}`
                   : `${TOPICS.length} topics`}
@@ -240,13 +240,13 @@ export function DocsPage() {
             </Reveal>
 
             {shown.length === 0 ? (
-              <div className="mt-12 rounded-[32px] bg-[#f7f7f7] p-8">
-                <p className="text-[15.5px] leading-[1.6] text-[#111011]">
+              <div className="mt-12 rounded-[24px] bg-[#f5f7fa] p-8">
+                <p className="text-[15.5px] leading-[1.6] text-[#0f1728]">
                   Nothing on “{query.trim()}” yet. Write to us: what is missing here is usually what we should
                   have explained first.
                 </p>
                 <div className="mt-6">
-                  <Btn to="/contact" variant="dark">
+                  <Btn to="/contact" variant="primary">
                     Ask the question
                   </Btn>
                 </div>
@@ -268,19 +268,19 @@ export function DocsPage() {
                         <Reveal key={t.id} delay={Math.min(i, 3) * 70} className="h-full">
                           <article
                             id={t.id}
-                            className="h-full rounded-[32px] border border-[#f0f0f0] bg-[linear-gradient(160deg,#ffffff_40%,#f8f8f8)] p-7 sm:p-9"
+                            className="hn-card hn-hover h-full rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-7 sm:p-9"
                           >
                             <MonoLabel>{t.section}</MonoLabel>
-                            <h3 className="mt-4 text-[21px] font-semibold leading-[1.2] tracking-[-0.035em] text-[#111011] sm:text-[23px]">
+                            <h3 className="mt-4 text-[21px] font-semibold leading-[1.2] tracking-[-0.035em] text-[#0f1728] sm:text-[23px]">
                               {t.title}
                             </h3>
-                            <p className="mt-4 text-[15px] font-light leading-[1.6] text-[#3d3c3d]">{t.body}</p>
+                            <p className="mt-4 text-[15px] leading-[1.6] text-[#4b5567]">{t.body}</p>
                             {t.points && (
-                              <ul className="mt-6 space-y-3 border-t border-[#f0f0f0] pt-6">
+                              <ul className="mt-6 space-y-3 border-t border-[#e6e9ef] pt-6">
                                 {t.points.map((p) => (
-                                  <li key={p} className="flex gap-3 text-[14px] leading-[1.5] text-[#111011]">
+                                  <li key={p} className="flex gap-3 text-[14px] leading-[1.5] text-[#0f1728]">
                                     <span className="mt-[1px]">
-                                      <CheckBadge size={20} />
+                                      <CheckCircle weight="fill" className="h-5 w-5 text-[#006edd]" />
                                     </span>
                                     <span>{p}</span>
                                   </li>
@@ -296,16 +296,16 @@ export function DocsPage() {
             )}
 
             <Reveal delay={120}>
-              <div className="mt-16 flex flex-col gap-6 rounded-[32px] bg-[#f7f7f7] p-8 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-16 flex flex-col gap-6 rounded-[24px] bg-[#f5f7fa] p-8 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <MonoLabel>What this page does not cover yet</MonoLabel>
-                  <p className="mt-4 max-w-[64ch] text-[15px] leading-[1.6] text-[#111011]">
+                  <p className="mt-4 max-w-[64ch] text-[15px] leading-[1.6] text-[#0f1728]">
                     There is no public API reference or step-by-step integration guide yet. We will not link to
                     pages that do not exist: when those guides are written, they will appear here. Until then, a
                     question sent through the contact form gets a real answer.
                   </p>
                 </div>
-                <Btn to="/contact" variant="dark" className="shrink-0">
+                <Btn to="/contact" variant="primary" className="shrink-0">
                   Write to us
                 </Btn>
               </div>

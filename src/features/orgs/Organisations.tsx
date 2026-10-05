@@ -13,6 +13,7 @@ import {
   UsersIcon as Users,
 } from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -55,14 +56,17 @@ export function OrganisationsPage() {
   return (
     <div className="min-h-screen bg-background">
       <header className="flex h-14 items-center justify-between border-b border-border px-6">
+        {/* The site's lockup — mark + Audiowide wordmark, in the ink of the
+            theme — then the page it is. */}
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Boxes className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold">Anduran</div>
-            <div className="text-xs text-muted-foreground">Organisations</div>
-          </div>
+          <span className="flex items-center gap-2.5 text-foreground">
+            <Logo size={20} color="currentColor" />
+            <span className="text-[19px] leading-none tracking-[0.02em]" style={{ fontFamily: "'Audiowide', 'Geist', sans-serif" }}>
+              ANDURAN.
+            </span>
+          </span>
+          <span className="h-5 w-px bg-border" />
+          <span className="text-sm text-muted-foreground">Organisations</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground">{user?.email}</span>

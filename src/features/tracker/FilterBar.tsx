@@ -15,7 +15,7 @@ import {
   type DisplayFilters, type DisplayProperties, type Filters, type GroupBy,
   type Layout, type OrderBy,
 } from "./filters";
-import { PRIORITIES, STATE_GROUPS, type Member, type PjCycle, type PjLabel, type PjModule, type PjState, type TrackerAgent } from "./model";
+import { PRIORITIES, STATE_GROUPS, type Member, type PjLabel, type PjState, type TrackerAgent } from "./model";
 import { AgentAvatar } from "./AgentPicker";
 import { MemberAvatar, PriorityIcon, StateIcon, memberName } from "./pickers";
 import { TextField } from "./ui";
@@ -42,8 +42,6 @@ export interface FilterContext {
   states: PjState[];
   labels: PjLabel[];
   members: Member[];
-  cycles: PjCycle[];
-  modules: PjModule[];
 }
 
 export function FilterBar({
@@ -199,8 +197,8 @@ function FiltersMenu({
    */
   const activeFields = ([
     ["state", "État"], ["state_group", "Groupe"], ["priority", "Priorité"],
-    ["assignees", "Assignés"], ["agents", "Agents"], ["labels", "Labels"], ["cycle", "Cycle"],
-    ["module", "Module"], ["issue_type", "Type"], ["created_by", "Créé par"],
+    ["assignees", "Assignés"], ["agents", "Agents"], ["labels", "Labels"],
+    ["issue_type", "Type"], ["created_by", "Créé par"],
     ["target_date", "Échéance"],
   ] as const)
     // Les clés viennent du tuple, donc le typage suit : on lit le champ par
@@ -331,28 +329,6 @@ function FiltersMenu({
               </CommandGroup>
             )}
 
-            {ctx.cycles.length > 0 && (
-              <CommandGroup heading="Cycle">
-                {ctx.cycles.map((c) => (
-                  <CommandItem key={c.id} value={`cycle ${c.name}`} onSelect={() => toggle("cycle", c.id)}>
-                    <CheckMark checked={filters.cycle.includes(c.id)} />
-                    <span className="flex-1 truncate">{c.name}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-
-            {ctx.modules.length > 0 && (
-              <CommandGroup heading="Module">
-                {ctx.modules.map((m) => (
-                  <CommandItem key={m.id} value={`module ${m.name}`} onSelect={() => toggle("module", m.id)}>
-                    <CheckMark checked={filters.module.includes(m.id)} />
-                    <span className="flex-1 truncate">{m.name}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-
             <CommandGroup heading="Échéance">
               {DATE_TOKENS.map((t) => (
                 <CommandItem key={t.key} value={`échéance ${t.label}`} onSelect={() => toggle("target_date", t.key)}>
@@ -414,12 +390,6 @@ function AppliedFilters({
   for (const id of filters.labels) {
     const l = ctx.labels.find((x) => x.id === id);
     chips.push({ key: "labels", value: id, label: id === "none" ? "Sans label" : l?.name ?? "Label", color: l?.color });
-  }
-  for (const id of filters.cycle) {
-    chips.push({ key: "cycle", value: id, label: ctx.cycles.find((c) => c.id === id)?.name ?? "Cycle" });
-  }
-  for (const id of filters.module) {
-    chips.push({ key: "module", value: id, label: ctx.modules.find((m) => m.id === id)?.name ?? "Module" });
   }
   for (const t of filters.target_date) {
     chips.push({ key: "target_date", value: t, label: DATE_TOKENS.find((x) => x.key === t)?.label ?? t });

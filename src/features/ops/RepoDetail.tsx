@@ -300,9 +300,9 @@ export function RepoDetailPage() {
                 )}
               </Section>
 
-              <Section title={`Commits — ${stats.heatmap.total} sur 12 mois`}>
+              <Section title={`Commits, ${stats.heatmap.total} sur 12 mois`}>
                 {stats.heatmap.weeks.length === 0
-                  ? <p className="text-xs text-muted-foreground">Statistiques en cours de calcul par GitHub — réessayez dans un instant.</p>
+                  ? <p className="text-xs text-muted-foreground">Statistiques en cours de calcul par GitHub, réessayez dans un instant.</p>
                   : <Heatmap weeks={stats.heatmap.weeks} />}
               </Section>
             </>
@@ -428,7 +428,7 @@ function CodeCard({ path, content, loading, onClose }: { path: string; content: 
         {loading || (content != null && lines == null) ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-white/50" /></div>
         ) : content == null ? (
-          <div className="p-6 text-sm text-white/50">Fichier binaire ou introuvable — impossible d'afficher le contenu.</div>
+          <div className="p-6 text-sm text-white/50">Fichier binaire ou introuvable, impossible d'afficher le contenu.</div>
         ) : (
           <table className="w-full border-collapse font-mono text-[12px] leading-relaxed">
             <tbody>

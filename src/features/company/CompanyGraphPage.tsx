@@ -206,7 +206,7 @@ export function CompanyGraphPage() {
     <div className="flex h-full flex-col px-6 py-6">
       <PageHeader
         title="Carte de l'entreprise"
-        description="Qui fait quoi, avec quels outils, pour quels objectifs. Dérivée des données réelles — rien n'est dessiné à la main."
+        description="Qui fait quoi, avec quels outils, pour quels objectifs. Dérivée des données réelles, rien n'est dessiné à la main."
       />
 
       <Card className="mb-3 flex flex-wrap items-center gap-2 p-2.5">
@@ -268,7 +268,7 @@ export function CompanyGraphPage() {
 
       <p className="mt-2 text-[11px] text-muted-foreground">
         {nodes.length} objets affichés{hiddenByFilter > 0 ? ` · ${hiddenByFilter} masqués` : ""} ·
-        {" "}Vos agents interrogent cette même carte avec l'outil <code className="rounded bg-muted px-1">explore_company_graph</code> — ce que vous voyez, ils le savent.
+        {" "}Vos agents interrogent cette même carte avec l'outil <code className="rounded bg-muted px-1">explore_company_graph</code>, ce que vous voyez, ils le savent.
       </p>
     </div>
   );

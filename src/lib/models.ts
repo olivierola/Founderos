@@ -20,7 +20,7 @@ export const CHAT_MODELS: ChatModel[] = [
   {
     id: "deepseek-chat",
     name: "DeepSeek V4",
-    description: "Par défaut — raisonnement et tool calling solides",
+    description: "Par défaut, raisonnement et tool calling solides",
   },
   {
     id: "llama-3.3-70b-versatile",

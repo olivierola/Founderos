@@ -229,7 +229,7 @@ function AlertsTab({ alerts, sources, actions, onChange, onGoSources }: {
           <span>
             Aucune alerte sur 7 jours. Branchez une première source (webhook d'un SIEM ou d'un EDR, interrogation d'API, ou nos propres signaux)
             dans <button type="button" className="font-medium text-foreground underline" onClick={onGoSources}>Sources</button>. Le triage s'allume dans
-            Gouvernance IA → Jugement rapide (« SentinelFlow — triage des alertes »).
+            Gouvernance IA → Jugement rapide (« SentinelFlow, triage des alertes »).
           </span>
         </CardContent>
       </Card>
@@ -298,12 +298,12 @@ function AlertsTab({ alerts, sources, actions, onChange, onGoSources }: {
               </dl>
               {sel.fp_verified?.length > 0 && (
                 <div className="rounded-md bg-muted/50 px-3 py-2">
-                  <div className="mb-1 font-medium">Faux positif — critères vérifiés</div>
+                  <div className="mb-1 font-medium">Faux positif, critères vérifiés</div>
                   <ul className="list-disc space-y-0.5 pl-4 text-[11.5px]">{sel.fp_verified.map((r, i) => <li key={i}>{r}</li>)}</ul>
                 </div>
               )}
               {sel.fp_hint_p != null && !sel.fp_verified?.length && (
-                <div className="text-[11px] text-muted-foreground">Avis du modèle : {Math.round(sel.fp_hint_p * 100)} % de chances d'activité légitime — un indice, pas une preuve.</div>
+                <div className="text-[11px] text-muted-foreground">Avis du modèle : {Math.round(sel.fp_hint_p * 100)} % de chances d'activité légitime, un indice, pas une preuve.</div>
               )}
               {actions.filter((x) => x.alert_id === sel.id).map((x, i) => (
                 <div key={i} className="rounded-md border border-border/60 px-3 py-2 text-[11.5px]">

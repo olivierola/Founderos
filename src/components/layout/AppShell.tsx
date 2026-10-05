@@ -61,16 +61,16 @@ export function AppShell() {
     <ShellNavContext.Provider value={{ mobileOpen, setMobileOpen, primaryExpanded, setPrimaryExpanded }}>
       <PermissionsProvider>
       <AssistantProvider>
-      {/* Soft-black chrome. The assistant is NOT part of this row: it floats
+      {/* Navy chrome — the site's dark band (#0B1220). The assistant is NOT part of this row: it floats
           above the app as a full-height right-hand modal, so opening it never
           reflows the page it is talking about. */}
-      <div className="flex h-screen w-full overflow-hidden bg-[#060608]">
+      <div className="flex h-screen w-full overflow-hidden bg-[#0b1220]">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopbarTabsProvider>
         <TopbarBreadcrumbProvider>
           <Topbar />
 
-          <div className="flex flex-1 overflow-hidden bg-[#060608]">
+          <div className="flex flex-1 overflow-hidden bg-[#0b1220]">
             {/* Mobile drawer (fixed, above the rounded block) */}
             {mobileOpen && (
               <>

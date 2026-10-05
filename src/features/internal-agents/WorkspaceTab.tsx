@@ -162,7 +162,7 @@ function InitiativesWidget({ agent }: { agent: InternalAgent }) {
     <Card className="p-4">
       <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Lightbulb className="h-3.5 w-3.5 text-amber-500" /> Initiatives proposées</div>
       {(proposals ?? []).length === 0 ? (
-        <p className="text-xs text-muted-foreground">Rien pour l'instant — l'agent proposera ici les opportunités qu'il repère en travaillant.</p>
+        <p className="text-xs text-muted-foreground">Rien pour l'instant, l'agent proposera ici les opportunités qu'il repère en travaillant.</p>
       ) : (
         <div className="space-y-2">
           {(proposals ?? []).map((p) => {
@@ -273,7 +273,7 @@ export function WorkspaceTab({ agent }: { agent: InternalAgent }) {
       )}
 
       {active.length === 0 ? (
-        <Card className="p-6 text-center text-sm text-muted-foreground">Aucun widget — cliquez « Personnaliser » pour composer le bureau de cet agent.</Card>
+        <Card className="p-6 text-center text-sm text-muted-foreground">Aucun widget, cliquez « Personnaliser » pour composer le bureau de cet agent.</Card>
       ) : (
         <div className="space-y-3">
           {active.map((id) => {

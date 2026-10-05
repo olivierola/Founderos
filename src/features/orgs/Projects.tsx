@@ -120,7 +120,7 @@ export function ProjectsPage() {
             <EmptyState
               icon={FolderGit2}
               title="No projects yet"
-              description="Create your first project — connect a repo and we'll generate the cockpit."
+              description="Create your first project, connect a repo and we'll generate the cockpit."
               action={
                 <Button onClick={() => setCreateOpen(true)} disabled={!ws}>
                   <Plus className="h-4 w-4" /> New project

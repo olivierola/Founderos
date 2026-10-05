@@ -284,7 +284,7 @@ function AddSourceDialog({ open, onClose, onAdded, collection, workspaceId, proj
     if (!files || !workspaceId || !projectId) return;
     const MAX_BYTES = 15 * 1024 * 1024;
     for (const file of Array.from(files)) {
-      if (file.size > MAX_BYTES) throw new Error(`"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB — the limit is 15 MB.`);
+      if (file.size > MAX_BYTES) throw new Error(`"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB, the limit is 15 MB.`);
       const path = `${projectId}/collection-${collection.id}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
       const { error: upErr } = await supabase.storage.from("rag-docs").upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
       if (upErr) throw new Error(upErr.message);
@@ -326,7 +326,7 @@ function AddSourceDialog({ open, onClose, onAdded, collection, workspaceId, proj
           {type === "document" && (
             <label className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border py-8 text-sm text-muted-foreground hover:bg-muted/30">
               <FileText className="h-5 w-5" />
-              <span>Click to choose a file (PDF, DOCX, TXT, MD — max 15 MB)</span>
+              <span>Click to choose a file (PDF, DOCX, TXT, MD, max 15 MB)</span>
               <input type="file" className="hidden" onChange={(e) => submit(e.target.files)} />
             </label>
           )}

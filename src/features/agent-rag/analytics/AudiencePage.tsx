@@ -123,7 +123,7 @@ export function AudiencePage({ data }: { data: AgentAnalytics }) {
       {/* ── Carte + classement pays ── */}
       <SectionCard
         title="D'où viennent les visiteurs"
-        subtitle="En-tête géographique du CDN quand il existe, sinon fuseau horaire du navigateur — une approximation, jamais une géolocalisation d'IP."
+        subtitle="En-tête géographique du CDN quand il existe, sinon fuseau horaire du navigateur, une approximation, jamais une géolocalisation d'IP."
         icon={<Globe className="h-3.5 w-3.5" />}
       >
         {data.countries.length === 0 ? (
@@ -205,7 +205,7 @@ export function AudiencePage({ data }: { data: AgentAnalytics }) {
         </SectionCard>
       </div>
 
-      <SectionCard title="Pages qui déclenchent le plus de conversations" subtitle="URL nettoyée de ses paramètres — rien de ce qui suit le « ? » n'est conservé">
+      <SectionCard title="Pages qui déclenchent le plus de conversations" subtitle="URL nettoyée de ses paramètres, rien de ce qui suit le « ? » n'est conservé">
         <BarList
           labelWidth="w-72"
           emptyLabel="Aucune page enregistrée sur la période."

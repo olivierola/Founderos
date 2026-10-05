@@ -237,7 +237,7 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
                 Build / Templates / Public switch itself. */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button className="rounded-full bg-foreground px-5 text-background hover:bg-foreground/90">
+                <Button className="rounded-full px-5">
                   Create agent
                 </Button>
               </DropdownMenuTrigger>
@@ -526,7 +526,7 @@ function PublicAgentGallery({ agents, dashboardId, onOpen }: {
               tools={c?.sources ?? null}
               extras={c?.convos ?? null}
               badges={[
-                { label: "public", tone: "auth", title: "Agent public — face client" },
+                { label: "public", tone: "auth", title: "Agent public, face client" },
                 { label: a.enabled ? "live" : "disabled", tone: "key", title: "État de publication" },
               ]}
               meta={new Date(a.created_at).toISOString().slice(0, 10)}
@@ -1048,7 +1048,7 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-semibold"><ClockCountdownIcon className="h-5 w-5 text-amber-500" /> Planifications</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">Faites tourner des missions d'agents automatiquement, à la cadence de votre choix — rapports récurrents, veilles, nettoyages… L'agent exécute la mission et livre ses résultats.</p>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">Faites tourner des missions d'agents automatiquement, à la cadence de votre choix, rapports récurrents, veilles, nettoyages… L'agent exécute la mission et livre ses résultats.</p>
         </div>
         <Button onClick={() => setEditing("new")}><PlusIcon className="mr-1.5 h-4 w-4" /> Nouvelle planification</Button>
       </div>
@@ -1152,7 +1152,7 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
 
                 {missionOff && (
                   <div className="mt-2 inline-flex items-center gap-1 self-start rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-600 dark:text-amber-400">
-                    <WarningIcon className="h-3 w-3" /> Missions désactivées sur cet agent — activez-les dans ses réglages.
+                    <WarningIcon className="h-3 w-3" /> Missions désactivées sur cet agent, activez-les dans ses réglages.
                   </div>
                 )}
               </div>
@@ -1282,7 +1282,7 @@ function ScheduleEditor({ existing, agents, workspaceId, projectId, onClose, onS
           </div>
           {selectedAgent && !selectedAgent.mission_enabled && (
             <div className="-mt-1 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
-              <WarningIcon className="h-3 w-3" /> Les missions sont désactivées sur cet agent — la planification ne se déclenchera pas tant qu'elles ne sont pas réactivées.
+              <WarningIcon className="h-3 w-3" /> Les missions sont désactivées sur cet agent, la planification ne se déclenchera pas tant qu'elles ne sont pas réactivées.
             </div>
           )}
           <Field label="Consigne (ce que l'agent doit faire à chaque exécution)">

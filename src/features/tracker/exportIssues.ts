@@ -1,4 +1,4 @@
-import type { Member, PjCycle, PjIssue, PjLabel, PjModule, PjProject, PjState } from "./model";
+import type { Member, PjIssue, PjLabel, PjProject, PjState } from "./model";
 import { PRIORITIES } from "./model";
 import { memberName } from "./pickers";
 
@@ -17,7 +17,7 @@ import { memberName } from "./pickers";
 
 const COLUMNS = [
   "Référence", "Titre", "État", "Priorité", "Assignés", "Labels",
-  "Cycle", "Modules", "Début", "Échéance", "Terminé le", "Créé le",
+  "Début", "Échéance", "Terminé le", "Créé le",
 ] as const;
 
 /**
@@ -40,10 +40,8 @@ export function issuesToCsv(input: {
   states: PjState[];
   labels: PjLabel[];
   members: Member[];
-  cycles: PjCycle[];
-  modules: PjModule[];
 }): string {
-  const { issues, project, states, labels, members, cycles, modules } = input;
+  const { issues, project, states, labels, members } = input;
 
   const rows = issues.map((issue) => [
     `${project.identifier}-${issue.sequence_id}`,
@@ -55,11 +53,6 @@ export function issuesToCsv(input: {
       .join(" · "),
     issue.label_ids
       .map((id) => labels.find((l) => l.id === id)?.name ?? "")
-      .filter(Boolean)
-      .join(" · "),
-    cycles.find((c) => c.id === issue.cycle_id)?.name ?? "",
-    issue.module_ids
-      .map((id) => modules.find((m) => m.id === id)?.name ?? "")
       .filter(Boolean)
       .join(" · "),
     isoDate(issue.start_date),

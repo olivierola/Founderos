@@ -312,7 +312,7 @@ export function AppTestPanel({
           <Input
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            placeholder="Cible — app.exemple.com/login"
+            placeholder="Cible, app.exemple.com/login"
             className="mt-2 text-sm"
             onKeyDown={(e) => { if (e.key === "Enter") void start(); }}
           />
@@ -403,7 +403,7 @@ export function AppTestPanel({
           <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-600 dark:text-amber-400">
             {noRunner
               ? "Personne n'a pris ce test : vérifie qu'un runner est démarré (dossier runner/, npm start)."
-              : "Le runner a pris le test mais n'envoie aucune image depuis " + Math.round(age / 1000) + " s — regarde sa console, puis relance."}
+              : "Le runner a pris le test mais n'envoie aucune image depuis " + Math.round(age / 1000) + " s, regarde sa console, puis relance."}
             <button
               onClick={() => void relaunch()} disabled={starting}
               className="mt-1.5 flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline disabled:opacity-50"
@@ -450,7 +450,7 @@ export function AppTestPanel({
             placeholder={
               run.status === "needs_input" ? "Réponds à l'agent…"
                 : live ? "Dis-lui quoi faire ensuite…"
-                : "Nouvelle instruction — le test reprend."
+                : "Nouvelle instruction, le test reprend."
             }
             className="min-h-[38px] max-h-24 resize-none py-2 text-sm"
           />

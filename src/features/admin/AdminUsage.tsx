@@ -109,7 +109,7 @@ export function AdminUsagePage() {
           )}
           {!breakdown.isLoading && rows.length === 0 && (
             <p className="py-8 text-sm text-muted-foreground">
-              Aucune consommation sur la période — vos agents n'ont pas encore travaillé.
+              Aucune consommation sur la période, vos agents n'ont pas encore travaillé.
             </p>
           )}
 

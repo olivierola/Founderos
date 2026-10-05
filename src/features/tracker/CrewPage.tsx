@@ -102,7 +102,7 @@ export function CrewPage({
       <PageHeader
         icon={<UsersThreeIcon className="h-4 w-4" />}
         title="Équipage"
-        subtitle="Qui travaille sur ce projet — et ce que chacun y porte."
+        subtitle="Qui travaille sur ce projet, et ce que chacun y porte."
         actions={
           <>
             <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setAdding("agent")}>

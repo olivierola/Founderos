@@ -89,7 +89,7 @@ export function GovAccessLogsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Accès des agents"
-        description="Trace complète de ce que chaque agent a utilisé : outils appelés, données lues, données écrites, appels externes — lue depuis les événements réels de vos runs."
+        description="Trace complète de ce que chaque agent a utilisé : outils appelés, données lues, données écrites, appels externes, lue depuis les événements réels de vos runs."
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -181,7 +181,7 @@ export function GovAccessLogsPage() {
             <DetailSection title={sel.resultOk === false ? "Erreur renvoyée" : "Résultat renvoyé"}>
               <CodeBlock text={sel.resultPreview} tone={sel.resultOk === false ? "error" : "default"} />
               <p className="mt-1.5 text-[11px] text-muted-foreground">
-                Aperçu tronqué à 1 000 caractères — le résultat complet reste dans la timeline du run.
+                Aperçu tronqué à 1 000 caractères, le résultat complet reste dans la timeline du run.
               </p>
             </DetailSection>
           )}
@@ -195,7 +195,7 @@ export function GovAccessLogsPage() {
               <p className="text-xs leading-relaxed text-muted-foreground">
                 {sel.status === "denied"
                   ? "Cet accès a été refusé par un guardrail ou une permission manquante. Consultez l'onglet Guardrails pour la règle correspondante, ou accordez l'accès dans la configuration de l'agent."
-                  : "L'appel a échoué côté fournisseur ou ressource. Le run a appliqué sa stratégie de retry — vérifiez les Incidents ops si l'erreur persiste."}
+                  : "L'appel a échoué côté fournisseur ou ressource. Le run a appliqué sa stratégie de retry, vérifiez les Incidents ops si l'erreur persiste."}
               </p>
             </DetailSection>
           )}

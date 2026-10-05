@@ -175,12 +175,13 @@ export function parseWorkflow(md: string, previous: WorkflowGraph): WorkflowGrap
     if (bullet && currentSection && ["rule", "resource", "deliverable", "memory"].includes(currentSection)) {
       flush();
       const text = bullet[1].replace(/\*\*/g, "").trim();
-      const [label, ...rest] = text.split(" — ");
+      // " · " since 04/10/2026; " — " is still read so saved documents parse.
+      const [label, ...rest] = text.split(/ (?:—|·) /);
       drafts.push({
         id: pendingId ?? newId(currentSection),
         kind: currentSection,
         label: label.replace(/\s*\([^)]*\)\s*$/, "").trim(),
-        body: rest.length ? [rest.join(" — ").trim()] : [],
+        body: rest.length ? [rest.join(" · ").trim()] : [],
       });
       pendingId = null;
       continue;

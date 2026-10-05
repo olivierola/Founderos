@@ -8,13 +8,13 @@ import { DashboardIllustration } from "./illustrations";
 import { EmptyState, PageHeader, Tabs } from "./ui";
 import { RadarChart, type RadarAxis } from "./analytics/RadarChart";
 import {
-  CyclesTab, IssuesTab, MembersTab, ModulesTab, ProjectsTab,
+  IssuesTab, MembersTab, ProjectsTab,
 } from "./analytics/tabs";
 import { AgentsAnalyticsTab } from "./analytics/AgentsTab";
 import {
-  HEALTH, fetchAnalytics, fetchAnalyticsCycles, fetchAnalyticsMembers,
-  fetchAnalyticsModules, fetchCycles, fetchIntake, fetchIssues, fetchMembers,
-  fetchModules, fetchPages, fetchProgress, fetchProjects, fetchViews, type PjProject,
+  HEALTH, fetchAnalytics, fetchAnalyticsMembers,
+  fetchIssues, fetchMembers,
+  fetchPages, fetchProgress, fetchProjects, fetchViews, type PjProject,
 } from "./model";
 
 /**
@@ -28,7 +28,7 @@ import {
  * chiffres ne rend aussi vite.
  */
 
-type Tab = "overview" | "projects" | "users" | "agents" | "issues" | "cycles" | "modules" | "intake";
+type Tab = "overview" | "projects" | "users" | "agents" | "issues";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -40,9 +40,6 @@ const TABS: { key: Tab; label: string }[] = [
   // sur les primitives d'Analytics.
   { key: "agents", label: "Agents" },
   { key: "issues", label: "Work items" },
-  { key: "cycles", label: "Cycles" },
-  { key: "modules", label: "Modules" },
-  { key: "intake", label: "Intake" },
 ];
 
 export function SpaceAnalytics({ dashboardId }: { dashboardId: string }) {
@@ -59,14 +56,6 @@ export function SpaceAnalytics({ dashboardId }: { dashboardId: string }) {
   const { data: analytics } = useQuery({
     queryKey: ["pj_analytics", dashboardId],
     queryFn: () => fetchAnalytics(dashboardId),
-  });
-  const { data: cycleRows } = useQuery({
-    queryKey: ["pj_analytics_cycles", dashboardId],
-    queryFn: () => fetchAnalyticsCycles(dashboardId),
-  });
-  const { data: moduleRows } = useQuery({
-    queryKey: ["pj_analytics_modules", dashboardId],
-    queryFn: () => fetchAnalyticsModules(dashboardId),
   });
   const { data: memberRows } = useQuery({
     queryKey: ["pj_analytics_members", dashboardId],
@@ -86,12 +75,6 @@ export function SpaceAnalytics({ dashboardId }: { dashboardId: string }) {
   const scopedRows = scope
     ? (analytics ?? []).filter((r) => r.pj_project_id === scope)
     : analytics ?? [];
-  const scopedCycles = scope
-    ? (cycleRows ?? []).filter((c) => c.project_name === current?.name)
-    : cycleRows ?? [];
-  const scopedModules = scope
-    ? (moduleRows ?? []).filter((m) => m.project_name === current?.name)
-    : moduleRows ?? [];
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -139,18 +122,12 @@ export function SpaceAnalytics({ dashboardId }: { dashboardId: string }) {
           <OverviewTab dashboardId={dashboardId} projects={scoped} allProjects={all} />
         ) : tab === "projects" ? (
           <ProjectsTab rows={scopedRows} />
-        ) : tab === "cycles" ? (
-          <CyclesTab cycles={scopedCycles} members={members ?? []} />
-        ) : tab === "modules" ? (
-          <ModulesTab modules={scopedModules} members={members ?? []} />
         ) : tab === "users" ? (
           <MembersTab rows={memberRows ?? []} members={members ?? []} />
         ) : tab === "agents" ? (
           <AgentsAnalyticsTab
             dashboardId={dashboardId} projects={all} scopeProjectId={scope}
           />
-        ) : tab === "intake" ? (
-          <IssuesTab rows={scopedRows} intake />
         ) : (
           <IssuesTab rows={scopedRows} />
         )}
@@ -197,28 +174,22 @@ function OverviewTab({
       // vue de plus pour une page consultée occasionnellement ; le coût réel
       // est celui d'un chargement, pas d'un board qu'on garde ouvert.
       const per = await Promise.all(projects.map(async (p) => {
-        const [issues, cycles, modules, pages, views, intake] = await Promise.all([
+        const [issues, pages, views] = await Promise.all([
           fetchIssues({ pjProjectId: p.id }),
-          fetchCycles(p.id),
-          fetchModules(p.id),
           fetchPages(p.id),
           fetchViews(p.id),
-          fetchIntake(p.id),
         ]);
         return {
-          issues: issues.length, cycles: cycles.length, modules: modules.length,
-          pages: pages.length, views: views.length, intake: intake.length,
+          issues: issues.length,
+          pages: pages.length, views: views.length,
         };
       }));
 
       return per.reduce((acc, x) => ({
         issues: acc.issues + x.issues,
-        cycles: acc.cycles + x.cycles,
-        modules: acc.modules + x.modules,
         pages: acc.pages + x.pages,
         views: acc.views + x.views,
-        intake: acc.intake + x.intake,
-      }), { issues: 0, cycles: 0, modules: 0, pages: 0, views: 0, intake: 0 });
+      }), { issues: 0, pages: 0, views: 0 });
     },
   });
 
@@ -228,14 +199,11 @@ function OverviewTab({
     queryFn: () => fetchMembers(projects[0].workspace_id),
   });
 
-  const t = totals ?? { issues: 0, cycles: 0, modules: 0, pages: 0, views: 0, intake: 0 };
+  const t = totals ?? { issues: 0, pages: 0, views: 0 };
   const memberCount = members?.length ?? 0;
 
   const rows: { label: string; value: number }[] = [
     { label: "Work items", value: t.issues },
-    { label: "Cycles", value: t.cycles },
-    { label: "Modules", value: t.modules },
-    { label: "Intake", value: t.intake },
     { label: "Membres", value: memberCount },
     { label: "Pages", value: t.pages },
     { label: "Vues", value: t.views },
@@ -254,11 +222,8 @@ function OverviewTab({
           <Stat label="Membres" value={memberCount} />
           <Stat label="Projets" value={allProjects.length} />
           <Stat label="Work items" value={t.issues} />
-          <Stat label="Cycles" value={t.cycles} />
-          <Stat label="Modules" value={t.modules} />
           <Stat label="Pages" value={t.pages} />
           <Stat label="Vues" value={t.views} />
-          <Stat label="Intake" value={t.intake} />
         </div>
       </section>
 
@@ -391,22 +356,7 @@ function BreakdownRow({
     queryFn: () => fetchProgress(project.id),
   });
 
-  const { data: extra } = useQuery({
-    queryKey: ["pj_analytics_dim", project.id, dimension],
-    enabled: dimension === "cycles" || dimension === "modules" || dimension === "intake",
-    queryFn: async () => {
-      switch (dimension) {
-        case "cycles": return (await fetchCycles(project.id)).length;
-        case "modules": return (await fetchModules(project.id)).length;
-        case "intake": return (await fetchIntake(project.id)).length;
-        default: return 0;
-      }
-    },
-  });
-
-  const total = dimension === "cycles" || dimension === "modules" || dimension === "intake"
-    ? extra ?? 0
-    : progress?.total ?? 0;
+  const total = progress?.total ?? 0;
 
   return (
     <div className="grid grid-cols-[1fr_100px_100px_100px] items-center gap-2 border-b border-border/40 px-3 py-2 text-13 last:border-0">

@@ -184,7 +184,7 @@ function ProviderCard({
         <div className="mt-4 space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
           <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
             <CheckCircleIcon weight="fill" className="h-4 w-4" />
-            {brand.label} connecté{result.bot_name ? ` — ${result.bot_name}` : ""}.
+            {brand.label} connecté{result.bot_name ? `, ${result.bot_name}` : ""}.
           </p>
           {result.interactions_url && (
             <CopyRow label="Interactions Endpoint URL (portail Discord)" value={result.interactions_url} />

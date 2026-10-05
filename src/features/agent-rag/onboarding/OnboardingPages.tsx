@@ -150,7 +150,7 @@ export function OnboardingOverviewPage() {
                       : "Onboarding is disabled for this agent."}
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    Onboarding is enabled per-agent — toggle it in the agent's Settings tab.
+                    Onboarding is enabled per-agent, toggle it in the agent's Settings tab.
                   </div>
                 </div>
                 {agentId && workspace?.slug && project?.slug && (
@@ -240,7 +240,7 @@ export function OnboardingOverviewPage() {
               <p>
                 The widget snippet that ships onboarding to your SaaS lives in the
                 <span className="mx-1 font-medium text-foreground">agent's Widget tab</span>
-                — open the agent and copy the embed code from there.
+               , open the agent and copy the embed code from there.
               </p>
             </CardContent>
           </Card>
@@ -317,7 +317,7 @@ export function OnboardingChecklistPage() {
       title="Activation checklist"
       description="Tasks the user must complete to be considered activated. Auto-checks on the matching event."
       emptyTitle="No checklist yet"
-      emptyDescription="Build the list of activation milestones — they tick off automatically when the matching event fires."
+      emptyDescription="Build the list of activation milestones, they tick off automatically when the matching event fires."
     />
   );
 }

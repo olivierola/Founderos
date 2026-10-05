@@ -62,7 +62,7 @@ export function GovFtOverviewPage() {
     <div className="space-y-6">
       <PageHeader
         title="Fine-tuning Studio"
-        description="Préparez vos données, expérimentez, entraînez, évaluez, déployez et améliorez vos modèles — en continu."
+        description="Préparez vos données, expérimentez, entraînez, évaluez, déployez et améliorez vos modèles, en continu."
       />
 
       {/* Widgets */}
@@ -126,7 +126,7 @@ export function GovFtOverviewPage() {
 
       {/* Architecture recommandée : données → RAG / FT / Outils → Agent → boucle */}
       <Card className="p-5">
-        <div className="mb-4 text-sm font-medium">Fine-tuning + RAG + Agents — l'architecture d'entreprise</div>
+        <div className="mb-4 text-sm font-medium">Fine-tuning + RAG + Agents, l'architecture d'entreprise</div>
         <div className="flex flex-col items-center gap-2 text-center text-xs">
           <div className="rounded-md border border-border bg-secondary/40 px-4 py-2">Sources de données <span className="text-muted-foreground">(tickets, docs, CRM…)</span></div>
           <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />

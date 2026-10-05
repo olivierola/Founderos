@@ -21,8 +21,8 @@ export const WORK_SECTION: DocSection = {
           <Lede>
             L'écran sur lequel le tableau s'ouvre. Il fait deux choses : vous laisser
             <strong> reprendre</strong> où vous en étiez, et vous laisser
-            <strong> demander</strong> quelque chose à votre équipe — humaine ou
-            machine — sans changer d'écran.
+            <strong> demander</strong> quelque chose à votre équipe, humaine ou
+            machine, sans changer d'écran.
           </Lede>
 
           <H>Le composeur</H>
@@ -34,14 +34,14 @@ export const WORK_SECTION: DocSection = {
 
           <Steps>
             <Step>Écrivez votre demande. <Key>Entrée</Key> envoie, <Key>Maj</Key>+<Key>Entrée</Key> passe à la ligne.</Step>
-            <Step>Mentionnez un agent avec <Ui>@</Ui> — il est <strong>ajouté à la room</strong> et peut donc y répondre. Sans mention, la room reste entre humains.</Step>
+            <Step>Mentionnez un agent avec <Ui>@</Ui>, il est <strong>ajouté à la room</strong> et peut donc y répondre. Sans mention, la room reste entre humains.</Step>
             <Step>Tapez <Ui>/</Ui> pour les commandes, joignez des fichiers, ou dictez au micro.</Step>
           </Steps>
 
           <Callout kind="tip" title="Pourquoi une room, et pas l'assistant">
             L'assistant répond dans un panneau latéral qui n'appartient à personne :
             la réponse se lit et se perd. Une room est un <strong>objet du
-            service</strong> — elle a des participants, elle garde son historique,
+            service</strong>, elle a des participants, elle garde son historique,
             les agents y travaillent avec leurs outils, et on y revient. L'assistant
             reste à un clic, par le bouton d'agrandissement du bloc, pour ce qui n'a
             pas vocation à laisser de trace.
@@ -58,7 +58,7 @@ export const WORK_SECTION: DocSection = {
             rows={[
               [<>Salutation et date</>, <>Le repère temporel, qui évite de confondre « hier » et « la semaine dernière » en lisant les échéances.</>],
               [<>Widgets</>, <>Vos items assignés, ceux qui arrivent à échéance, les projets récents. Chacun est une liste courte qui renvoie vers l'écran complet.</>],
-              [<>Récents</>, <>Ce que vous avez ouvert en dernier, tous types confondus — un projet, un work item, une page.</>],
+              [<>Récents</>, <>Ce que vous avez ouvert en dernier, tous types confondus, un projet, un work item, une page.</>],
               [<>Vos notes</>, <>Le mur de pense-bêtes, visible de vous seul.</>],
             ]}
           />
@@ -78,7 +78,7 @@ export const WORK_SECTION: DocSection = {
 
           <Shot
             file="docs/home.png"
-            alt="La page Home : le composeur en haut avec une mention d'agent en cours de frappe, puis les widgets — items assignés, échéances, projets récents."
+            alt="La page Home : le composeur en haut avec une mention d'agent en cours de frappe, puis les widgets, items assignés, échéances, projets récents."
           />
         </>
       ),
@@ -107,7 +107,7 @@ export const WORK_SECTION: DocSection = {
           <H>Ce qui n'y figure pas</H>
           <UL>
             <LI>Les items <strong>terminés</strong>, sauf en changeant le filtre : une liste de tâches qui garde ses tâches faites cesse d'être une liste de tâches.</LI>
-            <LI>Les items <strong>archivés</strong>, jamais — ils ont leur propre écran.</LI>
+            <LI>Les items <strong>archivés</strong>, jamais, ils ont leur propre écran.</LI>
             <LI>Les <strong>brouillons</strong>, qui ne sont assignés à personne tant qu'ils ne sont pas publiés.</LI>
           </UL>
         </>
@@ -130,13 +130,13 @@ export const WORK_SECTION: DocSection = {
           <H>Créer un projet</H>
           <Steps>
             <Step>Depuis la liste, le bouton <Ui>Nouveau projet</Ui>.</Step>
-            <Step>Donnez-lui un <strong>nom</strong> et un <strong>identifiant</strong> court — deux à cinq lettres.</Step>
+            <Step>Donnez-lui un <strong>nom</strong> et un <strong>identifiant</strong> court, deux à cinq lettres.</Step>
             <Step>Choisissez une icône : sur quinze projets aux noms qui se ressemblent, c'est elle qu'on repère.</Step>
             <Step>Réglez la <strong>visibilité</strong> : ouvert à l'espace, ou privé.</Step>
           </Steps>
 
           <Callout kind="warn" title="L'identifiant ne se change pas à la légère">
-            Il préfixe la référence de chaque work item — <Ui>DEMO-14</Ui> — et ces
+            Il préfixe la référence de chaque work item, <Ui>DEMO-14</Ui>, et ces
             références circulent dans les commentaires, les messages et les liens. Le
             modifier réécrit toutes les références existantes.
           </Callout>
@@ -162,7 +162,7 @@ export const WORK_SECTION: DocSection = {
         <>
           <Lede>
             La page qu'on montre à quelqu'un qui arrive sur le projet. Elle porte la
-            description longue — un vrai document, pas un champ de formulaire — et
+            description longue, un vrai document, pas un champ de formulaire, et
             l'état d'avancement.
           </Lede>
 
@@ -189,7 +189,7 @@ export const WORK_SECTION: DocSection = {
         <>
           <Lede>
             L'écran où l'on passe la journée. Une même liste de travail, présentée de
-            six façons, filtrable et groupable — et c'est le même contenu à chaque
+            six façons, filtrable et groupable, et c'est le même contenu à chaque
             fois, jamais six listes différentes.
           </Lede>
 
@@ -222,7 +222,7 @@ export const WORK_SECTION: DocSection = {
           <UL>
             <LI>
               <strong>Filtres</strong> retire des items de la liste. Le bouton nomme
-              les champs filtrés — « Priorité · Assignés » — plutôt que d'afficher un
+              les champs filtrés, « Priorité · Assignés », plutôt que d'afficher un
               simple compteur : ce qui explique une liste courte, c'est de savoir
               QUOI est écarté.
             </LI>
@@ -244,7 +244,7 @@ export const WORK_SECTION: DocSection = {
           <Steps>
             <Step>Le bouton <Ui>Nouveau</Ui> de la barre, ou <Key>C</Key> depuis n'importe quel écran du projet.</Step>
             <Step>Le titre suffit à enregistrer ; tout le reste se règle après.</Step>
-            <Step><strong>Créer un autre</strong> garde le formulaire ouvert avec les mêmes propriétés — pour saisir une réunion de cadrage d'une traite.</Step>
+            <Step><strong>Créer un autre</strong> garde le formulaire ouvert avec les mêmes propriétés, pour saisir une réunion de cadrage d'une traite.</Step>
           </Steps>
 
           <H>La fiche d'un item</H>
@@ -296,7 +296,7 @@ export const WORK_SECTION: DocSection = {
 
           <UL>
             <LI>Une barre se <strong>déplace</strong> et se <strong>redimensionne</strong> à la souris : les dates s'enregistrent aussitôt.</LI>
-            <LI>Un item <strong>sans dates</strong> n'a pas de barre — il apparaît dans la colonne de gauche, sans rien à sa droite. C'est le signal qu'il reste à planifier.</LI>
+            <LI>Un item <strong>sans dates</strong> n'a pas de barre, il apparaît dans la colonne de gauche, sans rien à sa droite. C'est le signal qu'il reste à planifier.</LI>
             <LI>Une échéance <strong>dépassée</strong> se teinte : c'est ce qu'on vient chercher.</LI>
           </UL>
 
@@ -318,7 +318,7 @@ export const WORK_SECTION: DocSection = {
           <Lede>
             Un cycle est un intervalle de dates dans lequel on range du travail :
             un sprint, une quinzaine, un mois. Ce qui le distingue d'un simple
-            filtre, c'est qu'il a une <strong>fin</strong> — et donc un bilan.
+            filtre, c'est qu'il a une <strong>fin</strong>, et donc un bilan.
           </Lede>
 
           <H>Les trois états d'un cycle</H>
@@ -341,7 +341,7 @@ export const WORK_SECTION: DocSection = {
 
           <Callout>
             Un work item n'appartient qu'à <strong>un seul cycle</strong> à la fois.
-            L'ajouter à un autre le retire du premier — c'est ce qui rend le bilan
+            L'ajouter à un autre le retire du premier, c'est ce qui rend le bilan
             d'un cycle interprétable.
           </Callout>
 
@@ -373,7 +373,7 @@ export const WORK_SECTION: DocSection = {
               [<>Statut</>, <>Planifié, en cours, en pause, terminé, annulé. Il se règle à la main : un module ne devient pas « terminé » parce que ses items le sont.</>],
               [<>Responsable</>, <>Une personne qui répond du module. Facultatif, mais un module sans responsable a tendance à ne jamais avancer.</>],
               [<>Dates</>, <>Un début et une cible, qui alimentent la barre d'avancement.</>],
-              [<>Appartenance</>, <>Un item peut être dans <strong>plusieurs</strong> modules — contrairement aux cycles.</>],
+              [<>Appartenance</>, <>Un item peut être dans <strong>plusieurs</strong> modules, contrairement aux cycles.</>],
             ]}
           />
 
@@ -399,7 +399,7 @@ export const WORK_SECTION: DocSection = {
           </Lede>
 
           <P>
-            La page <Ui>Epics</Ui> les liste avec leur avancement — combien de leurs
+            La page <Ui>Epics</Ui> les liste avec leur avancement, combien de leurs
             enfants sont terminés. C'est la vue de niveau au-dessus : elle répond à
             « où en est la refonte ? » quand la liste des work items répond à « que
             fait-on aujourd'hui ? ».
@@ -425,7 +425,7 @@ export const WORK_SECTION: DocSection = {
           <Lede>
             Une vue est une combinaison de filtres, de groupement et de disposition à
             laquelle on donne un nom. « Urgences en cours », « À relire », « Bugs du
-            trimestre » — ce sont des questions qu'on repose chaque semaine.
+            trimestre », ce sont des questions qu'on repose chaque semaine.
           </Lede>
 
           <H>Créer une vue</H>
@@ -486,8 +486,8 @@ export const WORK_SECTION: DocSection = {
       body: () => (
         <>
           <Lede>
-            Tout ce qui arrive de l'extérieur — un signalement, une demande client,
-            une idée — atterrit ici <strong>sans état</strong>, donc sans polluer le
+            Tout ce qui arrive de l'extérieur, un signalement, une demande client,
+            une idée, atterrit ici <strong>sans état</strong>, donc sans polluer le
             board. On les traite ensuite une par une.
           </Lede>
 
@@ -503,7 +503,7 @@ export const WORK_SECTION: DocSection = {
           <Callout kind="warn">
             Une demande en attente n'apparaît <strong>nulle part ailleurs</strong> :
             ni dans les work items, ni dans les statistiques, ni dans <Ui>Mon
-            travail</Ui>. C'est voulu — mais cela signifie qu'un Intake qu'on ne
+            travail</Ui>. C'est voulu, mais cela signifie qu'un Intake qu'on ne
             visite jamais est un trou noir. Regardez-le une fois par semaine.
           </Callout>
         </>
@@ -531,7 +531,7 @@ export const WORK_SECTION: DocSection = {
 
           <H>Archives</H>
           <P>
-            Archiver retire un item — ou un cycle, ou un module — de tous les écrans
+            Archiver retire un item, ou un cycle, ou un module, de tous les écrans
             de travail sans le détruire. C'est la bonne réponse à « on ne le fera
             pas, mais je ne veux pas perdre la trace ».
           </P>
@@ -562,9 +562,9 @@ export const WORK_SECTION: DocSection = {
           </Figure>
 
           <UL>
-            <LI><strong>Répartition</strong> — par état, priorité, assigné, label, cycle ou module. C'est le graphique qui révèle qu'une personne porte la moitié du projet.</LI>
-            <LI><strong>Tendance</strong> — créés contre terminés dans le temps. Si la première courbe monte plus vite que la seconde, la dette de travail grossit.</LI>
-            <LI><strong>Retards</strong> — les échéances dépassées, groupées par responsable.</LI>
+            <LI><strong>Répartition</strong>, par état, priorité, assigné, label, cycle ou module. C'est le graphique qui révèle qu'une personne porte la moitié du projet.</LI>
+            <LI><strong>Tendance</strong>, créés contre terminés dans le temps. Si la première courbe monte plus vite que la seconde, la dette de travail grossit.</LI>
+            <LI><strong>Retards</strong>, les échéances dépassées, groupées par responsable.</LI>
           </UL>
 
           <Callout>
@@ -589,7 +589,7 @@ export const WORK_SECTION: DocSection = {
 
           <Defs
             rows={[
-              [<>États</>, <>Vos propres noms d'étapes, rangés dans cinq <strong>groupes</strong> : backlog, à faire, en cours, terminé, annulé. Le groupe compte plus que le nom — c'est lui que lisent le burndown et les statistiques.</>],
+              [<>États</>, <>Vos propres noms d'étapes, rangés dans cinq <strong>groupes</strong> : backlog, à faire, en cours, terminé, annulé. Le groupe compte plus que le nom, c'est lui que lisent le burndown et les statistiques.</>],
               [<>Labels</>, <>Des étiquettes transversales, avec leur couleur. Un item peut en porter plusieurs.</>],
               [<>Estimations</>, <>Une échelle de charge : points, t-shirt sizes, heures. Une seule échelle active à la fois.</>],
               [<>Membres</>, <>Qui travaille sur le projet, et à quel rang. Voir l'article <strong>Équipage</strong>.</>],

@@ -196,7 +196,7 @@ export function GovContextIQPage() {
             <Funnel className="mt-0.5 h-4 w-4 shrink-0 text-purple-500" />
             <span>
               Aucune évaluation pour l'instant. ContextIQ se règle dans <strong className="text-foreground">Gouvernance IA → Jugement rapide</strong>,
-              usage « ContextIQ — filtre de contexte RAG ». En <strong className="text-foreground">Observation</strong>, chaque recherche est
+              usage « ContextIQ, filtre de contexte RAG ». En <strong className="text-foreground">Observation</strong>, chaque recherche est
               évaluée et journalisée ici sans rien changer aux réponses : c'est suffisant pour voir apparaître les trous de votre base.
             </span>
           </CardContent>

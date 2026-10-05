@@ -30,12 +30,12 @@ export function GovFtCostsPage() {
       id: `t_${j.id}`, label: j.name, kind: "training" as const, gpuHours: j.gpuHours, usd: j.costUsd, ts: j.startedAt,
     }));
     const storage = servers.map((s) => ({
-      id: `s_${s.id}`, label: `${s.name} — infra 30 j`, kind: "storage" as const, gpuHours: 0,
+      id: `s_${s.id}`, label: `${s.name}, infra 30 j`, kind: "storage" as const, gpuHours: 0,
       usd: Math.round(s.costPerDay * 30 * 100) / 100, ts: new Date().toISOString(),
     }));
     const inference = endpoints.filter((e) => e.status === "active").map((e) => {
       const h = Math.round(((e.reqPerMin || 1) * 0.4) * 10) / 10;
-      return { id: `i_${e.id}`, label: `${e.versionName} ${e.version} — serving`, kind: "inference" as const, gpuHours: h, usd: Math.round(h * GPU_RATE_PER_HOUR * 100) / 100, ts: e.since };
+      return { id: `i_${e.id}`, label: `${e.versionName} ${e.version}, serving`, kind: "inference" as const, gpuHours: h, usd: Math.round(h * GPU_RATE_PER_HOUR * 100) / 100, ts: e.since };
     });
     return [...training, ...storage, ...inference].sort((a, b) => b.ts.localeCompare(a.ts));
   }, [jobs, servers, endpoints]);
@@ -66,7 +66,7 @@ export function GovFtCostsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Coûts"
-        description="Dashboard financier du fine-tuning : GPU, API, stockage — entraînement vs inférence, avec prévision mensuelle et estimateur."
+        description="Dashboard financier du fine-tuning : GPU, API, stockage, entraînement vs inférence, avec prévision mensuelle et estimateur."
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -87,7 +87,7 @@ export function GovFtCostsPage() {
           <div className="font-stat-number text-2xl font-semibold tabular-nums tracking-tight text-[hsl(var(--accent-teal))]">{usd(eom)}</div>
         </div>
         <p className="ml-auto max-w-xs text-[11px] text-muted-foreground">
-          Projection au rythme de dépense courant — entraînements planifiés non inclus (utilisez l'estimateur ci-dessous).
+          Projection au rythme de dépense courant, entraînements planifiés non inclus (utilisez l'estimateur ci-dessous).
         </p>
       </Card>
 

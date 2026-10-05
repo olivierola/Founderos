@@ -30,7 +30,7 @@ export const RESOURCES_SECTION: DocSection = {
 
           <Callout kind="warn">
             Une mémoire fausse est pire qu'une mémoire vide : l'agent y puise avec la
-            même assurance. Quand une information change, corrigez-la ici — la
+            même assurance. Quand une information change, corrigez-la ici, la
             corriger dans une conversation ne la remplace pas.
           </Callout>
 
@@ -52,7 +52,7 @@ export const RESOURCES_SECTION: DocSection = {
       body: () => (
         <>
           <Lede>
-            Une connexion donne à un agent l'accès à un service extérieur — une boîte
+            Une connexion donne à un agent l'accès à un service extérieur, une boîte
             mail, un CRM, un dépôt de code. Sans connexion, un agent ne peut agir que
             dans FounderOS.
           </Lede>
@@ -60,7 +60,7 @@ export const RESOURCES_SECTION: DocSection = {
           <Defs
             rows={[
               [<>Connexions de l'espace</>, <>Des comptes partagés, utilisables par tous les agents du tableau. Pour les outils de l'équipe.</>],
-              [<>Mes connexions</>, <>Vos propres comptes. Un agent agit alors <strong>en votre nom</strong> — ce qui est parfois exactement ce qu'on veut, et parfois pas du tout.</>],
+              [<>Mes connexions</>, <>Vos propres comptes. Un agent agit alors <strong>en votre nom</strong>, ce qui est parfois exactement ce qu'on veut, et parfois pas du tout.</>],
             ]}
           />
 
@@ -122,7 +122,7 @@ export const RESOURCES_SECTION: DocSection = {
       body: () => (
         <>
           <Lede>
-            Les réglages du tableau lui-même — à ne pas confondre avec les réglages
+            Les réglages du tableau lui-même, à ne pas confondre avec les réglages
             d'un projet, qui définissent son vocabulaire de travail.
           </Lede>
 

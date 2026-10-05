@@ -40,23 +40,23 @@ function simulate(prompt: string, style: "tuned" | "base" | "gpt" | "claude" | "
   const topic = p.includes("retard") || p.includes("mécontent") ? "retard" : p.includes("résume") ? "resume" : p.includes("facture") ? "facture" : "lead";
   const T: Record<string, Record<string, string>> = {
     retard: {
-      tuned: "Bonjour Camille, vous avez raison d'être déçue — votre commande aurait dû arriver mardi. Elle est partie ce matin (suivi FR-2847) et arrivera avant vendredi. La livraison est offerte. — L'équipe",
+      tuned: "Bonjour Camille, vous avez raison d'être déçue, votre commande aurait dû arriver mardi. Elle est partie ce matin (suivi FR-2847) et arrivera avant vendredi. La livraison est offerte. L'équipe",
       base: "Bonjour, nous nous excusons pour le retard. Votre commande est en cours de traitement et sera livrée dès que possible. Cordialement.",
       gpt: "Bonjour, merci de nous avoir contactés. Nous comprenons votre frustration concernant ce retard. Votre commande est prioritaire et nous reviendrons vers vous avec un numéro de suivi sous 24h.",
-      claude: "Bonjour, je comprends parfaitement votre frustration face à ce retard — c'est une situation pénible. Votre commande a été localisée et expédiée ; vous recevrez le suivi par email d'ici ce soir. Puis-je faire autre chose pour vous ?",
+      claude: "Bonjour, je comprends parfaitement votre frustration face à ce retard, c'est une situation pénible. Votre commande a été localisée et expédiée ; vous recevrez le suivi par email d'ici ce soir. Puis-je faire autre chose pour vous ?",
       llama: "Bonjour, désolé pour le retard de votre commande. Elle devrait arriver bientôt. Merci de votre patience.",
     },
     resume: {
-      tuned: "Client Pro (plan Scale) bloqué par l'export CSV depuis la v2.4 — erreur 500 sur gros volumes. Contournement : export par lots ; correctif au prochain déploiement.",
+      tuned: "Client Pro (plan Scale) bloqué par l'export CSV depuis la v2.4, erreur 500 sur gros volumes. Contournement : export par lots ; correctif au prochain déploiement.",
       base: "Le client rencontre un problème avec le produit et demande de l'aide. Le support doit examiner la demande.",
       gpt: "Un client signale une erreur lors de l'export de données volumineuses. L'équipe technique propose une solution temporaire en attendant un correctif.",
       claude: "Résumé : un client Pro rencontre une erreur 500 à l'export CSV sur les volumes importants depuis la mise à jour 2.4. Un contournement par lots est proposé, correctif planifié.",
       llama: "Le client a un problème d'export CSV qui donne une erreur. Le support propose une solution de contournement.",
     },
     facture: {
-      tuned: "Bonjour Marc, petit rappel amical : la facture #1024 (3 450 €, échue le 12/06) reste ouverte. Lien de paiement joint — si un point bloque, appelez-moi et on règle ça ensemble. Bonne journée !",
+      tuned: "Bonjour Marc, petit rappel amical : la facture #1024 (3 450 €, échue le 12/06) reste ouverte. Lien de paiement joint, si un point bloque, appelez-moi et on règle ça ensemble. Bonne journée !",
       base: "Bonjour, sauf erreur de notre part, la facture mentionnée reste impayée. Merci de procéder au règlement. Cordialement.",
-      gpt: "Objet : Rappel de paiement — Bonjour, nous vous rappelons que votre facture demeure impayée à ce jour. Nous vous remercions de bien vouloir régulariser la situation dans les meilleurs délais.",
+      gpt: "Objet : Rappel de paiement, Bonjour, nous vous rappelons que votre facture demeure impayée à ce jour. Nous vous remercions de bien vouloir régulariser la situation dans les meilleurs délais.",
       claude: "Bonjour Marc, j'espère que vous allez bien. Je me permets de revenir vers vous au sujet de la facture #1024 arrivée à échéance. Si le règlement est déjà en cours, ignorez ce message ; sinon, le lien de paiement est ci-dessous. Belle journée !",
       llama: "Bonjour, votre facture n'a pas été payée. Merci de payer rapidement. Cordialement.",
     },
@@ -150,7 +150,7 @@ export function GovFtPromptTestsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Prompt Tests"
-        description="Testez le modèle affiné sur vos prompts et comparez-le au modèle de base, GPT, Claude ou Llama. Le modèle affiné répond en réel dès qu'il est déployé sur un pod (onglet Déploiement) ; les concurrents statiques sont simulés — branchez un fournisseur cloud (AI Ops → Modèles) pour des comparaisons réelles."
+        description="Testez le modèle affiné sur vos prompts et comparez-le au modèle de base, GPT, Claude ou Llama. Le modèle affiné répond en réel dès qu'il est déployé sur un pod (onglet Déploiement) ; les concurrents statiques sont simulés, branchez un fournisseur cloud (AI Ops → Modèles) pour des comparaisons réelles."
       />
 
       <Card className="p-4">
@@ -159,7 +159,7 @@ export function GovFtPromptTestsPage() {
           <Select value={current?.id ?? ""} onChange={(e) => setVersionId(e.target.value)} className="h-9 w-64">
             {versions.map((v) => <option key={v.id} value={v.id}>{v.name} {v.version}</option>)}
           </Select>
-          <Pill meta={tunedServer ? { label: "endpoint live", tone: "emerald" } : { label: "non déployé — simulation", tone: "slate" }} className="px-1.5 py-0 text-[10px]" />
+          <Pill meta={tunedServer ? { label: "endpoint live", tone: "emerald" } : { label: "non déployé, simulation", tone: "slate" }} className="px-1.5 py-0 text-[10px]" />
           <span className="ml-2 text-xs text-muted-foreground">Comparer à :</span>
           {CONTENDERS.map((c) => (
             <button
@@ -250,7 +250,7 @@ export function GovFtPromptTestsPage() {
 
       {results && vote && (
         <p className="text-xs text-muted-foreground">
-          Préférence enregistrée — ces votes alimentent le win-rate de l'onglet Évaluation.
+          Préférence enregistrée, ces votes alimentent le win-rate de l'onglet Évaluation.
         </p>
       )}
 

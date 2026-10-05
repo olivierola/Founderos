@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import NumberFlow from "@number-flow/react";
 import {
   BuildingsIcon,
+  CheckCircleIcon,
   CalendarCheckIcon,
   CoinsIcon,
   CrownSimpleIcon,
@@ -11,7 +11,7 @@ import {
   UserIcon,
 } from "@phosphor-icons/react";
 import { Reveal } from "./LandingKit";
-import { Btn, CheckBadge, IconOrb, InfoPill } from "./atlas/AtlasKit";
+import { Btn } from "./hn/HnKit";
 import { fetchPlans, type BillingPlan } from "@/lib/billing";
 
 /**
@@ -31,10 +31,10 @@ import { fetchPlans, type BillingPlan } from "@/lib/billing";
  * débiter à la souscription est le genre de promesse qui se règle en litige.
  *
  * ── La forme ────────────────────────────────────────────────────────────────
- * Le registre Atlas : trois cartes arrondies, le palier mis en avant sur le
- * dégradé noir → violet avec son badge « Popular », une rangée de faits en
- * pastilles, puis Enterprise en bandeau — il ne se compare pas, il se négocie.
- * La comparaison ligne à ligne vit dans le tableau de /pricing#compare.
+ * Le registre Hunar : trois cartes à angles courts, le palier mis en avant
+ * cerné de bleu avec son badge « Popular », une rangée de faits, puis
+ * Enterprise en bandeau — il ne se compare pas, il se négocie. La comparaison
+ * ligne à ligne vit dans le tableau de /pricing#compare.
  */
 
 type Plan = {
@@ -189,30 +189,27 @@ function reconcile(plan: Plan, row: BillingPlan | undefined): Plan {
 }
 
 /* ── The billing switch ─────────────────────────────────────────────────────
-   The reference's pill toggle: two labels either side of a switch. */
+   A two-segment control, square-cornered like the rest of the register. */
 function PeriodSwitch({ yearly, onChange }: { yearly: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="inline-flex items-center gap-3 rounded-full border border-[#e6e6e6] bg-white py-1.5 pl-4 pr-4 text-[14px] font-semibold text-[#111011] shadow-[0_10px_30px_-20px_rgba(17,16,17,0.35)]">
-      <button type="button" onClick={() => onChange(false)} className={yearly ? "opacity-45" : ""}>
-        Monthly
-      </button>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={yearly}
-        aria-label="Bill annually"
-        onClick={() => onChange(!yearly)}
-        className="relative h-[30px] w-[56px] rounded-full bg-[#111011]"
-      >
-        <span
-          className={`absolute top-[3px] h-[24px] w-[24px] rounded-full bg-white transition-all duration-300 ${
-            yearly ? "left-[29px]" : "left-[3px]"
-          }`}
-        />
-      </button>
-      <button type="button" onClick={() => onChange(true)} className={yearly ? "" : "opacity-45"}>
-        Annually <span className="at-grad-text">· 2 months free</span>
-      </button>
+    <div className="inline-flex rounded-full border border-[#e6e9ef] bg-white p-1 text-[15px]">
+      {[
+        { on: false, label: "Monthly" },
+        { on: true, label: "Yearly · 2 months free" },
+      ].map((opt) => {
+        const active = opt.on === yearly;
+        return (
+          <button
+            key={opt.label}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(opt.on)}
+            className={`rounded-full px-4 py-2 transition-colors ${active ? "bg-[#006edd] text-white" : "text-[#0f1728] hover:text-[#006edd]"}`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -222,6 +219,10 @@ const PLAN_ICON: Record<string, typeof UserIcon> = {
   Pro: CrownSimpleIcon,
   Agencies: BuildingsIcon,
 };
+
+function Tick() {
+  return <CheckCircleIcon weight="fill" className="mt-[2px] h-[18px] w-[18px] shrink-0 text-[#006edd]" />;
+}
 
 function PlanCard({ plan, yearly }: { plan: Plan; yearly: boolean }) {
   const hot = !!plan.popular;
@@ -233,72 +234,52 @@ function PlanCard({ plan, yearly }: { plan: Plan; yearly: boolean }) {
 
   return (
     <div
-      className={`relative flex h-full flex-col overflow-hidden rounded-[32px] p-2 ${
-        hot
-          ? "text-white shadow-[0_40px_80px_-40px_rgba(125,17,173,0.8)]"
-          : "border border-[#ededed] bg-[linear-gradient(160deg,#ffffff_40%,#f7f7f7)] text-[#111011]"
+      className={`flex h-full flex-col rounded-[24px] border bg-white p-6 ${
+        hot ? "border-[#006edd] shadow-[0_24px_50px_-30px_rgba(0,110,221,0.55)]" : "border-[#e6e9ef]"
       }`}
-      style={
-        hot
-          ? { background: "linear-gradient(180deg, #000000 0%, #000000 22%, #5b0d78 55%, #b01fe0 80%, #d22eff 100%)" }
-          : undefined
-      }
     >
-      {hot && (
-        <span className="absolute right-3 top-3 rounded-full bg-white px-4 py-2.5 text-[14px] font-semibold leading-none text-[#111011]">
-          Popular
+      <div className="flex items-start justify-between gap-3">
+        <span className="grid h-12 w-12 place-items-center rounded-[14px] border border-[#e6e9ef] text-[#006edd]">
+          <Icon className="h-6 w-6" />
         </span>
-      )}
-      <div className="flex flex-1 flex-col px-5 pb-6 pt-6">
-        <span
-          className={`grid h-9 w-9 place-items-center rounded-full ${hot ? "bg-white/15" : "bg-[#f1f1f1]"}`}
-        >
-          <Icon className="h-[18px] w-[18px]" />
-        </span>
-        <div className={`mt-4 text-[15px] ${hot ? "text-white/80" : "text-[#666666]"}`}>{plan.name}</div>
-        {amount === null ? (
-          <div className="mt-1 text-[22px] font-bold tracking-[-0.03em]">Custom</div>
-        ) : (
-          <div className="mt-1 flex items-baseline gap-2">
-            {struck !== null && (
-              <span className={`text-[16px] line-through tabular-nums ${hot ? "text-white/45" : "text-[#969696]"}`}>
-                €{struck}
-              </span>
-            )}
-            <span className="text-[22px] font-bold tracking-[-0.03em] tabular-nums">
-              €<NumberFlow value={amount} />
-            </span>
-            <span className={`text-[15px] font-semibold ${hot ? "text-white/80" : "text-[#666666]"}`}>
-              /{yearly ? "yr" : "mo"}
-            </span>
-          </div>
+        {hot && (
+          <span className="rounded-full bg-[#006edd] px-3 py-1.5 text-[13px] font-medium leading-none text-white">
+            Popular
+          </span>
         )}
-        <p className={`mt-2 text-[14px] leading-[1.45] ${hot ? "text-white/75" : "text-[#666666]"}`}>
-          {plan.description}
-        </p>
-
-        <ul className="mt-7 space-y-3">
-          {plan.features.map((f) => (
-            <li key={f} className="flex items-center gap-3.5 text-[14.5px] font-medium tracking-[-0.01em]">
-              <CheckBadge size={22} tone={hot ? "white" : "dark"} />
-              <span className={hot ? "text-white" : "text-[#111011]"}>{f}</span>
-            </li>
-          ))}
-        </ul>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <Btn to={plan.href} variant={hot ? "white" : "light"} className="w-full shadow-none">
+      <div className="mt-6 text-[22px] font-medium tracking-[-0.03em] text-[#0f1728]">{plan.name}</div>
+      <p className="mt-1 text-[16px] leading-[1.4] text-[#4b5567]">{plan.description}</p>
+      {amount === null ? (
+        <div className="mt-6 text-[36px] font-medium leading-none tracking-[-0.04em] text-[#0f1728]">Custom</div>
+      ) : (
+        <div className="mt-6 flex items-baseline gap-2">
+          {struck !== null && <span className="text-[18px] text-[#8a94a6] line-through tabular-nums">€{struck}</span>}
+          <span className="text-[36px] font-medium leading-none tracking-[-0.04em] text-[#0f1728] tabular-nums">
+            €<NumberFlow value={amount} />
+          </span>
+          <span className="text-[16px] text-[#4b5567]">/{yearly ? "year" : "month"}</span>
+        </div>
+      )}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <Btn to={plan.href} variant={hot ? "primary" : "secondary"}>
           {plan.buttonText}
         </Btn>
         {plan.secondary && (
-          <Link
-            to={plan.secondary.href}
-            className={`py-2 text-center text-[13.5px] font-semibold ${hot ? "text-white/85 hover:text-white" : "text-[#666666] hover:text-[#111011]"}`}
-          >
+          <Btn to={plan.secondary.href} variant="link" className="px-2">
             {plan.secondary.label}
-          </Link>
+          </Btn>
         )}
       </div>
+      <div className="mt-8 border-t border-[#e6e9ef] pt-6 text-[14px] text-[#4b5567]">{plan.featuresLabel}</div>
+      <ul className="mt-4 space-y-3">
+        {plan.features.map((f) => (
+          <li key={f} className="flex items-start gap-2.5 text-[16px] leading-[1.4] text-[#0f1728]">
+            <Tick />
+            {f}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -314,20 +295,20 @@ export function usePlans() {
 
 /** The grid: three plan cards, the facts row, and Enterprise as a banner —
     it does not compare, it negotiates. `compact` drops the switch and the
-    closing note, for the home page. */
+    closing note. */
 export function PricingPlans({ compact = false }: { compact?: boolean }) {
   const [yearly, setYearly] = useState(false);
   const { plans, enterprise } = usePlans();
 
   return (
-    <div className="text-[#111011]">
+    <div className="text-[#0f1728]">
       {!compact && (
-        <Reveal className="flex justify-center">
+        <Reveal>
           <PeriodSwitch yearly={yearly} onChange={setYearly} />
         </Reveal>
       )}
 
-      <div className={`grid gap-2.5 lg:grid-cols-3 ${compact ? "" : "mt-8"}`}>
+      <div className={`grid gap-6 lg:grid-cols-3 ${compact ? "" : "mt-8"}`}>
         {plans.map((p, i) => (
           <Reveal key={p.name} delay={i * 80} className="h-full">
             <PlanCard plan={p} yearly={yearly} />
@@ -336,34 +317,42 @@ export function PricingPlans({ compact = false }: { compact?: boolean }) {
       </div>
 
       <Reveal delay={120}>
-        <div className="mt-2.5 grid gap-2.5 md:grid-cols-3">
-          <InfoPill icon={CalendarCheckIcon}>
-            Pay yearly <span className="text-[#969696]">→</span> 2 months free
-          </InfoPill>
-          <InfoPill icon={CoinsIcon}>From 20 credits per agent reply</InfoPill>
-          <InfoPill icon={ShieldCheckIcon}>Cancel any time — your data leaves with you</InfoPill>
+        <div className="mt-6 grid gap-6 rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-6 sm:grid-cols-3">
+          {[
+            { icon: CalendarCheckIcon, t: "Pay yearly", d: "Two months free on every plan." },
+            { icon: CoinsIcon, t: "Usage in credits", d: "From 20 credits per agent reply." },
+            { icon: ShieldCheckIcon, t: "Cancel any time", d: "Your data leaves with you." },
+          ].map((f) => (
+            <div key={f.t} className="flex items-start gap-3">
+              <f.icon className="mt-0.5 h-6 w-6 shrink-0 text-[#006edd]" />
+              <div>
+                <div className="text-[17px] font-medium tracking-[-0.02em]">{f.t}</div>
+                <div className="text-[15px] text-[#4b5567]">{f.d}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </Reveal>
 
       <Reveal delay={160}>
-        <div className="mt-2.5 flex flex-col gap-5 rounded-[32px] border border-[#ededed] bg-white p-6 sm:flex-row sm:items-center sm:p-7">
-          <IconOrb icon={CubeIcon} size={60} />
+        <div className="mt-6 flex flex-col gap-5 rounded-[24px] border border-[#e6e9ef] bg-white p-6 sm:flex-row sm:items-center sm:p-8">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#e6e9ef] text-[#006edd]">
+            <CubeIcon className="h-6 w-6" />
+          </span>
           <div className="flex-1">
-            <div className="text-[17px] font-semibold tracking-[-0.02em]">
-              Enterprise <span className="text-[#969696]">/</span> {enterprise.includes}
+            <div className="text-[20px] font-medium tracking-[-0.02em]">
+              Enterprise <span className="text-[#8a94a6]">·</span> {enterprise.includes}
             </div>
-            <p className="mt-1.5 text-[14.5px] leading-[1.45] text-[#666666]">
+            <p className="mt-1 text-[16px] leading-[1.4] text-[#4b5567]">
               {enterprise.description} {enterprise.features.slice(0, 2).join(" · ")}.
             </p>
           </div>
-          <Btn to={enterprise.href} variant="dark">
-            {enterprise.buttonText}
-          </Btn>
+          <Btn to={enterprise.href}>{enterprise.buttonText}</Btn>
         </div>
       </Reveal>
 
       {!compact && (
-        <p className="mx-auto mt-6 max-w-[70ch] text-center text-[14px] leading-[1.6] text-[#666666]">
+        <p className="mt-6 max-w-[70ch] text-[15px] leading-[1.55] text-[#4b5567]">
           Every plan includes the encrypted secrets vault, the governance registry and the audit log. There is no
           free trial: you are billed at subscription, you can cancel any time, and your data leaves with you.
         </p>

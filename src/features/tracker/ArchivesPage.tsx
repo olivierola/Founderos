@@ -5,11 +5,11 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { IssueKey, StateIcon, formatDate } from "./pickers";
-import { ArchiveIllustration, CycleIllustration, ModuleIllustration } from "./illustrations";
+import { ArchiveIllustration } from "./illustrations";
 import { EmptyState, Tabs } from "./ui";
 import {
-  archiveCycle, archiveIssue, archiveModule, deleteCycle, deleteIssue, deleteModule,
-  fetchArchivedCycles, fetchArchivedIssues, fetchArchivedModules, fetchStates,
+  archiveIssue, deleteIssue,
+  fetchArchivedIssues, fetchStates,
   type PjProject,
 } from "./model";
 
@@ -38,16 +38,6 @@ export function ArchivesPage({ project }: { project: PjProject }) {
     queryKey: ["pj_archived_issues", project.id],
     queryFn: () => fetchArchivedIssues(project.id),
   });
-  const { data: cycles } = useQuery({
-    queryKey: ["pj_archived_cycles", project.id],
-    queryFn: () => fetchArchivedCycles(project.id),
-    enabled: project.cycle_view,
-  });
-  const { data: modules } = useQuery({
-    queryKey: ["pj_archived_modules", project.id],
-    queryFn: () => fetchArchivedModules(project.id),
-    enabled: project.module_view,
-  });
   const { data: states } = useQuery({
     queryKey: ["pj_states", project.id],
     queryFn: () => fetchStates(project.id),
@@ -59,15 +49,13 @@ export function ArchivesPage({ project }: { project: PjProject }) {
     // analytics. N'invalider que la liste d'ici laisserait les trois autres
     // afficher un état d'avant la restauration.
     for (const key of [
-      "pj_archived_issues", "pj_archived_cycles", "pj_archived_modules",
-      "pj_issues", "pj_cycles", "pj_modules",
+      "pj_archived_issues",
+      "pj_issues",
     ]) qc.invalidateQueries({ queryKey: [key] });
   };
 
   const tabs = [
     { key: "issues" as const, label: "Work items", count: issues?.length ?? 0, show: true },
-    { key: "cycles" as const, label: "Cycles", count: cycles?.length ?? 0, show: project.cycle_view },
-    { key: "modules" as const, label: "Modules", count: modules?.length ?? 0, show: project.module_view },
   ].filter((t) => t.show);
 
   // Le projet peut avoir désactivé l'onglet ouvert entre-temps : on retombe sur
@@ -112,62 +100,6 @@ export function ArchivesPage({ project }: { project: PjProject }) {
                   />
                 );
               })}
-            </ul>
-          )
-        )}
-
-        {active === "cycles" && (
-          !cycles?.length ? (
-            <ArchiveEmpty
-              illustration={<CycleIllustration className="w-full" />}
-              title="Aucun cycle archivé"
-              hint="Un cycle archivé quitte la page Cycles et les sélecteurs sans détacher les work items qu'il portait — son bilan reste juste."
-              where="Depuis la page Cycles, menu « … » d'un cycle terminé, puis « Archiver »."
-            />
-          ) : (
-            <ul className="px-4 pb-4">
-              {cycles.map((c) => (
-                <ArchivedRow
-                  key={c.id}
-                  leading={<ArrowsClockwiseIcon className="h-4 w-4 text-tertiary" />}
-                  label={c.name}
-                  reference={
-                    c.start_date && c.end_date ? (
-                      <span className="shrink-0 text-11 text-tertiary">
-                        {formatDate(c.start_date)} → {formatDate(c.end_date)}
-                      </span>
-                    ) : null
-                  }
-                  archivedAt={c.archived_at}
-                  onRestore={async () => { await archiveCycle(c.id, false); refresh(); }}
-                  onDelete={async () => { await deleteCycle(c.id); refresh(); }}
-                />
-              ))}
-            </ul>
-          )
-        )}
-
-        {active === "modules" && (
-          !modules?.length ? (
-            <ArchiveEmpty
-              illustration={<ModuleIllustration className="w-full" />}
-              title="Aucun module archivé"
-              hint="Un module archivé disparaît des listes et des filtres. Les work items qui lui étaient rattachés restent sur leurs boards."
-              where="Depuis la page Modules, menu « … » d'un module livré, puis « Archiver »."
-            />
-          ) : (
-            <ul className="px-4 pb-4">
-              {modules.map((m) => (
-                <ArchivedRow
-                  key={m.id}
-                  leading={<StackIcon className="h-4 w-4 text-tertiary" />}
-                  label={m.name}
-                  reference={null}
-                  archivedAt={m.archived_at}
-                  onRestore={async () => { await archiveModule(m.id, false); refresh(); }}
-                  onDelete={async () => { await deleteModule(m.id); refresh(); }}
-                />
-              ))}
             </ul>
           )
         )}

@@ -8,13 +8,12 @@ import { useCategorical } from "@/features/crm/overview/vizPalette";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { IssueKey, MemberAvatar, PriorityIcon, StateIcon, formatDate, formatRelative, memberName } from "./pickers";
-import { useProgress, ProgressBar } from "./CyclesPage";
 import { LogoPicker } from "./LogoPicker";
 import { PageEditor } from "./PageEditor";
 import { EmptyState } from "./ui";
 import {
-  cyclePhase, fetchCycles, fetchIssues, fetchMembers, fetchModules, fetchStates,
-  fetchStatusUpdates, updateProject, type PjProject,
+  fetchIssues, fetchMembers, fetchStates,
+  fetchStatusUpdates, updateProject, type PjProject, type PjIssue, type PjState,
 } from "./model";
 
 /**
@@ -362,8 +361,6 @@ function PulseTab({ project, onOpenIssue }: {
     queryFn: () => fetchIssues({ pjProjectId: project.id }),
   });
   const { data: states } = useQuery({ queryKey: ["pj_states", project.id], queryFn: () => fetchStates(project.id) });
-  const { data: cycles } = useQuery({ queryKey: ["pj_cycles", project.id], queryFn: () => fetchCycles(project.id) });
-  const { data: modules } = useQuery({ queryKey: ["pj_modules", project.id], queryFn: () => fetchModules(project.id) });
   const { data: members } = useQuery({
     queryKey: ["pj_members", project.workspace_id],
     queryFn: () => fetchMembers(project.workspace_id),
@@ -373,7 +370,6 @@ function PulseTab({ project, onOpenIssue }: {
   const stats = useProgress(all, states ?? []);
   const palette = useCategorical();
 
-  const current = (cycles ?? []).find((c) => cyclePhase(c) === "current") ?? null;
   const today = new Date().toISOString().slice(0, 10);
 
   const overdue = useMemo(
@@ -401,21 +397,6 @@ function PulseTab({ project, onOpenIssue }: {
           <Stat label="Terminés" value={stats.completed} />
           <Stat label="En retard" value={overdue.length} tone={overdue.length ? "warn" : undefined} />
         </div>
-      </section>
-
-      <section>
-        <h3 className="pb-1.5 text-12 font-semibold text-tertiary">Cycle en cours</h3>
-        {!current ? (
-          <p className="text-12 text-placeholder">Aucun cycle en cours.</p>
-        ) : (
-          <>
-            <p className="text-13">{current.name}</p>
-            <p className="pb-1 text-11 text-placeholder">
-              {formatDate(current.start_date)} → {formatDate(current.end_date)}
-            </p>
-            <CycleProgress projectId={project.id} cycleId={current.id} />
-          </>
-        )}
       </section>
 
       <section>
@@ -476,41 +457,8 @@ function PulseTab({ project, onOpenIssue }: {
         </section>
       )}
 
-      {(modules ?? []).length > 0 && (
-        <section>
-          <h3 className="pb-1.5 text-12 font-semibold text-tertiary">Modules</h3>
-          <div className="space-y-2">
-            {(modules ?? []).slice(0, 6).map((m) => {
-              const scoped = all.filter((i) => i.module_ids.includes(m.id));
-              const done = scoped.filter((i) => i.completed_at).length;
-              const pct = scoped.length ? Math.round((done / scoped.length) * 100) : 0;
-              return (
-                <div key={m.id}>
-                  <p className="truncate text-12">{m.name}</p>
-                  <p className="pb-1 text-11 text-placeholder">
-                    {done}/{scoped.length} terminés · {pct}%
-                  </p>
-                  <span className="block h-1.5 rounded-full bg-muted">
-                    <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
     </div>
   );
-}
-
-function CycleProgress({ projectId, cycleId }: { projectId: string; cycleId: string }) {
-  const { data: issues } = useQuery({
-    queryKey: ["pj_issues", { pjProjectId: projectId, cycleId }],
-    queryFn: () => fetchIssues({ pjProjectId: projectId, cycleId }),
-  });
-  const { data: states } = useQuery({ queryKey: ["pj_states", projectId], queryFn: () => fetchStates(projectId) });
-  const stats = useProgress(issues ?? [], states ?? []);
-  return <ProgressBar stats={stats} />;
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: "warn" }) {
@@ -520,6 +468,54 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: "wa
       <p className={cn("text-18 font-semibold tabular-nums", tone === "warn" && "text-amber-600")}>
         {value}
       </p>
+    </div>
+  );
+}
+
+// Progress helpers — a state-group tally and the segmented bar that draws it.
+// They lived in the (removed) Cycles page; OverviewPage is now their only home.
+export function useProgress(issues: PjIssue[], states: PjState[]) {
+  return useMemo(() => {
+    const groupOf = new Map(states.map((s) => [s.id, s.group]));
+    const total = issues.length;
+    const count = (g: string) => issues.filter((i) => groupOf.get(i.state_id ?? "") === g).length;
+    return {
+      total,
+      backlog: count("backlog"),
+      unstarted: count("unstarted"),
+      started: count("started"),
+      completed: count("completed"),
+      cancelled: count("cancelled"),
+      percent: total ? Math.round((count("completed") / total) * 100) : 0,
+    };
+  }, [issues, states]);
+}
+
+export function ProgressBar({ stats }: { stats: ReturnType<typeof useProgress> }) {
+  const segments = [
+    { key: "completed", value: stats.completed, color: "#3e9b4f" },
+    { key: "started", value: stats.started, color: "#eda100" },
+    { key: "unstarted", value: stats.unstarted, color: "#6b7180" },
+    { key: "backlog", value: stats.backlog, color: "#8b8f99" },
+    { key: "cancelled", value: stats.cancelled, color: "#8c8fa4" },
+  ];
+  return (
+    <div className="pt-3">
+      <div className="flex items-center justify-between pb-1 text-11 text-muted-foreground">
+        <span>{stats.completed}/{stats.total} terminés</span>
+        <span className="tabular-nums">{stats.percent}%</span>
+      </div>
+      <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+        {stats.total > 0 && segments.map((s) => (
+          s.value > 0 && (
+            <span
+              key={s.key}
+              style={{ width: `${(s.value / stats.total) * 100}%`, background: s.color }}
+              title={`${s.value}`}
+            />
+          )
+        ))}
+      </div>
     </div>
   );
 }

@@ -186,7 +186,7 @@ export function OpsSettingsPage() {
                 <ShieldAlert className="h-4 w-4 text-amber-500" />
                 No runner token yet.
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">Click "Rotate token" to issue one — runners must present it.</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">Click "Rotate token" to issue one, runners must present it.</p>
             </div>
           )}
 
@@ -194,7 +194,7 @@ export function OpsSettingsPage() {
             <div className="rounded-md border border-blue-500/40 bg-blue-500/10 p-3">
               <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                 <KeyRound className="h-4 w-4 text-blue-500" />
-                New token — copy now, it will not be shown again
+                New token, copy now, it will not be shown again
               </div>
               <div className="flex items-center gap-2">
                 <code className="flex-1 truncate rounded bg-background/60 px-2 py-1 font-mono text-[11px]">{newToken}</code>

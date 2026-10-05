@@ -98,7 +98,7 @@ export function GovFtLabelingPage() {
     <div className="space-y-6">
       <PageHeader
         title="Labeling"
-        description="Enrichissez vos datasets supervisés : l'IA propose un label, un humain valide — intents, sentiment, priorité, département…"
+        description="Enrichissez vos datasets supervisés : l'IA propose un label, un humain valide, intents, sentiment, priorité, département…"
         actions={<Button onClick={() => setCreating(true)}><Plus className="mr-1.5 h-4 w-4" />Nouvelle tâche</Button>}
       />
 
@@ -173,7 +173,7 @@ export function GovFtLabelingPage() {
                   )}
                   {!sugLoading && sugProblem && (
                     <p className="text-[11px] text-amber-500">
-                      Proposition automatique indisponible ({sugProblem}) — labellisez à la main.
+                      Proposition automatique indisponible ({sugProblem}), labellisez à la main.
                     </p>
                   )}
                   {suggestions.map((s) => (
@@ -195,8 +195,7 @@ export function GovFtLabelingPage() {
                   </Button>
                 </div>
                 <p className="mt-3 text-[11px] text-muted-foreground">
-                  Document {(queueIdx % docs.length) + 1} sur {docs.length} lus dans {selTask?.dataset}. Chaque validation enrichit le dataset —
-                  assez de labels validés et vous pouvez entraîner un classificateur automatique.
+                  Document {(queueIdx % docs.length) + 1} sur {docs.length} lus dans {selTask?.dataset}. Chaque validation enrichit le dataset, assez de labels validés et vous pouvez entraîner un classificateur automatique.
                 </p>
               </>
             )}

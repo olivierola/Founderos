@@ -23,42 +23,42 @@ export function toolSetupIssue(t: ConfigurableTool): string | null {
   switch (t.kind) {
     case "db_read": {
       const tables = Array.isArray(cfg.tables) ? cfg.tables : [];
-      if (tables.length === 0) return "Aucune table autorisée — l'agent ne peut rien lire. Définissez la liste blanche.";
+      if (tables.length === 0) return "Aucune table autorisée, l'agent ne peut rien lire. Définissez la liste blanche.";
       return null;
     }
     case "edge_function":
       return /^[a-z0-9-]+$/.test(String(cfg.slug ?? ""))
         ? null
-        : "Aucune fonction choisie — l'outil est ignoré à l'exécution.";
+        : "Aucune fonction choisie, l'outil est ignoré à l'exécution.";
     case "custom":
       return /^https?:\/\//.test(String(cfg.webhook_url ?? ""))
         ? null
-        : "Aucune URL de webhook — l'outil est ignoré à l'exécution.";
+        : "Aucune URL de webhook, l'outil est ignoré à l'exécution.";
     case "connector_action":
       return String(cfg.provider ?? "")
         ? null
-        : "Aucune intégration choisie — connectez le service et sélectionnez-le.";
+        : "Aucune intégration choisie, connectez le service et sélectionnez-le.";
     case "composio_toolkit":
       return String(cfg.toolkit ?? "")
         ? null
-        : "Aucun toolkit Composio choisi — connectez l'application concernée.";
+        : "Aucun toolkit Composio choisi, connectez l'application concernée.";
     case "rag_search": {
       const collections = Array.isArray(cfg.collection_ids) ? cfg.collection_ids : [];
-      if (collections.length === 0) return "Aucune base de connaissances rattachée — l'agent cherchera dans le vide.";
+      if (collections.length === 0) return "Aucune base de connaissances rattachée, l'agent cherchera dans le vide.";
       return null;
     }
     case "vibe_code":
       return String(cfg.repository_id ?? "")
         ? null
-        : "Aucun dépôt imposé — l'agent choisira seul s'il en existe plusieurs.";
+        : "Aucun dépôt imposé, l'agent choisira seul s'il en existe plusieurs.";
     case "testing":
       return String(cfg.suite_id ?? "")
         ? null
-        : "Aucune suite de tests imposée — l'agent choisira seul.";
+        : "Aucune suite de tests imposée, l'agent choisira seul.";
     case "security_scan":
       return String(cfg.target ?? "")
         ? null
-        : "Aucune cible enregistrée — déclarez le périmètre autorisé avant tout scan.";
+        : "Aucune cible enregistrée, déclarez le périmètre autorisé avant tout scan.";
     default:
       return null;
   }

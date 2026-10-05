@@ -241,7 +241,7 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
       // Read-only: this agent advises. Cart mutations belong to the template
       // below, where enabling them is a deliberate choice.
       allowedTools: ["search_shop_catalog", "get_product_details", "search_shop_policies_and_faqs"],
-      note: "Endpoint public de votre boutique, sans clé d'API. L'agent pourra lire le catalogue et vos politiques — pas modifier de panier.",
+      note: "Endpoint public de votre boutique, sans clé d'API. L'agent pourra lire le catalogue et vos politiques, pas modifier de panier.",
     },
     seed: {
       description: "Conseiller de vente branché en direct sur le catalogue Shopify via MCP.",

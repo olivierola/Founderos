@@ -421,7 +421,7 @@ function MatrixBlock({ d }: { d: MatrixData }) {
               <span key={i} className={cn("pointer-events-none absolute max-w-[42%] text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70", corner[i])}>{label}</span>
             ))}
             {items.map((it, i) => (
-              <div key={i} title={it.note ? `${it.label} — ${it.note}` : it.label}
+              <div key={i} title={it.note ? `${it.label}, ${it.note}` : it.label}
                 className="absolute -translate-x-1/2 translate-y-1/2"
                 style={{ left: `${clamp(it.x)}%`, bottom: `${clamp(it.y)}%` }}>
                 <div className="flex flex-col items-center gap-1">

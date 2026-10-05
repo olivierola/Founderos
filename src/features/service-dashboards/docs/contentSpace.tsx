@@ -22,7 +22,7 @@ export const SPACE_SECTION: DocSection = {
           </Lede>
 
           <UL>
-            <LI>Elle porte une <strong>date cible</strong> et un état de santé — en bonne voie, à risque, en retard.</LI>
+            <LI>Elle porte une <strong>date cible</strong> et un état de santé, en bonne voie, à risque, en retard.</LI>
             <LI>Son avancement est <strong>dérivé</strong> de celui de ses projets : on ne le saisit pas à la main.</LI>
             <LI>Un projet peut servir plusieurs initiatives.</LI>
           </UL>
@@ -46,7 +46,7 @@ export const SPACE_SECTION: DocSection = {
           <Lede>
             Une carte navigable de l'espace de travail. Elle montre les projets, les
             cycles, les modules, les work items, les epics, les notes, les
-            <strong> personnes</strong> et les <strong>agents</strong> — et surtout ce
+            <strong> personnes</strong> et les <strong>agents</strong>, et surtout ce
             qui les relie.
           </Lede>
 
@@ -58,7 +58,7 @@ export const SPACE_SECTION: DocSection = {
           <Steps>
             <Step>Les <strong>familles</strong> se filtrent depuis la légende : masquer les work items ne garde que le squelette projets/cycles.</Step>
             <Step>La <strong>recherche</strong> ne filtre pas, elle <em>atténue</em> : ce qui ne correspond pas s'estompe au lieu de disparaître, pour que les liens restent lisibles.</Step>
-            <Step>Cliquer un nœud le met au centre et fait ressortir <strong>tout son voisinage</strong> — ses parents, ses enfants, ses assignés.</Step>
+            <Step>Cliquer un nœud le met au centre et fait ressortir <strong>tout son voisinage</strong>, ses parents, ses enfants, ses assignés.</Step>
             <Step>Un double-clic ouvre l'objet réel : le work item, le projet, la fiche de l'agent.</Step>
           </Steps>
 
@@ -97,7 +97,7 @@ export const SPACE_SECTION: DocSection = {
 
           <P>
             Chaque carte porte le projet, les dates, l'avancement et le nombre
-            d'items restants. Les cycles en retard remontent en tête — un écran
+            d'items restants. Les cycles en retard remontent en tête, un écran
             trié par ordre alphabétique n'aurait servi à rien ici.
           </P>
         </>
@@ -119,7 +119,7 @@ export const SPACE_SECTION: DocSection = {
 
           <UL>
             <LI>Une note se crée depuis la barre du haut, s'écrit directement et s'enregistre seule.</LI>
-            <LI>Sa <strong>couleur</strong> se change depuis son menu — c'est le seul classement qu'elle connaît.</LI>
+            <LI>Sa <strong>couleur</strong> se change depuis son menu, c'est le seul classement qu'elle connaît.</LI>
             <LI>Elles se réorganisent par glisser-déposer.</LI>
           </UL>
 
@@ -194,8 +194,8 @@ export const SPACE_SECTION: DocSection = {
           </UL>
 
           <Callout kind="warn" title="Autorisations dans le fil">
-            Quand un agent veut faire une <strong>écriture</strong> — envoyer un
-            message, modifier une fiche —, il demande l'autorisation dans la
+            Quand un agent veut faire une <strong>écriture</strong>, envoyer un
+            message, modifier une fiche, il demande l'autorisation dans la
             conversation et attend. Les lectures ne demandent rien. Vous pouvez
             autoriser une fois, ou tout autoriser pour cet outil.
           </Callout>

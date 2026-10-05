@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  */
 export interface CatalogBadge {
   label: string;
-  /** "auth" = indigo pill, "key" = emerald pill (the two tints of the design). */
+  /** "auth" = accent-blue pill, "key" = emerald pill (the two tints of the design). */
   tone?: "auth" | "key";
   title?: string;
 }
@@ -111,7 +111,7 @@ export function CatalogCard({
                 "max-w-[92px] truncate rounded-md px-1.5 py-0.5 font-mono text-[11px]",
                 b.tone === "key"
                   ? "bg-emerald-500/12 text-emerald-500"
-                  : "bg-indigo-500/12 text-indigo-400",
+                  : "bg-coral/10 text-primary",
               )}
             >
               {b.label}

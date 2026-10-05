@@ -355,7 +355,7 @@ export function AgentMcpTab({ agent }: { agent: InternalAgent }) {
                     {s.status === "error" && <span className="text-[10px] text-destructive">hors-ligne</span>}
                   </div>
                   <p className="truncate text-[11px] text-muted-foreground">
-                    {toolCount > 0 ? `${toolCount} outil${toolCount > 1 ? "s" : ""}` : "Aucun outil découvert — testez le serveur"} · <span className="font-mono">{s.url}</span>
+                    {toolCount > 0 ? `${toolCount} outil${toolCount > 1 ? "s" : ""}` : "Aucun outil découvert, testez le serveur"} · <span className="font-mono">{s.url}</span>
                   </p>
                 </div>
                 <button
@@ -1163,7 +1163,7 @@ export function ChatTab({
     if (!user || !workspaceId || !projectId || !text.trim() || sending) return;
     // NB: sending is allowed WHILE a run is active — the message is folded into the
     // running agent on its next tick (mid-run steering), not queued as a new run.
-    if (!agent?.id) { setError("Agent is still loading — please retry in a moment."); return; }
+    if (!agent?.id) { setError("Agent is still loading, please retry in a moment."); return; }
     setSending(true);
     setError(null);
     // Sending is a deliberate "I'm back at the live edge" gesture.
@@ -1238,7 +1238,7 @@ export function ChatTab({
   const currentConvo = conversations?.find((c) => c.id === convoId) ?? null;
 
   return (
-    <div className="font-poppins relative flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       {/* Floating top row — overlays the chat, no full-width navbar. Optional
           leading (agent identity) and trailing (panel toggle) come from the
           embedded dashboard view; the session switcher sits in the middle. */}
@@ -1320,7 +1320,7 @@ export function ChatTab({
               autoSend: true,
               prompt: [
                 `Aide-moi à débloquer l'agent « ${agent.name} » (agent_id: ${agent.id}).`,
-                ...setupPending.map((t) => `- ${t.name} (${t.kind}) — ${t.issue}`),
+                ...setupPending.map((t) => `- ${t.name} (${t.kind}), ${t.issue}`),
                 "Appelle get_agent_setup pour les valeurs réellement disponibles, puis propose-moi des choix concrets une question à la fois.",
               ].join("\n"),
             });
@@ -1494,7 +1494,7 @@ export function ChatTab({
                 disabled={false}
                 running={isBusy}
                 onStop={activeRun ? stopRun : undefined}
-                placeholder={isBusy ? "L'agent travaille — écris pour ajouter ou corriger en cours de route…" : `Message ${agent.name}…`}
+                placeholder={isBusy ? "L'agent travaille, écris pour ajouter ou corriger en cours de route…" : `Message ${agent.name}…`}
                 models={AGENT_MODELS}
                 className="max-w-full"
               />
@@ -1858,7 +1858,7 @@ export function MissionTab({
       <div className="flex items-center justify-between gap-3">
         <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {view === "board"
-            ? "Drag cards between columns — the agent moves them too as it works (running → In progress, output ready → Review)."
+            ? "Drag cards between columns, the agent moves them too as it works (running → In progress, output ready → Review)."
             : "Toutes les missions en cartes. Cliquez une carte pour l'ouvrir."}
         </p>
         <div className="flex shrink-0 items-center gap-2">
@@ -2536,13 +2536,13 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "web_search", label: "Web search", icon: Globe, description: "Search the web for fresh information." },
   { kind: "web_fetch", label: "Fetch URL", icon: Globe, description: "Download and extract text from a URL." },
   { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed/ingested knowledge base." },
-  { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM — contacts, deals, companies. Writes need approval unless the agent is on autopilot." },
+  { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM, contacts, deals, companies. Writes need approval unless the agent is on autopilot." },
   { kind: "support", label: "Support desk", icon: Database, description: "The support queue triaged by ResolveAI from your public agents: read requests and transcripts, update their status, pull real figures for reports." },
   { kind: "leads", label: "LeadSense", icon: Target, description: "Qualify inbound prospects on the company's own grid, spot the ones to call now, assign the right sales rep, and publish the LeadSense board." },
   { kind: "soc", label: "SentinelFlow (SOC)", icon: ShieldCheck, description: "Triage security alerts from every connected source: investigate with correlation, close proven false positives, propose remediations for human validation, publish the SOC board." },
-  { kind: "governance", label: "Policy audit", icon: ShieldCheck, description: "Read-only PolicyGuard figures: risk levels of the agents' actions, decisions, human validations — for compliance reports." },
+  { kind: "governance", label: "Policy audit", icon: ShieldCheck, description: "Read-only PolicyGuard figures: risk levels of the agents' actions, decisions, human validations, for compliance reports." },
   { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Anduran function (notifications, email, marketing…)." },
-  { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status — no secrets)." },
+  { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status, no secrets)." },
   { kind: "connector_action", label: "Integration", icon: Plug, description: "Read data from a connected integration (CRM, HR, data lake) via its official API." },
   { kind: "security_scan", label: "Security scan", icon: ShieldCheck, description: "Run a consented security scan against a registered target." },
   // Studio engines — these are what turn an agent into a Vibe Code / QA /
@@ -2716,7 +2716,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
         <div className="order-2 mt-8 flex items-start justify-between gap-3">
           <div className="space-y-1">
             <h3 className="flex items-center gap-2 text-sm font-semibold"><Wrench className="h-4 w-4 text-muted-foreground" /> Generic tools</h3>
-            <p className="text-xs text-muted-foreground">Capabilities not tied to a specific app — web search, knowledge, internal actions.</p>
+            <p className="text-xs text-muted-foreground">Capabilities not tied to a specific app, web search, knowledge, internal actions.</p>
           </div>
           <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" /> Add tool</Button>
         </div>
@@ -2795,7 +2795,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
           <div className="space-y-1">
             <h3 className="flex items-center gap-2 text-sm font-semibold"><Plug className="h-4 w-4 text-muted-foreground" /> Integrations</h3>
             <p className="text-xs text-muted-foreground">
-              Add an integration and the agent gets its tools. Already-connected integrations are reused — no keys to
+              Add an integration and the agent gets its tools. Already-connected integrations are reused, no keys to
               re-enter. Click the gear to (re)configure an integration's credentials for this project.
             </p>
           </div>
@@ -2835,7 +2835,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
-                                  <AlertTriangle className="h-3 w-3" /> Not connected — click gear to set up
+                                  <AlertTriangle className="h-3 w-3" /> Not connected, click gear to set up
                                 </span>
                               )}
                             </div>
@@ -2932,7 +2932,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
                   Other function… (add empty, then set the slug in Configure)
                 </button>
                 <p className="px-1 text-[10px] text-muted-foreground">
-                  Added actions are approval-gated by default — the agent's calls wait for a human until you switch them to auto-execute.
+                  Added actions are approval-gated by default, the agent's calls wait for a human until you switch them to auto-execute.
                 </p>
               </div>
             )}
@@ -2949,7 +2949,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
                       key={c.provider}
                       onClick={() =>
                         addTool("vault_connector", `Connector: ${c.provider}`, {
-                          description: `Visibility on the ${c.provider} connection (status, permissions — no secrets).`,
+                          description: `Visibility on the ${c.provider} connection (status, permissions, no secrets).`,
                           config: { provider: c.provider },
                         })
                       }
@@ -3857,7 +3857,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
               onChange={setModel}
               disabled={!isOwner}
               options={[
-                { value: "deepseek", label: "DeepSeek", hint: "Par défaut — raisonnement et outils" },
+                { value: "deepseek", label: "DeepSeek", hint: "Par défaut, raisonnement et outils" },
                 { value: "groq", label: "Llama 3.3 70B (Groq)", hint: "Plus rapide, pour les échanges courts" },
               ]}
             />
@@ -3978,7 +3978,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
               disabled={!isOwner}
               onChange={(e) => setParentAgentId(e.target.value || null)}
             >
-              <option value="">— Personne (rattaché au service)</option>
+              <option value="">Personne (rattaché au service)</option>
               {(managerCandidates ?? []).map((m) => (
                 <option key={m.id} value={m.id}>{m.name}{m.role ? ` · ${m.role}` : ""}</option>
               ))}
@@ -4136,7 +4136,7 @@ function MobileAccessSection({ agent }: { agent: InternalAgent }) {
       </Button>
 
       {generated && (
-        <SoftField label="Secret — visible une seule fois">
+        <SoftField label="Secret, visible une seule fois">
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-xl bg-primary/10 px-3.5 py-2.5 font-mono text-xs">{generated}</code>
             <Button size="sm" variant="outline" className="rounded-xl" onClick={() => copy(generated, "secret")}>

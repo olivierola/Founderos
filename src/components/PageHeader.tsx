@@ -12,9 +12,9 @@ export function PageHeader({ title, accent, description, actions }: PageHeaderPr
   return (
     <div className="mb-6 flex items-start justify-between gap-4">
       <div>
-        <h1 className="text-[26px] font-semibold leading-[1.08] tracking-[-0.04em]">
+        <h1 className="text-[26px] font-medium leading-[1.08] tracking-[-0.04em]">
           {title}
-          {accent && <span className="serif-accent ml-2 text-[1.08em]">{accent}</span>}
+          {accent && <span className="serif-accent ml-2">{accent}</span>}
         </h1>
         {description && <p className="mt-1.5 max-w-[72ch] text-sm text-muted-foreground">{description}</p>}
       </div>

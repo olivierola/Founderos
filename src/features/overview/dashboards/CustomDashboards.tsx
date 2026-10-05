@@ -112,7 +112,7 @@ export function CustomDashboardsPage() {
     <div>
       <PageHeader
         title="Custom Dashboards"
-        description="Build your own dashboards — KPIs, charts, tables and notes from any data source."
+        description="Build your own dashboards, KPIs, charts, tables and notes from any data source."
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" /> New dashboard
@@ -126,7 +126,7 @@ export function CustomDashboardsPage() {
         <EmptyState
           icon={LayoutGrid}
           title="No custom dashboards yet"
-          description="Create a dashboard and start adding widgets — like Power BI, but inside your cockpit."
+          description="Create a dashboard and start adding widgets, like Power BI, but inside your cockpit."
           action={
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" /> New dashboard

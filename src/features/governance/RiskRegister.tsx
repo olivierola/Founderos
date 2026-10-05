@@ -43,7 +43,7 @@ export function GovRisksPage() {
     { key: "likelihood", label: "Probabilité (1–5)", type: "number", half: true },
     { key: "impact", label: "Impact (1–5)", type: "number", half: true },
     { key: "system_id", label: "Système concerné", type: "select",
-      options: [{ value: "", label: "— Aucun —" }, ...(systems ?? []).map((s) => ({ value: s.id, label: s.name }))] },
+      options: [{ value: "", label: "Aucun" }, ...(systems ?? []).map((s) => ({ value: s.id, label: s.name }))] },
     { key: "owner_name", label: "Responsable", placeholder: "Équipe / personne" },
     { key: "description", label: "Description", type: "textarea" },
     { key: "mitigation", label: "Plan de mitigation", type: "textarea" },
@@ -65,7 +65,7 @@ export function GovRisksPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Registre des risques"
-        description="Biais, sécurité, fuite de données, hallucination, conformité — évalués (probabilité × impact) et suivis."
+        description="Biais, sécurité, fuite de données, hallucination, conformité, évalués (probabilité × impact) et suivis."
         actions={<Button onClick={() => setCreating(true)}><Plus className="mr-1.5 h-4 w-4" />Risque</Button>} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

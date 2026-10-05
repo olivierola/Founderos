@@ -43,7 +43,7 @@ export function GovControlsPage() {
     { key: "status", label: "Statut", type: "select", options: CONTROL_STATUS_META, half: true },
     { key: "owner_name", label: "Responsable", half: true },
     { key: "system_id", label: "Système concerné", type: "select",
-      options: [{ value: "", label: "— Aucun —" }, ...(systems ?? []).map((s) => ({ value: s.id, label: s.name }))] },
+      options: [{ value: "", label: "Aucun" }, ...(systems ?? []).map((s) => ({ value: s.id, label: s.name }))] },
     { key: "description", label: "Description", type: "textarea" },
     { key: "evidence", label: "Preuve / évidence", type: "textarea" },
   ];

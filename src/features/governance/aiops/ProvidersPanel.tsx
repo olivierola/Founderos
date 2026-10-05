@@ -55,7 +55,7 @@ export function ProvidersPanel() {
       <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-5 py-3.5">
         <Plug className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">Fournisseurs de calcul</span>
-        <span className="text-xs text-muted-foreground">— endpoint cloud, GPU RunPod, OVHcloud ou AWS</span>
+        <span className="text-xs text-muted-foreground">endpoint cloud, GPU RunPod, OVHcloud ou AWS</span>
         <div className="ml-auto flex gap-2">
           {!hasPlatformRunpod && (
             <Button size="sm" variant="outline" disabled={platformBusy} onClick={connectPlatform} title="Utilise la clé RunPod configurée au niveau de la plateforme">
@@ -128,7 +128,7 @@ function ProviderRow({ p, onTest, onRemove }: { p: Provider; onTest: () => Promi
         </div>
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {detail}
-          {p.status === "error" && p.statusDetail ? ` — ${p.statusDetail}` : ""}
+          {p.status === "error" && p.statusDetail ? `, ${p.statusDetail}` : ""}
         </div>
       </div>
       <Button size="icon" variant="ghost" className="h-7 w-7" title="Re-tester" onClick={async () => { setTesting(true); try { await onTest(); } finally { setTesting(false); } }}>
@@ -195,16 +195,16 @@ function ConnectDialog({ onClose, onConnect }: { onClose: () => void; onConnect:
             </Field>
           )}
           {kind === "cloud_endpoint" && (
-            <Field label="Clé API" hint="chiffrée au repos (AES-256) — jamais renvoyée au navigateur">
+            <Field label="Clé API" hint="chiffrée au repos (AES-256), jamais renvoyée au navigateur">
               <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" />
             </Field>
           )}
           {kind === "runpod" && (
             <>
-              <Field label="Clé API RunPod (optionnel)" hint="laissez vide pour utiliser la clé RunPod de la plateforme — sinon chiffrée au repos (AES-256)">
+              <Field label="Clé API RunPod (optionnel)" hint="laissez vide pour utiliser la clé RunPod de la plateforme, sinon chiffrée au repos (AES-256)">
                 <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="rp_… (ou vide = clé plateforme)" />
               </Field>
-              <Field label="Token Hugging Face (optionnel)" hint="requis pour entraîner sur des modèles gated (Llama, Gemma) — chiffré aussi">
+              <Field label="Token Hugging Face (optionnel)" hint="requis pour entraîner sur des modèles gated (Llama, Gemma), chiffré aussi">
                 <Input type="password" value={hfToken} onChange={(e) => setHfToken(e.target.value)} placeholder="hf_…" />
               </Field>
             </>
@@ -212,10 +212,10 @@ function ConnectDialog({ onClose, onConnect }: { onClose: () => void; onConnect:
           {kind === "ovh" && (
             <>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Application Key" hint="créée sur api.ovh.com — chiffrée au repos">
+                <Field label="Application Key" hint="créée sur api.ovh.com, chiffrée au repos">
                   <Input type="password" value={appKey} onChange={(e) => setAppKey(e.target.value)} placeholder="xxxxxxxxxxxx" />
                 </Field>
-                <Field label="Consumer Key" hint="générée par l'app — chiffrée au repos">
+                <Field label="Consumer Key" hint="générée par l'app, chiffrée au repos">
                   <Input type="password" value={consumerKey} onChange={(e) => setConsumerKey(e.target.value)} placeholder="xxxxxxxxxxxxxxxxxxxx" />
                 </Field>
               </div>
@@ -236,7 +236,7 @@ function ConnectDialog({ onClose, onConnect }: { onClose: () => void; onConnect:
           {kind === "aws" && (
             <p className="rounded-md border border-border/60 bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
               AWS est en <span className="font-medium text-foreground">mode catalogue</span> : on liste des types d'instances GPU réalistes et le
-              provisioning est simulé — aucune instance AWS réelle n'est créée.
+              provisioning est simulé, aucune instance AWS réelle n'est créée.
             </p>
           )}
           {err && <p className="text-xs text-red-500">{err}</p>}
@@ -388,7 +388,7 @@ function RentDialog({ providers, onClose, onRefreshGpus, onTest }: {
             <>
               <div className="flex items-end gap-2">
                 <div className="flex-1">
-                  <Field label="GPU" hint="prix à la demande — les moins chers d'abord">
+                  <Field label="GPU" hint="prix à la demande, les moins chers d'abord">
                     <Select value={gpuId} onChange={(e) => setGpuId(e.target.value)}>
                       {gpus.map((g) => {
                         const needed = Math.ceil(vramNeeded / g.memoryGb);
@@ -458,9 +458,9 @@ function RentDialog({ providers, onClose, onRefreshGpus, onTest }: {
                   </Field>
                 </div>
                 <div className="w-44">
-                  <Field label="Clé SSH" hint="optionnelle — sans clé, le mot de passe root est envoyé par email">
+                  <Field label="Clé SSH" hint="optionnelle, sans clé, le mot de passe root est envoyé par email">
                     <Select value={sshKeyId} onChange={(e) => setSshKeyId(e.target.value)}>
-                      <option value="">— sans clé</option>
+                      <option value="">sans clé</option>
                       {sshKeys.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
                     </Select>
                   </Field>
@@ -468,7 +468,7 @@ function RentDialog({ providers, onClose, onRefreshGpus, onTest }: {
               </div>
               {!provider?.metadata.flavors?.length && (
                 <p className="rounded-md border border-border/60 bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
-                  Catalogue vide — vérifiez vos clés ou actualisez les prix.
+                  Catalogue vide, vérifiez vos clés ou actualisez les prix.
                 </p>
               )}
             </>
@@ -478,7 +478,7 @@ function RentDialog({ providers, onClose, onRefreshGpus, onTest }: {
             <>
               <div className="flex items-end gap-2">
                 <div className="flex-1">
-                  <Field label="Type d'instance" hint="catalogue — provisioning simulé">
+                  <Field label="Type d'instance" hint="catalogue, provisioning simulé">
                     <Select value={awsGpuId} onChange={(e) => setAwsGpuId(e.target.value)}>
                       {gpus.map((g) => {
                         const tooSmall = vramNeeded > 0 && g.memoryGb < vramNeeded;

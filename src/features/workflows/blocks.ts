@@ -74,7 +74,7 @@ const LOOK: Record<BlockKind, Look> = {
   resource: { label: "Ressource", hint: "Un document, une base, une app", icon: BookMarked, color: "cyan" },
   tool: { label: "Outil", hint: "Un outil imposé à cet endroit", icon: Wrench, color: "blue" },
   section: { label: "Section", hint: "Un intertitre qui groupe les étapes", icon: Heading, color: "slate" },
-  step: { label: "Étape", hint: "Une action — à faire ou à confier", icon: ListOrdered, color: "sky" },
+  step: { label: "Étape", hint: "Une action, à faire ou à confier", icon: ListOrdered, color: "sky" },
   loop: { label: "Boucle", hint: "Répéter pour chaque élément, ou jusqu'à une condition", icon: Repeat, color: "orange" },
   decision: { label: "Décision", hint: "Bifurcation : si… sinon…", icon: GitBranch, color: "amber" },
   handoff: { label: "Passation", hint: "Confier à des agents, avec ce qui doit revenir", icon: Users, color: "fuchsia" },
@@ -82,7 +82,7 @@ const LOOK: Record<BlockKind, Look> = {
   deliverable: { label: "Livrable", hint: "Ce qui doit être produit, et sous quelle forme", icon: FileOutput, color: "teal" },
   memory: { label: "Mémoire", hint: "Ce qui doit servir aux runs suivants", icon: BrainCircuit, color: "violet" },
   example: { label: "Exemple", hint: "Un cas traité de bout en bout", icon: Lightbulb, color: "slate" },
-  note: { label: "Note", hint: "Un commentaire pour l'équipe — jamais transmis", icon: Note, color: "slate" },
+  note: { label: "Note", hint: "Un commentaire pour l'équipe, jamais transmis", icon: Note, color: "slate" },
   set: { label: "Valeurs", hint: "Ranger un résultat sous un nom lisible", icon: Equals, color: "amber" },
   wait: { label: "Pause", hint: "Attendre quelques secondes avant la suite", icon: Timer, color: "cyan" },
   stop: { label: "Fin", hint: "Terminer ici, en disant pourquoi", icon: StopCircle, color: "rose" },
@@ -138,9 +138,9 @@ export function blockSummary(kind: BlockKind, data: Record<string, unknown>): st
   if (kind === "stop") {
     const outcome = s(data.outcome) || "succeeded";
     const verdict = outcome === "failed" ? "en échec"
-      : outcome === "stopped" ? "sans suite — ce n'est pas un échec"
+      : outcome === "stopped" ? "sans suite, ce n'est pas un échec"
       : "avec succès";
-    return `Terminer ${verdict}${s(data.body) ? ` — ${s(data.body)}` : ""}`;
+    return `Terminer ${verdict}${s(data.body) ? ` · ${s(data.body)}` : ""}`;
   }
   if (kind === "tool") {
     // Une action nommée se lit « app → action » ; une capacité, par son seul
@@ -149,17 +149,17 @@ export function blockSummary(kind: BlockKind, data: Record<string, unknown>): st
     const name = s(data.provider) && s(data.action)
       ? `${s(data.provider)} → ${s(data.action)}`
       : s(data.tool) || "outil non choisi";
-    return `${name}${data.required === false ? " (si besoin)" : ""}${s(data.body) ? ` — ${s(data.body)}` : ""}`;
+    return `${name}${data.required === false ? " (si besoin)" : ""}${s(data.body) ? ` · ${s(data.body)}` : ""}`;
   }
   if (kind === "handoff") {
     const n = agentIdsOf(data).length;
     const who = n === 0 ? "destinataire à choisir" : n === 1 ? "1 agent" : `${n} agents${data.mode === "parallel" ? " en parallèle" : ""}`;
-    return `${who}${s(data.body) ? ` — ${s(data.body)}` : ""}`;
+    return `${who}${s(data.body) ? ` · ${s(data.body)}` : ""}`;
   }
   const body = kind === "context" ? contextBodyOf(data).trim() : s(data.body);
   if (body) return body;
   const def = BLOCK_BY_KIND.get(kind);
-  return `À rédiger — ${def?.hint.toLowerCase() ?? ""}`;
+  return `À rédiger · ${def?.hint.toLowerCase() ?? ""}`;
 }
 
 export { paramsOf, agentIdsOf, varsOf, normalizeVarName } from "./context";
@@ -228,6 +228,6 @@ export const DELIVERABLE_FORMATS: Array<{ value: string; label: string; hint: st
   { value: "report", label: "Rapport", hint: "Document conçu, écrit par Le Rédacteur" },
   { value: "markdown", label: "Document", hint: "Markdown simple" },
   { value: "csv", label: "Tableau CSV", hint: "Des lignes et des colonnes" },
-  { value: "json", label: "JSON structuré", hint: "Lu par un programme — schéma exigé" },
+  { value: "json", label: "JSON structuré", hint: "Lu par un programme, schéma exigé" },
   { value: "notification", label: "Notification", hint: "Un message, pas un fichier" },
 ];

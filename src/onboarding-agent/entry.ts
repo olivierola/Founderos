@@ -117,7 +117,7 @@ async function start(opts: StartOptions): Promise<void> {
           `Cette action semble irréversible : « ${label || "?"} ». Je la fais pour vous ? (oui/non)`,
         );
         if (!/^\s*(oui|yes|o|y)\b/i.test(answer)) {
-          return `Action « ${label} » annulée — l'utilisateur n'a pas confirmé.`;
+          return `Action « ${label} » annulée, l'utilisateur n'a pas confirmé.`;
         }
       }
       const result = await this.pageController.clickElement(input.index);

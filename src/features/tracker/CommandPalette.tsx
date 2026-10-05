@@ -7,7 +7,7 @@ import {
 import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
-import { fetchInitiatives, fetchProjects, searchTracker, type SearchHit } from "./model";
+import { fetchProjects, searchTracker, type SearchHit } from "./model";
 
 /**
  * La palette ⌘K.
@@ -22,11 +22,10 @@ import { fetchInitiatives, fetchProjects, searchTracker, type SearchHit } from "
  * frappe est du gaspillage pour des résultats remplacés à la lettre suivante.
  */
 export function TrackerCommandPalette({
-  dashboardId, onOpenProject, onOpenInitiative, onNavigate, onNewIssue,
+  dashboardId, onOpenProject, onNavigate, onNewIssue,
 }: {
   dashboardId: string;
   onOpenProject: (id: string) => void;
-  onOpenInitiative: (id: string) => void;
   onNavigate: (view: string) => void;
   onNewIssue: () => void;
 }) {
@@ -60,11 +59,6 @@ export function TrackerCommandPalette({
     queryKey: ["pj_projects", dashboardId],
     enabled: open,
     queryFn: () => fetchProjects(dashboardId),
-  });
-  const { data: initiatives } = useQuery({
-    queryKey: ["pj_initiatives", dashboardId],
-    enabled: open,
-    queryFn: () => fetchInitiatives(dashboardId),
   });
   const { data: hits } = useQuery({
     queryKey: ["pj_search", dashboardId, query],
@@ -126,16 +120,6 @@ export function TrackerCommandPalette({
           ))}
         </CommandGroup>
 
-        {(initiatives ?? []).length > 0 && (
-          <CommandGroup heading="Initiatives">
-            {(initiatives ?? []).map((i) => (
-              <CommandItem key={i.id} value={i.name} onSelect={() => run(() => onOpenInitiative(i.id))}>
-                <FlagIcon className="h-4 w-4" />
-                <span className="flex-1 truncate">{i.name}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
       </CommandList>
     </CommandDialog>
   );

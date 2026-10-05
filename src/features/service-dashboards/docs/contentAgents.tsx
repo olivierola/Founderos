@@ -17,7 +17,7 @@ export const AGENTS_SECTION: DocSection = {
         <>
           <Lede>
             Un agent est un collaborateur artificiel rattaché au service. Il a un
-            nom, un portrait, des instructions, des outils, une mémoire — et il
+            nom, un portrait, des instructions, des outils, une mémoire, et il
             apparaît dans le produit partout où une personne apparaît.
           </Lede>
 
@@ -34,14 +34,14 @@ export const AGENTS_SECTION: DocSection = {
             rows={[
               [<>Instructions</>, <>Ce qu'il doit faire, et comment. La partie qu'on modifie le plus souvent.</>],
               [<>Âme</>, <>Qui il est : son ton, ses partis pris, ce qu'il refuse. Elle change rarement.</>],
-              [<>Préférences</>, <>Les habitudes apprises au fil des missions — les formats attendus, les pièges rencontrés.</>],
+              [<>Préférences</>, <>Les habitudes apprises au fil des missions, les formats attendus, les pièges rencontrés.</>],
             ]}
           />
 
           <P>
             Le contexte réellement envoyé à chaque tâche est <strong>assemblé</strong> à
             partir de ces trois fichiers, des compétences pertinentes et des
-            préférences applicables — pas concaténé en bloc.
+            préférences applicables, pas concaténé en bloc.
           </P>
 
           <Callout kind="tip">
@@ -56,14 +56,13 @@ export const AGENTS_SECTION: DocSection = {
     {
       slug: "crew",
       title: "Équipage d'un projet",
-      summary: "Mettre des personnes et des agents sur un projet — et ce que cela autorise.",
+      summary: "Mettre des personnes et des agents sur un projet, et ce que cela autorise.",
       keywords: ["équipage", "membres", "crew", "rôles", "périmètre", "autorisation"],
       body: () => (
         <>
           <Lede>
             L'onglet <Ui>Équipage</Ui> d'un projet réunit ses deux familles de
-            porteurs : les personnes et les agents. Même page, même vocabulaire —
-            mais pas les mêmes conséquences.
+            porteurs : les personnes et les agents. Même page, même vocabulaire, mais pas les mêmes conséquences.
           </Lede>
 
           <H>Les personnes : un rang</H>
@@ -89,14 +88,14 @@ export const AGENTS_SECTION: DocSection = {
           </Callout>
 
           <UL>
-            <LI><strong>Agit</strong> — il peut lire et écrire dans ce projet. Il reçoit du même coup l'outil de suivi de travail, borné à ce périmètre.</LI>
-            <LI><strong>Observe</strong> — lecture seule. Il ne peut pas recevoir de mission.</LI>
+            <LI><strong>Agit</strong>, il peut lire et écrire dans ce projet. Il reçoit du même coup l'outil de suivi de travail, borné à ce périmètre.</LI>
+            <LI><strong>Observe</strong>, lecture seule. Il ne peut pas recevoir de mission.</LI>
             <LI>Le retirer de la liste lui retire l'accès <strong>aussitôt</strong> : le périmètre est relu à chaque appel d'outil, pas au démarrage.</LI>
           </UL>
 
           <P>
-            Chaque ligne affiche la <strong>charge</strong> portée — items ouverts sur
-            total — pour repérer d'un coup d'œil qui tient le projet et qui n'y est
+            Chaque ligne affiche la <strong>charge</strong> portée, items ouverts sur
+            total, pour repérer d'un coup d'œil qui tient le projet et qui n'y est
             que de nom.
           </P>
 
@@ -118,7 +117,7 @@ export const AGENTS_SECTION: DocSection = {
           <Lede>
             Assigner un agent à un work item est une <strong>étiquette</strong> : cela
             dit à qui revient le sujet, cela ne déclenche rien. Une
-            <strong> mission</strong> est exécutable — elle porte un brief, des
+            <strong> mission</strong> est exécutable, elle porte un brief, des
             critères d'acceptation, et elle démarre un run.
           </Lede>
 
@@ -157,7 +156,7 @@ export const AGENTS_SECTION: DocSection = {
             La liste se <strong>met à jour seule</strong> tant qu'un agent travaille :
             inutile de recharger la page pour voir passer « en file » à « abouti ».
             Ce que l'agent produit apparaît <strong>sous la mission</strong> qui l'a
-            produit, et s'ouvre d'un clic — la demande et son résultat restent côte
+            produit, et s'ouvre d'un clic, la demande et son résultat restent côte
             à côte.
           </P>
         </>
@@ -175,7 +174,7 @@ export const AGENTS_SECTION: DocSection = {
             Un agent assigné à un work item peut s'en saisir <strong>sans qu'on le
             lance</strong> : il lit ce qu'il y a à faire, passe l'item en cours,
             travaille, rend compte et le marque terminé. Il faut pour cela deux
-            choses sur l'item — une consigne écrite pour lui, et l'autorisation de
+            choses sur l'item, une consigne écrite pour lui, et l'autorisation de
             démarrer seul.
           </Lede>
 
@@ -202,7 +201,7 @@ export const AGENTS_SECTION: DocSection = {
           <UL>
             <LI>l'item est armé, a un travail à faire, et sa <strong>date de début</strong> est passée s'il en a une ;</LI>
             <LI>il n'est ni terminé ni annulé ;</LI>
-            <LI>aucun item qui le <strong>bloque</strong> n'est encore ouvert — on ne rédige pas les notes de version d'une fonctionnalité inachevée ;</LI>
+            <LI>aucun item qui le <strong>bloque</strong> n'est encore ouvert, on ne rédige pas les notes de version d'une fonctionnalité inachevée ;</LI>
             <LI>un agent autorisé en écriture lui est assigné ;</LI>
             <LI>rien ne tourne déjà sur cet item.</LI>
           </UL>
@@ -221,8 +220,8 @@ export const AGENTS_SECTION: DocSection = {
           />
           <P>
             Commenter et faire avancer l'état de <strong>son propre</strong> work item
-            ne demande aucune autorisation. Tout le reste — renommer l'item, changer
-            sa priorité, toucher un autre item — passe par une validation humaine.
+            ne demande aucune autorisation. Tout le reste, renommer l'item, changer
+            sa priorité, toucher un autre item, passe par une validation humaine.
           </P>
 
           <H>Ce qui l'arrête</H>
@@ -297,8 +296,7 @@ export const AGENTS_SECTION: DocSection = {
 
           <H>Trancher</H>
           <P>
-            Chaque demande dit ce que l'agent veut faire <strong>en clair</strong> —
-            « modifier un work item », « découper en sous-tâches » — suivi du détail
+            Chaque demande dit ce que l'agent veut faire <strong>en clair</strong>, « modifier un work item », « découper en sous-tâches », suivi du détail
             et de sa justification. <Ui>Autoriser</Ui> exécute l'action et relance
             l'agent ; <Ui>Refuser</Ui> la lui refuse, et il continue sans.
           </P>
@@ -327,10 +325,10 @@ export const AGENTS_SECTION: DocSection = {
 
           <H>Filtrer</H>
           <UL>
-            <LI><strong>Période</strong> — 30 jours, 90 jours ou 12 mois.</LI>
-            <LI><strong>Projet</strong> — le sélecteur en haut de la page Analytics.</LI>
-            <LI><strong>Demandeur</strong> — la personne qui a confié le travail.</LI>
-            <LI><strong>Service</strong> — dans le dashboard général uniquement.</LI>
+            <LI><strong>Période</strong>, 30 jours, 90 jours ou 12 mois.</LI>
+            <LI><strong>Projet</strong>, le sélecteur en haut de la page Analytics.</LI>
+            <LI><strong>Demandeur</strong>, la personne qui a confié le travail.</LI>
+            <LI><strong>Service</strong>, dans le dashboard général uniquement.</LI>
           </UL>
           <Callout title="Pourquoi un filtre peut écarter des exécutions">
             Le projet se lit par la mission. Un agent interrogé dans une room
@@ -368,7 +366,7 @@ export const AGENTS_SECTION: DocSection = {
             coût, et si la machine a réellement terminé.
           </Lede>
 
-          <Figure caption="La chaîne complète. C'est le premier maillon — la demande — qui transforme un résultat en preuve.">
+          <Figure caption="La chaîne complète. C'est le premier maillon, la demande, qui transforme un résultat en preuve.">
             <ProofFigure />
           </Figure>
 
@@ -383,7 +381,7 @@ export const AGENTS_SECTION: DocSection = {
             rows={[
               [<>Tout</>, <>Ce que le projet a produit, sans tri.</>],
               [<>Aboutis</>, <>Les livrables dont le run a réussi. Ceux sur lesquels on peut s'appuyer.</>],
-              [<>À vérifier</>, <>Les autres : run échoué, encore en cours, ou sans run. Pas faux — <strong>invérifiés</strong>, ce qui n'est pas la même chose.</>],
+              [<>À vérifier</>, <>Les autres : run échoué, encore en cours, ou sans run. Pas faux, <strong>invérifiés</strong>, ce qui n'est pas la même chose.</>],
             ]}
           />
 
@@ -397,7 +395,7 @@ export const AGENTS_SECTION: DocSection = {
           <UL>
             <LI>La <strong>demande</strong> d'origine, avec sa référence.</LI>
             <LI>La <strong>mission</strong> et l'<strong>agent</strong>.</LI>
-            <LI>La <strong>durée</strong> et le <strong>coût</strong> du run — deux nombres qui disent ce que la machine a réellement dépensé. Sans eux, « autonome » ne veut rien dire.</LI>
+            <LI>La <strong>durée</strong> et le <strong>coût</strong> du run, deux nombres qui disent ce que la machine a réellement dépensé. Sans eux, « autonome » ne veut rien dire.</LI>
           </UL>
 
           <Shot
@@ -426,7 +424,7 @@ export const AGENTS_SECTION: DocSection = {
               [<>Missions</>, <>Le tableau de toutes les missions du service, en colonnes : backlog, en cours, terminées. C'est la vue collective de ce que les agents portent.</>],
               [<>Dashboard</>, <>Les statistiques du service : runs, coûts, taux de réussite, activité récente.</>],
               [<>Schedules</>, <>Les missions <strong>récurrentes</strong> : un agent qui produit un rapport chaque lundi, une veille quotidienne. Elles se déclenchent seules.</>],
-              [<>Artifacts</>, <>Les documents, présentations et tableurs produits par les agents à l'échelle du service — là où l'onglet Livrables d'un projet reste dans son périmètre.</>],
+              [<>Artifacts</>, <>Les documents, présentations et tableurs produits par les agents à l'échelle du service, là où l'onglet Livrables d'un projet reste dans son périmètre.</>],
             ]}
           />
 

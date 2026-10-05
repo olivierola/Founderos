@@ -19,8 +19,8 @@ export const START_SECTION: DocSection = {
       body: () => (
         <>
           <Lede>
-            Un tableau de service est l'espace de travail d'une équipe — humaine et
-            artificielle — autour d'un même sujet : le support, le marketing, la
+            Un tableau de service est l'espace de travail d'une équipe, humaine et
+            artificielle, autour d'un même sujet : le support, le marketing, la
             production, ce que vous voulez. Il réunit au même endroit le travail à
             faire, les agents qui en prennent une part, et ce qui en sort.
           </Lede>
@@ -46,7 +46,7 @@ export const START_SECTION: DocSection = {
 
           <Defs
             rows={[
-              [<>Le rail</>, <>Quatre destinations : <Ui>Travail</Ui>, <Ui>Assistant</Ui>, <Ui>Ressources</Ui>, <Ui>Paramètres</Ui>. En bas : l'assistant, le thème, votre profil — et cette documentation.</>],
+              [<>Le rail</>, <>Quatre destinations : <Ui>Travail</Ui>, <Ui>Assistant</Ui>, <Ui>Ressources</Ui>, <Ui>Paramètres</Ui>. En bas : l'assistant, le thème, votre profil, et cette documentation.</>],
               [<>Le panneau</>, <>La navigation de la section en cours. Sous <Ui>Travail</Ui>, il liste vos projets et déplie leurs sections. Il se replie avec le bouton en haut du rail.</>],
               [<>Le contenu</>, <>L'écran proprement dit. Il porte sa propre barre de titre, ses filtres et ses actions.</>],
             ]}
@@ -78,8 +78,8 @@ export const START_SECTION: DocSection = {
         <>
           <Lede>
             La documentation est plus utile avec quelque chose à regarder. Ce bouton
-            fabrique un projet complet — vingt et un work items, deux cycles, trois
-            modules, des demandes non triées, des pages et des notes — pour que
+            fabrique un projet complet, vingt et un work items, deux cycles, trois
+            modules, des demandes non triées, des pages et des notes, pour que
             chaque écran de ce manuel ait de la matière à afficher.
           </Lede>
 
@@ -89,9 +89,9 @@ export const START_SECTION: DocSection = {
           <Defs
             rows={[
               [<>Le projet</>, <>« Refonte du portail client », ouvert à l'espace, avec ses cinq états par défaut et cinq labels.</>],
-              [<>21 work items</>, <>Répartis sur tous les états, avec priorités, échéances, labels, sous-items et un epic. Un item est en retard, un autre annulé — les écrans qui servent à repérer ces cas ont ainsi quelque chose à montrer.</>],
+              [<>21 work items</>, <>Répartis sur tous les états, avec priorités, échéances, labels, sous-items et un epic. Un item est en retard, un autre annulé, les écrans qui servent à repérer ces cas ont ainsi quelque chose à montrer.</>],
               [<>2 cycles</>, <>Un en cours, un à venir. Le burndown a donc une pente et la page Cycles a deux sections à séparer.</>],
-              [<>3 modules</>, <>Authentification, Tableau de bord client, Facturation — dont un seulement planifié.</>],
+              [<>3 modules</>, <>Authentification, Tableau de bord client, Facturation, dont un seulement planifié.</>],
               [<>3 demandes</>, <>Dans l'Intake, non triées : c'est l'état dans lequel cette page a un sens.</>],
               [<>3 pages et 3 notes</>, <>Pour les Pages du projet et le mur de notes du service.</>],
             ]}
@@ -99,7 +99,7 @@ export const START_SECTION: DocSection = {
 
           <Callout kind="warn" title="C'est un projet ordinaire">
             Rien ne le marque comme « démo » en base. Il se modifie, s'archive et se
-            supprime comme les autres — et il compte dans les statistiques du
+            supprime comme les autres, et il compte dans les statistiques du
             service. Supprimez-le quand il a fini de servir.
           </Callout>
         </>
@@ -135,7 +135,7 @@ export const START_SECTION: DocSection = {
               projets confondus.
             </LI>
             <LI>
-              <strong>Un projet</strong> — quand vous ouvrez un projet, ses sections
+              <strong>Un projet</strong>, quand vous ouvrez un projet, ses sections
               se déplient en dessous, en retrait. Ce retrait est la seule chose qui
               les distingue des destinations d'espace : sans lui, <Ui>Cycles</Ui> du
               projet et <Ui>Cycles actifs</Ui> du service se liraient au même rang.
@@ -158,7 +158,7 @@ export const START_SECTION: DocSection = {
           <H>Replier le panneau</H>
           <Steps>
             <Step>Le bouton sous le sélecteur de tableau, en haut du rail, replie le panneau.</Step>
-            <Step>Le contenu occupe alors toute la largeur — utile sur le Gantt et le Workgraph.</Step>
+            <Step>Le contenu occupe alors toute la largeur, utile sur le Gantt et le Workgraph.</Step>
             <Step>Le choix est mémorisé pour la prochaine visite.</Step>
           </Steps>
 

@@ -177,10 +177,10 @@ export function GovFtSecurityPage() {
 
   const exportReport = () => {
     const L: string[] = [];
-    L.push(`# Rapport de sécurité — ${new Date().toLocaleDateString("fr-FR")}`, "");
+    L.push(`# Rapport de sécurité, ${new Date().toLocaleDateString("fr-FR")}`, "");
     L.push("## Chiffrement", "");
     L.push(`- Au repos : ${AT_REST_LABELS[encryption.atRest]} · ${KEY_MGMT_LABELS[encryption.keyManagement]}`);
-    L.push(`- Rotation des clés : tous les ${encryption.keyRotationDays} jours — dernière ${fmtDate(encryption.lastKeyRotationAt)}`);
+    L.push(`- Rotation des clés : tous les ${encryption.keyRotationDays} jours, dernière ${fmtDate(encryption.lastKeyRotationAt)}`);
     L.push(`- En transit : TLS ${encryption.tlsMin} minimum`);
     L.push(`- Anonymisation des PII à l'ingestion : ${encryption.piiRedaction ? "activée" : "désactivée"}`);
     L.push(`- Validation humaine avant déploiement prod : ${encryption.requireProdApproval ? "exigée" : "non exigée"}`, "");
@@ -189,10 +189,10 @@ export function GovFtSecurityPage() {
     L.push("", "## RBAC", "", `| Rôle | Membres | ${CAPS.map((c) => c.label).join(" | ")} |`, `| --- | --- | ${CAPS.map(() => "---").join(" | ")} |`);
     for (const r of roles) L.push(`| ${r.role} | ${r.members} | ${CAPS.map((c) => (r[c.key] ? "oui" : "non")).join(" | ")} |`);
     L.push("", `## Validations en attente (${pendingCount})`, "");
-    for (const e of pendingDeploys) L.push(`- ${endpointApprovalTitle(e)} — surface ${e.surface}, traffic ${e.trafficPct}%`);
-    for (const a of pendingRequests) L.push(`- ${a.title}${a.requested_by_name ? ` — demandé par ${a.requested_by_name}` : ""}`);
+    for (const e of pendingDeploys) L.push(`- ${endpointApprovalTitle(e)}, surface ${e.surface}, traffic ${e.trafficPct}%`);
+    for (const a of pendingRequests) L.push(`- ${a.title}${a.requested_by_name ? `, demandé par ${a.requested_by_name}` : ""}`);
     if (pendingCount === 0) L.push("_Aucune._");
-    L.push("", `## Audit — ${Math.min(50, audit.length)} derniers événements`, "");
+    L.push("", `## Audit, ${Math.min(50, audit.length)} derniers événements`, "");
     for (const e of audit.slice(0, 50)) L.push(`- ${new Date(e.created_at).toLocaleString("fr-FR")} · \`${e.action}\` · ${e.entity_label ?? e.entity_type ?? ""} · ${e.actor_name ?? "système"}`);
     downloadFile(`rapport-securite-${new Date().toISOString().slice(0, 10)}.md`, L.join("\n"), "text/markdown");
     toast.success("Rapport de conformité exporté");
@@ -202,7 +202,7 @@ export function GovFtSecurityPage() {
     { key: "title", label: "Objet de la demande", required: true, placeholder: "Accès au dataset support-conversations" },
     { key: "kind", label: "Type", type: "select", options: APPROVAL_KIND_META, half: true },
     { key: "risk_tier", label: "Niveau de risque", type: "select", half: true,
-      options: [{ value: "", label: "— Non défini —" }, ...Object.entries(RISK_TIER_META).map(([v, x]) => ({ value: v, label: x.label }))] },
+      options: [{ value: "", label: "Non défini" }, ...Object.entries(RISK_TIER_META).map(([v, x]) => ({ value: v, label: x.label }))] },
     { key: "requested_by_name", label: "Demandeur" },
     { key: "description", label: "Contexte", type: "textarea" },
   ];
@@ -237,11 +237,11 @@ export function GovFtSecurityPage() {
             <Pill meta={{ label: AT_REST_LABELS[encryption.atRest], tone: encryption.atRest === "none" ? "red" : "emerald" }} className="ml-auto px-1.5 py-0 text-[10px]" />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Datasets & poids — {KEY_MGMT_LABELS[encryption.keyManagement]}
+            Datasets & poids, {KEY_MGMT_LABELS[encryption.keyManagement]}
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">
             Rotation tous les {encryption.keyRotationDays} j · dernière {fmtDate(encryption.lastKeyRotationAt)}
-            {isOverdue(rotationDue) && <span className="ml-1 font-medium text-red-500">— échue</span>}
+            {isOverdue(rotationDue) && <span className="ml-1 font-medium text-red-500">échue</span>}
           </p>
           <div className="mt-3 flex gap-2">
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void rotateKeys()}>
@@ -275,7 +275,7 @@ export function GovFtSecurityPage() {
             {c.note && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{c.note}</p>}
             <p className="mt-2 text-[11px] text-muted-foreground">
               {c.owner ? `${c.owner} · ` : ""}revue {fmtDate(c.nextReviewAt)}
-              {isOverdue(c.nextReviewAt) && <span className="ml-1 font-medium text-red-500">— en retard</span>}
+              {isOverdue(c.nextReviewAt) && <span className="ml-1 font-medium text-red-500">en retard</span>}
             </p>
             <div className="mt-auto flex items-center gap-1 pt-2">
               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingFw(c)}><Pencil className="mr-1.5 h-3.5 w-3.5" />Éditer</Button>
@@ -359,7 +359,7 @@ export function GovFtSecurityPage() {
       {/* RBAC */}
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-5 py-3 text-sm font-medium">
-          <ShieldCheck className="h-4 w-4 text-muted-foreground" /> RBAC — rôles & permissions
+          <ShieldCheck className="h-4 w-4 text-muted-foreground" /> RBAC, rôles & permissions
           <div className="ml-auto flex gap-2">
             {roles.length > 0 && (
               <Button size="sm" variant="ghost" className="h-8" onClick={() => void guard(seedDefaults, "Rôles standard ajoutés")}>Rôles standard</Button>
@@ -440,7 +440,7 @@ export function GovFtSecurityPage() {
           <p className="px-5 py-4 text-sm text-muted-foreground">Chargement…</p>
         ) : audit.length === 0 ? (
           <p className="px-5 py-4 text-sm text-muted-foreground">
-            {auditQuery ? "Aucun événement ne correspond au filtre." : "Aucun événement — vos actions dans le studio apparaîtront ici."}
+            {auditQuery ? "Aucun événement ne correspond au filtre." : "Aucun événement, vos actions dans le studio apparaîtront ici."}
           </p>
         ) : (
           <>

@@ -53,13 +53,13 @@ const HIDEABLE: { slug: DashboardTabSlug; label: string; icon: PhosphorIcon }[] 
 ];
 
 const MODELS = [
-  { id: "deepseek", label: "DeepSeek", hint: "Par défaut — raisonnement + outils" },
-  { id: "groq", label: "Groq (Llama 3.3 70B)", hint: "Llama 3.3 70B — rapide" },
+  { id: "deepseek", label: "DeepSeek", hint: "Par défaut, raisonnement + outils" },
+  { id: "groq", label: "Groq (Llama 3.3 70B)", hint: "Llama 3.3 70B, rapide" },
   { id: "gpt-4", label: "GPT-4", hint: "Fallback" },
 ];
 
 const SANDBOX_MODES = [
-  { id: "cloud", label: "Cloud", hint: "Edge serverless — web, base, connecteurs" },
+  { id: "cloud", label: "Cloud", hint: "Edge serverless, web, base, connecteurs" },
   { id: "runner", label: "Runner", hint: "+ navigateur, shell et fichiers de votre machine" },
   { id: "sandbox", label: "Sandbox", hint: "+ conteneur Linux complet" },
   { id: "hybrid", label: "Hybride", hint: "Runner et sandbox, orchestrés" },
@@ -268,7 +268,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                   ))}
                 </div>
               </Field>
-              <Field label="Votre thème" hint="Personnel, et appliqué à toute l'app — vos coéquipiers gardent le leur.">
+              <Field label="Votre thème" hint="Personnel, et appliqué à toute l'app, vos coéquipiers gardent le leur.">
                 <div className="flex flex-wrap gap-2">
                   {THEMES.map((t) => (
                     <button

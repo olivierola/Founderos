@@ -94,7 +94,7 @@ export function GovFtEvaluationPage() {
             <div className="mt-3 space-y-3">
               {e.criteria.slice(0, 3).map((c) => <CriterionBars key={c.label} c={c} />)}
             </div>
-            <div className="mt-2 text-[11px] text-muted-foreground">{e.criteria.length - 3} autres métriques — cliquer pour le détail</div>
+            <div className="mt-2 text-[11px] text-muted-foreground">{e.criteria.length - 3} autres métriques, cliquer pour le détail</div>
           </Card>
         ))}
       </div>
@@ -119,7 +119,7 @@ export function GovFtEvaluationPage() {
               {sel.criteria.map((c) => <CriterionBars key={c.label} c={c} />)}
             </div>
           </DetailSection>
-          <DetailSection title={`Benchmark automatique — ${sel.benchmark.questions} questions`}>
+          <DetailSection title={`Benchmark automatique, ${sel.benchmark.questions} questions`}>
             <div className="overflow-hidden rounded-md border border-border/60">
               <table className="w-full text-xs">
                 <thead>
@@ -149,7 +149,7 @@ export function GovFtEvaluationPage() {
               </table>
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Winner : <span className="font-medium text-foreground">{sel.benchmark.tunedCorrect >= sel.benchmark.baseCorrect ? "modèle affiné" : "modèle de base"}</span> — même jeu de questions envoyé aux deux modèles, réponses jugées automatiquement.
+              Winner : <span className="font-medium text-foreground">{sel.benchmark.tunedCorrect >= sel.benchmark.baseCorrect ? "modèle affiné" : "modèle de base"}</span>, même jeu de questions envoyé aux deux modèles, réponses jugées automatiquement.
             </p>
           </DetailSection>
           <DetailSection title="Lecture">

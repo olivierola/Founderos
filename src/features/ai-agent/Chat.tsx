@@ -145,8 +145,7 @@ export function AiChatPage() {
             <div className="mb-8 text-center">
               <h1 className="text-3xl font-semibold tracking-tight">Votre assistant interne.</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                Il analyse vos données, rédige des documents, produit des tableaux, du JSON et du code —
-                dans la limite de vos droits d'accès.
+                Il analyse vos données, rédige des documents, produit des tableaux, du JSON et du code, dans la limite de vos droits d'accès.
               </p>
             </div>
 

@@ -152,7 +152,7 @@ export function CompanyContextPage() {
         <p className="mt-2 text-xs text-muted-foreground">
           {nextEmpty
             ? <>Prochain manque : <span className="font-medium text-foreground">{nextEmpty.label}</span>. Chaque champ vide est une question que vos agents reposeront.</>
-            : <>Profil complet. Vos agents partent avec le même cadre que vous — {project?.name ? `« ${project.name} »` : "cette entreprise"} n'a plus besoin d'être réexpliquée à chaque tâche.</>}
+            : <>Profil complet. Vos agents partent avec le même cadre que vous, {project?.name ? `« ${project.name} »` : "cette entreprise"} n'a plus besoin d'être réexpliquée à chaque tâche.</>}
         </p>
       </Card>
 

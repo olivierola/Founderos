@@ -288,7 +288,7 @@ export function AgentChatInput({
               className={cn(
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors",
                 canSend
-                  ? "bg-foreground text-background hover:bg-foreground/90"
+                  ? "bg-primary text-primary-foreground hover:bg-teal-accent"
                   : cn(GLASS, "cursor-default text-foreground/40 hover:bg-foreground/[0.06] hover:text-foreground/40"),
               )}
             >

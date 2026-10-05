@@ -70,7 +70,7 @@ export function UsageMeter({ expanded }: {
         "Crédits du mois épuisés",
         sub?.overage_enabled
           ? "Le dépassement est activé : vos agents continuent, facturés à l'usage."
-          : "Vos agents sont en pause jusqu'au renouvellement — rechargez ou changez d'offre.",
+          : "Vos agents sont en pause jusqu'au renouvellement, rechargez ou changez d'offre.",
       );
     } else {
       toast.info("80 % de vos crédits consommés", `Il reste ${formatCredits(credits?.remaining ?? 0)} crédits jusqu'au renouvellement.`);
@@ -93,7 +93,7 @@ export function UsageMeter({ expanded }: {
         <TooltipTrigger asChild>
           <button
             onClick={openLimits}
-            aria-label={`Crédits consommés ${pct} % — limites`}
+            aria-label={`Crédits consommés ${pct} %, limites`}
             className="mx-auto flex h-10 w-10 flex-col items-center justify-center gap-1 rounded-lg text-foreground/60 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
           >
             <span className={cn("text-[11px] font-semibold leading-none tabular-nums", tone !== "ok" && "text-foreground")}>{pct}%</span>
@@ -137,7 +137,7 @@ export function UsageMeter({ expanded }: {
 
         <p className={cn("mb-3 mt-2 text-xs", blocked ? "font-medium text-destructive" : tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
           {blocked
-            ? "Agents en pause — quota atteint"
+            ? "Agents en pause, quota atteint"
             : tone === "warn"
               ? `Plus que ${formatCredits(credits?.remaining ?? 0)} crédits`
               : resetLabel}

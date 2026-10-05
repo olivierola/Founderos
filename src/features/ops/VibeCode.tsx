@@ -286,7 +286,7 @@ function VibeMemory({ projectId }: { projectId?: string | null }) {
       <MemGroup title="Globale · tout le projet" items={globalMem} onDelete={deleteMemory} />
       <MemGroup title="Par session" items={sessionMem} onDelete={deleteMemory} />
       {!memQ.isLoading && (memQ.data ?? []).length === 0 && (
-        <p className="text-xs text-muted-foreground">Aucun souvenir pour l'instant — l'agent en crée avec l'outil « remember » au fil des sessions.</p>
+        <p className="text-xs text-muted-foreground">Aucun souvenir pour l'instant, l'agent en crée avec l'outil « remember » au fil des sessions.</p>
       )}
     </div>
   );
@@ -406,7 +406,7 @@ function VibeSkills({ workspaceId, projectId }: { workspaceId?: string | null; p
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold">Skills</h2>
-          <p className="text-xs text-muted-foreground">Modèles de tâches réutilisables (markdown) — ex. « Ajouter des tests », « Corriger le lint ».</p>
+          <p className="text-xs text-muted-foreground">Modèles de tâches réutilisables (markdown), ex. « Ajouter des tests », « Corriger le lint ».</p>
         </div>
         <Button size="sm" onClick={createSkill}><Plus className="mr-1.5 h-3.5 w-3.5" /> Nouvelle skill</Button>
       </div>
@@ -466,7 +466,7 @@ function VibeMcp({ workspaceId, projectId }: { workspaceId?: string | null; proj
     <div className="space-y-3">
       <div>
         <h2 className="text-base font-semibold">MCP</h2>
-        <p className="text-xs text-muted-foreground">Serveurs MCP du workspace activés pour l'agent de codage — leurs outils deviennent appelables pendant un run.</p>
+        <p className="text-xs text-muted-foreground">Serveurs MCP du workspace activés pour l'agent de codage, leurs outils deviennent appelables pendant un run.</p>
       </div>
       {servers.length === 0 ? (
         <p className="text-xs text-muted-foreground">Aucun serveur MCP dans ce workspace. Ajoutez-en un depuis la page MCP Servers.</p>
@@ -555,7 +555,7 @@ function VibeAutomations({ workspaceId, projectId, repos }: { workspaceId?: stri
       });
       await supabase.from("vibe_automations").update({ last_run_at: new Date().toISOString() }).eq("id", a.id);
       qc.invalidateQueries({ queryKey: ["vibe_automations", projectId] });
-      setNotice(`« ${a.name} » lancée — suivez-la dans l'onglet Vibe Code.`);
+      setNotice(`« ${a.name} » lancée, suivez-la dans l'onglet Vibe Code.`);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     } finally { setRunningId(null); }
@@ -566,7 +566,7 @@ function VibeAutomations({ workspaceId, projectId, repos }: { workspaceId?: stri
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold">Automation</h2>
-          <p className="text-xs text-muted-foreground">Tâches de code récurrentes — un prompt, un dépôt, une fréquence.</p>
+          <p className="text-xs text-muted-foreground">Tâches de code récurrentes, un prompt, un dépôt, une fréquence.</p>
         </div>
         <Button size="sm" onClick={() => setCreating((c) => !c)}><Plus className="mr-1.5 h-3.5 w-3.5" /> Nouvelle automatisation</Button>
       </div>
@@ -621,7 +621,7 @@ function VibeAutomations({ workspaceId, projectId, repos }: { workspaceId?: stri
         </ul>
       )}
       <p className="text-[11px] text-muted-foreground">
-        « ▶ » lance l'automatisation immédiatement. L'exécution planifiée (horaire/quotidienne/hebdo) nécessite le cron du scheduler — non branché pour l'instant.
+        « ▶ » lance l'automatisation immédiatement. L'exécution planifiée (horaire/quotidienne/hebdo) nécessite le cron du scheduler, non branché pour l'instant.
       </p>
     </div>
   );
@@ -789,7 +789,7 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
             settled = true;
           }
         }
-        if (!settled) setMessages((m) => m.map((x) => (x.id === aId ? { ...x, error: "Délai dépassé — la tâche est peut-être trop lourde. Réessayez avec une demande plus ciblée.", loading: false } : x)));
+        if (!settled) setMessages((m) => m.map((x) => (x.id === aId ? { ...x, error: "Délai dépassé, la tâche est peut-être trop lourde. Réessayez avec une demande plus ciblée.", loading: false } : x)));
       } else if (res.message !== undefined) {
         const result: RunResult = { message: res.message, base_branch: res.base_branch ?? branch, changes: res.changes ?? [], reads: res.reads ?? [] };
         onResult(result);
@@ -873,7 +873,7 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
       <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-1">
         {vibeProject ? (
           <span
-            title={`Projet « ${vibeProject.name} » — dépôt fixé par le projet`}
+            title={`Projet « ${vibeProject.name} », dépôt fixé par le projet`}
             className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 px-2 py-1 text-xs"
           >
             <FolderKanban className="h-3.5 w-3.5 shrink-0 text-primary" />
@@ -936,12 +936,12 @@ function VibeTab({ repoId, setRepoId, branch, setBranch, repos, workspaceId, pro
   );
 
   return (
-    <div className="font-poppins flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {messages.length === 0 ? (
         // ── Hero (empty state) ──
         <div className="flex flex-1 flex-col items-center justify-center px-6">
           <div className="w-full max-w-2xl">
-            <Logo size={44} className="mb-5" />
+            <Logo size={44} color="hsl(var(--foreground))" className="mb-5" />
             <h1 className="mb-6 text-3xl font-semibold tracking-tight">Bon retour{name ? `, ${name}` : ""}</h1>
             <div className="mb-2 flex items-center justify-between rounded-xl border border-border bg-card/60 px-3 py-2 text-sm text-muted-foreground">
               <span className="flex items-center gap-2"><Wand2 className="h-4 w-4 text-primary" /> Vibe Code lit et modifie le code de {repo?.full_name ?? "votre dépôt"}, puis ouvre une pull request.</span>
@@ -1289,7 +1289,7 @@ function PrCiPanel({ pr, ctx, onFix, busy }: {
           <Button size="sm" onClick={merge} disabled={merging || busy} className="bg-violet-600 hover:bg-violet-600/90">
             {merging ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Fusion…</> : <><GitMerge className="mr-1.5 h-3.5 w-3.5" /> Merger la PR</>}
           </Button>
-          {state === "failure" && <span className="text-[11px] text-muted-foreground">CI en échec — corrige d'abord ou merge quand même.</span>}
+          {state === "failure" && <span className="text-[11px] text-muted-foreground">CI en échec, corrige d'abord ou merge quand même.</span>}
         </div>
       )}
       {merged && (
@@ -1575,7 +1575,7 @@ function PreviewTab({ repoId, workspaceId, projectId }: { repoId: string; worksp
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
               <Monitor className="h-8 w-8" />
               <span className="text-sm">Sélectionnez un déploiement, ou entrez une URL.</span>
-              <span className="max-w-sm text-xs">Si la page reste blanche, l'app bloque probablement l'affichage en iframe (X-Frame-Options / CSP) — ouvrez-la dans un onglet.</span>
+              <span className="max-w-sm text-xs">Si la page reste blanche, l'app bloque probablement l'affichage en iframe (X-Frame-Options / CSP), ouvrez-la dans un onglet.</span>
             </div>
           )}
         </div>

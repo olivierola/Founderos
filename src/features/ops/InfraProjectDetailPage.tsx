@@ -273,7 +273,7 @@ export function OpsInfraProjectDetailPage() {
         return toLiveData(row.metrics, row.raw, row.created_at);
       }
     }
-    throw new Error("Probe timed out — is the Ops Runner online?");
+    throw new Error("Probe timed out, is the Ops Runner online?");
   }
 
   const file = useMemo(() => {
@@ -577,7 +577,7 @@ export function OpsInfraProjectDetailPage() {
                             </div>
                           }
                           onAiMessage={async (msg) => {
-                            if (!activeLayer?.bundle_id) return "This layer has no bundle yet — generate it first.";
+                            if (!activeLayer?.bundle_id) return "This layer has no bundle yet, generate it first.";
                             // Checkpoint before the AI touches anything (best-effort).
                             try {
                               await callEdge("ops-snapshot-create", {

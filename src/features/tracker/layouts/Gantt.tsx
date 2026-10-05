@@ -473,7 +473,7 @@ export function GanttLayout(props: LayoutProps) {
                   <button
                     type="button"
                     onClick={() => onOpen(i)}
-                    title="Sans dates — ouvrir pour en donner"
+                    title="Sans dates, ouvrir pour en donner"
                     className="absolute top-2.5 z-[6] h-[12px] rounded border border-dashed border-border opacity-0 transition-opacity group-hover/row:opacity-100"
                     style={{ left: todayOffset * DAY_WIDTH, width: DAY_WIDTH * 3 }}
                   />

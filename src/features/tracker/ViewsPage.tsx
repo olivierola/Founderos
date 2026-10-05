@@ -570,8 +570,7 @@ function ViewDialog({
 
           {!view && (
             <p className="rounded-md border border-dashed border-border/70 px-3 py-2 text-11 text-muted-foreground">
-              Les filtres se posent sur le board, puis « Enregistrer comme vue » les capture —
-              on voit ainsi ce qu&apos;on garde avant de le garder.
+              Les filtres se posent sur le board, puis « Enregistrer comme vue » les capture, on voit ainsi ce qu&apos;on garde avant de le garder.
             </p>
           )}
 

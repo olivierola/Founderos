@@ -131,8 +131,8 @@ function RelatedPlate({ post }: { post: Post }) {
 
 export function BlogPostPage() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "hn-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "hn-root");
   }, []);
 
   const { slug } = useParams();
@@ -153,7 +153,7 @@ export function BlogPostPage() {
     .slice(0, 3);
 
   return (
-    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify hn min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
 
       <ToneCanvas initial="paper">
@@ -248,7 +248,7 @@ export function BlogPostPage() {
 
         {/* ══ Related ═════════════════════════════════════════════════════ */}
         <ToneSection tone="bone">
-          <div className="mx-auto max-w-[1420px] px-5 py-24 sm:px-9 sm:py-28">
+          <div className="px-5 py-24 sm:px-8 lg:px-12 sm:py-28">
             <Reveal>
               <SectionTitle frame="Keep" claim="reading" />
             </Reveal>

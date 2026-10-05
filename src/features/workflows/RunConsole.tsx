@@ -304,7 +304,7 @@ export function RunConsole({
               <> · {new Date(run.started_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
             </span>
           ) : (
-            <span className="text-[11px] text-muted-foreground">aucune exécution — lancez un test</span>
+            <span className="text-[11px] text-muted-foreground">aucune exécution, lancez un test</span>
           )}
         </button>
 
@@ -520,7 +520,7 @@ function VariablesTab({ ctx, log }: { ctx: Ctx; log: RunLog }) {
             return (
               <VarRow
                 key={`p-${v.name}-${v.blockId}`} name={v.name} from={v.from}
-                value={value === undefined ? "— pas encore produite" : safeJson(value)}
+                value={value === undefined ? ", pas encore produite" : safeJson(value)}
                 pending={value === undefined}
                 onCopy={() => copy(v.name)}
                 onFocus={() => ctx.setOpenBlock(v.blockId)}
@@ -608,7 +608,7 @@ function PayloadEditor({ ctx, onClose, onRun }: {
     try {
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        setError("La charge doit être un objet JSON — { \"clé\": \"valeur\" }.");
+        setError("La charge doit être un objet JSON, { \"clé\": \"valeur\" }.");
         return null;
       }
       return parsed as Record<string, unknown>;

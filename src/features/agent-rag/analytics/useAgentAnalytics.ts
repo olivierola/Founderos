@@ -85,7 +85,7 @@ export function describeAnalyticsError(error: unknown): string {
   const hint = typeof e?.hint === "string" ? e.hint : "";
   const head = message || details || String(error ?? "");
   if (!head) return "Erreur inconnue.";
-  return head + (code ? ` (${code})` : "") + (hint ? ` — ${hint}` : "");
+  return head + (code ? ` (${code})` : "") + (hint ? `, ${hint}` : "");
 }
 
 // ── Dérivés ────────────────────────────────────────────────────────────────

@@ -95,7 +95,7 @@ function buildTips(hasMentions: boolean, hasSlash: boolean, base: string): strin
   const tips = [base];
   if (hasMentions) tips.push("Tapez @ pour parler à un agent en particulier");
   if (hasSlash) tips.push("Tapez / pour demander un livrable : document, tableur, image…");
-  tips.push("Glissez un fichier ici — PDF, image, CSV — il part avec le message");
+  tips.push("Glissez un fichier ici, PDF, image, CSV, il part avec le message");
   tips.push("Cliquez le micro pour dicter au lieu d'écrire");
   tips.push("Entrée pour envoyer, Maj + Entrée pour aller à la ligne");
   return tips;
@@ -596,7 +596,7 @@ export function ChatInput({
               type="button" onClick={togglePtt}
               className={cn("flex h-8 w-8 items-center justify-center rounded-full transition-colors",
                 pttEnabled ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
-              title={pttEnabled ? "Push-to-talk activé — maintenez Espace" : "Activer le push-to-talk (maintenir Espace)"}
+              title={pttEnabled ? "Push-to-talk activé, maintenez Espace" : "Activer le push-to-talk (maintenir Espace)"}
             >
               <Keyboard className="h-4 w-4" />
             </button>
@@ -610,7 +610,7 @@ export function ChatInput({
             </button>
             <Button
               size="icon"
-              className={cn("h-9 w-9 rounded-full transition-colors", canSend ? "bg-foreground text-background hover:bg-foreground/90" : "bg-muted text-muted-foreground")}
+              className={cn("h-9 w-9 rounded-full transition-colors", canSend ? "bg-primary text-primary-foreground hover:bg-teal-accent" : "bg-muted text-muted-foreground")}
               onClick={send}
               disabled={!canSend}
               title="Envoyer"

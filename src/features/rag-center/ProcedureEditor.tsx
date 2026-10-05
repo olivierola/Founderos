@@ -129,7 +129,7 @@ export function ProcedureEditor({
             placeholder={"## Quand l'appliquer\n\nToute demande de remboursement passée sous 30 jours.\n\n## Règles\n\n1. Vérifier l'identifiant de commande avant toute réponse.\n2. Au-delà de 5 000 €, escalader au responsable.\n\n## Formulation attendue\n\n…"}
             footer={
               <span>
-                Indexée dans la collection — les agents la retrouveront avec <code className="rounded bg-muted px-1">rag_search</code>,
+                Indexée dans la collection, les agents la retrouveront avec <code className="rounded bg-muted px-1">rag_search</code>,
                 et un workflow peut la joindre à une étape précise.
               </span>
             }

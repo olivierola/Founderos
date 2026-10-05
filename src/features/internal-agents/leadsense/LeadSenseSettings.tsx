@@ -107,7 +107,7 @@ export function LeadSenseSettings() {
               onChange={(e) => update({ ...cfg, ideal_customer: e.target.value })} />
           </label>
           <label className="block space-y-1">
-            <span className="text-[11px] text-muted-foreground">Prospect chaud — à transmettre immédiatement quand…</span>
+            <span className="text-[11px] text-muted-foreground">Prospect chaud, à transmettre immédiatement quand…</span>
             <Textarea rows={2} value={cfg.hot_rule} className="text-[12px]" onChange={(e) => update({ ...cfg, hot_rule: e.target.value })} />
           </label>
           <div className="flex flex-wrap items-center gap-3 text-[11.5px] text-muted-foreground">

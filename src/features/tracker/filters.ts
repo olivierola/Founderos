@@ -1,6 +1,6 @@
 import {
   PRIORITIES, STATE_GROUPS,
-  type Member, type PjCycle, type PjIssue, type PjLabel, type PjModule, type PjState,
+  type Member, type PjIssue, type PjLabel, type PjState,
   type Priority, type StateGroup,
 } from "./model";
 
@@ -27,7 +27,7 @@ export const LAYOUTS: { key: Layout; label: string }[] = [
 
 export type GroupBy =
   | "state" | "state_group" | "priority" | "labels" | "assignees"
-  | "cycle" | "module" | "created_by" | "target_date" | null;
+  | "created_by" | "target_date" | null;
 
 export type OrderBy =
   | "manual" | "created_at" | "-created_at" | "updated_at" | "-updated_at"
@@ -39,8 +39,6 @@ export const GROUP_BY_OPTIONS: { key: Exclude<GroupBy, null> | "none"; label: st
   { key: "priority", label: "Priorité" },
   { key: "labels", label: "Labels" },
   { key: "assignees", label: "Assignés" },
-  { key: "cycle", label: "Cycle" },
-  { key: "module", label: "Module" },
   { key: "created_by", label: "Créé par" },
   { key: "target_date", label: "Échéance" },
   { key: "none", label: "Aucun" },
@@ -67,8 +65,6 @@ export interface Filters {
   agents: string[];
   created_by: string[];
   labels: string[];
-  cycle: string[];
-  module: string[];
   issue_type: string[];
   start_date: string[];
   target_date: string[];
@@ -101,15 +97,13 @@ export interface DisplayProperties {
   attachment_count: boolean;
   resource_count: boolean;
   link: boolean;
-  cycle: boolean;
-  modules: boolean;
   created_on: boolean;
   updated_on: boolean;
 }
 
 export const EMPTY_FILTERS: Filters = {
   state: [], state_group: [], priority: [], assignees: [], agents: [], created_by: [],
-  labels: [], cycle: [], module: [], issue_type: [], start_date: [], target_date: [],
+  labels: [], issue_type: [], start_date: [], target_date: [],
   query: "",
 };
 
@@ -132,22 +126,22 @@ export const DEFAULT_DISPLAY_PROPERTIES: DisplayProperties = {
   key: true, state: true, priority: true, assignee: true, labels: true,
   start_date: false, due_date: true, estimate: false,
   sub_issue_count: true, attachment_count: true, resource_count: true, link: false,
-  cycle: false, modules: false, created_on: false, updated_on: false,
+  created_on: false, updated_on: false,
 };
 
 export const DISPLAY_PROPERTY_LABELS: Record<keyof DisplayProperties, string> = {
   key: "Référence", state: "État", priority: "Priorité", assignee: "Assignés",
   labels: "Labels", start_date: "Date de début", due_date: "Échéance",
   estimate: "Estimation", sub_issue_count: "Sous-tâches",
-  attachment_count: "Pièces jointes", resource_count: "Ressources", link: "Liens", cycle: "Cycle",
-  modules: "Modules", created_on: "Créé le", updated_on: "Modifié le",
+  attachment_count: "Pièces jointes", resource_count: "Ressources", link: "Liens",
+  created_on: "Créé le", updated_on: "Modifié le",
 };
 
 export function countActiveFilters(f: Filters): number {
   return (
     f.state.length + f.state_group.length + f.priority.length + f.assignees.length +
     (f.agents ?? []).length +
-    f.created_by.length + f.labels.length + f.cycle.length + f.module.length +
+    f.created_by.length + f.labels.length +
     f.issue_type.length + f.start_date.length + f.target_date.length +
     (f.query.trim() ? 1 : 0)
   );
@@ -229,16 +223,6 @@ export function applyFilters(
       const hit = i.label_ids.some((l) => filters.labels.includes(l));
       if (!hit && !(wantsNone && i.label_ids.length === 0)) return false;
     }
-    if (filters.cycle.length) {
-      const wantsNone = filters.cycle.includes("none");
-      if (!(i.cycle_id && filters.cycle.includes(i.cycle_id)) && !(wantsNone && !i.cycle_id)) return false;
-    }
-    if (filters.module.length) {
-      const wantsNone = filters.module.includes("none");
-      const hit = i.module_ids.some((m) => filters.module.includes(m));
-      if (!hit && !(wantsNone && i.module_ids.length === 0)) return false;
-    }
-
     if (filters.start_date.length &&
         !filters.start_date.some((t) => matchDateToken(i.start_date, t, today))) return false;
     if (filters.target_date.length &&
@@ -293,7 +277,7 @@ export interface IssueGroup {
   label: string;
   color?: string;
   /** L'entité derrière le groupe, pour que l'en-tête puisse l'afficher. */
-  payload?: PjState | PjLabel | Member | PjCycle | PjModule | null;
+  payload?: PjState | PjLabel | Member | null;
   issues: PjIssue[];
 }
 
@@ -301,8 +285,6 @@ export interface GroupContext {
   states: PjState[];
   labels: PjLabel[];
   members: Member[];
-  cycles: PjCycle[];
-  modules: PjModule[];
 }
 
 const NONE = "__none__";
@@ -343,7 +325,6 @@ export function groupIssues(
       }
       case "priority": push(i.priority, i); break;
       case "created_by": push(i.created_by ?? NONE, i); break;
-      case "cycle": push(i.cycle_id ?? NONE, i); break;
       case "target_date": push(i.target_date ?? NONE, i); break;
       case "labels":
         if (!i.label_ids.length) push(NONE, i);
@@ -352,10 +333,6 @@ export function groupIssues(
       case "assignees":
         if (!i.assignee_ids.length) push(NONE, i);
         else i.assignee_ids.forEach((a) => push(a, i));
-        break;
-      case "module":
-        if (!i.module_ids.length) push(NONE, i);
-        else i.module_ids.forEach((m) => push(m, i));
         break;
     }
   }
@@ -389,16 +366,6 @@ export function groupIssues(
         groups.push({ key: m.user_id, label: memberLabel(m, m.user_id), payload: m, issues: take(m.user_id) });
       }
       break;
-    case "cycle":
-      for (const c of ctx.cycles) {
-        groups.push({ key: c.id, label: c.name, payload: c, issues: take(c.id) });
-      }
-      break;
-    case "module":
-      for (const m of ctx.modules) {
-        groups.push({ key: m.id, label: m.name, payload: m, issues: take(m.id) });
-      }
-      break;
     case "created_by":
       for (const m of ctx.members) {
         groups.push({ key: m.user_id, label: memberLabel(m, m.user_id), payload: m, issues: take(m.user_id) });
@@ -428,8 +395,6 @@ function noneLabel(groupBy: GroupBy): string {
   switch (groupBy) {
     case "assignees": return "Non assigné";
     case "labels": return "Sans label";
-    case "cycle": return "Hors cycle";
-    case "module": return "Hors module";
     case "target_date": return "Sans échéance";
     case "created_by": return "Auteur inconnu";
     default: return "Sans état";

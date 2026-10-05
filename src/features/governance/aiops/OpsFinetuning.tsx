@@ -128,7 +128,7 @@ export function GovOpsFinetuningPage() {
     <div className="space-y-6">
       <PageHeader
         title="Entraînements"
-        description="Lancez et suivez vos jobs de fine-tuning — hyperparamètres Basic/Advanced, progression, loss, coût GPU."
+        description="Lancez et suivez vos jobs de fine-tuning, hyperparamètres Basic/Advanced, progression, loss, coût GPU."
         actions={<Button onClick={() => setCreating(true)}><Plus className="mr-1.5 h-4 w-4" />Job</Button>}
       />
 

@@ -58,7 +58,7 @@ export function GovFtDeploymentPage() {
     <div className="space-y-6">
       <PageHeader
         title="Déploiement"
-        description="Production, staging, testing, canary ou A/B avec répartition du trafic — et monitoring continu : erreurs, hallucinations, satisfaction, coût."
+        description="Production, staging, testing, canary ou A/B avec répartition du trafic, et monitoring continu : erreurs, hallucinations, satisfaction, coût."
         actions={<Button onClick={() => setDeploying(true)} disabled={ready.length === 0}><Rocket className="mr-1.5 h-4 w-4" />Déployer</Button>}
       />
 
@@ -122,7 +122,7 @@ export function GovFtDeploymentPage() {
               <DetailRow label="Environnement"><Pill meta={DEPLOY_ENV_META[sel.env]} /></DetailRow>
               <DetailRow label="Exposé via"><Pill meta={DEPLOY_SURFACE_META[sel.surface]} /></DetailRow>
               <DetailRow label="Traffic">{sel.trafficPct}% du trafic</DetailRow>
-              <DetailRow label="Rollback auto">{sel.autoRollback ? "Activé — bascule si les métriques chutent" : "Désactivé"}</DetailRow>
+              <DetailRow label="Rollback auto">{sel.autoRollback ? "Activé, bascule si les métriques chutent" : "Désactivé"}</DetailRow>
               <DetailRow label="Serveur">{server?.name ?? sel.serverId}{server ? ` · ${server.region}` : ""}</DetailRow>
               <DetailRow label="En service depuis">{new Date(sel.since).toLocaleString("fr-FR")}</DetailRow>
             </DetailSection>

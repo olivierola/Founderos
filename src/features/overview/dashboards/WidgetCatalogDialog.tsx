@@ -67,7 +67,7 @@ export function WidgetCatalogDialog({ open, onOpenChange, onPick }: Props) {
         <DialogHeader className="border-b border-border px-6 pb-4 pt-5">
           <DialogTitle>Widget catalog</DialogTitle>
           <DialogDescription>
-            Pick a pre-configured widget from any module — it lands fully editable in your dashboard.
+            Pick a pre-configured widget from any module, it lands fully editable in your dashboard.
           </DialogDescription>
         </DialogHeader>
 

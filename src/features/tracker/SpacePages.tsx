@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { IssueKey, StateIcon, formatRelative } from "./pickers";
-import { StickiesPage } from "./StickyBoard";
 import { ArchiveIllustration, DraftIllustration } from "./illustrations";
 import { EmptyState } from "./ui";
+import { StickiesPage } from "./StickyBoard";
 import {
   archiveIssue, deleteIssue, fetchArchivedIssues, fetchIssues, fetchProjects,
   fetchStates, updateIssue, type PjIssue, type PjProject,

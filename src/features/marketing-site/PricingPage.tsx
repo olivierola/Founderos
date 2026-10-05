@@ -131,13 +131,13 @@ function MatrixCell({ value, highlight }: { value: string; highlight?: boolean }
 
 export function PricingPage() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "hn-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "hn-root");
   }, []);
 
   return (
     <div
-      className="amplify atlas min-h-screen"
+      className="amplify hn min-h-screen"
       /* Same two reasons as the landing page: `.amplify` would paint over the
          tone canvas, and an `overflow-x-hidden` root kills sticky. */
       style={{ backgroundColor: "transparent" }}
@@ -169,14 +169,14 @@ export function PricingPage() {
 
         {/* ══ The plans ═══════════════════════════════════════════════════ */}
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1420px] px-5 pb-24 sm:px-9 sm:pb-28" style={{ color: INK }}>
+          <div className="px-5 pb-24 sm:px-8 lg:px-12 sm:pb-28" style={{ color: INK }}>
             <PricingPlans />
           </div>
         </ToneSection>
 
         {/* ══ Add-ons ═════════════════════════════════════════════════════ */}
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1420px] px-5 pb-24 sm:px-9 sm:pb-28" style={{ color: INK }}>
+          <div className="px-5 pb-24 sm:px-8 lg:px-12 sm:pb-28" style={{ color: INK }}>
             <Reveal>
               <SectionTitle frame="bought on top of any plan" claim="Add-ons," flip />
               <p className="mt-5 max-w-xl text-[15.5px] leading-[1.6] text-[#6E6E6E]">
@@ -224,7 +224,7 @@ export function PricingPage() {
 
         {/* ══ The comparison ══════════════════════════════════════════════ */}
         <ToneSection tone="bone" id="compare">
-          <div className="mx-auto max-w-[1420px] px-5 py-24 sm:px-9 sm:py-28" style={{ color: INK }}>
+          <div className="px-5 py-24 sm:px-8 lg:px-12 sm:py-28" style={{ color: INK }}>
             <Reveal>
               <SectionTitle frame="Every line," claim="side by side" />
             </Reveal>
@@ -233,7 +233,7 @@ export function PricingPage() {
               {/* The table scrolls inside its own box: a marketing page must
                   never scroll horizontally as a whole. */}
               <div
-                className="mt-12 overflow-x-auto border bg-white"
+                className="mt-12 overflow-x-auto rounded-[24px] border bg-white"
                 style={{ borderColor: "rgba(20,20,20,0.13)" }}
               >
                 <table className="w-full min-w-[820px] text-[13.5px]">
@@ -287,7 +287,7 @@ export function PricingPage() {
 
         {/* ══ Get an estimate ═════════════════════════════════════════════ */}
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1420px] px-5 py-24 sm:px-9 sm:py-28" style={{ color: INK }}>
+          <div className="px-5 py-24 sm:px-8 lg:px-12 sm:py-28" style={{ color: INK }}>
             <Reveal>
               <SectionTitle frame="Get an estimate" claim="based on your own numbers" />
             </Reveal>
@@ -334,7 +334,7 @@ export function PricingPage() {
 
         {/* ══ The guarantees ══════════════════════════════════════════════ */}
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1420px] px-5 pb-24 sm:px-9 sm:pb-28" style={{ color: INK }}>
+          <div className="px-5 pb-24 sm:px-8 lg:px-12 sm:pb-28" style={{ color: INK }}>
             <div
               className="grid gap-9 border-t pt-12 sm:grid-cols-3"
               style={{ borderColor: "rgba(0,0,0,0.12)" }}
@@ -357,7 +357,7 @@ export function PricingPage() {
 
         {/* ══ FAQ — billing only; the rest lives on /faq ══════════════════ */}
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1420px] px-5 pb-24 sm:px-9 sm:pb-28" style={{ color: INK }}>
+          <div className="px-5 pb-24 sm:px-8 lg:px-12 sm:pb-28" style={{ color: INK }}>
             <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
               <Reveal>
                 <SectionTitle frame="What people ask" claim="about the bill" />

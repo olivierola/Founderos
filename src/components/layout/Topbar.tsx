@@ -13,7 +13,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Logo } from "@/components/Logo";
+import { BRAND_MARK_ON_DARK, Logo } from "@/components/Logo";
 import { DashboardSwitcher } from "./DashboardSwitcher";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -58,7 +58,7 @@ export function Topbar() {
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
 
   return (
-    <header className="flex flex-col bg-[#060608]">
+    <header className="flex flex-col bg-[#0b1220]">
       <div className="flex items-stretch">
         {/* Left segment — matches the primary sidebar width so the sidebar's
             column visually continues up into the navbar, and widens with it. */}
@@ -89,7 +89,7 @@ export function Topbar() {
           ) : (
             // Collapsed: the logo morphs into the expand toggle on hover.
             <div className="relative flex h-8 w-8 items-center justify-center">
-              <Logo size={28} className="transition-opacity group-hover:opacity-0" />
+              <Logo size={28} color={BRAND_MARK_ON_DARK} className="transition-opacity group-hover:opacity-0" />
               <button
                 onClick={() => setPrimaryExpanded(true)}
                 className="absolute inset-0 flex items-center justify-center rounded-md text-white/70 opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100"

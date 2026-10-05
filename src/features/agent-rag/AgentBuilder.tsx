@@ -153,7 +153,7 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
         // Validate client-side so oversized files fail with a clear message
         // instead of a generic network "Failed to fetch" mid-upload.
         if (file.size > MAX_BYTES) {
-          throw new Error(`"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB — the limit is 15 MB.`);
+          throw new Error(`"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB, the limit is 15 MB.`);
         }
 
         const path = `${projectId}/${agent.id}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
@@ -183,7 +183,7 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
           const msg = e instanceof Error ? e.message : String(e);
           throw new Error(
             /failed to fetch|networkerror|load failed/i.test(msg)
-              ? `Extraction request for "${file.name}" could not reach the server (network/CORS). The file did upload — retry to process it.`
+              ? `Extraction request for "${file.name}" could not reach the server (network/CORS). The file did upload, retry to process it.`
               : `Could not process "${file.name}": ${msg}`,
           );
         }
@@ -528,7 +528,7 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
             value={model}
             onChange={setModel}
             options={[
-              { value: "groq", label: "Groq — Llama 3.3 70B" },
+              { value: "groq", label: "Groq, Llama 3.3 70B" },
               { value: "deepseek", label: "DeepSeek" },
             ]}
           />
@@ -829,12 +829,12 @@ function OnboardingSettings({ agent }: { agent: Agent }) {
 const MCP_STORE_PRESETS = [
   {
     key: "shopify",
-    label: "Shopify — Storefront MCP",
+    label: "Shopify, Storefront MCP",
     /** Per-store endpoint; only the shop domain varies. */
     url: (domain: string) => `https://${domain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/api/mcp`,
     domainPlaceholder: "ma-boutique.myshopify.com",
     auth: "none" as const,
-    help: "Endpoint public de votre boutique — aucune clé à fournir. Il expose la recherche catalogue et les opérations de panier.",
+    help: "Endpoint public de votre boutique, aucune clé à fournir. Il expose la recherche catalogue et les opérations de panier.",
   },
   {
     key: "custom",
@@ -854,7 +854,7 @@ interface McpServerRow {
 interface AttachRow { server_id: string; allowed_tools: string[] }
 
 /** The tables and columns this tab writes to arrive with migration 0201. Until
- *  it is applied every toggle fails, and Postgres says so precisely — surfacing
+ *  it is applied every toggle fails, and Postgres says so precisely, surfacing
  *  that beats a switch that silently refuses to move. */
 function schemaMissing(err: unknown): boolean {
   const e = err as { code?: string; message?: string } | null;
@@ -864,7 +864,7 @@ function schemaMissing(err: unknown): boolean {
 }
 function writeError(err: unknown): string {
   if (schemaMissing(err)) {
-    return "La migration 0201 n'est pas encore appliquée sur cette base — lancez `supabase db push`, puis rechargez la page.";
+    return "La migration 0201 n'est pas encore appliquée sur cette base, lancez `supabase db push`, puis rechargez la page.";
   }
   const e = err as { message?: string } | null;
   return e?.message || "Échec de l'enregistrement.";
@@ -936,7 +936,7 @@ function EcommerceTab({ agent, sub, workspaceId }: {
     ? (!agent.tool_use_enabled
         ? "« Autoriser cet agent à appeler des outils » est désactivé (onglet Boutique)."
         : grantedCount === 0
-          ? "Aucun outil n'est coché (onglet Outils) — une liste vide n'autorise rien."
+          ? "Aucun outil n'est coché (onglet Outils), une liste vide n'autorise rien."
           : null)
     : null;
 
@@ -1252,7 +1252,7 @@ function McpToolGrants({ agent, servers, attached, onChanged }: {
             </div>
             {tools.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Aucun outil en cache — lancez une redécouverte depuis l'onglet Boutique.
+                Aucun outil en cache, lancez une redécouverte depuis l'onglet Boutique.
               </p>
             ) : (
               <ul className="divide-y divide-border/40 rounded-xl border border-border/60">
@@ -1302,7 +1302,7 @@ function McpToolActivity({ agent }: { agent: Agent }) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-2">
       <p className="mb-3 text-xs text-muted-foreground">
-        Chaque appel déclenché par un visiteur anonyme, avec ses arguments — utile pour comprendre
+        Chaque appel déclenché par un visiteur anonyme, avec ses arguments, utile pour comprendre
         une réponse étrange autant que pour répondre à une demande RGPD.
       </p>
       {(calls ?? []).map((c) => (
@@ -1379,7 +1379,7 @@ function PublicSettingsTab({ agent }: { agent: Agent }) {
             value={form.model}
             onChange={(v) => upd("model", v)}
             options={[
-              { value: "groq", label: "Groq — Llama 3.3 70B" },
+              { value: "groq", label: "Groq, Llama 3.3 70B" },
               { value: "deepseek", label: "DeepSeek" },
             ]}
           />

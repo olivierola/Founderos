@@ -16,7 +16,7 @@ import type { DistItem, MetricDef, MetricKey, ObjectStat } from "./crmStats";
 export function Delta({ pct, upIsGood = true, period = "période préc." }: { pct: number | null; upIsGood?: boolean; period?: string }) {
   const c = useDeltaColors();
   if (pct == null) {
-    return <span className="text-xs text-muted-foreground">— vs {period}</span>;
+    return <span className="text-xs text-muted-foreground">vs {period}</span>;
   }
   const flat = Math.abs(pct) < 0.05;
   const good = pct > 0 === upIsGood;

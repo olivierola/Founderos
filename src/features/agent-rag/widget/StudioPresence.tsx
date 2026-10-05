@@ -216,7 +216,7 @@ export function VoiceGlowControls({ cfg, set }: { cfg: WidgetConfig; set: SetFn 
         </VoiceBeam>
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-[11px] text-muted-foreground">
-            {on ? (processing ? "Pendant la réponse de l'agent" : "Au repos — elle suit la voix pendant la dictée") : "Lueur désactivée"}
+            {on ? (processing ? "Pendant la réponse de l'agent" : "Au repos, elle suit la voix pendant la dictée") : "Lueur désactivée"}
           </span>
           <button
             type="button"

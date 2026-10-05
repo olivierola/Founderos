@@ -308,7 +308,7 @@ export function DeliverablesHub({ agent }: { agent: InternalAgent }) {
         <EmptyState
           icon={Package}
           title="No deliverables yet"
-          description="When this agent completes a mission, its outputs land here — reports, data, code and links across every run."
+          description="When this agent completes a mission, its outputs land here, reports, data, code and links across every run."
         />
       ) : filtered.length === 0 ? (
         <EmptyState icon={Filter} title="No matches" description="No deliverables match the current filters." />

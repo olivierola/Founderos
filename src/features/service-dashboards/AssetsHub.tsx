@@ -286,7 +286,7 @@ export function AssetsHub({ dashboardId, workspaceId, projectId }: {
             {kindMeta.hasValue && (
               <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder={kindMeta.placeholder} />
             )}
-            {kind === "key" && <p className="text-[11px] text-amber-600 dark:text-amber-400">Ne collez jamais une clé brute ici — mettez une référence (nom du secret dans le Vault). Ce n'est pas un coffre chiffré.</p>}
+            {kind === "key" && <p className="text-[11px] text-amber-600 dark:text-amber-400">Ne collez jamais une clé brute ici, mettez une référence (nom du secret dans le Vault). Ce n'est pas un coffre chiffré.</p>}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAdding(false)}>Annuler</Button>
               <Button onClick={add} disabled={!label.trim() || saving}>

@@ -456,7 +456,7 @@ function NewVibeProjectDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Nouveau projet Vibe Code</DialogTitle>
-          <DialogDescription>Un projet est lié à un seul dépôt — toutes ses discussions auront ce dépôt pour contexte.</DialogDescription>
+          <DialogDescription>Un projet est lié à un seul dépôt, toutes ses discussions auront ce dépôt pour contexte.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <label className="block space-y-1">
@@ -466,7 +466,7 @@ function NewVibeProjectDialog({
           <label className="block space-y-1">
             <span className="text-xs font-medium text-foreground">Dépôt</span>
             {list.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Aucun dépôt connecté — connectez-en un dans le module Dépôts.</p>
+              <p className="text-xs text-muted-foreground">Aucun dépôt connecté, connectez-en un dans le module Dépôts.</p>
             ) : (
               <select value={chosen} onChange={(e) => setRepoId(e.target.value)}
                 className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm">

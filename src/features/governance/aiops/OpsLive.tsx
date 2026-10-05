@@ -166,7 +166,7 @@ function LiveCanvas({ onSelect }: { onSelect: (s: LiveSel) => void }) {
       const cloud = d.target === "cloud";
       es.push({
         id: `e_ag_${d.agentId}`, source: `ag_${d.agentId}`, target: targetId, animated: true,
-        label: "— req/min",
+        label: ", req/min",
         labelStyle: { fontSize: 9, fill: "hsl(var(--muted-foreground))" },
         labelBgStyle: { fill: "hsl(var(--card))", fillOpacity: 0.9 },
         style: { stroke: cloud ? "hsl(var(--accent-teal))" : "hsl(263 70% 58%)", strokeWidth: 1.4 },

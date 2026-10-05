@@ -167,7 +167,7 @@ export function OnboardingPage() {
 
   async function commitCompany() {
     const name = draft.company.trim();
-    if (!name) throw new Error("Le nom de l'entreprise est nécessaire — tout le reste s'y rattache.");
+    if (!name) throw new Error("Le nom de l'entreprise est nécessaire, tout le reste s'y rattache.");
     // Idempotent : repasser par cette étape ne recrée pas un espace.
     let { workspaceId, workspaceSlug, projectId, projectSlug } = draft;
     if (!workspaceId) {
@@ -431,7 +431,7 @@ function StepAudience({
           placeholder="Des cabinets de 5 à 30 personnes, en France, déjà équipés d'un logiciel comptable."
         />
       </Field>
-      <Field label="Votre ton" help="Comment vous vous adressez à eux — vos agents s'y tiendront.">
+      <Field label="Votre ton" help="Comment vous vous adressez à eux, vos agents s'y tiendront.">
         <Textarea
           rows={2}
           value={tone}
@@ -450,7 +450,7 @@ function StepObjective({
     <div>
       <StepHead
         title="Qu'est-ce qui compte, ce trimestre ?"
-        lead="Un seul objectif suffit pour commencer. Il sert à juger si le travail des agents vous rapproche de quelque chose — sans lui, on mesure de l'activité."
+        lead="Un seul objectif suffit pour commencer. Il sert à juger si le travail des agents vous rapproche de quelque chose, sans lui, on mesure de l'activité."
       />
       <Field label="Votre objectif" help="Une phrase. Vous le préciserez (métrique, cible, échéance) dans l'onglet Objectifs.">
         <Textarea
@@ -504,7 +504,7 @@ function StepAgent({
         })}
       </div>
       <p className="mt-4 text-xs text-muted-foreground">
-        Rien ne vous tente ? Passez cette étape — l'assistant de votre service peut créer un agent sur
+        Rien ne vous tente ? Passez cette étape, l'assistant de votre service peut créer un agent sur
         mesure à partir d'une simple description.
       </p>
     </div>

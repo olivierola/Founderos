@@ -136,7 +136,7 @@ export function GovOpsServersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Serveurs & déploiements"
-        description="Vos serveurs d'inférence — endpoints cloud de vos modèles ou GPU loués (RunPod, OVHcloud, AWS) — leur charge, coût, et où chaque agent est déployé."
+        description="Vos serveurs d'inférence, endpoints cloud de vos modèles ou GPU loués (RunPod, OVHcloud, AWS), leur charge, coût, et où chaque agent est déployé."
       />
 
       <ProvidersPanel />
@@ -155,7 +155,7 @@ export function GovOpsServersPage() {
       <Card className="overflow-hidden">
         <div className="flex items-center gap-2 border-b border-border/60 px-5 py-3.5 text-sm font-medium">
           <Rocket className="h-4 w-4 text-muted-foreground" /> Déploiements d'agents
-          {!hasAgents && <span className="text-xs font-normal text-muted-foreground">— recrutez des agents (AI Workforce) pour les voir ici</span>}
+          {!hasAgents && <span className="text-xs font-normal text-muted-foreground">recrutez des agents (AI Workforce) pour les voir ici</span>}
         </div>
         <div className="divide-y divide-border/60">
           {deployments.map((d) => {

@@ -35,8 +35,8 @@ import {
 // provider. Using OpenAI (or anything else) now goes through a registered
 // model below, which is a real, tested connection.
 const PROVIDERS: { id: string; label: string; models: { id: string; label: string }[] }[] = [
-  { id: "deepseek", label: "DeepSeek", models: [{ id: "deepseek", label: "DeepSeek — raisonnement & outils" }] },
-  { id: "groq", label: "Groq (Llama 3.3 70B)", models: [{ id: "groq", label: "Llama 3.3 70B — rapide" }] },
+  { id: "deepseek", label: "DeepSeek", models: [{ id: "deepseek", label: "DeepSeek, raisonnement & outils" }] },
+  { id: "groq", label: "Groq (Llama 3.3 70B)", models: [{ id: "groq", label: "Llama 3.3 70B, rapide" }] },
 ];
 
 /** Sentinel provider id for "one of the company's own registered models". */
@@ -584,7 +584,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
         {provider === OWN_MODELS
-          ? "L'agent appellera votre propre endpoint avec votre clé — aucune inférence ne passe par nos fournisseurs."
+          ? "L'agent appellera votre propre endpoint avec votre clé, aucune inférence ne passe par nos fournisseurs."
           : ownModelOptions.length
             ? "Vous pouvez aussi utiliser vos propres modèles (option « Vos modèles »)."
             : <>Pour utiliser vos propres modèles (API cloud ou endpoint interne), ajoutez-les dans <span className="font-medium text-foreground">AI Ops → Modèles</span>.</>}
@@ -658,7 +658,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
           </div>
           {skillMatches > shownSkills.length && (
             <p className="mt-2 text-[11px] text-muted-foreground">
-              {skillMatches - shownSkills.length} autres résultats — affinez la recherche.
+              {skillMatches - shownSkills.length} autres résultats, affinez la recherche.
             </p>
           )}
         </PickerPanel>
@@ -681,7 +681,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
         <label className="mb-2 block text-sm text-muted-foreground">Âme</label>
         <Textarea
           rows={5} value={soul} onChange={(e) => setSoul(e.target.value)}
-          placeholder="Qui il est : sa voix, ce à quoi il tient, ce qu'il refuse même quand on insiste. Trois lignes suffisent — c'est du caractère, pas une procédure."
+          placeholder="Qui il est : sa voix, ce à quoi il tient, ce qu'il refuse même quand on insiste. Trois lignes suffisent, c'est du caractère, pas une procédure."
           className="resize-none rounded-2xl bg-background/60 text-sm"
         />
       </div>

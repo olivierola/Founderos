@@ -331,7 +331,7 @@ function LiveRun({ runId }: { runId: string }) {
             />
             {!live && r && (
               <p className="mb-1 text-center text-[11px] text-muted-foreground">
-                This run is {RUN_TONE[r.status].label.toLowerCase()} — send a message to continue.
+                This run is {RUN_TONE[r.status].label.toLowerCase()}, send a message to continue.
               </p>
             )}
           </div>

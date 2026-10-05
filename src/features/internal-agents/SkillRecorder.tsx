@@ -159,7 +159,7 @@ function describeEvent(ev: TimelineEvent): string {
     case "narration": return value;
     case "note":      return value;
     case "navigate":  return ev.url ?? "";
-    case "tab_open":  return `Nouvel onglet — ${ev.url ?? ""}`;
+    case "tab_open":  return `Nouvel onglet, ${ev.url ?? ""}`;
     case "tab_close": return "Onglet fermé";
     case "click":     return `Clic sur ${where}`;
     case "fill":      return `Saisie « ${value} » dans ${where}`;
@@ -552,8 +552,8 @@ export function SkillRecorderPage() {
                 <SoftField label="Où enregistrer">
                   <div className="grid grid-cols-2 gap-2">
                     {([
-                      { key: "extension" as const, title: "Mes onglets", hint: "Extension — sessions déjà ouvertes" },
-                      { key: "playwright" as const, title: "Navigateur séparé", hint: "Playwright — profil dédié" },
+                      { key: "extension" as const, title: "Mes onglets", hint: "Extension, sessions déjà ouvertes" },
+                      { key: "playwright" as const, title: "Navigateur séparé", hint: "Playwright, profil dédié" },
                     ]).map((opt) => {
                       const active = captureMode === opt.key;
                       return (
@@ -579,7 +579,7 @@ export function SkillRecorderPage() {
                 <div className="mb-2 flex items-center gap-1.5 font-medium text-foreground">
                   <Mic className="h-3.5 w-3.5" /> Commentez pendant que vous faites
                 </div>
-                C'est la narration qui porte le <em>pourquoi</em> — les règles métier, les cas particuliers,
+                C'est la narration qui porte le <em>pourquoi</em>, les règles métier, les cas particuliers,
                 ce qu'il ne faut surtout pas faire. Les gestes seuls ne donnent que le <em>comment</em>.
                 <br /><br />
                 Les mots de passe, numéros de carte, IBAN et clés d'API sont masqués avant même de quitter
@@ -699,7 +699,7 @@ npm start`}
                   </div>
                   <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                     Plus aucun geste ne remonte depuis {mmss(now - Date.parse(recording!.heartbeat_at!))}.
-                    Ce qui a déjà été capturé est en sécurité — vous pouvez en faire une skill dès maintenant.
+                    Ce qui a déjà été capturé est en sécurité, vous pouvez en faire une skill dès maintenant.
                   </p>
                   <div className="mt-3 flex gap-2">
                     <Button size="sm" onClick={forceSynthesis} disabled={busy}>
@@ -776,7 +776,7 @@ npm start`}
               </div>
 
               <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-                Travaillez dans la fenêtre ouverte par le recorder — c'est la seule qui est observée.
+                Travaillez dans la fenêtre ouverte par le recorder, c'est la seule qui est observée.
                 Fermer cette fenêtre arrête aussi l'enregistrement.
               </p>
             </aside>
@@ -789,7 +789,7 @@ npm start`}
             <Sparkles className="mx-auto h-6 w-6 animate-pulse text-primary" />
             <h2 className="mt-4 text-base font-medium">Traduction de votre démonstration en skill…</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {recording?.event_count ?? 0} événements analysés — gestes et narration recollés dans l'ordre.
+              {recording?.event_count ?? 0} événements analysés, gestes et narration recollés dans l'ordre.
             </p>
           </div>
         )}
@@ -857,7 +857,7 @@ function StaleNotice({ onRestart, busy }: { onRestart: () => void; busy: boolean
         <AlertTriangle className="h-4 w-4" /> Cette demande a expiré
       </div>
       <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-        Une demande en attente n'est servie que pendant 15 minutes — au-delà, aucun capteur ne la
+        Une demande en attente n'est servie que pendant 15 minutes, au-delà, aucun capteur ne la
         prendra. Relancez-la : vos réglages sont conservés.
       </p>
       <Button size="sm" onClick={onRestart} disabled={busy}>
@@ -926,8 +926,7 @@ function PairingBox({ onPaired }: { onPaired?: () => void }) {
         <KeyRound className="h-4 w-4 text-muted-foreground" /> Premier lancement ?
       </div>
       <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-        Le recorder affiche un code d'appairage dans le terminal. Saisissez-le ici une seule fois —
-        il n'y a aucun jeton à copier.
+        Le recorder affiche un code d'appairage dans le terminal. Saisissez-le ici une seule fois, il n'y a aucun jeton à copier.
       </p>
       <div className="flex gap-2">
         <SoftInput

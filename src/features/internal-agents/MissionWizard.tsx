@@ -167,7 +167,7 @@ export function MissionWizard({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Brief — what should the agent do?</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Brief, what should the agent do?</label>
                 <textarea
                   value={draft.brief}
                   onChange={(e) => set("brief", e.target.value)}
@@ -177,7 +177,7 @@ export function MissionWizard({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Acceptance criteria — what counts as done?</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Acceptance criteria, what counts as done?</label>
                 <textarea
                   value={draft.acceptance_criteria}
                   onChange={(e) => set("acceptance_criteria", e.target.value)}

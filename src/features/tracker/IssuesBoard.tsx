@@ -21,9 +21,9 @@ import {
   type DisplayFilters, type DisplayProperties, type Filters,
 } from "./filters";
 import {
-  createIssue, fetchCycles, fetchIssueTypes, fetchIssues, fetchLabels, fetchMembers,
+  createIssue, fetchIssueTypes, fetchIssues, fetchLabels, fetchMembers,
   fetchTrackerAgents, fetchWorkingIssueIds,
-  fetchModules, fetchStates, rankBetween, setAssignees, setIssueCycle, setIssueModules,
+  fetchStates, rankBetween, setAssignees,
   setLabels, updateIssue,
   type CreateIssueInput, type IssueScope, type Member, type PjIssue, type PjLabel,
   type PjProject, type PjState, type Priority,
@@ -89,8 +89,6 @@ export function IssuesBoard({
   });
   const statesQ = useQuery({ queryKey: ["pj_states", project.id], queryFn: () => fetchStates(project.id) });
   const labelsQ = useQuery({ queryKey: ["pj_labels", project.id], queryFn: () => fetchLabels(project.id) });
-  const cyclesQ = useQuery({ queryKey: ["pj_cycles", project.id], queryFn: () => fetchCycles(project.id) });
-  const modulesQ = useQuery({ queryKey: ["pj_modules", project.id], queryFn: () => fetchModules(project.id) });
   const membersQ = useQuery({
     queryKey: ["pj_members", project.workspace_id],
     queryFn: () => fetchMembers(project.workspace_id),
@@ -116,8 +114,6 @@ export function IssuesBoard({
   const states = statesQ.data ?? [];
   const labels = labelsQ.data ?? [];
   const members = membersQ.data ?? [];
-  const cycles = cyclesQ.data ?? [];
-  const modules = modulesQ.data ?? [];
   const issues = issuesQ.data ?? [];
 
   const refresh = useCallback(() => {
@@ -127,9 +123,9 @@ export function IssuesBoard({
   const groups = useMemo(
     () => buildBoard({
       issues, filters, display,
-      ctx: { states, labels, members, cycles, modules },
+      ctx: { states, labels, members },
     }),
-    [issues, filters, display, states, labels, members, cycles, modules],
+    [issues, filters, display, states, labels, members],
   );
 
   /**
@@ -157,12 +153,9 @@ export function IssuesBoard({
     qc.setQueriesData<PjIssue[]>({ queryKey: ["pj_issues"] }, (prev) =>
       (prev ?? []).map((i) => (i.id === id ? { ...i, ...patch } : i)));
 
-    const { cycle_id, module_ids, ...columns } = patch;
-    if (Object.keys(columns).length) await updateIssue(id, columns, user?.id ?? null);
-    if (cycle_id !== undefined) await setIssueCycle(id, project.workspace_id, cycle_id);
-    if (module_ids !== undefined) await setIssueModules(id, project.workspace_id, module_ids);
+    if (Object.keys(patch).length) await updateIssue(id, patch, user?.id ?? null);
     refresh();
-  }, [qc, refresh, user?.id, project.workspace_id]);
+  }, [qc, refresh, user?.id]);
 
   const patchAssignees = useCallback(async (id: string, ids: string[]) => {
     qc.setQueriesData<PjIssue[]>({ queryKey: ["pj_issues"] }, (prev) =>
@@ -196,16 +189,12 @@ export function IssuesBoard({
     switch (display.group_by) {
       case "state": patch.state_id = groupKey === "__none__" ? null : groupKey; break;
       case "priority": patch.priority = groupKey as Priority; break;
-      case "cycle": patch.cycle_id = groupKey === "__none__" ? null : groupKey; break;
       case "target_date": patch.target_date = groupKey === "__none__" ? null : groupKey; break;
       case "assignees":
         if (groupKey !== "__none__") { await patchAssignees(issueId, [groupKey]); }
         break;
       case "labels":
         if (groupKey !== "__none__") { await patchLabels(issueId, [groupKey]); }
-        break;
-      case "module":
-        if (groupKey !== "__none__") patch.module_ids = [groupKey];
         break;
     }
     await patchIssue(issueId, patch);
@@ -253,25 +242,20 @@ export function IssuesBoard({
       case "priority": seed.priority = groupKey as Priority; break;
       case "assignees": if (groupKey !== "__none__") seed.assignee_ids = [groupKey]; break;
       case "labels": if (groupKey !== "__none__") seed.label_ids = [groupKey]; break;
-      case "cycle": if (groupKey !== "__none__") seed.cycle_id = groupKey; break;
-      case "module": if (groupKey !== "__none__") seed.module_ids = [groupKey]; break;
       case "target_date": if (groupKey !== "__none__") seed.target_date = groupKey; break;
     }
     await createIssue({
       pjProjectId: project.id,
       workspaceId: project.workspace_id,
       name: title,
-      // Créé depuis un cycle ou un module, l'item y atterrit directement.
-      cycle_id: seed.cycle_id ?? scope.cycleId ?? null,
-      module_ids: seed.module_ids ?? (scope.moduleId ? [scope.moduleId] : []),
       createdBy: user?.id ?? null,
       ...seed,
     });
     refresh();
-  }, [display.group_by, project.id, project.workspace_id, scope.cycleId, scope.moduleId, user?.id, refresh]);
+  }, [display.group_by, project.id, project.workspace_id, user?.id, refresh]);
 
   const layoutProps = {
-    project, groups, issues, states, labels, members, cycles, modules, issueTypes, properties,
+    project, groups, issues, states, labels, members, issueTypes, properties,
     groupBy: display.group_by,
     onOpen: setOpen,
     onPatch: patchIssue,
@@ -292,7 +276,7 @@ export function IssuesBoard({
     <div className="relative flex h-full min-h-0 flex-col">
       <FilterBar
         filters={filters} display={display} properties={properties}
-        ctx={{ states, labels, members, cycles, modules, agents: agentsQ.data ?? [] }}
+        ctx={{ states, labels, members, agents: agentsQ.data ?? [] }}
         title={boardTitle ?? "Work items"}
         breadcrumb={breadcrumb}
         // Le compteur porte sur ce qui est AFFICHÉ, filtres appliqués : montrer
@@ -312,7 +296,7 @@ export function IssuesBoard({
                 `${project.identifier}-work-items`,
                 issuesToCsv({
                   issues: groups.flatMap((g) => g.issues),
-                  project, states, labels, members, cycles, modules,
+                  project, states, labels, members,
                 }),
               )}
               className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -369,7 +353,7 @@ export function IssuesBoard({
             <EmptyState
               illustration={<BoardIllustration className="w-full" />}
               title="Aucun work item"
-              hint={emptyHint ?? "Un work item est l'unité de travail : une tâche, un bug, une demande. Tout le reste — cycles, modules, epics — ne fait que les regrouper."}
+              hint={emptyHint ?? "Un work item est l'unité de travail : une tâche, un bug, une demande."}
               action={
                 <Button size="sm" onClick={() => setCreatingIn(states[0]?.id ?? "")}>
                   <Plus className="mr-1 h-4 w-4" /> Créer le premier
@@ -387,7 +371,6 @@ export function IssuesBoard({
       <BulkActionBar
         selected={[...selected]}
         states={states}
-        cycles={cycles}
         project={project}
         dashboardId={dashboardId}
         onClear={clearSelection}
@@ -417,7 +400,6 @@ export function IssuesBoard({
             <IssueDetailPanel
               issue={current}
               project={project} states={states} labels={labels} members={members}
-              cycles={cycles} modules={modules}
               dashboardId={dashboardId ?? project.dashboard_id}
               // La fermeture et la référence sont portées par l'enveloppe : deux
               // en-têtes empilés donneraient deux croix et deux titres.
@@ -434,15 +416,13 @@ export function IssuesBoard({
         // La création reprend le groupe cliqué comme valeur par défaut :
         // cliquer « + » en tête de la colonne « En cours » puis devoir choisir
         // l'état à la main serait une question dont le geste a déjà donné la
-        // réponse. Le cycle et le module du scope suivent la même règle.
+        // réponse.
         <CreateWorkItemModal
           dashboardId={project.dashboard_id}
           projectId={project.id}
           defaults={{
             stateId: display.group_by === "state" && creatingIn ? creatingIn : null,
             priority: display.group_by === "priority" ? (creatingIn as Priority) : "none",
-            cycleId: scope.cycleId ?? null,
-            moduleIds: scope.moduleId ? [scope.moduleId] : [],
           }}
           onClose={() => setCreatingIn(null)}
           onCreated={refresh}

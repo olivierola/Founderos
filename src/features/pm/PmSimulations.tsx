@@ -163,7 +163,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
     <div className="space-y-6 px-6 py-6">
       <PageHeader
         title="Simulations"
-        description="Test an idea, product or scenario against a population of AI personas — and predict how it plays out."
+        description="Test an idea, product or scenario against a population of AI personas, and predict how it plays out."
         actions={<Button onClick={() => setOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> New simulation</Button>}
       />
 
@@ -216,7 +216,7 @@ function SimList({ onOpen }: { onOpen: (id: string) => void }) {
                     placeholder="e.g. How will our users react if we move the Pro plan from €49 to €79/mo?"
                     className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 </Field>
-                <Field label="Seed material (optional — report, notes, context)">
+                <Field label="Seed material (optional, report, notes, context)">
                   <textarea value={form.seed} onChange={(e) => setForm({ ...form, seed: e.target.value })} rows={3}
                     placeholder="Paste any context that should shape the personas and their reactions…"
                     className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
@@ -403,7 +403,7 @@ function SimDetail({ simId, onBack }: { simId: string; onBack: () => void }) {
       const p = a.persona_id ? personaById[a.persona_id] : undefined;
       lines.push(`[r${a.round}] ${(p?.name ?? "cohort").slice(0, 18)}: ${a.content.slice(0, 60)}`);
     });
-    if (sim.status === "completed") lines.push("done — report generated");
+    if (sim.status === "completed") lines.push("done, report generated");
     if (sim.error) lines.push(`err: ${sim.error}`);
     return lines;
   }, [sim, personas, relations, actions, personaById, totalPopulation]);
@@ -838,7 +838,7 @@ function PersonaChat({ persona, onClose }: { persona: Persona; onClose: () => vo
 
         <div ref={scrollerRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
           {(messages ?? []).length === 0 ? (
-            <p className="py-8 text-center text-xs text-muted-foreground">Ask {persona.name} anything — they answer in character.</p>
+            <p className="py-8 text-center text-xs text-muted-foreground">Ask {persona.name} anything, they answer in character.</p>
           ) : (messages ?? []).map((m) => (
             <div key={m.id} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
               <div className={cn("max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm", m.role === "user" ? "rounded-tr-sm bg-primary/85 text-primary-foreground" : "rounded-tl-sm bg-secondary/60 text-foreground/90")}>

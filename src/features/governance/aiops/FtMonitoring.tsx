@@ -80,11 +80,11 @@ export function GovFtMonitoringPage() {
   const recommendation = useMemo(() => {
     if (active.length === 0) return null;
     const critical = active.find((e) => e.driftScore >= 5);
-    if (critical) return `Dérive critique (${critical.driftScore}/10) détectée sur ${critical.versionName} ${critical.version} — ré-entraînez avec les données des 30 derniers jours (onglet Entraînements).`;
+    if (critical) return `Dérive critique (${critical.driftScore}/10) détectée sur ${critical.versionName} ${critical.version}, ré-entraînez avec les données des 30 derniers jours (onglet Entraînements).`;
     const errors = active.find((e) => e.errRatePct > 2);
-    if (errors) return `${errors.versionName} ${errors.version} dépasse 2% d'erreurs — le rollback automatique est ${errors.autoRollback ? "armé" : "désactivé"}.`;
+    if (errors) return `${errors.versionName} ${errors.version} dépasse 2% d'erreurs, le rollback automatique est ${errors.autoRollback ? "armé" : "désactivé"}.`;
     const badSat = active.find((e) => e.satisfactionPct < 90);
-    if (badSat) return `Satisfaction sous 90% sur ${badSat.versionName} — pensez à relancer une évaluation LLM-judge.`;
+    if (badSat) return `Satisfaction sous 90% sur ${badSat.versionName}, pensez à relancer une évaluation LLM-judge.`;
     return null;
   }, [active]);
 
@@ -97,7 +97,7 @@ export function GovFtMonitoringPage() {
   if (active.length === 0) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Monitoring" description="Surveillance continue des modèles en production : trafic, qualité, dérives — avec alertes Slack, email et SMS." />
+        <PageHeader title="Monitoring" description="Surveillance continue des modèles en production : trafic, qualité, dérives, avec alertes Slack, email et SMS." />
         <EmptyState
           icon={Activity}
           title="Aucune télémétrie de production"
@@ -112,7 +112,7 @@ export function GovFtMonitoringPage() {
     <div className="space-y-6">
       <PageHeader
         title="Monitoring"
-        description="Surveillance continue des modèles en production : trafic, qualité, dérives — avec alertes Slack, email et SMS."
+        description="Surveillance continue des modèles en production : trafic, qualité, dérives, avec alertes Slack, email et SMS."
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -127,7 +127,7 @@ export function GovFtMonitoringPage() {
       <div className="grid gap-4 lg:grid-cols-5">
         {/* Trafic 14 j */}
         <Card className="p-5 lg:col-span-3">
-          <div className="mb-3 text-sm font-medium">Trafic — 14 derniers jours (req/jour)</div>
+          <div className="mb-3 text-sm font-medium">Trafic, 14 derniers jours (req/jour)</div>
           {daily.length === 0 ? (
             <p className="text-xs text-muted-foreground">Pas encore de données de trafic.</p>
           ) : (

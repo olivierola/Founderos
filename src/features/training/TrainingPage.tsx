@@ -182,7 +182,7 @@ export function TrainingPage() {
       <div className="mx-auto w-full max-w-7xl space-y-4">
         <PageHeader
           title="Formations"
-          description="Les parcours qui apprennent vos outils aux nouveaux arrivants — guidés dans l'outil, étape par étape, par un agent qui montre sans faire à leur place."
+          description="Les parcours qui apprennent vos outils aux nouveaux arrivants, guidés dans l'outil, étape par étape, par un agent qui montre sans faire à leur place."
           actions={<Button size="sm" onClick={() => setEditing("new")}><Plus className="h-4 w-4" /> Nouveau parcours</Button>}
         />
 
@@ -392,7 +392,7 @@ function ProgramDetail({ program, sessions, onBack, onEdit, editor }: {
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sessions</h2>
           {sessions.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Personne n'a encore suivi ce parcours. Demandez au Formateur de lancer une session — la personne active
+              Personne n'a encore suivi ce parcours. Demandez au Formateur de lancer une session, la personne active
               « Mode formation » dans l'extension, et le guidage démarre sur son écran.
             </p>
           ) : (
@@ -569,7 +569,7 @@ function ProgramDialog({ program, onClose, onSave }: {
               placeholder="Ce que la séance couvre, et ce qu'elle ne couvre pas." />
           </SoftField>
 
-          <SoftField label="À la fin, la personne sait — une par ligne">
+          <SoftField label="À la fin, la personne sait, une par ligne">
             <SoftTextarea rows={3} value={objectives} onChange={(e) => setObjectives(e.target.value)}
               placeholder={"Créer un contact sans doublon\nRattacher le contact à la bonne entreprise\nLancer une séquence de relance"} />
           </SoftField>

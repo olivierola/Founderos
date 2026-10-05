@@ -29,8 +29,8 @@ export interface McpCatalogCategory {
   servers: McpCatalogEntry[];
 }
 
-const LOCAL = "Serveur local (stdio) — non joignable depuis le cloud. Utilisable seulement en auto-hébergé.";
-const MANUAL = "Pas d'endpoint distant public connu — renseignez l'URL de votre instance.";
+const LOCAL = "Serveur local (stdio), non joignable depuis le cloud. Utilisable seulement en auto-hébergé.";
+const MANUAL = "Pas d'endpoint distant public connu, renseignez l'URL de votre instance.";
 const KEY_IN_URL = (tpl: string) => `Endpoint distant avec clé d'API dans l'URL : ${tpl}`;
 
 export const MCP_CATALOG: McpCatalogCategory[] = [
@@ -249,7 +249,7 @@ export const MCP_CATALOG: McpCatalogCategory[] = [
       // agent's E-commerce tab builds it from the shop domain.
       {
         name: "Shopify (Storefront)", transport: "http", auth: "none",
-        note: "Endpoint public par boutique : https://{votre-boutique}/api/mcp — catalogue + panier, sans authentification.",
+        note: "Endpoint public par boutique : https://{votre-boutique}/api/mcp, catalogue + panier, sans authentification.",
       },
       { name: "WooCommerce", local: true, note: LOCAL },
       { name: "BigCommerce", note: MANUAL },
@@ -261,10 +261,10 @@ export const MCP_CATALOG: McpCatalogCategory[] = [
   {
     label: "Automatisation",
     servers: [
-      { name: "Zapier", note: "URL personnelle générée dans Zapier (https://mcp.zapier.com/…) — collez-la ici en mode Header." },
+      { name: "Zapier", note: "URL personnelle générée dans Zapier (https://mcp.zapier.com/…), collez-la ici en mode Header." },
       { name: "n8n", local: true, note: LOCAL },
       { name: "Make", note: MANUAL },
-      { name: "Pipedream", note: "Endpoint distant par app généré dans Pipedream — collez votre URL." },
+      { name: "Pipedream", note: "Endpoint distant par app généré dans Pipedream, collez votre URL." },
       { name: "Activepieces", note: MANUAL },
     ],
   },
@@ -307,7 +307,7 @@ export const MCP_CATALOG: McpCatalogCategory[] = [
     servers: [
       { name: "Confluence", url: "https://mcp.atlassian.com/v1/sse", transport: "sse", auth: "oauth", note: "Serveur Atlassian." },
       { name: "ReadMe", note: MANUAL },
-      { name: "Mintlify", note: "Endpoint par docs généré dans Mintlify — collez votre URL." },
+      { name: "Mintlify", note: "Endpoint par docs généré dans Mintlify, collez votre URL." },
       { name: "Docusaurus", local: true, note: LOCAL },
       { name: "MkDocs", local: true, note: LOCAL },
     ],

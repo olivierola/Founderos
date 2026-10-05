@@ -1,7 +1,6 @@
 import { IssueKey, StateIcon, type LayoutProps } from "./shared";
 import {
-  AssigneePicker, DatePicker, LabelPicker, PriorityPicker, StatePicker,
-  CyclePicker, ModulePicker, formatDate,
+  AssigneePicker, DatePicker, LabelPicker, PriorityPicker, StatePicker, formatDate,
 } from "../pickers";
 import type { DisplayProperties } from "../filters";
 import type { PjIssue } from "../model";
@@ -28,8 +27,6 @@ const COLUMNS: Column[] = [
   { key: "labels", label: "Labels", width: 180 },
   { key: "start_date", label: "Début", width: 120 },
   { key: "due_date", label: "Échéance", width: 120 },
-  { key: "cycle", label: "Cycle", width: 150 },
-  { key: "modules", label: "Modules", width: 150 },
   { key: "sub_issue_count", label: "Sous-tâches", width: 110 },
   { key: "attachment_count", label: "Pièces jointes", width: 120 },
   { key: "resource_count", label: "Ressources", width: 110 },
@@ -39,7 +36,7 @@ const COLUMNS: Column[] = [
 
 export function SpreadsheetLayout(props: LayoutProps) {
   const {
-    groups, states, labels, members, cycles, modules, properties, project,
+    groups, states, labels, members, properties, project,
     onOpen, onPatch, onSetAssignees, onSetLabels,
   } = props;
 
@@ -102,12 +99,9 @@ export function SpreadsheetLayout(props: LayoutProps) {
                       column={c.key}
                       issue={issue}
                       states={states} labels={labels} members={members}
-                      cycles={cycles} modules={modules}
                       onPatch={onPatch}
                       onSetAssignees={onSetAssignees}
                       onSetLabels={onSetLabels}
-                      onSetCycle={(id) => onPatch(issue.id, { cycle_id: id } as Partial<PjIssue>)}
-                      onSetModules={(ids) => onPatch(issue.id, { module_ids: ids } as Partial<PjIssue>)}
                     />
                   </td>
                 ))}
@@ -128,14 +122,12 @@ export function SpreadsheetLayout(props: LayoutProps) {
 }
 
 function Cell({
-  column, issue, states, labels, members, cycles, modules,
-  onPatch, onSetAssignees, onSetLabels, onSetCycle, onSetModules,
+  column, issue, states, labels, members,
+  onPatch, onSetAssignees, onSetLabels,
 }: {
   column: keyof DisplayProperties;
   issue: PjIssue;
-  onSetCycle: (id: string | null) => void;
-  onSetModules: (ids: string[]) => void;
-} & Pick<LayoutProps, "states" | "labels" | "members" | "cycles" | "modules" | "onPatch" | "onSetAssignees" | "onSetLabels">) {
+} & Pick<LayoutProps, "states" | "labels" | "members" | "onPatch" | "onSetAssignees" | "onSetLabels">) {
   switch (column) {
     case "state":
       return <StatePicker states={states} value={issue.state_id} onChange={(id) => onPatch(issue.id, { state_id: id })} />;
@@ -156,10 +148,6 @@ function Cell({
           min={issue.start_date}
         />
       );
-    case "cycle":
-      return <CyclePicker cycles={cycles} value={issue.cycle_id} onChange={onSetCycle} />;
-    case "modules":
-      return <ModulePicker modules={modules} value={issue.module_ids} onChange={onSetModules} />;
     // Les compteurs et les horodatages sont en lecture seule : ils sont dérivés,
     // les rendre éditables serait mentir sur ce qu'ils décrivent.
     case "sub_issue_count":

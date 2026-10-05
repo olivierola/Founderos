@@ -267,7 +267,7 @@ export function MissionTimeline({
                     key={r.id}
                     type="button"
                     onClick={onOpenTask ? () => onOpenTask(r.task) : undefined}
-                    title={`${r.task.title} — ${r.task.status}`}
+                    title={`${r.task.title}, ${r.task.status}`}
                     className={cn(
                       "absolute rounded-[5px] text-left transition-opacity hover:opacity-80",
                       STATUS_BAR[r.task.status],

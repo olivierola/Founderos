@@ -115,7 +115,7 @@ export function GoalsStudioPage({ agentId: fixedAgentId }: { agentId?: string } 
     <div>
       <PageHeader
         title="Objectifs d'activation"
-        description="Déclarez un objectif — l'agent compose et optimise le parcours d'onboarding qui y mène."
+        description="Déclarez un objectif, l'agent compose et optimise le parcours d'onboarding qui y mène."
         actions={
           <div className="flex items-center gap-2">
             {!fixedAgentId && projectId && <AgentPicker projectId={projectId} selectedAgentId={agentId} onSelect={setPickedAgentId} />}
@@ -252,7 +252,7 @@ function CreateGoalDialog({ agentId, onClose, onCreated }: { agentId: string | n
           </div>
           <Field label="Description de l'app (si pas de scan)" hint="fallback quand le repo n'est pas connecté">
             <Textarea rows={2} value={appDescription} onChange={(e) => setAppDescription(e.target.value)}
-              placeholder="Optionnel — décrivez les pages/actions clés si aucun scan de code n'existe." />
+              placeholder="Optionnel, décrivez les pages/actions clés si aucun scan de code n'existe." />
           </Field>
         </div>
         <DialogFooter>
@@ -398,7 +398,7 @@ function GoalDetailView({ goalId, onBack }: { goalId: string; onBack: () => void
     const { error } = await supabase.from("rag_agents")
       .update({ onboarding_copilot_enabled: !copilotOn }).eq("id", goal.agent_id);
     if (error) { toast.error(error.message); return; }
-    toast.success(!copilotOn ? "Co-pilote activé — l'agent peut agir" : "Co-pilote désactivé");
+    toast.success(!copilotOn ? "Co-pilote activé, l'agent peut agir" : "Co-pilote désactivé");
     queryClient.invalidateQueries({ queryKey: ["onb_agent_copilot", goal.agent_id] });
   }
 
@@ -490,7 +490,7 @@ function GoalDetailView({ goalId, onBack }: { goalId: string; onBack: () => void
               <button
                 type="button"
                 onClick={toggleVoice}
-                title="Voix live (Deepgram) — l'agent parle et écoute l'utilisateur"
+                title="Voix live (Deepgram), l'agent parle et écoute l'utilisateur"
                 className={cn(
                   "inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors",
                   voiceOn ? "bg-emerald-500/10 text-emerald-400" : "bg-secondary/50 text-muted-foreground hover:text-foreground",
@@ -503,7 +503,7 @@ function GoalDetailView({ goalId, onBack }: { goalId: string; onBack: () => void
               <button
                 type="button"
                 onClick={toggleCopilot}
-                title="Co-pilote — l'agent agit à la place de l'utilisateur (clique/remplit/soumet). Jamais d'action destructive."
+                title="Co-pilote, l'agent agit à la place de l'utilisateur (clique/remplit/soumet). Jamais d'action destructive."
                 className={cn(
                   "inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors",
                   copilotOn ? "bg-emerald-500/10 text-emerald-400" : "bg-secondary/50 text-muted-foreground hover:text-foreground",
@@ -546,7 +546,7 @@ function GoalDetailView({ goalId, onBack }: { goalId: string; onBack: () => void
         <EmptyState
           icon={Wand2}
           title="Pas encore de parcours"
-          description="Cliquez « Générer le parcours » — l'agent lit la carte de votre app et compose flows, tours et checklist pour atteindre l'objectif."
+          description="Cliquez « Générer le parcours », l'agent lit la carte de votre app et compose flows, tours et checklist pour atteindre l'objectif."
         />
       ) : (
         <div className="space-y-4">

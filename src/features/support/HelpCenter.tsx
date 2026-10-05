@@ -112,7 +112,7 @@ export function HelpCenterPage() {
                   {a.body && <div className="mt-1 line-clamp-2 text-sm text-zinc-500">{a.body.replace(/[#*`]/g, "").slice(0, 160)}</div>}
                 </button>
               ))}
-              {filtered.length === 0 && <p className="py-8 text-center text-sm text-zinc-400">No articles match your search{config.ai_enabled ? " — try asking the AI." : "."}</p>}
+              {filtered.length === 0 && <p className="py-8 text-center text-sm text-zinc-400">No articles match your search{config.ai_enabled ? ", try asking the AI." : "."}</p>}
             </div>
           </>
         )}

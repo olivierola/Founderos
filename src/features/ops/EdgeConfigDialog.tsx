@@ -14,11 +14,11 @@ import type { EdgeKind, TopologyEdge, TopologyNode } from "./ArchitectureView";
 
 const EDGE_KINDS: Array<{ value: EdgeKind; label: string; desc: string }> = [
   { value: "http",         label: "HTTP",          desc: "Plain HTTP traffic" },
-  { value: "https",        label: "HTTPS",         desc: "Encrypted HTTP — animated" },
+  { value: "https",        label: "HTTPS",         desc: "Encrypted HTTP, animated" },
   { value: "tcp",          label: "TCP",           desc: "Raw TCP connection" },
   { value: "ssh",          label: "SSH",           desc: "Management / deploy access" },
   { value: "env",          label: "Env var",       desc: "Configuration coupling" },
-  { value: "webhook",      label: "Webhook",       desc: "Async callback — animated" },
+  { value: "webhook",      label: "Webhook",       desc: "Async callback, animated" },
   { value: "volume_mount", label: "Volume mount",  desc: "Filesystem dependency" },
   { value: "depends_on",   label: "Depends on",    desc: "Boot-order dependency" },
   { value: "network_link", label: "Network link",  desc: "Generic network membership" },

@@ -16,14 +16,13 @@ import { useCategorical } from "@/features/crm/overview/vizPalette";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { ProjectLogo } from "./LogoPicker";
-import { Burndown } from "./Burndown";
 import { IssueKey, PriorityIcon, StateIcon, formatDate } from "./pickers";
 import { EmptyState, Modal, PageHeader, TextField } from "./ui";
 import { DashboardIllustration } from "./illustrations";
 import { Select } from "./ui";
 import {
   createDashboard, createWidget, deleteDashboard, deleteWidget, fetchAnalytics,
-  fetchCycles, fetchDashboards, fetchIssues, fetchProjects, fetchStates, fetchWidgets,
+  fetchDashboards, fetchIssues, fetchProjects, fetchStates, fetchWidgets,
   renameDashboard, saveWidgetLayout, updateWidget,
   type AnalyticsRow, type PjDashboard, type PjProject, type PjWidget, type WidgetKind,
 } from "./model";
@@ -53,7 +52,6 @@ const WIDGET_KINDS: { key: WidgetKind; label: string; hint: string; w: number; h
   { key: "progress", label: "Avancement", hint: "Répartition par groupe d'état", w: 4, h: 4 },
   { key: "distribution", label: "Répartition", hint: "Par état ou par priorité", w: 4, h: 4 },
   { key: "issue_list", label: "Liste", hint: "Les derniers work items", w: 6, h: 5 },
-  { key: "burndown", label: "Burndown", hint: "La courbe du cycle en cours", w: 6, h: 4 },
 ];
 
 export function DashboardsPage({
@@ -107,7 +105,7 @@ export function DashboardsPage({
           <EmptyState
             illustration={<DashboardIllustration className="w-full" />}
             title="Aucun tableau de bord"
-            hint="Un tableau de bord assemble des widgets — compteurs, répartitions, listes — pour répondre d'un coup d'œil à une question qu'on se pose souvent."
+            hint="Un tableau de bord assemble des widgets, compteurs, répartitions, listes, pour répondre d'un coup d'œil à une question qu'on se pose souvent."
             action={
               <Button size="sm" onClick={() => setCreating(true)} disabled={!workspaceId}>
                 Créer un tableau de bord
@@ -577,11 +575,6 @@ function WidgetBody({
     queryFn: () => fetchStates(project.id),
     enabled: needsIssues,
   });
-  const { data: cycles } = useQuery({
-    queryKey: ["pj_cycles", project.id],
-    queryFn: () => fetchCycles(project.id),
-    enabled: widget.kind === "burndown",
-  });
 
   switch (widget.kind) {
     case "count":
@@ -686,13 +679,6 @@ function WidgetBody({
       );
     }
 
-    case "burndown": {
-      const today = new Date().toISOString().slice(0, 10);
-      const cycle = (cycles ?? []).find((c) =>
-        c.start_date && c.end_date && today >= c.start_date && today <= c.end_date);
-      if (!cycle) return <p className="text-12 text-muted-foreground">Aucun cycle en cours.</p>;
-      return <Burndown cycle={cycle} />;
-    }
   }
 }
 
@@ -891,8 +877,7 @@ function WidgetInspector({
               className="w-full accent-primary"
             />
             <span className="mt-1 block text-10 text-muted-foreground">
-              Au-delà d&apos;une vingtaine, la carte devient une liste qu&apos;on fait défiler —
-              c&apos;est le rôle du board, pas d&apos;un widget.
+              Au-delà d&apos;une vingtaine, la carte devient une liste qu&apos;on fait défiler, c&apos;est le rôle du board, pas d&apos;un widget.
             </span>
           </label>
         )}

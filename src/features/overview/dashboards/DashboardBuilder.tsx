@@ -413,7 +413,7 @@ export function DashboardBuilderPage() {
         spec={pdfExport ? { kind: "document", doc: pdfExport.doc } : null}
         defaultOptions={{ theme: "modern", landscape: true }}
         description={pdfExport && pdfExport.skipped.length > 0
-          ? `Non inclus : ${pdfExport.skipped.join(", ")} — utilisez la capture d'écran pour ces widgets.`
+          ? `Non inclus : ${pdfExport.skipped.join(", ")}, utilisez la capture d'écran pour ces widgets.`
           : "PDF vectoriel des widgets, avec les données affichées à l'écran."}
       />
     </div>

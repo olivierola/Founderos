@@ -13,7 +13,7 @@ import { Reveal } from "./LandingKit";
 import { PaperHero } from "./PaperHero";
 import { MonoLabel, SectionTitle } from "./PaperKit";
 import { ToneCanvas, ToneSection } from "./LandingTone";
-import { Btn, IconOrb, useAtlasSkin } from "./atlas/AtlasKit";
+import { Btn, IconTile, useHnSkin } from "./hn/HnKit";
 import { PROVIDERS, type ProviderCategory } from "@/lib/providers";
 
 /* ═══ Intégrations ═══════════════════════════════════════════════════════════
@@ -77,7 +77,7 @@ const PRINCIPLES = [
 ];
 
 export function IntegrationsPage() {
-  useAtlasSkin();
+  useHnSkin();
   const [search, setSearch] = useState("");
   const [activeCat, setActiveCat] = useState<string>("all");
 
@@ -96,7 +96,7 @@ export function IntegrationsPage() {
   }, [search, activeCat]);
 
   return (
-    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify hn min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
       <ToneCanvas initial="paper">
         <PaperHero
@@ -114,14 +114,14 @@ export function IntegrationsPage() {
 
         {/* ── What "connect" means here ──────────────────────────────────── */}
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1200px] px-5 pb-16 pt-4 sm:px-8">
+          <div className="px-5 pb-16 pt-4 sm:px-8 lg:px-12">
             <div className="grid gap-2.5 sm:grid-cols-3">
               {PRINCIPLES.map((c, i) => (
                 <Reveal key={c.t} delay={i * 80} className="h-full">
-                  <div className="h-full rounded-[32px] border border-[#f0f0f0] bg-[linear-gradient(160deg,#ffffff_40%,#f8f8f8)] p-7">
-                    <IconOrb icon={c.icon} size={48} />
-                    <div className="mt-5 text-[17px] font-semibold tracking-[-0.025em] text-[#111011]">{c.t}</div>
-                    <p className="mt-2 text-[14.5px] font-light leading-[1.55] text-[#3d3c3d]">{c.b}</p>
+                  <div className="hn-card hn-hover h-full rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-7">
+                    <IconTile icon={c.icon} />
+                    <div className="mt-5 text-[17px] font-semibold tracking-[-0.025em] text-[#0f1728]">{c.t}</div>
+                    <p className="mt-2 text-[14.5px] leading-[1.55] text-[#4b5567]">{c.b}</p>
                   </div>
                 </Reveal>
               ))}
@@ -130,25 +130,25 @@ export function IntegrationsPage() {
         </ToneSection>
 
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1200px] px-5 pb-10 sm:px-8">
+          <div className="px-5 pb-10 sm:px-8 lg:px-12">
             <Reveal>
-              <SectionTitle frame="The tools" claim={`already wired in — ${PROVIDERS.length}`} />
+              <SectionTitle frame="The tools" claim={`already wired in, ${PROVIDERS.length}`} />
             </Reveal>
 
             {/* ── Search + categories ──────────────────────────────────────── */}
             <Reveal delay={90}>
-              <div className="mt-10 flex flex-col gap-4 rounded-[28px] bg-[#f7f7f7] p-3 sm:flex-row sm:items-start">
+              <div className="mt-10 flex flex-col gap-4 rounded-[24px] bg-[#f5f7fa] p-3 sm:flex-row sm:items-start">
                 <div className="relative w-full shrink-0 sm:max-w-xs">
                   <Search
                     aria-hidden
-                    className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#969696]"
+                    className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a94a6]"
                   />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     aria-label="Search a tool"
                     placeholder="Search a tool…"
-                    className="h-11 w-full rounded-full border border-[#e6e6e6] bg-white pl-11 pr-4 text-[14px] text-[#111011] outline-none transition-colors placeholder:text-[#969696] focus:border-[#8b16c4]"
+                    className="h-11 w-full rounded-full border border-[#e6e9ef] bg-white pl-11 pr-4 text-[14px] text-[#0f1728] outline-none transition-colors placeholder:text-[#8a94a6] focus:border-[#006edd]"
                   />
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -161,8 +161,8 @@ export function IntegrationsPage() {
                           type="button"
                           onClick={() => setActiveCat(c)}
                           aria-pressed={active}
-                          className={`rounded-full px-3.5 py-2 text-[13px] font-medium transition-colors ${
-                            active ? "bg-black text-white" : "bg-white text-[#3d3c3d] hover:text-[#111011]"
+                          className={`rounded-full border px-3.5 py-2 text-[14px] transition-colors ${
+                            active ? "border-[#006edd] bg-[#006edd] text-white" : "border-[#e6e9ef] bg-white text-[#0f1728] hover:border-[#cfd5df]"
                           }`}
                         >
                           {c === "all" ? "All" : label(c)}{" "}
@@ -177,8 +177,8 @@ export function IntegrationsPage() {
 
             {/* ── The list ─────────────────────────────────────────────────── */}
             {list.length === 0 ? (
-              <p className="mt-12 text-[15px] text-[#666666]">
-                No tool matches. Tell us which one you need — we add them.
+              <p className="mt-12 text-[15px] text-[#4b5567]">
+                No tool matches. Tell us which one you need, we add them.
               </p>
             ) : (
               <ul className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -187,16 +187,16 @@ export function IntegrationsPage() {
                   return (
                     <li
                       key={p.slug}
-                      className="flex items-center gap-3.5 rounded-[22px] border border-[#f0f0f0] bg-white px-4 py-3.5 shadow-[0_14px_30px_-26px_rgba(17,16,17,0.4)]"
+                      className="hn-card hn-hover flex items-center gap-3.5 rounded-[24px] border border-[#e6e9ef] bg-white px-4 py-3.5 shadow-[0_14px_30px_-26px_rgba(17,16,17,0.4)]"
                     >
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f3f3f3] text-[#111011]">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] border border-[#e6e9ef] bg-white text-[#006edd] hn-icon">
                         <Icon className="h-[18px] w-[18px]" />
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-[15px] font-semibold tracking-[-0.02em] text-[#111011]">
+                        <span className="block truncate text-[15px] font-semibold tracking-[-0.02em] text-[#0f1728]">
                           {p.name}
                         </span>
-                        <span className="mt-0.5 block text-[12.5px] text-[#969696]">{label(p.category)}</span>
+                        <span className="mt-0.5 block text-[12.5px] text-[#8a94a6]">{label(p.category)}</span>
                       </span>
                     </li>
                   );
@@ -205,17 +205,17 @@ export function IntegrationsPage() {
             )}
 
             <Reveal delay={120}>
-              <div className="mt-10 flex flex-col gap-6 rounded-[32px] bg-[#f7f7f7] p-8 sm:flex-row sm:items-center">
-                <IconOrb icon={Plugs} size={56} />
+              <div className="mt-10 flex flex-col gap-6 rounded-[24px] bg-[#f5f7fa] p-8 sm:flex-row sm:items-center">
+                <IconTile icon={Plugs} />
                 <div className="flex-1">
                   <MonoLabel>And what is not on the list</MonoLabel>
-                  <p className="mt-4 max-w-[62ch] text-[15px] leading-[1.6] text-[#111011]">
-                    An agent can also receive tools from a remote MCP server — yours, or a vendor's — with OAuth or
+                  <p className="mt-4 max-w-[62ch] text-[15px] leading-[1.6] text-[#0f1728]">
+                    An agent can also receive tools from a remote MCP server, yours, or a vendor's, with OAuth or
                     an authentication header. That is the route for an internal system that will never have a
                     ready-made connector.
                   </p>
                 </div>
-                <Btn to="/contact" variant="dark" className="shrink-0">
+                <Btn to="/contact" variant="primary" className="shrink-0">
                   Request an integration
                 </Btn>
               </div>

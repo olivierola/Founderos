@@ -135,7 +135,7 @@ export function BlockForm({
                 <MarkdownEditor
                   value={str(d.body)} onChange={(v) => onPatch({ body: v })}
                   minHeight={bodyCfg.rows * 22} placeholder={bodyCfg.placeholder}
-                  footer={<span>Markdown — repris tel quel dans le document.</span>}
+                  footer={<span>Markdown, repris tel quel dans le document.</span>}
                 />
               ) : (
                 <TextArea
@@ -229,7 +229,7 @@ export function BlockForm({
             <>
               <Field
                 label="La question à trancher"
-                hint="UNE seule chose à la fois : « le client est en colère ET demande un remboursement » se juge mal — posez deux conditions successives. Écrivez-la pour que « oui » soit la réponse qui déclenche la branche du haut."
+                hint="UNE seule chose à la fois : « le client est en colère ET demande un remboursement » se juge mal, posez deux conditions successives. Écrivez-la pour que « oui » soit la réponse qui déclenche la branche du haut."
               >
                 <TextArea
                   value={str(d.question)}
@@ -260,7 +260,7 @@ export function BlockForm({
                   LIMITES valent mieux que dix cas évidents. */}
               <Field
                 label="Exemples de « oui »"
-                hint="Un par ligne. Les cas limites d'abord — ceux dont vous hésiteriez vous-même."
+                hint="Un par ligne. Les cas limites d'abord, ceux dont vous hésiteriez vous-même."
               >
                 <TextArea
                   value={str(d.yes_examples)}
@@ -306,7 +306,7 @@ export function BlockForm({
                 onChange={(v) => onPatch({ outcome: v })}
                 options={[
                   { value: "succeeded", label: "Terminé", hint: "Le travail est fait." },
-                  { value: "stopped", label: "Sans suite", hint: "Rien à faire cette fois — ce n'est pas un échec." },
+                  { value: "stopped", label: "Sans suite", hint: "Rien à faire cette fois, ce n'est pas un échec." },
                   { value: "failed", label: "En échec", hint: "Quelque chose ne va pas, et il faut le savoir." },
                 ]}
               />
@@ -336,7 +336,7 @@ export function BlockForm({
                   selected={agentIdsOf(d)}
                   onChange={(agent_ids) => onPatch({ agent_ids })}
                   options={agents.map((a) => ({ value: a.id, label: a.name }))}
-                  emptyHint="Aucun agent dans ce service — créez-en un d'abord."
+                  emptyHint="Aucun agent dans ce service, créez-en un d'abord."
                 />
               </Field>
               {agentIdsOf(d).length > 1 && (
@@ -475,7 +475,7 @@ function AttachmentSection({ node, nodes, edges, onAttach, onDetach }: {
   return (
     <Section
       title="Cadrage attaché"
-      hint="Contexte, règles, outils imposés — chargés à CETTE action seulement, et repris dans son bloc du document."
+      hint="Contexte, règles, outils imposés, chargés à CETTE action seulement, et repris dans son bloc du document."
     >
       <div className="space-y-1.5">
         {attached.map((q) => {
@@ -495,7 +495,7 @@ function AttachmentSection({ node, nodes, edges, onAttach, onDetach }: {
         })}
         {attached.length === 0 && (
           <p className="rounded-lg border border-dashed border-border/70 px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
-            Rien d'attaché. Tirez le point violet d'un bloc de cadrage jusqu'au bord gauche de celui-ci — ou choisissez-le ci-dessous.
+            Rien d'attaché. Tirez le point violet d'un bloc de cadrage jusqu'au bord gauche de celui-ci, ou choisissez-le ci-dessous.
           </p>
         )}
         {free.length > 0 && (
@@ -591,7 +591,7 @@ function ToolTarget({ d, projectId, workspaceId, onPatch }: {
 
       {!isAction ? (
         <>
-          <Field label="Outil" hint="L'agent a déjà sa boîte à outils — ce bloc dit lequel s'impose ici.">
+          <Field label="Outil" hint="L'agent a déjà sa boîte à outils, ce bloc dit lequel s'impose ici.">
             <Picker
               value={KNOWN_TOOLS.some((t) => t.value === str(d.tool)) ? str(d.tool) : "__custom"}
               onChange={(v) => onPatch({ tool: v === "__custom" ? "" : v })}
@@ -803,7 +803,7 @@ function VarList({ vars, onChange }: {
   return (
     <Field
       label="Valeurs nommées"
-      hint="Un identifiant de canal, un seuil, une URL de base — écrits ici, lus partout ailleurs avec {{nom}}."
+      hint="Un identifiant de canal, un seuil, une URL de base, écrits ici, lus partout ailleurs avec {{nom}}."
     >
       <div className="space-y-1.5">
         {vars.map((v, i) => {
@@ -834,7 +834,7 @@ function VarList({ vars, onChange }: {
               </div>
               <TextField mono
                 value={v.value ?? ""} onChange={(val) => patch(i, { value: val })}
-                placeholder="#ventes — ou {{trigger.canal}} pour la prendre au déclenchement"
+                placeholder="#ventes, ou {{trigger.canal}} pour la prendre au déclenchement"
               />
               <TextField
                 value={v.description ?? ""} onChange={(val) => patch(i, { description: val })}
@@ -926,11 +926,11 @@ function ContextSource({ source, body, refs, collections, onPatch }: {
               : { body: v })}
             minHeight={280}
             placeholder={"## Ce qu'il faut savoir\n\nLes remises au-delà de 15 % passent par la direction commerciale.\n\n## Vocabulaire\n\n« Compte stratégique » = plus de 50 k€ de CA annuel."}
-            footer={<span>Transmis intégralement à l'agent — pas de recherche, pas de troncature.</span>}
+            footer={<span>Transmis intégralement à l'agent, pas de recherche, pas de troncature.</span>}
           />
           {picked.length > 0 && (
             <DormantSide
-              text={`${picked.length} collection${picked.length > 1 ? "s" : ""} rattachée${picked.length > 1 ? "s" : ""} — ignorée${picked.length > 1 ? "s" : ""} tant que le bloc est en mode Rédiger.`}
+              text={`${picked.length} collection${picked.length > 1 ? "s" : ""} rattachée${picked.length > 1 ? "s" : ""}, ignorée${picked.length > 1 ? "s" : ""} tant que le bloc est en mode Rédiger.`}
               onClear={() => onPatch({ refs: refs.filter((r) => r.kind !== "collection") })}
             />
           )}
@@ -968,12 +968,11 @@ function ContextSource({ source, body, refs, collections, onPatch }: {
             </div>
           )}
           <p className="text-[10px] leading-snug text-muted-foreground/80">
-            L'agent y cherchera ce dont il a besoin avec <code className="rounded bg-muted px-1">rag_search</code> —
-            le contenu n'est pas chargé d'avance.
+            L'agent y cherchera ce dont il a besoin avec <code className="rounded bg-muted px-1">rag_search</code>, le contenu n'est pas chargé d'avance.
           </p>
           {written.trim() && (
             <DormantSide
-              text="Un texte rédigé est conservé dans ce bloc — ignoré tant que le bloc pointe vers des collections."
+              text="Un texte rédigé est conservé dans ce bloc, ignoré tant que le bloc pointe vers des collections."
               onClear={() => onPatch({ body: "", refs: refs.filter((r) => r.kind !== "text") })}
             />
           )}
@@ -1012,7 +1011,7 @@ function ContextPicker({ refs, collections, onChange }: {
   return (
     <Field
       label="Connaissances à fournir"
-      hint="Transmises à l'agent avec CETTE étape uniquement — c'est ainsi qu'on évite de recharger tout le contexte à chaque fois."
+      hint="Transmises à l'agent avec CETTE étape uniquement, c'est ainsi qu'on évite de recharger tout le contexte à chaque fois."
     >
       <div className="space-y-1.5">
         {refs.map((r, i) => {
@@ -1061,7 +1060,7 @@ function ContextPicker({ refs, collections, onChange }: {
                   minHeight={open ? 320 : 96}
                   className="border-t border-border/50"
                   placeholder={"## Règles de rapprochement\n\n1. Écart accepté : 0,50 € par ligne.\n2. Au-delà, escalader au contrôleur de gestion.\n\nTransmis tel quel à l'agent."}
-                  footer={open ? <span>Markdown — transmis intégralement à l'agent avec cette étape.</span> : undefined}
+                  footer={open ? <span>Markdown, transmis intégralement à l'agent avec cette étape.</span> : undefined}
                 />
               )}
               {r.kind === "collection" && (
@@ -1097,7 +1096,7 @@ function ContextPicker({ refs, collections, onChange }: {
             ) : (
               <p className="text-[10px] text-muted-foreground">
                 {collections.length === 0
-                  ? "Aucune collection dans ce projet — ajoutez-en dans Ressources → Mémoire."
+                  ? "Aucune collection dans ce projet, ajoutez-en dans Ressources → Mémoire."
                   : "Toutes les collections du projet sont déjà rattachées."}
               </p>
             )}

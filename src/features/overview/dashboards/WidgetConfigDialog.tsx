@@ -280,7 +280,7 @@ export function WidgetConfigDialog({ open, onOpenChange, widget, onSave }: Props
                       className="h-9 font-mono text-xs"
                     />
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Queried via PostgREST on your connected Supabase project — only tables in
+                      Queried via PostgREST on your connected Supabase project, only tables in
                       the <span className="font-mono">public</span> schema are exposed. The auth
                       table is <span className="font-mono">auth.users</span> and is not reachable
                       this way; use a <span className="font-mono">profiles</span> table instead.
@@ -389,7 +389,7 @@ export function WidgetConfigDialog({ open, onOpenChange, widget, onSave }: Props
                       <Input
                         value={cfg.emitFilterColumn ?? ""}
                         onChange={(e) => setCfg({ ...cfg, emitFilterColumn: e.target.value })}
-                        placeholder="status / provider — defaults to group by"
+                        placeholder="status / provider, defaults to group by"
                         className="h-9 font-mono text-xs"
                       />
                     </div>
@@ -622,7 +622,7 @@ function MarkdownEditor({ cfg, setCfg }: MarkdownEditorProps) {
 
       {!headingMode && text.trim() && (
         <p className="text-[11px] text-muted-foreground">
-          Markdown is rendered live in the widget — supports GFM (tables, task lists, strikethrough).
+          Markdown is rendered live in the widget, supports GFM (tables, task lists, strikethrough).
         </p>
       )}
     </div>

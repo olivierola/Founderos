@@ -313,7 +313,7 @@ function RoomRunDrawer({ run, onClose, onOpenDeliverable }: { run: { runId: stri
       <aside className="absolute right-4 top-4 bottom-4 z-50 flex w-[420px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-border/60 bg-background shadow-2xl ring-1 ring-black/5 animate-in slide-in-from-right-4 fade-in duration-200">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/60 px-4">
           <Activity className="h-4 w-4 text-primary" />
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{run.name ?? "Agent"} — activité</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{run.name ?? "Agent"} activité</span>
           {run.live && <LiveRunBadge runId={run.runId} />}
           <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </header>

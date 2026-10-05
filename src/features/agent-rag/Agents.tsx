@@ -262,7 +262,7 @@ export function AgentsPage() {
         <EmptyState
           icon={Bot}
           title="Aucun agent pour l'instant"
-          description="Les agents — internes (ils travaillent pour votre équipe) comme publics (face client, nourris par votre base de connaissances) — se créent dans un dashboard de service."
+          description="Les agents, internes (ils travaillent pour votre équipe) comme publics (face client, nourris par votre base de connaissances), se créent dans un dashboard de service."
           action={firstDashboardId
             ? <Button onClick={() => navigate(`${base}/service/${firstDashboardId}/agents/new`)}><Plus className="h-4 w-4" /> Créer un agent</Button>
             : undefined}
@@ -293,7 +293,7 @@ export function AgentsPage() {
                 extras={c?.skills ?? null}
                 tools_needed={resolveNeeds(c?.slugs ?? [], toolkits, connStatus)}
                 badges={[
-                  { label: "interne", tone: "auth", title: "Agent interne — travaille pour l'équipe" },
+                  { label: "interne", tone: "auth", title: "Agent interne, travaille pour l'équipe" },
                   { label: a.model ?? "deepseek", tone: "key", title: "Modèle" },
                 ]}
                 meta={new Date(a.created_at).toISOString().slice(0, 10)}
@@ -322,7 +322,7 @@ export function AgentsPage() {
                 tools={c?.sources ?? null}
                 extras={c?.convos ?? null}
                 badges={[
-                  { label: "public", tone: "auth", title: "Agent public — face client" },
+                  { label: "public", tone: "auth", title: "Agent public, face client" },
                   { label: a.enabled ? "live" : "disabled", tone: "key", title: "État de publication" },
                 ]}
                 meta={new Date(a.created_at).toISOString().slice(0, 10)}

@@ -23,7 +23,7 @@ const REMEDIATION: Record<IncidentKind, string> = {
   run_failure: "Relancer le run avec les mêmes entrées ; si l'échec persiste, inspecter l'étape fautive dans la timeline du run et corriger l'outil ou l'instruction concernée.",
   timeout: "Réduire la longueur de la chaîne d'outils, augmenter le budget temps du run, ou découper la mission en sous-tâches.",
   tool_error: "Vérifier le quota et l'état du fournisseur d'API ; ajouter un fallback ou un retry exponentiel sur cet outil.",
-  guardrail_block: "Comportement attendu — vérifier dans Guardrails si la règle est correctement calibrée, ou accorder l'accès si légitime.",
+  guardrail_block: "Comportement attendu, vérifier dans Guardrails si la règle est correctement calibrée, ou accorder l'accès si légitime.",
   rate_limit: "Espacer les requêtes concurrentes, activer la mise en file, ou répartir la charge sur un second modèle.",
   hallucination: "Renforcer l'ancrage (RAG/outils), abaisser la température, ou exiger des citations de sources dans l'instruction.",
 };
@@ -51,7 +51,7 @@ export function GovOpsIncidentsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Incidents & runs échoués"
-        description="Surveillance des échecs d'exécution : runs échoués, timeouts, erreurs d'outils, blocages guardrail — depuis vos runs réels."
+        description="Surveillance des échecs d'exécution : runs échoués, timeouts, erreurs d'outils, blocages guardrail, depuis vos runs réels."
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -73,7 +73,7 @@ export function GovOpsIncidentsPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState icon={Siren} title="Aucun incident" description="Rien à signaler sur la période — vos agents tournent proprement." />
+        <EmptyState icon={Siren} title="Aucun incident" description="Rien à signaler sur la période, vos agents tournent proprement." />
       ) : (
         <div className="space-y-2">
           {filtered.map((i) => (

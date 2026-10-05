@@ -191,13 +191,13 @@ export function RepositoriesPage() {
                 connectSuccess.canWrite ? (
                   <div className="mb-3 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="h-4 w-4 shrink-0" />
-                    Token mis à jour — <span className="font-semibold">@{connectSuccess.login}</span> · classique, scope <code className="rounded bg-emerald-500/15 px-1">repo</code> (écriture + fork OK).
+                    Token mis à jour, <span className="font-semibold">@{connectSuccess.login}</span> · classique, scope <code className="rounded bg-emerald-500/15 px-1">repo</code> (écriture + fork OK).
                   </div>
                 ) : (
                   <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
                     <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>
-                      Token mis à jour — <span className="font-semibold">@{connectSuccess.login}</span>, mais c'est un token{" "}
+                      Token mis à jour, <span className="font-semibold">@{connectSuccess.login}</span>, mais c'est un token{" "}
                       <span className="font-semibold">{connectSuccess.tokenType === "fine-grained" ? "fine-grained" : `classique (scopes : ${connectSuccess.scopes || "aucun"})`}</span>
                       {" "}: il <span className="font-semibold">ne peut pas écrire ni forker</span>. Reconnectez un token <span className="font-semibold">classique avec le scope <code className="rounded bg-amber-500/15 px-1">repo</code></span> pour que Vibe Code crée des PR.
                     </span>

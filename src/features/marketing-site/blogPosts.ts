@@ -71,7 +71,7 @@ export const POSTS: Post[] = [
       {
         type: "callout",
         title: "The uncomfortable pattern",
-        text: "Unsanctioned AI use almost always starts long before the first written AI policy — and nobody can say exactly when, because nobody was looking.",
+        text: "Unsanctioned AI use almost always starts long before the first written AI policy, and nobody can say exactly when, because nobody was looking.",
       },
       { type: "h2", text: "What to do in the first month" },
       {

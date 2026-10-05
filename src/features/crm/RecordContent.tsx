@@ -99,7 +99,7 @@ function ChannelChat({ channelId }: { channelId: string }) {
       {/* Messages + composer */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
-          {(messages ?? []).length === 0 ? <Empty text="No messages yet — say hello." />
+          {(messages ?? []).length === 0 ? <Empty text="No messages yet, say hello." />
             : (messages ?? []).map((m) => {
                 const sent = m.author_kind === "user";
                 return (
@@ -207,7 +207,7 @@ function DeliverableBody({ deliverableId }: { deliverableId: string }) {
       {d.file_url && <a href={d.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline"><ExternalLink className="h-3 w-3" /> Open file</a>}
       {d.content
         ? <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-xs">{d.content}</pre>
-        : <Empty text="No inline content — see the linked file/URL." />}
+        : <Empty text="No inline content, see the linked file/URL." />}
     </div>
   );
 }

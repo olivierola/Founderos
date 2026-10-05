@@ -325,7 +325,7 @@ function ObjectTable({ object, objects }: { object: CrmObject; objects: CrmObjec
           </tbody>
         </table>
         {records.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-muted-foreground">No {object.label_plural?.toLowerCase() ?? "records"} yet — add one above.</div>
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">No {object.label_plural?.toLowerCase() ?? "records"} yet, add one above.</div>
         )}
       </div>
       )}
@@ -561,7 +561,7 @@ function AssignMissionDialog({ agentSourceId, onClose }: { agentSourceId: string
         <DialogHeader><DialogTitle>Assign a mission</DialogTitle></DialogHeader>
         {done ? (
           <div className="space-y-3">
-            <p className="flex items-center gap-2 text-sm text-emerald-600"><Check className="h-4 w-4" /> Mission assigned — it appears in the Missions object.</p>
+            <p className="flex items-center gap-2 text-sm text-emerald-600"><Check className="h-4 w-4" /> Mission assigned, it appears in the Missions object.</p>
             <div className="flex justify-end"><Button onClick={onClose}>Done</Button></div>
           </div>
         ) : (
@@ -680,7 +680,7 @@ function NewObjectDialog({ objects, onClose, onCreated }: { objects: CrmObject[]
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {mode === "catalog" ? (
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Add a module as a live object — its records mirror the real data and stay in sync. Or create a blank custom object.</p>
+            <p className="text-xs text-muted-foreground">Add a module as a live object, its records mirror the real data and stay in sync. Or create a blank custom object.</p>
             <div className="grid grid-cols-1 gap-1.5">
               {available.map((t) => { const I = iconByName(t.icon); return (
                 <button key={t.slug} disabled={!!saving} onClick={() => addTemplate(t.slug)}

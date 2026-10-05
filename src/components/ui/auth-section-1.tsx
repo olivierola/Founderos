@@ -4,17 +4,20 @@ import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
-  ArrowUpRightIcon as ArrowUpRight,
+  ArrowRightIcon as ArrowRight,
   CircleNotchIcon as Loader2,
   HandPalmIcon,
   SparkleIcon,
   StackIcon,
 } from "@phosphor-icons/react";
-import { BrandLockup, TileField } from "@/features/marketing-site/atlas/AtlasKit";
+import { Brand } from "@/features/marketing-site/hn/HnKit";
 
-/* Split auth shell, in the site's Atlas register: the form on a white card
-   on the left, the black-to-violet hero ground on the right. Purely presentational — the pages own the Supabase calls and pass the
-   submit handler, the pending flag and the messages back in. */
+/* Split auth shell, in the site's Hunar register (04/10/2026): the form on
+   white on the left, Geist throughout, blue pills; on the right the site's
+   azure artwork panel with a real capture of the product rising out of it, as
+   on the product bands of the landing page. Purely presentational — the pages
+   own the Supabase calls and pass the submit handler, the pending flag and the
+   messages back in. */
 
 export type AuthMode = "login" | "signup";
 
@@ -28,6 +31,9 @@ export type AuthSubmitPayload = {
 };
 
 export type AuthSocialProvider = "google" | "apple";
+
+const LINK =
+  "font-medium text-[#006edd] underline-offset-4 transition-colors hover:text-[#0057c2] hover:underline dark:text-[#5aa8ff] dark:hover:text-[#8cc2ff]";
 
 export function AuthSection({
   mode,
@@ -72,31 +78,34 @@ export function AuthSection({
   }
 
   return (
-    <section className="min-h-screen bg-white p-2.5 text-[#111011] antialiased [font-synthesis:none] dark:bg-[#0b0a0b] dark:text-white">
-      <div className="grid min-h-[calc(100vh-1.25rem)] gap-2.5 lg:grid-cols-[0.94fr_1.06fr]">
-        <div className="flex min-h-[760px] items-start rounded-[28px] border border-[#f0f0f0] bg-white px-6 py-12 sm:rounded-[40px] sm:px-10 dark:border-white/[0.08] dark:bg-[#121112] lg:min-h-0 lg:px-14 lg:py-16 xl:px-20">
-          <div className="mx-auto w-full max-w-[520px]">
-            <Link to="/" className="mb-12 inline-flex" aria-label="Anduran — home">
+    <section
+      className="min-h-screen bg-white p-3 text-[#0f1728] antialiased [font-synthesis:none] dark:bg-[#0b1220] dark:text-white"
+      style={{ fontFamily: "'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif" }}
+    >
+      <div className="grid min-h-[calc(100vh-1.5rem)] gap-3 lg:grid-cols-[0.92fr_1.08fr]">
+        <div className="flex min-h-[760px] items-start px-6 py-10 sm:px-10 lg:min-h-0 lg:px-14 lg:py-12 xl:px-20">
+          <div className="mx-auto w-full max-w-[460px]">
+            <Link to="/" className="inline-flex" aria-label="Anduran, home">
               <span className="dark:hidden">
-                <BrandLockup />
+                <Brand />
               </span>
               <span className="hidden dark:inline-flex">
-                <BrandLockup tone="white" />
+                <Brand tone="white" />
               </span>
             </Link>
 
-            <div>
-              <h1 className="text-[38px] font-semibold leading-[1.02] tracking-[-0.045em] sm:text-[46px]">
-                {isSignup ? "Create an account" : "Welcome back"}
+            <div className="mt-16 lg:mt-20">
+              <h1 className="text-[36px] font-medium leading-[1.05] tracking-[-0.04em] sm:text-[44px]">
+                {isSignup ? "Create your account" : "Welcome back"}
               </h1>
-              <p className="at-serif mt-2 text-[28px] leading-[1.1] text-[#111011] dark:text-white sm:text-[34px]">
-                {isSignup ? "hire your first agents in minutes." : "to your AI workforce."}
+              <p className="mt-3 text-[18px] leading-[1.35] text-[#4b5567] dark:text-white/65">
+                {isSignup ? "Hire your first agents in minutes." : "Sign in to your AI workforce."}
               </p>
             </div>
 
             {onSocial && (
               <>
-                <div className="mt-10 grid gap-2.5 sm:grid-cols-2">
+                <div className="mt-10 grid gap-3 sm:grid-cols-2">
                   <SocialButton
                     icon={<GoogleIcon />}
                     label={`${isSignup ? "Sign up" : "Sign in"} with Google`}
@@ -111,26 +120,26 @@ export function AuthSection({
                   />
                 </div>
 
-                <div className="my-8 flex items-center gap-4 text-[14px] font-medium text-[#969696]">
-                  <span className="h-px flex-1 bg-[#ececec] dark:bg-white/10" />
-                  or
-                  <span className="h-px flex-1 bg-[#ececec] dark:bg-white/10" />
+                <div className="my-8 flex items-center gap-4 text-[14px] text-[#6b7385] dark:text-white/45">
+                  <span className="h-px flex-1 bg-[#e6e9ef] dark:bg-white/10" />
+                  or with your email
+                  <span className="h-px flex-1 bg-[#e6e9ef] dark:bg-white/10" />
                 </div>
               </>
             )}
 
-            <form className="space-y-2.5" onSubmit={handleSubmit} noValidate>
+            <form className="space-y-3" onSubmit={handleSubmit} noValidate>
               {isSignup && (
-                <div className="grid gap-2.5 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <FieldBox
-                    label="First Name"
+                    label="First name"
                     name="given-name"
                     autoComplete="given-name"
                     value={firstName}
                     onValueChange={setFirstName}
                   />
                   <FieldBox
-                    label="Last Name"
+                    label="Last name"
                     name="family-name"
                     autoComplete="family-name"
                     value={lastName}
@@ -140,7 +149,7 @@ export function AuthSection({
               )}
 
               <FieldBox
-                label="Email"
+                label="Work email"
                 type="email"
                 name="email"
                 autoComplete="email"
@@ -149,7 +158,7 @@ export function AuthSection({
                 onValueChange={setEmail}
               />
               <FieldBox
-                label="Password"
+                label={isSignup ? "Password (8+ characters)" : "Password"}
                 type="password"
                 name="password"
                 autoComplete={isSignup ? "new-password" : "current-password"}
@@ -160,82 +169,61 @@ export function AuthSection({
               />
 
               {isSignup ? (
-                <div className="space-y-3 px-1 pt-3 text-[14px] leading-5 text-[#666666] dark:text-white/55">
-                  <CheckboxLine
-                    checked={marketingOptOut}
-                    onCheckedChange={setMarketingOptOut}
-                  >
+                <div className="space-y-3 px-1 pt-3 text-[14px] leading-5 text-[#4b5567] dark:text-white/60">
+                  <CheckboxLine checked={marketingOptOut} onCheckedChange={setMarketingOptOut}>
                     I don&apos;t want to receive emails about Anduran feature updates
                   </CheckboxLine>
                   <CheckboxLine checked={acceptedTerms} onCheckedChange={setAcceptedTerms}>
                     I agree to the{" "}
-                    <Link
-                      to="/docs"
-                      className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-2 dark:text-white"
-                    >
-                      Terms and Services
+                    <Link to="/docs" className={LINK}>
+                      Terms of Service
                     </Link>{" "}
-                    and{" "}
-                    <Link
-                      to="/docs"
-                      className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-2 dark:text-white"
-                    >
+                    and the{" "}
+                    <Link to="/docs" className={LINK}>
                       Privacy Policy
                     </Link>
                   </CheckboxLine>
                 </div>
               ) : (
-                <div className="px-1 pt-2 text-[14px] text-[#666666] dark:text-white/55">
-                  Trouble signing in? Contact{" "}
-                  <Link
-                    to="/contact"
-                    className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-2 dark:text-white"
-                  >
-                    support
+                <div className="px-1 pt-1 text-[14px] text-[#4b5567] dark:text-white/60">
+                  Trouble signing in?{" "}
+                  <Link to="/contact" className={LINK}>
+                    Contact support
                   </Link>
-                  .
                 </div>
               )}
 
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="group !mt-7 flex h-[52px] w-full items-center justify-center gap-2.5 rounded-full bg-black text-[16px] font-semibold tracking-[-0.015em] text-white shadow-[0_14px_30px_-16px_rgba(0,0,0,0.7)] transition-colors hover:bg-[#1d1c1d] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-[#111011] dark:hover:bg-white/90"
+                className="group !mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#006edd] text-[16px] font-medium tracking-[-0.02em] text-white shadow-[0_14px_30px_-18px_rgba(0,87,194,0.9)] transition-colors hover:bg-[#0057c2] disabled:cursor-not-allowed disabled:bg-[#9fc3ec] disabled:shadow-none dark:disabled:bg-[#1d3a63] dark:disabled:text-white/50"
               >
                 {submitting && <Loader2 className="size-5 animate-spin" />}
                 {isSignup ? "Create account" : "Sign in"}
                 {!submitting && (
-                  <ArrowUpRight
+                  <ArrowRight
                     weight="bold"
-                    className="size-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                    className="size-4 transition-transform duration-300 group-hover:translate-x-0.5"
                   />
                 )}
               </button>
             </form>
 
-            {info && (
-              <p className="mt-5 text-[15px] text-emerald-600 dark:text-emerald-400">{info}</p>
-            )}
+            {info && <p className="mt-5 text-[15px] text-emerald-600 dark:text-emerald-400">{info}</p>}
             {error && <p className="mt-5 text-[15px] text-red-600 dark:text-red-400">{error}</p>}
 
-            <p className="mt-8 text-[15px] text-[#666666] dark:text-white/55">
+            <p className="mt-8 text-[15px] text-[#4b5567] dark:text-white/60">
               {isSignup ? (
                 <>
                   Already have an account?{" "}
-                  <Link
-                    to="/login"
-                    className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-4 dark:text-white"
-                  >
+                  <Link to="/login" className={LINK}>
                     Sign in
                   </Link>
                 </>
               ) : (
                 <>
                   No account yet?{" "}
-                  <Link
-                    to="/signup"
-                    className="font-semibold text-[#111011] underline decoration-[#d22eff]/50 underline-offset-4 dark:text-white"
-                  >
+                  <Link to="/signup" className={LINK}>
                     Create one
                   </Link>
                 </>
@@ -245,48 +233,53 @@ export function AuthSection({
         </div>
 
         {/* ── The panel ──────────────────────────────────────────────────────
-            The site's hero ground — black into violet into white, the tile
-            field over it — so signing in feels like the same product. */}
-        <div className="at-grad-hero relative hidden min-h-[720px] overflow-hidden rounded-[40px] text-white lg:flex lg:min-h-0">
-          <TileField
-            lit={[[0, 0], [1, 1], [5, 0], [6, 1], [7, 2], [1, 6], [2, 7], [6, 5], [7, 6]]}
-          />
-          <div className="relative z-10 flex h-full w-full flex-col justify-between p-10 xl:p-14">
-            <div className="pt-10">
-              <span className="inline-flex items-center gap-2.5 rounded-full border border-white/[0.14] bg-white/[0.08] px-4 py-2.5 text-[14px] font-semibold text-white backdrop-blur-md">
-                <SparkleIcon className="size-[18px]" />
-                The AI workforce that runs inside your tenant
-              </span>
-              <h2 className="mt-8 max-w-[560px] text-[52px] font-semibold leading-[1.0] tracking-[-0.045em] text-white xl:text-[64px]">
-                Hire agents,
-                <br />
-                <span className="at-serif text-[1.1em] font-normal">not headcount.</span>
-              </h2>
-            </div>
-
-            <div className="space-y-2.5">
+            The site's azure artwork, the headline in two tones, the product's
+            two rules as chips — and the real product rising out of the bottom
+            edge, as on the landing page's product bands. */}
+        <div className="hn-art hn-art-blue relative hidden min-h-[720px] overflow-hidden rounded-[28px] text-white lg:flex lg:min-h-0">
+          <div className="relative z-10 flex h-full w-full flex-col p-10 xl:p-14">
+            <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 py-2 text-[14px] font-medium backdrop-blur-md">
+              <SparkleIcon weight="fill" className="size-4" />
+              The AI workforce that runs inside your tenant
+            </span>
+            <h2 className="mt-8 max-w-[560px] text-[48px] font-medium leading-[1.04] tracking-[-0.04em] xl:text-[60px]">
+              Hire agents,
+              <br />
+              <span className="text-white/70">not headcount.</span>
+            </h2>
+            <div className="mt-8 flex flex-wrap gap-2.5">
               {[
                 { icon: StackIcon, text: "Runs inside your tenant" },
                 { icon: HandPalmIcon, text: "Every write waits for your approval" },
               ].map(({ icon: Icon, text }) => (
-                <div
+                <span
                   key={text}
-                  className="flex w-fit items-center gap-3.5 rounded-full bg-white px-5 py-3 text-[15px] font-medium text-[#111011] shadow-[0_16px_40px_-24px_rgba(60,0,90,0.6)]"
+                  className="inline-flex items-center gap-2.5 rounded-full bg-white px-4 py-2.5 text-[15px] font-medium text-[#0f1728] shadow-[0_16px_40px_-24px_rgba(4,32,92,0.8)]"
                 >
-                  <Icon className="size-5" />
+                  <Icon className="size-[18px] text-[#006edd]" />
                   {text}
-                </div>
+                </span>
               ))}
-              <Link
-                to="/solutions"
-                className="group !mt-6 inline-flex h-12 items-center gap-2.5 rounded-full bg-black px-6 text-[15px] font-semibold text-white shadow-[0_14px_30px_-16px_rgba(0,0,0,0.7)] transition-colors hover:bg-[#1d1c1d]"
-              >
-                See what the workforce runs
-                <ArrowUpRight
-                  weight="bold"
-                  className="size-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+            </div>
+            <Link
+              to="/solutions"
+              className="group mt-8 inline-flex h-11 w-fit items-center gap-2 rounded-full bg-white px-5 text-[15px] font-medium tracking-[-0.02em] text-[#0f1728] transition-colors hover:bg-white/90"
+            >
+              See what the workforce runs
+              <ArrowRight
+                weight="bold"
+                className="size-4 transition-transform duration-300 group-hover:translate-x-0.5"
+              />
+            </Link>
+
+            <div className="relative -mb-10 -mr-10 mt-auto pl-6 pt-12 xl:-mb-14 xl:-mr-14">
+              <div className="overflow-hidden rounded-tl-[14px] border-l border-t border-white/30 bg-white shadow-[0_40px_80px_-30px_rgba(4,32,92,0.85)]">
+                <img
+                  src="/marketing/product-agents.jpg"
+                  alt="The Agents page of Anduran, in a demo workspace"
+                  className="block aspect-[1440/860] w-full object-cover object-left-top"
                 />
-              </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -311,7 +304,7 @@ function SocialButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex h-12 items-center justify-center gap-2.5 rounded-full border border-[#e6e6e6] bg-white px-4 text-[14.5px] font-semibold leading-none tracking-[-0.01em] text-[#111011] shadow-[0_12px_30px_-20px_rgba(17,16,17,0.35)] transition-colors hover:border-[#d4d4d4] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/15 dark:bg-white/[0.06] dark:text-white dark:hover:bg-white/10"
+      className="flex h-12 items-center justify-center gap-2.5 rounded-full border border-[#e6e9ef] bg-white px-4 text-[15px] font-medium leading-none tracking-[-0.02em] text-[#0f1728] transition-colors hover:border-[#cfd6e2] hover:bg-[#f7f8fb] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/15 dark:bg-white/[0.05] dark:text-white dark:hover:bg-white/10"
     >
       <span className="shrink-0">{icon}</span>
       <span className="whitespace-nowrap">{label}</span>
@@ -344,7 +337,7 @@ function FieldBox({
   const showLabel = !focused && value.length === 0;
 
   return (
-    <label className="flex h-[52px] items-center justify-between gap-4 rounded-full border border-[#e6e6e6] bg-white px-6 text-[16px] leading-none transition-colors focus-within:border-[#d22eff] dark:border-white/15 dark:bg-white/[0.05] dark:focus-within:border-[#e27cff]">
+    <label className="flex h-12 items-center justify-between gap-4 rounded-full border border-[#e6e9ef] bg-white px-5 text-[16px] leading-none transition-[border-color,box-shadow] focus-within:border-[#006edd] focus-within:shadow-[0_0_0_4px_rgba(0,110,221,0.12)] dark:border-white/15 dark:bg-white/[0.05] dark:focus-within:border-[#5aa8ff] dark:focus-within:shadow-[0_0_0_4px_rgba(90,168,255,0.15)]">
       <input
         type={type}
         name={name}
@@ -356,11 +349,9 @@ function FieldBox({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onChange={(event) => onValueChange(event.target.value)}
-        className="min-w-0 flex-1 truncate bg-transparent text-[#111011] outline-none placeholder:text-black/30 dark:text-white dark:placeholder:text-white/35"
+        className="min-w-0 flex-1 truncate bg-transparent text-[#0f1728] outline-none placeholder:text-black/30 dark:text-white dark:placeholder:text-white/35"
       />
-      {showLabel && (
-        <span className="shrink-0 text-[#969696] dark:text-white/45">{label}</span>
-      )}
+      {showLabel && <span className="shrink-0 text-[#6b7385] dark:text-white/45">{label}</span>}
     </label>
   );
 }
@@ -381,11 +372,11 @@ function CheckboxLine({
           type="checkbox"
           checked={checked}
           onChange={(event) => onCheckedChange(event.target.checked)}
-          className="peer size-full appearance-none rounded-full border border-black/25 bg-white checked:border-black checked:bg-black dark:border-white/30 dark:bg-white/5 dark:checked:border-white dark:checked:bg-white"
+          className="peer size-full appearance-none rounded-[5px] border border-[#c3cad6] bg-white checked:border-[#006edd] checked:bg-[#006edd] dark:border-white/30 dark:bg-white/5 dark:checked:border-[#5aa8ff] dark:checked:bg-[#5aa8ff]"
         />
         <svg
           viewBox="0 0 12 12"
-          className="pointer-events-none absolute inset-0 hidden size-full p-0.5 text-white peer-checked:block dark:text-black"
+          className="pointer-events-none absolute inset-0 hidden size-full p-0.5 text-white peer-checked:block dark:text-[#0b1220]"
           fill="none"
           aria-hidden="true"
         >

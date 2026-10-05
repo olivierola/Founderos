@@ -103,7 +103,7 @@ export function KnowledgeCollectionsPage() {
       <div className="mx-auto w-full max-w-7xl space-y-4">
         <PageHeader
           title="Base de connaissances"
-          description="Vos collections de connaissances — documents, PDF, Word, Excel, images… Cliquez une collection pour l'ouvrir."
+          description="Vos collections de connaissances, documents, PDF, Word, Excel, images… Cliquez une collection pour l'ouvrir."
           actions={<Button size="sm" onClick={() => setNewOpen(true)}><Plus className="h-4 w-4" /> Nouvelle collection</Button>}
         />
 
@@ -249,7 +249,7 @@ function CollectionDetail({ collection, files, onBack, onChanged, onDeleted }: {
             written.length === 0 ? (
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-16 text-sm text-muted-foreground hover:bg-muted/20">
                 <Upload className="h-6 w-6" />
-                <span>Collection vide — importez un fichier (PDF, DOCX, XLSX, images…) ou rédigez une procédure.</span>
+                <span>Collection vide, importez un fichier (PDF, DOCX, XLSX, images…) ou rédigez une procédure.</span>
                 <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setWs({ kind: "new", file: f }); e.target.value = ""; }} />
               </label>
             ) : null

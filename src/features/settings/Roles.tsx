@@ -123,7 +123,7 @@ export function SettingsRolesPage() {
             role_id: role.id,
             slug: role.slug,
             name: role.name + " (archived)",
-            description: "Archived role — keep until members are reassigned.",
+            description: "Archived role, keep until members are reassigned.",
             color: role.color,
             permissions: [],
           }),

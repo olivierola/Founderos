@@ -474,7 +474,7 @@ export function AgentStats({
 
       {editing && (
         <p className="text-11 text-muted-foreground">
-          Glissez les widgets pour les réorganiser — au clavier, Alt + flèches. La
+          Glissez les widgets pour les réorganiser, au clavier, Alt + flèches. La
           disposition est mémorisée pour vous seul.
         </p>
       )}

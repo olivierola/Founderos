@@ -15,7 +15,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Logo } from "@/components/Logo";
+import { BRAND_MARK_ON_DARK, Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
 import { DASHBOARDS, dashboardLandingSlug } from "@/lib/navigation";
 import { ADMIN_LANDING, isAdminRoute } from "@/lib/admin-navigation";
@@ -63,7 +63,7 @@ export function DashboardSwitcher() {
           className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-white transition-colors hover:bg-white/10"
           aria-label="Changer de dashboard"
         >
-          <Logo size={24} />
+          <Logo size={24} color={BRAND_MARK_ON_DARK} />
           <span className="truncate text-sm font-semibold">{onAdmin ? "Admin" : activeDef.label}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/60" />
         </button>
@@ -129,7 +129,7 @@ export function DashboardSwitcher() {
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Nouveau dashboard de service</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Un espace dédié à un service — ses agents, rooms, tâches et un hub Assets — séparé du reste.</p>
+            <p className="text-sm text-muted-foreground">Un espace dédié à un service, ses agents, rooms, tâches et un hub Assets, séparé du reste.</p>
             <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createService()} placeholder="ex. Marketing, Support, Finance…" />
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setCreating(false)}>Annuler</Button>

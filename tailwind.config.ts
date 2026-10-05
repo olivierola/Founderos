@@ -94,9 +94,12 @@ const config: Config = {
         },
       },
       fontFamily: {
-        // Inter en tête, comme Plane. Elms Sans/Vend Sans restent en secours
-        // pour les postes où elles sont installées localement.
+        // Geist en tête depuis le 04/10/2026 : c'est la police du site (registre
+        // Hunar), chargée en variable pour que le « regular » à 450 tombe
+        // juste. Inter suit en secours, puis Elms Sans/Vend Sans pour les
+        // postes où elles sont installées localement.
         sans: [
+          "Geist",
           "Inter",
           "Elms Sans",
           "Vend Sans",

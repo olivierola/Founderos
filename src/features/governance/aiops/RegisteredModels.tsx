@@ -81,7 +81,7 @@ export function RegisteredModels() {
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Cloud className="h-4 w-4 text-primary" /> Vos modèles
-          <span className="text-xs font-normal text-muted-foreground">— vos propres APIs cloud ou endpoints, choisissez ce que vos agents utilisent</span>
+          <span className="text-xs font-normal text-muted-foreground">vos propres APIs cloud ou endpoints, choisissez ce que vos agents utilisent</span>
         </div>
         <Button size="sm" onClick={() => setAdding(true)}><Plus className="mr-1.5 h-3.5 w-3.5" /> Ajouter un modèle</Button>
       </div>
@@ -262,7 +262,7 @@ function AddModelDialog({
             </label>
             <Input value={manualModels} onChange={(e) => setManualModels(e.target.value)} placeholder={preset.example} />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Séparés par des virgules. Utile uniquement si l'endpoint n'expose pas de catalogue <code>/models</code> — sinon
+              Séparés par des virgules. Utile uniquement si l'endpoint n'expose pas de catalogue <code>/models</code> sinon
               il est découvert automatiquement.
             </p>
           </div>

@@ -136,7 +136,7 @@ export function EventTriggers({ workflowId, workspaceId, projectId }: {
                       : d.outcome === "filtered" ? "filtré"
                       : d.outcome === "skipped" ? "ignoré" : "échec"
                   }</span>
-                  {d.detail ? ` — ${d.detail}` : ""}
+                  {d.detail ? `, ${d.detail}` : ""}
                   <span className="ml-1 opacity-60">
                     {new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })
                       .format(new Date(d.received_at))}
@@ -268,7 +268,7 @@ function AddTrigger({ connectors, onAdd, onCancel }: {
 
       <Field
         label="Seulement si"
-        hint="Évalué AVANT tout démarrage — la procédure ne se lance pas pour découvrir que l'événement ne la concernait pas."
+        hint="Évalué AVANT tout démarrage, la procédure ne se lance pas pour découvrir que l'événement ne la concernait pas."
       >
         <TextArea
           value={filter} onChange={setFilter} minRows={2}

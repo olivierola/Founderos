@@ -277,7 +277,7 @@ function AgentBrief({
                 // déjà par sa date.
                 : issue.start_date
                   ? `L'agent assigné démarrera seul le ${new Date(issue.start_date).toLocaleDateString("fr-FR")}, date de début de l'item.`
-                  : "L'agent démarrera à la date de début de l'item, s'il en a une — ou quand on le lance depuis « Confier à un agent »."}
+                  : "L'agent démarrera à la date de début de l'item, s'il en a une, ou quand on le lance depuis « Confier à un agent »."}
           </span>
         </span>
       </div>
@@ -570,7 +570,7 @@ function MissionDialog({
         <p className="rounded-md bg-muted/40 px-3 py-3 text-12 leading-relaxed text-tertiary">
           Aucun agent n&apos;est autorisé à agir sur ce projet. Ouvrez l&apos;onglet
           <strong className="font-medium text-foreground"> Équipage</strong> pour en
-          autoriser un — un agent seulement observateur ne peut pas recevoir de mission.
+          autoriser un, un agent seulement observateur ne peut pas recevoir de mission.
         </p>
       )}
     </Modal>

@@ -620,7 +620,7 @@ export function OnboardingTreePage() {
     const list = repos ?? [];
     const repo = list.find((r) => r.full_name === repoName) ?? list[0];
     if (!repo) {
-      toast.error("Aucun dépôt connecté — connectez-en un dans le module Dépôts.");
+      toast.error("Aucun dépôt connecté, connectez-en un dans le module Dépôts.");
       return;
     }
     setScanning(true);
@@ -695,7 +695,7 @@ export function OnboardingTreePage() {
     <div>
       <PageHeader
         title="Carte de l'app"
-        description="Scannez le dépôt pour construire la carte de votre app — l'agent d'onboarding s'en sert pour guider les utilisateurs."
+        description="Scannez le dépôt pour construire la carte de votre app, l'agent d'onboarding s'en sert pour guider les utilisateurs."
         actions={
           <div className="flex items-center gap-2">
             {(repos ?? []).length > 1 && (
@@ -726,7 +726,7 @@ export function OnboardingTreePage() {
         <EmptyState
           icon={Radar}
           title="Pas encore de carte"
-          description="Cliquez « Scanner le repo » — l'app sera analysée et sa structure (pages, routes, éléments) cartographiée."
+          description="Cliquez « Scanner le repo », l'app sera analysée et sa structure (pages, routes, éléments) cartographiée."
         />
       ) : (
         /* Map card — click to open the tree full-screen. */

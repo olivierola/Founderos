@@ -2636,7 +2636,7 @@
       return;
     }
     try {
-      appendMessage("bot", "Ok, je m'en occupe — je pilote l'écran pour vous. 👀");
+      appendMessage("bot", "Ok, je m'en occupe, je pilote l'écran pour vous. 👀");
       closePanel();
       await loadCopilotBundle();
       await window.FounderOSOnboardingAgent.start({

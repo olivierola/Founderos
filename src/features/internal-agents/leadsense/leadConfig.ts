@@ -120,7 +120,7 @@ export const DEFAULT_LEAD_CONFIG: LeadConfig = {
     },
     {
       key: "client_existant", label: "Client existant (support)", qualify: false,
-      what: "Un client actuel qui a un problème ou une question sur son compte — ce n'est pas un prospect.",
+      what: "Un client actuel qui a un problème ou une question sur son compte, ce n'est pas un prospect.",
       examples: ["ma facture est fausse", "je n'arrive plus à me connecter"],
     },
     {

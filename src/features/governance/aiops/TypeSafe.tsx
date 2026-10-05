@@ -73,7 +73,7 @@ const FEATURES: Array<{
   {
     feature: "search_decision",
     label: "Décision de recherche",
-    effect: "Le tour dit s'il faut aller chercher (web, connaissances, données) ou si tout est déjà là — et les outils de recherche montent ou descendent en conséquence.",
+    effect: "Le tour dit s'il faut aller chercher (web, connaissances, données) ou si tout est déjà là, et les outils de recherche montent ou descendent en conséquence.",
     where: "Début de chaque tick de run",
     thresholdLabel: "Probabilité au-delà de laquelle il faut chercher",
     defaultThreshold: 0.6,
@@ -96,7 +96,7 @@ const FEATURES: Array<{
   },
   {
     feature: "rag_rerank",
-    label: "ContextIQ — filtre de contexte RAG",
+    label: "ContextIQ, filtre de contexte RAG",
     effect: "Les passages récupérés sont notés de 0 à 3 et les hors-sujet écartés ; la couverture de la question et les contradictions sont jugées. Couverture faible : la recherche s'élargit, puis l'agent dit « je ne sais pas » au lieu d'inventer. Détail dans Gouvernance IA → ContextIQ.",
     where: "Agents publics (widget, portail) · Agents internes (search_knowledge, choix des collections)",
     thresholdLabel: "Note minimale (0-3) pour garder un passage",
@@ -116,7 +116,7 @@ const FEATURES: Array<{
     feature: "browser_target",
     label: "Ciblage dans le navigateur",
     effect: "L'agent dit ce qu'il veut atteindre (« le bouton qui valide la commande ») et l'élément est choisi dans la page. Sans ça, chaque clic coûte un aller-retour génératif avec toute la liste des éléments.",
-    where: "Pilotage du navigateur de l'utilisateur (extension) — actions click, fill, select, check, press",
+    where: "Pilotage du navigateur de l'utilisateur (extension), actions click, fill, select, check, press",
     thresholdLabel: "Confiance minimale pour agir sur l'élément choisi",
     // Haut : un clic au mauvais endroit dans le navigateur de quelqu'un est une
     // action réelle, immédiate, et souvent irréversible.
@@ -132,7 +132,7 @@ const FEATURES: Array<{
   },
   {
     feature: "model_choice",
-    label: "AgentPilot — choix du modèle",
+    label: "AgentPilot, choix du modèle",
     effect: "Le modèle de raisonnement n'est pris que quand la tâche l'exige vraiment (analyse, diagnostic, plan sous contraintes), au lieu d'une liste de mots-clés. Ne touche jamais un modèle choisi dans le composer.",
     where: "Démarrage d'un chat et d'une mission · Détail dans Gouvernance IA → AgentPilot",
     thresholdLabel: "Probabilité minimale pour prendre le modèle de raisonnement",
@@ -140,7 +140,7 @@ const FEATURES: Array<{
   },
   {
     feature: "loop_watch",
-    label: "AgentPilot — boucles déguisées",
+    label: "AgentPilot, boucles déguisées",
     effect: "Une boucle de reformulations (la même recherche sous cinq formes) déclenche la replanification, comme une boucle d'appels identiques.",
     where: "Fin de chaque tick de run, quand aucun autre garde-fou n'a sonné",
     thresholdLabel: "Probabilité minimale pour déclarer une boucle",
@@ -149,7 +149,7 @@ const FEATURES: Array<{
   },
   {
     feature: "human_escalation",
-    label: "AgentPilot — escalade vers l'humain",
+    label: "AgentPilot, escalade vers l'humain",
     effect: "Quand un blocage dépend d'un accès, d'un document ou d'une décision de l'utilisateur, l'agent pose la question (ask_user) au lieu de replanifier dans le vide.",
     where: "Au moment où le contrôleur de boucle s'apprête à replanifier",
     thresholdLabel: "Probabilité minimale pour poser la question",
@@ -157,7 +157,7 @@ const FEATURES: Array<{
   },
   {
     feature: "support_triage",
-    label: "ResolveAI — tri des demandes",
+    label: "ResolveAI, tri des demandes",
     effect: "Chaque message reçu par un agent public est classé (intention, urgence, besoin d'une personne). Une demande qui relève de l'équipe reçoit une réponse prudente qui annonce le relais, et entre dans la file avec son échéance SLA.",
     where: "Agents publics (widget, playground) · File dans l'onglet « Demandes » de chaque agent public",
     thresholdLabel: "Probabilité minimale pour confier la demande à l'équipe",
@@ -167,7 +167,7 @@ const FEATURES: Array<{
   },
   {
     feature: "policy_guard",
-    label: "PolicyGuard — risque des actions",
+    label: "PolicyGuard, risque des actions",
     effect: "Chaque action d'écriture d'un agent reçoit un niveau de risque (0 lecture → 3 irréversible), confronté à la grille de son équipe : approbation, refus, ou plafond de l'autopilote. Ne retire jamais une approbation existante.",
     where: "Actions de connecteurs, Composio, CRM, suivi de travail, fonctions internes, webhooks · Grille dans Gouvernance IA → PolicyGuard",
     thresholdLabel: "Seuil (non utilisé : c'est la grille de l'équipe qui décide)",
@@ -175,15 +175,15 @@ const FEATURES: Array<{
   },
   {
     feature: "lead_scoring",
-    label: "LeadSense — qualification",
-    effect: "L'outil lead_sense des agents internes qualifie un prospect sur la grille de l'entreprise (type, critères, score, rang, prospect chaud, commercial). Éteint, l'outil refuse de noter plutôt que de deviner. En Observation, il note quand même — c'est sa raison d'être — et le prospect est marqué « observation ».",
+    label: "LeadSense, qualification",
+    effect: "L'outil lead_sense des agents internes qualifie un prospect sur la grille de l'entreprise (type, critères, score, rang, prospect chaud, commercial). Éteint, l'outil refuse de noter plutôt que de deviner. En Observation, il note quand même, c'est sa raison d'être, et le prospect est marqué « observation ».",
     where: "Outil « LeadSense » des agents internes · Grille dans le réglage de l'outil",
     thresholdLabel: "Probabilité minimale pour déclarer un prospect chaud",
     defaultThreshold: 0.6,
   },
   {
     feature: "soc_triage",
-    label: "SentinelFlow — triage des alertes",
+    label: "SentinelFlow, triage des alertes",
     effect: "Chaque alerte de sécurité reçue est classée (catégorie, situation réelle, procédure) et les cas urgents sont escaladés. Un faux positif n'est jamais décidé par le modèle : seulement par des critères vérifiables (suppression, actif de test, scan autorisé, historique).",
     where: "Toutes les sources SentinelFlow (webhooks, interrogations, signaux internes, agents, imports) · Gouvernance IA → SentinelFlow",
     thresholdLabel: "Probabilité minimale pour escalader à un analyste",
@@ -295,7 +295,7 @@ export function GovTypeSafePage() {
     <div className="space-y-6">
       <PageHeader
         title="Jugement rapide"
-        description="Un modèle « System One » (TypeSafe · Jev) tranche les micro-décisions que l'on paie aujourd'hui en raisonnement : quelle skill charger, quel agent est le bon, ce run est-il fini, ce message est-il dangereux. Il ne rédige rien — il décide autour de ce qui rédige."
+        description="Un modèle « System One » (TypeSafe · Jev) tranche les micro-décisions que l'on paie aujourd'hui en raisonnement : quelle skill charger, quel agent est le bon, ce run est-il fini, ce message est-il dangereux. Il ne rédige rien, il décide autour de ce qui rédige."
         actions={
           <Button variant="outline" size="sm" className="gap-1.5"
             onClick={() => { qc.invalidateQueries({ queryKey: ["typesafe_stats", workspaceId] }); }}>

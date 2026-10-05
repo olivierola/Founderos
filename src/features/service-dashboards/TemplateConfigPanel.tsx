@@ -218,7 +218,7 @@ export function TemplateConfigPanel({
                   CRM out of five. Saying so stops the list reading as a wall of
                   missing dependencies. */}
               <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
-                Les outils du métier. Connectez ceux que vous utilisez — les autres restent
+                Les outils du métier. Connectez ceux que vous utilisez, les autres restent
                 simplement inactifs.
               </p>
               <div className="space-y-1.5">
@@ -337,7 +337,7 @@ export function TemplateConfigPanel({
           <section>
             <label className="mb-1.5 block text-sm font-semibold">Âme</label>
             <p className="mb-1.5 text-xs text-muted-foreground">
-              Qui il est : sa voix, ce à quoi il tient, ce qu'il refuse. Court — c'est du caractère, pas une procédure.
+              Qui il est : sa voix, ce à quoi il tient, ce qu'il refuse. Court, c'est du caractère, pas une procédure.
             </p>
             <Textarea
               rows={6}
@@ -396,7 +396,7 @@ function McpSuggestions({ template }: { template: AgentTemplate }) {
           return (
             <span
               key={n}
-              title={entry?.note ?? (ready ? "Endpoint distant officiel — connexion en un clic." : "URL de votre instance à renseigner.")}
+              title={entry?.note ?? (ready ? "Endpoint distant officiel, connexion en un clic." : "URL de votre instance à renseigner.")}
               className={cn(
                 "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs",
                 ready ? "border-border/60 text-foreground" : "border-dashed border-border/60 text-muted-foreground",
@@ -414,7 +414,7 @@ function McpSuggestions({ template }: { template: AgentTemplate }) {
       <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
         Trait plein : endpoint officiel, connexion en un clic. Pointillés : URL de votre instance à
         renseigner. <span className="rounded bg-muted px-1">local</span> : serveur stdio, joignable
-        seulement en auto-hébergé — pas depuis le runtime cloud.
+        seulement en auto-hébergé, pas depuis le runtime cloud.
       </p>
     </section>
   );

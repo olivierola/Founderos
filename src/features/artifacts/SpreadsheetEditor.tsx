@@ -280,7 +280,7 @@ function CellRichPanel({
         <ArtifactPlateEditor
           value={value}
           onChange={(v) => onChange(slateToMarkdown(v))}
-          placeholder="Type the cell content — use the toolbar for formatting…"
+          placeholder="Type the cell content, use the toolbar for formatting…"
           editorClassName="px-4 py-2"
           workspaceId={workspaceId}
           projectId={projectId}

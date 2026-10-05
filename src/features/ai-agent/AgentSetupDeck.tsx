@@ -129,7 +129,7 @@ function useAgentSetupSteps(agentId: string) {
     const working = connectorTools.filter((t) => live.has(connectorSlug(t)));
 
     const connectorDetail = connectorTools.length === 0
-      ? "Aucun connecteur — l'agent n'agit dans aucun outil externe."
+      ? "Aucun connecteur, l'agent n'agit dans aucun outil externe."
       : [
         working.length ? working.map((t) => connectorSlug(t)).join(", ") : null,
         unset.length ? `${unset.length} sans service choisi` : null,
@@ -144,7 +144,7 @@ function useAgentSetupSteps(agentId: string) {
         status: instructions.length >= 80 ? "ready" : "todo",
         detail: instructions.length
           ? `${instructions.length} caractères d'instructions`
-          : "Aucune instruction — l'agent improvise.",
+          : "Aucune instruction, l'agent improvise.",
         prompt: brief("le prompt système (instructions)"),
       },
       {
@@ -154,10 +154,10 @@ function useAgentSetupSteps(agentId: string) {
         status: connectorTools.length === 0 ? "tune" : (unset.length || disconnected.length) ? "todo" : "ready",
         detail: connectorDetail,
         prompt: connectorTools.length === 0
-          ? `Configurons les connecteurs de l'agent ${named}. Appelle get_agent_setup pour voir les connexions réellement disponibles dans ce projet, et propose-moi celles qui ont du sens pour son rôle${agent.role ? ` (${agent.role})` : ""} — une question à la fois, puis rattache celles que je choisis.`
+          ? `Configurons les connecteurs de l'agent ${named}. Appelle get_agent_setup pour voir les connexions réellement disponibles dans ce projet, et propose-moi celles qui ont du sens pour son rôle${agent.role ? ` (${agent.role})` : ""}, une question à la fois, puis rattache celles que je choisis.`
           : `Configurons les connecteurs de l'agent ${named}. À régler : ${[
-            ...unset.map((t) => `${t.name} — aucun service choisi`),
-            ...disconnected.map((t) => `${connectorSlug(t)} — non connecté dans ce projet`),
+            ...unset.map((t) => `${t.name}, aucun service choisi`),
+            ...disconnected.map((t) => `${connectorSlug(t)}, non connecté dans ce projet`),
           ].join(" ; ") || "rien de bloquant, propose-moi ce qui manquerait pour son rôle"}. Appelle get_agent_setup pour les connexions réellement disponibles.`,
       },
       {
@@ -167,7 +167,7 @@ function useAgentSetupSteps(agentId: string) {
         status: skills > 0 ? "ready" : "tune",
         detail: skills > 0
           ? `${skills} skill${skills > 1 ? "s" : ""} active${skills > 1 ? "s" : ""}`
-          : "Aucune skill — le catalogue peut lui donner des méthodes de travail.",
+          : "Aucune skill, le catalogue peut lui donner des méthodes de travail.",
         prompt: `Configurons les skills de l'agent ${named}. Appelle get_agent_setup puis search_agent_skills avec des mots-clés tirés de son rôle, propose-moi 3 à 5 skills pertinentes avec ce qu'elles apportent, et active celles que je choisis.`,
       },
     ];

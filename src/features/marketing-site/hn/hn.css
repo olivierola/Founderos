@@ -1,0 +1,339 @@
+/* ══ The Hunar register ══════════════════════════════════════════════════════
+   The marketing site's skin since 2026-10-03, modelled on hunar.ai: Geist set
+   at 400/500 with a tight track, one blue (#006EDD), a warm off-white ground
+   (#f7f8fb) that alternates with near-black bands (#0f1728), small radii
+   (4px controls, 8px cards) and long-exposure gradient artwork instead of
+   photographs.
+
+   Scoped to `.hn` so nothing leaks into the product. Pages that still carry
+   `.amplify` keep it for the shared reveal/animation classes; `.hn` wins over
+   its dark ground and font stack. */
+
+.hn,
+.amplify.hn {
+  --hn-ink: #0f1728;
+  --hn-body: #344054;
+  --hn-grey: #4b5567;
+  --hn-bg: #f7f8fb;
+  --hn-soft: #f5f7fa;
+  --hn-line: #e6e9ef;
+  --hn-dark: #0f1728;
+  --hn-dark-2: #0b1220;
+  --hn-blue: #006edd;
+  --hn-blue-hover: #0057c2;
+  --hn-blue-light: #5aa8ff;
+  --hn-blue-50: #eaf2ff;
+  --hn-blue-100: #e5f0fb;
+  --hn-navy: #0a2c68;
+
+  /* The amp tokens the interior pages still read, re-pointed at this palette. */
+  --amp-accent: #006edd;
+  --amp-orange: #006edd;
+  --amp-accent-bright: #5aa8ff;
+  --amp-accent-deep: #006edd;
+  --amp-cyan: #5aa8ff;
+  --amp-on-accent: #ffffff;
+  --amp-muted: #4b5567;
+  --amp-faint: #8a94a6;
+  --amp-line: #e6e9ef;
+  --amp-line-soft: #eef1f5;
+  --amp-panel: #f7f8fb;
+  --amp-panel-hi: #f5f7fa;
+
+  background-color: #ffffff;
+  color: var(--hn-ink);
+  /* The app sets a 450 "regular" on body (Plane's); the reference is 400. */
+  font-weight: 400;
+  color-scheme: light;
+  font-family: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html.hn-root,
+html.hn-root body,
+html.hn-root.amp-root,
+html.hn-root.amp-root body {
+  background-color: #ffffff;
+}
+
+.hn ::selection {
+  background: rgba(0, 110, 221, 0.18);
+}
+
+/* ── Artwork ─────────────────────────────────────────────────────────────────
+   Gradient panels instead of photographs. Polished on 2026-10-04: one cool
+   family (navy → azure → ice, indigo, teal, slate) and a single warm accent,
+   so a page of panels reads as one brand rather than a paint chart. Each panel
+   is three soft light pools over a base ramp, a fine grain (::before) so the
+   colour has texture instead of looking flat on screen, and faint diagonal
+   light streaks (::after).
+
+   The class names are kept from the first pass so callers do not change:
+     blue → azure, violet → indigo, olive → teal, orange → amber (the accent),
+     pink → sky, gold → slate. */
+.hn-art {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.hn-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.22;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.hn-art::after {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  z-index: -2;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    168deg,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(255, 255, 255, 0.07) 26px,
+    rgba(255, 255, 255, 0) 64px
+  );
+  filter: blur(14px);
+}
+
+/* azure — the brand panel */
+.hn-art-blue {
+  background:
+    radial-gradient(70% 80% at 0% 100%, #06235e 0%, rgba(6, 35, 94, 0) 65%),
+    radial-gradient(55% 60% at 100% 0%, #e3efff 0%, rgba(227, 239, 255, 0) 65%),
+    radial-gradient(50% 55% at 75% 85%, #5ea3f7 0%, rgba(94, 163, 247, 0) 70%),
+    linear-gradient(140deg, #0a3a9a 0%, #1663d4 42%, #4f95ef 72%, #2a6fdc 100%);
+}
+/* indigo */
+.hn-art-violet {
+  background:
+    radial-gradient(70% 80% at 0% 100%, #1c1764 0%, rgba(28, 23, 100, 0) 65%),
+    radial-gradient(55% 60% at 100% 0%, #e7e8ff 0%, rgba(231, 232, 255, 0) 65%),
+    radial-gradient(50% 55% at 75% 85%, #8f93f6 0%, rgba(143, 147, 246, 0) 70%),
+    linear-gradient(140deg, #2b2a9e 0%, #4c4fe0 45%, #8086f2 75%, #3f42cc 100%);
+}
+/* teal */
+.hn-art-olive {
+  background:
+    radial-gradient(70% 80% at 0% 100%, #033540 0%, rgba(3, 53, 64, 0) 65%),
+    radial-gradient(55% 60% at 100% 0%, #d9f6fb 0%, rgba(217, 246, 251, 0) 65%),
+    radial-gradient(50% 55% at 75% 85%, #47b8cf 0%, rgba(71, 184, 207, 0) 70%),
+    linear-gradient(140deg, #0a5566 0%, #0f7f96 45%, #46aec4 75%, #0c6a7e 100%);
+}
+/* amber — the one warm accent, used sparingly */
+.hn-art-orange {
+  background:
+    radial-gradient(70% 80% at 0% 100%, #8a2f0a 0%, rgba(138, 47, 10, 0) 65%),
+    radial-gradient(55% 60% at 100% 0%, #fff0df 0%, rgba(255, 240, 223, 0) 65%),
+    radial-gradient(50% 55% at 75% 85%, #f6a15c 0%, rgba(246, 161, 92, 0) 70%),
+    linear-gradient(140deg, #c2410c 0%, #e5692a 45%, #f3a36b 75%, #d4561d 100%);
+}
+/* sky — light azure, for panels that carry dark UI */
+.hn-art-pink {
+  background:
+    radial-gradient(70% 80% at 0% 100%, #2f6fd6 0%, rgba(47, 111, 214, 0) 65%),
+    radial-gradient(60% 65% at 100% 0%, #ffffff 0%, rgba(255, 255, 255, 0) 65%),
+    radial-gradient(50% 55% at 70% 85%, #a9cdfb 0%, rgba(169, 205, 251, 0) 70%),
+    linear-gradient(140deg, #6aa3f2 0%, #a7c9f8 45%, #dbe9fd 75%, #8db8f5 100%);
+}
+/* slate — the quiet panel */
+.hn-art-gold {
+  background:
+    radial-gradient(70% 80% at 0% 100%, #0b1220 0%, rgba(11, 18, 32, 0) 65%),
+    radial-gradient(55% 60% at 100% 0%, #e2e8f0 0%, rgba(226, 232, 240, 0) 65%),
+    radial-gradient(50% 55% at 75% 85%, #7d8ca3 0%, rgba(125, 140, 163, 0) 70%),
+    linear-gradient(140deg, #1e293b 0%, #3a4a63 45%, #7a8aa3 75%, #2c3a52 100%);
+}
+
+/* The wide sky band behind the CTA card and the comparison panel. */
+.hn-sky {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(45% 90% at 6% 100%, #04205c 0%, rgba(4, 32, 92, 0) 70%),
+    radial-gradient(40% 90% at 80% 45%, #cfe3ff 0%, rgba(207, 227, 255, 0) 70%),
+    radial-gradient(35% 80% at 45% 10%, #4e93ec 0%, rgba(78, 147, 236, 0) 70%),
+    linear-gradient(100deg, #083a9e 0%, #1460d0 35%, #5d9ff1 62%, #2a6ddb 85%, #8fbcf7 100%);
+}
+.hn-sky::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.18;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* The dark bands: deep navy with a faint azure glow at the head, so the
+   section reads as lit rather than as a black slab. */
+.hn-dark {
+  background-color: #0b1220;
+  background-image:
+    radial-gradient(60% 40% at 50% 0%, rgba(22, 99, 212, 0.18) 0%, rgba(22, 99, 212, 0) 70%);
+}
+
+/* Product surfaces: a hairline, then a long soft shadow. */
+.hn-shadow {
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 24px 48px -28px rgba(16, 24, 40, 0.28);
+}
+.hn-shadow-lg {
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 40px 80px -36px rgba(6, 30, 80, 0.45);
+}
+
+/* ── Marquee ─────────────────────────────────────────────────────────────── */
+@keyframes hn-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.hn-marquee {
+  display: flex;
+  width: max-content;
+  animation: hn-marquee 40s linear infinite;
+}
+.hn-marquee:hover { animation-play-state: paused; }
+
+/* ── Dark band rules ─────────────────────────────────────────────────────────
+   The reference frames its dark bands with two vertical hairlines at the
+   container edges and rules each row off; this draws the vertical pair. */
+.hn-rails {
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@keyframes hn-wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.hn-wave > span {
+  display: block;
+  transform-origin: center;
+  animation: hn-wave 1.3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hn-marquee,
+  .hn-wave > span {
+    animation: none !important;
+  }
+}
+
+/* ── Older markup inside the register ───────────────────────────────────────
+   The interior pages were written for earlier registers. Three of their
+   devices are translated here rather than rewritten in every page: the serif
+   lead becomes Geist, the monospace uppercase labels become Geist medium, and
+   the dark diagram plates (LandingVisuals) take the blue artwork. */
+.hn .font-instrument-serif {
+  font-family: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-style: normal;
+  letter-spacing: -0.01em;
+}
+.hn .font-mono.uppercase {
+  font-family: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.hn .amp-viz {
+  border-radius: 8px;
+  background-color: #0b1220;
+  background-image:
+    radial-gradient(60% 50% at 80% 0%, rgba(54, 155, 255, 0.35), transparent 70%),
+    radial-gradient(50% 40% at 10% 100%, rgba(0, 110, 221, 0.35), transparent 70%);
+  --vz-accent: #e6f1ff;
+  --vz-neon: #8cc2ff;
+  --vz-line: rgba(108, 182, 255, 0.45);
+  --vz-fill: rgba(108, 182, 255, 0.08);
+  --vz-tile: rgba(108, 182, 255, 0.14);
+  --vz-glow: rgba(54, 155, 255, 0.6);
+  --vz-ink: #0b1220;
+}
+
+/* ── Card hover ──────────────────────────────────────────────────────────────
+   On hover a card floods with the brand blue: a gradient fades in behind the
+   content (::before), the ink turns white, hairlines and icon tiles go glassy,
+   and the card lifts by 3px. Artwork inside a card (`.hn-keep`) keeps its own
+   colours, so a product mock on a card stays legible. */
+.hn-hover {
+  position: relative;
+  isolation: isolate;
+}
+.hn-hover::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  background:
+    radial-gradient(80% 90% at 100% 0%, #6bb0ff 0%, rgba(107, 176, 255, 0) 60%),
+    radial-gradient(70% 80% at 0% 100%, #06235e 0%, rgba(6, 35, 94, 0) 65%),
+    linear-gradient(135deg, #0a3a9a 0%, #1663d4 55%, #3d86ea 100%);
+}
+.hn-hover:hover {
+  border-color: transparent;
+  translate: 0 -3px;
+  box-shadow: 0 30px 60px -30px rgba(6, 40, 110, 0.55);
+}
+.hn-hover:hover::before {
+  opacity: 1;
+}
+.hn-hover:hover *:not(.hn-keep):not(.hn-keep *) {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.hn-hover:hover p:not(.hn-keep *) {
+  color: rgba(255, 255, 255, 0.85);
+}
+.hn-hover:hover .hn-icon:not(.hn-keep *),
+.hn-hover:hover .hn-chip:not(.hn-keep *) {
+  background-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Appear on scroll ────────────────────────────────────────────────────────
+   Cards and section heads fade up as they enter the viewport (HnPage wires the
+   observer). One transition list for both behaviours, so the hover lift and
+   the reveal never overwrite each other's `transition`. */
+.hn-hover,
+.hn-reveal {
+  transition:
+    opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.75s cubic-bezier(0.16, 1, 0.3, 1),
+    translate 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+}
+.hn-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+}
+.hn-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hn-reveal {
+    opacity: 1;
+    transform: none;
+  }
+  .hn-hover:hover {
+    translate: none;
+  }
+}
+
+/* A hover flood that does not lift — for halves of a shared frame (the
+   Products section), where only the content inside moves. */
+.hn-hover.hn-hover-flat:hover {
+  translate: none;
+  box-shadow: none;
+}

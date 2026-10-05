@@ -327,7 +327,7 @@ export function NodeConfigDialog({
                 values={draft.env ?? []}
                 onChange={(vals) => setDraft({ ...draft, env: vals })}
                 placeholder="STRIPE_SECRET_KEY"
-                hint="Names only — actual values come from the Vault."
+                hint="Names only, actual values come from the Vault."
                 mono
               />
             </CollapsibleSection>
@@ -584,7 +584,7 @@ export function NodeConfigDialog({
               <Field label="Vault secret reference">
                 <Input value={meta.credentials_ref ?? ""} onChange={(e) => patchMeta({ credentials_ref: e.target.value })} placeholder="vault:projects/<id>/<secret-name>" className="font-mono" />
               </Field>
-              <p className="text-[10px] text-muted-foreground">Reference only — never paste secrets here.</p>
+              <p className="text-[10px] text-muted-foreground">Reference only, never paste secrets here.</p>
             </CollapsibleSection>
           )}
 
@@ -718,7 +718,7 @@ export function NodeConfigDialog({
                 values={meta.api_keys ?? []}
                 onChange={(vals) => patchMeta({ api_keys: vals })}
                 placeholder="OPENAI_API_KEY"
-                hint="Vault env var names — values never leave the runner."
+                hint="Vault env var names, values never leave the runner."
                 mono
               />
             </CollapsibleSection>

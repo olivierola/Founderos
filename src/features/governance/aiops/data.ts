@@ -194,9 +194,9 @@ const CAUSES: Record<IncidentKind, string> = {
   run_failure: "Exception non gérée dans l'étape d'exécution de l'outil",
   timeout: "Le modèle a dépassé le budget temps (>120s) sur une longue chaîne d'outils",
   tool_error: "L'API externe a renvoyé 500 (quota fournisseur dépassé)",
-  guardrail_block: "Tentative d'écriture sur une donnée restreinte — bloquée par un guardrail",
-  rate_limit: "429 du fournisseur LLM — trop de requêtes concurrentes",
-  hallucination: "Sortie contredite par la self-verification — relance demandée",
+  guardrail_block: "Tentative d'écriture sur une donnée restreinte, bloquée par un guardrail",
+  rate_limit: "429 du fournisseur LLM, trop de requêtes concurrentes",
+  hallucination: "Sortie contredite par la self-verification, relance demandée",
 };
 
 // ── Generators (seeded by project) ───────────────────────────────────────────
@@ -309,11 +309,11 @@ export const INFRA_KIND_META: Record<InfraKind, Meta> = {
   overheat: { label: "Surchauffe", tone: "orange" }, driver_crash: { label: "Crash driver", tone: "violet" },
 };
 const INFRA_CAUSES: Record<InfraKind, [string, string]> = {
-  gpu_oom: ["Batch trop large sur le modèle 32B — VRAM saturée", "Inférences en échec pendant 4 min, retries automatiques"],
+  gpu_oom: ["Batch trop large sur le modèle 32B, VRAM saturée", "Inférences en échec pendant 4 min, retries automatiques"],
   disk_full: ["Checkpoints de fine-tuning non purgés (/var/models)", "Écritures bloquées, jobs en pause"],
   network_latency: ["Pic de latence inter-région (eu-west ↔ us-east)", "P95 des requêtes ×3 pendant 12 min"],
   service_down: ["Le serveur d'inférence vLLM a redémarré (watchdog)", "30 s d'indisponibilité, bascule cloud automatique"],
-  overheat: ["Température GPU > 88°C — throttling thermique", "Débit d'inférence réduit de 40%"],
+  overheat: ["Température GPU > 88°C, throttling thermique", "Débit d'inférence réduit de 40%"],
   driver_crash: ["Crash du driver CUDA après mise à jour", "Redémarrage requis, 6 min d'arrêt"],
 };
 
@@ -486,15 +486,15 @@ export const DEFAULT_FT_ROLES: FtRole[] = [
 export interface FtIntegration { id: string; name: string; description: string; connected: boolean }
 export const FT_INTEGRATIONS: FtIntegration[] = [
   { id: "openai", name: "OpenAI", description: "Fine-tuning API managé (GPT)", connected: false },
-  { id: "anthropic", name: "Anthropic", description: "APIs Claude — évaluation LLM-judge & serving cloud", connected: true },
+  { id: "anthropic", name: "Anthropic", description: "APIs Claude, évaluation LLM-judge & serving cloud", connected: true },
   { id: "mistral", name: "Mistral AI", description: "Fine-tuning API + poids ouverts (La Plateforme)", connected: true },
-  { id: "meta", name: "Meta", description: "Poids Llama — licences & téléchargement officiel", connected: true },
-  { id: "google", name: "Google", description: "Vertex AI — tuning Gemini & Gemma", connected: false },
-  { id: "microsoft", name: "Microsoft", description: "Azure AI Foundry — fine-tuning & déploiement", connected: false },
-  { id: "aws", name: "Amazon Web Services", description: "Bedrock & SageMaker — training managé", connected: false },
-  { id: "huggingface", name: "Hugging Face", description: "Hub de modèles & datasets — push/pull des poids affinés", connected: true },
+  { id: "meta", name: "Meta", description: "Poids Llama, licences & téléchargement officiel", connected: true },
+  { id: "google", name: "Google", description: "Vertex AI, tuning Gemini & Gemma", connected: false },
+  { id: "microsoft", name: "Microsoft", description: "Azure AI Foundry, fine-tuning & déploiement", connected: false },
+  { id: "aws", name: "Amazon Web Services", description: "Bedrock & SageMaker, training managé", connected: false },
+  { id: "huggingface", name: "Hugging Face", description: "Hub de modèles & datasets, push/pull des poids affinés", connected: true },
   { id: "ollama", name: "Ollama", description: "Serving local des modèles affinés (GGUF)", connected: true },
-  { id: "nvidia", name: "NVIDIA", description: "NGC / NeMo — conteneurs & pilotes d'entraînement", connected: false },
+  { id: "nvidia", name: "NVIDIA", description: "NGC / NeMo, conteneurs & pilotes d'entraînement", connected: false },
 ];
 
 // ── Labeling (datasets supervisés : IA propose → humain valide) ──────────────
@@ -577,7 +577,7 @@ export const AT_REST_LABELS: Record<EncryptionPolicy["atRest"], string> = {
   aes_256: "AES-256", aes_128: "AES-128", none: "Désactivé",
 };
 export const KEY_MGMT_LABELS: Record<EncryptionPolicy["keyManagement"], string> = {
-  managed: "Clés gérées par la plateforme", kms: "KMS du cloud provider", byok: "BYOK — vos propres clés",
+  managed: "Clés gérées par la plateforme", kms: "KMS du cloud provider", byok: "BYOK, vos propres clés",
 };
 
 export const SECURITY_DEFAULTS: SecurityConfig = {

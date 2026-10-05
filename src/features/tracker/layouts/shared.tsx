@@ -13,7 +13,7 @@ import { PRIORITIES } from "../model";
 import { AgentStack } from "../AgentPicker";
 import type { TrackerAgent } from "../model";
 import type {
-  Member, PjCycle, PjIssue, PjIssueType, PjLabel, PjModule, PjProject, PjState, Priority,
+  Member, PjIssue, PjIssueType, PjLabel, PjProject, PjState, Priority,
 } from "../model";
 
 /**
@@ -32,8 +32,6 @@ export interface LayoutProps {
   states: PjState[];
   labels: PjLabel[];
   members: Member[];
-  cycles: PjCycle[];
-  modules: PjModule[];
   /** Les types du projet, pour la pastille de nature en tête de ligne. */
   issueTypes: PjIssueType[];
   /** Les agents du service, pour montrer ceux qui portent un item. */

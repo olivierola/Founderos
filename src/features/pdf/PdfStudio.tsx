@@ -105,7 +105,7 @@ export function PdfExportDialog({
         <div className="shrink-0 border-b border-border px-5 py-3 pr-12">
           <DialogTitle className="truncate text-base">{title}</DialogTitle>
           <DialogDescription className="text-xs">
-            {description ?? "PDF vectoriel, texte sélectionnable — généré dans votre navigateur avec pdfcn."}
+            {description ?? "PDF vectoriel, texte sélectionnable, généré dans votre navigateur avec pdfcn."}
           </DialogDescription>
         </div>
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">

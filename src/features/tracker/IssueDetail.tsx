@@ -19,19 +19,19 @@ import { CommentComposer } from "./CommentComposer";
 import { AgentAvatar } from "./AgentPicker";
 import { Select } from "./ui";
 import {
-  AssigneePicker, CyclePicker, DatePicker, IssueKey, LABEL_COLORS, LabelPicker, MemberAvatar,
-  ModulePicker, PriorityPicker, StateIcon, StatePicker, formatDate, memberName,
+  AssigneePicker, DatePicker, IssueKey, LABEL_COLORS, LabelPicker, MemberAvatar,
+  PriorityPicker, StateIcon, StatePicker, formatDate, memberName,
 } from "./pickers";
 import { AssetKindIcon, AssetPickerDialog, assetHref } from "./AssetsPage";
 import {
   RELATION_LABEL, RELATION_TYPES, attachmentUrl,
   addComment, addRelation, createIssue, createLabel, deleteAttachment, deleteComment, deleteIssue,
   fetchActivity, fetchAttachments, fetchComments, fetchIssues, fetchRelations,
-  removeRelation, setAssignees, setIssueCycle, setIssueModules, setLabels,
+  removeRelation, setAssignees, setLabels,
   setIssueAgents, updateIssue, uploadAttachment, assignMission, fetchTrackerAgents,
   attachAssetToIssue, detachAssetFromIssue, fetchIssueAssets, setIssueAssetRole,
-  type AssetRole, type Member, type PjCycle, type PjIssue, type PjIssueAsset, type PjLabel,
-  type PjModule, type PjProject, type PjState, type RelationType,
+  type AssetRole, type Member, type PjIssue, type PjIssueAsset, type PjLabel,
+  type PjProject, type PjState, type RelationType,
 } from "./model";
 
 /**
@@ -103,7 +103,7 @@ export function IssuePeekActions({
  * brouillon local à synchroniser, donc rien à perdre en fermant.
  */
 export function IssueDetailPanel({
-  issue, project, states, labels, members, cycles, modules,
+  issue, project, states, labels, members,
   onClose, onChanged, onOpenIssue, dashboardId, embedded = false,
 }: {
   issue: PjIssue;
@@ -111,8 +111,6 @@ export function IssueDetailPanel({
   states: PjState[];
   labels: PjLabel[];
   members: Member[];
-  cycles: PjCycle[];
-  modules: PjModule[];
   onClose: () => void;
   onChanged: () => void;
   onOpenIssue: (i: PjIssue) => void;
@@ -212,7 +210,7 @@ export function IssueDetailPanel({
 
           <PropertyGrid
             issue={issue} states={states} labels={labels} members={members}
-            cycles={cycles} modules={modules} project={project}
+            project={project}
             dashboardId={dashboardId ?? project.dashboard_id}
             onPatch={(p) => patch.mutate(p)}
             onChanged={invalidate}
@@ -285,11 +283,11 @@ function TabButton({
 // ── Propriétés ──────────────────────────────────────────────────────────────
 
 function PropertyGrid({
-  issue, project, states, labels, members, cycles, modules, dashboardId,
+  issue, project, states, labels, members, dashboardId,
   onPatch, onChanged,
 }: {
   issue: PjIssue; project: PjProject; states: PjState[]; labels: PjLabel[];
-  members: Member[]; cycles: PjCycle[]; modules: PjModule[];
+  members: Member[];
   dashboardId?: string | null;
   onPatch: (p: Partial<PjIssue>) => void;
   onChanged: () => void;
@@ -371,24 +369,6 @@ function PropertyGrid({
         <DatePicker
           value={issue.target_date} onChange={(v) => onPatch({ target_date: v })}
           placeholder="Échéance" min={issue.start_date}
-        />
-      ),
-    },
-    {
-      label: "Cycle",
-      control: (
-        <CyclePicker
-          cycles={cycles} value={issue.cycle_id}
-          onChange={async (id) => { await setIssueCycle(issue.id, project.workspace_id, id); onChanged(); }}
-        />
-      ),
-    },
-    {
-      label: "Modules",
-      control: (
-        <ModulePicker
-          modules={modules} value={issue.module_ids}
-          onChange={async (ids) => { await setIssueModules(issue.id, project.workspace_id, ids); onChanged(); }}
         />
       ),
     },
@@ -681,7 +661,7 @@ function Resources({ issue, project }: { issue: PjIssue; project: PjProject }) {
       {!attached.length && (
         <p className="text-12 text-muted-foreground">
           Aucune ressource. Rattachez le dépôt, le document ou les données sur lesquels porte cet
-          item — les agents s'en serviront.
+          item, les agents s'en serviront.
         </p>
       )}
 
@@ -831,7 +811,7 @@ function Comments({ issue, project, members }: { issue: PjIssue; project: PjProj
       try {
         await assignMission({
           agentId, issue, project,
-          title: `Réponse à un commentaire — ${issue.name}`.slice(0, 200),
+          title: `Réponse à un commentaire, ${issue.name}`.slice(0, 200),
           brief: `Un membre de l'équipe vous a mentionné dans la discussion de ce work item :
 
 « ${text} »

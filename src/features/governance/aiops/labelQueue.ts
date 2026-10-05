@@ -79,7 +79,7 @@ export function useDatasetQueue(dataset: FtDataset | undefined) {
     let cancelled = false;
     if (!path) {
       setDocs([]);
-      setProblem(dataset ? "Ce dataset n'a pas de fichier importé — la file de validation lit les documents réels du fichier." : null);
+      setProblem(dataset ? "Ce dataset n'a pas de fichier importé, la file de validation lit les documents réels du fichier." : null);
       return;
     }
     setLoading(true);

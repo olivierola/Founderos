@@ -231,7 +231,7 @@ function PolicyGrid({ teams, policies, workspaceId, projectId, onSaved }: {
   const projectRow = policies.find((p) => p.service_dashboard_id === null);
   const projectPolicy = projectRow ? normalize(projectRow.policy) : DEFAULT_POLICY;
   const rows: Array<{ key: string; teamId: string | null; label: string; own: boolean; policy: TeamPolicy }> = [
-    { key: "project", teamId: null, label: "Projet — par défaut", own: !!projectRow, policy: projectPolicy },
+    { key: "project", teamId: null, label: "Projet, par défaut", own: !!projectRow, policy: projectPolicy },
     ...teams.map((t) => {
       const own = policies.find((p) => p.service_dashboard_id === t.id);
       return { key: t.id, teamId: t.id, label: t.name, own: !!own, policy: own ? normalize(own.policy) : projectPolicy };
@@ -283,7 +283,7 @@ function PolicyGrid({ teams, policies, workspaceId, projectId, onSaved }: {
           <div className="text-[13px] font-medium">Grille par équipe</div>
           <div className="text-[11.5px] text-muted-foreground">
             <strong className="text-foreground">Interactif</strong> : quelqu'un est dans la conversation.{" "}
-            <strong className="text-foreground">Autonome</strong> : mission, planification ou room — personne ne regarde au moment où l'action part.
+            <strong className="text-foreground">Autonome</strong> : mission, planification ou room, personne ne regarde au moment où l'action part.
             Le <strong className="text-foreground">plafond de l'autopilote</strong> est le niveau à partir duquel même un agent en autopilote demande.
           </div>
         </div>
@@ -478,7 +478,7 @@ function AuditLog({ decisions, approvals, agentNames, teams }: {
           <div className="flex items-start gap-2 px-4 py-6 text-[12px] text-muted-foreground">
             <Shield className="mt-0.5 h-4 w-4 shrink-0" />
             {decisions.length === 0
-              ? "Aucune action évaluée sur 30 jours. PolicyGuard s'allume dans Gouvernance IA → Jugement rapide (usage « PolicyGuard — risque des actions ») ; en Observation, chaque action est classée et journalisée ici sans rien changer."
+              ? "Aucune action évaluée sur 30 jours. PolicyGuard s'allume dans Gouvernance IA → Jugement rapide (usage « PolicyGuard, risque des actions ») ; en Observation, chaque action est classée et journalisée ici sans rien changer."
               : "Aucune décision dans ce filtre."}
           </div>
         ) : (

@@ -227,7 +227,7 @@ export function ConnectorDialog({
                           "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded " +
                           (a.write ? "bg-amber-500/15 text-amber-500" : "bg-emerald-500/15 text-emerald-500")
                         }
-                        title={a.write ? "Écriture — action sortante" : "Lecture seule"}
+                        title={a.write ? "Écriture, action sortante" : "Lecture seule"}
                       >
                         {a.write ? <ArrowUpRight className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                       </span>

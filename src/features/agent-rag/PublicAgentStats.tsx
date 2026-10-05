@@ -183,7 +183,7 @@ export function PublicAgentStatsPage() {
         <footer className={cn("mt-10 flex flex-col items-center gap-2 text-center")}>
           <p className="text-xs text-muted-foreground">Chiffres agrégés, mis à jour en continu. Aucune conversation n'est publiée.</p>
           <a href={cta} className="rounded-full border border-border px-4 py-2 text-xs font-medium transition-colors hover:bg-muted">
-            Propulsé par <strong>Anduran</strong> — créez votre agent
+            Propulsé par <strong>Anduran</strong>, créez votre agent
           </a>
         </footer>
       </main>

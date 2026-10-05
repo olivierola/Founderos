@@ -185,7 +185,7 @@ export function GovAgentPilotPage() {
     <div className="space-y-6">
       <PageHeader
         title="AgentPilot"
-        description="Comment vos agents sont pilotés pendant un run : quel modèle ils prennent, quand ils tournent en rond, quand ils vous posent la question plutôt que d'insister — et ce que ça coûte."
+        description="Comment vos agents sont pilotés pendant un run : quel modèle ils prennent, quand ils tournent en rond, quand ils vous posent la question plutôt que d'insister, et ce que ça coûte."
         actions={
           <Button variant="outline" size="sm" className="gap-1.5"
             onClick={() => qc.invalidateQueries({ queryKey: ["agentpilot", workspaceId] })}>
@@ -355,7 +355,7 @@ function DecisionLine({ d, agent }: { d: DecisionRow; agent: string }) {
         <span className="ml-auto shrink-0 text-muted-foreground/70">{when(d.created_at)}</span>
       </div>
       <div className={cn("mt-0.5 truncate pl-[5.75rem] text-muted-foreground")} title={reason ?? undefined}>
-        {agent}{reason ? ` — ${reason}` : ""}
+        {agent}{reason ? `, ${reason}` : ""}
       </div>
     </div>
   );

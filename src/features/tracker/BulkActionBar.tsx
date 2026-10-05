@@ -11,7 +11,7 @@ import { StateIcon, PriorityIcon } from "./pickers";
 import {
   PRIORITIES, archiveIssue, bulkAssignAgent, bulkUpdate, deleteIssue,
   fetchProjectAgents, fetchTrackerAgents,
-  type PjCycle, type PjProject, type PjState, type Priority,
+  type PjProject, type PjState, type Priority,
 } from "./model";
 import { useConfirm } from "@/components/ConfirmProvider";
 
@@ -28,11 +28,10 @@ import { useConfirm } from "@/components/ConfirmProvider";
  * coche ferait perdre la place où l'on en était.
  */
 export function BulkActionBar({
-  selected, states, cycles, onClear, onDone, project, dashboardId,
+  selected, states, onClear, onDone, project, dashboardId,
 }: {
   selected: string[];
   states: PjState[];
-  cycles: PjCycle[];
   onClear: () => void;
   onDone: () => void;
   /** Le projet, pour proposer SES agents autorisés en écriture. */
@@ -127,19 +126,6 @@ export function BulkActionBar({
             </DropdownMenuItem>
           ))}
         </BulkMenu>
-
-        {cycles.length > 0 && (
-          <BulkMenu label="Cycle">
-            {cycles.map((c) => (
-              <DropdownMenuItem
-                key={c.id}
-                onClick={() => run(() => bulkUpdate({ issueIds: selected, cycle_id: c.id }))}
-              >
-                {c.name}
-              </DropdownMenuItem>
-            ))}
-          </BulkMenu>
-        )}
 
         <span className="h-4 w-px bg-border" />
 

@@ -104,7 +104,7 @@ export function McpServersPage() {
       const res = await callEdge<{ ok: boolean; authorize_url?: string; error?: string }>("mcp-oauth", { action: "start", server_id: s.id, redirect_uri: redirectUri });
       if (!res.ok || !res.authorize_url) { toast.error(`Échec : ${res.error ?? "impossible de démarrer OAuth"}`); return; }
       const popup = window.open(res.authorize_url, "mcp-oauth", "width=520,height=700");
-      if (!popup) { toast.error("Le popup a été bloqué — autorisez les popups pour ce site."); return; }
+      if (!popup) { toast.error("Le popup a été bloqué, autorisez les popups pour ce site."); return; }
       const onMsg = (e: MessageEvent) => {
         if (e.origin !== window.location.origin || (e.data as { type?: string })?.type !== "mcp-oauth") return;
         window.removeEventListener("message", onMsg);
@@ -400,7 +400,7 @@ function McpServerDialog({
         action: "test", url: url.trim(), headers: headersObj(), transport,
       });
       setTestResult(res.ok
-        ? { ok: true, msg: `Connexion OK — ${res.count ?? 0} outil(s) découvert(s).` }
+        ? { ok: true, msg: `Connexion OK, ${res.count ?? 0} outil(s) découvert(s).` }
         : { ok: false, msg: res.error ?? "Échec de la connexion." });
     } catch (e) {
       setTestResult({ ok: false, msg: e instanceof Error ? e.message : String(e) });
@@ -539,7 +539,7 @@ function McpServerDialog({
                 </p>
               </div>
               <details className="text-[11px]">
-                <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Client OAuth manuel (si l'enregistrement dynamique est refusé — erreur 403)</summary>
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Client OAuth manuel (si l'enregistrement dynamique est refusé, erreur 403)</summary>
                 <div className="mt-2 space-y-2">
                   <div>
                     <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Client name (DCR)</label>

@@ -189,7 +189,7 @@ ngOnInit() {
   s.defer = true;
   document.body.appendChild(s);
 }`,
-    WordPress: `// functions.php — le widget sur toutes les pages
+    WordPress: `// functions.php, le widget sur toutes les pages
 add_action("wp_footer", function () {
   echo '<script src="${WIDGET_URL}" data-agent="${agent.public_key}" defer></script>';
 });`,
@@ -214,7 +214,7 @@ add_action("wp_footer", function () {
           <>
             <Group
               title="Modèles"
-              hint="Un modèle change la STRUCTURE : où vit le champ de saisie, comment la fenêtre se pose, ce que montre l'écran vide. Vos couleurs, vos textes et votre clé publique restent intacts — on essaie un modèle sans rien perdre."
+              hint="Un modèle change la STRUCTURE : où vit le champ de saisie, comment la fenêtre se pose, ce que montre l'écran vide. Vos couleurs, vos textes et votre clé publique restent intacts, on essaie un modèle sans rien perdre."
             >
               <div className="grid gap-2 sm:grid-cols-2">
                 {WIDGET_MODELS.map((m) => {
@@ -291,7 +291,7 @@ add_action("wp_footer", function () {
                 onChange={(v) => set("voice_input", v)}
               />
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Reconnaissance vocale du navigateur du visiteur — aucun appel ni aucune clé de notre côté.
+                Reconnaissance vocale du navigateur du visiteur, aucun appel ni aucune clé de notre côté.
                 Là où le navigateur ne la porte pas (Firefox, la plupart des navigateurs mobiles), le bouton
                 n'est pas affiché plutôt qu'affiché et inerte.
               </p>
@@ -304,7 +304,7 @@ add_action("wp_footer", function () {
                   />
                   <p className="text-[11px] leading-relaxed text-muted-foreground">
                     Les pastilles de la barre. La touche n'est captée que si personne n'écrit ailleurs sur la
-                    page — un raccourci qui vole le « c » d'un formulaire coûte plus qu'il ne rapporte.
+                    page, un raccourci qui vole le « c » d'un formulaire coûte plus qu'il ne rapporte.
                   </p>
                 </>
               )}
@@ -345,7 +345,7 @@ add_action("wp_footer", function () {
 
         {tab === "apparence" && (
           <>
-            <Group title="Thèmes" hint="Un point de départ cohérent. Un thème ne touche que la matière — vos textes, vos conditions et votre clé restent intacts.">
+            <Group title="Thèmes" hint="Un point de départ cohérent. Un thème ne touche que la matière, vos textes, vos conditions et votre clé restent intacts.">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {WIDGET_PRESETS.map((p) => (
                   <button
@@ -398,7 +398,7 @@ add_action("wp_footer", function () {
             </Group>
 
             {cfg.theme_mode !== "dark" && (
-              <Group title="Couleurs — thème clair">
+              <Group title="Couleurs, thème clair">
                 <ColorRow label="Fond" value={cfg.base} onChange={(v) => set("base", v)} />
                 <ColorRow label="Bordure" value={cfg.base_border} onChange={(v) => set("base_border", v)} />
                 <ColorRow label="Texte" value={cfg.base_primary} onChange={(v) => set("base_primary", v)} />
@@ -407,7 +407,7 @@ add_action("wp_footer", function () {
             )}
 
             {dark && (
-              <Group title="Couleurs — thème sombre">
+              <Group title="Couleurs, thème sombre">
                 <ColorRow label="Fond" value={cfg.dark_base} onChange={(v) => set("dark_base", v)} />
                 <ColorRow label="Bordure" value={cfg.dark_border} onChange={(v) => set("dark_border", v)} />
                 <ColorRow label="Texte" value={cfg.dark_primary} onChange={(v) => set("dark_primary", v)} />
@@ -525,7 +525,7 @@ add_action("wp_footer", function () {
               <PxRow label="Décalage bas" value={cfg.offset_y} onChange={(v) => set("offset_y", v)} max={160} />
             </Group>
 
-            <Group title="Accroche" hint="Une bulle d'invitation, une fois par session et refusable. Un refus est mémorisé — rien n'agace autant qu'une accroche qui revient à chaque page.">
+            <Group title="Accroche" hint="Une bulle d'invitation, une fois par session et refusable. Un refus est mémorisé, rien n'agace autant qu'une accroche qui revient à chaque page.">
               <SoftToggle label="Afficher une accroche" checked={cfg.teaser_enabled} onChange={(v) => set("teaser_enabled", v)} />
               {cfg.teaser_enabled && (
                 <>
@@ -590,7 +590,7 @@ add_action("wp_footer", function () {
               <SoftToggle label="Pastille « en ligne »" checked={cfg.status_dot} onChange={(v) => set("status_dot", v)} />
             </Group>
 
-            <Group title="Présence de l'agent" hint="Son visage dans l'en-tête — et sur l'écran d'accueil ou la barre du Dock. L'orbe vivante change d'animation selon ce que fait l'agent.">
+            <Group title="Présence de l'agent" hint="Son visage dans l'en-tête, et sur l'écran d'accueil ou la barre du Dock. L'orbe vivante change d'animation selon ce que fait l'agent.">
               <AvatarChoices cfg={cfg} set={set} />
               <Row label="Forme">
                 <Pills
@@ -778,7 +778,7 @@ add_action("wp_footer", function () {
 
             <Group
               title="Statistiques publiques"
-              hint="Une page à partager qui montre les performances de votre agent : conversations, taux de résolution, temps de réponse, note moyenne. Uniquement des totaux — aucune conversation, aucun visiteur n'y apparaît."
+              hint="Une page à partager qui montre les performances de votre agent : conversations, taux de résolution, temps de réponse, note moyenne. Uniquement des totaux, aucune conversation, aucun visiteur n'y apparaît."
             >
               <SoftToggle
                 label="Publier la page de statistiques"
@@ -845,7 +845,7 @@ add_action("wp_footer", function () {
               </>
             ) : (
               <span className="flex items-center gap-2 py-1.5 pr-3 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <Check className="h-3.5 w-3.5" weight="bold" /> Enregistré — vos visiteurs le voient
+                <Check className="h-3.5 w-3.5" weight="bold" /> Enregistré, vos visiteurs le voient
               </span>
             )}
           </div>
@@ -920,7 +920,7 @@ function mockPage(dark: boolean, mobile: boolean): string {
   const soft = dark ? "#a1a1aa" : "#78716c";
   const tint = dark ? "#1c1c22" : "#efece6";
   const products = [
-    ["Lin lavé — Écru", "89 €", "linear-gradient(135deg,#e7d8c3,#c9b08e)"],
+    ["Lin lavé, Écru", "89 €", "linear-gradient(135deg,#e7d8c3,#c9b08e)"],
     ["Plaid alpaga", "129 €", "linear-gradient(135deg,#b9c4c9,#7f929b)"],
     ["Céramique sable", "34 €", "linear-gradient(135deg,#e9c9b1,#c98f6a)"],
   ];

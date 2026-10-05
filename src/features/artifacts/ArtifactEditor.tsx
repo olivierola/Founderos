@@ -123,7 +123,7 @@ function dataTool(type: string, label: string, icon: string): BlockToolConstruct
         host.innerHTML = "";
       }
       if (host.childNodes.length === 0) {
-        host.innerHTML = `<div class="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">${label} — vide</div>`;
+        host.innerHTML = `<div class="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">${label}, vide</div>`;
       }
     }
 
@@ -385,7 +385,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     for (const [name, t] of Object.entries(tools)) {
       const cls = (t as { class?: unknown })?.class ?? t;
       if (typeof cls !== "function") {
-        console.warn(`[artifact] outil « ${name} » indisponible — bloc rendu en lecture seule`);
+        console.warn(`[artifact] outil « ${name} » indisponible, bloc rendu en lecture seule`);
         tools[name] = dataTool(name, name, ICONS.block);
       }
     }
@@ -416,7 +416,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
         // screen and nothing is written back.
         const mounted = instance.blocks?.getBlocksCount?.() ?? 0;
         if (doc.blocks.length > 2 && mounted < doc.blocks.length / 2) {
-          console.error(`[artifact] ${doc.blocks.length} blocs dans le document, ${mounted} montés — passage en lecture seule`);
+          console.error(`[artifact] ${doc.blocks.length} blocs dans le document, ${mounted} montés, passage en lecture seule`);
           setMode("fallback");
         } else {
           setMode("live");
@@ -435,7 +435,7 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
             // document is never something a human does in one keystroke.
             if (doc.blocks.length > 2 && next.length < doc.blocks.length / 2) {
               console.error(
-                `[artifact] ${doc.blocks.length} blocs à l'ouverture, ${next.length} après montage — sauvegarde annulée pour ne pas perdre le document`,
+                `[artifact] ${doc.blocks.length} blocs à l'ouverture, ${next.length} après montage, sauvegarde annulée pour ne pas perdre le document`,
               );
               return;
             }
@@ -460,12 +460,12 @@ export function ArtifactEditor({ doc, onChange, readOnly, className }: {
     // and time out in case neither path resolves.
     instance.isReady.catch((err) => {
       if (cancelled) return;
-      console.error("[artifact] l'éditeur n'a pas pu s'initialiser — document affiché en lecture seule", err);
+      console.error("[artifact] l'éditeur n'a pas pu s'initialiser, document affiché en lecture seule", err);
       setMode("fallback");
     });
     const bail = setTimeout(() => {
       if (!ready.current && !cancelled) {
-        console.error("[artifact] l'éditeur n'a pas répondu — document affiché en lecture seule");
+        console.error("[artifact] l'éditeur n'a pas répondu, document affiché en lecture seule");
         setMode("fallback");
       }
     }, 4000);

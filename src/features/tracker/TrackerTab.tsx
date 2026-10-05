@@ -17,11 +17,8 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { FloatingTabBar } from "@/features/service-dashboards/FloatingTabBar";
 import { IssuesBoard } from "./IssuesBoard";
-import { CyclesPage } from "./CyclesPage";
-import { ModulesPage } from "./ModulesPage";
 import { ViewsPage } from "./ViewsPage";
 import { PagesPage } from "./PagesPage";
-import { IntakePage } from "./IntakePage";
 import { CrewPage } from "./CrewPage";
 import { DeliverablesPage } from "./DeliverablesPage";
 import { AssetsPage } from "./AssetsPage";
@@ -34,15 +31,11 @@ import { SpaceViewsPage } from "./SpaceViewsPage";
 import { AgentsTab } from "@/features/service-dashboards/ServiceDashboardTabs";
 import { DraftsPage } from "./DraftsPage";
 import { TrackerHomePage } from "./HomePage";
-import { InitiativesPage } from "./InitiativesPage";
-import { InitiativeDetail } from "./InitiativeDetail";
 import { WorkgraphPage } from "./WorkgraphPage";
 import { DashboardsPage } from "./DashboardsPage";
 import { SpaceAnalytics } from "./SpaceAnalytics";
 import { TrackerCommandPalette } from "./CommandPalette";
 import { WikiPage } from "./WikiPage";
-import { EpicsPage } from "./EpicsPage";
-import { ActiveCyclesPage } from "./ActiveCyclesPage";
 import { ArchivesPage } from "./ArchivesPage";
 import { LogoPicker, ProjectLogo } from "./LogoPicker";
 import { SpaceArchivesPage, SpaceDraftsPage, SpaceStickiesPage } from "./SpacePages";
@@ -52,7 +45,7 @@ import { TextAreaField, TextField } from "./ui";
 import { BoardIllustration } from "./illustrations";
 import { EmptyState } from "./ui";
 import {
-  createProject, deleteProject, deriveIdentifier, fetchFavorites, fetchInitiatives,
+  createProject, deleteProject, deriveIdentifier, fetchFavorites,
   fetchProjects, fetchIssues, fetchStates, toggleFavorite, updateProject,
   type PjProject,
 } from "./model";
@@ -74,8 +67,8 @@ type Section =
 
 /** Les destinations d'espace, par opposition à un identifiant de projet. */
 const SPACE_VIEWS = [
-  "my-work", "drafts", "stickies", "all-projects", "initiatives", "workgraph",
-  "analytics", "boards", "views", "archives", "wiki", "active-cycles", "agents",
+  "my-work", "drafts", "stickies", "all-projects", "workgraph",
+  "analytics", "boards", "views", "archives", "wiki", "agents",
 ];
 
 /**
@@ -84,12 +77,11 @@ const SPACE_VIEWS = [
  * au graphe sans avoir l'impression de changer d'outil.
  */
 function SpaceView({
-  view, dashboardId, workspaceId, onOpenProject, onOpenInitiative, onOpenView,
+  view, dashboardId, workspaceId, onOpenProject, onOpenView,
   onOpenAgent,
 }: {
   view: string; dashboardId: string; workspaceId: string | null;
   onOpenProject: (id: string) => void;
-  onOpenInitiative: (id: string) => void;
   /** Une vue s'ouvre DANS son projet : c'est là qu'elle a un board. */
   onOpenView: (projectId: string, viewId: string) => void;
   /** La fiche d'un agent vit dans le tableau de service, hors du module. */
@@ -98,13 +90,6 @@ function SpaceView({
   switch (view) {
     case "my-work":
       return <MyWorkPage dashboardId={dashboardId} onOpenProject={onOpenProject} />;
-    case "initiatives":
-      return (
-        <InitiativesPage
-          dashboardId={dashboardId} workspaceId={workspaceId}
-          onOpenProject={onOpenProject} onOpenInitiative={onOpenInitiative}
-        />
-      );
     case "workgraph":
       return (
         <WorkgraphPage
@@ -117,8 +102,6 @@ function SpaceView({
       return <DashboardsPage dashboardId={dashboardId} workspaceId={workspaceId} />;
     case "wiki":
       return <WikiPage dashboardId={dashboardId} workspaceId={workspaceId} />;
-    case "active-cycles":
-      return <ActiveCyclesPage dashboardId={dashboardId} onOpenProject={onOpenProject} />;
     case "drafts":
       return <SpaceDraftsPage dashboardId={dashboardId} />;
     case "archives":
@@ -135,7 +118,17 @@ function SpaceView({
       // à changer d'écran pour passer de « qui fait ça » à « ce qui est à
       // faire ». Réimplémenter une seconde liste d'agents ici aurait donné deux
       // rosters à garder d'accord, dont un qui aurait divergé au premier ajout.
-      return <AgentsTab dashboardId={dashboardId} />;
+      // Le roster s'étire avec son contenu (`min-h-full`) et compte sur un
+      // conteneur pour défiler. Les autres destinations d'espace portent le
+      // leur ; celle-ci est empruntée au tableau de service, où c'était
+      // `<main>` qui défilait — ici `<main>` est en `overflow-hidden` (le
+      // module de suivi borne sa hauteur), donc la page ne bougeait plus d'un
+      // pixel dès qu'il y avait plus d'agents que d'écran.
+      return (
+        <div className="h-full overflow-y-auto">
+          <AgentsTab dashboardId={dashboardId} />
+        </div>
+      );
     case "views":
       return <SpaceViewsPage dashboardId={dashboardId} onOpenView={onOpenView} />;
     default:
@@ -178,11 +171,6 @@ export function TrackerTab({
   const refresh = () => qc.invalidateQueries({ queryKey: ["pj_projects", dashboardId] });
   const current = (projects ?? []).find((p) => p.id === openId) ?? null;
 
-  const { data: initiatives } = useQuery({
-    queryKey: ["pj_initiatives", dashboardId],
-    queryFn: () => fetchInitiatives(dashboardId),
-  });
-
   const { data: favorites } = useQuery({
     queryKey: ["pj_favorites", workspaceId, user?.id],
     enabled: !!workspaceId && !!user,
@@ -201,7 +189,6 @@ export function TrackerTab({
     });
     qc.invalidateQueries({ queryKey: ["pj_favorites"] });
   };
-  const openInitiative = (initiatives ?? []).find((i) => i.id === openId) ?? null;
 
   // La palette est montée au-dessus de tout et reste disponible quelle que soit
   // la vue : un raccourci global qui ne marche que sur l'écran d'accueil n'est
@@ -210,7 +197,6 @@ export function TrackerTab({
     <TrackerCommandPalette
       dashboardId={dashboardId}
       onOpenProject={setOpenId}
-      onOpenInitiative={setOpenId}
       onNavigate={setOpenId}
       onNewIssue={() => setOpenId((projects ?? [])[0]?.id ?? null)}
     />
@@ -229,17 +215,6 @@ export function TrackerTab({
     );
   }
 
-  if (openInitiative) {
-    return (
-      <InitiativeDetail
-        initiative={openInitiative} workspaceId={workspaceId}
-        onBack={() => setOpenId(null)}
-        onChanged={() => qc.invalidateQueries({ queryKey: ["pj_initiatives", dashboardId] })}
-        onOpenProject={setOpenId}
-      />
-    );
-  }
-
   // `openId` porte soit un identifiant, soit le slug d'une destination
   // d'espace. Les distinguer ici plutôt que dans l'URL évite un second segment
   // pour une différence que personne ne voit.
@@ -249,7 +224,7 @@ export function TrackerTab({
         {palette}
         <SpaceView
           view={openId} dashboardId={dashboardId} workspaceId={workspaceId}
-          onOpenProject={setOpenId} onOpenInitiative={setOpenId}
+          onOpenProject={setOpenId}
           // La fiche d'un agent est HORS du module de suivi : elle vit dans le
           // tableau de service, avec son chat et ses missions. On y navigue
           // plutôt que d'en rapatrier une copie ici.
@@ -293,7 +268,7 @@ export function TrackerTab({
         <div>
           <h2 className="text-14 font-medium">Projets</h2>
           <p className="text-11 text-muted-foreground">
-            Work items, cycles, modules — le suivi du travail de ce service.
+            Work items, cycles, modules, le suivi du travail de ce service.
           </p>
         </div>
         <Button
@@ -378,12 +353,8 @@ function ProjectWorkspace({
     const all: { key: Section; label: string; icon: PhosphorIcon; on: boolean }[] = [
       { key: "overview", label: "Overview", icon: SquaresFourIcon, on: true },
       { key: "issues", label: "Work items", icon: ListChecksIcon, on: true },
-      { key: "cycles", label: "Cycles", icon: ArrowsClockwiseIcon, on: project.cycle_view },
-      { key: "modules", label: "Modules", icon: StackIcon, on: project.module_view },
-      { key: "epics", label: "Epics", icon: StackIcon, on: true },
       { key: "views", label: "Vues", icon: EyeIcon, on: project.issue_views_view },
       { key: "pages", label: "Pages", icon: FileTextIcon, on: project.page_view },
-      { key: "intake", label: "Intake", icon: TrayIcon, on: project.intake_view },
       // L'équipage puis les livrables, dans cet ordre : on met quelqu'un sur le
       // projet, puis on regarde ce qui en sort. Les deux sont toujours actifs —
       // un projet sans agent autorisé a d'autant plus besoin de la page qui
@@ -462,12 +433,8 @@ function ProjectWorkspace({
           )}
           {active === "drafts" && <DraftsPage project={project} />}
           {active === "archives" && <ArchivesPage project={project} />}
-          {active === "cycles" && <CyclesPage project={project} />}
-          {active === "modules" && <ModulesPage project={project} />}
-          {active === "epics" && <EpicsPage project={project} />}
           {active === "views" && <ViewsPage project={project} />}
           {active === "pages" && <PagesPage project={project} />}
-          {active === "intake" && <IntakePage project={project} />}
           {active === "crew" && <CrewPage project={project} dashboardId={dashboardId} />}
           {active === "deliverables" && <DeliverablesPage project={project} />}
           {active === "assets" && <AssetsPage project={project} />}

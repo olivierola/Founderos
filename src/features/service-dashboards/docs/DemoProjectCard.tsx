@@ -62,9 +62,8 @@ export function DemoProjectCard() {
               Projet <span className="font-mono">{result.identifier}</span> créé.
             </p>
             <p className="mt-0.5 text-13 leading-relaxed text-muted-foreground">
-              {result.counts.issues} work items, {result.counts.cycles} cycles,{" "}
-              {result.counts.modules} modules, {result.counts.intake} demandes,{" "}
-              {result.counts.pages} pages et {result.counts.stickies} notes.
+              {result.counts.issues} work items, {result.counts.pages} pages et{" "}
+              {result.counts.stickies} notes.
             </p>
             <Button
               size="sm"

@@ -109,7 +109,7 @@ export function GovFtDatasetsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Datasets"
-        description="Jeux de données d'entraînement — import multi-sources, nettoyage automatique (dédup, anonymisation, HTML, PII…), versionnés et tagués."
+        description="Jeux de données d'entraînement, import multi-sources, nettoyage automatique (dédup, anonymisation, HTML, PII…), versionnés et tagués."
         actions={
           <>
             <input
@@ -208,7 +208,7 @@ export function GovFtDatasetsPage() {
           }
         >
           {preview && (
-            <DetailSection title={`Prévisualisation${sel.storagePath ? "" : " — aucun fichier réel"}`}>
+            <DetailSection title={`Prévisualisation${sel.storagePath ? "" : ", aucun fichier réel"}`}>
               {previewLoading ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Téléchargement du fichier…</div>
               ) : sel.storagePath && previewText ? (

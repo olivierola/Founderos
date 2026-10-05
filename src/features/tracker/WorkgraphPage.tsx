@@ -499,7 +499,7 @@ export function WorkgraphPage({
                 <svg width="26" height="6" className="shrink-0" aria-hidden>
                   <line x1="0" y1="3" x2="26" y2="3" stroke="hsl(var(--border))" strokeWidth="1.5" />
                 </svg>
-                Appartient à — la structure.
+                Appartient à, la structure.
               </li>
               <li className="flex items-center gap-2">
                 <svg width="26" height="6" className="shrink-0" aria-hidden>
@@ -508,7 +508,7 @@ export function WorkgraphPage({
                     stroke="hsl(var(--muted-foreground))" strokeWidth="1.5" strokeDasharray="4 4"
                   />
                 </svg>
-                Travaille sur — ça se défait.
+                Travaille sur, ça se défait.
               </li>
             </ul>
           </PopoverContent>

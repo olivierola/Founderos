@@ -145,7 +145,7 @@ export function OpsWorkflowsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Workflows"
-        description="Describe your infra in plain English, review the agent's plan, then generate Terraform + Ansible + Docker + K8s — each as a separate, regenerable layer."
+        description="Describe your infra in plain English, review the agent's plan, then generate Terraform + Ansible + Docker + K8s, each as a separate, regenerable layer."
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setGenOpen(true)} className="gap-1.5">
@@ -166,7 +166,7 @@ export function OpsWorkflowsPage() {
         <EmptyState
           icon={Layers}
           title="No workflow yet"
-          description="Describe what you want to build — Terraform, Ansible, Docker, Kubernetes. The agent plans the layers and generates the files."
+          description="Describe what you want to build, Terraform, Ansible, Docker, Kubernetes. The agent plans the layers and generates the files."
           action={
             <Button onClick={() => setNewInfraOpen(true)} className="gap-1.5">
               <Wand2 className="h-4 w-4" /> Describe your infra

@@ -1,5 +1,4 @@
 import { useEffect, type ReactNode } from "react";
-import { Eyebrow } from "./LandingKit";
 import { PaperHero, type TileKey } from "./PaperHero";
 
 /* ── Shared chrome for every interior marketing page ────────────────────────
@@ -11,8 +10,8 @@ import { PaperHero, type TileKey } from "./PaperHero";
     background, and returns the page wrapper class the landing uses. */
 export function useLandingSkin() {
   useEffect(() => {
-    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "at-root");
-    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "at-root");
+    document.documentElement.classList.add("mkt-no-scrollbar", "amp-root", "hn-root");
+    return () => document.documentElement.classList.remove("mkt-no-scrollbar", "amp-root", "hn-root");
   }, []);
 }
 
@@ -157,35 +156,20 @@ export function PageHero({
 }
 
 /* ── Closing CTA ────────────────────────────────────────────────────────────
-   The Atlas close, as on the home page: an eyebrow, the title, one line, the
-   actions, on white — the violet footer slab lands right under it. `hue` is
-   accepted for the pages that still pass one; the register has one colour. */
+   Every page now ends on the footer's own call to action (hn/HnFooter: the
+   white card on the sky band), so this renders nothing. Kept, with its old
+   signature, so the pages that mount it do not have to change. `ctaWash` is
+   kept for the same reason. */
 export function ctaWash(hue: HeroHue | HueSpec) {
   return `radial-gradient(ellipse 50% 120% at 8% 50%, ${resolveHue(hue).glow}, transparent 62%)`;
 }
 
-export function ClosingCta({
-  eyebrow = "Get Started",
-  title,
-  lead,
-  actions,
-}: {
+export function ClosingCta(_: {
   eyebrow?: string;
   title: string;
   lead: string;
   actions: ReactNode;
   hue?: HeroHue | HueSpec;
 }) {
-  return (
-    <section className="relative py-20 sm:py-28">
-      <div className="mx-auto flex max-w-[1200px] flex-col items-center px-5 text-center sm:px-8">
-        <Eyebrow>{eyebrow}</Eyebrow>
-        <h2 className="mt-8 max-w-[22ch] text-balance text-[32px] font-semibold leading-[1.02] tracking-[-0.045em] text-[#111011] sm:text-[40px]">
-          {title}
-        </h2>
-        <p className="mt-5 max-w-[46ch] text-[16px] font-light leading-[1.45] text-[#666666] sm:text-[17px]">{lead}</p>
-        <div className="mt-8 flex flex-col items-center gap-2.5 sm:flex-row">{actions}</div>
-      </div>
-    </section>
-  );
+  return null;
 }

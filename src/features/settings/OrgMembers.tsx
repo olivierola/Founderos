@@ -113,7 +113,7 @@ export function OrgMembersPage() {
       // Email delivery needs a Resend connector on the workspace; without it the
       // invitation is still valid — the link just has to be shared by hand.
       if (res.email_sent) toast.success(`Invitation envoyée à ${target}`);
-      else toast.success("Invitation créée — copiez le lien ci-dessous");
+      else toast.success("Invitation créée, copiez le lien ci-dessous");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Invitation impossible");
     } finally { setInviting(false); }

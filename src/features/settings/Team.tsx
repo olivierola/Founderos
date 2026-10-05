@@ -417,7 +417,7 @@ function InviteDialog({
           success: (r) => {
             if (r.kind === "added") return "Member added";
             if (r.email_sent) return `Invitation sent to ${email.trim()}`;
-            return "Invitation created — email not sent";
+            return "Invitation created, email not sent";
           },
           error: "Invitation failed",
         },
@@ -428,7 +428,7 @@ function InviteDialog({
           await navigator.clipboard.writeText(url);
           if (!res.email_sent) {
             toast.info(
-              "Email not sent — link copied",
+              "Email not sent, link copied",
               res.email_error ?? "RESEND_API_KEY is not configured. Share the copied link manually.",
             );
           } else {

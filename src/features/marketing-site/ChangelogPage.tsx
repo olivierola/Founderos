@@ -1,4 +1,4 @@
-import { ClockCounterClockwiseIcon as History } from "@phosphor-icons/react";
+import { ClockCounterClockwiseIcon as History, CheckCircleIcon as CheckCircle } from "@phosphor-icons/react";
 import { LandingNav } from "./LandingNav";
 import { LandingFooter } from "./LandingFooter";
 import { LandingClose } from "./LandingClose";
@@ -6,7 +6,7 @@ import { Reveal } from "./LandingKit";
 import { PaperHero } from "./PaperHero";
 import { SectionTitle } from "./PaperKit";
 import { ToneCanvas, ToneSection } from "./LandingTone";
-import { Btn, CheckBadge, Tag as Pill, useAtlasSkin } from "./atlas/AtlasKit";
+import { Btn, Chip, useHnSkin } from "./hn/HnKit";
 
 /* ═══ Changelog ══════════════════════════════════════════════════════════════
    Sortie d'OtherPages, qui portait encore l'ancienne coque marketing, et
@@ -70,7 +70,7 @@ const CHANGELOG: Entry[] = [
     title: "Usage-based billing: credits, quotas and plans",
     items: [
       "A run consumes measured credits, not an estimated flat fee",
-      "Quotas per plan — agents, services, seats, storage, concurrent runs",
+      "Quotas per plan, agents, services, seats, storage, concurrent runs",
       "Overage is switched on explicitly, and capped",
     ],
   },
@@ -89,7 +89,7 @@ const CHANGELOG: Entry[] = [
     tag: "release",
     title: "Dashboards per service",
     items: [
-      "An agent-centred space — rooms, schedules, activity, artifacts",
+      "An agent-centred space, rooms, schedules, activity, artifacts",
       "Agent catalogue and invitations at organisation level",
     ],
   },
@@ -118,9 +118,9 @@ function fmtDate(iso: string) {
 }
 
 export function ChangelogPage() {
-  useAtlasSkin();
+  useHnSkin();
   return (
-    <div className="amplify atlas min-h-screen" style={{ backgroundColor: "transparent" }}>
+    <div className="amplify hn min-h-screen" style={{ backgroundColor: "transparent" }}>
       <LandingNav />
       <ToneCanvas initial="paper">
         <PaperHero
@@ -137,17 +137,17 @@ export function ChangelogPage() {
         />
 
         <ToneSection tone="paper">
-          <div className="mx-auto max-w-[1200px] px-5 pb-10 pt-6 sm:px-8">
+          <div className="px-5 pb-10 pt-6 sm:px-8 lg:px-12">
             <div className="grid gap-10 lg:grid-cols-[0.42fr_1fr] lg:gap-16">
               <div className="lg:sticky lg:top-28 lg:self-start">
                 <Reveal>
                   <SectionTitle frame={`${CHANGELOG.length} entries,`} claim="newest first" />
-                  <p className="mt-6 max-w-[40ch] text-[15px] font-light leading-[1.6] text-[#3d3c3d]">
+                  <p className="mt-6 max-w-[40ch] text-[15px] leading-[1.6] text-[#4b5567]">
                     An entry is written when the thing is in production, not when it is merged. If a feature is
                     not here, it has not shipped yet.
                   </p>
                   <div className="mt-8">
-                    <Btn to="/contact" variant="light">
+                    <Btn to="/contact" variant="secondary">
                       Request a feature
                     </Btn>
                   </div>
@@ -157,24 +157,24 @@ export function ChangelogPage() {
               <ol className="space-y-2.5">
                 {CHANGELOG.map((e, i) => (
                   <Reveal key={e.date + e.title} delay={Math.min(i, 4) * 70}>
-                    <li className="rounded-[32px] border border-[#f0f0f0] bg-[linear-gradient(160deg,#ffffff_40%,#f8f8f8)] p-7 sm:p-9">
+                    <li className="hn-card hn-hover rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-7 sm:p-9">
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="flex items-center gap-2 text-[13px] font-semibold text-[#666666]">
+                        <span className="flex items-center gap-2 text-[13px] font-semibold text-[#4b5567]">
                           <History className="h-4 w-4" />
                           {fmtDate(e.date)}
                         </span>
-                        <Pill tone={e.tag === "feature" ? "accent" : "light"} className="px-3 py-1.5 text-[12.5px]">
+                        <Chip tone={e.tag === "feature" ? "blue" : "light"} className="px-2.5 py-1.5 text-[13px]">
                           {KIND_LABEL[e.tag]}
-                        </Pill>
+                        </Chip>
                       </div>
-                      <h3 className="mt-4 text-balance text-[21px] font-semibold leading-[1.2] tracking-[-0.035em] text-[#111011] sm:text-[24px]">
+                      <h3 className="mt-4 text-balance text-[21px] font-semibold leading-[1.2] tracking-[-0.035em] text-[#0f1728] sm:text-[24px]">
                         {e.title}
                       </h3>
-                      <ul className="mt-6 space-y-3 border-t border-[#f0f0f0] pt-6">
+                      <ul className="mt-6 space-y-3 border-t border-[#e6e9ef] pt-6">
                         {e.items.map((it) => (
-                          <li key={it} className="flex gap-3 text-[14.5px] leading-[1.5] text-[#111011]">
+                          <li key={it} className="flex gap-3 text-[14.5px] leading-[1.5] text-[#0f1728]">
                             <span className="mt-[1px]">
-                              <CheckBadge size={20} />
+                              <CheckCircle weight="fill" className="h-5 w-5 text-[#006edd]" />
                             </span>
                             <span>{it}</span>
                           </li>

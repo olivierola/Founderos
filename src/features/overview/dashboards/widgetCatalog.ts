@@ -618,7 +618,7 @@ export const WIDGET_CATALOG: CatalogWidget[] = [
     id: "text-page-title",
     category: "Text",
     title: "Page title",
-    description: "Large centered H1 — good for the top of a dashboard.",
+    description: "Large centered H1, good for the top of a dashboard.",
     type: "markdown",
     config: { text: "Dashboard", headingLevel: 1, textAlign: "center" },
   },
@@ -646,7 +646,7 @@ export const WIDGET_CATALOG: CatalogWidget[] = [
     id: "text-checklist",
     category: "Text",
     title: "Checklist",
-    description: "Markdown task list — GFM checkboxes.",
+    description: "Markdown task list, GFM checkboxes.",
     type: "markdown",
     config: {
       text: "- [ ] First task\n- [ ] Second task\n- [x] Done",

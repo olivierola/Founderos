@@ -121,7 +121,7 @@ export function AgentIdentity({
           color={accentColor || undefined}
           interactive={interactive}
           paused={paused}
-          aria-label={seed ? `${seed} — avatar` : "Avatar de l'agent"}
+          aria-label={seed ? `${seed}, avatar` : "Avatar de l'agent"}
         />
       </span>
     </span>

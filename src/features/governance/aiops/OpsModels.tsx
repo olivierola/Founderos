@@ -56,7 +56,7 @@ export function GovOpsModelsPage() {
       <div>
         <div className="mb-3 flex items-center gap-2 text-sm font-medium">
           <Cloud className="h-4 w-4 text-[hsl(var(--accent-teal))]" /> APIs cloud
-          <span className="text-xs font-normal text-muted-foreground">— facturation au token, aucun serveur requis</span>
+          <span className="text-xs font-normal text-muted-foreground">facturation au token, aucun serveur requis</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {CLOUD_MODELS.map((m) => {
@@ -96,7 +96,7 @@ export function GovOpsModelsPage() {
       <div>
         <div className="mb-3 flex items-center gap-2 text-sm font-medium">
           <HardDrive className="h-4 w-4 text-violet-500" /> Modèles propriétaires
-          <span className="text-xs font-normal text-muted-foreground">— open-source, installés sur vos serveurs (poids locaux, zéro dépense API)</span>
+          <span className="text-xs font-normal text-muted-foreground">open-source, installés sur vos serveurs (poids locaux, zéro dépense API)</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {SELF_HOSTED_MODELS.map((m) => {
@@ -189,7 +189,7 @@ export function GovOpsModelsPage() {
 
             {sel.hosting === "self_hosted" ? (
               <DetailSection title="Installé sur">
-                {hosts.length === 0 ? <p className="text-xs text-muted-foreground">Pas encore installé — choisissez un serveur depuis la carte.</p> :
+                {hosts.length === 0 ? <p className="text-xs text-muted-foreground">Pas encore installé, choisissez un serveur depuis la carte.</p> :
                   hosts.map((s) => <DetailRow key={s.id} label={s.name}>{s.region}</DetailRow>)}
               </DetailSection>
             ) : (

@@ -180,6 +180,9 @@ import { SolutionPage } from "@/features/marketing-site/SolutionPage";
 import { BlogPage } from "@/features/marketing-site/BlogPage";
 import { BlogPostPage } from "@/features/marketing-site/BlogPostPage";
 import { FaqPage } from "@/features/marketing-site/FaqPage";
+import { ProductPage } from "@/features/marketing-site/ProductPage";
+import { UseCasesPage } from "@/features/marketing-site/UseCasesPage";
+import { AboutPage } from "@/features/marketing-site/AboutPage";
 
 type PageEl = import("react").ReactElement;
 
@@ -326,6 +329,9 @@ export const router = createBrowserRouter([
   // Ancienne URL de la page Solutions — gardée vivante, les liens externes et
   // les anciennes signatures d'email pointent encore dessus.
   { path: "/features", element: <Navigate to="/solutions" replace /> },
+  { path: "/product/:slug", element: <ProductPage /> },
+  { path: "/use-cases", element: <UseCasesPage /> },
+  { path: "/about", element: <AboutPage /> },
   { path: "/pricing", element: <PricingPage /> },
   { path: "/blog", element: <BlogPage /> },
   { path: "/blog/:slug", element: <BlogPostPage /> },

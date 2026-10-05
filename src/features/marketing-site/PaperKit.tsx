@@ -1,51 +1,41 @@
 import type { ReactNode } from "react";
+import { CheckCircleIcon as CheckCircle } from "@phosphor-icons/react";
 import { Reveal } from "./LandingKit";
-import { CheckBadge, Serif } from "./atlas/AtlasKit";
 
 /* ══ The interior pages' vocabulary ══════════════════════════════════════════
    These names are what the interior pages were written against — a plate, a
-   section title, a label, a feature line. They now draw the Atlas register
-   (see atlas/): rounded soft-grey plates, a heavy sans title answered in the
-   serif italic, check discs for bullets, and the violet as the one colour.
+   section title, a label, a feature line. They now draw the Hunar register
+   (see hn/): 8px cards on the off-white ground, a single medium-weight title,
+   blue check marks, and the blue as the one colour.
 
    Everything states its own ink: these land in pages whose roots set white,
    transparent or nothing at all. */
 
-export const PAPER_INK = "#111011";
-export const PAPER_FRAME = "#666666";
-export const PAPER_RULE = "rgba(17,16,17,0.08)";
+export const PAPER_INK = "#0f1728";
+export const PAPER_FRAME = "#4b5567";
+export const PAPER_RULE = "rgba(18,18,18,0.08)";
 
-/* ── The accent, in its two cuts ────────────────────────────────────────────
-     PAPER_ACCENT  the deep violet, #8b16c4 — anything DRAWN in the colour on
-                   a light ground: body-sized type, hairlines, bullets (7.0:1
-                   on white).
-     PAPER_BLUE    the true violet, #d22eff — fills and large type only (3.8:1
-                   on white). The name is historical; it is not blue any more. */
-export const PAPER_ACCENT = "#8b16c4";
-export const PAPER_BLUE = "#d22eff";
+/* ── The accent ─────────────────────────────────────────────────────────────
+     PAPER_ACCENT  the blue #006EDD — 4.9:1 on white, so it holds as body text.
+     PAPER_BLUE    the lighter #5aa8ff, for marks on the dark bands. */
+export const PAPER_ACCENT = "#006edd";
+export const PAPER_BLUE = "#5aa8ff";
 export const PAPER_ON_ACCENT = "#FFFFFF";
 
-/** The paper register pinned squares to every box's corners. The Atlas
-    register rounds the box instead, so the marks render nothing — kept so the
-    pages that still mount them do not have to change. */
+/** Register marks belonged to an earlier register; rendered as nothing so
+    the pages that still mount them do not have to change. */
 export function CornerMarks(_: { accent?: boolean }) {
   return null;
 }
 
-/** The small uppercase line that opens a list or a block. */
+/** The small line that opens a list or a block. */
 export function MonoLabel({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <div
-      className={`text-[11.5px] font-semibold uppercase leading-none tracking-[0.12em] text-[#969696] ${className}`}
-    >
-      {children}
-    </div>
-  );
+  return <div className={`text-[14px] leading-none text-[#4b5567] ${className}`}>{children}</div>;
 }
 
 /* ── Section heading ────────────────────────────────────────────────────────
-   The heavy sans line, then the serif italic answering it. `flip` puts the
-   claim first, for the sections that state the fact and then qualify it. */
+   One medium-weight title, set tight. `frame` and `claim` keep their old
+   meaning (setup, then claim); `flip` puts the claim first. */
 export function SectionTitle({
   frame,
   claim,
@@ -61,19 +51,18 @@ export function SectionTitle({
   const second = flip ? frame : claim;
   return (
     <h2
-      className={`text-balance text-[32px] font-semibold leading-[1.02] tracking-[-0.045em] text-[#111011] sm:text-[40px] ${className}`}
+      className={`text-balance text-[30px] font-medium leading-[1.15] tracking-[-0.04em] text-[#0f1728] sm:text-[36px] lg:text-[40px] ${className}`}
     >
       {first}
       <br />
-      <Serif>{second}</Serif>
+      {second}
     </h2>
   );
 }
 
 /* ── Plate ──────────────────────────────────────────────────────────────────
-   The soft grey rounded box: an add-on, an offer, a "calculate your costs"
-   card. `accent` rings it in the violet — the one box on a page that is being
-   pointed at. */
+   The off-white card: an add-on, an offer, a "calculate your costs" card.
+   `accent` rings it in the blue — the one box on a page being pointed at. */
 export function Plate({
   children,
   accent = false,
@@ -88,8 +77,8 @@ export function Plate({
   return (
     <Reveal delay={delay} className="h-full">
       <div
-        className={`relative h-full overflow-hidden rounded-[28px] bg-[#f7f7f7] transition-colors duration-300 hover:bg-[#f2f2f2] ${
-          accent ? "ring-1 ring-inset ring-[#d22eff]/40" : ""
+        className={`relative h-full overflow-hidden rounded-[24px] border bg-[#f7f8fb] transition-colors duration-300 hover:bg-[#f5f5f4] ${
+          accent ? "border-[#006edd]/40" : "border-[#e6e9ef]"
         } ${className}`}
       >
         {children}
@@ -98,14 +87,12 @@ export function Plate({
   );
 }
 
-/** A check disc and a term. */
+/** A blue check and a term. */
 export function FeatureLine({ children }: { children: ReactNode; accent?: boolean }) {
   return (
-    <li className="flex items-start gap-3">
-      <span className="mt-[1px]">
-        <CheckBadge size={20} />
-      </span>
-      <span className="text-[14.5px] font-medium leading-[1.45] tracking-[-0.01em] text-[#111011]">{children}</span>
+    <li className="flex items-start gap-2.5">
+      <CheckCircle weight="fill" className="mt-[2px] h-[18px] w-[18px] shrink-0 text-[#006edd]" />
+      <span className="text-[16px] leading-[1.4] tracking-[-0.01em] text-[#0f1728]">{children}</span>
     </li>
   );
 }

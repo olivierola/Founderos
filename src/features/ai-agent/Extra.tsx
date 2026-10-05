@@ -108,7 +108,7 @@ export function AiReportsPage() {
 
   return (
     <div>
-      <PageHeader title="Reports" description="Saved AI conversations — export any thread as JSON." />
+      <PageHeader title="Reports" description="Saved AI conversations, export any thread as JSON." />
       {!data || data.length === 0 ? (
         <EmptyState icon={FileText} title="No reports yet" description="Start a chat from AI Agent → Chat." />
       ) : (

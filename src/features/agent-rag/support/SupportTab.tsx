@@ -100,7 +100,7 @@ function EmptyNote() {
         <Tray className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
           Aucune demande sur 30 jours. Le tri s'active dans <strong className="text-foreground">Admin → Gouvernance IA → Jugement rapide</strong>,
-          usage « ResolveAI — tri des demandes ». En <strong className="text-foreground">Observation</strong>, chaque message est classé et
+          usage « ResolveAI, tri des demandes ». En <strong className="text-foreground">Observation</strong>, chaque message est classé et
           la file se remplit sans rien changer aux réponses de l'agent ; en <strong className="text-foreground">Actif</strong>, les demandes qui
           relèvent de l'équipe reçoivent une réponse prudente qui annonce le relais.
         </span>
@@ -554,10 +554,10 @@ function SetupPage({ agent }: { agent: Agent }) {
                 </div>
               </div>
               <div className="grid gap-2.5 md:grid-cols-2">
-                <Field label="Définition — ce que couvre cette intention">
+                <Field label="Définition, ce que couvre cette intention">
                   <Textarea rows={2} value={it.what} onChange={(e) => setIntent(idx, { what: e.target.value })} className="text-[12px]" />
                 </Field>
-                <Field label="Ce n'est pas — ce qui relève d'une intention voisine">
+                <Field label="Ce n'est pas, ce qui relève d'une intention voisine">
                   <Textarea rows={2} value={it.not_for ?? ""} onChange={(e) => setIntent(idx, { not_for: e.target.value })} className="text-[12px]" />
                 </Field>
                 <Field label="Exemples réels (un par ligne)">

@@ -304,7 +304,7 @@ export function AssistantPanel() {
         )}
         {isEmpty && agent ? (
           <p className="px-2 py-6 text-center text-[11px] text-muted-foreground">
-            Choisissez une carte à configurer — ou demandez-moi directement ce que vous voulez changer.
+            Choisissez une carte à configurer, ou demandez-moi directement ce que vous voulez changer.
           </p>
         ) : isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-2 text-center">
