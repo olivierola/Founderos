@@ -18,7 +18,7 @@ import { AuditMock, MissionsMock, RegistryMock, RunMock, ToolGrid } from "./hn/M
 import { PRODUCTS } from "./hn/site";
 
 /* ═══ A product ══════════════════════════════════════════════════════════════
-   hunar.ai's product-page template ("Conversational AI Agents - Self Serve"):
+   hunar.ai's product-page template ("Conversational Cloud collaborators - Self Serve"):
    a centred hero, the marks, a big screen on blue artwork, a facts strip,
    three "introducing" cards, then the dark band — three labelled stages, a
    sticky sub-navigation on the left and feature cards per topic — the agents
@@ -44,8 +44,8 @@ type Content = {
 
 const CONTENT: Record<string, Content> = {
   agents: {
-    title: "AI agents that do the work, self serve",
-    lead: "Start from a template, bring your company context, connect your tools, and hand your first agent its first mission.",
+    title: "Cloud collaborators that do the work, self serve",
+    lead: "Start from a template, bring your company context, connect your tools, and hand your first Cloud collaborator its first mission.",
     hero: (
       <div className="grid items-end gap-6 lg:grid-cols-[1.4fr_1fr]">
         <MissionsMock />
@@ -60,16 +60,16 @@ const CONTENT: Record<string, Content> = {
     ],
     intro: {
       eyebrow: "Built for real work",
-      title: "Introducing agents that remember how you work",
-      lead: "Every agent is described by three separate texts, and the context it receives is assembled per task, only what that task needs.",
+      title: "Introducing Cloud collaborators that remember how you work",
+      lead: "Every Cloud collaborator is described by three separate texts, and the context it receives is assembled per task, only what that task needs.",
       cards: [
-        { icon: ListChecks, title: "Instructions", body: "What the agent must do: its job, its rules, the outcome you expect." },
+        { icon: ListChecks, title: "Instructions", body: "What the Cloud collaborator must do: its job, its rules, the outcome you expect." },
         { icon: UserFocus, title: "Soul", body: "How it speaks and what it refuses, the same voice in every conversation." },
         { icon: Brain, title: "Preferences", body: "What you have taught it along the way, applied when the task calls for it." },
       ],
     },
     stages: [
-      { tag: "Set up", title: "Configure your agent", body: "Pick a template, describe the job, connect the tools it may use." },
+      { tag: "Set up", title: "Configure your Cloud collaborator", body: "Pick a template, describe the job, connect the tools it may use." },
       { tag: "Run", title: "Hand it a mission", body: "Once, on a cadence or at a date, in chat, in a room or on its own." },
       { tag: "Review", title: "Approve and audit", body: "Writes wait for you; every call stays in the log." },
     ],
@@ -78,32 +78,32 @@ const CONTENT: Record<string, Content> = {
         id: "agents",
         label: "Agents",
         title: "Agents",
-        body: "Create agents for every team. Give each one a job, the tools it may use and the context it needs.",
+        body: "Create Cloud collaborators for every team. Give each one a job, the tools it may use and the context it needs.",
         features: [
-          { title: "Describe the job in plain language", body: "Write the agent's instructions the way you'd brief a colleague. No flow charts.", art: "blue", sample: ["Reconcile invoices monthly", "Flag gaps above €50", "Never write without approval"] },
-          { title: "Templates for every team", body: "Finance, recruiting, support, reporting, sales, start from one and adjust it.", art: "violet", sample: ["Finance agent", "Recruiting agent", "Support agent"] },
-          { title: "Skills it can learn", body: "Record a task once by doing it; the agent turns it into a skill it can reuse.", art: "olive", sample: ["Skill recorded", "Steps synthesised", "Ready to reuse"] },
-          { title: "Knowledge it can search", body: "Collections of PDFs, documents and spreadsheets, built once, shared across agents.", art: "orange", sample: ["Contracts · 124 files", "Policies · 18 files", "Price lists · 6 files"] },
+          { title: "Describe the job in plain language", body: "Write the Cloud collaborator's instructions the way you'd brief a colleague. No flow charts.", art: "blue", sample: ["Reconcile invoices monthly", "Flag gaps above €50", "Never write without approval"] },
+          { title: "Templates for every team", body: "Finance, recruiting, support, reporting, sales, start from one and adjust it.", art: "violet", sample: ["Finance collaborator", "Recruiting collaborator", "Support collaborator"] },
+          { title: "Skills it can learn", body: "Record a task once by doing it; the Cloud collaborator turns it into a skill it can reuse.", art: "olive", sample: ["Skill recorded", "Steps synthesised", "Ready to reuse"] },
+          { title: "Knowledge it can search", body: "Collections of PDFs, documents and spreadsheets, built once, shared across Cloud collaborators.", art: "orange", sample: ["Contracts · 124 files", "Policies · 18 files", "Price lists · 6 files"] },
         ],
       },
       {
         id: "missions",
         label: "Missions",
         title: "Missions",
-        body: "Hand an agent work with an expected result. It plans, acts, checks its own work at each step, and says when it's stuck.",
+        body: "Hand a Cloud collaborator work with an expected result. It plans, acts, checks its own work at each step, and says when it's stuck.",
         features: [
           { title: "On demand, on a cadence or at a date", body: "Run a mission now, every Monday at 9:00, or once on the first of the month.", art: "blue", sample: ["Every Monday · 09:00", "1st of the month", "Now"] },
-          { title: "Steps it verifies itself", body: "The agent checks each step against the expected result before moving on.", art: "pink", sample: ["Step 1 · verified", "Step 2 · verified", "Step 3 · running"] },
+          { title: "Steps it verifies itself", body: "The Cloud collaborator checks each step against the expected result before moving on.", art: "pink", sample: ["Step 1 · verified", "Step 2 · verified", "Step 3 · running"] },
         ],
       },
       {
         id: "rooms",
         label: "Rooms",
         title: "Rooms",
-        body: "Conversations between people and agents. Mention an agent to bring it in, and follow its work live.",
+        body: "Conversations between people and Cloud collaborators. Mention a Cloud collaborator to bring it in, and follow its work live.",
         features: [
-          { title: "People and agents in one thread", body: "Mention @Finance to bring the agent in; what it produces stays attached to the room.", art: "violet", sample: ["@Finance agent joined", "Draft attached", "2 replies"] },
-          { title: "Parallel work, when it helps", body: "An agent can hand independent sub-tasks to short-lived agents working side by side.", art: "olive", sample: ["3 sub-tasks started", "2 done", "1 running"] },
+          { title: "People and Cloud collaborators in one thread", body: "Mention @Finance to bring the Cloud collaborator in; what it produces stays attached to the room.", art: "violet", sample: ["@Finance collaborator joined", "Draft attached", "2 replies"] },
+          { title: "Parallel work, when it helps", body: "A Cloud collaborator can hand independent sub-tasks to short-lived Cloud collaborators working side by side.", art: "olive", sample: ["3 sub-tasks started", "2 done", "1 running"] },
         ],
       },
       {
@@ -112,7 +112,7 @@ const CONTENT: Record<string, Content> = {
         title: "Approvals",
         body: "Reads never interrupt you. Anything that writes, sends, deletes or pays stops and waits, in the conversation.",
         features: [
-          { title: "Writes wait in the conversation", body: "Approve or decline right where the agent asked. The run stays alive while it waits.", art: "orange", sample: ["Credit note · waiting", "Approve", "Decline"] },
+          { title: "Writes wait in the conversation", body: "Approve or decline right where the Cloud collaborator asked. The run stays alive while it waits.", art: "orange", sample: ["Credit note · waiting", "Approve", "Decline"] },
           { title: "Allow repeats once", body: "Approve an action once, or allow its repeats up front for the rest of the run.", art: "blue", sample: ["Allow once", "Allow repeats", "Allow all for this tool"] },
         ],
       },
@@ -120,25 +120,25 @@ const CONTENT: Record<string, Content> = {
         id: "deliverables",
         label: "Deliverables",
         title: "Deliverables",
-        body: "What agents produce lands in the service's artifacts: documents, spreadsheets, presentations, reports.",
+        body: "What Cloud collaborators produce lands in the service's artifacts: documents, spreadsheets, presentations, reports.",
         features: [
-          { title: "Reports by a dedicated writer", body: "One system agent writes every report from your figures, with each source cited.", art: "pink", sample: ["Q3 board report", "12 sources cited", "Ready for review"] },
+          { title: "Reports by a dedicated writer", body: "One system Cloud collaborator writes every report from your figures, with each source cited.", art: "pink", sample: ["Q3 board report", "12 sources cited", "Ready for review"] },
           { title: "Edit, then export", body: "A report opens in an editor; the PDF export starts from what's on screen.", art: "violet", sample: ["Edited by you", "Export PDF", "Shared"] },
         ],
       },
     ],
     faq: [
-      { q: "Do we need engineers to set up an agent?", a: "No. Agents are configured in plain language through the assistant, and connectors sign in with accounts you already have. A self-hosted model or a custom MCP connector is where engineering helps." },
-      { q: "Which systems can an agent use?", a: "Any connector you authorise in the service, and anything exposed through a remote MCP server. Each agent only gets the tools you grant it." },
-      { q: "Can an agent act without asking?", a: "Reads run directly. Writes, sends, deletions and payments wait for approval unless you switch that specific agent to autonomous mode yourself." },
-      { q: "Which model runs our agents?", a: "The platform's model by default. You can point an agent at an OpenAI-compatible endpoint you host instead, so prompts stay on your network." },
-      { q: "How is usage billed?", a: "In credits, consumed by what agents actually do. Each plan includes a monthly volume; overage never switches itself on." },
+      { q: "Do we need engineers to set up a Cloud collaborator?", a: "No. Agents are configured in plain language through the assistant, and connectors sign in with accounts you already have. A self-hosted model or a custom MCP connector is where engineering helps." },
+      { q: "Which systems can a Cloud collaborator use?", a: "Any connector you authorise in the service, and anything exposed through a remote MCP server. Each Cloud collaborator only gets the tools you grant it." },
+      { q: "Can a Cloud collaborator act without asking?", a: "Reads run directly. Writes, sends, deletions and payments wait for approval unless you switch that specific Cloud collaborator to autonomous mode yourself." },
+      { q: "Which model runs our Cloud collaborators?", a: "The platform's model by default. You can point a Cloud collaborator at an OpenAI-compatible endpoint you host instead, so prompts stay on your network." },
+      { q: "How is usage billed?", a: "In credits, consumed by what Cloud collaborators actually do. Each plan includes a monthly volume; overage never switches itself on." },
       { q: "Can we stop a run?", a: "Yes, from the composer, at any time. Nothing pending is written once you stop it." },
     ],
   },
   govern: {
-    title: "Govern every agent, before an auditor asks",
-    lead: "A registry synced from the agents that actually run, guardrails enforced at runtime, approvals in the conversation, and an exportable audit trail.",
+    title: "Govern every Cloud collaborator, before an auditor asks",
+    lead: "A registry synced from the Cloud collaborators that actually run, guardrails enforced at runtime, approvals in the conversation, and an exportable audit trail.",
     hero: (
       <div className="grid items-end gap-6 lg:grid-cols-[1.4fr_1fr]">
         <RegistryMock />
@@ -146,7 +146,7 @@ const CONTENT: Record<string, Content> = {
       </div>
     ),
     facts: [
-      { value: "1", label: "registry, synced from the agents that run" },
+      { value: "1", label: "registry, synced from the Cloud collaborators that run" },
       { value: "3", label: "guardrail levels: log, warn, block" },
       { value: "2", label: "checks before any write action" },
       { value: "AES-256", label: "encryption of credentials at rest" },
@@ -154,10 +154,10 @@ const CONTENT: Record<string, Content> = {
     intro: {
       eyebrow: "Built for scrutiny",
       title: "Introducing governance you don't have to maintain by hand",
-      lead: "The inventory comes from the systems that actually run agents, not from a form someone forgets to update.",
+      lead: "The inventory comes from the systems that actually run Cloud collaborators, not from a form someone forgets to update.",
       cards: [
-        { icon: ListChecks, title: "Registry", body: "Every agent, its declared risk, its tool scope and its policies, in one place." },
-        { icon: ShieldCheck, title: "Guardrails", body: "Written rules agents follow, documentary or enforced at runtime against the traffic." },
+        { icon: ListChecks, title: "Registry", body: "Every Cloud collaborator, its declared risk, its tool scope and its policies, in one place." },
+        { icon: ShieldCheck, title: "Guardrails", body: "Written rules Cloud collaborators follow, documentary or enforced at runtime against the traffic." },
         { icon: SealCheck, title: "Audit trail", body: "Arguments, result, duration and run for every call, exportable for review." },
       ],
     },
@@ -171,9 +171,9 @@ const CONTENT: Record<string, Content> = {
         id: "registry",
         label: "Registry",
         title: "Registry",
-        body: "One inventory of every agent, synced from runtime, risks, policies, controls and the human decisions taken.",
+        body: "One inventory of every Cloud collaborator, synced from runtime, risks, policies, controls and the human decisions taken.",
         features: [
-          { title: "Synced from what actually runs", body: "The registry reads the agents in the product. A registry nobody maintains can't drift.", art: "blue", sample: ["5 agents", "Synced just now", "0 unregistered"] },
+          { title: "Synced from what actually runs", body: "The registry reads the Cloud collaborators in the product. A registry nobody maintains can't drift.", art: "blue", sample: ["5 Cloud collaborators", "Synced just now", "0 unregistered"] },
           { title: "Your frameworks, your status", body: "Add the compliance frameworks you work to and keep their status. Nothing is pre-declared.", art: "violet", sample: ["EU AI Act · in progress", "Internal policy · applied", "Owner assigned"] },
         ],
       },
@@ -181,7 +181,7 @@ const CONTENT: Record<string, Content> = {
         id: "guardrails",
         label: "Guardrails",
         title: "Guardrails",
-        body: "Rules agents must follow, read by the agent in its context, or enforced against prompts, tool calls and results.",
+        body: "Rules Cloud collaborators must follow, read by the Cloud collaborator in its context, or enforced against prompts, tool calls and results.",
         features: [
           { title: "Log, warn or block", body: "Three levels, tested against the traffic you choose: prompts, tool calls, results, or all.", art: "orange", sample: ["Personal data · block", "Profanity · warn", "Large export · log"] },
           { title: "A recommended baseline", body: "A new project starts with none; install the recommended baseline in one click, then adjust it.", art: "olive", sample: ["Baseline installed", "12 rules", "3 adjusted"] },
@@ -194,7 +194,7 @@ const CONTENT: Record<string, Content> = {
         body: "Human-in-the-loop where it matters: every write waits, and the decision is recorded.",
         features: [
           { title: "A second check that only adds caution", body: "A list of write verbs, then a judgement on what it let through. The second can add an approval, never remove one.", art: "pink", sample: ["Verb check · write", "Judgement · needs approval", "Waiting for you"] },
-          { title: "Autonomy is a decision", body: "Switching an agent to autonomous mode is explicit, per agent, and reversible.", art: "blue", sample: ["Autonomous mode · off", "Changed by you", "Logged"] },
+          { title: "Autonomy is a decision", body: "Switching a Cloud collaborator to autonomous mode is explicit, per Cloud collaborator, and reversible.", art: "blue", sample: ["Autonomous mode · off", "Changed by you", "Logged"] },
         ],
       },
       {
@@ -214,27 +214,27 @@ const CONTENT: Record<string, Content> = {
         body: "Credentials encrypted at rest, and inference that can stay on your network.",
         features: [
           { title: "Encrypted credentials", body: "Connector secrets encrypted with AES-256-GCM, decrypted only server-side at call time.", art: "blue", sample: ["AES-256-GCM", "Server-side only", "Never sent to the browser"] },
-          { title: "Your own model endpoint", body: "Point an agent at an OpenAI-compatible endpoint you host, vLLM on your network, a GPU pod of your own.", art: "orange", sample: ["Endpoint · self-hosted", "Agent · Finance", "Prompts stay on your network"] },
+          { title: "Your own model endpoint", body: "Point a Cloud collaborator at an OpenAI-compatible endpoint you host, vLLM on your network, a GPU pod of your own.", art: "orange", sample: ["Endpoint · self-hosted", "Agent · Finance", "Prompts stay on your network"] },
         ],
       },
     ],
     faq: [
       { q: "Do you hold SOC 2 or ISO 27001?", a: "Not today, and we won't display them until we do. What we provide are the mechanisms and the evidence: registry, policies, approvals, an exportable audit log." },
-      { q: "Where does the registry come from?", a: "From the agents that actually run in the product. You classify their risk and attach policies; you don't maintain the inventory by hand." },
+      { q: "Where does the registry come from?", a: "From the Cloud collaborators that actually run in the product. You classify their risk and attach policies; you don't maintain the inventory by hand." },
       { q: "What exactly is logged?", a: "For every tool call: the arguments passed, the start of what came back, whether it succeeded, how long it took and the run it belongs to." },
       { q: "Can a guardrail block an action?", a: "Yes. Guardrails run at three levels, log, warn, block, against prompts, tool calls, results, or all of them." },
-      { q: "Can prompts stay inside our network?", a: "Yes, by pointing an agent at an OpenAI-compatible endpoint you host. The endpoint's availability and hardening are then yours." },
+      { q: "Can prompts stay inside our network?", a: "Yes, by pointing a Cloud collaborator at an OpenAI-compatible endpoint you host. The endpoint's availability and hardening are then yours." },
       { q: "Does this help with the EU AI Act?", a: "It gives you the registry, risk classification and records the Act asks for. Whether you comply is a statement you make; we pre-declare nothing." },
     ],
   },
 };
 
 const AGENT_ORBS: { name: string; art: Art }[] = [
-  { name: "Finance agent", art: "blue" },
-  { name: "Recruiting agent", art: "violet" },
-  { name: "Support agent", art: "olive" },
+  { name: "Finance collaborator", art: "blue" },
+  { name: "Recruiting collaborator", art: "violet" },
+  { name: "Support collaborator", art: "olive" },
   { name: "Report writer", art: "orange" },
-  { name: "Sales agent", art: "gold" },
+  { name: "Sales collaborator", art: "gold" },
 ];
 
 const MARKS = ALL_TOOLS.slice(0, 14);

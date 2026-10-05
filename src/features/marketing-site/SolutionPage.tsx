@@ -27,44 +27,44 @@ import { UseCaseCarousel } from "./hn/home/HomeProductsHn";
 
 const CHAT: Record<string, { agent: string; lines: { from: "you" | "agent"; text: string }[] }> = {
   readiness: {
-    agent: "Readiness agent",
+    agent: "Readiness Cloud collaborator",
     lines: [
       { from: "agent", text: "Order-to-cash scores L2: the approval rules live in three inboxes. Fix that first and it clears L4." },
       { from: "you", text: "What else is ready today?" },
     ],
   },
   agents: {
-    agent: "Finance agent",
+    agent: "Finance collaborator",
     lines: [
       { from: "you", text: "Raise the credit note for invoice 1042." },
       { from: "agent", text: "I can, it's a write action on the ledger, so it waits for your approval." },
     ],
   },
   foundation: {
-    agent: "Foundation agent",
+    agent: "Foundation Cloud collaborator",
     lines: [
       { from: "agent", text: "Three systems call this field “client”. I've mapped them to one and flagged the rows that disagree." },
       { from: "you", text: "Send me the list." },
     ],
   },
   adoption: {
-    agent: "Adoption agent",
+    agent: "Adoption collaborator",
     lines: [
-      { from: "agent", text: "Nine of your twelve champions used an agent this week. Finance hasn't yet, worth a look?" },
+      { from: "agent", text: "Nine of your twelve champions used a Cloud collaborator this week. Finance hasn't yet, worth a look?" },
       { from: "you", text: "Yes, set up a session with them." },
     ],
   },
   governance: {
-    agent: "Governance agent",
+    agent: "Governance collaborator",
     lines: [
-      { from: "agent", text: "This agent was about to touch personnel data. That's outside its declared scope, so I stopped it." },
+      { from: "agent", text: "This Cloud collaborator was about to touch personnel data. That's outside its declared scope, so I stopped it." },
       { from: "you", text: "Good. Log it and tell me who owns the policy." },
     ],
   },
   managed: {
-    agent: "Run agent",
+    agent: "Run Cloud collaborator",
     lines: [
-      { from: "agent", text: "The model provider shipped a breaking change on Tuesday. Your four agents were migrated Wednesday." },
+      { from: "agent", text: "The model provider shipped a breaking change on Tuesday. Your four Cloud collaborators were migrated Wednesday." },
       { from: "you", text: "Anything I need to check?" },
     ],
   },
@@ -218,7 +218,7 @@ export function SolutionPage() {
           <Head
             eyebrow="Use cases"
             title="Real work. Real systems."
-            lead="Illustrative workflows, what an agent does in each, described as the product runs it. Not customer results."
+            lead="Illustrative workflows, what a Cloud collaborator does in each, described as the product runs it. Not customer results."
           />
         </Container>
         <div className="mt-12 pl-5 sm:pl-8 lg:pl-12">

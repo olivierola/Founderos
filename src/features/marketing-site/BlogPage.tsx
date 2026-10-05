@@ -38,7 +38,7 @@ export function BlogPage() {
         <Container className="pb-24 pt-16 lg:pt-24">
           <H as="h1" size="hero">All articles</H>
           <P className="mt-4 max-w-[640px]">
-            What we learn putting agents to work on real systems: the governance arguments, the adoption dead ends,
+            What we learn putting Cloud collaborators to work on real systems: the governance arguments, the adoption dead ends,
             and the engineering that keeps a pilot from becoming a story.
           </P>
 

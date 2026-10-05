@@ -32,15 +32,15 @@ type Group = { id: string; label: string; items: Item[] };
 const HEADLINE: Item[] = [
   {
     q: "What does Anduran actually do?",
-    a: "We help companies adopt AI safely. In practice that is three things: we assess where your processes and data stand today, we build the secured foundation so AI has something solid to work on, and we guide adoption across your organisation with the governance and change enablement that makes it stick.",
+    a: "We help companies adopt superintelligence safely. In practice that is three things: we assess where your processes and data stand today, we build the secured foundation so superintelligence has something solid to work on, and we guide adoption across your organisation with the governance and change enablement that makes it stick.",
   },
   {
     q: "How do you handle data security?",
-    a: "Credentials are encrypted at rest with AES-GCM and never returned in plaintext to the browser. Every agent runs against scoped tool grants, write actions are approval-gated, and every call is recorded in an exportable audit log. We connect to your systems rather than copying your data into ours.",
+    a: "Credentials are encrypted at rest with AES-GCM and never returned in plaintext to the browser. Every Cloud collaborator runs against scoped tool grants, write actions are approval-gated, and every call is recorded in an exportable audit log. We connect to your systems rather than copying your data into ours.",
   },
   {
     q: "How long before we see something real?",
-    a: "Four to eight weeks to the first secured milestone in production. Not a demo: one agent doing one real piece of work, inside your tenant, with the audit trail switched on.",
+    a: "Four to eight weeks to the first secured milestone in production. Not a demo: one Cloud collaborator doing one real piece of work, inside your tenant, with the audit trail switched on.",
   },
 ];
 
@@ -50,8 +50,8 @@ const GROUPS: Group[] = [
     label: "Working with us",
     items: [
       {
-        q: "We are not sure we are ready for AI. Where do we start?",
-        a: "With the readiness assessment. It rates every process from L1 to L5 and tells you which work is ready for an agent today, which needs a foundation first, and which should wait. It takes two to three weeks. Most teams find two or three quick wins and one structural gap they did not know about.",
+        q: "We are not sure we are ready for superintelligence. Where do we start?",
+        a: "With the readiness assessment. It rates every process from L1 to L5 and tells you which work is ready for a Cloud collaborator today, which needs a foundation first, and which should wait. It takes two to three weeks. Most teams find two or three quick wins and one structural gap they did not know about.",
       },
       {
         q: "What industries and company sizes do you work with?",
@@ -63,7 +63,7 @@ const GROUPS: Group[] = [
       },
       {
         q: "What if the assessment says we are not ready?",
-        a: "Then we say so, and the roadmap starts with the foundation work rather than with an agent. We would rather lose a quarter of scope than deliver an assistant onto a process that cannot support it.",
+        a: "Then we say so, and the roadmap starts with the foundation work rather than with a Cloud collaborator. We would rather lose a quarter of scope than deliver an assistant onto a process that cannot support it.",
       },
     ],
   },
@@ -72,7 +72,7 @@ const GROUPS: Group[] = [
     label: "Security & data",
     items: [
       {
-        q: "Do agents run on our own infrastructure?",
+        q: "Do Cloud collaborators run on our own infrastructure?",
         a: "They can. Agents run inside your tenant with your identity controls and data residency, and you can route inference to a model you host yourself. Your prompts, your data and the resulting IP stay yours.",
       },
       {
@@ -80,12 +80,12 @@ const GROUPS: Group[] = [
         a: "Nothing we can avoid sending, and nothing for training. We document per deployment which provider handles which class of data, in which region, with what retention. That document is part of the delivery, not an appendix you have to ask for.",
       },
       {
-        q: "Can an agent act without a human?",
-        a: "Reads are free; writes are gated by default. You decide per agent and per toolkit which write actions can be auto-approved once a pattern has proven itself, and every approval, automatic or not, is recorded with its approver.",
+        q: "Can a Cloud collaborator act without a human?",
+        a: "Reads are free; writes are gated by default. You decide per Cloud collaborator and per toolkit which write actions can be auto-approved once a pattern has proven itself, and every approval, automatic or not, is recorded with its approver.",
       },
       {
         q: "What happens to our data if we leave?",
-        a: "You export it and we delete ours. There is no lock-in clause, no proprietary format for the knowledge base, and the agent definitions leave with you.",
+        a: "You export it and we delete ours. There is no lock-in clause, no proprietary format for the knowledge base, and the Cloud collaborator definitions leave with you.",
       },
     ],
   },
@@ -94,19 +94,19 @@ const GROUPS: Group[] = [
     label: "Agents & platform",
     items: [
       {
-        q: "What can an agent actually do?",
+        q: "What can a Cloud collaborator actually do?",
         a: "Read and write in the systems you connect it to, run multi-step missions with a plan it revises as it goes, call your own tools over MCP, hand work to sub-agents when tasks are independent, and stop to ask a human when it hits an approval gate or an ambiguity.",
       },
       {
         q: "Which systems can you connect to?",
-        a: "Fifty-seven providers today across CRM, billing, support, code hosting, storage and messaging, plus anything that speaks MCP or exposes an HTTP API. No platform migration is required; agents layer onto the environment you already run.",
+        a: "Fifty-seven providers today across CRM, billing, support, code hosting, storage and messaging, plus anything that speaks MCP or exposes an HTTP API. No platform migration is required; Cloud collaborators layer onto the environment you already run.",
       },
       {
-        q: "Can agents work in Slack or Teams?",
+        q: "Can Cloud collaborators work in Slack or Teams?",
         a: "Yes. Agents can be mentioned in a channel or replied to in a thread on both, and they post their results back where the conversation started.",
       },
       {
-        q: "What stops an agent from looping forever?",
+        q: "What stops a Cloud collaborator from looping forever?",
         a: "A controller watches for repeated states and forces a replan or an escalation, and every run carries explicit budgets in time, tokens and tool calls. When a budget runs out the run stops cleanly and keeps whatever it already produced.",
       },
       {
@@ -120,8 +120,8 @@ const GROUPS: Group[] = [
     label: "Pricing & billing",
     items: [
       {
-        q: "What is an AI credit?",
-        a: "One unit of AI work. Credits cover what your agents actually spend at the AI providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5.",
+        q: "What is a credit?",
+        a: "One unit of superintelligence work. Credits cover what your Cloud collaborators actually spend at the model providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5.",
       },
       {
         q: "What happens when I run out?",
@@ -137,7 +137,7 @@ const GROUPS: Group[] = [
       },
       {
         q: "What counts as a ‘service’?",
-        a: "One agent-centred workspace: its own agents, rooms, schedules and knowledge base. Agencies typically run one service per client.",
+        a: "One collaborator-centred workspace: its own Cloud collaborators, rooms, schedules and knowledge base. Agencies typically run one service per client.",
       },
       {
         q: "What payment methods do you take?",
@@ -158,8 +158,8 @@ const GROUPS: Group[] = [
         a: "Ninety days on Individual, one year on Pro, two years on Agencies, three years plus export on Enterprise.",
       },
       {
-        q: "Who decides what an agent is allowed to touch?",
-        a: "You do, per agent, through scoped tool grants. The grant, its approver and its date are part of the registry, so nobody in your organisation can widen an agent's reach without leaving a trace.",
+        q: "Who decides what a Cloud collaborator is allowed to touch?",
+        a: "You do, per Cloud collaborator, through scoped tool grants. The grant, its approver and its date are part of the registry, so nobody in your organisation can widen a Cloud collaborator's reach without leaving a trace.",
       },
       {
         q: "Can we run our own approval workflow?",
@@ -181,7 +181,7 @@ const GROUPS: Group[] = [
       },
       {
         q: "Do you train our team, or do you keep the keys?",
-        a: "We train. The point of the engagement is that you can operate what we built: every agent, policy and workflow is documented and handed over, and a hundred percent of the resulting IP is yours.",
+        a: "We train. The point of the engagement is that you can operate what we built: every Cloud collaborator, policy and workflow is documented and handed over, and a hundred percent of the resulting IP is yours.",
       },
     ],
   },

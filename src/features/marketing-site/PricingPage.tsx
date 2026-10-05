@@ -33,20 +33,20 @@ const COMPARE_GROUPS = [
   {
     label: "Usage",
     rows: [
-      { feature: "AI credits / month", individual: "12,000", pro: "60,000", agencies: "220,000", ent: "Negotiated" },
-      { feature: "Agents", individual: "3", pro: "10", agencies: "50", ent: "Unlimited" },
+      { feature: "Credits / month", individual: "12,000", pro: "60,000", agencies: "220,000", ent: "Negotiated" },
+      { feature: "Cloud collaborators", individual: "3", pro: "10", agencies: "50", ent: "Unlimited" },
       { feature: "Services", individual: "1", pro: "3", agencies: "15", ent: "Unlimited" },
       { feature: "Seats", individual: "1", pro: "5", agencies: "20", ent: "Unlimited" },
       { feature: "Knowledge storage", individual: "2 GB", pro: "20 GB", agencies: "200 GB", ent: "Unlimited" },
       { feature: "Projects", individual: "2", pro: "10", agencies: "50", ent: "Unlimited" },
-      { feature: "Concurrent agent runs", individual: "1", pro: "3", agencies: "10", ent: "50" },
+      { feature: "Concurrent collaborator runs", individual: "1", pro: "3", agencies: "10", ent: "50" },
     ],
   },
   {
     label: "Platform",
     rows: [
       { feature: "Encrypted secrets vault", individual: "✓", pro: "✓", agencies: "✓", ent: "✓" },
-      { feature: "AI governance registry", individual: "✓", pro: "✓", agencies: "✓", ent: "✓" },
+      { feature: "Governance registry", individual: "✓", pro: "✓", agencies: "✓", ent: "✓" },
       { feature: "Runtime guardrails", individual: "✓", pro: "✓", agencies: "✓", ent: "✓" },
       { feature: "Human-in-the-loop approvals", individual: "—", pro: "✓", agencies: "✓", ent: "✓" },
       { feature: "MCP tool servers", individual: "1", pro: "5", agencies: "25", ent: "Unlimited" },
@@ -72,14 +72,14 @@ const ADDONS = [
   {
     name: "Voice",
     tag: "Includes call recording",
-    body: "Agents that answer and place calls, with transcription and the same approval gates as everything else. Twilio and Deepgram, wired for you.",
+    body: "Cloud collaborators that answer and place calls, with transcription and the same approval gates as everything else. Twilio and Deepgram, wired for you.",
     price: "€89",
     unit: "/mo",
     accent: true,
   },
   {
     name: "Sandbox runners",
-    body: "Dedicated compute for agents that write code, run tests and drive a browser. Isolated per service, scaled to the fleet you actually run.",
+    body: "Dedicated compute for cloud engineers that write code, run tests and drive a browser. Isolated per service, scaled to the fleet you actually run.",
     price: "€149",
     unit: "/mo",
   },
@@ -95,12 +95,12 @@ const GUARANTEES = [
   {
     icon: ShieldCheck,
     t: "Approval-gated by default",
-    b: "Every write an agent performs is gated and recorded in an exportable audit log.",
+    b: "Every write a Cloud collaborator performs is gated and recorded in an exportable audit log.",
   },
   {
     icon: Rocket,
     t: "Cancel any time",
-    b: "No lock-in and no notice period. Export your data and pause the agents whenever you want.",
+    b: "No lock-in and no notice period. Export your data and pause the collaborators whenever you want.",
   },
   {
     icon: Lock,
@@ -110,11 +110,11 @@ const GUARANTEES = [
 ];
 
 const PRICING_FAQ = [
-  { q: "What is an AI credit?", a: "One unit of AI work. Credits cover what your agents actually spend at the AI providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5." },
-  { q: "What happens when I run out?", a: "Agents stop cleanly and keep whatever they already produced, so nothing is lost mid-run. You can buy a credit pack (it never expires) or move up a plan; either restores service immediately." },
+  { q: "What is a credit?", a: "One unit of superintelligence work. Credits cover what your Cloud collaborators actually spend at the model providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5." },
+  { q: "What happens when I run out?", a: "Cloud collaborators stop cleanly and keep whatever they already produced, so nothing is lost mid-run. You can buy a credit pack (it never expires) or move up a plan; either restores service immediately." },
   { q: "Can I change plans later?", a: "Yes, anytime. Upgrading is instant and restarts your billing period with the new allowance; downgrading applies at the end of the current period." },
   { q: "How does annual billing work?", a: "Annual plans are billed once a year for the price of ten months, about 17% off versus monthly." },
-  { q: "What counts as a 'service'?", a: "One agent-centred workspace: its own agents, rooms, schedules and knowledge base. Agencies typically run one service per client." },
+  { q: "What counts as a 'service'?", a: "One collaborator-centred workspace: its own Cloud collaborators, rooms, schedules and knowledge base. Agencies typically run one service per client." },
   { q: "What payment methods?", a: "Card via Stripe. Wire transfer + PO available on Enterprise." },
 ];
 
@@ -154,7 +154,7 @@ export function PricingPage() {
             plain
             tiles={[]}
             label="Pricing"
-            frame={["One subscription for a fleet of agents"]}
+            frame={["One subscription for a fleet of Cloud collaborators"]}
             claim="that does the work."
             note={
               <>
@@ -180,7 +180,7 @@ export function PricingPage() {
             <Reveal>
               <SectionTitle frame="bought on top of any plan" claim="Add-ons," flip />
               <p className="mt-5 max-w-xl text-[15.5px] leading-[1.6] text-[#6E6E6E]">
-                Added or removed at any time, prorated to the day. None of them is required to run agents.
+                Added or removed at any time, prorated to the day. None of them is required to run Cloud collaborators.
               </p>
             </Reveal>
 
@@ -300,7 +300,7 @@ export function PricingPage() {
                   </h3>
                   <p className="mt-5 max-w-[46ch] text-[15px] leading-[1.6] text-[#5A5A5A]">
                     An estimated monthly cost from your team size, the number of services you run and the
-                    volume of agent work you expect.
+                    volume of collaborator work you expect.
                   </p>
                   <Link
                     to="/contact"

@@ -35,10 +35,10 @@ export function HomeAgentsBandHn() {
           <div className="pb-16 lg:pb-28">
             <Eyebrow tone="white">{p.bestFor}</Eyebrow>
             <H tone="white" size="hero" className="mt-5 max-w-[14ch] !text-[40px] sm:!text-[48px]">
-              Your first agent, live in minutes
+              Your first Cloud collaborator, live in minutes
             </H>
             <P tone="dim" className="mt-5 max-w-[36ch]">
-              Start from a template, add your company context, connect your tools, and hand your agent its first
+              Start from a template, add your company context, connect your tools, and hand your Cloud collaborator its first
               mission. No code, no integration project.
             </P>
             <div className="mt-9 flex flex-wrap items-center gap-5">
@@ -63,10 +63,10 @@ export function HomeAgentsBandHn() {
 const FEATURES = [
   { icon: Plugs, title: "Your systems, not a copy", body: "Agents read your data where it lives, through the connectors you authorise. Nothing is migrated." },
   { icon: HandPalm, title: "Approval-gated writes", body: "Writing, sending, deleting and paying stop and wait for you, in the conversation." },
-  { icon: CalendarCheck, title: "Missions on a schedule", body: "Hand an agent a job once, on demand, on a cadence or at a set date." },
-  { icon: BookOpen, title: "Knowledge it can search", body: "Collections of PDFs, documents and spreadsheets, built once and shared across agents." },
-  { icon: Chats, title: "Rooms with people and agents", body: "Mention an agent to bring it into a conversation; follow its work live." },
-  { icon: FileText, title: "Reports, written properly", body: "A dedicated agent writes deliverables from your figures, with sources cited, ready as PDF." },
+  { icon: CalendarCheck, title: "Missions on a schedule", body: "Hand a Cloud collaborator a job once, on demand, on a cadence or at a set date." },
+  { icon: BookOpen, title: "Knowledge it can search", body: "Collections of PDFs, documents and spreadsheets, built once and shared across Cloud collaborators." },
+  { icon: Chats, title: "Rooms with people and Cloud collaborators", body: "Mention a Cloud collaborator to bring it into a conversation; follow its work live." },
+  { icon: FileText, title: "Reports, written properly", body: "A dedicated Cloud collaborator writes deliverables from your figures, with sources cited, ready as PDF." },
 ];
 
 export function HomeFeaturesHn() {
@@ -75,8 +75,8 @@ export function HomeFeaturesHn() {
       <Container narrow>
         <Head
           eyebrow="Platform"
-          title="Everything an agent needs to deliver real work"
-          lead="Connect your tools, give agents knowledge and missions, and stay in control of every action they take."
+          title="Everything a Cloud collaborator needs to deliver real work"
+          lead="Connect your tools, give Cloud collaborators knowledge and missions, and stay in control of every action they take."
         />
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f) => (
@@ -94,9 +94,9 @@ export function HomeFeaturesHn() {
    the track translated by the scroll progress through the runway. On narrow
    screens it falls back to a plain horizontal scroller. */
 const STEPS: { title: string; body: string; art: Art; mock: ReactNode }[] = [
-  { title: "Pick a template", body: "Start from an agent built for the job and adjust it.", art: "blue", mock: <StepTemplateMock /> },
-  { title: "Describe the job", body: "Write what the agent must do, its rules and its tone, in plain language.", art: "violet", mock: <StepInstructionsMock /> },
-  { title: "Connect your tools", body: "Authorise a connector, then grant each agent only the tools it needs.", art: "olive", mock: <StepConnectMock /> },
+  { title: "Pick a template", body: "Start from a Cloud collaborator built for the job and adjust it.", art: "blue", mock: <StepTemplateMock /> },
+  { title: "Describe the job", body: "Write what the Cloud collaborator must do, its rules and its tone, in plain language.", art: "violet", mock: <StepInstructionsMock /> },
+  { title: "Connect your tools", body: "Authorise a connector, then grant each Cloud collaborator only the tools it needs.", art: "olive", mock: <StepConnectMock /> },
   { title: "Set the approvals", body: "Decide what waits for a human, what is blocked, and whether autonomy is ever allowed.", art: "orange", mock: <StepGuardrailsMock /> },
   { title: "Watch it run", body: "Follow every mission live, and step in when an approval is waiting.", art: "pink", mock: <StepLiveMock /> },
   { title: "Review every call", body: "Open a run to replay each step, each call and each approval.", art: "blue", mock: <StepReviewMock /> },
@@ -153,8 +153,8 @@ export function HomeHowHn() {
       <Head
         split
         eyebrow="How it works"
-        title="From first agent to first result, no engineering required"
-        lead="Pick a template, describe the job in plain language, connect your tools and set the approvals. Then watch your agent work, and review every step."
+        title="From first Cloud collaborator to first result, no engineering required"
+        lead="Pick a template, describe the job in plain language, connect your tools and set the approvals. Then watch your Cloud collaborator work, and review every step."
       />
     </Container>
   );

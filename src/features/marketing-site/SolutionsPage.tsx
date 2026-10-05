@@ -17,8 +17,8 @@ import { UseCaseCarousel } from "./hn/home/HomeProductsHn";
 
 const METHOD = [
   { tag: "Assess", title: "Score the ground", body: "Two to three weeks on processes, data and exposure. A scored roadmap before anyone writes code." },
-  { tag: "Build", title: "Foundation, then agents", body: "Approvals that follow rules, then the first agents, inside your tenant, against scoped grants." },
-  { tag: "Govern", title: "Switched on with agent one", body: "Registry, policies and audit trail from the first agent, never retrofitted." },
+  { tag: "Build", title: "Foundation, then Cloud collaborators", body: "Approvals that follow rules, then the first Cloud collaborators, inside your tenant, against scoped grants." },
+  { tag: "Govern", title: "Switched on with Cloud collaborator one", body: "Registry, policies and audit trail from the first Cloud collaborator, never retrofitted." },
   { tag: "Run", title: "Measured and maintained", body: "Adoption measured per team, and a retainer that keeps the platform current." },
 ];
 
@@ -35,7 +35,7 @@ export function SolutionsPage() {
       <HnHero
         variant="center"
         eyebrow="Solutions"
-        title="Six building blocks for adopting AI safely"
+        title="Six building blocks for adopting superintelligence safely"
         lead="In the order they actually need to happen. Most companies need three of them, and almost nobody needs all six at once."
       >
         <div className="flex flex-wrap items-center justify-center gap-5">
@@ -116,7 +116,7 @@ export function SolutionsPage() {
           <Head
             eyebrow="Use cases"
             title="Real work. Real systems."
-            lead="Illustrative workflows, what an agent does in each, described as the product runs it. Not customer results."
+            lead="Illustrative workflows, what a Cloud collaborator does in each, described as the product runs it. Not customer results."
           />
         </Container>
         <div className="mt-12 pl-5 sm:pl-8 lg:pl-12">

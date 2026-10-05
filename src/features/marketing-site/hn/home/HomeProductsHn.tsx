@@ -16,8 +16,8 @@ export function HomeProductsHn() {
       <Container>
         <Head
           eyebrow="Products"
-          title="One platform to deploy, run and govern AI agents."
-          lead="Build agents for every team, then keep them accountable with approvals, policies and a complete audit trail."
+          title="One platform to deploy, run and govern Cloud collaborators."
+          lead="Build Cloud collaborators for every team, then keep them accountable with approvals, policies and a complete audit trail."
         />
         <div className="mt-16 grid overflow-hidden rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] md:grid-cols-2">
           {PRODUCTS.map((p, i) => (
@@ -101,7 +101,7 @@ export function HomeUseCasesHn() {
               teams do every day.
             </>
           }
-          lead="See how agents handle finance, hiring, reporting, operations and governance, step by step."
+          lead="See how Cloud collaborators handle finance, hiring, reporting, operations and governance, step by step."
         />
       </Container>
       <div className="mt-14 pl-5 sm:pl-8 lg:pl-[max(48px,calc((100vw-1344px)/2))]">

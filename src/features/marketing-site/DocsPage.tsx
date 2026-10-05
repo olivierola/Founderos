@@ -41,7 +41,7 @@ const TOPICS: Topic[] = [
     section: "The objects",
     title: "Workspace, project, service",
     body:
-      "A workspace carries billing, members and roles. It contains projects, and a project contains services. A service is the unit that matters day to day: an agent-centred dashboard with its own rooms, schedules, connections and knowledge base. An agency usually keeps one service per client.",
+      "A workspace carries billing, members and roles. It contains projects, and a project contains services. A service is the unit that matters day to day: a collaborator-centred dashboard with its own rooms, schedules, connections and knowledge base. An agency usually keeps one service per client.",
     points: [
       "Quotas (agents, services, seats, storage) apply to the workspace, not to the project",
       "A connection to an external tool belongs to ONE service, or to one person within that service",
@@ -50,27 +50,27 @@ const TOPICS: Topic[] = [
   {
     id: "agent",
     section: "The objects",
-    title: "Internal and public agents",
+    title: "Internal and public Cloud collaborators",
     body:
-      "An internal agent works for your team: it has tools, missions, a schedule, and it hands in deliverables. A public agent faces your customers, it is the one behind a website widget, a Slack or a Teams channel. Both appear in the same directory, told apart by a badge; you configure them in the dashboard of the service that employs them.",
+      "An internal Cloud collaborator works for your team: it has tools, missions, a schedule, and it hands in deliverables. A public Cloud collaborator faces your customers, it is the one behind a website widget, a Slack or a Teams channel. Both appear in the same directory, told apart by a badge; you configure them in the dashboard of the service that employs them.",
   },
   {
     id: "three-files",
     section: "The objects",
-    title: "The three files of an agent",
+    title: "The three files of a Cloud collaborator",
     body:
-      "An agent is described by three separate texts. The instructions say what it must do. The soul says how it speaks and what it refuses. The preferences keep what you have taught it along the way. The context sent to the model is assembled per task: only the skills and preferences relevant to the task at hand go in.",
+      "A Cloud collaborator is described by three separate texts. The instructions say what it must do. The soul says how it speaks and what it refuses. The preferences keep what you have taught it along the way. The context sent to the model is assembled per task: only the skills and preferences relevant to the task at hand go in.",
   },
 
   // ── Getting started ───────────────────────────────────────────────────────
   {
     id: "first-agent",
     section: "Getting started",
-    title: "Create your first agent",
+    title: "Create your first Cloud collaborator",
     body:
-      "Start from an agent template rather than a blank page: it comes with instructions, a coherent set of tools and typical missions you adjust. Then describe your company's context, what you do, for whom, in what vocabulary. That context feeds every agent's system prompt, so you fill it in once and it serves everywhere.",
+      "Start from a Cloud collaborator template rather than a blank page: it comes with instructions, a coherent set of tools and typical missions you adjust. Then describe your company's context, what you do, for whom, in what vocabulary. That context feeds every Cloud collaborator's system prompt, so you fill it in once and it serves everywhere.",
     points: [
-      "An agent without substantial instructions stays flagged “to configure” until it has something to work with",
+      "A Cloud collaborator without substantial instructions stays flagged “to configure” until it has something to work with",
       "Skills are added as you go: you can record one by doing the task yourself",
     ],
   },
@@ -79,7 +79,7 @@ const TOPICS: Topic[] = [
     section: "Getting started",
     title: "Connect your tools",
     body:
-      "A connection is authorised from the service's Connectors tab, with your own account and through OAuth when the tool offers it. You then choose, agent by agent, which tools of that connection it is granted. An agent can only call what it has been granted.",
+      "A connection is authorised from the service's Connectors tab, with your own account and through OAuth when the tool offers it. You then choose, Cloud collaborator by Cloud collaborator, which tools of that connection it is granted. A Cloud collaborator can only call what it has been granted.",
     points: [
       "An internal system without a ready-made connector goes through a remote MCP server, declared once",
       "Credentials are encrypted at rest and decrypted only server-side, at call time",
@@ -90,7 +90,7 @@ const TOPICS: Topic[] = [
     section: "Getting started",
     title: "Give it knowledge",
     body:
-      "A knowledge collection groups documents your agents can search. Drop in PDFs, Word documents, spreadsheets; the content is chunked and indexed. The same collection can be attached to several agents, you build it once.",
+      "A knowledge collection groups documents your Cloud collaborators can search. Drop in PDFs, Word documents, spreadsheets; the content is chunked and indexed. The same collection can be attached to several Cloud collaborators, you build it once.",
   },
 
   // ── Day to day ────────────────────────────────────────────────────────────
@@ -99,11 +99,11 @@ const TOPICS: Topic[] = [
     section: "Day to day",
     title: "Approve an action",
     body:
-      "When an agent wants to do something that writes, sends, deletes or pays, it stops and asks you, in the conversation. The run stays alive while it waits. You can approve once, allow repeats of the same action up front, or allow everything for a given tool.",
+      "When a Cloud collaborator wants to do something that writes, sends, deletes or pays, it stops and asks you, in the conversation. The run stays alive while it waits. You can approve once, allow repeats of the same action up front, or allow everything for a given tool.",
     points: [
       "Reads, searching, listing, looking something up, run without asking",
       "Two checks decide: a list of verbs, then a judgement on what the list lets through. The second can only add an approval",
-      "An agent you switch to autonomous mode no longer waits: an explicit, reversible choice",
+      "A Cloud collaborator you switch to autonomous mode no longer waits: an explicit, reversible choice",
     ],
   },
   {
@@ -111,21 +111,21 @@ const TOPICS: Topic[] = [
     section: "Day to day",
     title: "Missions and scheduling",
     body:
-      "A mission is work handed to an agent, with an expected result. It can run on demand, on a cadence, or at a set date. The agent breaks its mission into steps, checks its own work at each stage, and says when it is going round in circles rather than insisting.",
+      "A mission is work handed to a Cloud collaborator, with an expected result. It can run on demand, on a cadence, or at a set date. The Cloud collaborator breaks its mission into steps, checks its own work at each stage, and says when it is going round in circles rather than insisting.",
   },
   {
     id: "deliverables",
     section: "Day to day",
     title: "Deliverables and reports",
     body:
-      "What an agent produces lands in the service's artifacts: documents, spreadsheets, presentations. Reports are written by a dedicated system agent, from the figures in your data, with sources cited. A report opens in an editor and can be reworked by hand; the PDF export starts from what is on screen.",
+      "What a Cloud collaborator produces lands in the service's artifacts: documents, spreadsheets, presentations. Reports are written by a dedicated system Cloud collaborator, from the figures in your data, with sources cited. A report opens in an editor and can be reworked by hand; the PDF export starts from what is on screen.",
   },
   {
     id: "rooms",
     section: "Day to day",
     title: "Rooms",
     body:
-      "A room is a conversation between several people and agents. Mention an agent to bring it in, follow its work live, and the artifacts it produces stay attached to the room. An agent can also hand independent sub-tasks to short-lived agents working in parallel.",
+      "A room is a conversation between several people and Cloud collaborators. Mention a Cloud collaborator to bring it in, follow its work live, and the artifacts it produces stay attached to the room. A Cloud collaborator can also hand independent sub-tasks to short-lived Cloud collaborators working in parallel.",
   },
 
   // ── Governance ────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ const TOPICS: Topic[] = [
     section: "Governance",
     title: "Guardrails",
     body:
-      "A guardrail is a written rule agents must follow. It can be documentary, read by the agent in its context, or enforced at runtime, with a detection pattern tested against the traffic: prompts, tool calls, results, or all of them. Three levels: log, warn, block.",
+      "A guardrail is a written rule Cloud collaborators must follow. It can be documentary, read by the Cloud collaborator in its context, or enforced at runtime, with a detection pattern tested against the traffic: prompts, tool calls, results, or all of them. Three levels: log, warn, block.",
     points: ["A new project has no guardrails: install the recommended baseline in one click, then adjust it"],
   },
   {
@@ -149,23 +149,23 @@ const TOPICS: Topic[] = [
     section: "Governance",
     title: "Registry and compliance",
     body:
-      "The registry lists your agents, declared risks, policies, controls and the human decisions taken. You add your compliance frameworks and keep their status. We pre-declare no status: compliance is a statement that commits you, not a box ticked by default.",
+      "The registry lists your Cloud collaborators, declared risks, policies, controls and the human decisions taken. You add your compliance frameworks and keep their status. We pre-declare no status: compliance is a statement that commits you, not a box ticked by default.",
   },
 
   // ── Models & costs ────────────────────────────────────────────────────────
   {
     id: "models",
     section: "Models & costs",
-    title: "Which model runs an agent",
+    title: "Which model runs a Cloud collaborator",
     body:
-      "By default an agent runs on the platform's model. You can instead point it at an OpenAI-compatible endpoint you host, vLLM on your network, a GPU pod of your own, and your prompts then never leave your infrastructure. The choice is made agent by agent.",
+      "By default a Cloud collaborator runs on the platform's model. You can instead point it at an OpenAI-compatible endpoint you host, vLLM on your network, a GPU pod of your own, and your prompts then never leave your infrastructure. The choice is made Cloud collaborator by Cloud collaborator.",
   },
   {
     id: "credits",
     section: "Models & costs",
     title: "Credits and quotas",
     body:
-      "Usage is measured in credits, consumed by what agents actually do. Each plan includes a monthly volume and sets limits: agents, services, seats, storage, concurrent runs. Overage never switches itself on, you allow it and you cap it.",
+      "Usage is measured in credits, consumed by what Cloud collaborators actually do. Each plan includes a monthly volume and sets limits: Cloud collaborators, services, seats, storage, concurrent runs. Overage never switches itself on, you allow it and you cap it.",
     points: [
       "An alert fires at 80% of the included volume, before you hit the wall",
       "There is no free trial: the subscription is billed when you subscribe",

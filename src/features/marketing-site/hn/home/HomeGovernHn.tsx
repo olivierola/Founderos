@@ -34,11 +34,11 @@ export function HomePrincipleHn() {
           <RunMock className="relative w-full max-w-[360px]" />
         </ArtPanel>
         <div>
-          <Chip className="border-[#d7e7fb] bg-[#eaf2ff] font-medium text-[#006edd]">The rule every agent runs under</Chip>
+          <Chip className="border-[#d7e7fb] bg-[#eaf2ff] font-medium text-[#006edd]">The rule every Cloud collaborator runs under</Chip>
           <blockquote className="mt-6 text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728]">
             “Read freely. Write only with your approval. Keep a trace of everything.”
           </blockquote>
-          <div className="mt-6 text-[20px] font-medium leading-[1.3] text-[#0f1728]">Every Anduran agent</div>
+          <div className="mt-6 text-[20px] font-medium leading-[1.3] text-[#0f1728]">Every Anduran Cloud collaborator</div>
           <div className="text-[20px] font-medium leading-[1.3] text-[#4b5567]">unless you switch it to autonomous mode yourself</div>
           <Btn to="/docs" variant="link" className="mt-8">
             Read how it works
@@ -59,23 +59,23 @@ const BLOCKS = ["agents", "governance", "adoption"];
 
 const BLOCK_CHAT: Record<string, { agent: string; lines: { from: "you" | "agent"; text: string }[] }> = {
   agents: {
-    agent: "Finance agent",
+    agent: "Finance collaborator",
     lines: [
       { from: "you", text: "Raise the credit note for invoice 1042." },
       { from: "agent", text: "I can, it's a write action on the ledger, so it waits for your approval." },
     ],
   },
   governance: {
-    agent: "Governance agent",
+    agent: "Governance collaborator",
     lines: [
-      { from: "agent", text: "This agent was about to touch personnel data. That's outside its declared scope, so I stopped it." },
+      { from: "agent", text: "This Cloud collaborator was about to touch personnel data. That's outside its declared scope, so I stopped it." },
       { from: "you", text: "Good. Log it and tell me who owns the policy." },
     ],
   },
   adoption: {
-    agent: "Adoption agent",
+    agent: "Adoption collaborator",
     lines: [
-      { from: "agent", text: "Nine of your twelve champions used an agent this week. Finance hasn't yet, worth a look?" },
+      { from: "agent", text: "Nine of your twelve champions used a Cloud collaborator this week. Finance hasn't yet, worth a look?" },
       { from: "you", text: "Yes, set up a session with them." },
     ],
   },
@@ -138,7 +138,7 @@ export function HomeGovernHn() {
             <span className="inline-flex items-center rounded-full border border-white/15 bg-white/[0.05] px-5 py-3">
               <ProductMark word={p.short} size={20} />
             </span>
-            <P tone="dim" className="mt-8 max-w-[30ch]">Registry, policies, approvals and an exportable audit trail, for every agent.</P>
+            <P tone="dim" className="mt-8 max-w-[30ch]">Registry, policies, approvals and an exportable audit trail, for every Cloud collaborator.</P>
             <Btn to={`/product/${p.slug}`} className="mt-6">Learn more</Btn>
           </div>
         </div>
@@ -165,9 +165,9 @@ const TRUST = [
   { icon: LockKey, title: "Encrypted at rest", body: "Connector credentials encrypted with AES-256-GCM, decrypted only server-side at call time." },
   { icon: Stack, title: "Isolated per workspace", body: "Row-level security on every table, and storage partitioned per customer." },
   { icon: Fingerprint, title: "Two-factor sign-in", body: "TOTP two-factor authentication available on every account." },
-  { icon: Key, title: "Scoped tool grants", body: "Each agent gets an explicit list of tools. Outside it, the call stops." },
+  { icon: Key, title: "Scoped tool grants", body: "Each Cloud collaborator gets an explicit list of tools. Outside it, the call stops." },
   { icon: ListChecks, title: "Exportable audit log", body: "Arguments, result, duration and run for every call, exportable for review." },
-  { icon: Cpu, title: "Self-hostable model", body: "Point an agent at an OpenAI-compatible endpoint you host; prompts stay on your network." },
+  { icon: Cpu, title: "Self-hostable model", body: "Point a Cloud collaborator at an OpenAI-compatible endpoint you host; prompts stay on your network." },
 ];
 
 export function HomeTrustHn() {
@@ -190,7 +190,7 @@ export function HomeTrustHn() {
             <Eyebrow>Plug and play</Eyebrow>
             <H size="sub" className="mt-3">Works with the systems you already run</H>
             <P className="mt-4 max-w-[40ch]">
-              Connect agents to your work, business, delivery and data tools, or anything that speaks MCP or HTTP.
+              Connect Cloud collaborators to your work, business, delivery and data tools, or anything that speaks MCP or HTTP.
               No migration, no second source of truth.
             </P>
             <Btn to="/integrations" variant="link" className="mt-6">See every integration</Btn>
@@ -219,10 +219,10 @@ export function HomeBlogHn() {
             <>
               Insights on running
               <br />
-              AI agents in production.
+              Cloud collaborators in production.
             </>
           }
-          lead="Practical lessons on governance, adoption and engineering, from putting agents to work on real systems."
+          lead="Practical lessons on governance, adoption and engineering, from putting Cloud collaborators to work on real systems."
         >
           <Btn to="/blog" variant="link">Go to the blog</Btn>
         </Head>

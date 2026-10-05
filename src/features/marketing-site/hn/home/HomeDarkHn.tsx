@@ -13,7 +13,7 @@ import { AuditMock, CheckPipelineMock, KeysMock, RunMock, TaskCard } from "../Mo
 const AGENTS: { team: string; name: string; art: Art; title: string; steps: string[]; waiting: string; line: string }[] = [
   {
     team: "Finance",
-    name: "Finance agent",
+    name: "Finance collaborator",
     art: "blue",
     title: "Reconcile March invoices",
     steps: ["Read invoices from the ledger", "Matched lines to purchase orders"],
@@ -22,7 +22,7 @@ const AGENTS: { team: string; name: string; art: Art; title: string; steps: stri
   },
   {
     team: "HR & Recruiting",
-    name: "Recruiting agent",
+    name: "Recruiting collaborator",
     art: "violet",
     title: "Screen applicants, Ops lead",
     steps: ["Read applications against criteria", "Wrote a note per candidate"],
@@ -31,7 +31,7 @@ const AGENTS: { team: string; name: string; art: Art; title: string; steps: stri
   },
   {
     team: "Customer support",
-    name: "Support agent",
+    name: "Support collaborator",
     art: "olive",
     title: "Resolve refund request #4821",
     steps: ["Found the order and its history", "Checked it against the refund policy"],
@@ -49,7 +49,7 @@ const AGENTS: { team: string; name: string; art: Art; title: string; steps: stri
   },
   {
     team: "Sales",
-    name: "Sales agent",
+    name: "Sales collaborator",
     art: "orange",
     title: "Weekly pipeline hygiene",
     steps: ["Found 12 deals with no next step", "Drafted a follow-up for each"],
@@ -68,9 +68,9 @@ export function HomeAgentsHn() {
         <Head
           split
           tone="dark"
-          eyebrow="Meet the agents"
-          title="Specialised agents for every team."
-          lead="Each agent works inside your systems, follows the rules you set, and hands back finished work, ready for your approval."
+          eyebrow="Meet your Cloud collaborators"
+          title="Specialised Cloud collaborators for every team."
+          lead="Each Cloud collaborator works inside your systems, follows the rules you set, and hands back finished work, ready for your approval."
         >
           <Btn to="/contact">Book a live demo</Btn>
         </Head>
@@ -119,7 +119,7 @@ const ROWS: { title: string; body: [string, string]; art: Art; visual: ReactNode
     title: "A second check that only adds caution",
     body: [
       "Two checks decide whether an action needs you: a list of write verbs, then a judgement on what the list let through.",
-      "The second check can add an approval, never remove one. A model that misreads an action can only make the agent more careful, not less.",
+      "The second check can add an approval, never remove one. A model that misreads an action can only make the Cloud collaborator more careful, not less.",
     ],
     art: "violet",
     visual: <CheckPipelineMock />,
@@ -127,7 +127,7 @@ const ROWS: { title: string; body: [string, string]; art: Art; visual: ReactNode
   {
     title: "Traceability, not just a log",
     body: [
-      "“The agent called read_url” does not answer an auditor. Every call records the arguments passed, the start of what came back, whether it succeeded and how long it took.",
+      "“The Cloud collaborator called read_url” does not answer an auditor. Every call records the arguments passed, the start of what came back, whether it succeeded and how long it took.",
       "Each call belongs to a run you can open and replay end to end. The log exports.",
     ],
     art: "olive",
@@ -137,7 +137,7 @@ const ROWS: { title: string; body: [string, string]; art: Art; visual: ReactNode
     title: "Your keys, and your model, if you want it",
     body: [
       "Connector credentials are encrypted at rest with AES-256-GCM and decrypted only server-side, at call time. The browser never sees them in clear.",
-      "Inference can leave our infrastructure too: point an agent at an OpenAI-compatible endpoint you host, and your prompts stay on your network.",
+      "Inference can leave our infrastructure too: point a Cloud collaborator at an OpenAI-compatible endpoint you host, and your prompts stay on your network.",
     ],
     art: "gold",
     visual: <KeysMock />,
@@ -160,7 +160,7 @@ export function HomeDifferentHn() {
                 Anduran with real work
               </>
             }
-            lead="Putting an agent on real systems is risky at four precise moments: the write, the audit, the key and the model. Anduran is built around each of them."
+            lead="Putting a Cloud collaborator on real systems is risky at four precise moments: the write, the audit, the key and the model. Anduran is built around each of them."
           />
         </div>
         {ROWS.map((r, i) => (

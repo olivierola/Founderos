@@ -38,9 +38,9 @@ const CARD_VISUAL: Record<string, ReactNode> = {
     <div className="flex h-full items-center justify-center">
       <Glass>
         <div className="flex items-center gap-2.5">
-          <AgentBadge name="Finance agent" size={30} />
+          <AgentBadge name="Finance collaborator" size={30} />
           <div>
-            <div className="text-[12.5px] font-semibold">Finance agent</div>
+            <div className="text-[12.5px] font-semibold">Finance collaborator</div>
             <div className="text-[11px] text-[#4b5567]">wants to write to the ledger</div>
           </div>
         </div>
@@ -76,7 +76,7 @@ const CARD_VISUAL: Record<string, ReactNode> = {
     <div className="flex h-full items-center justify-center">
       <Glass>
         <div className="flex items-center gap-2 text-[12.5px] font-semibold">
-          <LockKey weight="duotone" className="h-4 w-4 text-[#4447d6]" /> Policy · Finance agent
+          <LockKey weight="duotone" className="h-4 w-4 text-[#4447d6]" /> Policy · Finance collaborator
         </div>
         {["Writes need approval", "Amounts above €50 always ask", "Personnel data blocked"].map((r) => (
           <div key={r} className="mt-2 flex items-center gap-2 text-[11.5px] text-[#344054]">
@@ -97,11 +97,11 @@ export function HomeHeroHn() {
         <div className="relative pb-10 pt-16 sm:pt-24 lg:pb-14 lg:pt-32">
           <div className="amp-in max-w-[860px]">
             <H as="h1" size="hero">
-              Put AI agents to work. Keep every decision yours.
+              Your enterprise superintelligence. Hired as Cloud collaborators.
             </H>
             <P className="mt-6 max-w-[560px]">
-              Anduran deploys AI agents inside your own tenant. They work in the tools you already use, ask before
-              they change anything, and record every step for review.
+              Anduran gives you always-alive Cloud collaborators inside your own tenant. They work in the tools you
+              already use, ask before they change anything, and keep every decision yours.
             </P>
             <div className="mt-10 flex flex-wrap items-center gap-5">
               <Btn to="/contact">Book a demo</Btn>
@@ -114,7 +114,7 @@ export function HomeHeroHn() {
             <ArtPanel art="blue" className="flex h-[150px] items-center justify-center rounded-[14px] px-4">
               <div className="w-full rounded-[24px] bg-white p-2.5 text-[#0f1728] hn-shadow-lg">
                 <div className="flex items-center gap-2">
-                  <AgentBadge name="Finance agent" size={22} />
+                  <AgentBadge name="Finance collaborator" size={22} />
                   <span className="text-[11.5px] font-semibold">Approval required</span>
                   <span className="ml-auto text-[10px] text-[#8a94a6]">now</span>
                 </div>

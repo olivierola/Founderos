@@ -58,7 +58,7 @@ export const SOLUTIONS: Solution[] = [
     nav: "Readiness",
     menu: {
       label: "AI Readiness & Maturity",
-      blurb: "Map which processes are ready for agents today.",
+      blurb: "Map which processes are ready for Cloud collaborators today.",
     },
     key: "#2A9C82",
     viz: "amp-viz-grey",
@@ -72,7 +72,7 @@ export const SOLUTIONS: Solution[] = [
     ],
     problem: {
       title: "Most AI roadmaps are written before anyone looked at the ground",
-      body: "The pattern is consistent. A board asks for AI in the plan, a vendor demo goes well, and a programme starts on the use case that demoed best rather than on the one the organisation can actually support. Six months later the pilot works and nothing has scaled, because the process underneath it was never ready to carry an agent.",
+      body: "The pattern is consistent. A board asks for AI in the plan, a vendor demo goes well, and a programme starts on the use case that demoed best rather than on the one the organisation can actually support. Six months later the pilot works and nothing has scaled, because the process underneath it was never ready to carry a Cloud collaborator.",
       points: [
         "Nobody can say which processes are documented well enough to automate",
         "The same business term means different things in three systems",
@@ -83,8 +83,8 @@ export const SOLUTIONS: Solution[] = [
       title: "We score the ground before anyone draws a roadmap on it",
       body: "The assessment is deliberately unglamorous. We interview the people doing the work, read the systems rather than the org chart, and rate each process on a five-level scale so the roadmap is an output of evidence rather than of enthusiasm.",
       steps: [
-        { t: "Map the work", b: "Interviews across the teams that would use agents, plus a read of the systems those teams actually touch. Two weeks of listening before any scoring." },
-        { t: "Score L1 to L5", b: "Every process rated on documentation, data quality, approval clarity and integration surface. L4 and L5 are the only levels an agent can stand on today." },
+        { t: "Map the work", b: "Interviews across the teams that would use Cloud collaborators, plus a read of the systems those teams actually touch. Two weeks of listening before any scoring." },
+        { t: "Score L1 to L5", b: "Every process rated on documentation, data quality, approval clarity and integration surface. L4 and L5 are the only levels a Cloud collaborator can stand on today." },
         { t: "Price the gaps", b: "For each process below L4, what it would take to lift it, in effort and in weeks. This is what turns a scorecard into a plan." },
         { t: "Sequence it", b: "Quick wins first, structural work in parallel, and an explicit list of what should wait. We say no to more use cases than we say yes to." },
       ],
@@ -100,7 +100,7 @@ export const SOLUTIONS: Solution[] = [
     faq: [
       {
         q: "What if the assessment says we are not ready?",
-        a: "Then we say so, and the roadmap starts with foundation work rather than with an agent. We would rather lose a quarter of scope than deliver an assistant onto a process that cannot support it.",
+        a: "Then we say so, and the roadmap starts with foundation work rather than with a Cloud collaborator. We would rather lose a quarter of scope than deliver an assistant onto a process that cannot support it.",
       },
       {
         q: "Do we have to continue with you afterwards?",
@@ -124,27 +124,27 @@ export const SOLUTIONS: Solution[] = [
     viz: "",
     visual: SecuredAgents,
     title: "Secured AI Agents",
-    lead: "Your teams want agents. Your CISO wants to know where the data goes. Both are right, and the answer should be a document rather than a hope.",
+    lead: "Your teams want Cloud collaborators. Your CISO wants to know where the data goes. Both are right, and the answer should be a document rather than a hope.",
     meta: [
-      { label: "First agent live", value: "4 to 8 weeks" },
+      { label: "First Cloud collaborator live", value: "4 to 8 weeks" },
       { label: "Runs inside", value: "Your tenant" },
       { label: "Writes", value: "Approval-gated" },
     ],
     problem: {
-      title: "The security conversation is where most agent projects die",
-      body: "The business asks whether the agent is useful. Security asks where the data goes. A programme stalls when each side keeps answering its own question, and it usually stalls quietly, as a renewal that does not happen. A CISO rarely objects to a language model in the abstract. They object to an unbounded, unlogged process holding credentials, and they are right to.",
+      title: "The security conversation is where most Cloud collaborator projects die",
+      body: "The business asks whether the Cloud collaborator is useful. Security asks where the data goes. A programme stalls when each side keeps answering its own question, and it usually stalls quietly, as a renewal that does not happen. A CISO rarely objects to a language model in the abstract. They object to an unbounded, unlogged process holding credentials, and they are right to.",
       points: [
-        "No one can say which systems a given agent is able to write to",
+        "No one can say which systems a given Cloud collaborator is able to write to",
         "Credentials sit in environment variables that four people can read",
-        "There is no record of what the agent did last Tuesday at 3pm",
+        "There is no record of what the Cloud collaborator did last Tuesday at 3pm",
       ],
     },
     approach: {
       title: "Encrypt, scope, gate, log",
-      body: "Four properties, applied from the first agent rather than retrofitted once someone asks. Together they turn the security review from a negotiation into a document exchange.",
+      body: "Four properties, applied from the first Cloud collaborator rather than retrofitted once someone asks. Together they turn the security review from a negotiation into a document exchange.",
       steps: [
         { t: "Encrypt", b: "Credentials encrypted at rest with AES-GCM and never returned in plaintext to a browser. The vault is the only place a secret exists in readable form." },
-        { t: "Scope", b: "Tool grants issued per agent, not per platform. An agent that summarises invoices cannot reach your CRM, because it was never granted it." },
+        { t: "Scope", b: "Tool grants issued per Cloud collaborator, not per platform. A Cloud collaborator that summarises invoices cannot reach your CRM, because it was never granted it." },
         { t: "Gate", b: "Reads run free, writes stop for a human. That asymmetry is what makes the gate meaningful instead of a dialog everyone learns to dismiss." },
         { t: "Log", b: "Every call recorded with its inputs, outputs and approver, exportable in a form an auditor accepts without a follow-up call." },
       ],
@@ -155,11 +155,11 @@ export const SOLUTIONS: Solution[] = [
       "Per-agent tool grants, documented with who granted what and when",
       "Human-in-the-loop approvals on every write, with auto-approve once a pattern proves itself",
       "An exportable audit trail, retained for as long as your policy requires",
-      "A written data-flow document per agent: residency, retention, scope, evidence",
+      "A written data-flow document per Cloud collaborator: residency, retention, scope, evidence",
     ],
     faq: [
       {
-        q: "Do agents run on our own infrastructure?",
+        q: "Do Cloud collaborators run on our own infrastructure?",
         a: "They can. Agents run inside your tenant with your identity controls and data residency, and you can route inference to a model you host yourself. Your prompts, your data and the resulting IP stay yours.",
       },
       {
@@ -167,11 +167,11 @@ export const SOLUTIONS: Solution[] = [
         a: "Nothing we can avoid sending, and nothing for training. We document per deployment which provider handles which class of data, in which region, with what retention. That document is part of the delivery.",
       },
       {
-        q: "Can an agent act without a human?",
-        a: "Reads are free; writes are gated by default. You decide per agent and per toolkit which writes can be auto-approved once a pattern has proven itself, and every approval, automatic or not, is recorded with its approver.",
+        q: "Can a Cloud collaborator act without a human?",
+        a: "Reads are free; writes are gated by default. You decide per Cloud collaborator and per toolkit which writes can be auto-approved once a pattern has proven itself, and every approval, automatic or not, is recorded with its approver.",
       },
       {
-        q: "What stops an agent from looping forever?",
+        q: "What stops a Cloud collaborator from looping forever?",
         a: "A controller watches for repeated states and forces a replan or an escalation, and every run carries explicit budgets in time, tokens and tool calls. When a budget runs out the run stops cleanly and keeps what it already produced.",
       },
     ],
@@ -182,7 +182,7 @@ export const SOLUTIONS: Solution[] = [
     nav: "Foundation",
     menu: {
       label: "Foundation & Automation",
-      blurb: "Structured data and workflows agents can stand on.",
+      blurb: "Structured data and workflows Cloud collaborators can stand on.",
     },
     key: "#8E8577",
     viz: "amp-viz-ember",
@@ -199,15 +199,15 @@ export const SOLUTIONS: Solution[] = [
       body: "There is a particular disappointment that follows this combination. The model is fine. The answers are fluent. And they are wrong often enough that people stop trusting them, because the underlying data says three different things depending on which system you ask. The fix is not a better prompt.",
       points: [
         "\"Active customer\" means one thing in billing and another in the CRM",
-        "Approvals follow an unwritten convention that no agent can inherit",
+        "Approvals follow an unwritten convention that no Cloud collaborator can inherit",
         "Documents live in four places, and permissions are not machine-readable",
       ],
     },
     approach: {
       title: "Structure the work first, then let intelligence amplify it",
-      body: "This is not an AI project. It is the process and data work most organisations have been postponing anyway, and it pays for itself before a single agent runs. We do it on the systems you already have, because a migration is a second risk stacked on the first.",
+      body: "This is not an AI project. It is the process and data work most organisations have been postponing anyway, and it pays for itself before a single Cloud collaborator runs. We do it on the systems you already have, because a migration is a second risk stacked on the first.",
       steps: [
-        { t: "One meaning per concept", b: "A canonical model for the entities agents read and write, reconciled across the systems that currently disagree about them." },
+        { t: "One meaning per concept", b: "A canonical model for the entities Cloud collaborators read and write, reconciled across the systems that currently disagree about them." },
         { t: "Redesign, then automate", b: "Automating a broken process makes it break faster. We fix the sequence first, and only then hand steps to a machine." },
         { t: "Rules, not habits", b: "Approvals and hand-offs written as rules a runtime can evaluate, which is also the first time most teams see them written at all." },
         { t: "Wire the existing stack", b: "The connector catalogue, plus anything speaking MCP or HTTP. Nothing gets replaced; the layer between things gets built." },
@@ -222,7 +222,7 @@ export const SOLUTIONS: Solution[] = [
     ],
     faq: [
       {
-        q: "Can we skip this and go straight to agents?",
+        q: "Can we skip this and go straight to Cloud collaborators?",
         a: "You can, and some processes genuinely are ready. The assessment tells you which. What does not work is skipping it everywhere: those programmes end up doing this work later anyway, under time pressure, with an audience.",
       },
       {
@@ -290,7 +290,7 @@ export const SOLUTIONS: Solution[] = [
       },
       {
         q: "How do you measure whether it worked?",
-        a: "Tasks completed with an agent, per team, per month, against the hours those tasks used to take. Both numbers are visible to you from month one, including when they are bad.",
+        a: "Tasks completed with a Cloud collaborator, per team, per month, against the hours those tasks used to take. Both numbers are visible to you from month one, including when they are bad.",
       },
     ],
   },
@@ -314,7 +314,7 @@ export const SOLUTIONS: Solution[] = [
     ],
     problem: {
       title: "The questions most organisations cannot answer",
-      body: "Who is allowed to build an agent? What data can it reach? Where does it run? Which systems can it write to? These are not exotic questions, and the inability to answer them is where audit findings start. A registry maintained by hand in a spreadsheet is already out of date on the day it is written.",
+      body: "Who is allowed to build a Cloud collaborator? What data can it reach? Where does it run? Which systems can it write to? These are not exotic questions, and the inability to answer them is where audit findings start. A registry maintained by hand in a spreadsheet is already out of date on the day it is written.",
       points: [
         "No inventory of which AI systems are in use, or who owns them",
         "Risk classification done uniformly, so low-risk work carries high-risk process",
@@ -325,14 +325,14 @@ export const SOLUTIONS: Solution[] = [
       title: "Guardrails wide enough that people build inside them",
       body: "Governance that blocks gets routed around. The aim is a perimeter people can work inside without asking permission for everything, plus enough evidence that the questions above have answers. Most of what the EU AI Act asks a deployer for falls out of this as a by-product.",
       steps: [
-        { t: "Derive the registry", b: "The inventory syncs from the systems that actually run the agents, not from a form. A registry nobody has to maintain cannot drift." },
+        { t: "Derive the registry", b: "The inventory syncs from the systems that actually run the Cloud collaborators, not from a form. A registry nobody has to maintain cannot drift." },
         { t: "Classify proportionally", b: "Drafting and retrieval sit in the low-risk band and need transparency, not a conformity assessment. Hiring and credit do not. Getting this right keeps the effort proportional." },
         { t: "Wire oversight to runs", b: "Approval gates on real executions, which is what makes documented human oversight true rather than aspirational." },
         { t: "Separate environments", b: "An experiment that can reach production data is not an experiment. The boundary is enforced, not agreed." },
       ],
     },
     deliverables: [
-      "A live registry of every agent, its owner, its risk class and its data scope",
+      "A live registry of every Cloud collaborator, its owner, its risk class and its data scope",
       "Policies and controls with the evidence attached to each one",
       "Approval gates and incident handling wired to real runs, with named owners",
       "Environment separation between experimentation and production data",
@@ -344,8 +344,8 @@ export const SOLUTIONS: Solution[] = [
         a: "The platform produces what the Act asks a deployer for: a registry with owner and data scope, a risk class per system with the reasoning recorded, documented human oversight where it exists, and exportable logs. Because the registry syncs from the runtime, it cannot quietly fall out of date.",
       },
       {
-        q: "Who decides what an agent is allowed to touch?",
-        a: "You do, per agent, through scoped tool grants. The grant, its approver and its date are part of the registry, so nobody can widen an agent's reach without leaving a trace.",
+        q: "Who decides what a Cloud collaborator is allowed to touch?",
+        a: "You do, per Cloud collaborator, through scoped tool grants. The grant, its approver and its date are part of the registry, so nobody can widen a Cloud collaborator's reach without leaving a trace.",
       },
       {
         q: "Will this slow our teams down?",
@@ -365,7 +365,7 @@ export const SOLUTIONS: Solution[] = [
     viz: "amp-viz-ink",
     visual: ManagedRun,
     title: "Managed Run & Continuous Evolution",
-    lead: "The go-live is not the finish line. It is the starting gun. Models update, agents drift, regulations tighten, and capabilities ship every month.",
+    lead: "The go-live is not the finish line. It is the starting gun. Models update, Cloud collaborators drift, regulations tighten, and capabilities ship every month.",
     meta: [
       { label: "Engagement", value: "Monthly retainer" },
       { label: "Team", value: "Three named people" },
@@ -373,10 +373,10 @@ export const SOLUTIONS: Solution[] = [
     ],
     problem: {
       title: "Month four is where unattended platforms decay",
-      body: "The launch goes well. Then a provider deprecates a model, an integration changes a field, a regulation tightens, and the agent that was reliable in March is quietly wrong in July. Nobody notices immediately, because the failure mode of a drifting agent is not an error. It is a plausible answer that is no longer correct.",
+      body: "The launch goes well. Then a provider deprecates a model, an integration changes a field, a regulation tightens, and the Cloud collaborator that was reliable in March is quietly wrong in July. Nobody notices immediately, because the failure mode of a drifting Cloud collaborator is not an error. It is a plausible answer that is no longer correct.",
       points: [
         "Model updates change behaviour without changing your code",
-        "Nobody owns the question of whether the agents are still good",
+        "Nobody owns the question of whether the Cloud collaborators are still good",
         "Rebuilding context with a new partner every quarter costs more than the work",
       ],
     },
@@ -385,12 +385,12 @@ export const SOLUTIONS: Solution[] = [
       body: "Not a ticket queue. A standing team that carries the context, watches the things that decay, and keeps the roadmap moving between releases rather than only at them.",
       steps: [
         { t: "Architect", b: "Owns the shape of the platform, the integration surface and the security posture as both move underneath you." },
-        { t: "Functional consultant", b: "Keeps the agents pointed at work that matters, and translates between the teams using them and the runtime running them." },
+        { t: "Functional consultant", b: "Keeps the Cloud collaborators pointed at work that matters, and translates between the teams using them and the runtime running them." },
         { t: "Developer", b: "Ships the changes, tunes models and costs, and fixes the thing that broke on Thursday." },
       ],
     },
     deliverables: [
-      "Drift and quality monitoring on every agent in production",
+      "Drift and quality monitoring on every Cloud collaborator in production",
       "Model and cost tuning as the provider landscape moves",
       "Governance kept current against changing regulation",
       "A quarterly roadmap review against measured outcomes, not against activity",
@@ -399,7 +399,7 @@ export const SOLUTIONS: Solution[] = [
     faq: [
       {
         q: "Is this just a support contract?",
-        a: "No. Support waits for you to report a problem. This watches for the problems that do not announce themselves, which for agents is most of them.",
+        a: "No. Support waits for you to report a problem. This watches for the problems that do not announce themselves, which for Cloud collaborators is most of them.",
       },
       {
         q: "Can we run it ourselves instead?",

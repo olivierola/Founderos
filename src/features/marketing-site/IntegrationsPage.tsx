@@ -66,8 +66,8 @@ const PRINCIPLES = [
   },
   {
     icon: Stack,
-    t: "The agent gets a scope",
-    b: "An agent only sees the tools it has been granted. Outside that scope, the call stops dead.",
+    t: "The collaborator gets a scope",
+    b: "A Cloud collaborator only sees the tools it has been granted. Outside that scope, the call stops dead.",
   },
   {
     icon: HandPalm,
@@ -101,11 +101,11 @@ export function IntegrationsPage() {
       <ToneCanvas initial="paper">
         <PaperHero
           label="Integrations"
-          frame={["Your agents work"]}
+          frame={["Your Cloud collaborators work"]}
           claim="where your tools are"
           lead={
             <>
-              A connection you authorise, an explicit tool scope per agent, and writing that stops in front of
+              A connection you authorise, an explicit tool scope per Cloud collaborator, and writing that stops in front of
               you. Nothing is copied over to us.
             </>
           }
@@ -210,7 +210,7 @@ export function IntegrationsPage() {
                 <div className="flex-1">
                   <MonoLabel>And what is not on the list</MonoLabel>
                   <p className="mt-4 max-w-[62ch] text-[15px] leading-[1.6] text-[#0f1728]">
-                    An agent can also receive tools from a remote MCP server, yours, or a vendor's, with OAuth or
+                    A Cloud collaborator can also receive tools from a remote MCP server, yours, or a vendor's, with OAuth or
                     an authentication header. That is the route for an internal system that will never have a
                     ready-made connector.
                   </p>

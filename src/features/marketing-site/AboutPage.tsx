@@ -33,10 +33,10 @@ export function AboutPage() {
       <section className="bg-white">
         <Container className="pb-16 pt-16 lg:pb-20 lg:pt-24">
           <h1 className="max-w-[700px] text-[28px] font-medium leading-[1.2] tracking-[-0.04em] sm:text-[32px]">
-            <span className="text-[#0f1728]">AI should work for you, and answer to you.</span>
+            <span className="text-[#0f1728]">Superintelligence should work for you, and answer to you.</span>
             <br />
             <span className="text-[#4b5567]">
-              We're building an AI workforce companies can put on their real systems: governed, auditable, and running
+              We're building a Cloud workforce companies can put on their real systems: governed, auditable, and running
               inside their own tenant.
             </span>
           </h1>
@@ -64,11 +64,11 @@ export function AboutPage() {
           <h2 className="text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728] sm:text-[32px]">Who we are</h2>
           <div className="mt-6 grid max-w-[700px] gap-6 text-[18px] leading-[1.3] text-[#4b5567] sm:grid-cols-2">
             <div className="space-y-4">
-              <p>We're builders who think an agent is only useful once a company can trust it with real work.</p>
+              <p>We're builders who think a Cloud collaborator is only useful once a company can trust it with real work.</p>
               <p>We care about the model, but we care more about what surrounds it: the approval, the trace, the key.</p>
             </div>
             <div className="space-y-4">
-              <p>We work where AI meets the systems companies already run, </p>
+              <p>We work where superintelligence meets the systems companies already run, </p>
               <p>finance, hiring, support, reporting, operations, and the governance that has to come with it.</p>
             </div>
           </div>
@@ -90,10 +90,10 @@ export function AboutPage() {
           <ArtPanel art="blue" className="relative flex min-h-[560px] items-center rounded-[14px] p-6 sm:p-12">
             <div className="max-w-[480px] bg-white p-6 text-[#0f1728] sm:p-8">
               <p className="text-[18px] font-medium leading-[1.3]">
-                At Anduran, we're building one thing: a workforce of AI agents a company can actually switch on.
+                At Anduran, we're building one thing: a workforce of Cloud collaborators a company can actually switch on.
               </p>
               <p className="mt-5 text-[16px] leading-[1.45] text-[#4b5567]">
-                That means agents that work on your systems rather than on copies of them; that stop and ask before they
+                That means Cloud collaborators that work on your systems rather than on copies of them; that stop and ask before they
                 write; that leave a record an auditor can read; and that can run on a model you host when your data has
                 to stay home.
               </p>
@@ -112,12 +112,12 @@ export function AboutPage() {
           <div>
             <h2 className="text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728] sm:text-[32px]">Our vision is how we build</h2>
             <p className="mt-4 max-w-[360px] text-[18px] leading-[1.3] text-[#4b5567]">
-              We believe the next generation of work software will be run by agents, and supervised by people.
+              We believe the next generation of work software will be run by Cloud collaborators, and supervised by people.
             </p>
           </div>
           <div className="space-y-4 text-[18px] leading-[1.3] text-[#4b5567]">
             <p>
-              Every company already has more work than people. Agents can take on a large share of it, the reconciling,
+              Every company already has more work than people. Cloud collaborators can take on a large share of it, the reconciling,
               the chasing, the screening, the reporting, but only if the company can see and control what they do.
             </p>
             <p>Most AI tools ask for trust first. We think trust has to be earned one approved action at a time.</p>
@@ -127,7 +127,7 @@ export function AboutPage() {
               So we build the controls into the product rather than around it: an approval gate on every write, a second
               check that can only add caution, a log you can replay, and keys that never leave the server.
             </p>
-            <p>An AI workforce that runs inside your own tenant, on your terms.</p>
+            <p>A Cloud workforce that runs inside your own tenant, on your terms.</p>
           </div>
         </Container>
       </section>

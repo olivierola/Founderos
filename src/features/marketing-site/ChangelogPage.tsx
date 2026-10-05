@@ -37,9 +37,9 @@ const CHANGELOG: Entry[] = [
   {
     date: "2026-09-19",
     tag: "feature",
-    title: "A public stats page for an agent",
+    title: "A public stats page for a Cloud collaborator",
     items: [
-      "Performance and audience of a public agent, switched on per agent",
+      "Performance and audience of a public Cloud collaborator, switched on per Cloud collaborator",
       "A conversation's outcome is recorded as it happens, never estimated afterwards",
     ],
   },
@@ -48,8 +48,8 @@ const CHANGELOG: Entry[] = [
     tag: "feature",
     title: "Dictation in every composer, activity orbs, health loop",
     items: [
-      "The composer listens everywhere: agent chat, rooms, assistant, public widget",
-      "A working agent's state shows in its orb, derived from the family of tools it is using",
+      "The composer listens everywhere: Cloud collaborator chat, rooms, assistant, public widget",
+      "A working Cloud collaborator's state shows in its orb, derived from the family of tools it is using",
       "Health alert on the AI HQ dashboard and a real credit gauge, with an alert at 80%",
     ],
   },
@@ -70,7 +70,7 @@ const CHANGELOG: Entry[] = [
     title: "Usage-based billing: credits, quotas and plans",
     items: [
       "A run consumes measured credits, not an estimated flat fee",
-      "Quotas per plan, agents, services, seats, storage, concurrent runs",
+      "Quotas per plan, Cloud collaborators, services, seats, storage, concurrent runs",
       "Overage is switched on explicitly, and capped",
     ],
   },
@@ -89,18 +89,18 @@ const CHANGELOG: Entry[] = [
     tag: "release",
     title: "Dashboards per service",
     items: [
-      "An agent-centred space, rooms, schedules, activity, artifacts",
+      "A collaborator-centred space, rooms, schedules, activity, artifacts",
       "Agent catalogue and invitations at organisation level",
     ],
   },
   {
     date: "2026-07-16",
     tag: "feature",
-    title: "MCP servers, agent skills, Admin area",
+    title: "MCP servers, Cloud collaborator skills, Admin area",
     items: [
-      "An agent can receive tools from a remote MCP server, with OAuth or a static header",
+      "A Cloud collaborator can receive tools from a remote MCP server, with OAuth or a static header",
       "Multi-file skills, read on demand rather than loaded in one block",
-      "Administration lives in a single area: organisation, subscriptions, AI governance",
+      "Administration lives in a single area: organisation, subscriptions, superintelligence governance",
     ],
   },
 ];

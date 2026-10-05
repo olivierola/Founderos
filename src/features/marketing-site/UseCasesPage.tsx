@@ -24,7 +24,7 @@ export function UseCasesPage() {
         variant="center"
         tone="white"
         title="Use cases"
-        lead="What an agent takes on in each team, step by step, described exactly as the product runs it."
+        lead="What a Cloud collaborator takes on in each team, step by step, described exactly as the product runs it."
         note="Illustrative workflows with sample data, not customer results."
       >
         <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-[#7a8496]">

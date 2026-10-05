@@ -23,11 +23,11 @@ export type Product = {
 export const PRODUCTS: Product[] = [
   {
     slug: "agents",
-    name: "Anduran Agents",
-    short: "AGENTS",
+    name: "Anduran Workforce",
+    short: "WORKFORCE",
     shot: "/marketing/product-agents.jpg",
-    shotAlt: "The agents roster in Anduran: internal and public agents, their tools and models",
-    blurb: "AI agents that work inside your systems: they read freely, stop for approval before they write, and hand in finished work.",
+    shotAlt: "The Cloud collaborator roster in Anduran: internal and public workers, their tools and models",
+    blurb: "Cloud collaborators that work inside your systems: they read freely, stop for approval before they write, and hand in finished work.",
     bestFor: "Best for growing teams",
     art: "blue",
   },
@@ -36,18 +36,18 @@ export const PRODUCTS: Product[] = [
     name: "Anduran Govern",
     short: "GOVERN",
     shot: "/marketing/product-audit.jpg",
-    shotAlt: "The agent access log in Anduran: every tool call with its agent, result and run",
-    blurb: "The registry, guardrails, approvals and audit trail that keep every agent accountable, for the teams that answer to an auditor.",
+    shotAlt: "The access log in Anduran: every tool call with its Cloud collaborator, result and run",
+    blurb: "The registry, guardrails, approvals and audit trail that keep every Cloud collaborator accountable, for the teams that answer to an auditor.",
     bestFor: "Best for regulated teams",
     art: "violet",
   },
 ];
 
 export const RESOURCES = [
-  { label: "Blog", to: "/blog", blurb: "Field notes on putting agents to work." },
+  { label: "Blog", to: "/blog", blurb: "Field notes on putting Cloud collaborators to work." },
   { label: "Docs", to: "/docs", blurb: "How the product works, on one page." },
   { label: "Changelog", to: "/changelog", blurb: "What shipped, and when." },
-  { label: "Integrations", to: "/integrations", blurb: "The tools agents connect to." },
+  { label: "Integrations", to: "/integrations", blurb: "The tools Cloud collaborators connect to." },
   { label: "FAQ", to: "/faq", blurb: "The questions teams ask first." },
   { label: "About", to: "/about", blurb: "Who we are and why we build this." },
   { label: "Get in touch", to: "/contact", blurb: "Sales, support and press." },

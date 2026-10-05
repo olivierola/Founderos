@@ -84,7 +84,7 @@ export const POSTS: Post[] = [
           "Survey honestly, and promise amnesty. You want the real map, not the compliant one. People will not tell you what they use if the answer gets them written up.",
           "Sanction one path fast. A single approved assistant, running inside your tenant, beats a six-month evaluation of five vendors.",
           "Publish what is allowed with which data class, in one page, in plain language. Most policies fail because nobody can tell which bucket their document falls into.",
-          "Instrument it. If you cannot list which agents exist, who owns them and what they touch, you do not have governance. You have a memo.",
+          "Instrument it. If you cannot list which Cloud collaborators exist, who owns them and what they touch, you do not have governance. You have a memo.",
         ],
       },
       {
@@ -95,9 +95,9 @@ export const POSTS: Post[] = [
   },
   {
     slug: "agents-that-survive-production",
-    title: "What separates an agent that survives production from a demo",
+    title: "What separates a Cloud collaborator that survives production from a demo",
     excerpt:
-      "A demo agent needs to succeed once, on a happy path, with someone watching. A production agent needs to fail safely, ten thousand times, while nobody is looking.",
+      "A demo Cloud collaborator needs to succeed once, on a happy path, with someone watching. A production Cloud collaborator needs to fail safely, ten thousand times, while nobody is looking.",
     category: "Agents",
     date: "2026-07-22",
     readMinutes: 9,
@@ -111,17 +111,17 @@ export const POSTS: Post[] = [
       },
       {
         type: "p",
-        text: "The gap between a convincing agent demo and an agent you can leave running is not model quality. It has almost never been model quality. It is everything around the model: what happens on the fourth retry, what the agent does when a tool returns an empty list, and whether anyone finds out when it quietly stops.",
+        text: "The gap between a convincing Cloud collaborator demo and a Cloud collaborator you can leave running is not model quality. It has almost never been model quality. It is everything around the model: what happens on the fourth retry, what the Cloud collaborator does when a tool returns an empty list, and whether anyone finds out when it quietly stops.",
       },
       { type: "h2", text: "A verifiable definition of done" },
       {
         type: "p",
-        text: "Agents that drift are usually agents that were never told what finished looks like. A mission needs a success contract the runtime can check: a file that exists, a record whose status changed, a number that reconciles. Not the model's own opinion that it did well. Self-assessment is the single most expensive shortcut in agent engineering.",
+        text: "Agents that drift are usually Cloud collaborators that were never told what finished looks like. A mission needs a success contract the runtime can check: a file that exists, a record whose status changed, a number that reconciles. Not the model's own opinion that it did well. Self-assessment is the single most expensive shortcut in Cloud collaborator engineering.",
       },
       { type: "h2", text: "Stagnation is a first-class failure" },
       {
         type: "p",
-        text: "Left alone, a stuck agent does not stop. It re-reads the same file, re-runs the same query, and burns budget looking productive. A controller that watches for repeated states and forces a replan, or an escalation to a human, turns an infinite loop into a two-minute interruption.",
+        text: "Left alone, a stuck Cloud collaborator does not stop. It re-reads the same file, re-runs the same query, and burns budget looking productive. A controller that watches for repeated states and forces a replan, or an escalation to a human, turns an infinite loop into a two-minute interruption.",
       },
       {
         type: "list",
@@ -134,7 +134,7 @@ export const POSTS: Post[] = [
       },
       {
         type: "p",
-        text: "None of this is glamorous, and none of it shows up in a demo. It is, however, the entire difference between an agent your team trusts with real work and one that gets quietly switched off in month three.",
+        text: "None of this is glamorous, and none of it shows up in a demo. It is, however, the entire difference between a Cloud collaborator your team trusts with real work and one that gets quietly switched off in month three.",
       },
     ],
   },
@@ -170,7 +170,7 @@ export const POSTS: Post[] = [
       {
         type: "callout",
         title: "What we measure instead of logins",
-        text: "Tasks completed with an agent, per team, per month, and the hours those tasks used to take. A login tells you somebody opened a tab. A completed task tells you the work moved.",
+        text: "Tasks completed with a Cloud collaborator, per team, per month, and the hours those tasks used to take. A login tells you somebody opened a tab. A completed task tells you the work moved.",
       },
       { type: "h2", text: "Start where the pain is loud" },
       {
@@ -192,7 +192,7 @@ export const POSTS: Post[] = [
     body: [
       {
         type: "p",
-        text: "The business asks whether the agent is useful. Security asks where the data goes. Both questions are reasonable, and a programme stalls when each side keeps answering its own. The way through is to make the second question answerable in writing, with specifics, before the first one is even settled.",
+        text: "The business asks whether the Cloud collaborator is useful. Security asks where the data goes. Both questions are reasonable, and a programme stalls when each side keeps answering its own. The way through is to make the second question answerable in writing, with specifics, before the first one is even settled.",
       },
       { type: "h2", text: "Four specifics that end the argument" },
       {
@@ -200,7 +200,7 @@ export const POSTS: Post[] = [
         items: [
           "Residency: which region the inference runs in, and whether prompts leave it at all.",
           "Retention: what the provider keeps, for how long, and whether it trains on it.",
-          "Scope: which systems this specific agent can read, which it can write, and who granted that.",
+          "Scope: which systems this specific Cloud collaborator can read, which it can write, and who granted that.",
           "Evidence: whether every call is logged in a form you can export to an auditor.",
         ],
       },
@@ -210,12 +210,12 @@ export const POSTS: Post[] = [
       },
       {
         type: "quote",
-        text: "An agent your security team cannot describe is an agent your security team will eventually switch off.",
+        text: "A Cloud collaborator your security team cannot describe is a Cloud collaborator your security team will eventually switch off.",
       },
       { type: "h2", text: "Encrypt, scope, gate, log" },
       {
         type: "p",
-        text: "Credentials encrypted at rest and never returned in plaintext to a browser. Tool grants scoped per agent rather than per platform. Write actions gated behind a human approval, reads left free so the gate means something. Every call recorded with its inputs, its outputs and its approver. Do those four and the security review becomes a document exchange rather than a negotiation.",
+        text: "Credentials encrypted at rest and never returned in plaintext to a browser. Tool grants scoped per Cloud collaborator rather than per platform. Write actions gated behind a human approval, reads left free so the gate means something. Every call recorded with its inputs, its outputs and its approver. Do those four and the security review becomes a document exchange rather than a negotiation.",
       },
     ],
   },
@@ -237,20 +237,20 @@ export const POSTS: Post[] = [
       {
         type: "callout",
         title: "A cheap test",
-        text: "Ask three people in different teams to define your most-used business term. If you get three answers, an agent will get three answers too, and it will pick one, confidently.",
+        text: "Ask three people in different teams to define your most-used business term. If you get three answers, a Cloud collaborator will get three answers too, and it will pick one, confidently.",
       },
-      { type: "h2", text: "The three things agents need underneath" },
+      { type: "h2", text: "The three things Cloud collaborators need underneath" },
       {
         type: "list",
         items: [
-          "One canonical meaning per concept. If \"active customer\" means something different in billing and in CRM, no agent can reconcile that for you.",
+          "One canonical meaning per concept. If \"active customer\" means something different in billing and in CRM, no Cloud collaborator can reconcile that for you.",
           "Documents in one retrievable place, with permissions that are readable by a machine.",
-          "Approvals that follow a rule rather than a habit. An agent cannot inherit an unwritten convention.",
+          "Approvals that follow a rule rather than a habit. A Cloud collaborator cannot inherit an unwritten convention.",
         ],
       },
       {
         type: "p",
-        text: "The good news is that this work is not an AI project. It is the process and data work most organisations have been postponing anyway, and it pays for itself before a single agent runs. The bad news is that it cannot be skipped, and every programme that tries ends up doing it later, under time pressure, with an audience.",
+        text: "The good news is that this work is not an AI project. It is the process and data work most organisations have been postponing anyway, and it pays for itself before a single Cloud collaborator runs. The bad news is that it cannot be skipped, and every programme that tries ends up doing it later, under time pressure, with an audience.",
       },
     ],
   },
@@ -258,7 +258,7 @@ export const POSTS: Post[] = [
     slug: "eu-ai-act-without-panic",
     title: "The EU AI Act without the panic",
     excerpt:
-      "Most of what the Act asks for is a registry, a risk classification and evidence. If you run agents properly, you are most of the way there.",
+      "Most of what the Act asks for is a registry, a risk classification and evidence. If you run Cloud collaborators properly, you are most of the way there.",
     category: "Governance",
     date: "2026-05-28",
     readMinutes: 10,
@@ -267,17 +267,17 @@ export const POSTS: Post[] = [
     body: [
       {
         type: "p",
-        text: "The Act reads as intimidating and lands as administrative. Strip out the parts that apply to model providers and what remains, for most companies deploying agents, is a small set of obligations that good engineering practice already produces as a by-product.",
+        text: "The Act reads as intimidating and lands as administrative. Strip out the parts that apply to model providers and what remains, for most companies deploying Cloud collaborators, is a small set of obligations that good engineering practice already produces as a by-product.",
       },
       { type: "h2", text: "Know what you run" },
       {
         type: "p",
-        text: "An inventory of every AI system in use, its purpose, its owner and its data scope. If your registry is maintained by hand in a spreadsheet, it is already out of date. If it is derived from the systems that actually run the agents, it cannot be.",
+        text: "An inventory of every AI system in use, its purpose, its owner and its data scope. If your registry is maintained by hand in a spreadsheet, it is already out of date. If it is derived from the systems that actually run the Cloud collaborators, it cannot be.",
       },
       { type: "h2", text: "Classify, then act proportionally" },
       {
         type: "p",
-        text: "Most internal agents doing drafting, summarising and retrieval sit in the low-risk band and need transparency, not a conformity assessment. The ones that touch hiring, credit, or access to services do not. Getting the classification right early is what keeps the governance effort proportional instead of uniform and exhausting.",
+        text: "Most internal Cloud collaborators doing drafting, summarising and retrieval sit in the low-risk band and need transparency, not a conformity assessment. The ones that touch hiring, credit, or access to services do not. Getting the classification right early is what keeps the governance effort proportional instead of uniform and exhausting.",
       },
       {
         type: "list",
@@ -296,7 +296,7 @@ export const POSTS: Post[] = [
   },
   {
     slug: "cost-of-an-agent",
-    title: "What an agent actually costs to run",
+    title: "What a Cloud collaborator actually costs to run",
     excerpt:
       "Model pricing is the number everyone quotes and rarely the number that matters. Here is where the spend really goes.",
     category: "Engineering",
@@ -307,7 +307,7 @@ export const POSTS: Post[] = [
     body: [
       {
         type: "p",
-        text: "Teams budget for AI by looking up a price per million tokens and multiplying. The result is usually wrong by an order of magnitude in both directions: too low because a mission is not one call, too high because most of a well-built agent's traffic never needs the expensive model.",
+        text: "Teams budget for AI by looking up a price per million tokens and multiplying. The result is usually wrong by an order of magnitude in both directions: too low because a mission is not one call, too high because most of a well-built Cloud collaborator's traffic never needs the expensive model.",
       },
       { type: "h2", text: "A mission is not a message" },
       {
@@ -324,7 +324,7 @@ export const POSTS: Post[] = [
         type: "list",
         items: [
           "Tier the model: a cheap one for routing and extraction, an expensive one only when the run escalates.",
-          "Compact context aggressively. An agent re-reading its own transcript is paying for the same tokens repeatedly.",
+          "Compact context aggressively. A Cloud collaborator re-reading its own transcript is paying for the same tokens repeatedly.",
           "Trim tool definitions. Fifty tools in the system prompt on every call is a fixed tax on every single turn.",
           "Cache what is stable. Prompt caching is the cheapest optimisation nobody turns on.",
         ],

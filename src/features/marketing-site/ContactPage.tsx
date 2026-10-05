@@ -150,7 +150,7 @@ export function ContactPage() {
         <div className="mx-auto w-full max-w-[1046px] px-5 pb-20 pt-16 sm:px-12 lg:pt-24">
           <H as="h1" size="hero">Get in touch</H>
           <P className="mt-4 max-w-[640px]">
-            Tell us what you are trying to put an agent on. We reply within one working day.
+            Tell us what you are trying to put a Cloud collaborator on. We reply within one working day.
           </P>
 
           <div className="mt-10 grid gap-4 sm:grid-cols-2">
@@ -165,7 +165,7 @@ export function ContactPage() {
               <div className="mt-6 text-[24px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728]">
                 {OFFICES.map((o) => o.city).join(" · ")}
               </div>
-              <div className="mt-2 text-[16px] text-[#4b5567]">Data stays in the EU. Agents run in your tenant, in your region.</div>
+              <div className="mt-2 text-[16px] text-[#4b5567]">Data stays in the EU. Cloud collaborators run in your tenant, in your region.</div>
             </Card>
           </div>
 

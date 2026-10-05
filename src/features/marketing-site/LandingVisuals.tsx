@@ -100,7 +100,7 @@ export function ReadinessScan() {
   return (
     <Panel>
       <div className="flex h-full flex-col items-center gap-3 p-4">
-        <Chip icon={Shield} title="AI Readiness Scan" />
+        <Chip icon={Shield} title="Superintelligence Readiness Scan" />
 
         {/* Module grid with a sweeping scan line */}
         <div
@@ -271,12 +271,12 @@ export function SecuredAgents() {
   return (
     <Panel>
       <div className="flex h-full flex-col items-center gap-2 p-4">
-        <Chip icon={Sparkles} title="Secured AI Agents" sub="Inside your tenant" />
+        <Chip icon={Sparkles} title="Secured Cloud collaborators" sub="Inside your tenant" />
         {/* Height-driven: the 3D shield icon displays at optimal size */}
         <div className="flex min-h-0 w-full flex-1 items-center justify-center">
           <img 
             src="/landing/secure.jpg" 
-            alt="Secured AI Agents Shield" 
+            alt="Secured Cloud collaborators Shield" 
             className="h-full w-auto max-w-xs rounded-lg drop-shadow-lg object-contain"
           />
         </div>
@@ -428,7 +428,7 @@ export function GovernanceCloud() {
   return (
     <Panel>
       <div className="flex h-full flex-col items-center justify-between p-4">
-        <Chip icon={Shield} title="Agent & AI Governance" />
+        <Chip icon={Shield} title="Collaborator & governance" />
         <span className="h-3 w-px" style={{ background: NEON }} />
 
         <div

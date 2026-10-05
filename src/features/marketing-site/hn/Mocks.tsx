@@ -72,12 +72,12 @@ function Status({ s }: { s: "Running" | "Waiting" | "Done" | "Scheduled" }) {
 }
 
 const MISSIONS = [
-  { name: "Reconcile March invoices", s: "Waiting", agent: "Finance agent", done: 3, of: 4 },
+  { name: "Reconcile March invoices", s: "Waiting", agent: "Finance collaborator", done: 3, of: 4 },
   { name: "Draft Q3 board report", s: "Running", agent: "Report writer", done: 2, of: 5 },
-  { name: "Screen applicants, Ops lead", s: "Running", agent: "Recruiting agent", done: 41, of: 60 },
-  { name: "Weekly pipeline hygiene", s: "Scheduled", agent: "Sales agent", done: 0, of: 1 },
-  { name: "Supplier onboarding pack", s: "Done", agent: "Ops agent", done: 6, of: 6 },
-  { name: "Contract clause extraction", s: "Done", agent: "Legal agent", done: 12, of: 12 },
+  { name: "Screen applicants, Ops lead", s: "Running", agent: "Recruiting collaborator", done: 41, of: 60 },
+  { name: "Weekly pipeline hygiene", s: "Scheduled", agent: "Sales collaborator", done: 0, of: 1 },
+  { name: "Supplier onboarding pack", s: "Done", agent: "Ops Cloud collaborator", done: 6, of: 6 },
+  { name: "Contract clause extraction", s: "Done", agent: "Legal Cloud collaborator", done: 12, of: 12 },
 ] as const;
 
 /** The missions table — the product's main list. */
@@ -106,7 +106,7 @@ export function MissionsMock({ rows = 6, className }: { rows?: number; className
         ))}
       </div>
       <div className="mt-3 flex items-center gap-2 rounded-[14px] border border-[#e6e9ef] px-2 py-1 text-[9px] text-[#8a94a6]">
-        <Search className="h-2.5 w-2.5" /> Search missions, agents…
+        <Search className="h-2.5 w-2.5" /> Search missions, Cloud collaborators…
       </div>
       <table className="mt-2 w-full text-left text-[9.5px]">
         <thead className="text-[#8a94a6]">
@@ -114,7 +114,7 @@ export function MissionsMock({ rows = 6, className }: { rows?: number; className
             <th className="py-1.5 font-normal">Mission</th>
             <th className="font-normal">Status</th>
             <th className="font-normal">Steps</th>
-            <th className="hidden font-normal sm:table-cell">Agent</th>
+            <th className="hidden font-normal sm:table-cell">Cloud collaborator</th>
           </tr>
         </thead>
         <tbody>
@@ -143,9 +143,9 @@ export function RunMock({ className }: { className?: string }) {
   return (
     <div className={cn("rounded-[24px] border border-[#e6e9ef] bg-white p-4 text-[#0f1728] shadow-[0_30px_70px_-40px_rgba(0,30,90,0.5)]", className)}>
       <div className="flex items-center gap-2.5">
-        <AgentBadge name="Finance agent" size={30} />
+        <AgentBadge name="Finance collaborator" size={30} />
         <div>
-          <div className="text-[12px] font-semibold tracking-[-0.01em]">Finance agent</div>
+          <div className="text-[12px] font-semibold tracking-[-0.01em]">Finance collaborator</div>
           <div className="text-[10px] text-[#4b5567]">Reconcile March invoices · sample</div>
         </div>
         <span className="ml-auto"><Status s="Waiting" /></span>
@@ -173,11 +173,11 @@ export function RunMock({ className }: { className?: string }) {
 }
 
 const REGISTRY = [
-  { agent: "Finance agent", risk: "Medium", scope: "Ledger · read, write*", policy: "Writes > €50 need approval" },
-  { agent: "Recruiting agent", risk: "High", scope: "ATS · read", policy: "No automated rejection" },
+  { agent: "Finance collaborator", risk: "Medium", scope: "Ledger · read, write*", policy: "Writes > €50 need approval" },
+  { agent: "Recruiting collaborator", risk: "High", scope: "ATS · read", policy: "No automated rejection" },
   { agent: "Report writer", risk: "Low", scope: "Warehouse · read", policy: "Cite every figure" },
-  { agent: "Support agent", risk: "Medium", scope: "Helpdesk · read, write*", policy: "Refunds need approval" },
-  { agent: "Sales agent", risk: "Low", scope: "CRM · read, write*", policy: "Emails wait for review" },
+  { agent: "Support collaborator", risk: "Medium", scope: "Helpdesk · read, write*", policy: "Refunds need approval" },
+  { agent: "Sales collaborator", risk: "Low", scope: "CRM · read, write*", policy: "Emails wait for review" },
 ];
 
 /** The governance registry. */
@@ -185,11 +185,11 @@ export function RegistryMock({ className }: { className?: string }) {
   const tone = (r: string) =>
     r === "High" ? "bg-[#fdecec] text-[#b42318]" : r === "Medium" ? "bg-[#fff4e0] text-[#a15c00]" : "bg-[#e7f6ec] text-[#1a7f3c]";
   return (
-    <MockWindow title="AI registry" active={4} className={className} right={<span className="text-[9.5px] text-[#4b5567]">5 agents · sample</span>}>
+    <MockWindow title="Governance registry" active={4} className={className} right={<span className="text-[9.5px] text-[#4b5567]">5 Cloud collaborators · sample</span>}>
       <table className="w-full text-left text-[9.5px]">
         <thead className="text-[#8a94a6]">
           <tr className="border-b border-[#e6e9ef]">
-            <th className="py-1.5 font-normal">Agent</th>
+            <th className="py-1.5 font-normal">Cloud collaborator</th>
             <th className="font-normal">Risk</th>
             <th className="hidden font-normal sm:table-cell">Tool scope</th>
             <th className="font-normal">Policy</th>
@@ -281,9 +281,9 @@ export function ChatMock({
 /* ── The six "how it works" screens ─────────────────────────────────────── */
 
 export function StepTemplateMock() {
-  const t = ["Finance agent", "Recruiting agent", "Support agent", "Report writer"];
+  const t = ["Finance collaborator", "Recruiting collaborator", "Support collaborator", "Report writer"];
   return (
-    <MockWindow title="Create a new agent" active={1}>
+    <MockWindow title="Create a new Cloud collaborator" active={1}>
       <div className="text-[10px] text-[#4b5567]">Start from a template</div>
       <div className="mt-2 grid grid-cols-4 gap-2">
         {t.map((n, i) => (
@@ -297,7 +297,7 @@ export function StepTemplateMock() {
         ))}
       </div>
       <div className="mt-3 text-[10px] text-[#4b5567]">Name</div>
-      <div className="mt-1 rounded-[14px] border border-[#e6e9ef] px-2 py-1.5 text-[10.5px]">Finance agent, reconciliation</div>
+      <div className="mt-1 rounded-[14px] border border-[#e6e9ef] px-2 py-1.5 text-[10.5px]">Finance collaborator, reconciliation</div>
     </MockWindow>
   );
 }
@@ -305,7 +305,7 @@ export function StepTemplateMock() {
 export function StepInstructionsMock() {
   return (
     <MockWindow title="Instructions" active={1}>
-      <div className="text-[10px] text-[#4b5567]">What is this agent's job?</div>
+      <div className="text-[10px] text-[#4b5567]">What is this Cloud collaborator's job?</div>
       <div className="mt-1 rounded-[14px] border border-[#e6e9ef] px-2 py-1.5 text-[10.5px]">Reconcile supplier invoices against purchase orders every month.</div>
       <div className="mt-2.5 rounded-[14px] border border-[#e6e9ef] bg-[#f7f8fb] p-2 font-mono text-[9.5px] leading-[1.55] text-[#344054]">
         # Goal
@@ -396,7 +396,7 @@ export function StepReviewMock() {
         </div>
         <div className="rounded-[14px] bg-[#f7f8fb] p-2 text-[9px] leading-[1.6] text-[#555]">
           <div className="font-medium text-[#0f1728]">Run</div>
-          Agent: Finance agent
+          Cloud collaborator: Finance collaborator
           <br />Calls: 14
           <br />Approvals: 1
           <br />Duration: 2m 10s
@@ -521,7 +521,7 @@ export function KeysMock({ className }: { className?: string }) {
   return (
     <div className={cn("w-full max-w-[380px] rounded-[18px] bg-white p-4 text-[#0f1728] hn-shadow-lg", className)}>
       <div className="flex items-center gap-2 text-[13px] font-semibold">
-        <Gear weight="duotone" className="h-4 w-4 text-[#0b5ed7]" /> Finance agent · runtime
+        <Gear weight="duotone" className="h-4 w-4 text-[#0b5ed7]" /> Finance collaborator · runtime
       </div>
       <div className="mt-3 space-y-2">
         <div className="rounded-[12px] border border-[#e6e9ef] px-3 py-2">

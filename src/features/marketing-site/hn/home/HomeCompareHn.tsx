@@ -8,11 +8,11 @@ import { Brand, Eyebrow, H, P } from "../HnKit";
 
 const ROWS = [
   { label: <>A chatbot</>, guarantees: ["Answers questions"], width: "33%", tone: "bg-[#cfd5df]" },
-  { label: <>An agent with tool access</>, guarantees: ["Answers", "Acts on your systems"], width: "66%", tone: "bg-[#84b6f4]" },
+  { label: <>A Cloud collaborator with tool access</>, guarantees: ["Answers", "Acts on your systems"], width: "66%", tone: "bg-[#84b6f4]" },
   {
     label: (
       <span className="flex items-center gap-2">
-        An agent on <Brand />
+        A Cloud collaborator on <Brand />
       </span>
     ),
     guarantees: ["Answers", "Acts", "Every write approved & logged"],
@@ -27,12 +27,12 @@ export function HomeCompareHn() {
       <div className="mx-auto grid max-w-[950px] gap-12 rounded-[24px] bg-white p-8 hn-shadow-lg sm:p-12 md:grid-cols-[1fr_1fr]">
         <div>
           <Eyebrow>Built to be trusted</Eyebrow>
-          <H size="sub" className="mt-3">More than an agent with access</H>
+          <H size="sub" className="mt-3">More than a Cloud collaborator with access</H>
           <P className="mt-3">
-            Any agent can demo well. What makes one safe to run on your real systems is everything around it.
+            Any Cloud collaborator can demo well. What makes one safe to run on your real systems is everything around it.
           </P>
           <div className="mt-8 border-t border-[#e5e5e5] pt-6 text-[16px] leading-[1.4] text-[#4b5567]">
-            <span className="font-medium text-[#006edd]">3 of 3</span> guarantees on every Anduran agent: it reads,
+            <span className="font-medium text-[#006edd]">3 of 3</span> guarantees on every Anduran Cloud collaborator: it reads,
             it acts, and nothing it writes leaves without you.
           </div>
         </div>

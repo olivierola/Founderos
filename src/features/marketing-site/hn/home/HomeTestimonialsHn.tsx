@@ -70,7 +70,7 @@ export function HomeTestimonialsHn() {
               In their own words.
             </>
           }
-          lead="How teams use Anduran to put agents to work on their own systems, and keep every action accountable."
+          lead="How teams use Anduran to put Cloud collaborators to work on their own systems, and keep every action accountable."
         >
           <Btn to="/use-cases" variant="link">See use cases</Btn>
         </Head>

@@ -57,26 +57,26 @@ type Plan = {
 const PLANS: Plan[] = [
   {
     name: "Individual",
-    includes: "Includes the full agent runtime",
-    description: "One operator, their agents, one service.",
+    includes: "Includes the full collaborator runtime",
+    description: "One operator, their Cloud collaborators, one service.",
     price: 29,
     yearlyPrice: 290,
     href: "/subscribe/individual",
     buttonText: "Get started",
     featuresLabel: "Key features include",
     features: [
-      "12,000 AI credits / month",
-      "3 agents · 1 service",
+      "12,000 credits / month",
+      "3 collaborators · 1 service",
       "2 GB knowledge storage",
-      "AI governance registry",
+      "Governance registry",
       "Runtime guardrails",
       "90-day audit retention",
     ],
   },
   {
     name: "Pro",
-    includes: "Includes the full agent runtime",
-    description: "A team running a supervised fleet of agents.",
+    includes: "Includes the full collaborator runtime",
+    description: "A team running a supervised fleet of Cloud collaborators.",
     price: 99,
     yearlyPrice: 990,
     href: "/subscribe/pro",
@@ -85,8 +85,8 @@ const PLANS: Plan[] = [
     popular: true,
     featuresLabel: "Every Individual feature, plus",
     features: [
-      "60,000 AI credits / month",
-      "10 agents · 3 services · 5 seats",
+      "60,000 credits / month",
+      "10 collaborators · 3 services · 5 seats",
       "Human-in-the-loop approvals",
       "Audit export · 1-year retention",
       "5 MCP tool servers",
@@ -95,7 +95,7 @@ const PLANS: Plan[] = [
   },
   {
     name: "Agencies",
-    includes: "Includes the full agent runtime",
+    includes: "Includes the full collaborator runtime",
     description: "Several clients, several services, defensible governance.",
     price: 349,
     yearlyPrice: 3490,
@@ -104,11 +104,11 @@ const PLANS: Plan[] = [
     secondary: { label: "Book a demo", href: "/contact" },
     featuresLabel: "Every Pro feature, plus",
     features: [
-      "220,000 AI credits / month",
-      "50 agents · 15 services · 20 seats",
+      "220,000 credits / month",
+      "50 collaborators · 15 services · 20 seats",
       "White-label",
       "2-year audit retention",
-      "10 concurrent agent runs",
+      "10 concurrent collaborator runs",
     ],
   },
 ];
@@ -125,7 +125,7 @@ const ENTERPRISE: Plan = {
   featuresLabel: "Features include",
   features: [
     "Negotiated credit volume",
-    "Unlimited agents, services and seats",
+    "Unlimited collaborators, services and seats",
     "Bring your own provider keys",
     "99.9% SLA · dedicated engineer",
     "3-year audit retention + export",
@@ -168,9 +168,9 @@ function reconcile(plan: Plan, row: BillingPlan | undefined): Plan {
   if (!row) return plan;
   const l = row.limits ?? {};
   const quantified: string[] = [
-    `${fmtCredits(row.included_credits)} AI credits / month`,
+    `${fmtCredits(row.included_credits)} credits / month`,
     [
-      l.agents != null && l.agents >= 0 ? `${l.agents} agents` : null,
+      l.agents != null && l.agents >= 0 ? `${l.agents} Cloud collaborators` : null,
       l.services != null && l.services >= 0 ? `${l.services} service${l.services > 1 ? "s" : ""}` : null,
       l.seats != null && l.seats >= 0 ? `${l.seats} seat${l.seats > 1 ? "s" : ""}` : null,
     ].filter(Boolean).join(" · "),
@@ -320,7 +320,7 @@ export function PricingPlans({ compact = false }: { compact?: boolean }) {
         <div className="mt-6 grid gap-6 rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-6 sm:grid-cols-3">
           {[
             { icon: CalendarCheckIcon, t: "Pay yearly", d: "Two months free on every plan." },
-            { icon: CoinsIcon, t: "Usage in credits", d: "From 20 credits per agent reply." },
+            { icon: CoinsIcon, t: "Usage in credits", d: "From 20 credits per collaborator reply." },
             { icon: ShieldCheckIcon, t: "Cancel any time", d: "Your data leaves with you." },
           ].map((f) => (
             <div key={f.t} className="flex items-start gap-3">

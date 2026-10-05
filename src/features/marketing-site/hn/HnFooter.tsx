@@ -21,7 +21,7 @@ function Si({ path, className }: { path: string; className?: string }) {
 /* "Ask an AI about us": each mark opens that assistant with the question
    already typed. The question is ours; the answer is theirs. */
 const PROMPT = encodeURIComponent(
-  "Summarise what Anduran does: an AI workforce that runs inside a company's own tenant, with approval-gated write actions and an exportable audit log. Who is it for?",
+  "Summarise what Anduran does: enterprise superintelligence hired as always-alive Cloud collaborators that run inside a company's own tenant, with approval-gated write actions and an exportable audit log. Who is it for?",
 );
 const ASSISTANTS = [
   { label: "ChatGPT", href: `https://chatgpt.com/?hints=search&q=${PROMPT}`, icon: <OpenAi className="h-[22px] w-[22px]" /> },
@@ -62,7 +62,7 @@ const COLUMNS: { title: string; links: { label: string; to: string }[] }[] = [
 ];
 
 export function HnCta({
-  title = "Ready to put AI agents to work on your own systems?",
+  title = "Ready to put Cloud collaborators to work on your own systems?",
   button = "Book a demo",
   to = "/contact",
 }: {
@@ -107,7 +107,7 @@ export function HnFooter({ cta = true }: { cta?: boolean }) {
         <div>
           <div className="grid border-b border-[#e6e9ef] md:grid-cols-[312px_1fr]">
             <p className="border-b border-[#e6e9ef] px-6 py-8 text-[18px] leading-[1.3] text-[#4b5567] md:border-b-0 md:border-r lg:px-12">
-              The AI workforce that runs inside your own tenant.
+              Enterprise superintelligence, running inside your own tenant.
             </p>
             <div className="flex items-center justify-start px-6 py-8 md:justify-end lg:px-12">
               <Brand size="lg" />
