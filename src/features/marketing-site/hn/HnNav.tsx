@@ -159,7 +159,7 @@ export function HnNav() {
             <Link to="/login" className="hidden text-[16px] font-medium tracking-[-0.02em] text-[#0f1728] hover:text-[#006edd] sm:block">
               Sign in
             </Link>
-            <Btn to="/contact" className="hidden sm:inline-flex">
+            <Btn to="/contact" variant="liquid" className="hidden sm:inline-flex">
               Book a demo
             </Btn>
             <button
@@ -196,7 +196,7 @@ export function HnNav() {
             />
           </div>
           <div className="mt-10 flex flex-col gap-3">
-            <Btn to="/contact" className="justify-center">Book a demo</Btn>
+            <Btn to="/contact" variant="liquid" className="justify-center">Book a demo</Btn>
             <Btn to="/login" variant="secondary" className="justify-center">Sign in</Btn>
           </div>
         </div>

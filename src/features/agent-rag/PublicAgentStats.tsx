@@ -89,7 +89,7 @@ export function PublicAgentStatsPage() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
         <p className="text-sm font-medium">Statistiques non publiées</p>
         <p className="max-w-sm text-xs text-muted-foreground">
-          Le propriétaire de cet agent n'a pas rendu ses statistiques publiques, ou le lien est incorrect.
+          Le propriétaire de ce collaborateur n'a pas rendu ses statistiques publiques, ou le lien est incorrect.
         </p>
       </div>
     );
@@ -183,7 +183,7 @@ export function PublicAgentStatsPage() {
         <footer className={cn("mt-10 flex flex-col items-center gap-2 text-center")}>
           <p className="text-xs text-muted-foreground">Chiffres agrégés, mis à jour en continu. Aucune conversation n'est publiée.</p>
           <a href={cta} className="rounded-full border border-border px-4 py-2 text-xs font-medium transition-colors hover:bg-muted">
-            Propulsé par <strong>Anduran</strong>, créez votre agent
+            Propulsé par <strong>Anduran</strong>, créez votre collaborateur
           </a>
         </footer>
       </main>

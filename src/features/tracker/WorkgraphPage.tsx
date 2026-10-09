@@ -70,7 +70,7 @@ const KIND = {
   // elles sont reliées à ce qu'elles portent. C'est aussi pour ça qu'elles
   // ferment la liste du filtre — on les ajoute à une carte déjà dressée pour
   // voir qui s'occupe de quoi, pas l'inverse.
-  agent: { one: "Agent", label: "Agents", icon: RobotIcon, color: "#a855f7", meter: false },
+  agent: { one: "Collaborateur", label: "Collaborateurs", icon: RobotIcon, color: "#a855f7", meter: false },
   member: { one: "Membre", label: "Membres", icon: UserIcon, color: "#0ea5e9", meter: false },
 } as const satisfies Record<
   GraphKind,

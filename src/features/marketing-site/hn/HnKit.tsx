@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
+import { Liquid, BLUE_LIQUID } from "./LiquidButton";
 import "./hn.css";
 
 /* ══ The Hunar vocabulary ════════════════════════════════════════════════════
@@ -34,7 +35,7 @@ export const HN = {
 } as const;
 
 export type IconType = ComponentType<{ className?: string; weight?: "regular" | "bold" | "fill" | "duotone" | "light" | "thin"; style?: CSSProperties }>;
-export type Art = "blue" | "violet" | "olive" | "orange" | "pink" | "gold";
+export type Art = "blue" | "brand" | "violet" | "olive" | "orange" | "pink" | "gold";
 
 /** Puts the white ground on <html> while a marketing page is mounted, so
     overscroll never flashes the app's own background. */
@@ -361,9 +362,9 @@ export function Head({
 // white ground), blue the accent for secondary actions and inline links, white
 // the one used on dark bands. `blue` keeps a full-colour button where the
 // accent should lead rather than the black slab.
-type BtnVariant = "primary" | "blue" | "secondary" | "link" | "link-light" | "ghost" | "white";
+type BtnVariant = "primary" | "blue" | "secondary" | "link" | "link-light" | "ghost" | "white" | "liquid";
 
-const BTN: Record<BtnVariant, string> = {
+const BTN: Record<Exclude<BtnVariant, "liquid">, string> = {
   primary: "h-11 rounded-full bg-[#0f1728] px-5 text-white hover:bg-[#1c2740]",
   blue: "h-11 rounded-full bg-[#006edd] px-5 text-white hover:bg-[#0057c2]",
   secondary: "h-11 rounded-full border border-[#e6e9ef] bg-white px-5 text-[#0f1728] hover:border-[#cfd5df]",
@@ -392,12 +393,16 @@ export function Btn({
   className?: string;
   children: ReactNode;
 }) {
+  const liquid = variant === "liquid";
+  const [hover, setHover] = useState(false);
   const cls = cn(
-    "group inline-flex items-center gap-1.5 whitespace-nowrap text-[16px] font-medium leading-none tracking-[-0.02em] transition-colors",
-    BTN[variant],
+    "group inline-flex items-center justify-center gap-1.5 whitespace-nowrap text-[16px] font-medium leading-none tracking-[-0.02em] transition-colors",
+    liquid
+      ? "relative h-12 overflow-hidden rounded-full px-6 text-white hn-shadow"
+      : BTN[variant],
     className,
   );
-  const inner = (
+  const label = (
     <>
       {children}
       {chevron && (
@@ -405,9 +410,23 @@ export function Btn({
       )}
     </>
   );
-  if (to) return <Link to={to} onClick={onClick} className={cls}>{inner}</Link>;
-  if (href) return <a href={href} onClick={onClick} className={cls} target="_blank" rel="noopener noreferrer">{inner}</a>;
-  return <button type={type} onClick={onClick} className={cls}>{inner}</button>;
+  const inner = liquid ? (
+    <>
+      <span aria-hidden className="absolute inset-0 rounded-full bg-black" />
+      <span aria-hidden className="absolute inset-0 overflow-hidden rounded-full">
+        <Liquid isHovered={hover} colors={BLUE_LIQUID} />
+      </span>
+      <span className="relative z-10 inline-flex items-center gap-1.5 [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]">{label}</span>
+    </>
+  ) : (
+    label
+  );
+  const hoverProps = liquid
+    ? { onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) }
+    : {};
+  if (to) return <Link to={to} onClick={onClick} className={cls} {...hoverProps}>{inner}</Link>;
+  if (href) return <a href={href} onClick={onClick} className={cls} target="_blank" rel="noopener noreferrer" {...hoverProps}>{inner}</a>;
+  return <button type={type} onClick={onClick} className={cls} {...hoverProps}>{inner}</button>;
 }
 
 /* ── Surfaces ───────────────────────────────────────────────────────────── */

@@ -99,7 +99,7 @@ export function AssetsHub({ dashboardId, workspaceId, projectId }: {
   async function vectorizeDocs(list: FileList | null) {
     const svcAgents = agents ?? [];
     if (!list?.length || !projectId) return;
-    if (svcAgents.length === 0) { setIngestErr("Ajoutez d'abord un agent à ce service pour lui donner une source."); return; }
+    if (svcAgents.length === 0) { setIngestErr("Ajoutez d'abord un collaborateur à ce service pour lui donner une source."); return; }
     setIngestErr(null);
     for (const file of Array.from(list)) {
       if (file.size > 15 * 1024 * 1024) { setIngestErr(`"${file.name}" dépasse 15 Mo.`); continue; }
@@ -144,14 +144,14 @@ export function AssetsHub({ dashboardId, workspaceId, projectId }: {
           <Boxes className="h-5 w-5 text-indigo-500" />
           <h1 className="text-xl font-semibold">Assets</h1>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">Tout ce qui touche ce service au même endroit : personnes, agents, dépôts, liens, fichiers, clés et outils connectés.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Tout ce qui touche ce service au même endroit : personnes, collaborateurs, dépôts, liens, fichiers, clés et outils connectés.</p>
       </div>
 
       {/* Agents (real, auto from this dashboard) */}
       <section>
-        <SectionHead icon={Bot} title="Agents" count={agents?.length ?? 0} />
+        <SectionHead icon={Bot} title="Collaborateurs" count={agents?.length ?? 0} />
         {(agents ?? []).length === 0 ? (
-          <Empty text="Aucun agent dans ce dashboard. Créez-en un depuis l'onglet Agents." />
+          <Empty text="Aucun collaborateur dans ce dashboard. Créez-en un depuis l'onglet Collaborateurs." />
         ) : (
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {(agents ?? []).map((a) => (
@@ -170,7 +170,7 @@ export function AssetsHub({ dashboardId, workspaceId, projectId }: {
       <section>
         <SectionHead icon={Sparkles} title="Sources de connaissance" count={docs.length} />
         <p className="-mt-1 mb-2.5 text-xs text-muted-foreground">
-          Déposez des documents : ils sont vectorisés et deviennent une source consultable par les agents de ce service.
+          Déposez des documents : ils sont vectorisés et deviennent une source consultable par les collaborateurs de ce service.
         </p>
         {ingestErr && <p className="mb-2 text-xs text-destructive">{ingestErr}</p>}
         <input
@@ -212,7 +212,7 @@ export function AssetsHub({ dashboardId, workspaceId, projectId }: {
       <section>
         <SectionHead icon={Github} title="Dépôts GitHub" count={repos?.length ?? 0} />
         <p className="-mt-1 mb-2.5 text-xs text-muted-foreground">
-          Ajoutez des dépôts depuis votre connexion GitHub : ils deviennent disponibles pour l'agent Vibe Coder de ce service.
+          Ajoutez des dépôts depuis votre connexion GitHub : ils deviennent disponibles pour le collaborateur Vibe Coder de ce service.
         </p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           <button
@@ -332,14 +332,14 @@ function AgentAssetCard({ agent, onClick }: {
         </span>
       </div>
       <div className="flex items-center justify-center gap-1 border-t border-border/50 bg-muted/40 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground">
-        <Bot className="h-3 w-3" /> Agent
+        <Bot className="h-3 w-3" /> Collaborateur
       </div>
     </div>
   );
 }
 
 // Vectorized knowledge document card — document glyph, filename, and a green
-// "source des agents" badge signalling it feeds the service's RAG.
+// "source des collaborateurs" badge signalling it feeds the service's RAG.
 function DocCard({ asset, onDelete }: { asset: DashboardAsset; onDelete: () => void }) {
   return (
     <div className="group relative flex aspect-square flex-col justify-between overflow-hidden rounded-2xl border border-border/70 bg-card p-3.5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
@@ -356,7 +356,7 @@ function DocCard({ asset, onDelete }: { asset: DashboardAsset; onDelete: () => v
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium" title={asset.label}>{asset.label}</span>
         <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-          <Check className="h-2.5 w-2.5" /> Source des agents
+          <Check className="h-2.5 w-2.5" /> Source des collaborateurs
         </span>
       </span>
     </div>

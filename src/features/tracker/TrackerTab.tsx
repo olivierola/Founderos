@@ -29,6 +29,7 @@ import { TrackerSearch } from "./TrackerSearch";
 import { OverviewPage } from "./OverviewPage";
 import { SpaceViewsPage } from "./SpaceViewsPage";
 import { AgentsTab } from "@/features/service-dashboards/ServiceDashboardTabs";
+import { CollaboratorInbox } from "@/features/service-dashboards/CollaboratorInbox";
 import { DraftsPage } from "./DraftsPage";
 import { TrackerHomePage } from "./HomePage";
 import { WorkgraphPage } from "./WorkgraphPage";
@@ -68,7 +69,7 @@ type Section =
 /** Les destinations d'espace, par opposition à un identifiant de projet. */
 const SPACE_VIEWS = [
   "my-work", "drafts", "stickies", "all-projects", "workgraph",
-  "analytics", "boards", "views", "archives", "wiki", "agents",
+  "analytics", "boards", "views", "archives", "wiki", "agents", "inbox",
 ];
 
 /**
@@ -131,6 +132,9 @@ function SpaceView({
       );
     case "views":
       return <SpaceViewsPage dashboardId={dashboardId} onOpenView={onOpenView} />;
+    case "inbox":
+      // Ce que les collaborateurs attendent d'un humain, tous confondus (0265).
+      return <CollaboratorInbox dashboardId={dashboardId} />;
     default:
       return null;
   }

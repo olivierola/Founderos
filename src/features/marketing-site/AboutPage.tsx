@@ -33,7 +33,7 @@ export function AboutPage() {
       <section className="bg-white">
         <Container className="pb-16 pt-16 lg:pb-20 lg:pt-24">
           <h1 className="max-w-[700px] text-[28px] font-medium leading-[1.2] tracking-[-0.04em] sm:text-[32px]">
-            <span className="text-[#0f1728]">Superintelligence should work for you, and answer to you.</span>
+            <span className="text-[#0f1728]">Super intelligence should work for you, and answer to you.</span>
             <br />
             <span className="text-[#4b5567]">
               We're building a Cloud workforce companies can put on their real systems: governed, auditable, and running
@@ -68,7 +68,7 @@ export function AboutPage() {
               <p>We care about the model, but we care more about what surrounds it: the approval, the trace, the key.</p>
             </div>
             <div className="space-y-4">
-              <p>We work where superintelligence meets the systems companies already run, </p>
+              <p>We work where super intelligence meets the systems companies already run, </p>
               <p>finance, hiring, support, reporting, operations, and the governance that has to come with it.</p>
             </div>
           </div>

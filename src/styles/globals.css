@@ -88,7 +88,7 @@
        L'échelle sombre : canvas 5,9 % → surface 8 % → élevé 10-12 % →
        bordure 14 %. Quatre plans en huit points de luminosité, ce qui suffit
        parce que la teinte commune les fait lire comme une famille. */
-    --background: 222 47% 7%;           /* neutral-black — la page */
+    --background: 220 10% 4.5%;         /* charbon profond — contenu des onglets, plus foncé */
     --foreground: 220 33% 94%;          /* neutral-1200 */
 
     /* ── Hiérarchie de texte de Plane ─────────────────────────────────────
@@ -106,7 +106,7 @@
     --text-tertiary: 219 13% 65%;
     --text-placeholder: 218 11% 52%;
 
-    --card: 220 44% 10%;                 /* neutral-100 — cartes, champs */
+    --card: 220 8% 11%;                  /* charbon — cartes, champs */
     --card-foreground: 220 33% 94%;
 
     /* Catalogue card stage — the plate the agent portrait sits on. Deliberately
@@ -114,9 +114,9 @@
        objects lit against a dark set, so the tile is their backdrop, not just
        another surface tint. Kept dark in both themes so an icon looks the same
        wherever it is shown. */
-    --catalog-stage: 222 55% 4%;        /* #05080F — still the darkest plane, navy like the rest */
+    --catalog-stage: 220 9% 4%;         /* darkest plane, neutral charcoal like the rest */
 
-    --popover: 220 40% 13%;             /* neutral-300 — flotte au-dessus de la carte */
+    --popover: 220 8% 14%;              /* charbon — flotte au-dessus de la carte */
     --popover-foreground: 220 33% 94%;
 
     /* ── Accent system ────────────────────────────────────────────────────
@@ -161,13 +161,13 @@
     --accent-2: 140 40% 65%;
     --accent-2-foreground: 140 35% 18%;
 
-    --secondary: 220 38% 13%;           /* neutral-200 */
+    --secondary: 220 8% 14%;            /* charbon neutre */
     --secondary-foreground: 220 33% 94%;
 
-    --muted: 220 38% 13%;
+    --muted: 220 8% 14%;
     --muted-foreground: 219 13% 65%;    /* = --text-tertiary */
 
-    --accent: 220 36% 16%;
+    --accent: 220 8% 17%;
     --accent-foreground: 220 33% 94%;
 
     /* Info accent — pale aqua #AFE9F0 for highlights, links, info badges */
@@ -175,26 +175,26 @@
     --info-foreground: 214 80% 16%;
 
     /* Deep teal surface for emphasis panels (harmonises with the accent trio). */
-    --surface-deep: 214 64% 14%;
+    --surface-deep: 220 10% 15%;
 
     --destructive: 0 72% 51%;          /* red-500 */
     --destructive-foreground: 240 5% 96%;
 
-    --border: 220 32% 18%;              /* neutral-400 — le filet reste lisible sur la carte */
-    --input: 220 32% 18%;
+    --border: 220 9% 20%;               /* neutral — le filet reste lisible sur la carte */
+    --input: 220 9% 20%;
     /* Focus dans l'accent plutôt qu'en gris : sur un fond aussi sombre, c'est
        le seul anneau qu'on voie réellement. */
     --ring: 212 100% 60%;
 
-    --sidebar: 222 50% 6%;              /* neutral-100 — s'efface derrière le contenu */
-    --sidebar-foreground: 219 13% 65%;
-    --sidebar-accent: 214 50% 16%;      /* élément actif */
+    --sidebar: 220 9% 7%;               /* charbon — s'efface derrière le contenu */
+    --sidebar-foreground: 219 10% 65%;
+    --sidebar-accent: 220 8% 18%;       /* élément actif */
 
     /* Service-dashboard shell: three planes that get LIGHTER left to right —
        the ground under the icon rail (darkest), the contextual panel, then the
        content (--background, lightest). Every skin keeps that ordering. */
-    --sd-ground: 222 55% 4%;
-    --sd-panel: 222 50% 6%;
+    --sd-ground: 220 9% 5%;
+    --sd-panel: 220 9% 7%;
 
     /* Le rayon de TOUTE l'app. Il valait 0,3 rem — des angles presque droits,
        choisis « sobres », qui donnaient surtout des boîtes coupées au carré.
@@ -2003,4 +2003,38 @@ html.mkt-no-scrollbar::-webkit-scrollbar {
   font-family: inherit;
   font-style: normal;
   color: hsl(var(--text-tertiary));
+}
+
+/* ── L'onglet « Collaborators » : arc-en-ciel animé (texte ET icône) ──────────
+   Le texte porte un dégradé arc-en-ciel découpé sur les glyphes qui défile en
+   boucle ; l'icône, elle, n'est pas du texte, donc on la teinte d'une couleur
+   saturée que l'on fait tourner dans la roue chromatique (hue-rotate) à la
+   même cadence — les deux parcourent le spectre ensemble. Coupé net pour qui a
+   demandé moins d'animation. */
+.sd-rainbow-text {
+  font-weight: 600;
+  background-image: linear-gradient(
+    90deg,
+    #ff2e63, #ff8a00, #ffe600, #22e06b, #00d4ff, #6a5cff, #ff2bd6, #ff2e63
+  );
+  background-size: 200% 100%;
+  background-position: 0% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: sd-rainbow-slide 6s linear infinite;
+}
+@keyframes sd-rainbow-slide {
+  to { background-position: -200% 0; }
+}
+.sd-rainbow-icon {
+  color: #ff2e63;
+  animation: sd-rainbow-hue 6s linear infinite;
+}
+@keyframes sd-rainbow-hue {
+  to { filter: hue-rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sd-rainbow-text, .sd-rainbow-icon { animation: none; }
 }

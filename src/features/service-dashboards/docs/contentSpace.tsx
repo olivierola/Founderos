@@ -46,11 +46,11 @@ export const SPACE_SECTION: DocSection = {
           <Lede>
             Une carte navigable de l'espace de travail. Elle montre les projets, les
             cycles, les modules, les work items, les epics, les notes, les
-            <strong> personnes</strong> et les <strong>agents</strong>, et surtout ce
+            <strong> personnes</strong> et les <strong>collaborateurs</strong>, et surtout ce
             qui les relie.
           </Lede>
 
-          <Figure caption="Les traits pleins portent l'appartenance (un item dans un cycle) ; les pointillés portent l'assignation (un agent sur un item).">
+          <Figure caption="Les traits pleins portent l'appartenance (un item dans un cycle) ; les pointillés portent l'assignation (un collaborateur sur un item).">
             <GraphFigure />
           </Figure>
 
@@ -59,7 +59,7 @@ export const SPACE_SECTION: DocSection = {
             <Step>Les <strong>familles</strong> se filtrent depuis la légende : masquer les work items ne garde que le squelette projets/cycles.</Step>
             <Step>La <strong>recherche</strong> ne filtre pas, elle <em>atténue</em> : ce qui ne correspond pas s'estompe au lieu de disparaître, pour que les liens restent lisibles.</Step>
             <Step>Cliquer un nœud le met au centre et fait ressortir <strong>tout son voisinage</strong>, ses parents, ses enfants, ses assignés.</Step>
-            <Step>Un double-clic ouvre l'objet réel : le work item, le projet, la fiche de l'agent.</Step>
+            <Step>Un double-clic ouvre l'objet réel : le work item, le projet, la fiche du collaborateur.</Step>
           </Steps>
 
           <P>
@@ -70,13 +70,13 @@ export const SPACE_SECTION: DocSection = {
 
           <Callout>
             Le graphe se lit surtout par ses <strong>absences</strong> : un projet sans
-            cycle, un cycle sans item, un agent relié à rien. Ce sont les nœuds isolés
+            cycle, un cycle sans item, un collaborateur relié à rien. Ce sont les nœuds isolés
             qui apprennent quelque chose.
           </Callout>
 
           <Shot
             file="docs/workgraph.png"
-            alt="Le Workgraph peuplé : projets, cycles, work items et agents reliés, avec la légende des familles ouverte."
+            alt="Le Workgraph peuplé : projets, cycles, work items et collaborateurs reliés, avec la légende des familles ouverte."
           />
         </>
       ),
@@ -176,7 +176,7 @@ export const SPACE_SECTION: DocSection = {
           <H>Ce qui les distingue d'un chat ordinaire</H>
           <UL>
             <LI>
-              <strong>Les agents y participent.</strong> On les mentionne avec
+              <strong>Les collaborateurs y participent.</strong> On les mentionne avec
               <Ui>@</Ui> ; ils répondent dans le fil, avec leurs outils.
             </LI>
             <LI>
@@ -188,13 +188,13 @@ export const SPACE_SECTION: DocSection = {
               partout ailleurs dans le produit.
             </LI>
             <LI>
-              Le travail d'un agent lancé depuis une room reste visible dans la
+              Le travail d'un collaborateur lancé depuis une room reste visible dans la
               room : ses étapes, ses appels d'outils, ses demandes d'autorisation.
             </LI>
           </UL>
 
           <Callout kind="warn" title="Autorisations dans le fil">
-            Quand un agent veut faire une <strong>écriture</strong>, envoyer un
+            Quand un collaborateur veut faire une <strong>écriture</strong>, envoyer un
             message, modifier une fiche, il demande l'autorisation dans la
             conversation et attend. Les lectures ne demandent rien. Vous pouvez
             autoriser une fois, ou tout autoriser pour cet outil.
@@ -202,7 +202,7 @@ export const SPACE_SECTION: DocSection = {
 
           <Shot
             file="docs/room.png"
-            alt="Une room avec une conversation mêlant personnes et agents, et une demande d'autorisation en attente dans le fil."
+            alt="Une room avec une conversation mêlant personnes et collaborateurs, et une demande d'autorisation en attente dans le fil."
           />
         </>
       ),

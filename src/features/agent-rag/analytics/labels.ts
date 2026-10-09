@@ -16,7 +16,7 @@ export const REASON_LABELS: Record<string, string> = {
 };
 
 export const REASON_HINTS: Record<string, string> = {
-  answer_quality: "L'agent a répondu en s'appuyant sur au moins une source de sa base.",
+  answer_quality: "Le collaborateur a répondu en s'appuyant sur au moins une source de sa base.",
   quick_resolution: "Réponse sourcée en moins de 4 s, dans les deux premiers échanges.",
   user_effort: "Le visiteur a dû poser quatre questions ou plus sur le même fil.",
   no_knowledge: "Aucune source du corpus ni aucun outil n'a pu alimenter la réponse.",

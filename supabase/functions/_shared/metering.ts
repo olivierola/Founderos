@@ -31,7 +31,9 @@ export type MeterUnit =
 /** Ressources plafonnées par l'offre (hors crédits). */
 export type LimitMetric =
   | "services" | "agents" | "seats" | "projects"
-  | "knowledge_collections" | "mcp_servers" | "scheduled_agents" | "storage_mb";
+  | "knowledge_collections" | "mcp_servers" | "scheduled_agents" | "storage_mb"
+  // Counted by billing_check_quota since 0194; the run gate asks for it.
+  | "concurrent_runs";
 
 export interface MeterScope {
   workspace_id?: string | null;

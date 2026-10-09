@@ -110,7 +110,7 @@ export function buildHqView(raw: HqRawData, range: RangeKey, now: Date = new Dat
     agents: liveAgents,
     allAgents: raw.agents,
     agentById,
-    agentName: (id) => agentById.get(id)?.name ?? "Agent supprimé",
+    agentName: (id) => agentById.get(id)?.name ?? "Collaborateur supprimé",
 
     runs,
     missions: raw.missions,

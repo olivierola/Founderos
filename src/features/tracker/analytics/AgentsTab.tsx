@@ -15,7 +15,7 @@ import { filterHqRaw, hasFilters } from "./agentStatsFilters";
 import { fetchAgentAttribution, type PjProject } from "../model";
 
 /**
- * Les statistiques d'agents À L'ÉCHELLE D'UN SERVICE.
+ * Les statistiques d'collaborateurs À L'ÉCHELLE D'UN SERVICE.
  *
  * Ce fichier ne dessine rien : le rendu est celui d'`AgentStats`, partagé avec
  * le tableau de bord général. Ce qu'il porte en propre, c'est ce qui n'a de sens
@@ -85,8 +85,8 @@ export function AgentsAnalyticsTab({
     return (
       <EmptyState
         illustration={<DashboardIllustration className="w-full" />}
-        title="Aucun agent dans ce service"
-        hint="Les exécutions, les coûts, les outils et les livrables de vos agents apparaîtront ici dès qu'un agent aura travaillé."
+        title="Aucun collaborateur dans ce service"
+        hint="Les exécutions, les coûts, les outils et les livrables de vos collaborateurs apparaîtront ici dès qu'un collaborateur aura travaillé."
       />
     );
   }

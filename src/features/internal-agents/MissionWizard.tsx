@@ -167,7 +167,7 @@ export function MissionWizard({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Brief, what should the agent do?</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Brief, what should the collaborateur do?</label>
                 <textarea
                   value={draft.brief}
                   onChange={(e) => set("brief", e.target.value)}
@@ -192,7 +192,7 @@ export function MissionWizard({
           {step === 1 && (
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">
-                Tell the agent what artifacts to produce. Click a preset to add it, then rename as needed.
+                Tell the collaborateur what artifacts to produce. Click a preset to add it, then rename as needed.
               </p>
               <div className="flex flex-wrap gap-2">
                 {DELIVERABLE_PRESETS.map((p) => {

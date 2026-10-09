@@ -117,8 +117,8 @@ function PxRow({ label, value, onChange, max = 40 }: {
 export function WidgetStudio({ agent, tab = "modele" }: { agent: Agent; tab?: StudioTab }) {
   const queryClient = useQueryClient();
 
-  // La couleur de marque de l'agent (onglet Réglages) amorce l'accent et l'orbe,
-  // pour qu'un agent jamais ouvert ici s'embarque quand même à ses couleurs.
+  // La couleur de marque du collaborateur (onglet Réglages) amorce l'accent et l'orbe,
+  // pour qu'un collaborateur jamais ouvert ici s'embarque quand même à ses couleurs.
   const [cfg, setCfg] = useState<WidgetConfig>({
     ...WIDGET_DEFAULTS,
     accent: agent.accent_color ?? WIDGET_DEFAULTS.accent,
@@ -256,14 +256,14 @@ add_action("wp_footer", function () {
                   options={[
                     { value: "classic", label: "Classique", hint: "Fenêtre d'un seul tenant, en bas à droite" },
                     { value: "detached", label: "Détaché", hint: "Barre de saisie flottante sous la fenêtre" },
-                    { value: "dock", label: "Dock", hint: "Barre d'agent toujours posée, sans lanceur rond" },
+                    { value: "dock", label: "Dock", hint: "Barre de collaborateur toujours posée, sans lanceur rond" },
                     { value: "hero", label: "Accueil", hint: "Écran d'accueil centré tant que rien n'est dit" },
                     { value: "sidebar", label: "Volet", hint: "Collé au bord, pleine hauteur" },
                     { value: "spotlight", label: "Projecteur", hint: "Fenêtre centrée sur la page voilée" },
                   ]}
                 />
               </Row>
-              <Row label="Réponses de l'agent" hint="À plat : le texte posé sur la surface, sans bulle">
+              <Row label="Réponses du collaborateur" hint="À plat : le texte posé sur la surface, sans bulle">
                 <Pills
                   value={cfg.bot_bubble}
                   onChange={(v) => set("bot_bubble", v)}
@@ -312,7 +312,7 @@ add_action("wp_footer", function () {
 
             <Group
               title="Lueur du champ"
-              hint="Le faisceau voice-glow posé sur le champ de saisie : il respire au repos, monte avec la voix pendant la dictée et balaie le champ pendant que l'agent répond."
+              hint="Le faisceau voice-glow posé sur le champ de saisie : il respire au repos, monte avec la voix pendant la dictée et balaie le champ pendant que le collaborateur répond."
             >
               <SoftToggle label="Afficher la lueur" checked={cfg.voice_glow !== false} onChange={(v) => set("voice_glow", v)} />
               <VoiceGlowControls cfg={cfg} set={set} />
@@ -321,7 +321,7 @@ add_action("wp_footer", function () {
             {cfg.layout === "hero" && (
               <Group
                 title="Écran d'accueil"
-                hint="Le titre est le message d'accueil de l'agent (onglet Réglages) et les raccourcis sont les questions suggérées (onglet Contenu) : ils ne se saisissent pas deux fois."
+                hint="Le titre est le message d'accueil du collaborateur (onglet Réglages) et les raccourcis sont les questions suggérées (onglet Contenu) : ils ne se saisissent pas deux fois."
               >
                 <Row label="Salutation">
                   <SoftInput
@@ -384,7 +384,7 @@ add_action("wp_footer", function () {
             </Group>
 
             <Group title="Accent">
-              <ColorRow label="Accent" hint="Vide = couleur de marque de l'agent" value={cfg.accent} onChange={(v) => set("accent", v)} />
+              <ColorRow label="Accent" hint="Vide = couleur de marque du collaborateur" value={cfg.accent} onChange={(v) => set("accent", v)} />
               <Row label="Texte sur l'accent" hint="Auto calcule le contraste">
                 <Pills
                   value={cfg.accent_primary === "auto" ? "auto" : "custom"}
@@ -590,7 +590,7 @@ add_action("wp_footer", function () {
               <SoftToggle label="Pastille « en ligne »" checked={cfg.status_dot} onChange={(v) => set("status_dot", v)} />
             </Group>
 
-            <Group title="Présence de l'agent" hint="Son visage dans l'en-tête, et sur l'écran d'accueil ou la barre du Dock. L'orbe vivante change d'animation selon ce que fait l'agent.">
+            <Group title="Présence du collaborateur" hint="Son visage dans l'en-tête, et sur l'écran d'accueil ou la barre du Dock. L'orbe vivante change d'animation selon ce que fait le collaborateur.">
               <AvatarChoices cfg={cfg} set={set} />
               <Row label="Forme">
                 <Pills
@@ -719,7 +719,7 @@ add_action("wp_footer", function () {
 
             <Group
               title="Proactivité"
-              hint="L'agent observe la page (visiteur qui ne bouge plus, clics répétés au même endroit, changement de page) et propose son aide quand le moteur d'activation estime avoir quelque chose d'utile à dire."
+              hint="Le collaborateur observe la page (visiteur qui ne bouge plus, clics répétés au même endroit, changement de page) et propose son aide quand le moteur d'activation estime avoir quelque chose d'utile à dire."
             >
               <SoftToggle
                 label="Proposer de l'aide sans qu'on la demande"
@@ -778,7 +778,7 @@ add_action("wp_footer", function () {
 
             <Group
               title="Statistiques publiques"
-              hint="Une page à partager qui montre les performances de votre agent : conversations, taux de résolution, temps de réponse, note moyenne. Uniquement des totaux, aucune conversation, aucun visiteur n'y apparaît."
+              hint="Une page à partager qui montre les performances de votre collaborateur : conversations, taux de résolution, temps de réponse, note moyenne. Uniquement des totaux, aucune conversation, aucun visiteur n'y apparaît."
             >
               <SoftToggle
                 label="Publier la page de statistiques"
@@ -1108,7 +1108,7 @@ function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: WidgetConfig }) {
 
       <p className="mt-2.5 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
-        C'est le widget réel, branché sur l'agent : les messages envoyés ici comptent comme de vraies conversations
+        C'est le widget réel, branché sur le collaborateur : les messages envoyés ici comptent comme de vraies conversations
         et apparaissent dans l'onglet Analytics.
       </p>
     </div>

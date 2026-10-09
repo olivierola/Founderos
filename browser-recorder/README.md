@@ -1,7 +1,15 @@
-# FounderOS Skill Recorder — extension navigateur
+# Anduran · Collaborateurs, extension navigateur
 
-Enregistrer une démonstration **dans vos propres onglets**, avec vos sessions
-déjà ouvertes, dans le navigateur que vous utilisez déjà.
+Quatre usages, un seul paquet :
+
+- **le panneau des collaborateurs** : un panneau latéral pleine hauteur, à côté
+  de chaque page, où l'on parle à tous ses collaborateurs. La page part d'un
+  raccourci, ils la lisent, la surlignent et répondent, en bulle si le panneau
+  est fermé (voir plus bas) ;
+- enregistrer une démonstration **dans vos propres onglets**, avec vos sessions
+  déjà ouvertes, dans le navigateur que vous utilisez déjà ;
+- laisser un collaborateur **agir** dans vos onglets (pilotage armé) ;
+- se faire **former** dans un outil (mode formation).
 
 C'est la voie principale. Le paquet [skill-recorder/](../skill-recorder/) fait la
 même chose avec Playwright, dans un navigateur séparé — utile sur un serveur ou
@@ -22,12 +30,73 @@ même paquet MV3 s'installe sur Chrome, Edge, Opera, Brave et Vivaldi.
 1. `chrome://extensions` (ou `edge://extensions`, `opera://extensions`…)
 2. activer le **mode développeur**
 3. **« Charger l'extension non empaquetée »** → choisir ce dossier
-4. ouvrir l'extension depuis la barre d'outils, renseigner l'URL de votre projet
-   Supabase, puis saisir dans FounderOS le code d'appairage affiché
+4. cliquer l'icône de l'extension : le panneau s'ouvre sur Anduran (il retrouve
+   seul l'adresse de l'app si un onglet Anduran a déjà été ouvert, sinon il la
+   demande). Connecté, un bandeau propose « Relier ce navigateur » : un clic, et
+   l'appareil est appairé, sans code à recopier
 
 L'appairage ne se refait plus : le jeton vit dans le stockage de l'extension.
-C'est le même flux *device code* que le recorder Playwright — vous ne manipulez
-jamais de secret.
+C'est le même flux *device code* que le recorder Playwright, le code est
+simplement validé par l'app connectée au lieu d'être retapé. Le saisir à la
+main reste possible (Réglages de l'extension, dans le panneau).
+
+## Le panneau des collaborateurs
+
+Le panneau latéral du navigateur (Chrome, Edge, Brave : pleine hauteur, largeur
+réglable à la souris) affiche **l'app elle-même**, route `/companion`, dans
+un iframe et avec votre session. Le chat y est donc exactement celui de l'app :
+mêmes collaborateurs, mêmes validations en ligne, mêmes livrables. En haut, la
+rangée des collaborateurs du projet, les plus récents d'abord ; un point bleu
+signale une réponse non lue, l'avatar s'anime quand l'un d'eux travaille.
+
+Ce que le panneau ajoute, c'est la page :
+
+| Geste | Effet |
+| --- | --- |
+| `Alt+Shift+A` ou l'icône | ouvrir le panneau |
+| `Alt+Shift+P`, ou clic droit « Envoyer cette page » | la page part avec « Analyse cette page… », le collaborateur peut y surligner l'essentiel |
+| `Alt+Shift+S`, ou clic droit sur une sélection | la sélection est jointe au prochain message |
+| pastille sur le texte sélectionné (panneau ouvert) | Demander, Expliquer, Résumer, Traduire |
+| `Alt+Shift+E` ou « Pointer » | cliquer un élément de la page pour le joindre |
+| pastille « page » dans le composer | joindre (ou non) la page à chaque message |
+
+Les raccourcis se changent dans `chrome://extensions/shortcuts`.
+
+**Ce qui est lu.** La page est lue **au moment de l'envoi**, jamais en continu :
+texte principal en markdown (titres, listes, tableaux, liens), sans les menus ni
+les bandeaux de cookies. Les **valeurs des champs ne sont jamais lues**, et ce
+qui ressemble à un secret (clé d'API, jeton, IBAN, numéro de carte validé par
+Luhn) est masqué dans la page, avant envoi. Une page inchangée depuis le
+message précédent n'est pas renvoyée : une ligne la désigne. Côté serveur, seule
+la dernière page jointe d'une conversation reste entière dans le contexte.
+
+**Ce que le collaborateur peut faire en retour** passe par l'outil
+`page_assist`, enregistré seulement dans une conversation ouverte depuis le
+panneau, et par un troisième canal, `companion` (migration 0271) :
+
+- `look` : relire la page en cours, **panneau ouvert seulement**. L'extension
+  renouvelle un bail de 150 s (`recorder_devices.companion_until`) tant que le
+  panneau est affiché ; fermé, le serveur refuse la lecture, et l'extension aussi ;
+- `highlight` : surligner des passages (par leur texte exact) ou des éléments
+  (par leur libellé), numérotés, avec une note. Ce qui n'a pas été trouvé revient
+  nommé au collaborateur ;
+- `say`, `clear` : une bulle dans la page, tout effacer.
+
+Aucun clic, aucune saisie sur ce canal : la liste blanche `COMPANION_ACTIONS`
+de [background.js](src/background.js) est la garantie, comme pour la formation.
+
+**Panneau fermé**, la conversation continue : une réponse, une question à choix
+ou une validation en attente arrive dans une **bulle** sur la page en cours
+(mode `companion_feed`), avec de quoi répondre sur place ou rouvrir le
+panneau. Sur une page où aucune bulle ne peut s'afficher, le badge de l'icône
+compte les réponses. Désactivable : « Bulles panneau fermé ».
+
+**Prérequis côté app.** La route `/companion` doit être déployée, avec
+l'exception d'encadrement de [vercel.json](../vercel.json) (toutes les autres
+routes restent en `X-Frame-Options: DENY`). En local, l'adresse
+`http://localhost:5173` suffit. Avec ses permissions d'hôte, l'extension
+reçoit dans l'iframe le même stockage que l'onglet Anduran : une session
+ouverte dans un onglet l'est aussi dans le panneau.
 
 ## Ce qui est enregistré, et quand
 

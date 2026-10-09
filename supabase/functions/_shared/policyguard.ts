@@ -34,6 +34,34 @@ export type RiskLevel = 0 | 1 | 2 | 3;
 export type Environment = "interactive" | "autonomous";
 export type PolicyDecision = "allow" | "approve" | "block";
 
+/** Ce qu'un collaborateur a le droit de faire seul (0266). */
+export type AutonomyLevel = "observer" | "propose" | "assisted" | "autonomous";
+
+export function normalizeAutonomy(raw: unknown): AutonomyLevel {
+  return raw === "observer" || raw === "propose" || raw === "autonomous" ? raw : "assisted";
+}
+
+/**
+ * Le type d'une action, tel que la confiance acquise le reconnaît :
+ * « outil:action » normalisés. MIROIR de `agent_trust_scope()` (0266) — les deux
+ * doivent rendre la même chaîne, sinon une confiance accordée dans l'app ne
+ * serait jamais reconnue ici.
+ */
+export function trustScope(tool: string, action: string): string {
+  const n = (s: string) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  return `${n(tool)}:${n(action)}`;
+}
+
+async function hasTrustGrant(admin: Admin, agentId: string, scope: string): Promise<boolean> {
+  try {
+    const { data } = await admin.from("agent_trust_grants")
+      .select("id").eq("agent_id", agentId).eq("scope", scope).maybeSingle();
+    return !!data;
+  } catch {
+    return false; // table absente : aucune confiance, on demande
+  }
+}
+
 export const RISK_LABEL: Record<RiskLevel, string> = {
   0: "lecture",
   1: "écriture interne réversible",
@@ -164,6 +192,8 @@ export interface GateContext {
   conversationId?: string | null;
   serviceDashboardId?: string | null;
   autopilot?: boolean;
+  /** Le niveau d'autonomie du collaborateur ; « assisted » par défaut. */
+  autonomy?: AutonomyLevel;
 }
 
 export interface GateInput {
@@ -189,12 +219,36 @@ export interface GateResult {
  * rend la décision d'origine (`legacyApproval`).
  */
 export async function policyGate(ctx: GateContext, input: GateInput): Promise<GateResult> {
-  const legacy: PolicyDecision = input.legacyApproval ? "approve" : "allow";
+  const autonomy = normalizeAutonomy(ctx.autonomy);
+  const isWrite = input.legacyApproval || input.knownWrite;
+  // « Proposer » : toute écriture connue demande, quoi qu'en dise la règle
+  // d'origine. Règle de code : elle tient même quand Jev ne juge pas.
+  const legacy: PolicyDecision = input.legacyApproval || (autonomy === "propose" && isWrite) ? "approve" : "allow";
   const env: Environment = ctx.conversationId ? "interactive" : "autonomous";
   // Une lecture évidente ne coûte ni appel ni ligne de journal : c'est la
   // majorité des appels d'outils, et leur niveau est connu d'avance.
-  if (!input.legacyApproval && !input.knownWrite && READ_ACTION_RE.test(normalizeAction(input.action))) {
+  if (!isWrite && READ_ACTION_RE.test(normalizeAction(input.action))) {
     return { decision: "allow", linkApproval: () => {} };
+  }
+  const observerRefusal = () => ({
+    decision: "block" as const,
+    message:
+      `⛔ Tu es en mode Observateur : tu n'écris pas dans les outils connectés (${input.tool} · ${input.action}). ` +
+      "Décris à l'utilisateur ce que tu ferais et pourquoi, ou dépose-le avec propose_mission pour qu'il le lance lui-même.",
+    linkApproval: () => {},
+  });
+  // « Observateur » : une écriture connue est refusée d'office, sans jugement.
+  if (autonomy === "observer" && isWrite) {
+    void ctx.admin.from("policy_decisions").insert({
+      workspace_id: ctx.workspaceId, project_id: ctx.projectId, agent_id: ctx.agentId,
+      service_dashboard_id: ctx.serviceDashboardId ?? null, run_id: ctx.runId,
+      conversation_id: ctx.conversationId ?? null, environment: env, autopilot: false,
+      tool: input.tool.slice(0, 120), action: input.action.slice(0, 200),
+      risk_level: 1, risk_confidence: null,
+      decision: "block", applied_decision: "block", legacy_decision: legacy,
+      policy_source: "default", reason: "niveau d'autonomie : observateur", mode: "on",
+    }).then(() => {}, () => {});
+    return observerRefusal();
   }
   let decisionId: number | null = null;
   const pendingLink: string[] = [];
@@ -208,38 +262,64 @@ export async function policyGate(ctx: GateContext, input: GateInput): Promise<Ga
 
   try {
     const risk = await judgeRisk(ctx, input.tool, input.action, input.params);
-    if (!risk) return { decision: legacy, linkApproval };
+    // Sans jugement : la décision d'origine. L'autonomie et la confiance acquise
+    // ne s'accordent qu'à une action dont Jev a noté le risque — et un
+    // observateur ne prend pas le pari d'une action qu'on ne sait pas lire.
+    if (!risk) return autonomy === "observer" ? observerRefusal() : { decision: legacy, linkApproval };
 
     const floor: RiskLevel = input.knownWrite ? 1 : 0;
     const level = Math.max(risk.level, floor) as RiskLevel;
     const { policy, source } = await loadTeamPolicy(ctx.admin, ctx.projectId, ctx.serviceDashboardId);
     const grid = policy[env];
 
+    // Ce qui dispense d'approbation sous le plafond de l'équipe : l'autopilote
+    // (procédures), un collaborateur autonome, ou une confiance acquise sur CE
+    // type d'action. La confiance ne vaut qu'en assisté : en « proposer », la
+    // personne a choisi de tout voir.
+    const scope = trustScope(input.tool, input.action);
+    const trusted = autonomy === "assisted" && isWrite ? await hasTrustGrant(ctx.admin, ctx.agentId, scope) : false;
+    const exemptKind: "autopilot" | "autonomy" | "trust" | null =
+      ctx.autopilot ? "autopilot" : autonomy === "autonomous" ? "autonomy" : trusted ? "trust" : null;
+    const exempt = exemptKind != null && level < policy.autopilot_ceiling;
+    const exemptLabel = exemptKind === "trust" ? `confiance acquise (${scope})`
+      : exemptKind === "autonomy" ? "collaborateur autonome" : "autopilote";
+
     let decision: PolicyDecision = legacy;
     const reasons: string[] = [];
-    if (grid.block_at != null && level >= grid.block_at) {
+    if (autonomy === "observer" && level >= 1) {
+      decision = "block";
+      reasons.push("niveau d'autonomie : observateur");
+    } else if (grid.block_at != null && level >= grid.block_at) {
       decision = "block";
       reasons.push(`niveau ${level} ≥ refus à ${grid.block_at} (${env === "interactive" ? "interactif" : "autonome"})`);
     } else {
       const wantsApproval = grid.approve_at != null && level >= grid.approve_at;
-      // L'autopilote dispense d'approbation sous son plafond, et seulement là.
-      const autopilotExempt = !!ctx.autopilot && level < policy.autopilot_ceiling;
-      if (wantsApproval && !autopilotExempt) {
+      if (wantsApproval && !exempt) {
         decision = "approve";
         reasons.push(`niveau ${level} ≥ approbation à ${grid.approve_at}`);
       }
-      if (ctx.autopilot && level >= policy.autopilot_ceiling && policy.autopilot_ceiling < 4) {
+      if (exemptKind && level >= policy.autopilot_ceiling && policy.autopilot_ceiling < 4) {
         decision = "approve";
-        reasons.push(`autopilote plafonné sous le niveau ${policy.autopilot_ceiling}`);
+        reasons.push(`${exemptLabel} plafonné sous le niveau ${policy.autopilot_ceiling}`);
       }
-      // Jamais moins que la règle d'origine.
       if (legacy === "approve" && decision === "allow") {
-        decision = "approve";
-        reasons.push("règle d'origine");
+        // Jamais moins que la règle d'origine — sauf dispense EXPLICITE accordée
+        // au collaborateur (autonomie, confiance), et jugée par Jev sous le
+        // plafond. L'autopilote des procédures, lui, ne lève pas une approbation
+        // posée sur l'outil : c'était déjà la règle.
+        if (exempt && (exemptKind === "autonomy" || exemptKind === "trust")) {
+          reasons.push(exemptLabel);
+        } else {
+          decision = "approve";
+          reasons.push(autonomy === "propose" ? "niveau d'autonomie : proposer" : "règle d'origine");
+        }
       }
     }
 
-    const final: PolicyDecision = risk.applied ? decision : legacy;
+    // Un observateur dont le jugement n'est pas appliqué (shadow) reste prudent.
+    const final: PolicyDecision = risk.applied
+      ? decision
+      : autonomy === "observer" ? "block" : legacy;
     const { data } = await ctx.admin.from("policy_decisions").insert({
       workspace_id: ctx.workspaceId,
       project_id: ctx.projectId,
@@ -248,7 +328,9 @@ export async function policyGate(ctx: GateContext, input: GateInput): Promise<Ga
       run_id: ctx.runId,
       conversation_id: ctx.conversationId ?? null,
       environment: env,
-      autopilot: !!ctx.autopilot,
+      // Toute dispense sous plafond : autopilote, autonomie ou confiance acquise
+      // (la raison dit laquelle).
+      autopilot: exemptKind != null,
       tool: input.tool.slice(0, 120),
       action: input.action.slice(0, 200),
       risk_level: level,
@@ -266,6 +348,7 @@ export async function policyGate(ctx: GateContext, input: GateInput): Promise<Ga
     decisionId = (data as { id?: number } | null)?.id ?? null;
     for (const id of pendingLink.splice(0)) linkApproval(id);
 
+    if (final === "block" && autonomy === "observer") return { ...observerRefusal(), linkApproval };
     if (final === "block") {
       return {
         decision: "block",
@@ -278,7 +361,7 @@ export async function policyGate(ctx: GateContext, input: GateInput): Promise<Ga
     }
     return { decision: final, linkApproval };
   } catch {
-    return { decision: legacy, linkApproval };
+    return autonomy === "observer" ? observerRefusal() : { decision: legacy, linkApproval };
   }
 }
 

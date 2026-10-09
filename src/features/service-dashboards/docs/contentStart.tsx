@@ -22,14 +22,14 @@ export const START_SECTION: DocSection = {
             Un tableau de service est l'espace de travail d'une équipe, humaine et
             artificielle, autour d'un même sujet : le support, le marketing, la
             production, ce que vous voulez. Il réunit au même endroit le travail à
-            faire, les agents qui en prennent une part, et ce qui en sort.
+            faire, les collaborateurs qui en prennent une part, et ce qui en sort.
           </Lede>
 
           <P>
             La différence avec le reste de FounderOS tient en une phrase : ici,
             <strong> une machine et une personne apparaissent sur la même ligne</strong>.
-            Un work item peut être porté par quelqu'un, par un agent, ou par les
-            deux ; une mission confiée à un agent produit un livrable rattaché à la
+            Un work item peut être porté par quelqu'un, par un collaborateur, ou par les
+            deux ; une mission confiée à un collaborateur produit un livrable rattaché à la
             demande qui l'a motivée ; et le graphe de travail montre les deux
             familles avec leurs liens.
           </P>

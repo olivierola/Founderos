@@ -129,7 +129,7 @@ export function DashboardSwitcher() {
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Nouveau dashboard de service</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Un espace dédié à un service, ses agents, rooms, tâches et un hub Assets, séparé du reste.</p>
+            <p className="text-sm text-muted-foreground">Un espace dédié à un service, ses collaborateurs, rooms, tâches et un hub Assets, séparé du reste.</p>
             <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createService()} placeholder="ex. Marketing, Support, Finance…" />
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setCreating(false)}>Annuler</Button>

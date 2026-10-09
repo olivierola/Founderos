@@ -324,7 +324,7 @@ export function AgentWorkChip({
   return (
     <span
       className="relative flex shrink-0 items-center"
-      title={working ? "Un agent travaille sur cet item en ce moment" : "Confié à un agent"}
+      title={working ? "Un collaborateur travaille sur cet item en ce moment" : "Confié à un collaborateur"}
     >
       <AgentStack ids={ids} agents={agents ?? []} max={2} />
       {working && (

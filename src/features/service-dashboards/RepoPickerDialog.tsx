@@ -140,7 +140,7 @@ export function RepoPickerDialog({
         ) : (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Choisissez les dépôts à rendre disponibles pour ce service. Ils deviennent utilisables par l'agent Vibe Coder.
+              Choisissez les dépôts à rendre disponibles pour ce service. Ils deviennent utilisables par le collaborateur Vibe Coder.
             </p>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

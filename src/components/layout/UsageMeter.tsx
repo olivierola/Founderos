@@ -69,8 +69,8 @@ export function UsageMeter({ expanded }: {
       toast.error(
         "Crédits du mois épuisés",
         sub?.overage_enabled
-          ? "Le dépassement est activé : vos agents continuent, facturés à l'usage."
-          : "Vos agents sont en pause jusqu'au renouvellement, rechargez ou changez d'offre.",
+          ? "Le dépassement est activé : vos collaborateurs continuent, facturés à l'usage."
+          : "Vos collaborateurs sont en pause jusqu'au renouvellement, rechargez ou changez d'offre.",
       );
     } else {
       toast.info("80 % de vos crédits consommés", `Il reste ${formatCredits(credits?.remaining ?? 0)} crédits jusqu'au renouvellement.`);
@@ -137,7 +137,7 @@ export function UsageMeter({ expanded }: {
 
         <p className={cn("mb-3 mt-2 text-xs", blocked ? "font-medium text-destructive" : tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
           {blocked
-            ? "Agents en pause, quota atteint"
+            ? "Collaborateurs en pause, quota atteint"
             : tone === "warn"
               ? `Plus que ${formatCredits(credits?.remaining ?? 0)} crédits`
               : resetLabel}

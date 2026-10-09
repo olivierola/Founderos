@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "relay.fullname" . }}
+  labels: {{- include "relay.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "relay.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "relay.selector" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "relay.serviceAccount" . }}
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: relay
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          env:
+            - name: FOUNDEROS_URL
+              value: {{ required "founderosUrl est requis" .Values.founderosUrl | quote }}
+            - name: RELAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "relay.secretName" . }}
+                  key: RELAY_TOKEN
+            - name: RELAY_ALLOWED_HOSTS
+              value: {{ .Values.allowedHosts | quote }}
+            - name: RELAY_ALLOWED_BINARIES
+              value: {{ .Values.allowedBinaries | quote }}
+            - name: RELAY_DENIED_SUBCOMMANDS
+              value: {{ .Values.deniedSubcommands | quote }}
+            - name: RELAY_CONCURRENCY
+              value: {{ .Values.concurrency | quote }}
+            - name: RELAY_HEALTH_PORT
+              value: "8080"
+            {{- if .Values.caConfigMap }}
+            - name: RELAY_CA_FILE
+              value: /etc/founderos-ca/ca.pem
+            {{- end }}
+            {{- range .Values.secretEnv }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secretName }}
+                  key: {{ .secretKey }}
+            {{- end }}
+          ports:
+            - name: health
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: health }
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 4
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.caConfigMap }}
+            - name: ca
+              mountPath: /etc/founderos-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.caConfigMap }}
+        - name: ca
+          configMap:
+            name: {{ .Values.caConfigMap }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -208,7 +208,7 @@ function DeliverableBlock({ props, agentName, onOpen }: {
   return (
     <WorkCard
       title={name}
-      subtitle={agentName ? `Créé par ${agentName}` : "Livrable de l'agent"}
+      subtitle={agentName ? `Créé par ${agentName}` : "Livrable du collaborateur"}
       kind={kind}
       onOpen={open}
     />

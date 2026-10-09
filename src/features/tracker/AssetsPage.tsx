@@ -195,7 +195,7 @@ export function AssetsPage({ project }: { project: PjProject }) {
             hint={
               assets?.length
                 ? "Changez de genre ou effacez la recherche."
-                : "Décrivez ici ce sur quoi le projet travaille, le dépôt, la maquette, le jeu de données. Chaque work item pourra ensuite pointer dessus, et les agents sauront quoi ouvrir."
+                : "Décrivez ici ce sur quoi le projet travaille, le dépôt, la maquette, le jeu de données. Chaque work item pourra ensuite pointer dessus, et les collaborateurs sauront quoi ouvrir."
             }
             action={
               <Button size="sm" className="h-8" onClick={() => setCreating("repo")}>
@@ -414,7 +414,7 @@ export function CreateAssetDialog({
       <Field label="À quoi elle sert">
         <TextAreaField
           value={description} onChange={(e) => setDescription(e.target.value)}
-          placeholder="Une phrase : ce que quelqu'un, ou un agent, doit savoir avant de l'ouvrir."
+          placeholder="Une phrase : ce que quelqu'un, ou un collaborateur, doit savoir avant de l'ouvrir."
           className="min-h-[64px]"
         />
       </Field>

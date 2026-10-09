@@ -251,7 +251,7 @@ export function MemoryGraph({ mems, agents }: { mems: MemoryRow[]; agents: Graph
 
   const toggleKind = (k: string) => setKindFilter((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const activeFilters = (kindFilter.size > 0 ? 1 : 0) + (sourceFilter !== "all" ? 1 : 0) + (pinnedOnly ? 1 : 0);
-  const GROUPS: { v: GroupBy; label: string }[] = [{ v: "kind", label: "Type" }, { v: "agent", label: "Agent" }, { v: "source", label: "Source" }];
+  const GROUPS: { v: GroupBy; label: string }[] = [{ v: "kind", label: "Type" }, { v: "agent", label: "Collaborateur" }, { v: "source", label: "Source" }];
 
   const nodes = nodesRef.current;
   const links = linksRef.current;
@@ -386,7 +386,7 @@ export function MemoryGraph({ mems, agents }: { mems: MemoryRow[]; agents: Graph
           <div className="mt-3 space-y-1 text-[11px] text-muted-foreground">
             {selected.is_pinned && <div className="text-amber-500">★ épinglé</div>}
             <div>{selected.agent_id && nameOf.get(selected.agent_id) ? nameOf.get(selected.agent_id) : "Workspace"}</div>
-            <div>{selected.source === "user" ? "ajouté par vous" : "appris par l'agent"}</div>
+            <div>{selected.source === "user" ? "ajouté par vous" : "appris par le collaborateur"}</div>
             <div>Importance {selected.importance ?? 0}/5</div>
             <div>{new Date(selected.created_at).toLocaleString("fr-FR")}</div>
           </div>

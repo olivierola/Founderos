@@ -304,7 +304,7 @@ function StepsList({ flowId, kind }: { flowId: string; kind: FlowKind }) {
 
       {(steps ?? []).length === 0 ? (
         <p className="rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-          No steps yet. Add at least one for the agent to follow.
+          No steps yet. Add at least one for the collaborateur to follow.
         </p>
       ) : (
         <div className="space-y-2">
@@ -398,7 +398,7 @@ function StepRow({ step, kind, onUpdate, onDelete }: StepRowProps) {
                 value={local.body ?? ""}
                 onChange={(e) => patch("body", e.target.value)}
                 rows={3}
-                placeholder="What should the agent tell the user at this step?"
+                placeholder="What should the collaborateur tell the user at this step?"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>

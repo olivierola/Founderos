@@ -77,8 +77,8 @@ export function HomeAgentsHn() {
 
         <div ref={track} className="mt-14 flex snap-x gap-6 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {AGENTS.map((a) => (
-            <article key={a.name} className="w-[340px] shrink-0 snap-start rounded-[18px] border border-white/10 bg-white/[0.04] p-2">
-              <ArtPanel art={a.art} className="relative flex h-[300px] items-end justify-center rounded-[12px] p-4 pt-14">
+            <article key={a.name} className="w-[340px] shrink-0 snap-start">
+              <ArtPanel art={a.art} className="relative flex h-[300px] items-end justify-center rounded-[18px] p-4 pt-14">
                 <span className="absolute left-4 top-4 rounded-[14px] bg-white/15 px-2.5 py-1.5 text-[13px] font-medium text-white backdrop-blur-md">
                   {a.team}
                 </span>
@@ -174,8 +174,8 @@ export function HomeDifferentHn() {
                 </p>
               ))}
             </div>
-            <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
-              <ArtPanel art={r.art} className="grid h-[320px] place-items-center rounded-[12px] p-6 sm:h-[380px]">
+            <div className="overflow-hidden rounded-[18px]">
+              <ArtPanel art={r.art} className="grid h-[320px] place-items-center rounded-[18px] p-6 sm:h-[380px]">
                 {r.visual}
               </ArtPanel>
             </div>

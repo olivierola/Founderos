@@ -15,6 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
+import { useToast } from "@/components/ToastProvider";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 
@@ -168,7 +169,7 @@ const FEATURES: Array<{
   {
     feature: "policy_guard",
     label: "PolicyGuard, risque des actions",
-    effect: "Chaque action d'écriture d'un agent reçoit un niveau de risque (0 lecture → 3 irréversible), confronté à la grille de son équipe : approbation, refus, ou plafond de l'autopilote. Ne retire jamais une approbation existante.",
+    effect: "Chaque action d'écriture d'un collaborateur reçoit un niveau de risque (0 lecture → 3 irréversible), confronté à la grille de son équipe et à son niveau d'autonomie : approbation, refus, ou dispense sous le plafond (collaborateur Autonome, confiance acquise). Éteint : Observateur et Proposer s'appliquent quand même, Autonome et la confiance acquise retombent sur la validation humaine.",
     where: "Actions de connecteurs, Composio, CRM, suivi de travail, fonctions internes, webhooks · Grille dans Gouvernance IA → PolicyGuard",
     thresholdLabel: "Seuil (non utilisé : c'est la grille de l'équipe qui décide)",
     defaultThreshold: 0.5,
@@ -212,6 +213,7 @@ const MODE_META: Record<Mode, { label: string; hint: string; tone: string; icon:
 export function GovTypeSafePage() {
   const { workspaceId } = useCurrentContext();
   const qc = useQueryClient();
+  const toast = useToast();
   const [saving, setSaving] = useState<string | null>(null);
 
   const { data: settings, isLoading } = useQuery({
@@ -277,12 +279,19 @@ export function GovTypeSafePage() {
     setSaving(feature);
     try {
       const next = { ...(settings ?? {}), [feature]: { ...configOf(feature), ...patch } };
-      await supabase.from("typesafe_settings").upsert({
+      // The error used to be dropped: a member without the right clicked, the
+      // button stayed where it was, and nothing said why.
+      const { error } = await supabase.from("typesafe_settings").upsert({
         workspace_id: workspaceId,
         features: next,
         updated_at: new Date().toISOString(),
       }, { onConflict: "workspace_id" });
+      if (error) {
+        toast.error("Réglage non enregistré", "Seuls les propriétaires et administrateurs de l'espace peuvent changer Jev.");
+        return;
+      }
       qc.invalidateQueries({ queryKey: ["typesafe_settings", workspaceId] });
+      qc.invalidateQueries({ queryKey: ["typesafe_policy_guard_mode"] });
     } finally {
       setSaving(null);
     }

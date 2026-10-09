@@ -38,6 +38,8 @@ import { renderSoul, selectPreferences } from "./agent-context.ts";
 import { judge, choice, readChoice, qid } from "./typesafe.ts";
 import { loadCompanyContext, renderCompanySection, type CompanyContext } from "./company-context.ts";
 import { ORCHESTRATOR_PROACTIVITY } from "./proactivity.ts";
+import { ASSISTANT_OPS_DOCTRINE } from "./assistant-ops.ts";
+import { CONNECTOR_OPS_DOCTRINE } from "./assistant-connectors.ts";
 import { deriveContract } from "./agent-loop.ts";
 import { defaultTimezone, renderClock } from "./clock.ts";
 
@@ -686,6 +688,9 @@ export function buildRoomSystemPrompt(opts: {
     missionMode: false, delegationDepth: 0,
     serviceDashboardId: opts.agent.service_dashboard_id ?? opts.room.dashboard_id,
     userId: opts.agent.created_by ?? null,
+    // Same reason as requestReport below: the tick engine registers the
+    // administration tools for the assistant, so the advertised toolbox must too.
+    isOrchestrator: opts.agent.is_orchestrator === true,
     swarmEnabled: opts.agent.swarm_enabled !== false,
     // Inert like the rest of this stub, but it must be PRESENT: its presence is
     // what tells buildInternalToolset that reports go to Le Rédacteur, so the
@@ -727,10 +732,14 @@ export function buildRoomSystemPrompt(opts: {
       body: [
         "## Tu es le chef d'orchestre de cette room",
         "Tu es le nœud central du service : tu réponds, tu routes, tu organises, et tu peux CONSTRUIRE l'espace de travail à la demande.",
-        "- Crée un agent sur mesure (create_agent) dès que l'utilisateur décrit un besoin qu'aucun agent existant ne couvre — nom clair, rôle, instructions opérationnelles.",
+        "- Crée un agent sur mesure (manage_agents create) dès que l'utilisateur décrit un besoin qu'aucun agent existant ne couvre : nom clair, rôle, instructions opérationnelles, et dans le même appel les connecteurs, skills et outils demandés. Il rejoint la room tout de suite.",
         "- Planifie du récurrent avec create_mission (schedule cron, heure locale de l'utilisateur), un rappel ou une tâche ponctuelle plus tard avec create_mission (run_at), lance de l'immédiat avec create_mission (start_now) sur l'agent le mieux placé.",
         "- Quand une mission de room est en cours, tu en es le responsable : tu suis l'avancement, tu synthétises les résultats des autres agents, et tu conclus.",
         "Confirme chaque action faite, en une phrase (« Agent X créé », « Brief quotidien planifié à 6h »).",
+        "",
+        ASSISTANT_OPS_DOCTRINE,
+        "",
+        CONNECTOR_OPS_DOCTRINE,
         "",
         ORCHESTRATOR_PROACTIVITY,
       ].join("\n"),

@@ -153,7 +153,7 @@ function InitiativesWidget({ agent }: { agent: InternalAgent }) {
     queryFn: async () => {
       const { data } = await supabase.from("internal_agent_missions")
         .select("id, title, brief, created_at, status, board_column")
-        .eq("agent_id", agent.id).ilike("brief", "%Proposée par l'agent%")
+        .eq("agent_id", agent.id).ilike("brief", "%Proposée par le collaborateur%")
         .order("created_at", { ascending: false }).limit(8);
       return (data ?? []) as Array<{ id: string; title: string; brief: string | null; created_at: string; status: string; board_column: string | null }>;
     },
@@ -162,7 +162,7 @@ function InitiativesWidget({ agent }: { agent: InternalAgent }) {
     <Card className="p-4">
       <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Lightbulb className="h-3.5 w-3.5 text-amber-500" /> Initiatives proposées</div>
       {(proposals ?? []).length === 0 ? (
-        <p className="text-xs text-muted-foreground">Rien pour l'instant, l'agent proposera ici les opportunités qu'il repère en travaillant.</p>
+        <p className="text-xs text-muted-foreground">Rien pour l'instant, le collaborateur proposera ici les opportunités qu'il repère en travaillant.</p>
       ) : (
         <div className="space-y-2">
           {(proposals ?? []).map((p) => {
@@ -215,7 +215,7 @@ function MemoryHighlightsWidget({ agent }: { agent: InternalAgent }) {
 
 // ── Registry + tab ───────────────────────────────────────────────────────────
 const WIDGETS: Record<string, { label: string; Component: (p: { agent: InternalAgent }) => React.ReactElement }> = {
-  kpi_overview: { label: "KPIs de l'agent", Component: KpiOverviewWidget },
+  kpi_overview: { label: "KPIs du collaborateur", Component: KpiOverviewWidget },
   missions_mini: { label: "Missions (aperçu)", Component: MissionsMiniWidget },
   deliverables_gallery: { label: "Derniers livrables", Component: DeliverablesGalleryWidget },
   initiatives: { label: "Initiatives proposées", Component: InitiativesWidget },
@@ -273,7 +273,7 @@ export function WorkspaceTab({ agent }: { agent: InternalAgent }) {
       )}
 
       {active.length === 0 ? (
-        <Card className="p-6 text-center text-sm text-muted-foreground">Aucun widget, cliquez « Personnaliser » pour composer le bureau de cet agent.</Card>
+        <Card className="p-6 text-center text-sm text-muted-foreground">Aucun widget, cliquez « Personnaliser » pour composer le bureau de ce collaborateur.</Card>
       ) : (
         <div className="space-y-3">
           {active.map((id) => {

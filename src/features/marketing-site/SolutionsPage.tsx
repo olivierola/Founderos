@@ -35,7 +35,7 @@ export function SolutionsPage() {
       <HnHero
         variant="center"
         eyebrow="Solutions"
-        title="Six building blocks for adopting superintelligence safely"
+        title="Six building blocks for adopting super intelligence safely"
         lead="In the order they actually need to happen. Most companies need three of them, and almost nobody needs all six at once."
       >
         <div className="flex flex-wrap items-center justify-center gap-5">

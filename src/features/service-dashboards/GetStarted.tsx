@@ -61,7 +61,7 @@ export function useGetStarted(dashboardId: string) {
   });
 
   const items: GetStartedItem[] = [
-    { key: "agent", label: "Créez votre premier agent", icon: RobotIcon, done: (data?.agents ?? 0) > 0, go: `${base}/agents/new` },
+    { key: "agent", label: "Créez votre premier collaborateur", icon: RobotIcon, done: (data?.agents ?? 0) > 0, go: `${base}/agents/new` },
     {
       key: "connectors", label: "Connectez vos applications", icon: PlugsConnectedIcon,
       done: (data?.connectors ?? 0) > 0, go: `${base}/connectors`,

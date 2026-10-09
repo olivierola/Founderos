@@ -1,0 +1,6 @@
+apiVersion: v2
+name: founderos-connector-relay
+description: Relais sortant FounderOS — accès contrôlé des collaborateurs aux outils internes (Argo CD, Vault, Grafana, Loki, Kubernetes, Helm).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -145,14 +145,14 @@ export function RoomPanel({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    title="Ajouter un agent"
+                    title="Ajouter un collaborateur"
                     className="pointer-events-auto flex items-center gap-1 rounded-full border border-dashed border-border bg-card/85 px-2.5 py-1.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:border-primary/60 hover:text-foreground"
                   >
-                    <Plus className="h-3.5 w-3.5" /> Agent
+                    <Plus className="h-3.5 w-3.5" /> Collaborateur
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" side="top" className="w-52 rounded-xl">
-                  {addable.length === 0 ? <div className="px-2 py-2 text-xs text-muted-foreground">Tous les agents sont déjà là.</div> :
+                  {addable.length === 0 ? <div className="px-2 py-2 text-xs text-muted-foreground">Tous les collaborateurs sont déjà là.</div> :
                     addable.map((a) => (
                       <DropdownMenuItem key={a.id} className="rounded-lg" onSelect={() => onAdd(a.id)}>
                         <AgentIdentity url={a.avatar_url} seed={a.name} size={16} rounded="rounded-full" className="mr-2" /> {a.name}
@@ -187,7 +187,7 @@ export function RoomPanel({
             <AgentTerminalPanel
               agents={participants.map((a) => ({ id: a.id, name: a.name }))}
               onCommand={async (command) => {
-                if (!lead || !projectId) return "Aucun agent dans cette room.";
+                if (!lead || !projectId) return "Aucun collaborateur dans cette room.";
                 await sendToRoom(
                   { roomId, workspaceId, projectId, userId: user?.id ?? null },
                   `Exécute cette commande et rends-moi sa sortie : \`${command}\``,

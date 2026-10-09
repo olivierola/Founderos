@@ -197,7 +197,7 @@ function FiltersMenu({
    */
   const activeFields = ([
     ["state", "État"], ["state_group", "Groupe"], ["priority", "Priorité"],
-    ["assignees", "Assignés"], ["agents", "Agents"], ["labels", "Labels"],
+    ["assignees", "Assignés"], ["agents", "Collaborateurs"], ["labels", "Labels"],
     ["issue_type", "Type"], ["created_by", "Créé par"],
     ["target_date", "Échéance"],
   ] as const)
@@ -299,9 +299,9 @@ function FiltersMenu({
 
             {(ctx.agents ?? []).length > 0 && (
               <CommandGroup heading="Agents">
-                <CommandItem value="agent aucun" onSelect={() => toggle("agents", "none")}>
+                <CommandItem value="collaborateur aucun" onSelect={() => toggle("agents", "none")}>
                   <CheckMark checked={(filters.agents ?? []).includes("none")} />
-                  <span className="flex-1 text-muted-foreground">Sans agent</span>
+                  <span className="flex-1 text-muted-foreground">Sans collaborateur</span>
                 </CommandItem>
                 {(ctx.agents ?? []).map((a) => (
                   <CommandItem key={a.id} value={`agent ${a.name}`} onSelect={() => toggle("agents", a.id)}>
@@ -384,7 +384,7 @@ function AppliedFilters({
   for (const id of filters.agents ?? []) {
     chips.push({
       key: "agents", value: id,
-      label: id === "none" ? "Sans agent" : ctx.agents?.find((a) => a.id === id)?.name ?? "Agent",
+      label: id === "none" ? "Sans collaborateur" : ctx.agents?.find((a) => a.id === id)?.name ?? "Agent",
     });
   }
   for (const id of filters.labels) {

@@ -171,7 +171,7 @@ export async function reflectAndPropose(admin: Admin, opts: {
       workspace_id: opts.workspaceId,
       project_id: opts.projectId,
       title: p.title,
-      brief: `${p.brief}\n\n---\n💡 Repérée par l'agent en terminant un travail${p.value ? ` — Valeur attendue : ${p.value}` : ""}`,
+      brief: `${p.brief}\n\n---\n💡 Repérée par le collaborateur en terminant un travail${p.value ? `. Valeur attendue : ${p.value}` : ""}`,
       status: "paused",
       board_column: "backlog",
       delegated_by_agent: opts.agentId,

@@ -500,7 +500,7 @@ export function SkillRecorderPage() {
             <div className="mb-8 flex items-start gap-3">
               <div className="mt-0.5 rounded-xl bg-primary/10 p-2.5"><Clapperboard className="h-5 w-5 text-primary" /></div>
               <div>
-                <h1 className="text-xl font-semibold tracking-tight">Montrez, l'agent apprend</h1>
+                <h1 className="text-xl font-semibold tracking-tight">Montrez, le collaborateur apprend</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Un navigateur s'ouvre et enregistre vos gestes pendant que vous expliquez à voix haute
                   ce que vous faites. Vos mots sont recollés aux actions qu'ils décrivent, et l'ensemble
@@ -519,7 +519,7 @@ export function SkillRecorderPage() {
                 />
               </SoftField>
 
-              <SoftField label="Objectif (ce que l'agent devra savoir refaire)">
+              <SoftField label="Objectif (ce que le collaborateur devra savoir refaire)">
                 <SoftTextarea
                   value={goal}
                   onChange={(e) => setGoal(e.target.value)}
@@ -536,12 +536,12 @@ export function SkillRecorderPage() {
                 />
               </SoftField>
 
-              <SoftField label="Activer la skill sur un agent (facultatif)">
+              <SoftField label="Activer la skill sur un collaborateur (facultatif)">
                 <SoftSelect
                   value={agentId}
                   options={(agents ?? []).map((a) => ({ value: a.id, label: a.name }))}
                   onChange={setAgentId}
-                  placeholder="Aucun agent"
+                  placeholder="Aucun collaborateur"
                 />
               </SoftField>
 
@@ -801,7 +801,7 @@ npm start`}
             <h2 className="mt-4 text-lg font-semibold">Skill créée</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {mmss(recording?.duration_ms ?? 0)} de démonstration · {recording?.event_count ?? 0} événements
-              {agentId ? " · activée sur l'agent choisi" : ""}
+              {agentId ? " · activée sur le collaborateur choisi" : ""}
             </p>
             <div className="mt-6 flex justify-center gap-2">
               <Button variant="outline" onClick={() => navigate(skillsHome)}>Bibliothèque</Button>

@@ -14,7 +14,7 @@ export const WORK_SECTION: DocSection = {
     {
       slug: "home",
       title: "Home",
-      summary: "Le point de reprise, et le composeur qui ouvre une conversation avec vos agents.",
+      summary: "Le point de reprise, et le composeur qui ouvre une conversation avec vos collaborateurs.",
       keywords: ["accueil", "home", "reprise", "widgets", "room", "agent", "mention"],
       body: () => (
         <>
@@ -34,7 +34,7 @@ export const WORK_SECTION: DocSection = {
 
           <Steps>
             <Step>Écrivez votre demande. <Key>Entrée</Key> envoie, <Key>Maj</Key>+<Key>Entrée</Key> passe à la ligne.</Step>
-            <Step>Mentionnez un agent avec <Ui>@</Ui>, il est <strong>ajouté à la room</strong> et peut donc y répondre. Sans mention, la room reste entre humains.</Step>
+            <Step>Mentionnez un collaborateur avec <Ui>@</Ui>, il est <strong>ajouté à la room</strong> et peut donc y répondre. Sans mention, la room reste entre humains.</Step>
             <Step>Tapez <Ui>/</Ui> pour les commandes, joignez des fichiers, ou dictez au micro.</Step>
           </Steps>
 
@@ -42,7 +42,7 @@ export const WORK_SECTION: DocSection = {
             L'assistant répond dans un panneau latéral qui n'appartient à personne :
             la réponse se lit et se perd. Une room est un <strong>objet du
             service</strong>, elle a des participants, elle garde son historique,
-            les agents y travaillent avec leurs outils, et on y revient. L'assistant
+            les collaborateurs y travaillent avec leurs outils, et on y revient. L'assistant
             reste à un clic, par le bouton d'agrandissement du bloc, pour ce qui n'a
             pas vocation à laisser de trace.
           </Callout>
@@ -78,7 +78,7 @@ export const WORK_SECTION: DocSection = {
 
           <Shot
             file="docs/home.png"
-            alt="La page Home : le composeur en haut avec une mention d'agent en cours de frappe, puis les widgets, items assignés, échéances, projets récents."
+            alt="La page Home : le composeur en haut avec une mention de collaborateur en cours de frappe, puis les widgets, items assignés, échéances, projets récents."
           />
         </>
       ),
@@ -252,7 +252,7 @@ export const WORK_SECTION: DocSection = {
             Un clic ouvre la fiche en aperçu, sans quitter la liste. Elle porte le
             titre, la description, les propriétés, les sous-items, les liens vers
             d'autres items, les pièces jointes, les <strong>missions confiées aux
-            agents</strong>, puis les commentaires et l'activité.
+            collaborateurs</strong>, puis les commentaires et l'activité.
           </P>
           <P>
             L'aperçu s'agrandit : panneau latéral, fenêtre centrée ou plein écran,

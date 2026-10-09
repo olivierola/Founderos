@@ -27,7 +27,7 @@ import {
 /** Events worth offering by name. Composio exposes far more per toolkit; these
  *  are the ones a workflow is actually built on, and anything else can be typed
  *  in by slug. */
-const KNOWN_EVENTS: Record<string, { slug: string; label: string }[]> = {
+export const KNOWN_EVENTS: Record<string, { slug: string; label: string }[]> = {
   gmail: [
     { slug: "GMAIL_NEW_GMAIL_MESSAGE", label: "Nouveau mail reçu" },
     { slug: "GMAIL_NEW_LABELED_EMAIL", label: "Mail étiqueté" },

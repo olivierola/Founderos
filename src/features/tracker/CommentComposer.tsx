@@ -14,7 +14,7 @@ import {
  * Le composeur de commentaire d'un work item — avec la mention d'agent.
  *
  * C'est le point de rencontre qui manquait entre humains et agents. Dans une
- * room, on écrit « @Analyste, regarde ça » et l'agent s'y met ; dans la
+ * room, on écrit « @Analyste, regarde ça » et le collaborateur s'y met ; dans la
  * discussion d'un work item, là où se prennent pourtant les décisions sur le
  * travail, on ne pouvait que parler entre humains, puis aller ouvrir « Confier à
  * un agent » et récrire la demande ailleurs. La demande existait déjà, écrite,
@@ -30,7 +30,7 @@ import {
  *
  * Ne sont proposés que les agents AUTORISÉS EN ÉCRITURE sur le projet. En
  * proposer d'autres reviendrait à lancer une mission qui échouera sur chaque
- * outil, ou pire, à laisser croire qu'un agent a reçu une demande qu'il ne peut
+ * outil, ou pire, à laisser croire qu'un collaborateur a reçu une demande qu'il ne peut
  * pas traiter.
  */
 
@@ -112,7 +112,7 @@ export function CommentComposer({
       {query !== null && (
         <div className="absolute bottom-full left-0 z-30 mb-1 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-overlay-200">
           <p className="px-2 py-1 text-10 font-medium uppercase tracking-wide text-tertiary">
-            Mettre un agent au travail
+            Mettre un collaborateur au travail
           </p>
           {matches.length ? matches.map((a, i) => (
             <button
@@ -131,8 +131,8 @@ export function CommentComposer({
           )) : (
             <p className="px-2 py-2 text-11 leading-snug text-tertiary">
               {writable.length
-                ? "Aucun agent ne correspond."
-                : "Aucun agent n'est autorisé en écriture sur ce projet. Ajoutez-en un dans l'onglet Équipage."}
+                ? "Aucun collaborateur ne correspond."
+                : "Aucun collaborateur n'est autorisé en écriture sur ce projet. Ajoutez-en un dans l'onglet Équipage."}
             </p>
           )}
         </div>
@@ -158,7 +158,7 @@ export function CommentComposer({
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); }
           }}
           onBlur={() => setQuery(null)}
-          placeholder="Écrire un commentaire… @ pour mettre un agent au travail"
+          placeholder="Écrire un commentaire… @ pour mettre un collaborateur au travail"
           className="min-h-[64px] text-14"
         />
         <Button size="sm" onClick={() => void submit()} disabled={!draft.trim() || busy}>
@@ -172,7 +172,7 @@ export function CommentComposer({
         <p className="flex items-center gap-1.5 text-11 text-primary">
           <RobotIcon className="h-3.5 w-3.5" />
           {targets.length === 1
-            ? "L'agent mentionné se mettra au travail sur cet item et répondra ici."
+            ? "Le collaborateur mentionné se mettra au travail sur cet item et répondra ici."
             : `${targets.length} agents mentionnés se mettront au travail sur cet item et répondront ici.`}
         </p>
       )}

@@ -316,7 +316,7 @@ export function LiveRunsWidget({
   return (
     <LiveFrame title="En cours" connected={connected} count={runs.length}>
       {!runs.length ? (
-        <Empty>Aucun agent ne travaille en ce moment.</Empty>
+        <Empty>Aucun collaborateur ne travaille en ce moment.</Empty>
       ) : (
         <ul className="space-y-1">
           {[...running, ...queued].map((r) => {
@@ -485,9 +485,9 @@ export function AgentStatesWidget({
   );
 
   return (
-    <LiveFrame title="États des agents" connected={connected}>
+    <LiveFrame title="États des collaborateurs" connected={connected}>
       {!agents.length ? (
-        <Empty>Aucun agent.</Empty>
+        <Empty>Aucun collaborateur.</Empty>
       ) : (
         <>
           <div className="flex flex-wrap gap-x-3 gap-y-1 pb-2">
@@ -569,7 +569,7 @@ export function LiveApprovalsWidget({
   return (
     <LiveFrame title="À valider" connected={false} count={approvals.length}>
       {!approvals.length ? (
-        <Empty>Aucun agent n'attend de réponse.</Empty>
+        <Empty>Aucun collaborateur n'attend de réponse.</Empty>
       ) : (
         <ul className="space-y-2">
           {approvals.map((a) => {
@@ -581,7 +581,7 @@ export function LiveApprovalsWidget({
                   <AgentDot agent={agent} />
                   <div className="min-w-0 flex-1">
                     <p className="text-12">
-                      <span className="font-medium">{agent?.name ?? "Un agent"}</span> veut {describe(a)}
+                      <span className="font-medium">{agent?.name ?? "Un collaborateur"}</span> veut {describe(a)}
                     </p>
                     {a.reason && <p className="line-clamp-2 text-11 text-muted-foreground">{a.reason}</p>}
                     {/* Au-delà de vingt minutes, le run approche du délai de trente

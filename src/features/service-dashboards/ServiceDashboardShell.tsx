@@ -11,7 +11,7 @@ import {
   DotsThreeIcon, PencilSimpleIcon, TrashIcon, HashIcon, SidebarSimpleIcon, UsersThreeIcon, UserIcon,
   TargetIcon, GlobeIcon, FlowArrowIcon, KanbanIcon, FlagIcon, EyeIcon,
   ArrowsClockwiseIcon, StackIcon, NotePencilIcon, ArchiveIcon, PushPinIcon, PackageIcon,
-  PushPinSlashIcon, BookOpenIcon,
+  PushPinSlashIcon, BookOpenIcon, TrayIcon, WrenchIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import {
@@ -36,6 +36,7 @@ import {
   type ServiceDashboard, type Room, type DashboardTabSlug,
 } from "./model";
 import { RoomView } from "./RoomView";
+import { useCollaboratorInbox } from "./CollaboratorInbox";
 import { SidebarProfileFooter } from "./SidebarProfileFooter";
 import { SidebarGetStarted } from "./GetStarted";
 import { DocsPage, DocsPanel } from "./docs/DocsPage";
@@ -49,6 +50,7 @@ import { fetchProjects as fetchTrackerProjects } from "@/features/tracker/model"
 import { ProjectLogo } from "@/features/tracker/LogoPicker";
 import { CreateWorkItemModal } from "@/features/tracker/CreateWorkItem";
 import { ComposioCatalog } from "@/features/integrations/ComposioCatalog";
+import { CustomConnectorsPage } from "@/features/custom-connectors/CustomConnectorsPage";
 import { WorkflowsList } from "@/features/workflows/WorkflowsList";
 import { WorkflowDocument } from "@/features/workflows/WorkflowDocument";
 import { DashboardSettingsTab, DASHBOARD_SETTINGS_SECTIONS, type DashboardSettingsSection } from "./DashboardSettings";
@@ -116,6 +118,9 @@ const RESOURCE_GROUPS: {
     items: [
       { tab: "connectors", key: "space", label: "Connexions de l'espace", icon: UsersThreeIcon },
       { tab: "connectors", key: "personal", label: "Mes connexions", icon: UserIcon },
+      // Les outils hébergés par l'entreprise (Argo CD, Vault, Grafana…), hors
+      // Composio : connecteurs décrits à la main, relais, journal d'accès (0267).
+      { tab: "connectors", key: "internal", label: "Outils internes", icon: WrenchIcon },
     ],
   },
   {
@@ -178,7 +183,7 @@ export function ServiceDashboardPage() {
   // memory + connections + workflows share the merged Ressources section.
   const RESOURCE_TABS = ["memory", "connectors", "workflows"];
   // TOUT ce qui touche aux agents appartient au module de travail : le roster,
-  // la fiche d'un agent, sa configuration, un agent public, et jusqu'à sa
+  // la fiche d'un collaborateur, sa configuration, un collaborateur public, et jusqu'à sa
   // création. C'était auparavant un rail séparé, ce qui posait la force de
   // travail à côté du travail — deux mondes parallèles entre lesquels il fallait
   // faire l'aller-retour pour savoir qui fait quoi.
@@ -316,7 +321,7 @@ export function ServiceDashboardPage() {
                   base={base} dashboardId={dashboardId!}
                   activeProjectId={sub} activeView={sub} activeSection={leaf}
                 />
-                {/* Pas de liste d'agents ici : l'onglet Agents la porte déjà,
+                {/* Pas de liste d'collaborateurs ici : l'onglet Agents la porte déjà,
                     avec ses dossiers et ses cartes. La répéter dans la barre
                     latérale ne donnait aucun accès nouveau — seulement deux
                     endroits à parcourir des yeux pour la même information, et
@@ -401,7 +406,8 @@ export function ServiceDashboardPage() {
               />
             )}
             {activeTab === "memory" && <WorkspaceMemoryTab workspaceId={workspaceId} dashboardId={dashboardId!} projectId={projectId} view={sub || "graph"} />}
-            {activeTab === "connectors" && (
+            {activeTab === "connectors" && sub === "internal" && <CustomConnectorsPage serviceDashboardId={dashboardId!} />}
+            {activeTab === "connectors" && sub !== "internal" && (
               <ComposioCatalog serviceDashboardId={dashboardId!} scope={sub === "personal" ? "personal" : "dashboard"} />
             )}
             {/* The list pads itself; the canvas must be FULL-BLEED — a dotted
@@ -724,6 +730,9 @@ function useCollapsed(key: string): [boolean, () => void] {
  */
 const TRACKER_PERSONAL: { slug: string; label: string; icon: PhosphorIcon }[] = [
   { slug: "projects", label: "Home", icon: HouseIcon },
+  // Juste sous l'accueil : c'est la question qu'on se pose en arrivant, « est-ce
+  // qu'un collaborateur attend quelque chose de moi ? ».
+  { slug: "inbox", label: "À valider", icon: TrayIcon },
   { slug: "drafts", label: "Brouillons", icon: PencilSimpleIcon },
   { slug: "my-work", label: "Votre travail", icon: UserIcon },
   { slug: "stickies", label: "Notes", icon: NotePencilIcon },
@@ -732,7 +741,7 @@ const TRACKER_PERSONAL: { slug: string; label: string; icon: PhosphorIcon }[] = 
 /** Le second niveau : ce qui est à TOUT LE MONDE. */
 const TRACKER_NAV: { slug: string; label: string; icon: PhosphorIcon }[] = [
   { slug: "all-projects", label: "Projets", icon: KanbanIcon },
-  { slug: "agents", label: "Agents", icon: RobotIcon },
+  { slug: "agents", label: "Super Intelligence", icon: RobotIcon },
   { slug: "analytics", label: "Analytics", icon: ChartBarIcon },
   { slug: "views", label: "Vues", icon: EyeIcon },
   { slug: "archives", label: "Archives", icon: ArchiveIcon },
@@ -804,6 +813,7 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
   });
 
   const { unpinned, toggle, isPinned } = useNavPins(dashboardId);
+  const inboxCount = useCollaboratorInbox(dashboardId).data?.length ?? 0;
   // La personnalisation est un MODE, pas un écran de réglages : on veut voir la
   // barre changer sous ses doigts, et non deviner le résultat depuis une liste
   // de cases à cocher ailleurs.
@@ -835,11 +845,22 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
             key={n.slug}
             active={isActive(n.slug)}
             onClick={() => go(n.slug)}
-            leading={<n.icon className="h-4 w-4" />}
-            label={n.label}
+            leading={n.slug === "agents"
+              ? <span className="sd-rainbow-icon"><n.icon weight="fill" className="h-4 w-4" /></span>
+              : <n.icon className="h-4 w-4" />}
+            label={n.slug === "agents" ? <span className="sd-rainbow-text">{n.label}</span> : n.label}
             trailing={customizing
               ? <PinToggle pinned={isPinned(n.slug)} onToggle={() => toggle(n.slug)} label={n.label} />
-              : undefined}
+              : n.slug === "inbox" && inboxCount > 0
+                ? (
+                  <span
+                    className="mr-1.5 min-w-[20px] rounded-full bg-amber-500/15 px-1.5 text-center text-[11px] font-semibold tabular-nums text-amber-700 dark:text-amber-400"
+                    title={`${inboxCount} élément${inboxCount > 1 ? "s" : ""} en attente`}
+                  >
+                    {inboxCount > 99 ? "99+" : inboxCount}
+                  </span>
+                )
+                : undefined}
           />
         ))}
     </nav>
@@ -1073,7 +1094,7 @@ function SettingsPanel({ base, active }: { base: string; active: DashboardSettin
 }
 
 function PanelItem({ active, onClick, leading, label, tone, trailing }: {
-  active: boolean; onClick: () => void; leading: React.ReactNode; label: string; tone?: "danger";
+  active: boolean; onClick: () => void; leading: React.ReactNode; label: React.ReactNode; tone?: "danger";
   /** Une action propre à la ligne (épingler, par exemple), à sa droite. */
   trailing?: React.ReactNode;
 }) {
@@ -1264,7 +1285,7 @@ function DashboardSelector({ current, dashboards }: { current: ServiceDashboard 
     } finally { setSaving(false); }
   }
   async function remove(id: string) {
-    if (!(await confirm("Supprimer ce dashboard de service ? Les agents qu'il contient ne seront pas supprimés (juste dissociés)."))) return;
+    if (!(await confirm("Supprimer ce dashboard de service ? Les collaborateurs qu'il contient ne seront pas supprimés (juste dissociés)."))) return;
     await deleteServiceDashboard(id);
     queryClient.invalidateQueries({ queryKey: ["service_dashboards", projectId] });
     navigate(`${base}/${dashboardLandingSlug("workforce")}`);

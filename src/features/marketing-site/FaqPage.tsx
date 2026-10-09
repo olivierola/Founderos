@@ -32,7 +32,7 @@ type Group = { id: string; label: string; items: Item[] };
 const HEADLINE: Item[] = [
   {
     q: "What does Anduran actually do?",
-    a: "We help companies adopt superintelligence safely. In practice that is three things: we assess where your processes and data stand today, we build the secured foundation so superintelligence has something solid to work on, and we guide adoption across your organisation with the governance and change enablement that makes it stick.",
+    a: "We help companies adopt super intelligence safely. In practice that is three things: we assess where your processes and data stand today, we build the secured foundation so super intelligence has something solid to work on, and we guide adoption across your organisation with the governance and change enablement that makes it stick.",
   },
   {
     q: "How do you handle data security?",
@@ -50,7 +50,7 @@ const GROUPS: Group[] = [
     label: "Working with us",
     items: [
       {
-        q: "We are not sure we are ready for superintelligence. Where do we start?",
+        q: "We are not sure we are ready for super intelligence. Where do we start?",
         a: "With the readiness assessment. It rates every process from L1 to L5 and tells you which work is ready for a Cloud collaborator today, which needs a foundation first, and which should wait. It takes two to three weeks. Most teams find two or three quick wins and one structural gap they did not know about.",
       },
       {
@@ -121,7 +121,7 @@ const GROUPS: Group[] = [
     items: [
       {
         q: "What is a credit?",
-        a: "One unit of superintelligence work. Credits cover what your Cloud collaborators actually spend at the model providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5.",
+        a: "One unit of super intelligence work. Credits cover what your Cloud collaborators actually spend at the model providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5.",
       },
       {
         q: "What happens when I run out?",

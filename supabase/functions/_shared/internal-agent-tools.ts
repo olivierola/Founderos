@@ -11,6 +11,9 @@
 //   vault_connector → list_connectors()            connector inventory (no secrets)
 //   edge_function   → one tool per row             invoke an internal edge function
 //   custom          → one tool per row             POST a webhook with model-provided args
+//   custom_connector → one tool per row (ext_<slug>) an internal tool (Argo CD, Vault, Grafana…)
+//                                                  through connector-action: declared operations,
+//                                                  direct or via the client's relay (0267)
 //
 // Cross-cutting concerns handled here:
 //
@@ -43,16 +46,26 @@ import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
 import { defaultTimezone, parseRunAt, parseSchedule } from "./clock.ts";
 import { embedTexts, toVectorLiteral } from "./jina.ts";
 import type { Passage } from "./contextiq.ts";
-import { policyGate, type GateInput } from "./policyguard.ts";
+import { policyGate, type GateInput, type AutonomyLevel } from "./policyguard.ts";
 import {
   judge as judgeTs, noul as noulTs, choice as choiceTs,
   readNoul as readNoulTs, readChoice as readChoiceTs, ranked as rankedTs, qid as qidTs,
   loadTypesafeConfig as loadTypesafeConfigTs,
 } from "./typesafe.ts";
 import { mcpCallTool, type McpTool } from "./mcp-client.ts";
+import {
+  type ConnectorOperation,
+  normalizeOperations as normalizeConnectorOperations,
+  normalizePolicy as normalizeConnectorPolicy,
+} from "./custom-connector-model.ts";
 import { executeApprovalAction, approvalScope, approvalScopePrefix, approvalScopeLabel } from "./approval-exec.ts";
 import { runTrackerAction, trackerScope } from "./tracker-actions.ts";
 import { postApprovalToBoundChannel } from "./channel-approval.ts";
+import {
+  agentOpsToolDef, projectOpsToolDef, runAgentOps, runProjectOps, resolveOpsRole,
+  type OpsActor, type OpsResult,
+} from "./assistant-ops.ts";
+import { connectorOpsToolDef, runConnectorOps } from "./assistant-connectors.ts";
 
 export interface AgentToolRow {
   id: string;
@@ -75,7 +88,8 @@ export interface AgentToolRow {
     | "vibe_code"
     | "testing"
     | "simulation"
-    | "custom";
+    | "custom"
+    | "custom_connector";
   name: string;
   description: string | null;
   config: Record<string, unknown>;
@@ -97,9 +111,24 @@ export interface ArtifactDraft {
   content: string;
 }
 
+export interface CustomConnectorSnapshot {
+  id: string;
+  name: string;
+  slug: string;
+  base_url: string;
+  transport: "direct" | "relay";
+  operations: ConnectorOperation[];
+  allow_raw: boolean;
+  raw_methods: string[];
+  path_allowlist: string[];
+  read_only: boolean;
+  approval: "writes" | "all" | "destructive_only";
+  description: string | null;
+}
+
 export interface ApprovalRequest {
   tool_name: string;
-  action_kind: "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write" | "tracker_write";
+  action_kind: "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write" | "tracker_write" | "custom_connector";
   payload: Record<string, unknown>;
   reason: string | null;
 }
@@ -115,6 +144,8 @@ export interface InternalToolContext {
   collaborationEnabled?: boolean;
   /** Whether the agent may run write/outgoing actions without per-action approval. */
   autopilot?: boolean;
+  /** The collaborator's autonomy level (0266), applied by PolicyGuard. */
+  autonomy?: AutonomyLevel;
   runId: string | null;
   /** Originating chat session, when running in chat mode. */
   conversationId?: string | null;
@@ -131,7 +162,10 @@ export interface InternalToolContext {
     kind:
       | "tool_call" | "tool_result" | "status" | "log" | "error" | "plan" | "plan_step"
       | "tool_error" | "question" | "todos" | "ui" | "loop"
-      | "browser_navigate" | "browser_action" | "browser_screenshot",
+      | "browser_navigate" | "browser_action" | "browser_screenshot"
+      // Emitted by internal-agent-run (prompt budget, room routing, guardrails)
+      // and accepted by the CHECK constraint; missing here, they read as errors.
+      | "prompt" | "route" | "guardrail",
     payload: Record<string, unknown>,
   ) => Promise<void>;
   /** Loop engine: successful tool results observed since the last update_todos
@@ -165,6 +199,11 @@ export interface InternalToolContext {
   mcpServers?: Array<{ id: string; name: string; url: string; headers: Record<string, string>; tools: McpTool[] }>;
   /** Per-run MCP session cache (server id → session), reused across tool calls. */
   mcpSessions?: Map<string, { id?: string }>;
+  /** Internal tools (custom connectors, 0267) this agent was granted, active and
+   *  in scope, with their declared operations — loaded once per run so the tool
+   *  schema can carry a real operation enum. Undefined: not preloaded (the tool
+   *  then discovers its operations at call time). */
+  customConnectors?: CustomConnectorSnapshot[];
   /** Depth of this run in a delegation chain (0 = user-initiated). create_mission
    *  refuses to delegate beyond MAX_DELEGATION_DEPTH to stop infinite loops. */
   delegationDepth?: number;
@@ -176,6 +215,12 @@ export interface InternalToolContext {
   serviceRoomId?: string | null;
   /** The user who owns/created the agent — stamped on resources it creates. */
   userId?: string | null;
+  /** This agent is its service's assistant (is_orchestrator): it gets the
+   *  workspace-administration tools (manage_agents / manage_projects). */
+  isOrchestrator?: boolean;
+  /** The human this turn acts for (the person who posted in the room, or who
+   *  started the run). Bounds what the assistant may change, by their role. */
+  actingUserId?: string | null;
   /** True when THIS context is an ephemeral parallel sub-agent — disables
    *  spawn_parallel_agents / create_mission so a sub-agent can't fan out again. */
   isSubagent?: boolean;
@@ -202,6 +247,10 @@ export interface InternalToolContext {
   requestReport?: (brief: {
     subject: string; material: string; angle?: string; audience?: string; accent?: string;
   }) => Promise<string>;
+  /** Cette conversation a été ouverte depuis le panneau latéral du navigateur
+   *  (0271) : la personne a une page sous les yeux, et `page_assist` est
+   *  enregistré pour la lire, la surligner ou y poser une bulle. */
+  companion?: boolean;
 }
 
 export const MAX_DELEGATION_DEPTH = 3;
@@ -349,7 +398,7 @@ async function awaitInlineApproval(
   const id = await ctx.requestApproval(req);
   onApprovalId?.(id);
   if (!ctx.conversationId) {
-    return `⏳ Action « ${summary} » mise en attente d'approbation (id ${id}). Approuve-la depuis le chat direct de l'agent pour que je l'exécute.`;
+    return `⏳ Action « ${summary} » mise en attente d'approbation (id ${id}). Elle attend une décision dans « À valider » (module Travail) et s'exécutera dès qu'elle sera autorisée.`;
   }
 
   // Surface the approval inline, live, while the run keeps turning.
@@ -403,6 +452,7 @@ function gate(ctx: InternalToolContext, input: GateInput) {
     admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId,
     agentId: ctx.agentId, runId: ctx.runId, conversationId: ctx.conversationId ?? null,
     serviceDashboardId: ctx.serviceDashboardId ?? null, autopilot: !!ctx.autopilot,
+    autonomy: ctx.autonomy,
   }, input);
 }
 
@@ -551,18 +601,23 @@ async function sendBrowserCommand(
   deviceId: string,
   action: string,
   params: Record<string, unknown>,
+  /** Le canal (control par défaut) et l'attente maximale. Le compagnon (0269)
+   *  n'attend pas 45 s : une bulle ou un surlignage s'affiche ou ne s'affiche
+   *  pas, et un run ne doit pas rester suspendu à un panneau fermé. */
+  opts: { channel?: "control" | "companion"; waitMs?: number } = {},
 ): Promise<string> {
   const { data: cmd, error } = await ctx.admin.from("browser_commands").insert({
     workspace_id: ctx.workspaceId, device_id: deviceId,
     agent_id: ctx.agentId, run_id: ctx.runId,
     action, params,
+    ...(opts.channel ? { channel: opts.channel } : {}),
   }).select("id").single();
   if (error || !cmd) return `ERROR: commande non enregistrée (${error?.message ?? "inconnu"})`;
 
   // Attente du compte rendu. L'extension interroge toutes les ~1,5 s ; au pire
   // elle dormait et son alarme la réveille sous 30 s. Au-delà, c'est que le
   // navigateur est fermé — le dire vaut mieux que bloquer le run.
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + (opts.waitMs ?? 45_000);
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 1200));
     const { data: row } = await ctx.admin.from("browser_commands")
@@ -1704,6 +1759,42 @@ const SIMULATION_SESSION_SCHEMA_HINT = `For kind="simulation_session", content M
   "next_steps": ["string"]
 }
 Quote real persona reactions in "signals" — invented quotes make the whole artifact worthless. "sentiment" must have one entry per round played.`;
+
+/**
+ * The internal tools (custom connectors, 0267) an agent may use: ACTIVE, in its
+ * project, and either project-wide or reserved to its service. Loaded once per
+ * run so each `ext_*` tool can expose a real operation enum. Pass `only` to load
+ * specific connectors (lazy path), otherwise the agent's granted rows are read.
+ */
+export async function loadCustomConnectorSnapshots(
+  admin: SupabaseClient,
+  opts: { projectId: string; serviceDashboardId: string | null; agentId?: string; only?: string[] },
+): Promise<CustomConnectorSnapshot[]> {
+  let ids = opts.only ?? [];
+  if (!opts.only && opts.agentId) {
+    const { data } = await admin.from("internal_agent_tools").select("config")
+      .eq("agent_id", opts.agentId).eq("kind", "custom_connector").eq("enabled", true);
+    ids = ((data ?? []) as Array<{ config: Record<string, unknown> | null }>)
+      .map((r) => String(r.config?.connector_id ?? "")).filter(Boolean);
+  }
+  if (!ids.length) return [];
+  const { data } = await admin.from("custom_connectors")
+    .select("id, name, slug, description, base_url, transport, operations, policy, status, project_id, service_dashboard_id")
+    .in("id", ids).eq("status", "active").eq("project_id", opts.projectId);
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .filter((c) => !c.service_dashboard_id || c.service_dashboard_id === opts.serviceDashboardId)
+    .map((c) => {
+      const policy = normalizeConnectorPolicy(c.policy);
+      return {
+        id: String(c.id), name: String(c.name), slug: String(c.slug),
+        description: (c.description as string | null) ?? null,
+        base_url: String(c.base_url ?? ""), transport: c.transport === "relay" ? "relay" : "direct",
+        operations: normalizeConnectorOperations(c.operations),
+        allow_raw: policy.allow_raw, raw_methods: policy.raw_methods, path_allowlist: policy.path_allowlist,
+        read_only: policy.read_only, approval: policy.approval,
+      } satisfies CustomConnectorSnapshot;
+    });
+}
 
 export function buildInternalToolset(
   rows: AgentToolRow[],
@@ -3294,6 +3385,11 @@ export function buildInternalToolset(
   // dashboard so the orchestrator can build out its team by request.
   let agentsCreatedThisRun = 0;
   tools.set("create_agent", {
+    // The service's assistant creates agents through manage_agents, which also
+    // wires connectors, skills and tools in the same call. The bare version
+    // stays executable for it (a model that learned the name still works) but
+    // is no longer advertised next to the complete one.
+    hidden: ctx.isOrchestrator === true && !ctx.isSubagent,
     def: {
       name: "create_agent",
       description:
@@ -3329,6 +3425,63 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- create_agent: spin up a new teammate agent on request (passive until used; always available).");
+
+  // ── Administration de l'espace : l'assistant du service seulement ─────────
+  // L'assistant agit pour la personne qui lui parle : créer et configurer des
+  // agents, tenir le suivi de travail. Les autres agents gardent leurs outils
+  // de travail ; leur donner ceux-ci reviendrait à laisser chaque agent
+  // reconfigurer ses collègues. Le rôle de la personne, lu une fois par run,
+  // borne ce qu'il peut écrire, exactement comme dans le panneau.
+  // Implémentation partagée avec ai-agent-chat : _shared/assistant-ops.ts.
+  if (ctx.isOrchestrator && !ctx.isSubagent) {
+    let actorP: Promise<OpsActor> | null = null;
+    const opsActor = () => (actorP ??= (async (): Promise<OpsActor> => {
+      const who = ctx.actingUserId ?? ctx.userId ?? null;
+      return {
+        admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId,
+        dashboardId: ctx.serviceDashboardId ?? null, roomId: ctx.serviceRoomId ?? null,
+        userId: who, role: await resolveOpsRole(ctx.admin, ctx.workspaceId, who),
+        agentId: ctx.agentId, agentName: ctx.agentName ?? null,
+      };
+    })());
+    // Les cartes (« Ouvrir l'agent », « Connecter ») passent par le même canal
+    // que render_ui et prennent leur numéro [[ui:N]] dans la même suite.
+    const deliver = async (res: OpsResult): Promise<string> => {
+      const tags: string[] = [];
+      for (const block of res.ui ?? []) {
+        await ctx.logEvent("ui", { block });
+        uiBlockCount++;
+        tags.push(`[[ui:${uiBlockCount}]]`);
+      }
+      return tags.length
+        ? `${res.text}\n\nCartes jointes : ${tags.join(" ")}. Écris chaque balise seule sur sa ligne dans ta réponse finale, là où la carte doit apparaître.`
+        : res.text;
+    };
+    // Les modèles posent souvent les champs à plat, à côté d'« action » : on
+    // les accepte au lieu de répondre « name est requis » à un appel lisible.
+    const opsParams = (args: Record<string, unknown>) => ({
+      ...Object.fromEntries(Object.entries(args).filter(([k]) => k !== "action" && k !== "params")),
+      ...((args.params && typeof args.params === "object") ? args.params as Record<string, unknown> : {}),
+    });
+    tools.set("manage_agents", {
+      family: "ADMIN",
+      def: agentOpsToolDef(),
+      run: async (args) => deliver(await runAgentOps(await opsActor(), str(args.action), opsParams(args))),
+    });
+    tools.set("manage_projects", {
+      family: "ADMIN",
+      def: projectOpsToolDef(),
+      run: async (args) => deliver(await runProjectOps(await opsActor(), str(args.action), opsParams(args))),
+    });
+    tools.set("manage_connectors", {
+      family: "ADMIN",
+      def: connectorOpsToolDef(),
+      run: async (args) => deliver(await runConnectorOps(await opsActor(), str(args.action), opsParams(args))),
+    });
+    summaryLines.push("- manage_agents: créer, lire et configurer les agents (prompt, connecteurs, skills, outils, MCP).");
+    summaryLines.push("- manage_connectors: outils internes de l'entreprise (Argo CD, Vault, Grafana…) : rédiger un brouillon de connecteur, le confier à un collaborateur.");
+    summaryLines.push("- manage_projects: le suivi de travail (projets, work items, équipes, pages) et la mise au travail des agents.");
+  }
 
   // Draft a reusable PROCEDURE from a plain-language request. The workflow is
   // created as a DRAFT, never active: turning a sentence into something that
@@ -3433,7 +3586,7 @@ export function buildInternalToolset(
       const { data: mission, error } = await ctx.admin.from("internal_agent_missions").insert({
         agent_id: ctx.agentId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
         title,
-        brief: `${brief}\n\n---\n💡 Proposée par l'agent${value ? ` — Valeur attendue : ${value}` : ""}`,
+        brief: `${brief}\n\n---\n💡 Proposée par le collaborateur${value ? `. Valeur attendue : ${value}` : ""}`,
         status: "paused",
         board_column: "backlog",
         delegated_by_agent: ctx.agentId,
@@ -3640,19 +3793,39 @@ export function buildInternalToolset(
         const value = Number(args.value);
         if (!id || !Number.isFinite(value)) return "ERROR: objective_id et value (numérique) sont requis.";
         const { data: before } = await ctx.admin.from("company_objectives")
-          .select("title, metric, unit, target_value").eq("id", id).eq("project_id", ctx.projectId).maybeSingle();
+          .select("title, metric, unit, target_value, direction, status").eq("id", id).eq("project_id", ctx.projectId).maybeSingle();
         if (!before) return "ERROR: cet objectif n'existe pas dans cette entreprise.";
+        const b = before as {
+          title: string; metric: string | null; unit: string | null; target_value: number | null;
+          direction: "increase" | "decrease" | "maintain" | null; status: string;
+        };
+        // On track or not is decided HERE, in code (0269): comparing two numbers
+        // is not a judgement. « maintain » tolerates 5 % around the target.
+        const target = b.target_value;
+        const offTrack = target == null ? null
+          : b.direction === "decrease" ? value > target
+          : b.direction === "maintain" ? Math.abs(value - target) > Math.abs(target) * 0.05
+          : value < target;
+        // Only the two live states move: a draft, a done or an abandoned
+        // objective keeps the status a person gave it.
+        const nextStatus = offTrack === true && b.status === "active" ? "at_risk"
+          : offTrack === false && b.status === "at_risk" ? "active"
+          : b.status;
         const { error } = await ctx.admin.from("company_objectives").update({
           current_value: value,
           measured_at: new Date().toISOString(),
           measured_by: "agent",
           measured_note: str(args.note).slice(0, 600) || null,
+          status: nextStatus,
           updated_at: new Date().toISOString(),
         }).eq("id", id).eq("project_id", ctx.projectId);
         if (error) return `ERROR: ${error.message}`;
-        const b = before as { title: string; metric: string | null; unit: string | null; target_value: number | null };
-        return `Mesure enregistrée : « ${b.title} » — ${b.metric ?? "valeur"} = ${value}${b.unit ? ` ${b.unit}` : ""}` +
-          `${b.target_value != null ? ` (cible ${b.target_value}${b.unit ? ` ${b.unit}` : ""})` : ""}. ` +
+        const unit = b.unit ? ` ${b.unit}` : "";
+        return `Mesure enregistrée : « ${b.title} » — ${b.metric ?? "valeur"} = ${value}${unit}` +
+          `${target != null ? ` (cible ${target}${unit})` : ""}. ` +
+          (offTrack === true
+            ? "ÉCART : l'objectif n'est pas tenu. Agis pour le ramener dans les limites de ton autonomie, ou dépose les actions nécessaires avec propose_mission ; l'équipe le voit dans « À valider ». "
+            : offTrack === false ? "TENU : l'objectif est atteint. " : "") +
           `Elle est datée et attribuée à toi : le tableau de bord montrera qui l'a mise à jour.`;
       }
 
@@ -4234,6 +4407,123 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- guide_user: coach a person step by step INSIDE a real web tool (highlight + instruction + wait for their gesture). Never acts for them.");
+
+  // ── LE COMPAGNON : la page que la personne a sous les yeux (0271) ─────────
+  //
+  // Quand on parle à un collaborateur depuis le panneau latéral du navigateur,
+  // la conversation porte sur une page. Le plus utile qu'il puisse faire n'est
+  // pas de décrire « le troisième paragraphe sous le tableau » : c'est de le
+  // MONTRER. D'où un outil à part, plus étroit que user_browser (qui agit) et
+  // que guide_user (qui attend un geste) : lire, surligner, poser une bulle.
+  //
+  // Enregistré seulement pour une conversation ouverte depuis le panneau : un
+  // agent de mission n'a pas à écrire sur l'écran de quelqu'un sans qu'on lui
+  // ait parlé. Et le serveur ne remet une LECTURE que tant que le panneau est
+  // ouvert (bail companion_until) — panneau fermé, il reste les bulles.
+  if (ctx.companion && ctx.conversationId) {
+    const companionDevice = async (): Promise<{ id: string; open: boolean } | null> => {
+      const { data: conv } = await ctx.admin.from("internal_agent_conversations")
+        .select("user_id").eq("id", ctx.conversationId!).maybeSingle();
+      const userId = (conv as { user_id?: string | null } | null)?.user_id;
+      if (!userId) return null;
+      const { data } = await ctx.admin.from("recorder_devices")
+        .select("id, companion_until, last_seen_at")
+        .eq("workspace_id", ctx.workspaceId).eq("user_id", userId).is("revoked_at", null)
+        .gt("last_seen_at", new Date(Date.now() - 3 * 60_000).toISOString())
+        .order("companion_until", { ascending: false, nullsFirst: false })
+        .order("last_seen_at", { ascending: false }).limit(1);
+      const d = (data ?? [])[0] as { id: string; companion_until: string | null } | undefined;
+      return d ? { id: d.id, open: !!d.companion_until && Date.parse(d.companion_until) > Date.now() } : null;
+    };
+
+    tools.set("page_assist", {
+      family: "EXECUTION",
+      def: {
+        name: "page_assist",
+        description:
+          "La page web que la personne consulte à côté de ce chat (panneau latéral de son navigateur). " +
+          "look : lire la page en cours (texte principal, url, titre ; offset pour la suite d'une longue page), seulement panneau ouvert. " +
+          "highlight : surligner dans SA page les passages ou éléments dont tu parles, pour attirer son attention au lieu de décrire où regarder ; " +
+          "chaque cible = {text:\"phrase exacte copiée de la page\"} ou {label:\"libellé visible d'un bouton/champ\", role?}, avec une note courte facultative. " +
+          "say : une bulle dans la page (utile panneau fermé, ou pour ancrer une remarque sur un élément avec target). clear : retirer surlignages et bulles. " +
+          "Jamais de clic ni de saisie : pour agir, c'est user_browser.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["look", "highlight", "say", "clear"] },
+            targets: {
+              type: "array", maxItems: 8,
+              description: "highlight : les passages/éléments à surligner, dans l'ordre où tu en parles.",
+              items: {
+                type: "object",
+                properties: {
+                  text: { type: "string", description: "Extrait exact du texte de la page (5 à 20 mots suffisent)." },
+                  label: { type: "string", description: "Libellé visible d'un bouton, lien ou champ." },
+                  role: { type: "string" },
+                  css: { type: "string" },
+                  note: { type: "string", description: "Pourquoi tu le montres, 12 mots max." },
+                },
+                additionalProperties: false,
+              },
+            },
+            message: { type: "string", description: "say : le texte de la bulle (2 phrases max)." },
+            target: { type: "object", description: "say : élément auquel accrocher la bulle ({text} ou {label})." },
+            offset: { type: "number", description: "look : reprendre la lecture à ce caractère (pages longues)." },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const action = str(args.action);
+        if (!["look", "highlight", "say", "clear"].includes(action)) {
+          return `ERROR: action inconnue « ${action} ». Disponibles : look, highlight, say, clear.`;
+        }
+        const device = await companionDevice();
+        if (!device) {
+          return "Le navigateur de la personne n'est pas joignable (extension fermée ou poste non appairé). "
+            + "Réponds simplement dans le chat, sans faire référence à un surlignage.";
+        }
+        if (action === "look" && !device.open) {
+          return "Le panneau est fermé : la page ne peut pas être lue. Appuie-toi sur le contexte joint au message, "
+            + "ou demande à la personne de rouvrir le panneau si tu dois voir la page.";
+        }
+        const params: Record<string, unknown> = { agent: ctx.agentName ?? "Collaborateur" };
+        if (action === "highlight") {
+          const targets = (Array.isArray(args.targets) ? args.targets : [])
+            .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+            .slice(0, 8);
+          if (!targets.length) return "ERROR: highlight demande au moins une cible dans targets.";
+          params.targets = targets;
+        }
+        if (action === "say") {
+          const message = str(args.message).trim();
+          if (!message) return "ERROR: say demande un message.";
+          params.message = message.slice(0, 600);
+          if (args.target && typeof args.target === "object") params.target = args.target;
+        }
+        if (action === "look" && Number.isFinite(Number(args.offset))) params.offset = Math.max(0, Number(args.offset));
+
+        const raw = await sendBrowserCommand(ctx, device.id, action, params, { channel: "companion", waitMs: 20_000 });
+        if (raw.startsWith("ERROR")) return raw;
+        if (action !== "highlight") return raw;
+        // Ce qui n'a pas été trouvé doit revenir NOMMÉ : surligner la moitié des
+        // passages et dire « fait » laisserait l'agent parler d'un repère
+        // invisible.
+        try {
+          const res = JSON.parse(raw) as { shown?: number; missing?: string[] };
+          const missing = Array.isArray(res.missing) ? res.missing : [];
+          return missing.length
+            ? `Surligné : ${res.shown ?? 0}. Introuvable dans la page : ${missing.map((m) => `« ${m} »`).join(", ")}. `
+              + "Pour ceux-là, cite le texte exact (look pour relire) ou décris-les dans ta réponse."
+            : `Surligné : ${res.shown ?? 0} élément(s), visibles dans sa page. Tu peux y faire référence (« ce que je surligne »).`;
+        } catch {
+          return raw;
+        }
+      },
+    });
+    summaryLines.push("- page_assist: the web page the user has open beside this chat (browser side panel): read it, highlight passages/elements you talk about, or drop a bubble in it.");
+  }
 
 
   // ── LE PARCOURS, ET CE QU'IL APPREND SUR LUI-MÊME ─────────────────────────
@@ -6263,6 +6553,144 @@ export function buildInternalToolset(
     summaryLines.push(`- ${toolName}: act on ${toolkit} via Composio.`);
   }
 
+  // custom_connector rows: an INTERNAL tool the client described itself —
+  // Argo CD, Vault, Grafana, Loki, a home-grown API — possibly on an internal
+  // URL reached through the relay the client deploys in its own network
+  // (migration 0267). The agent picks a DECLARED operation and its params; it
+  // never sees a URL it can rewrite nor a secret. connector-action decrypts,
+  // calls, redacts the response and writes the hash-chained access log.
+  // Approval floor: [destructive] (and every call under an "all" policy) waits
+  // for a human whatever the autonomy level; [write] goes through PolicyGuard.
+  for (const row of enabled.filter((r) => r.kind === "custom_connector")) {
+    const connectorId = str(row.config?.connector_id);
+    if (!connectorId) continue;
+    const preloaded = ctx.customConnectors?.find((c) => c.id === connectorId);
+    // Preloaded but absent: draft, disabled, or outside this agent's service.
+    if (ctx.customConnectors && !preloaded) continue;
+    const granted = Array.isArray(row.config?.operations)
+      ? (row.config.operations as unknown[]).map(String).filter(Boolean)
+      : [];
+    const credentialId = str(row.config?.credential_id) || null;
+    const isGranted = (name: string) => !granted.length || granted.includes(name);
+    const toolName = slugToToolName("ext", preloaded?.slug || str(row.config?.slug) || row.name);
+    const label = preloaded?.name ?? row.name;
+    const ops = (preloaded?.operations ?? []).filter((o) => isGranted(o.name));
+    const rawAllowed = !!preloaded?.allow_raw && isGranted("request");
+    const opNames = [...ops.map((o) => o.name), ...(rawAllowed ? ["request"] : [])];
+    if (preloaded && !opNames.length) continue;
+
+    const describeOp = (o: ConnectorOperation) => {
+      const params = (o.params ?? []).map((p) =>
+        `${p.name}${p.required ? "*" : ""}${p.type !== "string" ? `:${p.type}` : ""}${p.enum?.length ? `=${p.enum.join("|")}` : ""}`);
+      return `${o.name} [${o.risk}]: ${o.description}${params.length ? ` (params: ${params.join(", ")})` : ""}`;
+    };
+    let host = "";
+    try { host = preloaded ? new URL(preloaded.base_url).host : ""; } catch { /* brouillon sans URL */ }
+    const description = preloaded
+      ? `Internal tool "${label}"${host ? ` (${host}${preloaded.transport === "relay" ? ", reached through the company's relay" : ""})` : ""}` +
+        `${preloaded.description ? `: ${preloaded.description}` : ""}. Operations: ${ops.map(describeOp).join("; ")}.` +
+        (rawAllowed
+          ? ` "request" = raw HTTP call (methods: ${preloaded.raw_methods.join(", ")}; allowed path prefixes: ${preloaded.path_allowlist.join(", ") || "none"}); give method, path, query, body.`
+          : "") +
+        " [read] runs directly. [write] may wait for a quick human approval. [destructive] ALWAYS waits for a human approval." +
+        " Credentials are handled server-side: never ask for, invent or pass a token. [masqué] in a response = a secret that was redacted."
+      : `Internal tool "${label}". Call with no "operation" to list its operations, then call again with one.`;
+
+    tools.set(toolName, {
+      // The operation list IS the contract (names go into a JSON-schema enum).
+      incompressible: true,
+      family: "INTEGRATIONS",
+      def: {
+        name: toolName,
+        description,
+        parameters: {
+          type: "object",
+          properties: {
+            operation: preloaded
+              ? { type: "string", enum: opNames, description: "The operation to run (see the tool description)." }
+              : { type: "string", description: "Operation name. Omit to list the available operations." },
+            params: { type: "object", description: "The operation's parameters (* = required)." },
+            ...(rawAllowed || !preloaded
+              ? {
+                  method: { type: "string", description: "Raw request only: HTTP method." },
+                  path: { type: "string", description: "Raw request only: path starting with /, no query string." },
+                  query: { type: "object", description: "Raw request only: query string parameters." },
+                  body: { type: "object", description: "Raw request only: JSON body." },
+                }
+              : {}),
+            reason: { type: "string", description: "One-sentence justification, shown to the human who approves." },
+          },
+          ...(preloaded ? { required: ["operation"] } : {}),
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const snap = preloaded ?? (await loadCustomConnectorSnapshots(ctx.admin, {
+          projectId: ctx.projectId, serviceDashboardId: ctx.serviceDashboardId ?? null, only: [connectorId],
+        }))[0];
+        if (!snap) return "ERROR: this internal tool is unavailable (draft, disabled, or reserved to another service).";
+        const available = snap.operations.filter((o) => isGranted(o.name));
+        const operation = str(args.operation);
+        if (!operation) {
+          return `Operations of "${snap.name}": ${available.map(describeOp).join("; ") || "none"}` +
+            (snap.allow_raw && isGranted("request") ? `; request [raw ${snap.raw_methods.join("/")}] on ${snap.path_allowlist.join(", ")}` : "");
+        }
+        if (!isGranted(operation)) return `REFUSÉ : l'opération « ${operation} » n'est pas accordée à ce collaborateur.`;
+        const op = operation === "request" ? null : available.find((o) => o.name === operation);
+        if (operation !== "request" && !op) {
+          return `ERROR: unknown operation "${operation}". Available: ${available.map((o) => o.name).join(", ")}.`;
+        }
+        const method = str(args.method, "GET").toUpperCase();
+        const risk: "read" | "write" | "destructive" = op ? op.risk : (method === "GET" || method === "HEAD" ? "read" : "write");
+        if (snap.read_only && risk !== "read") return "REFUSÉ : ce connecteur est en lecture seule.";
+        const params = (args.params && typeof args.params === "object") ? args.params as Record<string, unknown> : {};
+        const raw = operation === "request"
+          ? {
+              method, path: str(args.path),
+              query: (args.query && typeof args.query === "object") ? args.query : undefined,
+              body: args.body ?? undefined,
+            }
+          : undefined;
+
+        const hard = risk === "destructive" || snap.approval === "all";
+        const soft = risk === "write" && snap.approval !== "destructive_only";
+        const g = await gate(ctx, {
+          tool: `ext:${snap.slug}`, action: operation, params,
+          legacyApproval: hard || (soft && !ctx.autopilot), knownWrite: risk !== "read",
+        });
+        if (g.decision === "block") return g.message!;
+
+        const payload: Record<string, unknown> = {
+          connector_id: snap.id, connector_name: snap.name, operation, params, raw,
+          credential_id: credentialId, allowed_operations: granted.length ? granted : null,
+          agent_id: ctx.agentId, run_id: ctx.runId, conversation_id: ctx.conversationId ?? null,
+          actor_user_id: ctx.actingUserId ?? ctx.userId ?? null, risk,
+          // A destructive gesture is approved ONCE: its scope never matches again.
+          ...(risk === "destructive" ? { nonce: crypto.randomUUID() } : {}),
+        };
+        if (hard || g.decision === "approve") {
+          let shown = "";
+          try { shown = JSON.stringify(raw ? { [raw.method]: raw.path } : params); } catch { /* vide */ }
+          const summary = `${snap.name} · ${operation}${shown && shown !== "{}" ? ` ${shown.slice(0, 140)}` : ""}${risk === "destructive" ? " (irréversible)" : ""}`;
+          return await awaitInlineApproval(ctx, {
+            tool_name: toolName, action_kind: "custom_connector", payload, reason: str(args.reason) || null,
+          }, summary, g.linkApproval);
+        }
+        const base = Deno.env.get("SUPABASE_URL");
+        const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (!base || !key) return "ERROR: internal tools are not configured.";
+        const res = await fetch(`${base}/functions/v1/connector-action`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "custom.call", source: "collaborator", ...payload }),
+        });
+        const out = await res.json().catch(() => null) as { text?: string; error?: string } | null;
+        return cap(out?.text ?? out?.error ?? `HTTP ${res.status}`, 12_000);
+      },
+    });
+    summaryLines.push(`- ${toolName}: internal tool ${label}${opNames.length ? ` (${opNames.join(", ")})` : ""}.`);
+  }
+
   // crm rows: read + write the in-house CRM (contacts, deals, companies, …).
   // One tool with an action discriminator, same shape as connector_action.
   // Reads (list_objects/search_records/get_record) run directly; writes
@@ -7630,7 +8058,11 @@ export function buildInternalToolset(
   // load_toolset round). The heavy families load on demand: DATA (allowlisted
   // tables), TEAM (missions/delegation) and INTEGRATIONS (connectors + one
   // schema per remote MCP tool, the real fan-out).
-  const DEFAULT_FAMILIES: ToolFamily[] = ["EXECUTION", "WEB", "DELIVER", "PLAN", "MEMORY"];
+  // The service assistant administers the workspace on request: its ADMIN
+  // tools must be callable without a load_toolset round.
+  const DEFAULT_FAMILIES: ToolFamily[] = ctx.isOrchestrator && !ctx.isSubagent
+    ? ["EXECUTION", "WEB", "DELIVER", "PLAN", "MEMORY", "ADMIN"]
+    : ["EXECUTION", "WEB", "DELIVER", "PLAN", "MEMORY"];
 
   tools.set("load_toolset", {
     family: "PLAN",
@@ -7752,7 +8184,7 @@ export function buildInternalToolset(
 // with one usage rule per family. Replaces the old flat summaryLines dump —
 // the flat list buried execution tools among meta-tools, which fed the
 // "meta-work instead of real work" failure mode.
-const FAMILY_ORDER = ["EXECUTION", "WEB", "DATA", "PLAN", "DELIVER", "MEMORY", "TEAM", "INTEGRATIONS"] as const;
+const FAMILY_ORDER = ["EXECUTION", "WEB", "DATA", "PLAN", "DELIVER", "MEMORY", "TEAM", "ADMIN", "INTEGRATIONS"] as const;
 type ToolFamily = (typeof FAMILY_ORDER)[number];
 const FAMILY_META: Record<ToolFamily, { label: string; rule: string }> = {
   EXECUTION: { label: "EXECUTION — files, code, shell, browser", rule: "Your hands. REAL work happens here: create files, run commands, process data, build and test. Prefer these tools for any concrete task." },
@@ -7762,6 +8194,7 @@ const FAMILY_META: Record<ToolFamily, { label: string; rule: string }> = {
   DELIVER: { label: "DELIVERABLES", rule: "Persist each final output ONCE. Never call create_deliverable repeatedly for the same artifact." },
   MEMORY: { label: "MEMORY", rule: "Save a durable fact once; recall with search_memory. Memory records knowledge — it does not do work." },
   TEAM: { label: "TEAM & DELEGATION", rule: "STRICT: creating missions/messages is coordination, NOT execution. Never create a mission for yourself during a mission run. Max 2 delegations per run. When in doubt, do the work yourself with EXECUTION tools." },
+  ADMIN: { label: "ADMINISTRATION — agents & suivi de travail", rule: "Tu agis pour la personne qui te parle : lis (list/get) avant d'écrire, fais en un appel ce qui peut l'être, et ne mets un agent au travail que si on te le demande." },
   INTEGRATIONS: { label: "INTEGRATIONS & OTHER", rule: "Connectors, internal functions, custom webhooks — check each tool's description." },
 };
 const TOOL_FAMILY: Record<string, ToolFamily> = {
@@ -7788,6 +8221,7 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
   save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY", search_past_work: "MEMORY",
   create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
   create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM", propose_mission: "TEAM", create_agent: "TEAM", create_workflow: "TEAM",
+  manage_agents: "ADMIN", manage_projects: "ADMIN", manage_connectors: "ADMIN",
   send_email: "INTEGRATIONS", security_scan: "INTEGRATIONS",
 };
 

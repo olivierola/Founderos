@@ -66,13 +66,13 @@ export function CreateAgentPage({ dashboardId, workspaceId, projectId }: {
   const [params] = useSearchParams();
   const base = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
   // ?type=public lands straight on the public form — that's how the roster's
-  // "Agent public" entry gets here.
+  // "Collaborateur public" entry gets here.
   const [mode, setMode] = useState<CreateMode>(params.get("type") === "public" ? "public" : "custom");
 
   const MODES: { key: CreateMode; label: string; icon?: typeof SquaresFourIcon }[] = [
     { key: "custom", label: "Build Your Own" },
     { key: "templates", label: "Templates", icon: SquaresFourIcon },
-    { key: "public", label: "Agent public", icon: GlobeIcon },
+    { key: "public", label: "Collaborateur public", icon: GlobeIcon },
   ];
 
   return (
@@ -80,9 +80,9 @@ export function CreateAgentPage({ dashboardId, workspaceId, projectId }: {
       {/* Breadcrumb + the Build/Templates/Public switch, as in the mockup. */}
       <div className="relative flex items-center">
         <nav className="flex items-center gap-2 text-sm">
-          <button onClick={() => navigate(`${base}/agents`)} className="text-muted-foreground transition-colors hover:text-foreground">Agents</button>
+          <button onClick={() => navigate(`${base}/agents`)} className="text-muted-foreground transition-colors hover:text-foreground">Collaborators</button>
           <span className="text-muted-foreground">›</span>
-          <span className="font-medium">Create Agent</span>
+          <span className="font-medium">Create Collaborateur</span>
         </nav>
         <div className="absolute left-1/2 -translate-x-1/2">
           <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card/60 p-1">
@@ -120,7 +120,7 @@ function BuildPublicAgent({ dashboardId, workspaceId, projectId, base }: {
   return (
     <div className="mx-auto mt-8 max-w-6xl">
       <div className="mb-7">
-        <h1 className="text-2xl font-semibold tracking-tight">Nouvel agent public</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Nouvel collaborateur public</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Il répond à vos clients depuis sa base de connaissances et s'intègre en widget sur votre
           site. Les modèles marqués « MCP » vont plus loin : ils interrogent votre boutique en
@@ -253,7 +253,7 @@ function PublicTemplateConfig({ preset, onClose, dashboardId, workspaceId, proje
         await callEdge("mcp-gateway", { action: "discover", server_id: serverId }).catch(() => {});
       }
 
-      setStep("Création de l'agent…");
+      setStep("Création du collaborateur…");
       const { seed } = preset;
       const { data, error: err } = await supabase
         .from("rag_agents")
@@ -319,7 +319,7 @@ function PublicTemplateConfig({ preset, onClose, dashboardId, workspaceId, proje
         </div>
 
         <div className="mt-5 space-y-4">
-          <SoftField label="Nom de l'agent">
+          <SoftField label="Nom du collaborateur">
             <SoftInput
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -534,7 +534,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
         </button>
         <input
           value={name} onChange={(e) => setName(e.target.value)} autoFocus
-          placeholder="Nom de l'agent"
+          placeholder="Nom du collaborateur"
           className="min-w-0 flex-1 bg-transparent text-[26px] font-semibold tracking-tight placeholder:text-muted-foreground/50 focus:outline-none"
         />
       </div>
@@ -584,7 +584,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
         {provider === OWN_MODELS
-          ? "L'agent appellera votre propre endpoint avec votre clé, aucune inférence ne passe par nos fournisseurs."
+          ? "Le collaborateur appellera votre propre endpoint avec votre clé, aucune inférence ne passe par nos fournisseurs."
           : ownModelOptions.length
             ? "Vous pouvez aussi utiliser vos propres modèles (option « Vos modèles »)."
             : <>Pour utiliser vos propres modèles (API cloud ou endpoint interne), ajoutez-les dans <span className="font-medium text-foreground">AI Ops → Modèles</span>.</>}
@@ -672,7 +672,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
         <label className="mb-2 block text-sm text-muted-foreground">Instructions</label>
         <Textarea
           rows={11} value={instructions} onChange={(e) => setInstructions(e.target.value)}
-          placeholder="Que fait cet agent ? Sa procédure de travail, étape par étape, et ses règles absolues."
+          placeholder="Que fait ce collaborateur ? Sa procédure de travail, étape par étape, et ses règles absolues."
           className="resize-none rounded-2xl bg-background/60 text-sm"
         />
       </div>

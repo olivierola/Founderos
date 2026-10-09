@@ -86,7 +86,7 @@ export function DeliverablesPage({ project }: { project: PjProject }) {
       <PageHeader
         icon={<PackageIcon className="h-4 w-4" />}
         title="Livrables"
-        subtitle="Ce que les agents ont produit sur ce projet, et de quoi le vérifier."
+        subtitle="Ce que les collaborateurs ont produit sur ce projet, et de quoi le vérifier."
         actions={
           <>
             <Tabs
@@ -118,7 +118,7 @@ export function DeliverablesPage({ project }: { project: PjProject }) {
             title={all.length ? "Rien dans cette catégorie" : "Aucun livrable"}
             hint={all.length
               ? "Changez d'onglet pour voir le reste."
-              : "Confiez un work item à un agent : ce qu'il produira arrivera ici, rattaché à la demande qui l'a motivé."}
+              : "Confiez un work item à un collaborateur : ce qu'il produira arrivera ici, rattaché à la demande qui l'a motivé."}
           />
         ) : (
           <ul className="px-4 pb-6">

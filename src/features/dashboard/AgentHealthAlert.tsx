@@ -79,7 +79,7 @@ export function AgentHealthAlert({ projectId }: { projectId: string | null | und
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border/60 bg-card px-4 py-2.5 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5 font-medium text-foreground">
-          <CheckCircle2 className="h-4 w-4 text-emerald-500" weight="fill" /> Agents en bonne santé
+          <CheckCircle2 className="h-4 w-4 text-emerald-500" weight="fill" /> Collaborateurs en bonne santé
         </span>
         <span>{ended} runs terminés en {WINDOW_H} h · {failed.length} échec{failed.length > 1 ? "s" : ""} ({pct})</span>
         <span>· coût moyen {fmtUsd(avgCost)} / run</span>
@@ -99,7 +99,7 @@ export function AgentHealthAlert({ projectId }: { projectId: string | null | und
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         <span className={cn("flex items-center gap-1.5 font-semibold", bad ? "text-destructive" : "text-amber-600 dark:text-amber-400")}>
           {bad ? <XCircle className="h-4 w-4" weight="fill" /> : <AlertTriangle className="h-4 w-4" weight="fill" />}
-          {bad ? "Des agents échouent" : "Santé des agents à surveiller"}
+          {bad ? "Des collaborateurs échouent" : "Santé des collaborateurs à surveiller"}
         </span>
         <span className="text-xs text-muted-foreground">
           {failed.length} échec{failed.length > 1 ? "s" : ""} sur {ended} runs terminés en {WINDOW_H} h ({pct})

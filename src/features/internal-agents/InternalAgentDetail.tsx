@@ -110,6 +110,7 @@ import { InterleavedMessage, type UiBlock, type ArtifactOpenTarget } from "./UiB
 import { LeadSenseSettings } from "./leadsense/LeadSenseSettings";
 import { WorkspaceTab } from "./WorkspaceTab";
 import { chatUserBubble } from "@/lib/chatStyles";
+import { UserMessageBody, splitContextBlocks } from "@/features/companion/contextBlocks";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { BrandLogo } from "@/components/BrandLogo";
 import { toolSummary, orbStateForRun } from "./runEventMeta";
@@ -176,7 +177,7 @@ export function AgentTabContent({ agentId, tab, embedded }: { agentId: string; t
     },
   });
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
-  if (!agent) return <EmptyState icon={Bot} title="Agent not found" />;
+  if (!agent) return <EmptyState icon={Bot} title="Collaborateur not found" />;
   return (
     <>
       {tab === "chat" && <ChatTab agent={agent} workspaceId={workspaceId} projectId={projectId} />}
@@ -322,7 +323,7 @@ export function AgentMcpTab({ agent }: { agent: InternalAgent }) {
         <div>
           <h2 className="text-lg font-semibold">Serveurs MCP</h2>
           <p className="mt-1 max-w-lg text-sm text-muted-foreground">
-            Activez des serveurs MCP pour cet agent : leurs outils deviennent utilisables pendant ses runs.
+            Activez des serveurs MCP pour ce collaborateur : leurs outils deviennent utilisables pendant ses runs.
           </p>
         </div>
         <Button variant="outline" size="sm" className="rounded-full shrink-0" onClick={() => navigate(mcpHome)}>
@@ -554,7 +555,7 @@ export function AgentConnectorsTab({ agent }: { agent: InternalAgent }) {
           the Admin Connecteurs tab; click to connect (redirects to Admin). */}
       {suggested.length > 0 && (
         <div className="mt-6">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggérés pour cet agent</h3>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggérés pour ce collaborateur</h3>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {suggested.map((s) => (
               <ToolkitCard
@@ -667,7 +668,7 @@ function ConnectorCapabilitiesDialog({
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant={enabled ? "outline" : "default"} onClick={onToggle}>
-            {enabled ? "Désactiver pour cet agent" : "Activer pour cet agent"}
+            {enabled ? "Désactiver pour ce collaborateur" : "Activer pour ce collaborateur"}
           </Button>
         </div>
       </DialogContent>
@@ -792,8 +793,8 @@ function ToolSetupReminder({
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold leading-snug">
                     {hasBlocking
-                      ? "Cet agent a besoin d'être configuré avant de travailler"
-                      : "Quelques réglages rendraient cet agent plus efficace"}
+                      ? "Ce collaborateur a besoin d'être configuré avant de travailler"
+                      : "Quelques réglages rendraient ce collaborateur plus efficace"}
                   </div>
                 </div>
                 <button
@@ -844,7 +845,7 @@ function ToolSetupReminder({
               "pointer-events-auto flex h-9 items-center gap-2 rounded-full border border-border/70 bg-background/85 pl-2.5 pr-3.5",
               "text-xs font-medium backdrop-blur-xl transition-colors hover:bg-background", tone.glow, tone.text,
             )}
-            title={hasBlocking ? "Cet agent a besoin d'être configuré" : "Quelques réglages rendraient cet agent plus efficace"}
+            title={hasBlocking ? "Ce collaborateur a besoin d'être configuré" : "Quelques réglages rendraient ce collaborateur plus efficace"}
           >
             <span className="relative flex h-2 w-2">
               {hasBlocking && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500/60" />}
@@ -888,6 +889,15 @@ export function ChatTab({
   headerLeading,
   headerTrailing,
   onConversationChange,
+  onOpenInPanel,
+  compact,
+  conversationOrigin,
+  prepareMessage,
+  composerChips,
+  composerAbove,
+  emptyExtras,
+  sendRequest,
+  onSendRequestHandled,
 }: {
   agent: InternalAgent;
   workspaceId: string | null;
@@ -900,6 +910,27 @@ export function ChatTab({
   /** Which session is open, for a host that acts on the same conversation
    *  (the dashboard's side panel posts the terminal's commands into it). */
   onConversationChange?: (conversationId: string | null) => void;
+  /** A host with a side panel (the dashboard) opens deliverables and documents
+   *  there, beside the conversation. Without it, the old routes are used. */
+  onOpenInPanel?: (target: ArtifactOpenTarget) => void;
+  // ── The browser side panel (features/companion) hosts this same chat. ──
+  /** Narrow host: tighter paddings, smaller hero. */
+  compact?: boolean;
+  /** Stamped on a conversation this chat creates (`companion` = the panel). */
+  conversationOrigin?: string;
+  /** Rewrites the outgoing message just before it is stored: the panel appends
+   *  the page, selection or element the person is looking at. */
+  prepareMessage?: (text: string) => Promise<string>;
+  /** Context chips shown inside the composer card. */
+  composerChips?: React.ReactNode;
+  /** A row above the composer (page-aware suggestions). */
+  composerAbove?: React.ReactNode;
+  /** Replaces the two default cards of the empty state. */
+  emptyExtras?: React.ReactNode;
+  /** A message to send on the host's behalf (shortcut, context menu); sent
+   *  once per id, as soon as the chat is free. */
+  sendRequest?: { id: string; text: string } | null;
+  onSendRequestHandled?: (id: string) => void;
 }) {
   const confirm = useConfirm();
   const { user } = useAuth();
@@ -908,14 +939,24 @@ export function ChatTab({
   const assistant = useAssistant();
   const { workspaceSlug, projectSlug } = useParams();
   function openDeliverable(id: string) {
+    // The deliverables tab no longer exists: the redirect behind this route
+    // drops `deliverables?d=` and lands back on the chat, so prefer the panel.
+    if (onOpenInPanel) {
+      onOpenInPanel({ id, table: "deliverable", kind: "document", title: "", agentId: agent.id });
+      return;
+    }
     navigate(`/app/${workspaceSlug}/${projectSlug}/agent/internal/${agent.id}/deliverables?d=${id}`);
   }
-  /** Where an artifact card opens depends on what backs it. Outside a Room
-   *  there is no side panel, so a document/spreadsheet/presentation opens in
-   *  its editor route; a deliverable goes to the deliverables tab; an image and
-   *  a text block are already fully shown on the card itself. */
+  /** Where an artifact card opens depends on what backs it. With a host panel,
+   *  everything opens there. Otherwise a document/spreadsheet/presentation
+   *  opens in its editor route; an image and a text block are already fully
+   *  shown on the card itself. */
   function openArtifactTarget(t: ArtifactOpenTarget) {
     if (!t.id) return;
+    if (onOpenInPanel && (t.table === "office_documents" || t.table === "deliverable" || t.table === "office_media")) {
+      onOpenInPanel(t);
+      return;
+    }
     if (t.table === "office_documents") {
       const kind = ["document", "spreadsheet", "presentation"].includes(t.kind) ? t.kind : "document";
       navigate(`/app/${workspaceSlug}/${projectSlug}/artifact/${kind}/${t.id}`);
@@ -1014,12 +1055,13 @@ export function ChatTab({
     prevRunRef.current = cur;
   }, [activeRun?.id, convoId, agent.id, queryClient]);
 
-  // Open a specific conversation when linked with ?c=<id> (e.g. from a service
-  // dashboard's Rooms tab), once — before the default "resume most recent".
+  // Open a specific conversation when linked with ?c=<id> (a service
+  // dashboard's Rooms tab, a card of the Tasks panel next door…), before the
+  // default "resume most recent". Read EVERY time one appears — the Tasks panel
+  // switches conversations while the chat stays mounted — and removed once read.
   const [searchParams, setSearchParams] = useSearchParams();
   const pickedConvoRef = useRef(false);
   useEffect(() => {
-    if (pickedConvoRef.current) return;
     const c = searchParams.get("c");
     if (c) {
       pickedConvoRef.current = true;
@@ -1163,12 +1205,18 @@ export function ChatTab({
     if (!user || !workspaceId || !projectId || !text.trim() || sending) return;
     // NB: sending is allowed WHILE a run is active — the message is folded into the
     // running agent on its next tick (mid-run steering), not queued as a new run.
-    if (!agent?.id) { setError("Agent is still loading, please retry in a moment."); return; }
+    if (!agent?.id) { setError("Le collaborateur est encore en chargement, réessayez dans un instant."); return; }
     setSending(true);
     setError(null);
     // Sending is a deliberate "I'm back at the live edge" gesture.
     jumpToBottom();
     try {
+      // The host may attach what the person is looking at (browser panel). A
+      // failed capture must not cost the question: it goes out on its own.
+      let content = text;
+      if (prepareMessage) {
+        try { content = await prepareMessage(text); } catch { content = text; }
+      }
       let cid = convoId;
       if (!cid) {
         const { data, error } = await supabase
@@ -1179,6 +1227,7 @@ export function ChatTab({
             project_id: projectId,
             user_id: user.id,
             title: text.slice(0, 60),
+            ...(conversationOrigin ? { origin: conversationOrigin } : {}),
           })
           .select("id")
           .single();
@@ -1188,7 +1237,7 @@ export function ChatTab({
       }
       const { error: msgErr } = await supabase
         .from("internal_agent_messages")
-        .insert({ conversation_id: cid, agent_id: agent.id, role: "user", content: text });
+        .insert({ conversation_id: cid, agent_id: agent.id, role: "user", content });
       if (msgErr) throw msgErr;
       setInput("");
       queryClient.invalidateQueries({ queryKey: ["internal_agent_messages", cid] });
@@ -1200,7 +1249,7 @@ export function ChatTab({
         agent_id: agent.id,
         mode: "chat",
         conversation_id: cid,
-        // The composer's pick wins over the agent's default and over the cost
+        // The composer's pick wins over the collaborateur's default and over the cost
         // tiering for this turn.
         ...(model ? { model } : {}),
       });
@@ -1233,6 +1282,19 @@ export function ChatTab({
       setSending(false);
     }
   }
+
+  // A send asked by the host (a shortcut, the context menu): once per id, and
+  // only when the chat is free — a request arriving mid-send waits its turn
+  // instead of being dropped.
+  const handledRequest = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sendRequest || handledRequest.current === sendRequest.id) return;
+    if (!user || !workspaceId || !projectId || sending) return;
+    handledRequest.current = sendRequest.id;
+    onSendRequestHandled?.(sendRequest.id);
+    void handleSend(sendRequest.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendRequest, user, workspaceId, projectId, sending]);
 
   const isEmpty = !messages || messages.length === 0;
   const currentConvo = conversations?.find((c) => c.id === convoId) ?? null;
@@ -1330,23 +1392,24 @@ export function ChatTab({
 
       {isEmpty ? (
         // Perplexity-style hero: centered title + composer + suggestion cards.
-        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10">
+        <div className={cn("flex flex-1 flex-col items-center justify-center", compact ? "overflow-y-auto px-3 pb-4 pt-14" : "px-6 pb-10")}>
           {/* Either the avatar OR the living orb — the agent's chosen identity. */}
           <AgentIdentity
             style={agent.avatar_style}
             url={agent.avatar_url}
             seed={agent.name}
-            size={88}
+            size={compact ? 56 : 88}
             accentColor={agent.accent_color}
             state={isBusy ? "working" : agent.is_archived ? "sleeping" : "default"}
-            className="mb-4"
+            className={compact ? "mb-3" : "mb-4"}
           />
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">{agent.name}</h1>
+          <h1 className={cn("font-semibold tracking-tight text-foreground", compact ? "text-xl" : "text-3xl")}>{agent.name}</h1>
           {agent.description && (
-            <p className="mt-2 max-w-md text-center text-sm text-muted-foreground">{agent.description}</p>
+            <p className={cn("mt-2 max-w-md text-center text-muted-foreground", compact ? "line-clamp-2 text-xs" : "text-sm")}>{agent.description}</p>
           )}
-          <div className="mt-7 w-full max-w-2xl">
+          <div className={cn("w-full max-w-2xl", compact ? "mt-5" : "mt-7")}>
             <ChatComposer
+              chips={composerChips}
               value={input}
               onValueChange={setInput}
               onSubmit={({ message, model }) => handleSend(message, model)}
@@ -1354,12 +1417,13 @@ export function ChatTab({
               disabled={isBusy}
               running={isBusy}
               onStop={activeRun ? stopRun : undefined}
-              placeholder={isBusy ? "L'agent travaille…" : `Demandez à ${agent.name}…`}
+              placeholder={isBusy ? "Le collaborateur travaille…" : `Demandez à ${agent.name}…`}
               models={AGENT_MODELS}
               className="max-w-full"
             />
             {error && <p className="mt-2 text-center text-xs text-destructive">{error}</p>}
           </div>
+          {emptyExtras ?? (
           <div className="mt-5 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
             <button
               onClick={() => setInput("Quelles sont tes capacités, et que peux-tu faire pour moi ?")}
@@ -1386,6 +1450,7 @@ export function ChatTab({
               <p className="text-xs leading-relaxed text-muted-foreground">Donne-lui un projet : il produit des livrables fiables, en autonomie.</p>
             </button>
           </div>
+          )}
         </div>
       ) : (
         <>
@@ -1403,7 +1468,7 @@ export function ChatTab({
           >
             {/* The bottom padding IS the measured composer height: content
                 scrolls behind the input and still ends above it. */}
-            <div ref={contentRef} className="mx-auto max-w-4xl space-y-8 px-6 pt-14" style={{ paddingBottom: composerH + 24 }}>
+            <div ref={contentRef} className={cn("mx-auto max-w-4xl pt-14", compact ? "space-y-6 px-3" : "space-y-8 px-6")} style={{ paddingBottom: composerH + 24 }}>
               {messages!.map((m, i) => {
                 const isLastAssistant =
                   m.role === "assistant" &&
@@ -1471,7 +1536,7 @@ export function ChatTab({
           <div
             ref={composerRef}
             onWheel={(e) => forwardWheel(e, scrollerRef.current)}
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 pb-7"
+            className={cn("pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-transparent pt-8", compact ? "pb-3" : "pb-7")}
           >
             {/* Sits above the composer without taking part in its height —
                 the padding under the conversation is measured from this box. */}
@@ -1481,12 +1546,14 @@ export function ChatTab({
                   onClick={() => jumpToBottom(true)}
                   className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors hover:text-foreground"
                 >
-                  <ChevronDown className="h-3.5 w-3.5" /> {isBusy ? "Suivre l'agent" : "Revenir en bas"}
+                  <ChevronDown className="h-3.5 w-3.5" /> {isBusy ? "Suivre le collaborateur" : "Revenir en bas"}
                 </button>
               </div>
             )}
-            <div className="pointer-events-auto mx-auto w-full max-w-4xl px-6">
+            <div className={cn("pointer-events-auto mx-auto w-full max-w-4xl", compact ? "px-3" : "px-6")}>
+              {composerAbove}
               <ChatComposer
+                chips={composerChips}
                 value={input}
                 onValueChange={setInput}
                 onSubmit={({ message, model }) => handleSend(message, model)}
@@ -1494,7 +1561,7 @@ export function ChatTab({
                 disabled={false}
                 running={isBusy}
                 onStop={activeRun ? stopRun : undefined}
-                placeholder={isBusy ? "L'agent travaille, écris pour ajouter ou corriger en cours de route…" : `Message ${agent.name}…`}
+                placeholder={isBusy ? "Le collaborateur travaille, écris pour ajouter ou corriger en cours de route…" : `Message ${agent.name}…`}
                 models={AGENT_MODELS}
                 className="max-w-full"
               />
@@ -1532,8 +1599,8 @@ function ChatBubble({
   if (msg.role === "user") {
     return (
       <div className="group flex flex-col items-end">
-        <div className={chatUserBubble}>{msg.content}</div>
-        <UserMessageActions content={msg.content} createdAt={msg.created_at} onEdit={onEdit} onResend={onResend} />
+        <UserMessageBody content={msg.content} />
+        <UserMessageActions content={msg.content} createdAt={msg.created_at} onEdit={onEdit ? (c) => onEdit(splitContextBlocks(c).text) : undefined} onResend={onResend} />
       </div>
     );
   }
@@ -1858,7 +1925,7 @@ export function MissionTab({
       <div className="flex items-center justify-between gap-3">
         <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {view === "board"
-            ? "Drag cards between columns, the agent moves them too as it works (running → In progress, output ready → Review)."
+            ? "Drag cards between columns, the collaborateur moves them too as it works (running → In progress, output ready → Review)."
             : "Toutes les missions en cartes. Cliquez une carte pour l'ouvrir."}
         </p>
         <div className="flex shrink-0 items-center gap-2">
@@ -1873,7 +1940,7 @@ export function MissionTab({
         <EmptyState
           icon={Target}
           title="Assign a mission"
-          description="Give this agent a structured task with a brief, expected deliverables, an owner and a deadline."
+          description="Give this collaborateur a structured task with a brief, expected deliverables, an owner and a deadline."
           action={<Button onClick={() => setWizardOpen(true)}><Plus className="mr-1.5 h-3.5 w-3.5" /> Assign mission</Button>}
         />
       ) : view === "cards" ? (
@@ -2363,7 +2430,7 @@ function RunCard({ run }: { run: MissionRun }) {
   });
 
   async function cancelRun() {
-    if (!(await confirm("Cancel this run? The agent stops before its next action."))) return;
+    if (!(await confirm("Cancel this run? The collaborateur stops before its next action."))) return;
     await supabase
       .from("internal_agent_runs")
       .update({ status: "cancelled", finished_at: new Date().toISOString() })
@@ -2524,7 +2591,7 @@ function DeliverableItem({ d }: { d: Deliverable }) {
 interface AgentTool {
   id: string;
   agent_id: string;
-  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "support" | "governance" | "leads" | "soc" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom";
+  kind: "web_search" | "web_fetch" | "db_read" | "rag_search" | "edge_function" | "vault_connector" | "connector_action" | "composio_toolkit" | "crm" | "support" | "governance" | "leads" | "soc" | "security_scan" | "vibe_code" | "testing" | "simulation" | "custom" | "custom_connector";
   name: string;
   description: string | null;
   config: Record<string, any>;
@@ -2536,11 +2603,11 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "web_search", label: "Web search", icon: Globe, description: "Search the web for fresh information." },
   { kind: "web_fetch", label: "Fetch URL", icon: Globe, description: "Download and extract text from a URL." },
   { kind: "rag_search", label: "Knowledge search", icon: BookOpen, description: "Semantic search over the project's indexed/ingested knowledge base." },
-  { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM, contacts, deals, companies. Writes need approval unless the agent is on autopilot." },
-  { kind: "support", label: "Support desk", icon: Database, description: "The support queue triaged by ResolveAI from your public agents: read requests and transcripts, update their status, pull real figures for reports." },
+  { kind: "crm", label: "CRM", icon: Database, description: "Read and write the in-house CRM, contacts, deals, companies. Writes need approval unless the collaborateur is on autopilot." },
+  { kind: "support", label: "Support desk", icon: Database, description: "The support queue triaged by ResolveAI from your public collaborateurs: read requests and transcripts, update their status, pull real figures for reports." },
   { kind: "leads", label: "LeadSense", icon: Target, description: "Qualify inbound prospects on the company's own grid, spot the ones to call now, assign the right sales rep, and publish the LeadSense board." },
   { kind: "soc", label: "SentinelFlow (SOC)", icon: ShieldCheck, description: "Triage security alerts from every connected source: investigate with correlation, close proven false positives, propose remediations for human validation, publish the SOC board." },
-  { kind: "governance", label: "Policy audit", icon: ShieldCheck, description: "Read-only PolicyGuard figures: risk levels of the agents' actions, decisions, human validations, for compliance reports." },
+  { kind: "governance", label: "Policy audit", icon: ShieldCheck, description: "Read-only PolicyGuard figures: risk levels of the collaborateurs' actions, decisions, human validations, for compliance reports." },
   { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Anduran function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status, no secrets)." },
   { kind: "connector_action", label: "Integration", icon: Plug, description: "Read data from a connected integration (CRM, HR, data lake) via its official API." },
@@ -2722,9 +2789,10 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
         </div>
         <div className="order-2 mt-4">
           {(() => {
-            const builtinTools = (tools ?? []).filter((t) => t.kind !== "connector_action");
+            // Les outils internes ont leur propre section (AgentInternalToolsTab).
+            const builtinTools = (tools ?? []).filter((t) => t.kind !== "connector_action" && t.kind !== "custom_connector");
             return builtinTools.length === 0 ? (
-              <p className="py-6 text-center text-xs text-muted-foreground">No tools yet. Add one to give this agent capabilities.</p>
+              <p className="py-6 text-center text-xs text-muted-foreground">No tools yet. Add one to give this collaborateur capabilities.</p>
             ) : (
               <div className="space-y-2">
                 {builtinTools.map((t) => {
@@ -2755,7 +2823,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
                           {(t.kind === "edge_function" || t.kind === "custom") && (
                             <button
                               onClick={() => toggleApproval(t)}
-                              title="When on, the agent's calls to this tool wait for human approval before executing."
+                              title="When on, the collaborateur's calls to this tool wait for human approval before executing."
                               className={cn(
                                 "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
                                 t.requires_approval ? "bg-amber-500/15 text-amber-600" : "bg-muted text-muted-foreground",
@@ -2932,7 +3000,7 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
                   Other function… (add empty, then set the slug in Configure)
                 </button>
                 <p className="px-1 text-[10px] text-muted-foreground">
-                  Added actions are approval-gated by default, the agent's calls wait for a human until you switch them to auto-execute.
+                  Added actions are approval-gated by default, the collaborateur's calls wait for a human until you switch them to auto-execute.
                 </p>
               </div>
             )}
@@ -3075,7 +3143,7 @@ function StudioToolConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
             value={scopeValue}
             onChange={(v) => onSave({ ...tool.config, [scopeKey]: v || undefined })}
             options={[
-              { value: "", label: "Laisser l'agent choisir" },
+              { value: "", label: "Laisser le collaborateur choisir" },
               ...(scopes ?? []).map((s) => ({ value: s.id, label: s.label })),
             ]}
           />
@@ -3166,7 +3234,7 @@ function CustomToolConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
         <SoftInput
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://hooks.exemple.com/agent"
+          placeholder="https://hooks.exemple.com/collaborateur"
           className="flex-1 font-mono"
         />
         <Button
@@ -3283,7 +3351,7 @@ export function MemoryTab({ agent }: { agent: InternalAgent }) {
   }
 
   async function removeMemory(id: string) {
-    if (!(await confirm("Forget this memory? The agent will no longer see it."))) return;
+    if (!(await confirm("Forget this memory? The collaborateur will no longer see it."))) return;
     await supabase.from("internal_agent_memories").delete().eq("id", id);
     invalidate();
   }
@@ -3313,7 +3381,7 @@ export function MemoryTab({ agent }: { agent: InternalAgent }) {
           value={newContent}
           onChange={(e) => setNewContent(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") addMemory(); }}
-          placeholder="Apprendre quelque chose de durable à l'agent…"
+          placeholder="Apprendre quelque chose de durable au collaborateur…"
           className="flex-1"
         />
         <SoftSelect
@@ -3339,7 +3407,7 @@ export function MemoryTab({ agent }: { agent: InternalAgent }) {
           <Brain className="h-6 w-6 text-muted-foreground/40" />
           <p className="text-sm font-medium">{hasMemories ? "Aucun résultat" : "Aucune mémoire"}</p>
           <p className="text-xs text-muted-foreground">
-            {hasMemories ? "Essayez un autre terme." : "L'agent en enregistre au fil de son travail, ou ajoutez-en une ci-dessus."}
+            {hasMemories ? "Essayez un autre terme." : "Le collaborateur en enregistre au fil de son travail, ou ajoutez-en une ci-dessus."}
           </p>
         </div>
       ) : (
@@ -3377,7 +3445,7 @@ function MemoryRow({
         <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
           <span className="capitalize">{MEMORY_KIND_META[m.kind].label}</span>
           <span>·</span>
-          <span>{m.source === "agent" ? "par l'agent" : "par l'équipe"}</span>
+          <span>{m.source === "agent" ? "par le collaborateur" : "par l'équipe"}</span>
           <span>·</span>
           <span>{relativeDate(m.updated_at)}</span>
         </div>
@@ -3470,7 +3538,7 @@ function MembersTab({ agent }: { agent: InternalAgent }) {
   return (
     <div className="space-y-1">
       <h3 className="flex items-center gap-2 text-sm font-semibold"><UsersIcon className="h-4 w-4 text-muted-foreground" /> Members</h3>
-      <p className="text-xs text-muted-foreground">Who on your team can see and use this agent.</p>
+      <p className="text-xs text-muted-foreground">Who on your team can see and use this collaborateur.</p>
 
       <div className="grid gap-6 pt-3 lg:grid-cols-2">
         <div>
@@ -3680,7 +3748,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   const [role, setRole] = useState(agent.role ?? "");
   const [skills, setSkills] = useState<string[]>(agent.skills ?? []);
   const [collabEnabled, setCollabEnabled] = useState(agent.collaboration_enabled ?? true);
-  // L'organigramme (0213) : à qui cet agent rend compte. Jusqu'ici la
+  // L'organigramme (0213) : à qui ce collaborateur rend compte. Jusqu'ici la
   // hiérarchie n'existait que le temps d'une room ; persistée, elle devient une
   // arête du graphe d'entreprise et une ligne du contexte de l'agent.
   const [parentAgentId, setParentAgentId] = useState<string | null>(agent.parent_agent_id ?? null);
@@ -3792,7 +3860,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   }
 
   async function archive() {
-    if (!(await confirm("Archive this agent? Members will lose access. You can restore it later from the database."))) return;
+    if (!(await confirm("Archive this collaborateur? Members will lose access. You can restore it later from the database."))) return;
     await supabase.from("internal_agents").update({ is_archived: true }).eq("id", agent.id);
     queryClient.invalidateQueries({ queryKey: ["internal_agents"] });
     // Back to the agent list of the service dashboard we're inside (the agent
@@ -3945,7 +4013,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
           {/* Essaim — parallel sub-agents. The switch only OFFERS the capability;
               the agent still decides, per task, whether to fan out. */}
           <div className="grid gap-4 md:grid-cols-2">
-            <SoftToggle icon={Atom} label="Mode essaim (sous-agents en parallèle)" checked={swarmEnabled} onChange={setSwarmEnabled} disabled={!isOwner} />
+            <SoftToggle icon={Atom} label="Mode essaim (sous-collaborateurs en parallèle)" checked={swarmEnabled} onChange={setSwarmEnabled} disabled={!isOwner} />
             {swarmEnabled && (
               <SoftField label="Instances en parallèle (2–6)">
                 <SoftInput
@@ -3960,7 +4028,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
 
           {/* Collaboration profile — how other agents find this one (A2A). */}
           <SoftToggle
-            icon={Network} label="Collaborer avec les autres agents"
+            icon={Network} label="Collaborer avec les autres collaborateurs"
             checked={collabEnabled} onChange={setCollabEnabled} disabled={!isOwner}
           />
           <div className="grid gap-4 md:grid-cols-2">
@@ -3984,7 +4052,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
               ))}
             </select>
             <p className="text-[11px] leading-snug text-muted-foreground">
-              L'organigramme : qui supervise cet agent. Apparaît sur la carte de l'entreprise et oriente la décomposition des objectifs.
+              L'organigramme : qui supervise ce collaborateur. Apparaît sur la carte de l'entreprise et oriente la décomposition des objectifs.
             </p>
           </SoftField>
 
@@ -4022,7 +4090,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
       {(embedded ? openSections.has("danger") : section === "danger") && isOwner && (
         <SettingsSection>
           <Button variant="outline" onClick={archive} className="rounded-xl text-destructive">
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Archiver l'agent
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Archiver le collaborateur
           </Button>
         </SettingsSection>
       )}
@@ -4121,7 +4189,7 @@ function MobileAccessSection({ agent }: { agent: InternalAgent }) {
     <SettingsSection>
       <SoftToggle icon={Smartphone} label="Accès depuis l'app mobile" checked={enabled} onChange={toggleEnabled} />
 
-      <SoftField label="Agent ID">
+      <SoftField label="Collaborateur ID">
         <div className="flex items-center gap-2">
           <code className="min-w-0 flex-1 truncate rounded-xl bg-muted/50 px-3.5 py-2.5 font-mono text-xs">{agent.id}</code>
           <Button size="sm" variant="outline" className="rounded-xl" onClick={() => copy(agent.id, "id")}>
@@ -4317,7 +4385,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
       <EmptyState
         icon={Network}
         title="Collaboration is disabled"
-        description="Enable collaboration in Settings so this agent can message, delegate to and learn from teammate agents."
+        description="Enable collaboration in Settings so this collaborateur can message, delegate to and learn from teammate collaborateurs."
       />
     );
   }
@@ -4336,7 +4404,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
   const threadCount = new Set(msgs.map((m) => m.thread_id)).size;
 
   // Agents that actually appear in the feed, with sent/received tallies —
-  // "les agents concernés" by this agent's collaboration.
+  // "les collaborateurs concernés" by this agent's collaboration.
   const partMap = new Map<string, { sent: number; received: number }>();
   for (const m of msgs) {
     const s = partMap.get(m.from_agent) ?? { sent: 0, received: 0 }; s.sent++; partMap.set(m.from_agent, s);
@@ -4358,7 +4426,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
               <MessagesSquare className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium">#{channelName}-collab</span>
               <span className="text-muted-foreground">|</span>
-              <span className="flex-1 truncate text-muted-foreground">Messages &amp; délégations entre agents</span>
+              <span className="flex-1 truncate text-muted-foreground">Messages &amp; délégations entre collaborateurs</span>
             </div>
           </div>
 
@@ -4366,7 +4434,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background/60 to-transparent" />
             {feed.length === 0 ? (
               <p className="py-10 text-center text-xs text-muted-foreground">
-                Aucun message pour l'instant. Cet agent contactera ou déléguera à ses pairs de façon autonome lorsqu'une tâche correspond à leurs compétences.
+                Aucun message pour l'instant. Ce collaborateur contactera ou déléguera à ses pairs de façon autonome lorsqu'une tâche correspond à leurs compétences.
               </p>
             ) : (
               <div className="flex flex-col gap-3">
@@ -4410,7 +4478,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
             <AgentIdentity url={agent.avatar_url} seed={agent.name} size={36} rounded="rounded-lg" accentColor={agent.accent_color} />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">#{channelName}-collab</div>
-              <div className="truncate text-[11px] text-muted-foreground">{agent.role ?? "Collaboration inter-agents"}</div>
+              <div className="truncate text-[11px] text-muted-foreground">{agent.role ?? "Collaboration inter-collaborateurs"}</div>
             </div>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -4447,7 +4515,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
         {/* Agents concernés — participants in this agent's feed */}
         {participants.length > 0 && (
           <div className="rounded-xl border border-border bg-card/40 p-4">
-            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Agents concernés</div>
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Collaborateurs concernés</div>
             <div className="space-y-2">
               {participants.map((p) => {
                 const c = a2aColor(p.id);
@@ -4458,7 +4526,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className={cn("truncate text-sm font-medium", c.text)}>{p.name}</span>
-                        {isSelf && <Badge variant="outline" className="shrink-0 text-[9px]">cet agent</Badge>}
+                        {isSelf && <Badge variant="outline" className="shrink-0 text-[9px]">ce collaborateur</Badge>}
                       </div>
                       <div className="text-[10px] text-muted-foreground">{p.sent} envoyé{p.sent > 1 ? "s" : ""} · {p.received} reçu{p.received > 1 ? "s" : ""}</div>
                     </div>
@@ -4474,7 +4542,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
         <div className="rounded-xl border border-border bg-card/40 p-4">
           <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Coéquipiers</div>
           {!peers || peers.length === 0 ? (
-            <p className="py-2 text-center text-xs text-muted-foreground">Aucun autre agent collaboratif sur ce projet.</p>
+            <p className="py-2 text-center text-xs text-muted-foreground">Aucun autre collaborateur collaboratif sur ce projet.</p>
           ) : (
             <div className="space-y-2">
               {peers.map((p) => (
@@ -4618,7 +4686,7 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
   const { workspaceSlug, projectSlug } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  // The library page opens on the user's own skills; an agent's tab opens on
+  // The library page opens on the user's own skills; an collaborateur's tab opens on
   // everything so the catalogue is one click from activation.
   const [filter, setFilter] = useState<"all" | "mine" | "examples">(customOnly ? "mine" : "all");
   const [search, setSearch] = useState("");
@@ -5205,11 +5273,11 @@ function AgentArtifactsTab({ agentId }: { agentId: string }) {
 
   return (
     <div className="space-y-6 px-6 py-6 lg:px-10">
-      <h3 className="text-sm font-semibold">Agent Activity & Artifacts</h3>
+      <h3 className="text-sm font-semibold">Collaborateur Activity & Artifacts</h3>
 
       {/* Live runs */}
       {planningCards.filter((r) => r.status === "running").map((r) => (
-        <AgentPlanning key={r.runId} title="Agent is working" steps={r.steps} />
+        <AgentPlanning key={r.runId} title="Collaborateur is working" steps={r.steps} />
       ))}
 
       {/* Recent completed runs */}
@@ -5240,7 +5308,7 @@ function AgentArtifactsTab({ agentId }: { agentId: string }) {
       )}
 
       {runs.length === 0 && deliverables.length === 0 && (
-        <p className="py-8 text-center text-sm text-muted-foreground">No activity yet. Assign a mission to this agent to see its work here.</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">No activity yet. Assign a mission to this collaborateur to see its work here.</p>
       )}
     </div>
   );

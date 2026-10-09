@@ -100,8 +100,8 @@ function SolutionBlock({ slug }: { slug: string }) {
             <AccordionList tone="dark" value={open} onChange={setOpen} items={s.approach.steps.map((st) => ({ title: st.t, body: st.b }))} />
           </div>
         </div>
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6">
-          <ArtPanel art={SOLUTION_ART[s.slug] ?? "blue"} className="grid h-full min-h-[420px] place-items-center rounded-[24px] p-6">
+        <div className="overflow-hidden rounded-[28px]">
+          <ArtPanel art={SOLUTION_ART[s.slug] ?? "blue"} className="grid h-full min-h-[420px] place-items-center rounded-[28px] p-6">
             {chat && <ChatMock agent={chat.agent} lines={chat.lines} />}
           </ArtPanel>
         </div>
@@ -144,7 +144,7 @@ export function HomeGovernHn() {
         </div>
         <div className="relative px-6 sm:px-12 lg:px-24">
           <div aria-hidden className="hn-sky absolute inset-x-0 bottom-0 top-[60%]" />
-          <div className="relative rounded-[28px] border border-white/10 bg-white/[0.04] p-4 sm:p-6">
+          <div className="relative overflow-hidden rounded-[28px]">
             <ProductShot src={p.shot} alt={p.shotAlt} className="aspect-[1440/860] w-full" />
           </div>
           <div className="relative h-12" />

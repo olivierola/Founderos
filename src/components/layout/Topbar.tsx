@@ -33,7 +33,7 @@ export function Topbar() {
   const assistant = useAssistant();
   const location = useLocation();
   // Extra breadcrumb segments a page can publish (e.g. the CRM record view
-  // surfaces "Autonomous agents / Support Concierge" here).
+  // surfaces "Autonomous collaborateurs / Support Concierge" here).
   const crumbs = useTopbarBreadcrumb();
 
   // The Admin dashboard uses a single sidebar (w-64); force the navbar's left

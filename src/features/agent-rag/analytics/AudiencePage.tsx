@@ -20,7 +20,7 @@ import { rampAt, useSequential } from "./vizRamps";
 import { CHANNEL_LABELS, DEVICE_LABELS } from "./labels";
 import { fmtDuration, fmtMs, nf, pct, type AgentAnalytics } from "./useAgentAnalytics";
 
-// Page Audience — qui vient parler à l'agent, d'où, sur quoi, et combien de
+// Page Audience — qui vient parler au collaborateur, d'où, sur quoi, et combien de
 // temps ils restent.
 //
 // Le pays n'est PAS une géolocalisation IP : c'est l'en-tête géo du CDN quand

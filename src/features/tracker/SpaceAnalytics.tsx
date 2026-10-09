@@ -38,7 +38,7 @@ const TABS: { key: Tab; label: string }[] = [
   // travaille ici », et les éloigner l'une de l'autre ferait chercher la
   // seconde ailleurs. C'est l'ancien onglet Dashboard de l'Assistant, rebâti
   // sur les primitives d'Analytics.
-  { key: "agents", label: "Agents" },
+  { key: "agents", label: "Collaborateurs" },
   { key: "issues", label: "Work items" },
 ];
 

@@ -180,7 +180,7 @@ export function AgentTerminalPanel({
   const commands = useMemo(() => [
     {
       name: "runs",
-      description: "les derniers runs de cet agent",
+      description: "les derniers runs de ce collaborateur",
       run: () => ((runs ?? []).length === 0
         ? "aucun run."
         : (runs ?? []).map((r) =>
@@ -208,10 +208,10 @@ export function AgentTerminalPanel({
       status={anyActive ? "live" : "idle"}
       commands={commands}
       onCommand={onCommand}
-      forwardHint="demandé à l'agent"
+      forwardHint="demandé au collaborateur"
       emptyMessage={
         "Aucune commande exécutée sur les derniers runs.\n\n" +
-        "Ce terminal rejoue en direct les commandes que l'agent lance sur son runner\n" +
+        "Ce terminal rejoue en direct les commandes que le collaborateur lance sur son runner\n" +
         "ou dans sa sandbox (shell, python, node, processus).\n" +
         'Tape "help" pour les commandes de ce terminal.'
       }

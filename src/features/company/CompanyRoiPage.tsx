@@ -333,7 +333,7 @@ export function CompanyRoiPage() {
               <thead>
                 <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Livrable</th>
-                  <th className="py-2 pr-3 font-medium">Agent</th>
+                  <th className="py-2 pr-3 font-medium">Collaborateur</th>
                   <th className="py-2 pr-3 font-medium">Règle appliquée</th>
                   <th className="py-2 pr-3 text-right font-medium">Temps</th>
                   <th className="py-2 text-right font-medium">Valeur</th>

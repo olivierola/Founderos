@@ -16,7 +16,7 @@ type Dimension = "provider" | "feature" | "agent" | "sku";
 const DIMENSIONS: Array<{ key: Dimension; label: string }> = [
   { key: "provider", label: "Fournisseur" },
   { key: "feature", label: "Fonctionnalité" },
-  { key: "agent", label: "Agent" },
+  { key: "agent", label: "Collaborateur" },
   { key: "sku", label: "Modèle" },
 ];
 

@@ -236,7 +236,7 @@ export function AuthSection({
             The site's azure artwork, the headline in two tones, the product's
             two rules as chips — and the real product rising out of the bottom
             edge, as on the landing page's product bands. */}
-        <div className="hn-art hn-art-blue relative hidden min-h-[720px] overflow-hidden rounded-[28px] text-white lg:flex lg:min-h-0">
+        <div className="hn-art hn-art-brand relative hidden min-h-[720px] overflow-hidden rounded-[28px] text-white lg:flex lg:min-h-0">
           <div className="relative z-10 flex h-full w-full flex-col p-10 xl:p-14">
             <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 py-2 text-[14px] font-medium backdrop-blur-md">
               <SparkleIcon weight="fill" className="size-4" />

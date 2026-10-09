@@ -26,7 +26,7 @@ import {
  * Les statistiques d'une force de travail, rendues avec les primitives du
  * module de suivi.
  *
- * UN SEUL rendu pour DEUX écrans : l'onglet « Agents » des analytics d'un
+ * UN SEUL rendu pour DEUX écrans : l'onglet « Collaborateurs » des analytics d'un
  * service, et le tableau de bord général de FounderOS. Ils regardent le même
  * genre d'objet à deux échelles — un service, puis tout l'espace — et leur
  * donner deux mises en page revenait à faire apprendre deux fois la même
@@ -142,7 +142,7 @@ export function AgentStats({
   }));
 
   // Le taux de réussite EN REGARD du volume : un agent à 100 % sur deux
-  // exécutions n'est pas un agent fiable, c'est un agent peu sollicité. Les
+  // exécutions n'est pas un collaborateur fiable, c'est un agent peu sollicité. Les
   // deux graphes se lisent donc ensemble, dans cet ordre.
   const successByAgent = topAgents
     .filter((p) => p.successRate != null)
@@ -181,7 +181,7 @@ export function AgentStats({
     { label: "Livrables", value: outputs.total, max: Math.max(5, outputs.total) },
     { label: "Outils", value: toolUsage.calls, max: Math.max(20, toolUsage.calls) },
     { label: "Approbations", value: approvalStats.total, max: Math.max(5, approvalStats.total) },
-    { label: "Agents actifs", value: productivity.filter((p) => p.runs > 0).length, max: Math.max(3, view.agents.length) },
+    { label: "Collaborateurs actifs", value: productivity.filter((p) => p.runs > 0).length, max: Math.max(3, view.agents.length) },
   ];
 
   const q = search.trim().toLowerCase();
@@ -277,7 +277,7 @@ export function AgentStats({
         );
       case "c-runs-agent":
         return (
-          <ChartWidget title="Exécutions par agent">
+          <ChartWidget title="Exécutions par collaborateur">
             {runsByAgent.length
               ? (h) => <BarChart data={runsByAgent} yLabel="Exécutions" xLabel="Agent" height={h} />
               : null}
@@ -301,7 +301,7 @@ export function AgentStats({
         );
       case "c-success":
         return (
-          <ChartWidget title="Réussite par agent" hint="à lire avec le volume">
+          <ChartWidget title="Réussite par collaborateur" hint="à lire avec le volume">
             {successByAgent.length
               ? (h) => <LollipopChart data={successByAgent} yLabel="Réussite (%)" height={h} />
               : null}
@@ -496,19 +496,19 @@ export function AgentStats({
           carrée : elle y deviendrait défilante dans les deux sens, c'est-à-dire
           illisible. */}
       <section className="space-y-3 pt-2">
-        <h3 className="text-13 font-medium">Par agent</h3>
+        <h3 className="text-13 font-medium">Par collaborateur</h3>
         <DataTable
           rows={agentRows}
           filename="agents-analytics"
           search={search}
           onSearch={setSearch}
-          empty="Aucun agent ne correspond à cette recherche."
+          empty="Aucun collaborateur ne correspond à cette recherche."
           onRowClick={(r) => setOpenAgent(r.agent.id)}
           activeRow={(r) => r.agent.id === openAgent}
           columns={[
             {
               key: "agent",
-              label: "Agent",
+              label: "Collaborateur",
               render: (r) => (
                 <span className="flex items-center gap-2">
                   <span
@@ -572,7 +572,7 @@ export function AgentStats({
                 render: (sv) => <span className="font-medium">{sv.name}</span>,
                 value: (sv) => sv.name,
               },
-              { key: "agents", label: "Agents", align: "right", render: (sv) => sv.agents, value: (sv) => sv.agents },
+              { key: "agents", label: "Collaborateurs", align: "right", render: (sv) => sv.agents, value: (sv) => sv.agents },
               {
                 key: "active", label: "Dont actifs", align: "right",
                 render: (sv) => sv.activeAgents, value: (sv) => sv.activeAgents,
@@ -631,7 +631,7 @@ export function AgentStats({
               // rien ne fonde.
               render: (t) => percent(t.errorRate), value: (t) => t.errorRate ?? "",
             },
-            { key: "agents", label: "Agents", align: "right", render: (t) => t.agents, value: (t) => t.agents },
+            { key: "agents", label: "Collaborateurs", align: "right", render: (t) => t.agents, value: (t) => t.agents },
             { key: "runs", label: "Exécutions", align: "right", render: (t) => t.runs, value: (t) => t.runs },
             {
               key: "last", label: "Dernier usage", align: "right",
@@ -758,15 +758,15 @@ const DEFAULT_WIDGETS: WidgetItem[] = [
   { id: "k-tools", size: "sm", label: "Appels d'outils" },
   { id: "k-pending", size: "sm", label: "À valider" },
   { id: "l-runs", size: "lg", label: "En cours" },
-  { id: "l-states", size: "wide", label: "États des agents" },
+  { id: "l-states", size: "wide", label: "États des collaborateurs" },
   { id: "l-tools", size: "tall", label: "Appels d'outils en direct" },
   { id: "l-approvals", size: "tall", label: "À valider maintenant" },
-  { id: "c-runs-agent", size: "wide", label: "Exécutions par agent" },
+  { id: "c-runs-agent", size: "wide", label: "Exécutions par collaborateur" },
   { id: "c-runs-time", size: "wide", label: "Exécutions dans le temps" },
   { id: "c-cost-time", size: "wide", label: "Coût dans le temps" },
   { id: "c-radar", size: "tall", label: "Silhouette" },
   { id: "p-approvals", size: "tall", label: "Validations humaines" },
-  { id: "c-success", size: "wide", label: "Réussite par agent" },
+  { id: "c-success", size: "wide", label: "Réussite par collaborateur" },
   { id: "c-families", size: "wide", label: "Outils par famille" },
   { id: "l-errors", size: "tall", label: "Erreurs récentes" },
   { id: "p-loop", size: "tall", label: "Santé de la boucle" },

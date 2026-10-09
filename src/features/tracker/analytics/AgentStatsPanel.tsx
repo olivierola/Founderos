@@ -149,7 +149,7 @@ export function AgentStatsPanel({
             </div>
 
             <div className="flex shrink-0 items-center gap-1">
-              <HeaderButton title="Ouvrir la fiche de l'agent" onClick={() => onOpenAgent(agent.id)}>
+              <HeaderButton title="Ouvrir la fiche du collaborateur" onClick={() => onOpenAgent(agent.id)}>
                 <ArrowSquareOutIcon className="h-4 w-4" />
               </HeaderButton>
               <HeaderButton title="Fermer" onClick={onClose}>

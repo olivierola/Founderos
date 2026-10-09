@@ -95,7 +95,7 @@ Ce que tu refuses : promettre à la place de quelqu'un d'autre. Écris le caract
     label: "Préférences",
     fileName: "preferences.md",
     icon: Sparkles,
-    blurb: () => "Comment votre équipe aime les choses. Une préférence par ligne, l'agent en ajoute lui-même quand vous en exprimez une.",
+    blurb: () => "Comment votre équipe aime les choses. Une préférence par ligne, le collaborateur en ajoute lui-même quand vous en exprimez une.",
     soft: 12000,
     placeholder: `- [langue] Répondre en français, même sur une demande en anglais.
 - [format] Les rapports font 2 pages maximum, avec un encadré de conclusion.

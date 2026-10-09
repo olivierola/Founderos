@@ -268,6 +268,51 @@ export async function applyApprovalDecision(
 }
 
 /**
+ * Relance le collaborateur quand la décision arrive APRÈS qu'il a cessé d'attendre.
+ *
+ * Il n'attend sa réponse que deux minutes (awaitInlineApproval). Passé ce délai,
+ * son exécution a continué ou s'est terminée : la décision serait prise dans le
+ * vide. On lui écrit le verdict dans sa conversation et on le relance, pour qu'il
+ * reprenne avec le résultat. Partagé par les canaux et par l'application (la
+ * boîte « À valider » tranche souvent bien après la demande).
+ *
+ * Sans conversation (room, mission planifiée), il n'y a pas de fil où reprendre :
+ * l'action approuvée s'exécute, et c'est tout.
+ */
+export async function resumeAfterLateDecision(
+  admin: Admin,
+  a: { agent_id: string; run_id: string | null; conversation_id: string | null },
+  decision: "approve" | "approve_all" | "reject",
+  result: { ok: boolean; detail: string },
+  /** Où la décision a été prise, pour le collaborateur : « dans Slack », « dans À valider »… */
+  where: string,
+): Promise<void> {
+  if (!a.run_id || !a.conversation_id) return;
+  const { data: run } = await admin.from("internal_agent_runs")
+    .select("status").eq("id", a.run_id).maybeSingle();
+  const stillWaiting = (run as { status?: string } | null)?.status === "running";
+  if (stillWaiting) return;
+  const verdict = decision === "reject"
+    ? "a REFUSÉ l'action demandée. Ne la refais pas ; adapte-toi ou propose une alternative."
+    : result.ok
+      ? `a autorisé l'action demandée, qui a été exécutée. Résultat : ${result.detail.slice(0, 1500)}`
+      : `a autorisé l'action demandée, mais son exécution a échoué : ${result.detail.slice(0, 800)}`;
+  await admin.from("internal_agent_messages").insert({
+    conversation_id: a.conversation_id, agent_id: a.agent_id, role: "user",
+    content: `[Décision prise ${where}] L'utilisateur ${verdict} Poursuis.`,
+  });
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (url && key) {
+    fetch(`${url}/functions/v1/internal-agent-run`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_id: a.agent_id, mode: "chat", conversation_id: a.conversation_id }),
+    }).catch(() => {});
+  }
+}
+
+/**
  * Une décision prise depuis un canal (clic Slack / Teams).
  *
  * Vérifie, dans l'ordre : que la demande existe et attend encore ; qu'elle est
@@ -313,34 +358,7 @@ export async function decideApprovalFromChannel(
     admin, a, input.decision, null, `${input.provider}:${input.clickerRef}`,
   );
 
-  // L'agent n'attend sa réponse que deux minutes (awaitInlineApproval). Passé ce
-  // délai, son exécution a continué ou s'est terminée : la décision serait alors
-  // prise dans le vide. On le relance avec le verdict, pour qu'il reprenne.
-  if (a.run_id) {
-    const { data: run } = await admin.from("internal_agent_runs")
-      .select("status").eq("id", a.run_id).maybeSingle();
-    const stillWaiting = (run as { status?: string } | null)?.status === "running";
-    if (!stillWaiting) {
-      const verdict = input.decision === "reject"
-        ? "a REFUSÉ l'action demandée. Ne la refais pas ; adapte-toi ou propose une alternative."
-        : result.ok
-          ? `a autorisé l'action demandée, qui a été exécutée. Résultat : ${result.detail.slice(0, 1500)}`
-          : `a autorisé l'action demandée, mais son exécution a échoué : ${result.detail.slice(0, 800)}`;
-      await admin.from("internal_agent_messages").insert({
-        conversation_id: a.conversation_id, agent_id: a.agent_id, role: "user",
-        content: `[Décision prise dans ${PROVIDER_LABEL[input.provider]}] L'utilisateur ${verdict} Poursuis.`,
-      });
-      const url = Deno.env.get("SUPABASE_URL");
-      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-      if (url && key) {
-        fetch(`${url}/functions/v1/internal-agent-run`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ agent_id: a.agent_id, mode: "chat", conversation_id: a.conversation_id }),
-        }).catch(() => {});
-      }
-    }
-  }
+  await resumeAfterLateDecision(admin, a, input.decision, result, `dans ${PROVIDER_LABEL[input.provider]}`);
 
   const message = input.decision === "reject"
     ? "❌ Refusé."

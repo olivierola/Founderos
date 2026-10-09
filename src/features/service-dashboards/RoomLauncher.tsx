@@ -23,7 +23,7 @@ import { SLASH_COMMANDS, expandSlash, sendToRoom } from "./roomCompose";
  * d'abord ferait rapporter un échec d'envoi dans une room vide, où l'on ne
  * saurait ni ce qui a échoué ni comment le reprendre.
  *
- * Le tour de l'agent, lui, tourne côté serveur en tâche de fond. Ce que l'on
+ * Le tour du collaborateur, lui, tourne côté serveur en tâche de fond. Ce que l'on
  * attend ici est un aller-retour court, pas la réponse.
  */
 

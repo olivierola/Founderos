@@ -16,6 +16,8 @@ import {
   type RoomRef, type RosterAgent,
 } from "../_shared/room-orchestrator.ts";
 import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
+import { issueRefPrefixes, looksLikeWorkspaceAdmin } from "../_shared/assistant-ops.ts";
+import { normalizeAutonomy } from "../_shared/policyguard.ts";
 import {
   loadCompanyContext, renderCompanySection, type CompanyContext,
 } from "../_shared/company-context.ts";
@@ -191,7 +193,19 @@ Deno.serve(async (req) => {
       const { data: orchRow } = await admin.from("internal_agents")
         .select("id, name, persona, instructions, role, is_orchestrator, created_by, service_dashboard_id, swarm_enabled, swarm_max_concurrency")
         .in("id", participantIds).eq("is_orchestrator", true).limit(1).maybeSingle();
-      if (orchRow) {
+      // Administering the workspace (agents, tracker) is the assistant's own
+      // job: only it has the tools. Such a turn skips routing, which would hand
+      // it to a specialist or spawn a bare agent through "new_agents".
+      const refPrefixes = issueRefPrefixes(content);
+      const knownIdents = refPrefixes.length
+        ? (((await admin.from("pj_projects").select("identifier")
+          .eq("project_id", room.project_id).in("identifier", refPrefixes)).data ?? []) as Array<{ identifier: string }>)
+          .map((r) => r.identifier)
+        : [];
+      const adminTurn = !!orchRow && looksLikeWorkspaceAdmin(content, knownIdents);
+      if (adminTurn) {
+        responders = [(orchRow as { id: string }).id];
+      } else if (orchRow) {
         const routed = await orchestrateTurn(admin, {
           room: roomRef, dashboardName,
           assistant: orchRow as RosterAgent,
@@ -221,7 +235,7 @@ Deno.serve(async (req) => {
     const work = async () => {
       for (const aid of responders) {
         try {
-          await runResponder(admin, room, dashboardName, aid, placeholders[aid], participantIds, explicitMissionId);
+          await runResponder(admin, room, dashboardName, aid, placeholders[aid], participantIds, explicitMissionId, userId);
         } catch (e) {
           await admin.from("service_room_messages").update({
             status: "failed", content: `⚠️ ${e instanceof Error ? e.message : "erreur"}`,
@@ -433,9 +447,12 @@ async function runResponder(
   admin: Admin, room: { id: string; workspace_id: string; project_id: string; title: string; dashboard_id: string },
   dashboardName: string, agentId: string, placeholderId: string, participantIds: string[],
   missionId: string | null = null,
+  /** The person who posted the turn: the assistant's administration tools act
+   *  with THEIR workspace role (carried to the tick engine in meta.room). */
+  requestedBy: string | null = null,
 ) {
   const { data: agent } = await admin.from("internal_agents")
-    .select("id, name, persona, instructions, soul, preferences, model, temperature, is_orchestrator, service_dashboard_id, created_by, swarm_enabled, swarm_max_concurrency")
+    .select("id, name, persona, instructions, soul, preferences, model, temperature, is_orchestrator, service_dashboard_id, created_by, swarm_enabled, swarm_max_concurrency, autonomy_level")
     .eq("id", agentId).maybeSingle();
   if (!agent) throw new Error("Agent introuvable");
   const a = agent as AgentRow;
@@ -468,10 +485,14 @@ async function runResponder(
     admin, workspaceId: room.workspace_id, projectId: room.project_id,
     agentId: a.id, agentName: a.name,
     collaborationEnabled: true, autopilot: false, runId: turnRunId,
+    // Same autonomy as in its direct chat (0266): a room is not a loophole.
+    autonomy: normalizeAutonomy((a as { autonomy_level?: string | null }).autonomy_level),
     missionMode: false, delegationDepth: 0,
     serviceDashboardId: a.service_dashboard_id ?? room.dashboard_id,
     serviceRoomId: room.id,
     userId: a.created_by ?? null,
+    isOrchestrator: a.is_orchestrator === true,
+    actingUserId: requestedBy,
     createDeliverable: async (d) => {
       const { data } = await admin.from("internal_agent_deliverables").insert({
         agent_id: a.id, run_id: turnRunId, kind: d.kind, name: d.name, content: d.content, summary: d.summary,
@@ -589,7 +610,7 @@ async function runResponder(
     model,
     processing_until: null,
     last_input_at: new Date().toISOString(),
-    meta: { room: { room_id: room.id, placeholder_id: placeholderId } },
+    meta: { room: { room_id: room.id, placeholder_id: placeholderId, requested_by: requestedBy } },
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: turnRunId });
 }

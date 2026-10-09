@@ -333,7 +333,7 @@ export function GraphFigure() {
     { x: 50, y: 18, label: "Projet", tone: "#0ea5e9", r: 13 },
     { x: 18, y: 52, label: "Cycle", tone: "#eda100", r: 10 },
     { x: 50, y: 58, label: "Item", tone: "#8b5cf6", r: 10 },
-    { x: 82, y: 48, label: "Agent", tone: "#22c55e", r: 10 },
+    { x: 82, y: 48, label: "Collab.", tone: "#22c55e", r: 10 },
     { x: 32, y: 86, label: "Item", tone: "#8b5cf6", r: 9 },
     { x: 68, y: 86, label: "Note", tone: "#f59e0b", r: 9 },
   ];

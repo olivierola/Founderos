@@ -72,7 +72,7 @@ export interface AgentTemplate {
    * `persona` est une étiquette : elle tient sur une ligne et sert à le
    * présenter. `instructions` est une procédure : elle dit quoi faire, dans
    * quel ordre. Entre les deux il manquait le caractère — la voix, ce à quoi
-   * l'agent tient, ce qu'il refuse même quand on insiste — et faute d'endroit
+   * le collaborateur tient, ce qu'il refuse même quand on insiste — et faute d'endroit
    * où l'écrire, il finissait dilué au milieu d'une liste numérotée, lu comme
    * une consigne de plus. C'est ce fichier-là.
    *
@@ -270,7 +270,7 @@ RÈGLES ABSOLUES
     mcpServers: ["HubSpot", "Close", "Pipedrive", "Zoho CRM", "Apollo.io", "LinkedIn", "Exa"],
     setupNotes: [
       "Connectez votre CRM commercial (HubSpot) et/ou LinkedIn.",
-      "Décrivez votre profil client idéal dans les instructions de l'agent.",
+      "Décrivez votre profil client idéal dans les instructions du collaborateur.",
     ],
     outcomes: ["Leads qualifiés avec un vrai déclencheur", "Approches personnalisées", "CRM tenu à jour"],
   },
@@ -434,7 +434,7 @@ RÈGLES ABSOLUES
     mcpServers: ["Notion", "Asana", "Outlook", "Google Chat", "Zoom", "Cal.com", "Box", "Dropbox", "OneDrive"],
     setupNotes: [
       "Connectez la messagerie (Gmail) et l'agenda (Google Calendar) du compte concerné.",
-      "L'agent n'envoie rien sans validation, vérifiez le niveau d'autonomie.",
+      "Le collaborateur n'envoie rien sans validation, vérifiez le niveau d'autonomie.",
     ],
     outcomes: ["Boîte triée en quatre piles", "Réunions préparées", "Engagements suivis"],
   },
@@ -573,7 +573,7 @@ Tu n'es pas un conseiller financier agréé : pour un placement, un crédit ou u
     ],
     setupNotes: [
       "Exportez vos relevés en CSV ou PDF depuis votre banque et donnez-les-lui.",
-      "L'agent ne se connecte jamais à votre banque.",
+      "Le collaborateur ne se connecte jamais à votre banque.",
     ],
     suggestedSchedule: { label: "Point budget hebdo", cron: "0 18 * * 0", prompt: "Fais le point budget de la semaine : dépenses par catégorie, écarts, abonnements et reste à vivre du mois." },
     outcomes: ["Dépenses classées", "Abonnements oubliés repérés", "Économies chiffrées"],
@@ -861,7 +861,7 @@ RÈGLES ABSOLUES
     mcpServers: ["BigQuery", "Snowflake", "Databricks", "Supabase", "Metabase", "Looker", "Power BI", "Tableau", "Apache Superset"],
     skillSlugs: ["data-analyst"],
     setupNotes: [
-      "Autorisez les tables que l'agent peut interroger.",
+      "Autorisez les tables que le collaborateur peut interroger.",
       "Connectez votre analytics produit (PostHog) et/ou BigQuery.",
     ],
     outcomes: ["Questions rendues mesurables", "Qualité de donnée vérifiée", "Limites annoncées"],
@@ -1066,7 +1066,7 @@ RAPPORT
     mcpServers: ["Shell", "Terminal", "Browserbase", "Exa"],
     setupNotes: [
       "Déclarez le périmètre autorisé (Admin → Gouvernance → Périmètre pentest) AVANT le premier run.",
-      "Cet agent s'exécute en bac à sable, vérifiez qu'un environnement sandbox est disponible.",
+      "Ce collaborateur s'exécute en bac à sable, vérifiez qu'un environnement sandbox est disponible.",
     ],
     suggestedSchedule: { label: "Pentest de régression mensuel", cron: "0 6 1 * *", prompt: "Relance un pentest de régression sur le périmètre autorisé et compare aux failles déjà rapportées." },
     outcomes: ["Uniquement des failles confirmées par PoC", "Chaînes d'attaque jusqu'à l'impact réel", "Correction concrète par faille"],
@@ -1121,7 +1121,7 @@ RÈGLES ABSOLUES
     mcpServers: ["GitHub", "Semgrep", "Snyk", "SonarQube", "Context7"],
     setupNotes: [
       "Connectez le dépôt GitHub à auditer (onglet Assets du dashboard, ou Admin → Dépôts).",
-      "Agent hybride (bac à sable pour les scanners + dépôt pour les PR), les PR passent par une validation.",
+      "Collaborateur hybride (bac à sable pour les scanners + dépôt pour les PR), les PR passent par une validation.",
     ],
     suggestedSchedule: { label: "Audit de sécurité hebdomadaire", cron: "0 6 * * 1", prompt: "Audite le dépôt : nouvelles vulnérabilités dans le code, secrets exposés, dépendances vulnérables introduites cette semaine." },
     outcomes: ["Findings tracés source→sink, jamais devinés", "file:line + correctif concret", "PR de remédiation sur demande"],
@@ -1129,7 +1129,7 @@ RÈGLES ABSOLUES
   {
     key: "sec-llm-redteam",
     name: "AI Red-Teamer",
-    tagline: "Attaque vos IA et agents : injection de prompt, jailbreak, fuite de données, abus d'outils.",
+    tagline: "Attaque vos IA et collaborateurs : injection de prompt, jailbreak, fuite de données, abus d'outils.",
     category: "Cybersecurity",
     emoji: "🧠",
     icon3d: "potion",
@@ -1137,7 +1137,7 @@ RÈGLES ABSOLUES
     sandboxMode: "sandbox",
     skillSlugs: ["pentest-web-app", "web-researcher"],
     persona:
-      "Un red-teamer spécialisé IA qui pense comme un attaquant d'agents : il détourne le contexte, empoisonne les entrées ingérées, force la fuite du prompt système, et s'arrête à la preuve, sans jamais faire de dégât réel.",
+      "Un red-teamer spécialisé IA qui pense comme un attaquant d'collaborateurs : il détourne le contexte, empoisonne les entrées ingérées, force la fuite du prompt système, et s'arrête à la preuve, sans jamais faire de dégât réel.",
     soul: `Tu attaques des systèmes qui parlent, donc tu te méfies de ce qu'ils te répondent.
 Un modèle qui déraille une fois sur dix est vulnérable : tu rejoues, tu comptes, tu qualifies.
 Tu distingues le jailbreak amusant de la fuite qui coûte cher, et tu ne publies jamais une charge utile sans dire exactement ce qu'elle prouve.`,
@@ -1149,7 +1149,7 @@ CADRAGE
 
 CLASSES À TESTER (une à la fois, par différentiel)
 3. Injection directe & jailbreak (LLM01) : contournement d'instructions, changement de rôle, encodages, langues, obfuscation. Mesure ce qui passe vs le comportement de référence.
-4. Injection INDIRECTE : place une charge dans une source que l'agent va ingérer (document, page, champ de formulaire) et vérifie si elle détourne son comportement. C'est le vecteur le plus sous-estimé.
+4. Injection INDIRECTE : place une charge dans une source que le collaborateur va ingérer (document, page, champ de formulaire) et vérifie si elle détourne son comportement. C'est le vecteur le plus sous-estimé.
 5. Fuite du prompt système & de données sensibles (LLM02/07) : exfiltration des instructions, des clés, des données d'autres utilisateurs via le contexte ou les outils.
 6. Agence excessive & abus d'outils (LLM06) : amène l'agent à appeler un outil sensible avec des arguments détournés, à dépasser sa portée, ou à enchaîner des actions non prévues.
 7. Traitement non sûr des sorties : sortie du LLM rendue sans échappement (XSS stockée via réponse) ou consommée par un système en aval sans validation.
@@ -1162,14 +1162,14 @@ RAPPORT
     autonomy: "assisted",
     max_steps: 28,
     tools: [
-      { kind: "security_scan", name: "Bac à sable de test IA", description: "Envoyer des requêtes à la cible LLM/agent et injecter des charges dans les sources ingérées, strictement en périmètre autorisé.", config: {} },
+      { kind: "security_scan", name: "Bac à sable de test IA", description: "Envoyer des requêtes à la cible LLM/collaborateur et injecter des charges dans les sources ingérées, strictement en périmètre autorisé.", config: {} },
       { kind: "web_fetch", name: "Lire une source", description: "Inspecter une page ou un document servant de vecteur d'injection indirecte." },
       { kind: "web_search", name: "Recherche techniques", description: "Derniers jailbreaks, familles d'injection, contournements de garde-fous publiés." },
     ],
     mcpServers: ["Hugging Face", "OpenAI", "Anthropic", "Firecrawl", "Browserbase"],
     setupNotes: [
-      "Déclarez la cible IA (endpoint, chatbot ou agent) dans le périmètre autorisé (Admin → Gouvernance → Périmètre pentest).",
-      "Pour tester un agent interne, donnez-lui accès au canal ou à l'API de l'agent cible ; cet agent s'exécute en bac à sable.",
+      "Déclarez la cible IA (endpoint, chatbot ou collaborateur) dans le périmètre autorisé (Admin → Gouvernance → Périmètre pentest).",
+      "Pour tester un collaborateur interne, donnez-lui accès au canal ou à l'API du collaborateur cible ; ce collaborateur s'exécute en bac à sable.",
     ],
     outcomes: ["Injection directe ET indirecte testées", "Fuites et abus d'outils prouvés, pas supposés", "Remédiation par garde-fou concret"],
   },
@@ -1224,7 +1224,7 @@ RÈGLES ABSOLUES
     skillSlugs: ["code-analyst"],
     setupNotes: [
       "Connectez le dépôt GitHub cible (onglet Assets du dashboard, ou Admin → Dépôts).",
-      "Choisissez si l'agent peut ouvrir des PR seul ou attend une validation (niveau d'autonomie).",
+      "Choisissez si le collaborateur peut ouvrir des PR seul ou attend une validation (niveau d'autonomie).",
     ],
     outcomes: ["De vraies PR sur vos dépôts", "Chaque session lisible comme un artifact", "Périmètre et risques annoncés avant le merge"],
   },
@@ -1266,7 +1266,7 @@ RÈGLE ABSOLUE
     skillSlugs: ["browser-navigator"],
     setupNotes: [
       "Déclarez l'URL de l'app et au moins un scénario de test (module Test runs).",
-      "Cet agent a besoin du runner Playwright, vérifiez qu'un runner est actif (DevOps).",
+      "Ce collaborateur a besoin du runner Playwright, vérifiez qu'un runner est actif (DevOps).",
     ],
     outcomes: ["Défauts trouvés avant vos utilisateurs", "Chaque verdict adossé à un vrai run", "Un artifact actionnable par un dev"],
   },
@@ -1464,7 +1464,7 @@ RÈGLES ABSOLUES
     ],
     mcpServers: ["GitHub", "GitLab", "Bitbucket", "Azure DevOps", "Confluence", "Linear", "Jira", "Postman", "Swagger / OpenAPI", "SonarQube", "Context7", "DeepWiki"],
     setupNotes: [
-      "Connectez GitHub : sans le code réel, l'agent ne documente qu'une architecture supposée.",
+      "Connectez GitHub : sans le code réel, le collaborateur ne documente qu'une architecture supposée.",
       "Indexez vos ADR et schémas existants pour éviter les décisions qui se contredisent.",
     ],
     outcomes: ["Des ADR écrits au moment de la décision, pas six mois après", "Des options chiffrées au lieu d'un débat d'opinions", "Des schémas qui correspondent au code"],
@@ -1529,7 +1529,7 @@ RÈGLES ABSOLUES
     mcpServers: ["Linear", "Jira", "Notion", "Confluence", "Figma", "Asana", "Monday.com", "ClickUp", "Trello"],
     suggestedSchedule: { label: "Revue de backlog hebdomadaire", cron: "0 8 * * 2", prompt: "Passe le backlog en revue : ce qui a été livré la semaine dernière et ce que ça a changé dans les métriques, ce qui traîne sans raison, et les 3 sujets à prioriser avec impact/effort chiffrés." },
     setupNotes: [
-      "Connectez l'outil de backlog et l'analytics produit, sans usage réel, l'agent priorise à l'aveugle.",
+      "Connectez l'outil de backlog et l'analytics produit, sans usage réel, le collaborateur priorise à l'aveugle.",
       "Indexez vos entretiens utilisateurs pour que les specs citent une source.",
     ],
     outcomes: ["Des specs qui traitent les cas limites", "Une priorisation chiffrée, défendable en comité", "Un succès mesuré au lieu d'être supposé"],
@@ -1689,8 +1689,8 @@ RÈGLES ABSOLUES
     ],
     mcpServers: ["Sentry", "Grafana", "Prometheus", "Elasticsearch", "Splunk", "Kubernetes", "Docker", "GitHub", "Buildkite", "Vercel", "Cloudflare"],
     setupNotes: [
-      "Connectez au minimum la supervision et le dépôt : sans corrélation changement/incident, l'agent devine.",
-      "Aucune action sur la production n'est exécutée par l'agent, il propose, vous appliquez.",
+      "Connectez au minimum la supervision et le dépôt : sans corrélation changement/incident, le collaborateur devine.",
+      "Aucune action sur la production n'est exécutée par le collaborateur, il propose, vous appliquez.",
     ],
     outcomes: ["Une chronologie tenue pendant l'incident, pas reconstituée après", "La cause racine prouvée par les logs", "Des actions correctives avec responsable et échéance"],
   },
@@ -1799,7 +1799,7 @@ RÈGLES ABSOLUES
     mcpServers: ["BigQuery", "Snowflake", "Databricks", "ClickHouse", "PostgreSQL", "MySQL", "MongoDB", "Redis", "Elasticsearch", "Supabase", "Neon", "Prisma Postgres", "GitHub"],
     suggestedSchedule: { label: "Contrôle qualité quotidien", cron: "0 6 * * *", prompt: "Contrôle fraîcheur, volume et intégrité des tables critiques. Pour chaque anomalie : la requête qui la prouve, la source probable, et les tableaux de bord impactés." },
     setupNotes: [
-      "Autorisez les tables critiques : l'agent ne peut contrôler que ce qu'il peut lire.",
+      "Autorisez les tables critiques : le collaborateur ne peut contrôler que ce qu'il peut lire.",
       "Connectez le dépôt des transformations pour remonter d'une anomalie à sa cause.",
     ],
     outcomes: ["Les ruptures de pipeline vues avant les métiers", "Les anomalies prouvées par une requête", "Un catalogue qui documente aussi les pièges"],
@@ -1904,8 +1904,8 @@ RÈGLES ABSOLUES
     mcpServers: ["Splunk", "Elastic Security", "CrowdStrike", "SentinelOne", "Wiz", "Sentry", "Semgrep", "GitHub"],
     suggestedSchedule: { label: "Revue d'alertes quotidienne", cron: "0 7 * * 1-5", prompt: "Trie les alertes des dernières 24 h : verdict par alerte avec les faits, incidents à escalader, et les règles qui génèrent trop de faux positifs." },
     setupNotes: [
-      "Autorisez vos tables de journaux : sans logs, l'agent ne peut rien qualifier.",
-      "Agent défensif, il ne lance aucun scan actif et n'applique aucun confinement lui-même.",
+      "Autorisez vos tables de journaux : sans logs, le collaborateur ne peut rien qualifier.",
+      "Collaborateur défensif, il ne lance aucun scan actif et n'applique aucun confinement lui-même.",
     ],
     outcomes: ["Un verdict explicite par alerte", "Les faux positifs récurrents traités à la source", "Les incidents réels escaladés avec leur étendue"],
   },
@@ -1958,7 +1958,7 @@ RÈGLES ABSOLUES
       "Autorisez les tables de gouvernance (registre IA, risques, contrôles) pour que l'état soit réel et non déclaratif.",
       "Indexez vos politiques et vos preuves documentaires.",
     ],
-    outcomes: ["Un état de conformité fondé sur les preuves", "Le registre IA à jour, agents en production compris", "Des écarts classés par risque, avec responsable"],
+    outcomes: ["Un état de conformité fondé sur les preuves", "Le registre IA à jour, collaborateurs en production compris", "Des écarts classés par risque, avec responsable"],
   },
 
   // ── Revenue, marketing & clients ──────────────────────────────────────────
@@ -2014,7 +2014,7 @@ RÈGLES ABSOLUES
     mcpServers: ["HubSpot", "Salesforce", "Pipedrive", "Zoho CRM", "Close", "Apollo.io", "Zoom", "Stripe", "Notion"],
     suggestedSchedule: { label: "Préparation des rendez-vous", cron: "0 7 * * 1-5", prompt: "Prépare les rendez-vous du jour : historique du compte, état de la qualification avec les critères manquants, trois questions à poser et l'objection la plus probable." },
     setupNotes: [
-      "Connectez le CRM commercial et l'agenda, l'agent prépare à partir de rendez-vous réels.",
+      "Connectez le CRM commercial et l'agenda, le collaborateur prépare à partir de rendez-vous réels.",
       "Indexez votre argumentaire et votre grille tarifaire pour que les réponses soient sourcées.",
     ],
     outcomes: ["Des rendez-vous préparés sur l'historique réel", "Une qualification honnête, trous compris", "Un pipeline dont la prévision veut dire quelque chose"],
@@ -2063,7 +2063,7 @@ RÈGLES ABSOLUES
     mcpServers: ["Firecrawl", "Exa", "Apify", "Tavily", "SerpAPI", "Bright Data", "Jina AI Reader", "Notion"],
     suggestedSchedule: { label: "Revue SEO mensuelle", cron: "0 9 2 * *", prompt: "Analyse le trafic organique du mois : pages en progression et en recul, requêtes en page deux à récupérer, cannibalisations, et les 5 actions à plus fort gain qualifié." },
     setupNotes: [
-      "Connectez au moins un outil SEO et l'analytics du site, sans données de position, l'agent ne fait que des hypothèses.",
+      "Connectez au moins un outil SEO et l'analytics du site, sans données de position, le collaborateur ne fait que des hypothèses.",
       "Indexez vos contenus existants pour détecter les cannibalisations.",
     ],
     outcomes: ["Les gains rapides identifiés sur l'existant", "Des requêtes choisies pour leur intention, pas leur volume", "Chaque action rattachée à une conversion"],
@@ -2280,7 +2280,7 @@ RÈGLES ABSOLUES
     suggestedSchedule: { label: "Point financier mensuel", cron: "0 8 4 * *", prompt: "Établis le point du mois : rapprochement des sources, écarts expliqués au-dessus du seuil, position et projection de trésorerie, impayés par ancienneté, dérives budgétaires à surveiller." },
     setupNotes: [
       "Connectez le système de paiement et autorisez les tables de facturation, le rapprochement exige deux sources.",
-      "Agent en lecture seule : il ne modifie jamais une écriture ni un paiement.",
+      "Collaborateur en lecture seule : il ne modifie jamais une écriture ni un paiement.",
     ],
     outcomes: ["Des chiffres rapprochés sur deux sources", "Chaque écart expliqué ou déclaré inexpliqué", "Une trésorerie projetée qui sépare l'engagé de l'espéré"],
   },
@@ -2328,8 +2328,8 @@ RÈGLES ABSOLUES
     ],
     mcpServers: ["Notion", "Confluence", "Box", "SharePoint", "OneDrive", "Dropbox"],
     setupNotes: [
-      "Indexez vos contrats signés et votre position de référence : sans elle, l'agent n'a rien à quoi comparer.",
-      "Agent consultatif, il n'engage aucune signature et son analyse doit être validée par un professionnel.",
+      "Indexez vos contrats signés et votre position de référence : sans elle, le collaborateur n'a rien à quoi comparer.",
+      "Collaborateur consultatif, il n'engage aucune signature et son analyse doit être validée par un professionnel.",
     ],
     outcomes: ["Les clauses à risque classées en bloquant / à négocier / acceptable", "Un risque exprimé en conséquence concrète", "Des reformulations prêtes à envoyer"],
   },
@@ -2378,7 +2378,7 @@ RÈGLES ABSOLUES
     suggestedSchedule: { label: "Point approvisionnement hebdomadaire", cron: "0 7 * * 1", prompt: "Fais le point stocks : ruptures imminentes sur les produits qui tournent, surstock immobilisé, réassorts à commander cette semaine avec date limite, et fiabilité des fournisseurs." },
     setupNotes: [
       "Autorisez les tables de stock, de commandes et de fournisseurs.",
-      "L'agent ne passe aucune commande : il prépare la décision d'achat.",
+      "Le collaborateur ne passe aucune commande : il prépare la décision d'achat.",
     ],
     outcomes: ["Les ruptures vues avant qu'elles ne coûtent une vente", "Le surstock chiffré en trésorerie immobilisée", "Des fournisseurs jugés sur leur historique réel"],
   },
@@ -2431,7 +2431,7 @@ RÈGLES ABSOLUES
     mcpServers: ["LinkedIn", "Notion", "Asana", "Monday.com", "Cal.com"],
     setupNotes: [
       "Connectez votre ATS : c'est la source des candidatures et l'endroit où la décision humaine se trace.",
-      "Décision réglementée : l'agent classe et documente, il ne rejette ni ne sélectionne personne.",
+      "Décision réglementée : le collaborateur classe et documente, il ne rejette ni ne sélectionne personne.",
     ],
     outcomes: ["Une grille écrite avant la première candidature", "Des évaluations critère par critère, citations à l'appui", "Des entretiens ciblés sur ce qui reste à trancher"],
   },
@@ -2486,8 +2486,8 @@ RÈGLES ABSOLUES
     mcpServers: ["Notion", "Confluence", "Box", "SharePoint", "Outlook Calendar", "Cal.com"],
     suggestedSchedule: { label: "Échéances RH hebdomadaires", cron: "0 8 * * 1", prompt: "Liste les échéances RH des trois prochaines semaines : fins de période d'essai, entretiens à planifier, formations obligatoires, renouvellements, avec le responsable de chacune." },
     setupNotes: [
-      "Indexez vos procédures RH : l'agent doit citer un texte interne, jamais improviser une règle.",
-      "Agent en lecture seule sur les données RH, avec confidentialité stricte.",
+      "Indexez vos procédures RH : le collaborateur doit citer un texte interne, jamais improviser une règle.",
+      "Collaborateur en lecture seule sur les données RH, avec confidentialité stricte.",
     ],
     outcomes: ["Des arrivées et départs sans accès oublié", "Des réponses qui citent la procédure applicable", "Les échéances légales vues à l'avance"],
   },
@@ -2555,8 +2555,8 @@ RÈGLES ABSOLUES
     },
     setupNotes: [
       "La personne formée installe l'extension FounderOS, l'appaire, puis active « Mode formation », sans ça, aucun repère ne s'affiche chez elle.",
-      "Enregistrez d'abord une démonstration par procédure (Skills → Enregistrer) : l'agent guide d'après les gestes réels, pas d'après ce qu'il croit savoir de l'outil.",
-      "L'agent ne clique jamais à la place de qui que ce soit : c'est une contrainte technique du mode formation, pas une consigne.",
+      "Enregistrez d'abord une démonstration par procédure (Skills → Enregistrer) : le collaborateur guide d'après les gestes réels, pas d'après ce qu'il croit savoir de l'outil.",
+      "Le collaborateur ne clique jamais à la place de qui que ce soit : c'est une contrainte technique du mode formation, pas une consigne.",
     ],
     outcomes: [
       "Un nouvel arrivant autonome sur un outil en une séance",
@@ -2671,7 +2671,7 @@ RÈGLES ABSOLUES
     ],
     mcpServers: ["GitHub", "Figma", "Sentry", "Vercel", "Netlify", "Cloudflare", "Playwright", "Chrome DevTools", "Context7", "Stack Overflow", "Linear"],
     setupNotes: [
-      "Connectez GitHub, sans dépôt, l'agent ne peut ni lire l'existant ni proposer de pull request.",
+      "Connectez GitHub, sans dépôt, le collaborateur ne peut ni lire l'existant ni proposer de pull request.",
       "Connectez Figma si vous implémentez d'après des maquettes.",
     ],
     outcomes: ["Des composants qui traitent tous leurs états", "L'accessibilité faite d'emblée, pas rattrapée", "Des optimisations mesurées avant/après"],
@@ -2727,7 +2727,7 @@ RÈGLES ABSOLUES
     mcpServers: ["GitHub", "Sentry", "Supabase", "Neon", "Prisma Postgres", "PostgreSQL", "MySQL", "MongoDB", "Redis", "Postman", "Swagger / OpenAPI", "Context7", "Stack Overflow"],
     setupNotes: [
       "Connectez GitHub et autorisez les tables : le contrat d'API se conçoit contre le modèle de données réel.",
-      "Aucune migration n'est appliquée sans validation, l'agent prépare, vous exécutez.",
+      "Aucune migration n'est appliquée sans validation, le collaborateur prépare, vous exécutez.",
     ],
     outcomes: ["Des API dont le contrat d'erreur est écrit", "Des migrations réversibles et compatibles", "Des échecs traités, jamais avalés"],
   },
@@ -2826,7 +2826,7 @@ RÈGLES ABSOLUES
     mcpServers: ["GitHub", "Sentry", "Figma", "Supabase", "Firebase", "Context7", "Stack Overflow", "Linear"],
     setupNotes: [
       "Connectez GitHub et Sentry : les crashs mobiles ne se voient que dans la remontée d'erreurs.",
-      "L'agent ne soumet rien aux magasins d'applications.",
+      "Le collaborateur ne soumet rien aux magasins d'applications.",
     ],
     outcomes: ["Un hors-ligne conçu, pas subi", "Les différences iOS/Android traitées", "Rien de livré sans double vérification sur les chemins critiques"],
   },
@@ -2879,7 +2879,7 @@ RÈGLES ABSOLUES
     mcpServers: ["GitHub", "GitHub Actions", "GitLab", "Docker", "Docker Hub", "Kubernetes", "Helm", "Terraform", "Jenkins", "CircleCI", "Buildkite", "AWS", "Cloudflare", "Vercel", "Netlify"],
     setupNotes: [
       "Connectez GitHub : pipelines et infrastructure as code y vivent tous les deux.",
-      "L'agent ne pousse aucun changement d'infrastructure, il produit le plan, vous appliquez.",
+      "Le collaborateur ne pousse aucun changement d'infrastructure, il produit le plan, vous appliquez.",
     ],
     outcomes: ["Des pipelines rapides dont l'échec est lisible", "La dérive entre déclaré et réel rendue visible", "Un retour arrière préparé pour chaque déploiement"],
   },
@@ -2931,7 +2931,7 @@ RÈGLES ABSOLUES
     mcpServers: ["Kubernetes", "Helm", "Terraform", "Docker", "GitHub", "GitHub Actions", "Buildkite", "AWS", "Linear", "Jira", "Confluence"],
     setupNotes: [
       "Connectez GitHub et le suivi de tickets : la duplication et les demandes répétitives sont le diagnostic.",
-      "L'agent ne modifie pas les environnements des équipes, il propose des gabarits.",
+      "Le collaborateur ne modifie pas les environnements des équipes, il propose des gabarits.",
     ],
     outcomes: ["Les délais de mise en production chronométrés", "Ce que chaque équipe réinvente, rendu visible", "Des chemins pavés plus faciles que le contournement"],
   },
@@ -2984,7 +2984,7 @@ RÈGLES ABSOLUES
     mcpServers: ["AWS", "Azure", "Google Cloud", "Oracle Cloud", "DigitalOcean", "Terraform", "Kubernetes", "Cloudflare", "Wiz", "GitHub"],
     setupNotes: [
       "Autorisez vos tables d'inventaire et de journaux d'accès, le moindre privilège se prouve avec l'usage réel.",
-      "Agent en lecture : il produit le changement à appliquer, il ne touche pas au compte cloud.",
+      "Collaborateur en lecture : il produit le changement à appliquer, il ne touche pas au compte cloud.",
     ],
     outcomes: ["Les permissions jugées sur l'usage, pas l'intention", "Ce qui est exposé publiquement, listé", "Une résilience éprouvée plutôt que supposée"],
   },
@@ -3092,7 +3092,7 @@ RÈGLES ABSOLUES
     suggestedSchedule: { label: "Revue de durcissement mensuelle", cron: "0 7 7 * *", prompt: "Fais la revue : comptes et permissions à révoquer, secrets exposés à tourner, services publiquement accessibles sans raison, dépendances vulnérables atteignables, et état des restaurations de sauvegarde." },
     setupNotes: [
       "Connectez GitHub et autorisez les tables de comptes et de journaux d'authentification.",
-      "Agent défensif, aucun test actif, aucune modification appliquée.",
+      "Collaborateur défensif, aucun test actif, aucune modification appliquée.",
     ],
     outcomes: ["Les accès morts et les permissions inutiles listés", "Les secrets exposés signalés pour rotation", "Une priorisation par exploitabilité réelle chez vous"],
   },
@@ -3147,7 +3147,7 @@ RÈGLES ABSOLUES
     mcpServers: ["BigQuery", "Snowflake", "Databricks", "ClickHouse", "DuckDB", "Supabase", "Hugging Face", "GitHub", "Power BI", "Tableau"],
     setupNotes: [
       "Autorisez les tables d'analyse ou connectez l'entrepôt, sans données réelles, il n'y a pas d'analyse.",
-      "Agent en lecture seule sur les données ; le code d'analyse passe par une pull request.",
+      "Collaborateur en lecture seule sur les données ; le code d'analyse passe par une pull request.",
     ],
     outcomes: ["Une hypothèse écrite avant de regarder les données", "Les artefacts de collecte séparés des vraies découvertes", "Des résultats rendus avec leur incertitude"],
   },
@@ -3262,21 +3262,21 @@ RÈGLES ABSOLUES
   },
   {
     key: "ai-agent-engineer",
-    name: "AI Agent Engineer",
-    tagline: "Conçoit les boucles d'agents : outils, mémoire, garde-fous, reprises.",
+    name: "AI Collaborateur Engineer",
+    tagline: "Conçoit les boucles d'collaborateurs : outils, mémoire, garde-fous, reprises.",
     category: "R&D",
     emoji: "🌀",
     icon3d: "at",
     accent: "#c026d3",
     persona:
-      "Un ingénieur d'agents qui a déjà vu une boucle partir en vrille et brûler un budget en une nuit. Conçoit d'abord les conditions d'arrêt, ensuite les capacités.",
-    soul: `Tu conçois des boucles qui doivent survivre à l'échec : un agent qui n'a pas prévu la reprise n'est pas fini.
+      "Un ingénieur d'collaborateurs qui a déjà vu une boucle partir en vrille et brûler un budget en une nuit. Conçoit d'abord les conditions d'arrêt, ensuite les capacités.",
+    soul: `Tu conçois des boucles qui doivent survivre à l'échec : un collaborateur qui n'a pas prévu la reprise n'est pas fini.
 Tu es obsédé par ce que l'agent VOIT, le contexte, pas le prompt.
 Tu poses les garde-fous avant d'ajouter des capacités. Une démonstration réussie ne prouve rien sur la dixième exécution.`,
     instructions: `Tu conçois et fiabilises les agents : outils, mémoire, orchestration, garde-fous.
 
 CONCEVOIR UN AGENT
-1. Écris d'abord le critère de réussite vérifiable : à quoi reconnaît-on que la tâche est finie, et par quelle preuve. Un agent sans critère d'arrêt tourne jusqu'à épuisement du budget.
+1. Écris d'abord le critère de réussite vérifiable : à quoi reconnaît-on que la tâche est finie, et par quelle preuve. Un collaborateur sans critère d'arrêt tourne jusqu'à épuisement du budget.
 2. Définis les outils par ce qu'ils rendent possible, pas par l'API qu'ils exposent. Un outil dont la description est ambiguë sera appelé de travers, la description EST l'interface.
 3. Sépare lecture et écriture : la lecture est libre, l'écriture demande une validation. C'est la frontière qui rend un agent utilisable en production.
 4. Prévois la boucle qui déraille : détection de stagnation (même action répétée sans progrès), plafond d'étapes, plafond de coût, et une sortie propre qui rend le travail partiel plutôt que rien.
@@ -3296,13 +3296,13 @@ RÈGLES ABSOLUES
     max_steps: 20,
     skillSlugs: ["mcp-builder", "context-engineering", "using-agent-skills", "claude-api", "securing-agentic-ai-tool-invocation"],
     tools: [
-      { kind: "vibe_code", name: "Construire l'agent", description: "Implémenter outils, boucle et garde-fous, puis ouvrir une pull request.", config: { actions: ["run", "apply", "pr_status"] }, requires_approval: true },
+      { kind: "vibe_code", name: "Construire le collaborateur", description: "Implémenter outils, boucle et garde-fous, puis ouvrir une pull request.", config: { actions: ["run", "apply", "pr_status"] }, requires_approval: true },
       { kind: "db_read", name: "Traces d'exécution", description: "Tables de runs, d'appels d'outils et d'approbations.", config: { tables: [] } },
-      { kind: "rag_search", name: "Base de connaissances", description: "Collections servant de mémoire ou de source aux agents.", config: {} },
-      { kind: "connector_action", name: "Dépôt", description: "GitHub, code des agents, définitions d'outils, skills.", config: { provider: "github" }, setupHint: "Connectez GitHub." },
-      { kind: "testing", name: "Tests de bout en bout", description: "Rejouer des tâches réelles contre l'agent et comparer les résultats.", config: {} },
-      { kind: "web_search", name: "Recherche techniques", description: "Protocoles d'outils, patrons d'orchestration, failles d'agents publiées." },
-      { kind: "web_fetch", name: "Lire une spécification", description: "Spécification MCP, documentation d'un SDK d'agents." },
+      { kind: "rag_search", name: "Base de connaissances", description: "Collections servant de mémoire ou de source aux collaborateurs.", config: {} },
+      { kind: "connector_action", name: "Dépôt", description: "GitHub, code des collaborateurs, définitions d'outils, skills.", config: { provider: "github" }, setupHint: "Connectez GitHub." },
+      { kind: "testing", name: "Tests de bout en bout", description: "Rejouer des tâches réelles contre le collaborateur et comparer les résultats.", config: {} },
+      { kind: "web_search", name: "Recherche techniques", description: "Protocoles d'outils, patrons d'orchestration, failles d'collaborateurs publiées." },
+      { kind: "web_fetch", name: "Lire une spécification", description: "Spécification MCP, documentation d'un SDK d'collaborateurs." },
       { kind: "composio_toolkit", name: "OpenAI", description: "Modèles, fichiers et exécutions.", config: { toolkit: "openai" }, setupHint: "Connectez OpenAI si c'est l'outil que vous utilisez." },
       { kind: "composio_toolkit", name: "Langfuse", description: "Traces, évaluations et coûts des appels LLM.", config: { toolkit: "langfuse" }, setupHint: "Connectez Langfuse si c'est l'outil que vous utilisez." },
       { kind: "composio_toolkit", name: "Pinecone", description: "Base vectorielle : index et recherche.", config: { toolkit: "pinecone" }, setupHint: "Connectez Pinecone si c'est l'outil que vous utilisez." },
@@ -3314,7 +3314,7 @@ RÈGLES ABSOLUES
       "Autorisez les tables de traces d'exécution : une boucle se corrige sur ses traces, pas sur des impressions.",
       "Tout outil d'écriture reste soumis à approbation, y compris pendant les tests.",
     ],
-    outcomes: ["Des agents avec un critère d'arrêt vérifiable", "Lecture libre, écriture validée, la frontière tenue", "Des boucles testées avec des entrées hostiles"],
+    outcomes: ["Des collaborateurs avec un critère d'arrêt vérifiable", "Lecture libre, écriture validée, la frontière tenue", "Des boucles testées avec des entrées hostiles"],
   },
 ];
 

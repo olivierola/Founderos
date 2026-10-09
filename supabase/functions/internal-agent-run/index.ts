@@ -28,6 +28,7 @@ import { decryptSecret } from "../_shared/crypto.ts";
 import { callAi, runToolRounds, safeParseJson, truncateMiddle, PayloadTooLargeError, ProviderExhaustedError, type ChatMessage } from "../_shared/ai.ts";
 import { runParallelSubagents, SUBAGENT_BUDGET_MS } from "../_shared/subagents.ts";
 import { writeReport } from "../_shared/reporter.ts";
+import { normalizeAutonomy, type AutonomyLevel } from "../_shared/policyguard.ts";
 import {
   classifyTier, classifyRequest, modelForTier, resolveProvider, defaultProvider,
   availableProviders, modelMatchesProvider, cheapProvider, providerMismatchNote,
@@ -51,6 +52,7 @@ import { recordRunIncident, recordGuardrailIncident } from "../_shared/governanc
 import { judgeModelTier, judgeSemanticLoop, judgeNeedsHuman, recordDecision } from "../_shared/agentpilot.ts";
 import {
   buildInternalToolset, RunCancelledError, AwaitingInputError, embedMemoryVector,
+  loadCustomConnectorSnapshots,
   writeAgentMemory, touchAgentMemories,
   type AgentToolRow, type InternalToolContext,
 } from "../_shared/internal-agent-tools.ts";
@@ -74,6 +76,8 @@ import {
   loadCompanyContext, renderCompanySection, type CompanyContext,
 } from "../_shared/company-context.ts";
 import { completeMissionTask, advanceRoomMission } from "../_shared/room-orchestrator.ts";
+import { ASSISTANT_OPS_DOCTRINE } from "../_shared/assistant-ops.ts";
+import { CONNECTOR_OPS_DOCTRINE } from "../_shared/assistant-connectors.ts";
 import { completeWorkflowRun } from "../_shared/workflow-engine.ts";
 import { defaultTimezone, renderClock } from "../_shared/clock.ts";
 import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
@@ -93,6 +97,8 @@ interface AgentRow {
   created_by?: string | null;
   service_dashboard_id?: string | null;
   is_orchestrator?: boolean;
+  /** What it may do alone (0266) — observer / propose / assisted / autonomous. */
+  autonomy_level?: string | null;
   model: string;
   temperature: number;
   max_steps: number;
@@ -257,7 +263,8 @@ function isSecurityAgent(skills: AgentSkill[] | undefined): boolean {
 const ORCHESTRATOR_DOCTRINE = [
   "## You are this workspace's orchestrator (its default assistant)",
   "You help run a service workspace by conversation. Beyond answering, you can BUILD the workspace when asked — act directly, don't just describe:",
-  "- CREATE AGENTS: when the user wants a specialist (\"crée un agent SEO\", \"ajoute un agent qui surveille X\"), call create_agent with a clear name, role and instructions. Confirm it's ready and offer to open it or give it work.",
+  "- CREATE & CONFIGURE AGENTS: when the user wants a specialist (\"crée un agent SEO\", \"ajoute un agent qui surveille X\") or wants one changed, use manage_agents (create, update, connect, set_skills, add_tool…). Give the connectors, skills and tools asked for in the SAME create call. Confirm it's ready and offer to open it or give it work.",
+  "- RUN THE WORK TRACKER: projects, work items, crews and pages go through manage_projects; launch an agent on an item only when asked.",
   "- SCHEDULE WORK: when the user wants recurring work (\"chaque matin fais X\", \"tous les lundis…\", \"un brief quotidien\"), call create_mission with a cron `schedule` (e.g. '0 6 * * *' for daily 06:00). Assign it to the right agent via assignee_agent, creating that agent first if needed.",
   "- RUN A ONE-OFF TASK: for \"fais X maintenant\", either do it yourself with your tools, or create_mission (start_now) on the best-suited agent.",
   "- COORDINATE: keep track of the service's agents (list_team_agents), delegate to the right one, and summarize.",
@@ -411,6 +418,15 @@ function selectLines(block: string, task: string, budget: number): { body: strin
   return { body: sel.kept.join("\n"), dropped: sel.dropped, offered };
 }
 
+// What the collaborator may do alone (0266). PolicyGuard enforces it; this line
+// keeps it from bumping into the gate in a loop.
+const AUTONOMY_RULE: Record<AutonomyLevel, string> = {
+  observer: "- AUTONOMIE : OBSERVATEUR. Tu lis, analyses et rédiges des livrables, mais tu n'écris JAMAIS dans les outils connectés (CRM, e-mail, intégrations, suivi) : ces actions te seront refusées. Décris ce que tu ferais, ou dépose-le avec propose_mission.",
+  propose: "- AUTONOMIE : PROPOSER. Chaque écriture dans un outil connecté attend une validation humaine. Prépare l'action complète, demande-la, et avance sur le reste en attendant.",
+  assisted: "- AUTONOMIE : ASSISTÉ. Les écritures sensibles attendent une validation humaine ; celles que l'équipe t'a confiées passent directement.",
+  autonomous: "- AUTONOMIE : AUTONOME. Tu agis seul sous le plafond de risque de l'équipe ; une action irréversible ou engageante demande toujours une personne. Rends compte de ce que tu as fait.",
+};
+
 function buildSystemPrompt(
   agent: AgentRow,
   capabilitySummary: string,
@@ -470,7 +486,7 @@ function buildSystemPrompt(
   }
   push("presence", lines.join("\n"));
   if (securityDoctrine) push("doctrine", SECURITY_DOCTRINE);
-  if (agent.is_orchestrator) push("doctrine", ORCHESTRATOR_DOCTRINE);
+  if (agent.is_orchestrator) push("doctrine", `${ORCHESTRATOR_DOCTRINE}\n\n${ASSISTANT_OPS_DOCTRINE}\n\n${CONNECTOR_OPS_DOCTRINE}`);
   // Initiative is a doctrine, not a footnote: as one line inside the operating
   // rules it was reliably ignored. Sub-agents are excluded — a spawned worker
   // has ONE narrow subtask and must not start filing ideas of its own.
@@ -514,6 +530,7 @@ function buildSystemPrompt(
     "- SAVE durable knowledge as you learn it (save_memory), one self-contained line each: stable facts, installed tools, produced files (with paths), key results. Skip transient details and anything already known.",
     "- PRÉFÉRENCES : dès que l'utilisateur exprime une habitude durable ou te reprend sur la forme (langue, ton, format d'un livrable, canal, horaire, ce qu'il ne veut jamais), enregistre-la avec remember_preference — une phrase impérative, réutilisable hors de cette conversation. S'il change d'avis, corrige la préférence existante (`replaces`) au lieu d'en empiler une seconde. Ne redemande jamais ce qui est déjà dans tes préférences.",
     "- Approvals: a gated tool queues for review and your run KEEPS RUNNING — acknowledge and continue; never re-ask an approval already granted. If a tool errors, adapt or state the limitation.",
+    AUTONOMY_RULE[normalizeAutonomy(agent.autonomy_level)],
     // Initiative itself is covered by PROACTIVITY_DOCTRINE above; this line only
     // ties it back to the checklist discipline the rules are about.
     "- INITIATIVE : applique la doctrine d'initiative ci-dessus — ce qui découle de la demande fait partie du travail, ce qui en sort se dépose avec propose_mission. Jamais d'effet de bord hors périmètre.",
@@ -745,7 +762,7 @@ async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, created_by, service_dashboard_id, is_orchestrator")
+      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, created_by, service_dashboard_id, is_orchestrator, autonomy_level")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -1108,6 +1125,61 @@ function lastUserText(messages: ChatMessage[]): string {
   return String([...messages].reverse().find((m) => m.role === "user")?.content ?? "");
 }
 
+// ---------------------------------------------------------------------------
+// Compagnon navigateur (0271)
+// ---------------------------------------------------------------------------
+// Une conversation ouverte depuis le panneau latéral du navigateur porte sur la
+// page que la personne a sous les yeux. Elle reçoit l'outil page_assist et une
+// consigne de forme : le panneau est étroit, et la réponse peut arriver dans
+// une bulle si le panneau s'est refermé entre-temps.
+
+async function isCompanionConversation(
+  admin: ReturnType<typeof createServiceClient>,
+  conversationId: string | null | undefined,
+): Promise<boolean> {
+  if (!conversationId) return false;
+  const { data } = await admin.from("internal_agent_conversations")
+    .select("origin").eq("id", conversationId).maybeSingle();
+  return (data as { origin?: string | null } | null)?.origin === "companion";
+}
+
+const COMPANION_NOTE = [
+  "",
+  "",
+  "## Compagnon navigateur",
+  "La personne te parle depuis le panneau latéral de son navigateur, à côté de la page qu'elle consulte.",
+  "- Les blocs <page_context>, <selection_context> et <element_context> joints à ses messages sont ce qu'elle a sous les yeux : c'est ton matériau principal. Réponds à partir d'eux et cite-les ; n'invente rien qui n'y est pas.",
+  "- Un bloc collapsed=\"true\" ou unchanged=\"true\" renvoie à la page déjà fournie plus haut dans la conversation.",
+  "- Pour attirer son attention sur un passage, un chiffre ou un bouton de SA page, surligne-le avec page_assist action=\"highlight\" (extrait exact du texte, ou libellé visible) au lieu de décrire où regarder.",
+  "- Le panneau est étroit : va à l'essentiel, phrases courtes, listes brèves. Si le panneau est fermé, ta réponse lui arrive dans une bulle : mets la conclusion dans la première phrase.",
+].join("\n");
+
+const CONTEXT_BLOCK_RE = /<page_context\b([^>]*)>([\s\S]*?)<\/page_context>/g;
+
+/**
+ * Une page jointe pèse jusqu'à ~6 000 tokens, et l'historique d'une conversation
+ * en garde trente messages. Renvoyer chaque version de chaque page à chaque
+ * tour noierait le modèle et la facture : seule la DERNIÈRE page complète reste
+ * entière, les précédentes deviennent une ligne qui dit ce qu'elles étaient.
+ */
+function collapseStalePageContexts<T extends { role: string; content: string | null }>(history: T[]): T[] {
+  let keep = -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role !== "user" || !m.content) continue;
+    const full = [...m.content.matchAll(CONTEXT_BLOCK_RE)].some((x) => !/\b(unchanged|collapsed)="true"/.test(x[1]));
+    if (full) { keep = i; break; }
+  }
+  return history.map((m, i) => {
+    if (i === keep || m.role !== "user" || !m.content || !m.content.includes("<page_context")) return m;
+    const content = m.content.replace(CONTEXT_BLOCK_RE, (whole, attrs: string, body: string) =>
+      /\b(unchanged|collapsed)="true"/.test(attrs)
+        ? whole
+        : `<page_context${attrs} collapsed="true">[page jointe à ce moment-là (${body.length} caractères), remplacée par une version plus récente ; page_assist look pour la relire]</page_context>`);
+    return { ...m, content };
+  });
+}
+
 function makeToolContext(opts: {
   admin: ReturnType<typeof createServiceClient>;
   agent: AgentRow;
@@ -1136,11 +1208,11 @@ function makeToolContext(opts: {
     agentId: agent.id,
     agentName: agent.name,
     collaborationEnabled: agent.collaboration_enabled,
-    // Autopilot = the agent may execute write actions without per-action
-    // approval. There is no per-agent autopilot flag on internal_agents, so we
-    // default to NOT autopilot — write gating is driven per-tool by each tool's
-    // own requires_approval flag.
+    // Autopilot stays off for collaborators: what they may do alone is their
+    // autonomy level (0266), applied by PolicyGuard with Jev's risk judgement —
+    // never a blanket dispensation.
     autopilot: false,
+    autonomy: normalizeAutonomy(agent.autonomy_level),
     runId,
     conversationId: opts.conversationId ?? null,
     // Precedence: per-agent override → live DB config → env fallback.
@@ -1159,6 +1231,8 @@ function makeToolContext(opts: {
     swarmEnabled: agent.swarm_enabled !== false,
     serviceDashboardId: agent.service_dashboard_id ?? null,
     userId: agent.created_by ?? null,
+    // The service's assistant gets the administration tools (assistant-ops).
+    isOrchestrator: agent.is_orchestrator === true,
     // Reports are written by Le Rédacteur (0206): this agent hands over the
     // matter and gets back a published document. Injected HERE, in the one place
     // every path builds a context, so the toolbox the system prompt advertises
@@ -1351,6 +1425,7 @@ async function initChatRun(
 
   const runtimeConfig = await loadRuntimeConfig(admin);
   const ctx = makeToolContext({ admin, agent, runId: chatRunId, missionId: null, conversationId, runtimeConfig });
+  ctx.companion = await isCompanionConversation(admin, conversationId);
   // Circuit breaker (chat = graceful degrade): if the sandbox is down, strip the
   // execution tools for this turn and tell the model why, instead of letting it
   // grind against a dead tunnel.
@@ -1380,8 +1455,15 @@ async function initChatRun(
   }
   // Semantic memory recall keyed on the user's latest message.
   const lastUserText = String([...(history ?? [])].reverse().find((m) => m.role === "user")?.content ?? "");
+  // Les blocs joints depuis le navigateur (0271) ne sont pas le SUJET de la
+  // demande : une page entière noierait le rappel de mémoire et le classement
+  // des skills. Ils y sont réduits à leur titre ; le planificateur, lui, garde tout.
+  const lastUserFocus = lastUserText.replace(
+    /<(page|selection|element)_context\b([^>]*)>[\s\S]*?<\/\1_context>/g,
+    (_w: string, kind: string, attrs: string) => ` [${kind} : ${attrs.match(/title="([^"]*)"/)?.[1] ?? "jointe"}]`,
+  );
   const [memorySection, teamMemorySection, chatSkills, recentWorkSection, company] = await Promise.all([
-    loadMemorySection(admin, agent.id, lastUserText || undefined),
+    loadMemorySection(admin, agent.id, lastUserFocus || undefined),
     loadTeamMemorySection(admin, agent.project_id, agent.service_dashboard_id ?? null),
     loadActivatedSkills(admin, agent.id),
     loadRecentWorkSection(admin, agent.id),
@@ -1389,6 +1471,9 @@ async function initChatRun(
   ]);
   ctx.skills = chatSkills;
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
+    agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
+  });
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
 
   // Le run de CE chat s'appelle `chatRunId` dans cette fonction — `runId` n'y
@@ -1398,15 +1483,15 @@ async function initChatRun(
     admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId: chatRunId,
   };
   const chatPrompt = buildSystemPrompt(
-    agent, capabilitySummary + sandboxDownNote, "chat", memorySection, teamMemorySection,
-    chatSkills, recentWorkSection, isSecurityAgent(chatSkills), lastUserText,
+    agent, capabilitySummary + sandboxDownNote + (ctx.companion ? COMPANION_NOTE : ""), "chat", memorySection, teamMemorySection,
+    chatSkills, recentWorkSection, isSecurityAgent(chatSkills), lastUserFocus,
     undefined, false, company,
-    await rankSkills(chatJudge, chatSkills, lastUserText),
+    await rankSkills(chatJudge, chatSkills, lastUserFocus),
   );
   await ctx.logEvent("prompt", budgetEventPayload(chatPrompt.budget, null)).catch(() => {});
   const messages: ChatMessage[] = [
     { role: "system", content: chatPrompt.prompt },
-    ...(history ?? [])
+    ...collapseStalePageContexts((history ?? []) as Array<{ role: string; content: string | null; tool_calls?: unknown }>)
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => {
         // Surface what an assistant turn actually DID (tool names) so a later
@@ -1568,7 +1653,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
 
   const { data: run } = await admin
     .from("internal_agent_runs")
-    .select("id, mission_id, status")
+    .select("id, mission_id, status, trigger_payload")
     .eq("id", runId)
     .maybeSingle();
   if (!run) throw new Error("Run not found");
@@ -1707,6 +1792,9 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
   ]);
   ctx.skills = missionSkills;
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
+    agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
+  });
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
   await ctx.logEvent("log", { message: `Run started (ticked) — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
 
@@ -1813,13 +1901,35 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
     }
   }
 
+  // A run started by an event (0267) carries it: the brief says what to do when
+  // it happens, this says WHAT happened. Without it, the collaborator would
+  // know its standing instruction and not the case in front of it.
+  const trigger = (run as { trigger_payload?: { provider?: string; event?: string; received_at?: string; data?: unknown } | null }).trigger_payload;
+  let triggerSection = "";
+  if (trigger) {
+    let dataText = "";
+    try { dataText = JSON.stringify(trigger.data ?? {}, null, 2).slice(0, 5000); } catch { dataText = String(trigger.data ?? ""); }
+    triggerSection = [
+      "",
+      "## Événement déclencheur",
+      `Source : ${trigger.provider === "founderos" ? "l'application (événement interne)" : trigger.provider} · ${trigger.event ?? "?"}`,
+      trigger.received_at ? `Reçu : ${trigger.received_at}` : "",
+      "Données de l'événement :",
+      "```json",
+      dataText,
+      "```",
+      "Traite CET événement selon le brief ci-dessus. S'il ne demande finalement rien (doublon, hors sujet, déjà traité), termine en le disant en une phrase, sans livrable.",
+      "",
+    ].filter((l) => l !== "").join("\n") + "\n";
+  }
+
   const userPrompt = `# Mission: ${mission.title}
 
 ## Brief
 ${mission.brief ?? "(no brief provided)"}
 
 ${mission.acceptance_criteria ? `## Acceptance criteria\n${mission.acceptance_criteria}\n` : ""}
-${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}${workItemSection}${previousRunSection}
+${deliverablesSpec ? `## Expected deliverables\n${deliverablesSpec}\n` : ""}${workItemSection}${triggerSection}${previousRunSection}
 Execute this mission now. Use your tools to gather what you need, save each expected deliverable with create_deliverable, then write your final mission report.`;
 
   const provider = providerFor(agent);
@@ -2663,7 +2773,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const isChat = state.mode === "chat" || !state.mission_id;
   // Room-bound run: same durable tick engine as chat, but the reply/deliverables
   // are posted back to a room placeholder message instead of a conversation.
-  const roomBinding = ((state.meta as { room?: { room_id: string; placeholder_id: string } } | undefined)?.room) ?? null;
+  const roomBinding = ((state.meta as { room?: { room_id: string; placeholder_id: string; requested_by?: string | null } } | undefined)?.room) ?? null;
   // Room MISSION task: this run executes one card of a multi-agent mission. Its
   // outcome is what unblocks the tasks waiting on it, so every terminal path
   // below (success, failure, cancellation) must report back — a task whose run
@@ -2689,7 +2799,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
 
   // Run no longer active? clean up.
   const { data: runRow } = await admin.from("internal_agent_runs")
-    .select("status, error_message").eq("id", runId).maybeSingle();
+    .select("status, error_message, triggered_by").eq("id", runId).maybeSingle();
   if (!runRow || ["cancelled", "failed", "succeeded"].includes(runRow.status as string)) {
     // Report before cleaning up. This branch is what the zombie reconciler
     // leaves behind (it flips a timed-out run to 'failed' from SQL, which no
@@ -2730,8 +2840,26 @@ async function runMissionTick(runId: string, msgId: number | null) {
     : { data: null };
   const runtimeConfig = await loadRuntimeConfig(admin);
   const ctx = makeToolContext({ admin, agent, runId, missionId: state.mission_id, conversationId: state.conversation_id, delegationDepth: (mission as { delegation_depth?: number } | null)?.delegation_depth ?? 0, runtimeConfig });
+  // Le toolset est reconstruit à chaque tick : sans ce drapeau, page_assist
+  // annoncé au premier tour aurait disparu au suivant.
+  ctx.companion = !state.mission_id && await isCompanionConversation(admin, state.conversation_id);
   ctx.skills = await loadActivatedSkills(admin, agent.id);
   ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
+    agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
+  });
+  // The person this turn acts for: who posted in the room, else who started
+  // the run. The service assistant's administration tools act with THEIR
+  // role, not the role of whoever first created the assistant.
+  ctx.actingUserId = roomBinding?.requested_by
+    ?? ((runRow as { triggered_by?: string | null } | null)?.triggered_by ?? null);
+  if (!ctx.actingUserId && agent.is_orchestrator && state.conversation_id) {
+    // A direct chat with the assistant: the conversation knows who is talking.
+    const { data: convo } = await admin.from("internal_agent_conversations")
+      .select("user_id").eq("id", state.conversation_id).maybeSingle();
+    ctx.actingUserId = (convo as { user_id?: string | null } | null)?.user_id ?? null;
+  }
+  if (roomBinding?.room_id) ctx.serviceRoomId = roomBinding.room_id;
   // ── Guardrails (runtime enforcement) ──────────────────────────────────────
   // Loaded once per tick. Two passes, and elles ne couvrent pas les mêmes
   // règles : l'expression régulière attrape ce qui s'écrit (un numéro de carte),
@@ -2757,7 +2885,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
     parentLogEvent: (p) => ctx.logEvent("status", p),
     makeChildContext: (childRunId) => {
       const c = makeToolContext({ admin, agent, runId: childRunId, missionId: null, conversationId: null, delegationDepth: (ctx.delegationDepth ?? 0) + 1, runtimeConfig });
-      c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.isSubagent = true;
+      c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.customConnectors = ctx.customConnectors; c.isSubagent = true;
       return c;
     },
     // Un sous-agent n'hérite ni de la mémoire ni de l'initiative — mais il
@@ -2818,6 +2946,10 @@ async function runMissionTick(runId: string, msgId: number | null) {
     // is unpredictable and never lexically related to the task at hand. A round
     // where its schema was ranked out is a preference lost for good.
     "save_memory", "remember_preference", "link_artifact", "spawn_parallel_agents",
+    // The service assistant's administration tools: "mets Léa sur ABC-12" shares
+    // no word with either schema, so lexical ranking would drop exactly the
+    // tool the request is about.
+    ...(agent.is_orchestrator ? ["manage_agents", "manage_projects"] : []),
   ]);
   /** Tools called in the recent transcript — the agent is mid-pipeline with
    *  them, so their schemas stay whatever the ranking says. */
@@ -4107,7 +4239,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
       // The gate stops the ACTION, not the work already done: the report the
       // agent wrote before asking for permission ships with this message.
       await closeRoomMessage(admin, agent, roomBinding, runId,
-        `⏸️ L'action « ${summary} » nécessite une approbation humaine. Ouvre-moi en chat direct (hors room) pour l'approuver et l'exécuter.`,
+        `⏸️ L'action « ${summary} » nécessite ton autorisation. Elle t'attend dans « À valider » (module Travail) et s'exécutera dès que tu l'auras autorisée.`,
         "done");
       await reportMissionTask(false, `Approbation humaine requise : ${summary}`);
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);

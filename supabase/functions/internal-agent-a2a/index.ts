@@ -12,6 +12,8 @@ import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { callAiWithTools, type ChatMessage } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
+import { normalizeAutonomy } from "../_shared/policyguard.ts";
+import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
 import {
   buildInternalToolset, type AgentToolRow, type InternalToolContext,
 } from "../_shared/internal-agent-tools.ts";
@@ -55,7 +57,7 @@ Deno.serve(async (req) => {
     // Load recipient + its tools.
     const [{ data: agent }, { data: tools }, { data: sender }] = await Promise.all([
       admin.from("internal_agents")
-        .select("id, name, persona, instructions, model, temperature, max_steps, workspace_id, project_id, is_archived, collaboration_enabled")
+        .select("id, name, persona, instructions, model, temperature, max_steps, workspace_id, project_id, is_archived, collaboration_enabled, autonomy_level, service_dashboard_id, created_by")
         .eq("id", recipientId).maybeSingle(),
       admin.from("internal_agent_tools")
         .select("id, kind, name, description, config, enabled, requires_approval")
@@ -93,9 +95,31 @@ Deno.serve(async (req) => {
       agentId: a.id,
       agentName: a.name,
       collaborationEnabled: true,
+      // A message from a teammate does not widen what this collaborator may do
+      // alone (0266): same autonomy as everywhere else.
+      autonomy: normalizeAutonomy(a.autonomy_level),
+      serviceDashboardId: a.service_dashboard_id ?? null,
       runId: null,
       conversationId: null,
-      createDeliverable: async () => {},
+      // Both used to be missing or empty here: create_artifact crashed on an
+      // undefined function, and create_deliverable answered « livré » while
+      // writing nothing. They now persist exactly like a chat turn does.
+      createDeliverable: async (d) => {
+        const { data: row, error } = await admin.from("internal_agent_deliverables").insert({
+          agent_id: a.id, kind: d.kind, name: d.name, content: d.content, summary: d.summary,
+        }).select("id").maybeSingle();
+        if (error || !row) throw new Error(`enregistrement impossible : ${error?.message ?? "aucune ligne écrite"}`);
+      },
+      createArtifact: async (art) => {
+        const scope = { workspaceId: a.workspace_id ?? null, projectId: a.project_id ?? null, createdBy: a.created_by ?? null, agentId: a.id };
+        if (art.kind === "image") {
+          if (!(await generateArtifactImage(admin, art.content, scope))) throw new Error("génération d'image indisponible");
+          return;
+        }
+        // Plain text has no store outside a thread: the reply itself carries it.
+        if (!isDocKind(art.kind)) return;
+        if (!(await insertArtifact(admin, art.kind, art.title, art.content, scope))) throw new Error("enregistrement du document impossible");
+      },
       requestApproval: async (r) => {
         const { data } = await admin.from("internal_agent_approvals").insert({
           agent_id: a.id, workspace_id: a.workspace_id, project_id: a.project_id,

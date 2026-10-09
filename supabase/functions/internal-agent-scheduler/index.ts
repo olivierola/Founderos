@@ -18,13 +18,17 @@
 //      is armed (agent_autorun + agent_brief, 0242) or when its START DATE
 //      arrives (0250). Mission + run + passage « en cours ».
 //   5. Launches due scheduled WORKFLOWS (agent_workflows.next_run_at <= now).
+//   6. Routes queued INTERNAL events (0267) to the triggers listening for them.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { timingSafeEqual } from "../_shared/authz.ts";
-import { startWorkflowRun, syncWorkflowSchedule } from "../_shared/workflow-engine.ts";
+import { startWorkflowRun, syncWorkflowSchedule, routeWorkflowEvent } from "../_shared/workflow-engine.ts";
 
 const MAX_LAUNCHES_PER_TICK = 3;
+// Internal events routed per tick. Each costs a few queries (and a Jev call
+// when its trigger has a prose filter), never a model run by itself.
+const MAX_EVENTS_PER_TICK = 25;
 const MAX_RESCUES_PER_TICK = 3;
 const QUEUED_RESCUE_AFTER_MS = 5 * 60 * 1000;
 const RUNNING_TIMEOUT_MS = 30 * 60 * 1000;
@@ -139,7 +143,7 @@ Deno.serve(async (req) => {
     launched: [] as string[], rescued: [] as string[], timed_out: [] as string[], a2a: [] as string[],
     workflows: [] as string[], workflow_errors: [] as string[],
     issue_runs: [] as string[], issue_errors: [] as string[],
-    query_errors: [] as string[],
+    query_errors: [] as string[], events: [] as string[],
   };
 
   // 1. Due scheduled missions.
@@ -428,6 +432,33 @@ Deno.serve(async (req) => {
       report.workflow_errors.push(`${w.name}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  // 6. Internal events (0267): a CRM record, a work item or a support ticket was
+  //    created, and an active trigger listens. The database queued it; it goes
+  //    through the SAME routing as a Composio event — dedup, filter, start —
+  //    scoped to its project. Marked processed before routing: a slow route must
+  //    not let the next tick deliver it twice (the delivery ledger would refuse
+  //    it anyway, but the run counter would not).
+  const { data: queued, error: queueError } = await admin.from("collab_event_queue")
+    .select("id, project_id, event_slug, external_event_id, payload")
+    .is("processed_at", null).order("created_at", { ascending: true }).limit(MAX_EVENTS_PER_TICK);
+  if (queueError) report.query_errors.push(`événements internes : ${queueError.message}`);
+  for (const ev of (queued ?? []) as Array<{ id: number; project_id: string; event_slug: string; external_event_id: string; payload: Record<string, unknown> }>) {
+    await admin.from("collab_event_queue").update({ processed_at: new Date().toISOString() }).eq("id", ev.id);
+    try {
+      const res = await routeWorkflowEvent(admin, {
+        provider: "founderos", eventSlug: ev.event_slug, externalEventId: ev.external_event_id,
+        payload: ev.payload ?? {}, projectId: ev.project_id,
+      });
+      await admin.from("collab_event_queue").update({ result: res }).eq("id", ev.id);
+      report.events.push(`${ev.event_slug}:${res.started}/${res.matched}`);
+    } catch (e) {
+      await admin.from("collab_event_queue").update({ result: { error: e instanceof Error ? e.message : String(e) } }).eq("id", ev.id);
+    }
+  }
+  // A week of history is enough to explain a trigger that "did not fire".
+  await admin.from("collab_event_queue").delete()
+    .not("processed_at", "is", null).lt("created_at", new Date(now.getTime() - 7 * 86400_000).toISOString());
 
   return jsonResponse({ ok: true, ...report });
 });

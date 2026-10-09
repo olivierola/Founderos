@@ -127,7 +127,7 @@ export function OnboardingOverviewPage() {
     <div>
       <PageHeader
         title="Onboarding"
-        description="Design flows, tours and checklists that the RAG agent runs to onboard your SaaS users."
+        description="Design flows, tours and checklists that the RAG collaborateur runs to onboard your SaaS users."
         actions={
           <AgentPicker
             projectId={projectId}
@@ -146,11 +146,11 @@ export function OnboardingOverviewPage() {
                 <div>
                   <div className="font-medium">
                     {agent.onboarding_enabled
-                      ? "Onboarding is active for this agent."
-                      : "Onboarding is disabled for this agent."}
+                      ? "Onboarding is active for this collaborateur."
+                      : "Onboarding is disabled for this collaborateur."}
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    Onboarding is enabled per-agent, toggle it in the agent's Settings tab.
+                    Onboarding is enabled per-collaborateur, toggle it in the collaborateur's Settings tab.
                   </div>
                 </div>
                 {agentId && workspace?.slug && project?.slug && (
@@ -159,7 +159,7 @@ export function OnboardingOverviewPage() {
                     className="shrink-0"
                   >
                     <Button size="sm" variant="outline">
-                      Open agent settings
+                      Open collaborateur settings
                     </Button>
                   </Link>
                 )}
@@ -184,7 +184,7 @@ export function OnboardingOverviewPage() {
                     <Network className="h-4 w-4" /> App structure
                   </h2>
                   <p className="text-xs text-muted-foreground">
-                    The agent uses an enriched map of your SaaS pages and actions to drive dynamic
+                    The collaborateur uses an enriched map of your SaaS pages and actions to drive dynamic
                     onboarding. Run an enrichment after each new code scan.
                   </p>
                 </div>
@@ -207,7 +207,7 @@ export function OnboardingOverviewPage() {
                 <StatTile
                   label="Enriched pages"
                   value={enrichmentStatus?.enriched_pages ?? 0}
-                  hint={enrichmentStatus?.has_enriched ? "Ready for the agent" : "Not enriched yet"}
+                  hint={enrichmentStatus?.has_enriched ? "Ready for the collaborateur" : "Not enriched yet"}
                 />
                 <StatTile
                   label="Last enrichment"
@@ -239,8 +239,8 @@ export function OnboardingOverviewPage() {
             <CardContent className="flex items-start justify-between gap-3 p-4 text-xs text-muted-foreground">
               <p>
                 The widget snippet that ships onboarding to your SaaS lives in the
-                <span className="mx-1 font-medium text-foreground">agent's Widget tab</span>
-               , open the agent and copy the embed code from there.
+                <span className="mx-1 font-medium text-foreground">collaborateur's Widget tab</span>
+               , open the collaborateur and copy the embed code from there.
               </p>
             </CardContent>
           </Card>
@@ -283,9 +283,9 @@ export function OnboardingFlowsPage() {
     <KindPage
       kind="flow"
       title="Onboarding flows"
-      description="Conversational sequences the agent plays when a trigger fires (signup, first login, etc.)."
+      description="Conversational sequences the collaborateur plays when a trigger fires (signup, first login, etc.)."
       emptyTitle="No flow yet"
-      emptyDescription="Create a flow and add steps for the agent to walk users through."
+      emptyDescription="Create a flow and add steps for the collaborateur to walk users through."
     />
   );
 }
@@ -301,7 +301,7 @@ export function OnboardingToursPage() {
       title="Guided tours"
       description="UI tours that highlight specific elements on specific pages. Steps include a route and a CSS selector."
       emptyTitle="No tour yet"
-      emptyDescription="Tours let the agent point at concrete UI elements on a given page."
+      emptyDescription="Tours let the collaborateur point at concrete UI elements on a given page."
     />
   );
 }

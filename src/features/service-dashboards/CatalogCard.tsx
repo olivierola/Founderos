@@ -15,11 +15,34 @@ export interface CatalogBadge {
   title?: string;
 }
 
+/** What a collaborator is doing right now, under its name. Templates have none. */
+export interface CatalogStatus {
+  tone: "working" | "waiting" | "error" | "idle";
+  label: string;
+  /** The task in hand, the last error… one line, truncated. */
+  detail?: string;
+}
+
+const STATUS_DOT: Record<CatalogStatus["tone"], string> = {
+  working: "bg-emerald-500",
+  waiting: "bg-amber-500",
+  error: "bg-red-500",
+  idle: "bg-muted-foreground/40",
+};
+
+const STATUS_TEXT: Record<CatalogStatus["tone"], string> = {
+  working: "text-emerald-700 dark:text-emerald-400",
+  waiting: "text-amber-700 dark:text-amber-400",
+  error: "text-red-700 dark:text-red-400",
+  idle: "text-muted-foreground",
+};
+
 export function CatalogCard({
-  glyph, name, tools, extras, badges, shield, meta, overlay, action, tools_needed, onClick, disabled, className,
+  glyph, name, status, tools, extras, badges, shield, meta, overlay, action, tools_needed, onClick, disabled, className,
 }: {
   glyph: React.ReactNode;
   name: string;
+  status?: CatalogStatus;
   /** Wrench count — tools. `null` renders the em dash of the design. */
   tools: number | null;
   /** Bolt count — skills / triggers. */
@@ -29,7 +52,7 @@ export function CatalogCard({
   shield?: boolean;
   /** Mono text on the right of the pill row. */
   meta?: string;
-  /** Revealed over the glyph plate on hover (e.g. an "Add agent" affordance). */
+  /** Revealed over the glyph plate on hover (e.g. an "Add collaborateur" affordance). */
   overlay?: React.ReactNode;
   /** Apps this agent/template depends on, connected or not. */
   tools_needed?: ToolNeed[];
@@ -69,6 +92,19 @@ export function CatalogCard({
 
       <div className="flex flex-1 flex-col border-t border-border/70 px-3.5 py-3">
         <div className="truncate text-[15px] font-semibold">{name}</div>
+
+        {status && (
+          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px]" title={status.detail ?? status.label}>
+            <span className="relative flex h-2 w-2 shrink-0">
+              {status.tone === "working" && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+              )}
+              <span className={cn("relative inline-flex h-2 w-2 rounded-full", STATUS_DOT[status.tone])} />
+            </span>
+            <span className={cn("shrink-0 font-medium", STATUS_TEXT[status.tone])}>{status.label}</span>
+            {status.detail && <span className="min-w-0 truncate text-muted-foreground">{status.detail}</span>}
+          </div>
+        )}
 
         <div className="mt-1.5 flex items-center gap-3.5 text-[12px] text-muted-foreground">
           <span className="flex items-center gap-1" title="Outils">

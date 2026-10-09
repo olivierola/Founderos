@@ -100,7 +100,7 @@ const CHANGELOG: Entry[] = [
     items: [
       "A Cloud collaborator can receive tools from a remote MCP server, with OAuth or a static header",
       "Multi-file skills, read on demand rather than loaded in one block",
-      "Administration lives in a single area: organisation, subscriptions, superintelligence governance",
+      "Administration lives in a single area: organisation, subscriptions, super intelligence governance",
     ],
   },
 ];

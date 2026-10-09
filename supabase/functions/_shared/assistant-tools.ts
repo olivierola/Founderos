@@ -43,6 +43,12 @@ export interface EmittedArtifact {
 }
 
 import { workflowToolDefs } from "./workflow-authoring.ts";
+import {
+  agentToolIssue, isBlockingSetup, AGENT_TOOL_CONFIG_HINTS, CONFIGURABLE_TOOL_KINDS, describeAgentTool,
+  EDGE_FUNCTION_SLUGS, agentOpsToolDef, projectOpsToolDef, runAgentOps, runProjectOps,
+  type OpsToolRow, type OpsActor, type OpsResult,
+} from "./assistant-ops.ts";
+import { connectorOpsToolDef, runConnectorOps } from "./assistant-connectors.ts";
 
 export interface ToolContext {
   admin: SupabaseClient;
@@ -50,6 +56,9 @@ export interface ToolContext {
   projectId: string;
   userId: string;
   userRole: WorkspaceRole;
+  /** The service dashboard the user is looking at, read from the page path —
+   *  the default home of whatever the assistant creates. */
+  serviceDashboardId?: string | null;
   // Tools push deliverables here; the edge function persists them after the loop.
   emitArtifact: (a: EmittedArtifact) => void;
 }
@@ -1569,90 +1578,9 @@ const recruitmentOverview: AssistantTool = {
 // (the same rules drive the banner and the Tools tab badges) — keep in sync.
 // ===========================================================================
 
-interface AgentToolRow {
-  id: string;
-  kind: string;
-  name: string;
-  description: string | null;
-  config: Record<string, unknown> | null;
-  enabled: boolean | null;
-  requires_approval: boolean | null;
-}
-
-/** Human explanation of what this tool still needs, or null when it's ready. */
-function agentToolIssue(kind: string, config: Record<string, unknown> | null | undefined): string | null {
-  const cfg = config ?? {};
-  switch (kind) {
-    case "db_read":
-      return Array.isArray(cfg.tables) && cfg.tables.length > 0
-        ? null
-        : "No allowed tables — the agent cannot read anything.";
-    case "edge_function":
-      return /^[a-z0-9-]+$/.test(str(cfg.slug)) ? null : "No function chosen — the tool is skipped at runtime.";
-    case "custom":
-      return /^https?:\/\//.test(str(cfg.webhook_url)) ? null : "No webhook URL — the tool is skipped at runtime.";
-    case "connector_action":
-      return str(cfg.provider) ? null : "No integration chosen — connect the service and select it.";
-    case "composio_toolkit":
-      return str(cfg.toolkit) ? null : "No Composio toolkit chosen — connect the app first.";
-    case "rag_search":
-      return Array.isArray(cfg.collection_ids) && cfg.collection_ids.length > 0
-        ? null
-        : "No knowledge collection attached — the agent searches an empty index.";
-    case "vibe_code":
-      return str(cfg.repository_id) ? null : "No repository pinned — the agent picks one itself if several exist.";
-    case "testing":
-      return str(cfg.suite_id) ? null : "No test suite pinned — the agent picks one itself.";
-    case "security_scan":
-      return str(cfg.target) ? null : "No target registered — declare the authorised scope before any scan.";
-    default:
-      return null;
-  }
-}
-
-/** vibe_code/testing merely lose their pin; every other gap makes the worker skip the tool. */
-function isBlockingSetup(kind: string): boolean {
-  return !["vibe_code", "testing"].includes(kind);
-}
-
-/** The config shape the model must produce, per kind. */
-const AGENT_TOOL_CONFIG_HINTS: Record<string, string> = {
-  db_read: '{"tables": ["crm_records", "product_events"]} — whitelist of table names, project-scoped at runtime.',
-  edge_function: '{"slug": "send-notification"} — a Supabase edge function slug (see options.edge_functions).',
-  custom: '{"webhook_url": "https://…"} — the endpoint called with model-provided arguments.',
-  connector_action: '{"provider": "slack"} — a connected integration (see options.connectors).',
-  composio_toolkit: '{"toolkit": "gmail"} — a Composio toolkit slug the workspace has connected.',
-  rag_search: '{"collection_ids": ["<uuid>", …]} — knowledge collections (see options.rag_collections).',
-  vibe_code: '{"repository_id": "<uuid>", "actions": ["run","apply"]} — repo pin (see options.repositories); actions grant write powers ("apply" opens the PR, "merge_pr" merges).',
-  testing: '{"suite_id": "<uuid>"} — the test suite to pin (see options.test_suites).',
-  security_scan: '{"target": "https://app.example.com"} — the explicitly authorised scope.',
-  simulation: '{"max_rounds": 8} — model calls per simulation; above 8 the cost climbs fast.',
-  support: '{} — no config: the ResolveAI support queue of this project (requests received by public agents).',
-  governance: '{} — no config: read-only PolicyGuard audit figures (risk levels, decisions, human validations).',
-  leads: '{} — no config on the tool: the qualification grid, lead types and sales reps are shared by the project (LeadSense settings).',
-  soc: '{} — no config on the tool: SentinelFlow sources, assets and rules are set in Admin → Gouvernance IA → SentinelFlow.',
-};
-
-const CONFIGURABLE_TOOL_KINDS = [
-  "web_search", "web_fetch", "db_read", "rag_search", "edge_function",
-  "vault_connector", "connector_action", "composio_toolkit", "crm", "support", "governance", "leads", "soc",
-  "security_scan", "vibe_code", "testing", "simulation", "custom",
-];
-
-function describeAgentTool(t: AgentToolRow) {
-  const issue = t.enabled === false ? null : agentToolIssue(t.kind, t.config);
-  return {
-    tool_id: t.id,
-    kind: t.kind,
-    name: t.name,
-    enabled: t.enabled !== false,
-    requires_approval: t.requires_approval === true,
-    config: t.config ?? {},
-    needs_setup: issue,
-    blocking: issue ? isBlockingSetup(t.kind) : false,
-    expects: AGENT_TOOL_CONFIG_HINTS[t.kind] ?? null,
-  };
-}
+// Those rules (agentToolIssue, the config hints, the configurable kinds…) live
+// in assistant-ops.ts, shared with the service assistant of the rooms.
+type AgentToolRow = OpsToolRow;
 
 /** Resolve an agent of the current workspace by id or (fuzzy) name. */
 async function resolveAgent(ctx: ToolContext, agentId: string, agentName: string) {
@@ -1712,13 +1640,6 @@ const listAgents: AssistantTool = {
     );
   },
 };
-
-// Curated internal functions an agent can be granted — mirrors
-// EDGE_FUNCTION_CATALOGUE in src/features/internal-agents/InternalAgentDetail.tsx.
-const EDGE_FUNCTION_SLUGS = [
-  "send-notification", "send-email", "send-bulk-email", "marketing-generate",
-  "marketing-publish", "run-workflow", "analytics-query", "calculate-metrics", "daily-briefing",
-];
 
 const getAgentSetup: AssistantTool = {
   name: "get_agent_setup",
@@ -2044,7 +1965,7 @@ const updateAgentProfile: AssistantTool = {
         instructions: { type: "string", description: "FULL system prompt — replaces the existing one." },
         model: { type: "string", description: "Inference model key (e.g. 'deepseek', 'groq')." },
         temperature: { type: "number", description: "0–1. Low = factual, high = creative." },
-        max_steps: { type: "number", description: "Tool-loop steps per run (1–60)." },
+        max_steps: { type: "number", description: "Tool-loop steps per run (1–30)." },
         sandbox_mode: { type: "string", enum: SANDBOX_MODES, description: "Where the agent executes." },
         swarm_enabled: { type: "boolean", description: "May fan out to parallel sub-agents." },
       },
@@ -2066,7 +1987,7 @@ const updateAgentProfile: AssistantTool = {
       update.temperature = Math.min(Math.max(args.temperature, 0), 1);
     }
     if (typeof args.max_steps === "number") {
-      update.max_steps = Math.min(Math.max(Math.round(args.max_steps), 1), 60);
+      update.max_steps = Math.min(Math.max(Math.round(args.max_steps), 1), 30); // DB check: 1..30
     }
     if (SANDBOX_MODES.includes(str(args.sandbox_mode))) update.sandbox_mode = str(args.sandbox_mode);
     if (typeof args.swarm_enabled === "boolean") update.swarm_enabled = args.swarm_enabled;
@@ -2258,6 +2179,89 @@ const workflowTools: AssistantTool[] = workflowToolDefs().map((t) => ({
   },
 }));
 
+// ── Créer des agents, tenir le suivi de travail ──────────────────────────────
+//
+// Mêmes implémentations que l'assistant des rooms (assistant-ops.ts), pour
+// qu'une demande produise le même objet quelle que soit la porte d'entrée.
+// Lire et régler finement un agent reste aux outils ci-dessus
+// (get_agent_setup, configure_agent_tool…), dont dépend le deck de setup :
+// manage_agents n'expose ici que ce qui leur manquait, créer en tête.
+const PANEL_AGENT_ACTIONS = [
+  "create", "connect", "remove_tool", "list_connections", "list_mcp_servers",
+  "attach_mcp", "detach_mcp", "list_tool_kinds", "archive", "restore",
+];
+
+const panelActors = new WeakMap<ToolContext, OpsActor>();
+function panelActor(ctx: ToolContext): OpsActor {
+  let a = panelActors.get(ctx);
+  if (!a) {
+    a = {
+      admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId,
+      dashboardId: ctx.serviceDashboardId ?? null, roomId: null,
+      userId: ctx.userId, role: ctx.userRole, agentId: null, agentName: "Assistant",
+    };
+    panelActors.set(ctx, a);
+  }
+  return a;
+}
+
+/** Les cartes deviennent ce que le panneau sait afficher : les connecteurs en
+ *  artefact (les mêmes cartes que propose_connectors), les liens en markdown. */
+function panelDeliver(res: OpsResult, ctx: ToolContext): string {
+  const links: string[] = [];
+  for (const b of res.ui ?? []) {
+    if (b.component === "connectors") {
+      ctx.emitArtifact({ kind: "connectors", title: "Connecteurs à brancher", data: b.props });
+    } else if (b.component === "link_card" && typeof b.props.url === "string") {
+      links.push(`[${String(b.props.title ?? "Ouvrir")}](${b.props.url})`);
+    }
+  }
+  const cards = (res.ui ?? []).some((b) => b.component === "connectors")
+    ? "\nLes cartes « Connecter » sont affichées sous ta réponse : ne recopie pas leur contenu." : "";
+  return `${res.text}${links.length ? `\nLiens à donner tels quels : ${links.join(" · ")}` : ""}${cards}`;
+}
+
+const manageAgents: AssistantTool = {
+  name: "manage_agents",
+  // Les écritures sont refusées en dessous de member, à l'intérieur : un
+  // lecteur garde la liste des connexions et des serveurs MCP.
+  minRole: "viewer",
+  scope: "Créer un agent complet (connecteurs, skills, outils) et brancher ses connecteurs ou serveurs MCP.",
+  def: agentOpsToolDef("manage_agents", PANEL_AGENT_ACTIONS),
+  run: async (args, ctx) => {
+    const params = (args.params && typeof args.params === "object") ? args.params as Record<string, unknown> : {};
+    const flat = Object.fromEntries(Object.entries(args).filter(([k]) => k !== "action" && k !== "params"));
+    return panelDeliver(await runAgentOps(panelActor(ctx), String(args.action ?? ""), { ...flat, ...params }), ctx);
+  },
+};
+
+const manageProjects: AssistantTool = {
+  name: "manage_projects",
+  minRole: "viewer",
+  scope: "Le suivi de travail : projets, work items, équipes d'agents, pages, mise au travail des agents.",
+  def: projectOpsToolDef(),
+  run: async (args, ctx) => {
+    const params = (args.params && typeof args.params === "object") ? args.params as Record<string, unknown> : {};
+    const flat = Object.fromEntries(Object.entries(args).filter(([k]) => k !== "action" && k !== "params"));
+    return panelDeliver(await runProjectOps(panelActor(ctx), String(args.action ?? ""), { ...flat, ...params }), ctx);
+  },
+};
+
+// Outils internes (0267) : brouillons de connecteurs à compléter à la main.
+// Lecture pour tous ; écritures bornées par le rôle à l'intérieur, et jamais
+// de secret (refusé par runConnectorOps).
+const manageConnectors: AssistantTool = {
+  name: "manage_connectors",
+  minRole: "viewer",
+  scope: "Outils internes de l'entreprise (Argo CD, Vault, Grafana…) : rédiger un connecteur à compléter, le confier à un collaborateur.",
+  def: connectorOpsToolDef(),
+  run: async (args, ctx) => {
+    const params = (args.params && typeof args.params === "object") ? args.params as Record<string, unknown> : {};
+    const flat = Object.fromEntries(Object.entries(args).filter(([k]) => k !== "action" && k !== "params"));
+    return panelDeliver(await runConnectorOps(panelActor(ctx), String(args.action ?? ""), { ...flat, ...params }), ctx);
+  },
+};
+
 const ALL_TOOLS: AssistantTool[] = [
   getMetrics,
   supplyOverview,
@@ -2298,6 +2302,9 @@ const ALL_TOOLS: AssistantTool[] = [
   searchAgentSkills,
   setAgentSkills,
   proposeConnectors,
+  manageAgents,
+  manageProjects,
+  manageConnectors,
   // Building a procedure, not describing one — same implementations the
   // internal agents use.
   ...workflowTools,

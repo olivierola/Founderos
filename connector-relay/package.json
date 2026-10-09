@@ -1,0 +1,15 @@
+{
+  "name": "founderos-connector-relay",
+  "version": "0.1.0",
+  "description": "Relais sortant qui donne aux collaborateurs FounderOS un accès contrôlé aux outils internes (Argo CD, Vault, Grafana, Loki, Kubernetes, Helm…).",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test \"src/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

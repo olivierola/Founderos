@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "FounderOS Skill Recorder",
-  "version": "0.2.0",
-  "description": "Enregistre une démonstration dans VOS onglets et la transforme en compétence d'agent — puis, en mode formation, vous guide pas à pas dans vos outils.",
-  "permissions": ["storage", "tabs", "scripting", "alarms"],
+  "name": "Anduran · Collaborateurs",
+  "version": "0.3.0",
+  "description": "Vos collaborateurs dans un panneau latéral : envoyez-leur la page d'un raccourci, ils la lisent, la surlignent et vous répondent. Enregistre aussi vos démonstrations et vous forme dans vos outils.",
+  "permissions": ["storage", "tabs", "scripting", "alarms", "sidePanel", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/background.js",
@@ -16,8 +16,28 @@
       "run_at": "document_idle"
     }
   ],
+  "side_panel": {
+    "default_path": "src/panel.html"
+  },
   "action": {
-    "default_title": "FounderOS Skill Recorder",
-    "default_popup": "src/popup.html"
+    "default_title": "Anduran · ouvrir le panneau des collaborateurs"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+A" },
+      "description": "Ouvrir le panneau des collaborateurs"
+    },
+    "send-page": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Envoyer la page en cours au collaborateur"
+    },
+    "ask-selection": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Demander au collaborateur à propos du texte sélectionné"
+    },
+    "pick-element": {
+      "suggested_key": { "default": "Alt+Shift+E" },
+      "description": "Pointer un élément de la page et l'envoyer"
+    }
   }
 }

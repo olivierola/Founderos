@@ -5,7 +5,7 @@ import { StatTile, compact } from "@/features/governance/aiops/StatTile";
 // Le tableau SentinelFlow — un livrable prédéfini (kind « soc_board »).
 //
 // Construit par l'outil `sentinel` à partir des alertes réellement reçues et
-// triées ; l'agent n'y a écrit que le titre, sa lecture et ses recommandations.
+// triées ; le collaborateur n'y a écrit que le titre, sa lecture et ses recommandations.
 
 export interface SocBoardDoc {
   type: "soc_board";

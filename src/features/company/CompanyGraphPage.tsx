@@ -55,7 +55,7 @@ const KIND: Record<GraphKind, { label: string; icon: LucideIcon; color: string }
   company: { label: "Entreprise", icon: Building2, color: "#6366f1" },
   objective: { label: "Objectifs", icon: Target, color: "#f59e0b" },
   service: { label: "Services", icon: Boxes, color: "#0ea5e9" },
-  agent: { label: "Agents", icon: Bot, color: "#d946ef" },
+  agent: { label: "Collaborateurs", icon: Bot, color: "#d946ef" },
   room: { label: "Rooms", icon: MessagesSquare, color: "#8b5cf6" },
   mission: { label: "Missions", icon: ListChecks, color: "#3b82f6" },
   deliverable: { label: "Livrables", icon: FileText, color: "#10b981" },

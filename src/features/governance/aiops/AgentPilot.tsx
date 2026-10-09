@@ -223,7 +223,7 @@ export function GovAgentPilotPage() {
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr className="border-b border-border/40 text-left text-[11px] text-muted-foreground">
-                        <th className="px-4 py-2 font-normal">Agent</th>
+                        <th className="px-4 py-2 font-normal">Collaborateur</th>
                         <th className="px-3 py-2 text-right font-normal">Runs</th>
                         <th className="px-3 py-2 text-right font-normal">Échecs</th>
                         <th className="px-3 py-2 text-right font-normal">Coût total</th>

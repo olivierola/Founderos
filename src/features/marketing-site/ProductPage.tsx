@@ -391,8 +391,8 @@ export function ProductPage() {
               {slug === "agents" && (
                 <div className="grid grid-cols-2 gap-6 border-t border-white/10 pt-16 sm:grid-cols-3 lg:grid-cols-5">
                   {AGENT_ORBS.map((a) => (
-                    <div key={a.name} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-2">
-                      <ArtPanel art={a.art} className="grid h-[120px] place-items-center rounded-[14px]">
+                    <div key={a.name} className="overflow-hidden rounded-[24px]">
+                      <ArtPanel art={a.art} className="grid h-[120px] place-items-center rounded-[24px]">
                         <AgentBadge name={a.name} size={52} tone="glass" />
                       </ArtPanel>
                       <div className="px-2 pb-2 pt-3 text-[16px] font-medium">{a.name}</div>

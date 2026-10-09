@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Anduran · Collaborateurs</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #0F1728; --text: #4B5567; --line: #E6E9EF; --band: #F7F8FB; --blue: #006EDD; --blue-hover: #0057C2; --bg: #FFFFFF;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --ink: #EEF2F8; --text: #A3ADBF; --line: #222B3D; --band: #111827; --bg: #0B1220; --blue: #3B8FF0; --blue-hover: #5AA8FF; }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { background: var(--bg); color: var(--ink); font: 13px/1.5 Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+    #app { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: var(--bg); }
+    #app.on { display: block; }
+    .screen { position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center; padding: 28px 22px; gap: 14px; overflow: auto; }
+    .screen.on { display: flex; }
+    h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+    p { margin: 0; color: var(--text); }
+    .mark { width: 40px; height: 40px; border-radius: 12px; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-weight: 700; font-size: 18px; }
+    label { font-size: 11.5px; font-weight: 500; color: var(--text); }
+    input { width: 100%; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; outline: none; }
+    input:focus { border-color: var(--blue); }
+    button { font: inherit; font-weight: 500; cursor: pointer; border-radius: 999px; padding: 9px 16px; border: 1px solid var(--line); background: transparent; color: var(--ink); }
+    button:hover { background: var(--band); }
+    button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    button.primary:hover { background: var(--blue-hover); }
+    .stack { display: flex; flex-direction: column; gap: 8px; }
+    .origins { display: flex; flex-direction: column; gap: 6px; }
+    .origins button { text-align: left; border-radius: 14px; }
+    .err { color: #DC2626; font-size: 12px; min-height: 16px; }
+    .spinner { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--blue); animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .center { align-items: center; text-align: center; }
+    kbd { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--band); }
+    .shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 12px; color: var(--text); }
+    #settings { position: absolute; inset: 0; background: var(--bg); display: none; flex-direction: column; z-index: 5; }
+    #settings.on { display: flex; }
+    #settings header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    #settings header strong { flex: 1; font-size: 13px; }
+    #settings .body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+    .card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .toggle { display: flex; align-items: center; gap: 10px; }
+    .toggle span { flex: 1; }
+    .switch { appearance: none; width: 36px; height: 20px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; padding: 0; border: 0; flex: none; }
+    .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+    .switch:checked { background: var(--blue); }
+    .switch:checked::after { left: 18px; }
+    #recorder-frame { width: 100%; height: 560px; border: 0; border-radius: 14px; background: var(--bg); }
+  </style>
+</head>
+<body>
+  <iframe id="app" title="Collaborateurs" allow="microphone; clipboard-read; clipboard-write"></iframe>
+
+  <!-- Chargement de l'app -->
+  <section class="screen center" id="s-loading">
+    <div class="spinner"></div>
+    <p>Vos collaborateurs arrivent…</p>
+  </section>
+
+  <!-- L'app n'a pas répondu -->
+  <section class="screen" id="s-failed">
+    <div class="mark">A</div>
+    <h1>Le panneau ne s'est pas chargé</h1>
+    <p id="failed-why">Anduran n'a pas répondu à l'adresse <strong id="failed-url"></strong>.</p>
+    <p>Vérifiez que vous êtes connecté dans un onglet, puis réessayez. Si l'adresse est la bonne, la version déployée de l'app ne connaît peut-être pas encore le panneau.</p>
+    <div class="stack">
+      <button class="primary" id="retry">Réessayer</button>
+      <button id="open-tab">Ouvrir dans un onglet</button>
+      <button id="change-url">Changer d'adresse</button>
+    </div>
+  </section>
+
+  <!-- Première ouverture : où est l'app ? -->
+  <section class="screen" id="s-setup">
+    <div class="mark">A</div>
+    <h1>Vos collaborateurs, à côté de chaque page</h1>
+    <p>Indiquez l'adresse de votre espace Anduran. Le panneau s'ouvrira ensuite sur vos collaborateurs, avec votre session.</p>
+    <div class="origins" id="origins"></div>
+    <label for="url">Adresse de l'app</label>
+    <input id="url" type="url" placeholder="https://app.exemple.com" />
+    <button class="primary" id="save-url">Continuer</button>
+    <p class="err" id="setup-err"></p>
+    <div class="shortcuts">
+      <kbd>Alt+Shift+A</kbd><span>ouvrir le panneau</span>
+      <kbd>Alt+Shift+P</kbd><span>envoyer la page en cours</span>
+      <kbd>Alt+Shift+S</kbd><span>demander à propos de la sélection</span>
+      <kbd>Alt+Shift+E</kbd><span>pointer un élément</span>
+    </div>
+  </section>
+
+  <!-- Réglages de l'extension : l'ancienne popup, plus le compagnon -->
+  <section id="settings">
+    <header>
+      <strong>Réglages de l'extension</strong>
+      <button id="settings-close">Fermer</button>
+    </header>
+    <div class="body">
+      <div class="card">
+        <div class="toggle">
+          <span><strong>Bulles quand le panneau est fermé</strong><br /><small>Un collaborateur peut vous répondre ou signaler une validation dans une bulle sur la page. Il ne lit rien panneau fermé.</small></span>
+          <input type="checkbox" class="switch" id="bubbles" />
+        </div>
+        <div class="toggle">
+          <span><strong>Pastille sur le texte sélectionné</strong><br /><small>Panneau ouvert, sélectionnez un passage pour le demander, l'expliquer ou le traduire.</small></span>
+          <input type="checkbox" class="switch" id="selection-pill" />
+        </div>
+      </div>
+      <div class="card">
+        <strong>Raccourcis</strong>
+        <div class="shortcuts" id="shortcut-list"></div>
+        <button id="edit-shortcuts">Modifier les raccourcis</button>
+      </div>
+      <div class="card">
+        <strong>Adresse de l'app</strong>
+        <p id="current-url"></p>
+        <button id="settings-change-url">Changer d'adresse</button>
+      </div>
+      <!-- L'appairage, le pilotage et la formation : la popup d'avant, telle quelle. -->
+      <iframe id="recorder-frame" title="Appareil, pilotage et formation"></iframe>
+    </div>
+  </section>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

@@ -97,7 +97,7 @@ export function AgentsPage() {
     },
   });
 
-  // Where "Nouvel agent interne" goes: an internal agent belongs to a service
+  // Where "Nouvel collaborateur interne" goes: an internal agent belongs to a service
   // dashboard, so it is created there. Without one there is nowhere to put it,
   // and the option is simply not offered.
   const { data: dashboards } = useQuery({
@@ -196,22 +196,22 @@ export function AgentsPage() {
   return (
     <div>
       <PageHeader
-        title="Agents"
-        description="Toute la main-d'œuvre IA du projet : les agents internes qui travaillent pour l'équipe (dans leur dashboard de service) et les agents publics destinés à vos clients (SAV, e-commerce, renseignements, onboarding)."
+        title="Collaborators"
+        description="Toute la main-d'œuvre IA du projet : les collaborateurs internes qui travaillent pour l'équipe (dans leur dashboard de service) et les collaborateurs publics destinés à vos clients (SAV, e-commerce, renseignements, onboarding)."
         actions={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button><Plus className="h-4 w-4" /> Nouvel agent</Button>
+              <Button><Plus className="h-4 w-4" /> Nouvel collaborateur</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">Type d'agent</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">Type de collaborateur</DropdownMenuLabel>
               <DropdownMenuItem
                 disabled={!firstDashboardId}
                 onSelect={() => firstDashboardId && navigate(`${base}/service/${firstDashboardId}/agents/new`)}
               >
                 <Users className="h-4 w-4" />
                 <span className="min-w-0">
-                  <span className="block text-sm">Agent interne</span>
+                  <span className="block text-sm">Collaborateur interne</span>
                   <span className="block text-[11px] text-muted-foreground">
                     {firstDashboardId ? "Travaille pour l'équipe, dans un dashboard de service." : "Créez d'abord un dashboard de service."}
                   </span>
@@ -225,7 +225,7 @@ export function AgentsPage() {
               >
                 <Bot className="h-4 w-4" />
                 <span className="min-w-0">
-                  <span className="block text-sm">Agent public</span>
+                  <span className="block text-sm">Collaborateur public</span>
                   <span className="block text-[11px] text-muted-foreground">
                     {firstDashboardId ? "Face client, nourri par une base de connaissances." : "Créez d'abord un dashboard de service."}
                   </span>
@@ -261,21 +261,21 @@ export function AgentsPage() {
       ) : total === 0 ? (
         <EmptyState
           icon={Bot}
-          title="Aucun agent pour l'instant"
-          description="Les agents, internes (ils travaillent pour votre équipe) comme publics (face client, nourris par votre base de connaissances), se créent dans un dashboard de service."
+          title="Aucun collaborateur pour l'instant"
+          description="Les collaborateurs, internes (ils travaillent pour votre équipe) comme publics (face client, nourris par votre base de connaissances), se créent dans un dashboard de service."
           action={firstDashboardId
-            ? <Button onClick={() => navigate(`${base}/service/${firstDashboardId}/agents/new`)}><Plus className="h-4 w-4" /> Créer un agent</Button>
+            ? <Button onClick={() => navigate(`${base}/service/${firstDashboardId}/agents/new`)}><Plus className="h-4 w-4" /> Créer un collaborateur</Button>
             : undefined}
         />
       ) : visible === 0 ? (
         <EmptyState
           icon={Bot}
-          title={scope === "internal" ? "Aucun agent interne" : "Aucun agent public"}
+          title={scope === "internal" ? "Aucun collaborateur interne" : "Aucun collaborateur public"}
           description={scope === "internal"
-            ? "Les agents internes se créent dans un dashboard de service."
-            : "Créez un agent orienté client (SAV, e-commerce, guide, onboarding) depuis un dashboard de service, ajoutez des sources de connaissance, puis intégrez-le en widget sur votre site."}
+            ? "Les collaborateurs internes se créent dans un dashboard de service."
+            : "Créez un collaborateur orienté client (SAV, e-commerce, guide, onboarding) depuis un dashboard de service, ajoutez des sources de connaissance, puis intégrez-le en widget sur votre site."}
           action={scope === "public" && firstDashboardId
-            ? <Button onClick={() => navigate(`${base}/service/${firstDashboardId}/agents/new?type=public`)}><Plus className="h-4 w-4" /> Nouvel agent public</Button>
+            ? <Button onClick={() => navigate(`${base}/service/${firstDashboardId}/agents/new?type=public`)}><Plus className="h-4 w-4" /> Nouvel collaborateur public</Button>
             : undefined}
         />
       ) : (
@@ -293,7 +293,7 @@ export function AgentsPage() {
                 extras={c?.skills ?? null}
                 tools_needed={resolveNeeds(c?.slugs ?? [], toolkits, connStatus)}
                 badges={[
-                  { label: "interne", tone: "auth", title: "Agent interne, travaille pour l'équipe" },
+                  { label: "interne", tone: "auth", title: "Collaborateur interne, travaille pour l'équipe" },
                   { label: a.model ?? "deepseek", tone: "key", title: "Modèle" },
                 ]}
                 meta={new Date(a.created_at).toISOString().slice(0, 10)}
@@ -322,7 +322,7 @@ export function AgentsPage() {
                 tools={c?.sources ?? null}
                 extras={c?.convos ?? null}
                 badges={[
-                  { label: "public", tone: "auth", title: "Agent public, face client" },
+                  { label: "public", tone: "auth", title: "Collaborateur public, face client" },
                   { label: a.enabled ? "live" : "disabled", tone: "key", title: "État de publication" },
                 ]}
                 meta={new Date(a.created_at).toISOString().slice(0, 10)}

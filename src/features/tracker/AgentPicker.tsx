@@ -148,17 +148,17 @@ export function AgentPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <PickerTrigger active={value.length > 0} title="Agents">
+        <PickerTrigger active={value.length > 0} title="Collaborateurs">
           {value.length
             ? <AgentStack ids={value} agents={list} />
             : <RobotIcon className="h-3.5 w-3.5" />}
-          {!compact && !value.length && <span>Agents</span>}
+          {!compact && !value.length && <span>Collaborateurs</span>}
         </PickerTrigger>
       </PopoverTrigger>
 
       <PopoverContent className="w-64 p-0" align="start">
         <Command>
-          <CommandInput placeholder="Chercher un agent…" />
+          <CommandInput placeholder="Chercher un collaborateur…" />
           <CommandList>
             <CommandEmpty>
               {/* Trois causes, trois messages. Un seul texte pour les trois
@@ -168,12 +168,12 @@ export function AgentPicker({
                 {error
                   ? `La liste n'a pas pu être chargée : ${error.message}`
                   : list.length
-                    ? "Aucun agent ne correspond à cette recherche."
+                    ? "Aucun collaborateur ne correspond à cette recherche."
                     : pjProjectId && roster.length
                       // La cause la plus fréquente, et la seule qui ait un
                       // remède à portée de clic.
-                      ? "Aucun agent n'est autorisé sur ce projet. Ouvrez l'onglet Équipage pour en ajouter un."
-                      : "Aucun agent dans cet espace de travail. Créez-en un depuis l'onglet Agents."}
+                      ? "Aucun collaborateur n'est autorisé sur ce projet. Ouvrez l'onglet Équipage pour en ajouter un."
+                      : "Aucun collaborateur dans cet espace de travail. Créez-en un depuis l'onglet Collaborateurs."}
               </span>
             </CommandEmpty>
             <CommandGroup>
@@ -199,7 +199,7 @@ export function AgentPicker({
         <p className={cn(
           "border-t border-border px-3 py-2 text-10 leading-snug text-tertiary",
         )}>
-          Seuls les agents de l&apos;équipage du projet apparaissent ici. Un agent
+          Seuls les collaborateurs de l&apos;équipage du projet apparaissent ici. Un collaborateur
           assigné démarre seul si le work item porte un travail à faire et le
           travail autonome ; sinon il attend qu&apos;on le lance.
         </p>

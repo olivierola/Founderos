@@ -96,7 +96,7 @@ function ToolsPage({ data }: { data: Data }) {
       <EmptyState
         icon={Wrench}
         title="Aucun appel d'outil sur la période"
-        description="Cet agent répond depuis sa base de connaissances. Dès qu'un serveur MCP est branché dans l'onglet E-commerce, ses appels, leurs latences et leurs échecs apparaissent ici."
+        description="Ce collaborateur répond depuis sa base de connaissances. Dès qu'un serveur MCP est branché dans l'onglet E-commerce, ses appels, leurs latences et leurs échecs apparaissent ici."
       />
     );
   }
@@ -148,7 +148,7 @@ function LlmPage({ data }: { data: Data }) {
         ]}
       />
       <p className="rounded-xl bg-muted/50 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-        Ces coûts sont ceux facturés par les fournisseurs de modèles pour la fonctionnalité « agent public » du projet,
+        Ces coûts sont ceux facturés par les fournisseurs de modèles pour la fonctionnalité « collaborateur public » du projet,
         toutes conversations confondues. La conversion en crédits et la marge appliquée au client se lisent dans
         Administration → Abonnements.
       </p>

@@ -92,7 +92,7 @@ export function MissionsBoard({ roomId, dashboardId, onOpen }: {
         <p className="text-sm font-medium">Aucune mission dans cette room</p>
         <p className="mt-1 text-sm text-muted-foreground">
           Demandez à l'assistant un travail qui demande plusieurs compétences, il le découpe en jalons et tâches,
-          les répartit entre les agents, et pilote l'exécution ici. Ou créez-en une directement.
+          les répartit entre les collaborateurs, et pilote l'exécution ici. Ou créez-en une directement.
         </p>
         <Button className="mt-5" onClick={() => setCreating(true)}>
           <Plus className="mr-1.5 h-4 w-4" /> Nouvelle mission
@@ -268,7 +268,7 @@ export function NewMissionPanel({
             <div className="flex items-center rounded-full border border-border/70 bg-card p-0.5">
               <ModePill
                 active={mode === "auto"} onClick={() => setMode("auto")} icon={Sparkles} label="Assistant"
-                title="L'assistant découpe en jalons et tâches, répartit entre les agents (en en créant si besoin) et démarre."
+                title="L'assistant découpe en jalons et tâches, répartit entre les collaborateurs (en en créant si besoin) et démarre."
               />
               <ModePill
                 active={mode === "empty"} onClick={() => setMode("empty")} icon={PencilLine} label="Manuel"
@@ -370,7 +370,7 @@ export function DashboardMissionsTab({ dashboardId, dashboardName, workspaceId, 
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold tracking-tight">Missions</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Le travail collectif orchestré par l'assistant : jalons, tâches réparties entre agents, livrables.
+            Le travail collectif orchestré par l'assistant : jalons, tâches réparties entre collaborateurs, livrables.
           </p>
         </div>
         <Button onClick={() => setCreating(true)} className="shrink-0">
@@ -393,7 +393,7 @@ export function DashboardMissionsTab({ dashboardId, dashboardName, workspaceId, 
           <p className="text-sm font-medium">Aucune mission</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Créez-en une ici, ou demandez à l'assistant dans une room un travail qui demande plusieurs compétences :
-            il le découpe en jalons et tâches, les répartit entre les agents, et pilote l'exécution.
+            il le découpe en jalons et tâches, les répartit entre les collaborateurs, et pilote l'exécution.
           </p>
           <Button className="mt-5" onClick={() => setCreating(true)}>
             <Plus className="mr-1.5 h-4 w-4" /> Nouvelle mission
@@ -792,7 +792,7 @@ function ExecutionTab({
       </section>
 
       <section>
-        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Runs des agents</h4>
+        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Runs des collaborateurs</h4>
         <div className="space-y-2">
           {tasks.filter((t) => t.run_id).map((t) => (
             <div key={t.id} className="rounded-lg border border-border/60 bg-card">
@@ -1043,7 +1043,7 @@ function KanbanTab({
  *
  * A native <select> hands the list to the OS: no avatars, no theming, and with
  * fifteen agents whose names repeat ("Vibe Coder", "Vibe Coder 2") the reader
- * cannot tell them apart. The app's own menu shows each agent's face next to
+ * cannot tell them apart. The app's own menu shows each collaborateur's face next to
  * its name, which is how they are recognised everywhere else.
  */
 function AgentPicker({ participants, value, onChange, placeholder = "Assigner…" }: {
@@ -1141,7 +1141,7 @@ function NewTaskForm({
         />
         <textarea
           value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
-          placeholder="Consigne donnée à l'agent : quoi produire, avec quoi, comment vérifier."
+          placeholder="Consigne donnée au collaborateur : quoi produire, avec quoi, comment vérifier."
           className="w-full resize-none bg-transparent text-sm leading-relaxed text-muted-foreground outline-none placeholder:text-muted-foreground/50"
         />
 

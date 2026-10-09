@@ -1,0 +1,61 @@
+# FounderOS — relais d'outils internes.
+#
+#   helm install founderos-relay ./helm/connector-relay -n founderos --create-namespace \
+#     --set founderosUrl=https://xxxxxxxx.supabase.co \
+#     --set relayToken=fosr_... \
+#     --set-string allowedHosts="argocd-server.argocd.svc.cluster.local\,*.monitoring.svc.cluster.local"
+
+image:
+  repository: founderos/connector-relay
+  # « k8s » embarque helm et kubectl (docker build --build-arg WITH_K8S_TOOLS=true).
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+founderosUrl: ""
+# Jeton du relais. Préférez existingSecret (clé RELAY_TOKEN) en production.
+relayToken: ""
+existingSecret: ""
+
+# Liste blanche des hôtes joignables, appliquée ICI, chez vous. Refus par défaut.
+allowedHosts: ""
+# CLI autorisées pour les opérations « commande » (ex. "helm,kubectl").
+allowedBinaries: ""
+deniedSubcommands: "helm:uninstall,helm:delete,helm:plugin,kubectl:delete,kubectl:exec,kubectl:cp,kubectl:port-forward,kubectl:proxy,kubectl:attach,kubectl:debug"
+concurrency: 4
+
+# Autorité de certification interne : nom d'un ConfigMap contenant ca.pem.
+caConfigMap: ""
+
+# Secrets lus par le relais pour les profils « relais » (env:NOM côté FounderOS).
+# Chaque entrée devient une variable d'environnement issue d'un Secret existant.
+#   - name: ARGOCD_TOKEN
+#     secretName: argocd-founderos
+#     secretKey: token
+secretEnv: []
+
+# Droits Kubernetes du relais : c'est la VRAIE barrière pour les opérations
+# Kubernetes et Helm. « view » = lecture seule sur le cluster (hors Secrets).
+rbac:
+  create: true
+  clusterRole: view
+  # Règles supplémentaires (ex. patch des deployments pour le redémarrage).
+  extraRules: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Sortie seulement : le relais n'accepte aucun trafic entrant (hors sonde).
+networkPolicy:
+  enabled: false
+  # Destinations internes autorisées (CIDR), en plus du DNS et de FounderOS (443).
+  egressCidrs: []
+
+resources:
+  requests: { cpu: 25m, memory: 64Mi }
+  limits: { cpu: 500m, memory: 256Mi }
+
+replicaCount: 1
+nodeSelector: {}
+tolerations: []
+affinity: {}

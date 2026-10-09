@@ -19,6 +19,7 @@
 import { api, rpc, getSettings, pollPairing, forgetDevice } from "./api.js";
 import { runCommand } from "./executor.js";
 import { runCoach } from "./coach.js";
+import { extractPage, runCompanion } from "./companion.js";
 
 const STATE_KEY = "rec:state";
 // L'étape de formation en cours attend un HUMAIN : elle survivra donc presque
@@ -612,7 +613,9 @@ async function pumpControl() {
   for (const cmd of res.commands) {
     const outcome = cmd.channel === "coach"
       ? await runCoachCommand(cmd, state, coachOrigins)
-      : await runOneCommand(cmd, state, res.origins);
+      : cmd.channel === "companion"
+        ? await runCompanionCommand(cmd, res)
+        : await runOneCommand(cmd, state, res.origins);
     if (!outcome) continue; // étape de formation en attente d'un geste humain
     try {
       await rpc({ mode: "rec_control_result", command_id: cmd.id, ...outcome });
@@ -620,22 +623,398 @@ async function pumpControl() {
   }
 }
 
+// ── COMPAGNON (panneau latéral, 0271) ──────────────────────────────────────
+//
+// Le panneau affiche l'app (route /companion) et lit la page lui-même. Le
+// service worker garde ce que le panneau ne peut pas porter, parce qu'il
+// n'existe pas toujours :
+//
+//   1. le BAIL — tant qu'un panneau est ouvert, le serveur sait qu'un
+//      collaborateur peut lire la page en cours ; il cesse de le savoir deux
+//      minutes après la fermeture, même si le navigateur a été tué ;
+//   2. les INTENTIONS — un raccourci ou le menu contextuel ouvre le panneau et
+//      lui confie quoi faire ; le panneau met deux secondes à charger l'app,
+//      l'intention l'attend en storage.session ;
+//   3. les BULLES — une réponse arrivée panneau fermé s'affiche sur la page,
+//      avec de quoi répondre sans rouvrir quoi que ce soit.
+
+const COMPANION_ACTIONS = new Set(["look", "highlight", "say", "clear"]);
+const INTENTS_KEY = "companion:intents";
+const FEED_SINCE_KEY = "companion:feedSince";
+const FEED_SEEN_KEY = "companion:seen";
+const UNREAD_KEY = "companion:unread";
+
+/** windowId → port du panneau ouvert dans cette fenêtre. En mémoire : à la mort
+ *  du worker, chaque panneau se reconnecte de lui-même en une seconde. */
+const panels = new Map();
+let lastLeaseAt = 0;
+
+async function isAppUrl(url) {
+  if (!url) return false;
+  const { appUrl } = await api.storage.local.get("appUrl");
+  const origins = await appOrigins();
+  if (appUrl) origins.add(new URL(appUrl).origin);
+  try { return origins.has(new URL(url).origin); } catch { return false; }
+}
+
+async function bubblesPref() {
+  const { companionBubbles } = await api.storage.local.get("companionBubbles");
+  return companionBubbles !== false;
+}
+
+async function touchCompanion() {
+  await api.storage.local.set({ companionLastActivity: Date.now() });
+}
+
+async function companionLease(open, bubbles) {
+  const { token } = await getSettings();
+  if (!token) return;
+  try {
+    await rpc({ mode: "companion_lease", open, bubbles: typeof bubbles === "boolean" ? bubbles : await bubblesPref() });
+    lastLeaseAt = open ? Date.now() : 0;
+  } catch { /* réseau : renouvelé au prochain battement */ }
+}
+
+/** Ouvrir le panneau. Appelé AVANT tout await dans les gestionnaires de geste :
+ *  Chrome n'autorise sidePanel.open qu'en réponse directe à une action. */
+function openPanel(windowId) {
+  if (windowId == null) return Promise.reject(new Error("fenêtre inconnue"));
+  try { return api.sidePanel.open({ windowId }); } catch (e) { return Promise.reject(e); }
+}
+
+async function queueIntent(windowId, intent) {
+  await touchCompanion();
+  const port = panels.get(windowId);
+  if (port) {
+    try { port.postMessage({ type: "intent", intent }); return; } catch { /* panneau en train de se fermer */ }
+  }
+  const got = await api.storage.session.get(INTENTS_KEY);
+  const list = (got[INTENTS_KEY] ?? []).filter((i) => Date.now() - i.at < 60_000);
+  list.push({ windowId, at: Date.now(), intent });
+  await api.storage.session.set({ [INTENTS_KEY]: list.slice(-5) });
+}
+
+async function flushIntents(windowId) {
+  const port = panels.get(windowId);
+  if (!port) return;
+  const got = await api.storage.session.get(INTENTS_KEY);
+  const list = got[INTENTS_KEY] ?? [];
+  const mine = list.filter((i) => i.windowId === windowId && Date.now() - i.at < 60_000);
+  await api.storage.session.set({ [INTENTS_KEY]: list.filter((i) => i.windowId !== windowId) });
+  for (const i of mine) {
+    try { port.postMessage({ type: "intent", intent: i.intent }); } catch { /* fermé entre-temps */ }
+  }
+}
+
+async function setUnread(n) {
+  await api.storage.session.set({ [UNREAD_KEY]: Math.max(0, n) });
+  await setControlBadge(null, null, null, null);
+}
+async function getUnread() {
+  const got = await api.storage.session.get(UNREAD_KEY);
+  return Number(got[UNREAD_KEY] ?? 0);
+}
+
+api.runtime.onConnect.addListener((port) => {
+  if (port.name !== "panel") return;
+  let win = null;
+  port.onMessage.addListener(async (m) => {
+    switch (m?.type) {
+      case "hello":
+        win = m.windowId;
+        panels.set(win, port);
+        await touchCompanion();
+        await setUnread(0);
+        await companionLease(true);
+        await flushIntents(win);
+        return;
+      case "take_intents":
+        if (win != null) await flushIntents(win);
+        return;
+      case "agent":
+        await api.storage.local.set({ companionAgent: m.agent ?? null });
+        await updateMenus(m.agent);
+        return;
+      case "prefs":
+        await companionLease(panels.size > 0, m.bubbles);
+        return;
+      case "paired":
+        await companionLease(true);
+        return;
+      default:
+        // ping : recevoir le message suffit à garder le worker éveillé.
+        if (panels.size && Date.now() - lastLeaseAt > 55_000) await companionLease(true);
+    }
+  });
+  port.onDisconnect.addListener(async () => {
+    if (win != null && panels.get(win) === port) panels.delete(win);
+    // La pastille de sélection n'a plus de panneau à qui parler.
+    if (win != null) {
+      for (const t of await api.tabs.query({ windowId: win }).catch(() => [])) {
+        api.tabs.sendMessage(t.id, { type: "companion:teardown" }).catch(() => {});
+      }
+    }
+    if (!panels.size) await companionLease(false);
+  });
+});
+
+/** L'onglet que la personne regarde : celui d'une fenêtre où le panneau est
+ *  ouvert d'abord, la dernière fenêtre active sinon. Jamais l'app elle-même. */
+async function companionTab() {
+  const focused = await api.windows.getLastFocused().catch(() => null);
+  const ids = [...panels.keys()];
+  const order = focused && ids.includes(focused.id)
+    ? [focused.id, ...ids.filter((w) => w !== focused.id)]
+    : [...ids, focused?.id].filter((x) => x != null);
+  for (const w of order) {
+    const [t] = await api.tabs.query({ active: true, windowId: w }).catch(() => []);
+    if (t && /^https?:/.test(t.url ?? "") && !(await isAppUrl(t.url))) return t;
+  }
+  return null;
+}
+
+async function runCompanionCommand(cmd, poll) {
+  // Même principe que COACH_ACTIONS : la liste blanche est la promesse.
+  if (!COMPANION_ACTIONS.has(cmd.action)) {
+    return { error: `Action « ${cmd.action} » refusée au compagnon : il lit et montre, il ne clique ni ne saisit.` };
+  }
+  if (cmd.action === "look" && !panels.size) {
+    return { error: "panneau fermé : la page ne peut être lue que panneau ouvert" };
+  }
+  if (cmd.action !== "look" && !panels.size && poll?.companion_bubbles === false) {
+    return { error: "la personne a désactivé les bulles panneau fermé" };
+  }
+  const tab = await companionTab();
+  if (!tab) return { error: "aucune page lisible au premier plan (page interne du navigateur, ou l'app elle-même)" };
+  const params = cmd.params ?? {};
+  try {
+    if (cmd.action === "look") {
+      const [r] = await api.scripting.executeScript({
+        target: { tabId: tab.id }, func: extractPage, args: [{ offset: params.offset, maxChars: 12000 }],
+      });
+      const v = r?.result;
+      if (!v?.ok) return { error: v?.error ?? "lecture impossible" };
+      return {
+        result: {
+          url: v.url, title: v.title, text: v.text, chars: v.chars, offset: v.offset,
+          next_offset: v.truncated ? v.offset + v.text.length : null, selection: v.selection || undefined,
+        },
+      };
+    }
+    const [r] = await api.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: runCompanion,
+      args: [{ kind: cmd.action, targets: params.targets, message: params.message, target: params.target, agent: params.agent }],
+    });
+    const v = r?.result;
+    if (!v) return { error: "aucune réponse de la page" };
+    return v.ok === false ? { error: v.error ?? "affichage impossible" } : { result: v };
+  } catch (e) {
+    return { error: `Affichage impossible : ${e.message}` };
+  }
+}
+
+async function companionAsk(args) {
+  await touchCompanion();
+  const { companionAgent } = await api.storage.local.get("companionAgent");
+  const res = await rpc({
+    mode: "companion_ask",
+    text: args.text ?? "",
+    context: args.context ?? "",
+    ...(args.conversation_id ? { conversation_id: args.conversation_id } : {}),
+    ...(!args.conversation_id && companionAgent?.id ? { agent_id: companionAgent.id } : {}),
+  });
+  // La réponse arrive dans quelques secondes : on regarde plus souvent.
+  lastFeedAt = 0;
+  return res;
+}
+
+async function openConversationInTab(item) {
+  const { appUrl } = await api.storage.local.get("appUrl");
+  const origin = appUrl ?? [...(await appOrigins())][0];
+  if (!origin) return;
+  const q = new URLSearchParams();
+  if (item?.conversation_id) q.set("c", item.conversation_id);
+  if (item?.agent?.id) q.set("a", item.agent.id);
+  await api.tabs.create({ url: `${new URL(origin).origin}/companion?${q}`, active: true });
+}
+
+// ── Le fil : ce qui s'est passé dans les conversations du navigateur ──
+
+let feedBusy = false;
+let lastFeedAt = 0;
+
+async function pumpFeed() {
+  if (feedBusy) return;
+  const { token } = await getSettings();
+  if (!token) return;
+  const { companionLastActivity = 0 } = await api.storage.local.get("companionLastActivity");
+  // Six secondes quand une conversation vit, une minute sinon : une validation
+  // demandée par une mission doit finir par se voir, sans marteler le serveur.
+  const period = Date.now() - companionLastActivity < 30 * 60_000 ? 6000 : 60_000;
+  if (Date.now() - lastFeedAt < period) return;
+  feedBusy = true;
+  lastFeedAt = Date.now();
+  try {
+    const st = await api.storage.local.get([FEED_SINCE_KEY, FEED_SEEN_KEY]);
+    const res = await rpc({ mode: "companion_feed", since: st[FEED_SINCE_KEY] ?? null });
+    const seen = new Set(st[FEED_SEEN_KEY] ?? []);
+    const fresh = (res.items ?? []).filter((i) => !seen.has(i.id));
+    // Le curseur recule de quinze secondes : un message écrit pendant notre
+    // lecture serait sinon perdu. Les doublons, eux, sont filtrés par `seen`.
+    const cursor = new Date(Date.parse(res.now ?? new Date().toISOString()) - 15_000).toISOString();
+    await api.storage.local.set({
+      [FEED_SINCE_KEY]: cursor,
+      [FEED_SEEN_KEY]: [...seen, ...fresh.map((i) => i.id)].slice(-300),
+    });
+    if ((res.busy ?? []).length || fresh.length) await touchCompanion();
+    if (fresh.length) await deliverFeed(fresh);
+  } catch { /* hors ligne */ } finally {
+    feedBusy = false;
+  }
+}
+
+async function deliverFeed(items) {
+  const focused = await api.windows.getLastFocused().catch(() => null);
+  const port = focused ? panels.get(focused.id) : null;
+  if (port) {
+    // Le panneau est sous les yeux : la réponse s'y affiche déjà.
+    try { port.postMessage({ type: "feed", items }); } catch { /* fermé entre-temps */ }
+    return;
+  }
+  for (const p of panels.values()) { try { p.postMessage({ type: "feed", items }); } catch { /* idem */ } }
+
+  // Un « je regarde ça » de progression n'interrompt personne.
+  const worth = items.filter((i) => !i.interim);
+  if (!worth.length) return;
+  let shown = 0;
+  if (await bubblesPref()) {
+    const [tab] = await api.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    if (tab && /^https?:/.test(tab.url ?? "") && !(await isAppUrl(tab.url))) {
+      for (const item of worth.slice(-3)) {
+        try {
+          await api.scripting.executeScript({ target: { tabId: tab.id }, func: runCompanion, args: [{ kind: "bubble", item }] });
+          shown++;
+        } catch { /* page protégée */ }
+      }
+    }
+  }
+  if (shown < worth.length) await setUnread((await getUnread()) + worth.length - shown);
+}
+
+// ── Raccourcis et menu contextuel ──
+
+const MENU_IDS = { page: "fos-page", selection: "fos-selection", link: "fos-link" };
+
+// Le démarrage du worker, onStartup et onInstalled appellent tous la mise en
+// place : sérialisée, pour qu'un second removeAll ne croise pas les create du
+// premier (« duplicate id »).
+let menusChain = Promise.resolve();
+function setupMenus() {
+  menusChain = menusChain.then(() => new Promise((done) => {
+    try {
+      const quiet = () => void api.runtime.lastError;
+      api.contextMenus.removeAll(() => {
+        api.contextMenus.create({ id: MENU_IDS.page, title: "Envoyer cette page à un collaborateur", contexts: ["page"] }, quiet);
+        api.contextMenus.create({ id: MENU_IDS.selection, title: "Demander à un collaborateur : « %s »", contexts: ["selection"] }, quiet);
+        api.contextMenus.create({ id: MENU_IDS.link, title: "Demander à un collaborateur à propos de ce lien", contexts: ["link"] }, quiet);
+        api.storage.local.get("companionAgent").then(({ companionAgent }) => updateMenus(companionAgent)).catch(() => {}).finally(done);
+      });
+    } catch { done(); /* navigateur sans menus contextuels */ }
+  }));
+}
+
+async function updateMenus(agent) {
+  const who = agent?.name ? agent.name : "un collaborateur";
+  const set = (id, title) => { try { api.contextMenus.update(id, { title }, () => void api.runtime.lastError); } catch { /* absent */ } };
+  set(MENU_IDS.page, `Envoyer cette page à ${who}`);
+  set(MENU_IDS.selection, `Demander à ${who} : « %s »`);
+  set(MENU_IDS.link, `Demander à ${who} à propos de ce lien`);
+}
+
+api.contextMenus?.onClicked.addListener((info, tab) => {
+  const windowId = tab?.windowId;
+  openPanel(windowId).catch(() => {});
+  if (info.menuItemId === MENU_IDS.page) {
+    queueIntent(windowId, { kind: "send_page", url: tab?.url, title: tab?.title });
+  } else if (info.menuItemId === MENU_IDS.selection) {
+    queueIntent(windowId, { kind: "selection", action: "ask", text: String(info.selectionText ?? "").slice(0, 6000), url: tab?.url, title: tab?.title });
+  } else if (info.menuItemId === MENU_IDS.link) {
+    queueIntent(windowId, { kind: "link", url: info.linkUrl, text: info.selectionText ?? "", page: tab?.url });
+  }
+});
+
+api.commands?.onCommand.addListener((command, tab) => {
+  if (!["send-page", "ask-selection", "pick-element"].includes(command)) return;
+  const windowId = tab?.windowId;
+  openPanel(windowId).catch(() => {});
+  (async () => {
+    if (command === "send-page") return queueIntent(windowId, { kind: "send_page", url: tab?.url, title: tab?.title });
+    if (command === "pick-element") return queueIntent(windowId, { kind: "pick" });
+    // La sélection est lue TOUT DE SUITE : le focus part dans le panneau à
+    // l'ouverture, et certaines pages effacent la sélection en le perdant.
+    let text = "";
+    if (tab?.id != null && /^https?:/.test(tab.url ?? "")) {
+      try {
+        const [r] = await api.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => String(window.getSelection() || "").replace(/\s+/g, " ").trim().slice(0, 6000),
+        });
+        text = r?.result ?? "";
+      } catch { /* page protégée */ }
+    }
+    return queueIntent(windowId, text
+      ? { kind: "selection", action: "ask", text, url: tab?.url, title: tab?.title }
+      : { kind: "focus" });
+  })().catch(() => {});
+});
+
+// Les gestes faits dans une bulle. Écouteur séparé et SYNCHRONE : « Ouvrir »
+// doit appeler sidePanel.open avant le moindre await, sous peine de perdre le
+// geste de l'utilisateur.
+api.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type !== "companion:bubble") return false;
+  const item = msg.item ?? {};
+  if (msg.action === "open") {
+    const windowId = sender.tab?.windowId;
+    openPanel(windowId).then(
+      () => queueIntent(windowId, { kind: "open_conversation", conversation_id: item.conversation_id, agent_id: item.agent?.id }),
+      () => openConversationInTab(item),
+    );
+  } else if (msg.action === "reply" && item.conversation_id) {
+    companionAsk({ conversation_id: item.conversation_id, text: msg.text }).catch(() => {});
+  }
+  return false;
+});
+
 /** Le badge dit ce qui est vrai : REC pendant un enregistrement, ⚡ quand un
  *  agent peut piloter, 🎓 quand il ne peut que former. L'utilisateur ne doit
  *  jamais avoir à deviner — et surtout pas confondre les deux pouvoirs. */
+// Le dernier état d'armement connu : le compteur de réponses non lues redessine
+// le badge entre deux battements, sans connaître l'armement par lui-même.
+let lastControl = { armed: false, until: null, coachArmed: false, coachUntil: null };
+
 async function setControlBadge(armed, until, coachArmed, coachUntil) {
+  if (armed !== null) lastControl = { armed, until, coachArmed, coachUntil };
+  ({ armed, until, coachArmed, coachUntil } = lastControl);
   const state = await loadState();
   if (state?.recordingId) return; // REC prime
   const hhmm = (v) => (v ? new Date(v).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "?");
+  const unread = await getUnread();
   if (armed) {
     await setBadge("⚡", "#f59e0b");
     await api.action.setTitle({ title: `Pilotage autorisé jusqu'à ${hhmm(until)}` }).catch(() => {});
   } else if (coachArmed) {
     await setBadge("🎓", "#7C5CFF");
-    await api.action.setTitle({ title: `Mode formation jusqu'à ${hhmm(coachUntil)} — l'agent affiche des repères, il ne clique pas` }).catch(() => {});
+    await api.action.setTitle({ title: `Mode formation jusqu'à ${hhmm(coachUntil)}, le collaborateur affiche des repères, il ne clique pas` }).catch(() => {});
+  } else if (unread > 0) {
+    // Une réponse arrivée panneau fermé, sur une page où aucune bulle ne
+    // pouvait s'afficher : l'icône le dit, ouvrir le panneau l'efface.
+    await setBadge(unread > 9 ? "9+" : String(unread), "#006EDD");
+    await api.action.setTitle({ title: `${unread} réponse${unread > 1 ? "s" : ""} de vos collaborateurs, ouvrez le panneau` }).catch(() => {});
   } else {
     await setBadge("");
-    await api.action.setTitle({ title: "FounderOS Skill Recorder" }).catch(() => {});
+    await api.action.setTitle({ title: "Anduran · ouvrir le panneau des collaborateurs" }).catch(() => {});
   }
 }
 
@@ -753,6 +1132,9 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
 
       default:
+        // Les messages du compagnon ont leurs propres destinataires (le
+        // panneau, l'écouteur des bulles) : ne pas leur répondre à leur place.
+        if (String(msg?.type ?? "").startsWith("companion:")) return;
         sendResponse({ ok: false });
     }
   })();
@@ -811,6 +1193,7 @@ api.alarms.onAlarm.addListener(async (alarm) => {
   if (state?.recordingId) await flush();
   else await claim().catch(() => {});
   await pumpControl().catch(() => {});
+  await pumpFeed().catch(() => {});
 });
 
 // Tant que le service worker est vivant, on pousse au rythme fin ; l'alarme
@@ -819,6 +1202,19 @@ setInterval(() => { flush().catch(() => {}); }, FLUSH_MS);
 // Le pilotage demande un rythme interactif : un agent qui attend 30 s par clic
 // serait inutilisable. L'alarme ne sert qu'à réveiller un worker endormi.
 setInterval(() => { pumpControl().catch(() => {}); }, CONTROL_POLL_MS);
+// Le fil du compagnon règle lui-même son rythme (6 s ou 60 s, voir pumpFeed).
+setInterval(() => { pumpFeed().catch(() => {}); }, 2000);
+// Le bail de lecture expire en 150 s côté serveur : renouvelé chaque minute
+// tant qu'un panneau est ouvert, même sans ping du panneau.
+setInterval(() => { if (panels.size && Date.now() - lastLeaseAt > 55_000) companionLease(true).catch(() => {}); }, 15_000);
+
+// Cliquer l'icône ouvre le panneau des collaborateurs. Les réglages d'avant
+// (appairage, pilotage, formation) vivent maintenant dans ce panneau.
+function companionSetup() {
+  api.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(() => {});
+  setupMenus();
+}
+companionSetup();
 
 // Au démarrage du navigateur : reprendre l'alarme de réclamation si l'appareil
 // est appairé, et finir un appairage laissé en suspens.
@@ -826,7 +1222,9 @@ api.runtime.onStartup?.addListener(async () => {
   const { token, deviceId } = await getSettings();
   if (!token && deviceId) await pollPairing().catch(() => {});
   await api.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MIN });
+  companionSetup();
 });
 api.runtime.onInstalled.addListener(async () => {
   await api.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MIN });
+  companionSetup();
 });

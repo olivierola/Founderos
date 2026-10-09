@@ -78,7 +78,7 @@ export function describeAnalyticsError(error: unknown): string {
       + "Poussez les migrations Supabase, puis rechargez la page.";
   }
   if (/Accès refusé/.test(message)) {
-    return "Cet agent appartient à un autre espace de travail.";
+    return "Ce collaborateur appartient à un autre espace de travail.";
   }
 
   const details = typeof e?.details === "string" ? e.details : "";
@@ -91,7 +91,7 @@ export function describeAnalyticsError(error: unknown): string {
 // ── Dérivés ────────────────────────────────────────────────────────────────
 // Le dénominateur de tous les taux est le volume MESURÉ, pas le volume total :
 // les conversations antérieures à la migration 0217 n'ont pas d'issue, et les
-// compter comme des échecs ferait plonger un taux sans qu'aucun agent n'ait
+// compter comme des échecs ferait plonger un taux sans qu'aucun collaborateur n'ait
 // changé de comportement. L'écart est affiché à l'écran, jamais dissimulé.
 export function measured(t: Totals): number {
   return Math.max(0, t.total - t.unknown_outcome);

@@ -103,7 +103,7 @@ type FilterOption = { id: string; label: string; count: number };
 
 /**
  * One filter pill of the gallery's toolbar. Single choice per axis (the axes
- * combine, so "cet agent, dans cette mission" is one click each), with the
+ * combine, so "ce collaborateur, dans cette mission" is one click each), with the
  * count of matching artifacts next to every option — a filter that would empty
  * the wall says so before you pick it.
  */
@@ -233,7 +233,7 @@ export function ArtifactsBrowser({
   );
 }
 
-function ArtifactViewer({ target, onBack, dense }: { target: ArtifactOpenTarget; onBack: () => void; dense?: boolean }) {
+export function ArtifactViewer({ target, onBack, dense }: { target: ArtifactOpenTarget; onBack: () => void; dense?: boolean }) {
   if (target.table === "code") {
     return (
       <div className="flex h-full flex-col">
@@ -563,7 +563,7 @@ function ArtifactGallery({
     },
   });
   // Deux tables portent le mot « mission » : celles d'une room (l'onglet
-  // Missions) et celles d'un agent (ce qu'on programme dans Schedules). Un
+  // Missions) et celles d'un collaborateur (ce qu'on programme dans Schedules). Un
   // rapport peut sortir de l'une ou de l'autre, et de la fenêtre des filtres
   // les deux sont la même chose — une seule liste, donc.
   const { data: missionNames } = useQuery({
@@ -817,7 +817,7 @@ function ArtifactGallery({
               className="w-full rounded-2xl border border-border bg-background py-2.5 pl-11 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring/20"
             />
           </div>
-          <FilterSelect icon={Bot} label="Agent" empty="Aucun artifact rattaché à un agent."
+          <FilterSelect icon={Bot} label="Collaborateur" empty="Aucun artifact rattaché à un collaborateur."
             options={agentOptions} value={agentFilter} onChange={setAgentFilter} />
           <FilterSelect icon={Hash} label="Room" empty="Aucun artifact rattaché à une room."
             options={roomOptions} value={roomFilter} onChange={setRoomFilter} />

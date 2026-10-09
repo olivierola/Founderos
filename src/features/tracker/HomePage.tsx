@@ -230,7 +230,7 @@ function AttentionQueue({
               className="min-w-0 flex-1 text-left"
             >
               <span className="block truncate text-13">
-                <span className="font-medium">{item.agent_name ?? "Un agent"}</span>
+                <span className="font-medium">{item.agent_name ?? "Un collaborateur"}</span>
                 {item.kind === "approval"
                   ? <> veut {TRACKER_ACTION_LABEL[item.detail ?? ""] ?? item.detail ?? "agir"}</>
                   : <> est en pause après trois échecs</>}
@@ -366,8 +366,8 @@ function AskTeam({
         workspaceId={workspaceId}
         projectId={projectId}
         agents={agents ?? []}
-        placeholder="Décrivez ce qu'il y a à faire, ou mentionnez un agent avec @…"
-        hint="Mentionnez un agent avec @ pour qu'il rejoigne la conversation. Une nouvelle room est créée."
+        placeholder="Décrivez ce qu'il y a à faire, ou mentionnez un collaborateur avec @…"
+        hint="Mentionnez un collaborateur avec @ pour qu'il rejoigne la conversation. Une nouvelle room est créée."
       />
     </section>
   );

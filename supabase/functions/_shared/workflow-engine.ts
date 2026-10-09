@@ -35,6 +35,7 @@ import { embedTexts, toVectorLiteral } from "./jina.ts";
 // Le cron vit dans son propre module, sans dépendance : l'éditeur en a besoin
 // pour montrer la prochaine échéance, et il ne peut pas importer ce fichier-ci.
 import { nextCronRun } from "./cron.ts";
+import { judge as judgeTs, noul as noulTs, readNoul as readNoulTs } from "./typesafe.ts";
 export { nextCronRun };
 
 type Admin = SupabaseClient;
@@ -466,6 +467,15 @@ export async function syncEventTrigger(admin: Admin, triggerId: string): Promise
       .update({ status: "error", status_detail: detail.slice(0, 400), updated_at: new Date().toISOString() })
       .eq("id", t.id);
 
+  // Internal events (0267) need no subscription anywhere: the database queues
+  // them itself as soon as an active trigger listens.
+  if (t.provider === "founderos") {
+    await admin.from("agent_workflow_triggers")
+      .update({ status: "active", status_detail: null, updated_at: new Date().toISOString() })
+      .eq("id", t.id);
+    return;
+  }
+
   const apiKey = Deno.env.get("COMPOSIO_API_KEY");
   if (!apiKey) { await fail("COMPOSIO_API_KEY n'est pas configurée sur le backend."); return; }
 
@@ -511,13 +521,20 @@ export async function syncEventTrigger(admin: Admin, triggerId: string): Promise
  *  an orphan subscription upstream is noise; a row we cannot remove is a bug. */
 export async function removeEventTrigger(admin: Admin, triggerId: string): Promise<void> {
   const { data } = await admin.from("agent_workflow_triggers")
-    .select("external_id").eq("id", triggerId).maybeSingle();
+    .select("external_id, mission_id").eq("id", triggerId).maybeSingle();
   const externalId = (data as { external_id?: string | null } | null)?.external_id;
+  const missionId = (data as { mission_id?: string | null } | null)?.mission_id;
   const apiKey = Deno.env.get("COMPOSIO_API_KEY");
   if (externalId && apiKey) {
     await fetch(`https://backend.composio.dev/api/v3/trigger_instances/manage/${externalId}`, {
       method: "DELETE", headers: { "x-api-key": apiKey },
     }).catch(() => {});
+  }
+  // A collaborator's trigger carries its own mission: it goes with it, so the
+  // collaborator's task list does not keep a mission nothing can start anymore.
+  if (missionId) {
+    await admin.from("internal_agent_missions")
+      .update({ status: "archived", updated_at: new Date().toISOString() }).eq("id", missionId);
   }
   await admin.from("agent_workflow_triggers").delete().eq("id", triggerId);
 }
@@ -546,21 +563,24 @@ export async function routeWorkflowEvent(admin: Admin, opts: {
   payload: Record<string, unknown>;
   /** Composio's trigger instance id, when the callback carries one. */
   externalTriggerId?: string | null;
+  /** Internal events (0267) belong to ONE project: never route them elsewhere. */
+  projectId?: string | null;
 }): Promise<{ matched: number; started: number }> {
   const provider = opts.provider.trim().toLowerCase();
   const slug = opts.eventSlug.trim();
   if (!provider || !slug) return { matched: 0, started: 0 };
 
   let q = admin.from("agent_workflow_triggers")
-    .select("id, workflow_id, workspace_id, project_id, filter, status")
+    .select("id, workflow_id, agent_id, mission_id, workspace_id, project_id, filter, status, hourly_cap")
     .eq("provider", provider).eq("event_slug", slug).eq("status", "active");
   // When the callback names the subscription, trust it over the (provider,
   // event) pair: two workspaces can listen to the same event of the same app.
   if (opts.externalTriggerId) q = q.eq("external_id", opts.externalTriggerId);
+  if (opts.projectId) q = q.eq("project_id", opts.projectId);
   const { data: rows } = await q;
   const triggers = (rows ?? []) as Array<{
-    id: string; workflow_id: string; workspace_id: string; project_id: string;
-    filter: string | null; status: string;
+    id: string; workflow_id: string | null; agent_id: string | null; mission_id: string | null;
+    workspace_id: string; project_id: string; filter: string | null; status: string; hourly_cap: number | null;
   }>;
   if (triggers.length === 0) return { matched: 0, started: 0 };
 
@@ -568,29 +588,50 @@ export async function routeWorkflowEvent(admin: Admin, opts: {
   for (const t of triggers) {
     // 1 — claim this delivery. A duplicate loses here and goes no further.
     const { data: claim, error: claimErr } = await admin.from("workflow_event_deliveries").insert({
-      trigger_id: t.id, workflow_id: t.workflow_id, workspace_id: t.workspace_id,
+      trigger_id: t.id, workflow_id: t.workflow_id, agent_id: t.agent_id, workspace_id: t.workspace_id,
       external_event_id: opts.externalEventId, payload: opts.payload, outcome: "started",
     }).select("id").single();
     if (claimErr || !claim) continue; // already delivered, or unwritable
     const deliveryId = (claim as { id: string }).id;
 
-    const close = (outcome: string, detail?: string, runId?: string) =>
+    const close = (outcome: string, detail?: string, runId?: string, agentRunId?: string) =>
       admin.from("workflow_event_deliveries")
-        .update({ outcome, detail: detail?.slice(0, 500) ?? null, run_id: runId ?? null })
+        .update({ outcome, detail: detail?.slice(0, 500) ?? null, run_id: runId ?? null, agent_run_id: agentRunId ?? null })
         .eq("id", deliveryId);
 
-    // The workflow must still want to run.
-    const { data: wf } = await admin.from("agent_workflows")
-      .select("status").eq("id", t.workflow_id).maybeSingle();
-    const status = (wf as { status?: string } | null)?.status;
-    if (status !== "active") {
-      await close("skipped", `Workflow ${status ?? "introuvable"} — non déclenché.`);
-      continue;
+    // The target must still want to run.
+    if (t.workflow_id) {
+      const { data: wf } = await admin.from("agent_workflows")
+        .select("status").eq("id", t.workflow_id).maybeSingle();
+      const status = (wf as { status?: string } | null)?.status;
+      if (status !== "active") {
+        await close("skipped", `Workflow ${status ?? "introuvable"} — non déclenché.`);
+        continue;
+      }
+    } else {
+      const { data: ag } = await admin.from("internal_agents")
+        .select("is_archived, mission_enabled").eq("id", t.agent_id!).maybeSingle();
+      const a = ag as { is_archived?: boolean; mission_enabled?: boolean } | null;
+      if (!a || a.is_archived) { await close("skipped", "Collaborateur archivé ou introuvable."); continue; }
+      if (a.mission_enabled === false) { await close("skipped", "Les missions de ce collaborateur sont désactivées."); continue; }
+      if (!t.mission_id) { await close("failed", "Déclencheur sans mission : recréez-le."); continue; }
+      // A chatty source must not drain the plan: past the hourly cap, the
+      // deliveries are recorded and skipped.
+      const since = new Date(Date.now() - 3600_000).toISOString();
+      const { count } = await admin.from("workflow_event_deliveries")
+        .select("id", { count: "exact", head: true })
+        .eq("trigger_id", t.id).eq("outcome", "started").gte("received_at", since).neq("id", deliveryId);
+      if ((count ?? 0) >= (t.hourly_cap ?? 20)) {
+        await close("skipped", `Limite de ${t.hourly_cap ?? 20} exécutions par heure atteinte pour ce déclencheur.`);
+        continue;
+      }
     }
 
     // 2 — filter.
     if (t.filter?.trim()) {
-      const verdict = await eventMatchesFilter(t.filter, opts.payload);
+      const verdict = await eventMatchesFilter(t.filter, opts.payload, {
+        admin, workspaceId: t.workspace_id, projectId: t.project_id,
+      });
       if (!verdict.pass) {
         await close("filtered", verdict.reason);
         continue;
@@ -598,14 +639,38 @@ export async function routeWorkflowEvent(admin: Admin, opts: {
     }
 
     // 3 — start.
-    const res = await startWorkflowRun(admin, {
-      workflowId: t.workflow_id,
-      trigger: `${provider}:${slug}`,
-      payload: { trigger: "event", provider, event: slug, data: opts.payload },
-      triggeredBy: null,
-    });
-    if ("error" in res) await close("failed", res.error);
-    else { await close("started", undefined, res.runId); started++; }
+    if (t.workflow_id) {
+      const res = await startWorkflowRun(admin, {
+        workflowId: t.workflow_id,
+        trigger: `${provider}:${slug}`,
+        payload: { trigger: "event", provider, event: slug, data: opts.payload },
+        triggeredBy: null,
+      });
+      if ("error" in res) await close("failed", res.error);
+      else { await close("started", undefined, res.runId); started++; }
+      continue;
+    }
+
+    // A collaborator: one run of the trigger's mission, with the event attached.
+    const { data: run, error: runErr } = await admin.from("internal_agent_runs").insert({
+      mission_id: t.mission_id, agent_id: t.agent_id, workspace_id: t.workspace_id, project_id: t.project_id,
+      status: "queued", triggered_via: "event",
+      trigger_payload: { provider, event: slug, received_at: new Date().toISOString(), data: opts.payload },
+    }).select("id").single();
+    if (runErr || !run) { await close("failed", runErr?.message ?? "Exécution impossible à créer."); continue; }
+    const runId = (run as { id: string }).id;
+    await close("started", undefined, undefined, runId);
+    started++;
+    // Fire and forget: a queued run the worker misses is rescued by the scheduler.
+    const base = Deno.env.get("SUPABASE_URL");
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (base && key) {
+      fetch(`${base}/functions/v1/internal-agent-run`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_id: t.agent_id, mode: "mission", run_id: runId }),
+      }).catch(() => {});
+    }
   }
 
   await admin.from("agent_workflow_triggers")
@@ -647,6 +712,8 @@ export function parseStructuredFilter(filter: string): Record<string, unknown> |
  */
 async function eventMatchesFilter(
   filter: string, payload: Record<string, unknown>,
+  /** Where the trigger lives — lets Jev judge the condition when it is on. */
+  scope?: { admin: Admin; workspaceId: string; projectId: string },
 ): Promise<{ pass: boolean; reason?: string }> {
   // A STRUCTURED filter (the automation condition format) is evaluated here,
   // for free and identically every time. Only prose pays for a model call —
@@ -657,6 +724,33 @@ async function eventMatchesFilter(
     return evaluateDecision(structured, ctx)
       ? { pass: true }
       : { pass: false, reason: "Condition structurée non satisfaite." };
+  }
+  // « Cet événement satisfait-il la condition ? » is a yes/no decision — what
+  // Jev answers in one pass for a fraction of a generative call. Usage
+  // `workflow_judge`, the same switch as the « Condition jugée » block: off or
+  // shadow (or a Jev outage) falls through to the generative judge below, so
+  // turning Jev off never stops a trigger.
+  if (scope) {
+    let eventText = "";
+    try { eventText = JSON.stringify(payload).slice(0, 6000); } catch { eventText = ""; }
+    const verdict = await judgeTs(
+      { admin: scope.admin, workspaceId: scope.workspaceId, projectId: scope.projectId },
+      "workflow_judge",
+      { condition: filter.slice(0, 500), evenement: eventText },
+      {
+        reponse: noulTs(`L'événement satisfait-il cette condition : « ${filter.slice(0, 300)} » ?`, {
+          true: { what: "L'événement contient explicitement ce que la condition demande." },
+          false: { what: "L'événement ne le contient pas, ou il faudrait le supposer." },
+        }),
+      },
+      { subject: `Déclencheur : ${filter.slice(0, 60)}` },
+    );
+    const p = readNoulTs(verdict, "reponse");
+    if (verdict?.apply && p != null) {
+      return p >= verdict.threshold
+        ? { pass: true, reason: `Jev : ${Math.round(p * 100)} %` }
+        : { pass: false, reason: `Jev : condition non satisfaite (${Math.round(p * 100)} %).` };
+    }
   }
   try {
     const res = await callAi({

@@ -12,6 +12,8 @@ import {
   type WorkspaceRole, type EmittedArtifact, type ToolContext,
   toolDefsForRole, accessScopeSummary, buildExecutor,
 } from "../_shared/assistant-tools.ts";
+import { TRACKER_OPS_DOCTRINE } from "../_shared/assistant-ops.ts";
+import { CONNECTOR_OPS_DOCTRINE } from "../_shared/assistant-connectors.ts";
 
 const BASE_SYSTEM_PROMPT = `Tu es l'assistant interne de Anduran, une plateforme pour fondateurs et équipes SaaS.
 Tu agis comme un collaborateur capable d'exécuter des tâches : analyser des données, rédiger des documents, produire des tableaux, du JSON, du code.
@@ -33,6 +35,15 @@ L'utilisateur voit ces trois cartes dans ce panneau ; il clique "Configurer" sur
   3) Propose du CONCRET et court, une seule question à la fois ("Je rattache Slack — je valide ?"). Pour le prompt système, montre le texte proposé avant de l'écrire.
   4) Après accord, écris : update_agent_profile (instructions), configure_agent_tool / add_agent_tool avec kind 'connector_action' ou 'composio_toolkit' (connecteurs), search_agent_skills puis set_agent_skills (skills).
   5) Termine par l'état de CETTE carte : ce qui est prêt, ce qui reste.
+
+CRÉER UN AGENT (tu le fais, tu ne renvoies pas vers un formulaire):
+- manage_agents action=create : un nom clair, un rôle en une ligne, des instructions opérationnelles, et DANS LE MÊME APPEL ce qu'on t'a demandé de lui donner (connectors en slugs, skills trouvées avec search_agent_skills, tools, mcp_servers). Il naît dans le service que l'utilisateur regarde.
+- manage_agents connect rattache un connecteur déjà connecté, ou affiche la carte « Connecter » s'il ne l'est pas encore. remove_tool et archive demandent l'accord explicite puis confirm=true.
+- Pour lire ou régler finement un agent existant, garde get_agent_setup, configure_agent_tool, update_agent_profile, set_agent_skills.
+
+${TRACKER_OPS_DOCTRINE}
+
+${CONNECTOR_OPS_DOCTRINE}
 
 AUTOMATISER UN TRAVAIL (WORKFLOWS) — TU CONSTRUIS, TU NE DÉCRIS PAS:
 Quand l'utilisateur veut qu'un travail se répète tout seul ("chaque matin…", "à chaque nouveau lead…", "automatise…"), tu CONSTRUIS un workflow avec les outils workflow_*. Un récapitulatif en markdown, un document ou un artefact ne créent RIEN : le workflow n'existe que s'il a été construit par ces appels.
@@ -243,12 +254,18 @@ ${JSON.stringify({ project: context.project, connectors: context.connectors, cod
 
     // Artifacts collected during the tool loop.
     const artifacts: EmittedArtifact[] = [];
+    // The service the user is in, from the same snapshot path: what the
+    // assistant creates (an agent, a tracker project) is born THERE, not in
+    // whichever service happens to come first.
+    const pageDashboard = /\/service\/([0-9a-f-]{36})(?:[/?#]|$)/i
+      .exec(typeof page_context === "string" ? page_context : "")?.[1] ?? null;
     const toolCtx: ToolContext = {
       admin,
       workspaceId: workspace_id,
       projectId: project_id,
       userId,
       userRole,
+      serviceDashboardId: pageDashboard,
       emitArtifact: (a) => artifacts.push(a),
     };
 

@@ -100,7 +100,7 @@ export function ReadinessScan() {
   return (
     <Panel>
       <div className="flex h-full flex-col items-center gap-3 p-4">
-        <Chip icon={Shield} title="Superintelligence Readiness Scan" />
+        <Chip icon={Shield} title="Super intelligence Readiness Scan" />
 
         {/* Module grid with a sweeping scan line */}
         <div

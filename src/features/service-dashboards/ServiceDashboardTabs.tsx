@@ -1,3 +1,4 @@
+import { AgentInternalToolsTab } from "@/features/custom-connectors/AgentInternalToolsTab";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -9,9 +10,11 @@ import {
   ChartBarIcon, PlugsConnectedIcon, PlayIcon, PauseIcon, TrashIcon, ClockCountdownIcon,
   WarningIcon, CalendarBlankIcon, CalendarCheckIcon, ArrowsClockwiseIcon, TimerIcon,
   FolderPlusIcon, DotsThreeIcon, SparkleIcon, GlobeIcon, MonitorPlayIcon, TerminalWindowIcon,
+  RocketLaunchIcon, PackageIcon, TrayIcon, ShieldCheckIcon, ListChecksIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import { ChromeButton } from "@/components/ui/chrome-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -42,9 +45,16 @@ import { type InternalAgent } from "@/features/internal-agents/shared";
 import { type StudioKind } from "@/features/internal-agents/agentTemplates";
 
 import { RoomLauncher } from "./RoomLauncher";
+import { ArtifactViewer } from "./RoomArtifacts";
+import { AgentAutonomyTab, AUTONOMY_META, type AutonomyLevel } from "./AgentAutonomyTab";
+import { AgentTasksPanel } from "./AgentTasksPanel";
+import { AgentEventTriggers } from "./AgentEventTriggers";
+import { AgentGoals } from "./AgentGoals";
+import { type ArtifactOpenTarget } from "@/features/internal-agents/UiBlocks";
 import { AssetsHub } from "./AssetsHub";
 import { MemoryGraph } from "./MemoryGraph";
-import { CatalogCard } from "./CatalogCard";
+import { CatalogCard, type CatalogStatus } from "./CatalogCard";
+import { useCollaboratorInbox, type InboxItem } from "./CollaboratorInbox";
 import { GetStartedCard } from "./GetStarted";
 import {
   useComposioToolkits, useConnectorStatus, toolSlugsFromRows, resolveNeeds,
@@ -63,7 +73,7 @@ import { useConfirm } from "@/components/ConfirmProvider";
 // select("*") on purpose: naming columns makes the WHOLE query 400 the day one
 // of them isn't in the schema (internal_agents has grown through best-effort
 // migrations — `requires_approval`, for one, isn't there). And the error is
-// rethrown so a failed fetch surfaces as an error, never as "no agents".
+// rethrown so a failed fetch surfaces as an error, never as "no collaborateurs".
 export interface DashboardAgent {
   id: string; name: string; description: string | null;
   avatar_url: string | null; avatar_style: "avatar" | "orb" | null; accent_color: string | null;
@@ -74,6 +84,8 @@ export interface DashboardAgent {
   folder_id?: string | null;
   /** Only present on databases where the column was added. */
   requires_approval?: boolean | null;
+  /** What it may do alone (0266); absent on a database without the column. */
+  autonomy_level?: AutonomyLevel | null;
 }
 
 export function useDashboardAgents(dashboardId: string) {
@@ -154,6 +166,90 @@ function Empty({ icon: Icon, title, hint }: { icon: PhosphorIcon; title: string;
 // ── Agents ───────────────────────────────────────────────────────────────────
 // Creation itself lives in CreateAgent.tsx (…/agents/new) — this page only
 // lists the roster and sends you there.
+// ── What the roster is doing ────────────────────────────────────────────────
+export interface RosterActivity {
+  /** A run is going on right now. */
+  live: boolean;
+  /** What that run (or the last one) is about: its mission or conversation. */
+  title: string | null;
+  lastAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+  /** Finished runs this week, for the success rate. */
+  ok: number;
+  failed: number;
+}
+
+// A run "running" for hours is a zombie the reconciler has not swept yet —
+// showing it as « au travail » would be a lie.
+const LIVE_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+async function fetchRosterActivity(ids: string[]): Promise<Map<string, RosterActivity>> {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase.from("internal_agent_runs")
+    .select("id, agent_id, status, created_at, finished_at, mission_id, conversation_id, error_message")
+    .in("agent_id", ids).is("parent_run_id", null).gte("created_at", since)
+    .order("created_at", { ascending: false }).limit(600);
+  if (error) throw new Error(error.message);
+  type Run = { id: string; agent_id: string; status: string; created_at: string; finished_at: string | null;
+    mission_id: string | null; conversation_id: string | null; error_message: string | null };
+  const runs = (data ?? []) as Run[];
+
+  const now = Date.now();
+  const isLive = (r: Run) => (r.status === "running" || r.status === "queued")
+    && now - new Date(r.created_at).getTime() < LIVE_WINDOW_MS;
+  const head = new Map<string, Run>(); // the live run, else the latest one
+  const out = new Map<string, RosterActivity>();
+  for (const r of runs) {
+    const cur = out.get(r.agent_id) ?? {
+      live: false, title: null, lastAt: r.finished_at ?? r.created_at, lastStatus: r.status,
+      lastError: r.error_message, ok: 0, failed: 0,
+    };
+    if (r.status === "succeeded") cur.ok += 1;
+    if (r.status === "failed") cur.failed += 1;
+    if (!cur.live && isLive(r)) { cur.live = true; head.set(r.agent_id, r); }
+    if (!head.has(r.agent_id)) head.set(r.agent_id, r);
+    out.set(r.agent_id, cur);
+  }
+
+  // Titles for the head runs only: one query per table, not one per card.
+  const mids = [...new Set([...head.values()].map((r) => r.mission_id).filter(Boolean))] as string[];
+  const cids = [...new Set([...head.values()].map((r) => r.conversation_id).filter(Boolean))] as string[];
+  const [ms, cs] = await Promise.all([
+    mids.length ? supabase.from("internal_agent_missions").select("id, title").in("id", mids) : Promise.resolve({ data: [] }),
+    cids.length ? supabase.from("internal_agent_conversations").select("id, title").in("id", cids) : Promise.resolve({ data: [] }),
+  ]);
+  const titleOf = new Map<string, string>();
+  for (const m of (ms.data ?? []) as Array<{ id: string; title: string | null }>) if (m.title) titleOf.set(m.id, m.title);
+  for (const c of (cs.data ?? []) as Array<{ id: string; title: string | null }>) if (c.title) titleOf.set(c.id, c.title);
+  for (const [agentId, r] of head) {
+    const cur = out.get(agentId);
+    if (cur) cur.title = titleOf.get(r.mission_id ?? "") ?? titleOf.get(r.conversation_id ?? "") ?? null;
+  }
+  return out;
+}
+
+/** One state per card, the one that calls for something first. */
+function rosterStatus(act: RosterActivity | undefined, waiting: number, loaded: boolean): CatalogStatus | undefined {
+  if (waiting > 0) return { tone: "waiting", label: waiting > 1 ? `Vous attend (${waiting})` : "Vous attend", detail: "dans « À valider »" };
+  if (!loaded) return undefined;
+  if (act?.live) return { tone: "working", label: "Au travail", detail: act.title ?? undefined };
+  if (act?.lastStatus === "failed") {
+    return { tone: "error", label: "En échec", detail: (act.lastError ?? "").split("\n")[0] || act.title || undefined };
+  }
+  if (act?.lastAt) return { tone: "idle", label: "Disponible", detail: `actif ${relTime(act.lastAt)}` };
+  return { tone: "idle", label: "Disponible", detail: "rien cette semaine" };
+}
+
+function summarizeBlocking(items: InboxItem[]): string {
+  const approvals = items.filter((i) => i.kind === "approval").length;
+  const questions = items.filter((i) => i.kind === "question").length;
+  return [
+    approvals ? `${approvals} autorisation${approvals > 1 ? "s" : ""}` : "",
+    questions ? `${questions} question${questions > 1 ? "s" : ""}` : "",
+  ].filter(Boolean).join(", ");
+}
+
 export function AgentsTab({ dashboardId }: { dashboardId: string }) {
   const { user } = useAuth();
   const { workspaceSlug, projectSlug } = useParams();
@@ -205,6 +301,20 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
   });
   const countMap = counts ?? new Map<string, { tools: number; skills: number; work: number; slugs: string[] }>();
 
+  // What each collaborator is DOING — the card used to describe only how it was
+  // configured. Polled: a run starts and ends while the roster is on screen.
+  const { data: activity } = useQuery({
+    queryKey: ["sd_agent_activity", dashboardId, ids.join(",")],
+    enabled: ids.length > 0,
+    refetchInterval: 20_000,
+    queryFn: () => fetchRosterActivity(ids),
+  });
+  // What they wait for from a human: approvals and questions block the work.
+  const { data: inbox } = useCollaboratorInbox(dashboardId);
+  const blocking = (inbox ?? []).filter((i) => i.kind === "approval" || i.kind === "question");
+  const waitingByAgent = new Map<string, number>();
+  for (const i of blocking) waitingByAgent.set(i.agent_id, (waitingByAgent.get(i.agent_id) ?? 0) + 1);
+
   // Composio catalogue + this project's connection status, fetched once for the
   // whole grid so each card can show which of its apps still need connecting.
   const { data: toolkits } = useComposioToolkits();
@@ -228,7 +338,7 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
     <div className="min-h-full px-10 py-8">
       <div className="mx-auto max-w-5xl">
         <div className="mb-10 flex flex-wrap items-center gap-3">
-          <h1 className="text-[30px] font-semibold tracking-tight">Agents</h1>
+          <h1 className="text-[30px] font-semibold tracking-tight">Collaborators</h1>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" onClick={() => setCreatingFolder(true)} className="rounded-full">
               <FolderPlusIcon className="mr-1.5 h-3.5 w-3.5" /> Dossier
@@ -237,23 +347,24 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
                 Build / Templates / Public switch itself. */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button className="rounded-full px-5">
-                  Create agent
-                </Button>
+                <ChromeButton>
+                  <RocketLaunchIcon weight="fill" className="h-4 w-4" />
+                  Deploy collaborator
+                </ChromeButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64 rounded-xl">
-                <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">Type d'agent</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">Type de collaborateur</DropdownMenuLabel>
                 <DropdownMenuItem onSelect={() => navigate(`${sbase}/agents/new`)}>
                   <RobotIcon className="mr-2 h-4 w-4" />
                   <span className="min-w-0">
-                    <span className="block text-sm">Agent interne</span>
+                    <span className="block text-sm">Collaborateur interne</span>
                     <span className="block text-[11px] text-muted-foreground">Travaille pour l'équipe de ce service.</span>
                   </span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => navigate(`${sbase}/agents/new?type=public`)}>
                   <GlobeIcon className="mr-2 h-4 w-4" />
                   <span className="min-w-0">
-                    <span className="block text-sm">Agent public</span>
+                    <span className="block text-sm">Collaborateur public</span>
                     <span className="block text-[11px] text-muted-foreground">Face client, nourri par une base de connaissances.</span>
                   </span>
                 </DropdownMenuItem>
@@ -261,6 +372,23 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
             </DropdownMenu>
           </div>
         </div>
+
+        {blocking.length > 0 && (
+          <div className="-mt-4 mb-8 flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <TrayIcon className="h-5 w-5 shrink-0 text-amber-600" />
+            <div className="min-w-0 flex-1 text-sm">
+              <span className="font-medium">
+                {blocking.length} demande{blocking.length > 1 ? "s" : ""} vous attend{blocking.length > 1 ? "ent" : ""}
+              </span>
+              <span className="text-muted-foreground">
+                {" "}({summarizeBlocking(blocking)}). Vos collaborateurs ne peuvent pas avancer sans vous.
+              </span>
+            </div>
+            <Button size="sm" className="rounded-full" onClick={() => navigate(`${sbase}/projects/inbox`)}>
+              Ouvrir « À valider »
+            </Button>
+          </div>
+        )}
 
         <FolderDialog
           open={creatingFolder || !!editing}
@@ -281,21 +409,21 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
           : error ? (
             <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-6 text-center">
               <WarningIcon className="mx-auto mb-2 h-6 w-6 text-destructive" />
-              <div className="text-sm font-medium">Impossible de charger les agents</div>
+              <div className="text-sm font-medium">Impossible de charger les collaborateurs</div>
               <div className="mt-1 text-xs text-muted-foreground">{error instanceof Error ? error.message : "Erreur inconnue"}</div>
             </div>
           )
           : (agents ?? []).length === 0 && (publicAgents ?? []).length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border p-10 text-center">
               <RobotIcon className="mx-auto mb-2 h-7 w-7 text-muted-foreground/60" />
-              <div className="text-sm font-medium">Aucun agent dans ce service</div>
+              <div className="text-sm font-medium">Aucun collaborateur dans ce service</div>
               <div className="mt-1 text-xs text-muted-foreground">Créez-en un ou partez d'un template.</div>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <Button size="sm" className="rounded-full" onClick={() => navigate(`${sbase}/agents/new`)}>
-                  <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> Agent interne
+                  <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> Collaborateur interne
                 </Button>
                 <Button size="sm" variant="outline" className="rounded-full" onClick={() => navigate(`${sbase}/agents/new?type=public`)}>
-                  <GlobeIcon className="mr-1.5 h-3.5 w-3.5" /> Agent public
+                  <GlobeIcon className="mr-1.5 h-3.5 w-3.5" /> Collaborateur public
                 </Button>
               </div>
             </div>
@@ -310,13 +438,15 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
                   dot={f.color}
                   agents={(agents ?? []).filter((a) => a.folder_id === f.id)}
                   counts={countMap}
+                  activity={activity}
+                  waitingByAgent={waitingByAgent}
                   folders={folders ?? []}
                   toolkits={toolkits}
                   connStatus={connStatus}
                   onOpen={(id) => navigate(`${sbase}/agent/${id}`)}
                   onMove={move}
                   onEditFolder={() => setEditing(f)}
-                  emptyHint="Glissez des agents ici depuis le menu ⋯ d'une carte."
+                  emptyHint="Glissez des collaborateurs ici depuis le menu ⋯ d'une carte."
                 />
               ))}
               {unfiled.length > 0 && (
@@ -324,6 +454,8 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
                   title={(folders ?? []).length > 0 ? "Sans dossier" : "All"}
                   agents={unfiled}
                   counts={countMap}
+                  activity={activity}
+                  waitingByAgent={waitingByAgent}
                   folders={folders ?? []}
                   toolkits={toolkits}
                   connStatus={connStatus}
@@ -347,13 +479,17 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
 
 // A titled gallery of catalogue cards — the agent's identity on its own plate,
 // then its name, tool/skill counts, model + runtime pills and its created date.
-function AgentGallery({ title, dot, agents, counts, folders, toolkits, connStatus, onOpen, onMove, onEditFolder, emptyHint }: {
+function AgentGallery({ title, dot, agents, counts, activity, waitingByAgent, folders, toolkits, connStatus, onOpen, onMove, onEditFolder, emptyHint }: {
   title: string;
   /** Tailwind bg class of the folder's colour dot, when this is a folder. */
   dot?: string;
   agents: DashboardAgent[];
   /** agentId → { tools, skills, work }, fetched once for the whole roster. */
   counts: Map<string, { tools: number; skills: number; work: number; slugs: string[] }>;
+  /** agentId → what it did this week, fetched once for the whole roster. */
+  activity: Map<string, RosterActivity> | undefined;
+  /** agentId → approvals + questions waiting for a human. */
+  waitingByAgent: Map<string, number>;
   /** Composio catalogue + connection status, to draw the app logos. */
   toolkits: ComposioToolkit[] | undefined;
   connStatus: Map<string, string> | undefined;
@@ -381,6 +517,9 @@ function AgentGallery({ title, dot, agents, counts, folders, toolkits, connStatu
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {agents.map((a) => {
           const c = counts.get(a.id);
+          const act = activity?.get(a.id);
+          const status = rosterStatus(act, waitingByAgent.get(a.id) ?? 0, !!activity);
+          const finished = (act?.ok ?? 0) + (act?.failed ?? 0);
           return (
             <CatalogCard
               key={a.id}
@@ -412,14 +551,21 @@ function AgentGallery({ title, dot, agents, counts, folders, toolkits, connStatu
                   </DropdownMenuContent>
                 </DropdownMenu>
               }
-              glyph={<AgentIdentity style={a.avatar_style} url={a.avatar_url} seed={a.name} size={54} rounded="rounded-xl" />}
+              glyph={
+                <AgentIdentity
+                  style={a.avatar_style} url={a.avatar_url} seed={a.name} size={54} rounded="rounded-xl"
+                  state={act?.live ? "working" : "default"}
+                />
+              }
               name={a.name}
+              status={status}
               tools={c?.tools ?? null}
               extras={c?.skills ?? null}
               tools_needed={resolveNeeds(c?.slugs ?? [], toolkits, connStatus)}
+              // Model and runtime moved to the configuration page: they describe
+              // how the collaborator was built, not how it is doing. The load
+              // stays — it changes day to day and calls for a decision.
               badges={[
-                // La charge D'ABORD : c'est la seule des trois qui change d'un
-                // jour à l'autre, et la seule qui appelle une décision.
                 ...(c?.work
                   ? [{
                     label: `${c.work} work item${c.work > 1 ? "s" : ""}`,
@@ -427,12 +573,19 @@ function AgentGallery({ title, dot, agents, counts, folders, toolkits, connStatu
                     title: "Travail assigné dans le suivi",
                   }]
                   : []),
-                { label: a.model ?? "deepseek", tone: "auth", title: "Modèle" },
-                { label: a.sandbox_mode ?? "cloud", tone: "key", title: "Environnement d'exécution" },
+                // The default level says nothing; any other one changes what
+                // the collaborator does without asking, so it shows.
+                ...(a.autonomy_level && a.autonomy_level !== "assisted"
+                  ? [{
+                    label: AUTONOMY_META[a.autonomy_level].short,
+                    tone: a.autonomy_level === "autonomous" ? "key" as const : "auth" as const,
+                    title: `Autonomie : ${AUTONOMY_META[a.autonomy_level].label}`,
+                  }]
+                  : []),
               ]}
               // No shield here: internal_agents has no requires_approval column,
               // so there is nothing real to show (templates carry their autonomy).
-              meta={new Date(a.created_at).toISOString().slice(0, 10)}
+              meta={finished >= 3 ? `${Math.round(((act?.ok ?? 0) / finished) * 100)} % réussite` : undefined}
             />
           );
         })}
@@ -481,7 +634,7 @@ function PublicAgentGallery({ agents, dashboardId, onOpen }: {
   return (
     <section>
       <h2 className="mb-5 flex items-center gap-2 text-[19px] font-semibold tracking-tight">
-        Agents publics
+        Collaborateurs publics
         <span className="text-[15px] font-normal text-muted-foreground">{agents.length}</span>
         <CaretRightIcon className="h-4 w-4 text-muted-foreground" />
       </h2>
@@ -526,7 +679,7 @@ function PublicAgentGallery({ agents, dashboardId, onOpen }: {
               tools={c?.sources ?? null}
               extras={c?.convos ?? null}
               badges={[
-                { label: "public", tone: "auth", title: "Agent public, face client" },
+                { label: "public", tone: "auth", title: "Collaborateur public, face client" },
                 { label: a.enabled ? "live" : "disabled", tone: "key", title: "État de publication" },
               ]}
               meta={new Date(a.created_at).toISOString().slice(0, 10)}
@@ -582,7 +735,7 @@ function FolderDialog({ open, folder, onClose, onSave, onDelete }: {
               <Button
                 variant="ghost" className="mr-auto text-destructive hover:text-destructive"
                 onClick={async () => {
-                  if (!(await confirm("Supprimer ce dossier ? Ses agents ne sont pas supprimés, ils sortent du dossier."))) return;
+                  if (!(await confirm("Supprimer ce dossier ? Ses collaborateurs ne sont pas supprimés, ils sortent du dossier."))) return;
                   setBusy(true);
                   try { await onDelete(); onClose(); } finally { setBusy(false); }
                 }}
@@ -613,7 +766,7 @@ function FolderDialog({ open, folder, onClose, onSave, onDelete }: {
 // (the Missions board — it belongs to the dashboard, not to a settings page —
 // and Analytics) or a second door onto the same subject (MCP is a tool provider,
 // so it lives with the tools; Memory is now a section of Général).
-type AgentDetailTab = "settings" | "instructions" | "skills" | "connectors" | "automations";
+type AgentDetailTab = "settings" | "instructions" | "skills" | "connectors" | "automations" | "autonomy";
 
 // The leaf components behind these (SettingsTab, SkillsTab, …) are the exact
 // same ones the standalone page uses — reused directly instead of through the
@@ -625,6 +778,7 @@ const AGENT_DETAIL_TABS: { key: AgentDetailTab; label: string; icon: any }[] = [
   { key: "skills", label: "Compétences", icon: LightningIcon },
   { key: "connectors", label: "Outils", icon: PlugsConnectedIcon },
   { key: "automations", label: "Automatisations", icon: FlowArrowIcon },
+  { key: "autonomy", label: "Autonomie", icon: ShieldCheckIcon },
 ];
 
 // Links written when this page had nine tabs (?t=missions, ?t=mcp, …) — each old
@@ -665,7 +819,24 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
   const { data: agent, isLoading } = useDashboardAgent(agentId);
   // Two windows into the agent's machine, beside the conversation: the live
   // browser session while it tests an app, and its shell.
-  const [side, setSide] = useState<"test" | "terminal" | null>(null);
+  // …and a third for what it produced: a deliverable or a document opened from
+  // the conversation reads beside it instead of leaving the page.
+  // …and, first, what it is working on: the Tasks tab. The panel remembers the
+  // last tab this viewer left open (or closed); a first visit opens Tasks.
+  type Side = "tasks" | "test" | "terminal" | "artifact";
+  const [side, setSideState] = useState<Side | null>(() => {
+    try {
+      const v = localStorage.getItem("sd_agent_side");
+      return v === null ? "tasks" : v === "tasks" || v === "test" || v === "terminal" ? v : null;
+    } catch { return "tasks"; }
+  });
+  const setSide = (next: Side | null | ((s: Side | null) => Side | null)) => setSideState((prev) => {
+    const v = typeof next === "function" ? next(prev) : next;
+    // A deliverable is opened on purpose, never restored on the next visit.
+    try { if (v !== "artifact") localStorage.setItem("sd_agent_side", v ?? "none"); } catch { /* storage blocked */ }
+    return v;
+  });
+  const [artifact, setArtifact] = useState<ArtifactOpenTarget | null>(null);
   const [convoId, setConvoId] = useState<string | null>(null);
   const { width, startResize } = useResizableWidth("sd_agent_panel_width", 400, 300, 900);
 
@@ -680,7 +851,7 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
     if (error) throw error;
     await callEdge("internal-agent-run", { agent_id: agentId, mode: "chat", conversation_id: convoId });
     qc.invalidateQueries({ queryKey: ["internal_agent_messages", convoId] });
-    return "→ demandé à l'agent dans la conversation.";
+    return "→ demandé au collaborateur dans la conversation.";
   }
 
   // Links written when the config lived here (…/agent/:id?t=skills) land on the
@@ -696,7 +867,7 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
   }, [legacyTab, agentId, sbase, navigate]);
 
   return (
-    <div className="sd-agent-canvas relative flex h-full min-h-0">
+    <div className="sd-collaborateur-canvas relative flex h-full min-h-0">
       {/* No solid header — the agent identity (left) and the config entry
           (right) float over the chat via ChatTab's top row. */}
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -708,22 +879,28 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
             workspaceId={workspaceId}
             projectId={projectId}
             onConversationChange={setConvoId}
+            onOpenInPanel={(t) => { setArtifact(t); setSide("artifact"); }}
             headerLeading={
               <div className="flex h-9 items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2.5 shadow-sm backdrop-blur">
-                <button onClick={() => navigate(`${sbase}/agents`)} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground" title="Retour aux agents"><ArrowLeftIcon className="h-3.5 w-3.5" /></button>
-                <AgentIdentity style={agent.avatar_style ?? "orb"} url={agent.avatar_url} seed={agent.name} size={22} rounded="rounded-full" />
+                <button onClick={() => navigate(`${sbase}/agents`)} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground" title="Retour aux collaborateurs"><ArrowLeftIcon className="h-3.5 w-3.5" /></button>
+                <AgentIdentity style={agent.avatar_style ?? "orb"} url={agent.avatar_url} seed={agent.name} size={22} rounded="rounded-full" accentColor={agent.accent_color} />
                 <span className="max-w-[160px] truncate text-xs font-semibold leading-tight">{agent.name}</span>
               </div>
             }
             headerTrailing={
               <div className="flex h-9 items-center gap-0.5 rounded-full border border-border/60 bg-background/70 px-1 shadow-sm backdrop-blur">
+                {/* What it is working on, live. */}
+                <SidePanelToggle
+                  icon={ListChecksIcon} title="Tâches du collaborateur"
+                  active={side === "tasks"} onClick={() => setSide((s) => (s === "tasks" ? null : "tasks"))}
+                />
                 {/* Watch the machine: the app it's testing, and its shell. */}
                 <SidePanelToggle
                   icon={MonitorPlayIcon} title="Tester une app"
                   active={side === "test"} onClick={() => setSide((s) => (s === "test" ? null : "test"))}
                 />
                 <SidePanelToggle
-                  icon={TerminalWindowIcon} title="Terminal de l'agent"
+                  icon={TerminalWindowIcon} title="Terminal du collaborateur"
                   active={side === "terminal"} onClick={() => setSide((s) => (s === "terminal" ? null : "terminal"))}
                 />
                 {/* Conversational configuration: opens the assistant on this
@@ -738,7 +915,7 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
                 </button>
                 <button
                   onClick={() => navigate(`${sbase}/agent-config/${agent.id}`)}
-                  title="Configuration de l'agent"
+                  title="Configuration du collaborateur"
                   className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <GearSixIcon className="h-4 w-4" />
@@ -759,8 +936,12 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
             title="Glisser pour redimensionner"
           />
           <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1.5">
+            <SideTab active={side === "tasks"} onClick={() => setSide("tasks")} icon={ListChecksIcon} label="Tâches" />
             <SideTab active={side === "test"} onClick={() => setSide("test")} icon={MonitorPlayIcon} label="Test app" />
             <SideTab active={side === "terminal"} onClick={() => setSide("terminal")} icon={TerminalWindowIcon} label="Terminal" />
+            {artifact && (
+              <SideTab active={side === "artifact"} onClick={() => setSide("artifact")} icon={PackageIcon} label="Livrable" />
+            )}
             <button
               onClick={() => setSide(null)} title="Fermer le panneau"
               className="ml-auto rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -769,7 +950,16 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
             </button>
           </div>
           <div className="min-h-0 flex-1">
-            {side === "test" ? (
+            {side === "artifact" && artifact ? (
+              <ArtifactViewer
+                key={`${artifact.table}:${artifact.id ?? ""}`}
+                target={artifact}
+                onBack={() => { setArtifact(null); setSide("tasks"); }}
+                dense
+              />
+            ) : side === "tasks" ? (
+              <AgentTasksPanel agentId={agent.id} agentName={agent.name} sbase={sbase} activeConversationId={convoId} />
+            ) : side === "test" ? (
               <AppTestPanel
                 workspaceId={workspaceId}
                 projectId={projectId}
@@ -918,9 +1108,22 @@ export function AgentConfigInDashboard({ dashboardId, agentId }: { dashboardId: 
               <ToolsTab agent={agent} variant="tools" />
               <div className="mx-auto max-w-5xl border-t border-border/60" />
               <AgentMcpTab agent={agent} />
+              <div className="mx-auto max-w-5xl border-t border-border/60" />
+              <AgentInternalToolsTab agent={agent} />
             </div>
           )}
-          {tab === "automations" && <AgentAutomationsTab agent={agent} />}
+          {tab === "automations" && (
+            // Events first: « when X happens » is what makes a collaborator act
+            // on its own; the pre-coded automations below run on a clock.
+            <div className="space-y-12">
+              <AgentEventTriggers agent={agent} />
+              <div className="mx-auto max-w-3xl border-t border-border/60" />
+              <AgentGoals agent={agent} />
+              <div className="mx-auto max-w-3xl border-t border-border/60" />
+              <AgentAutomationsTab agent={agent} />
+            </div>
+          )}
+          {tab === "autonomy" && <AgentAutonomyTab agent={agent} />}
         </div>
       </div>
     </div>
@@ -1036,7 +1239,7 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
   }
 
   if (agentIds.length === 0)
-    return <div className="p-6"><Empty icon={CalendarDotsIcon} title="Aucun agent dans ce service" hint="Ajoutez d'abord un agent pour lui planifier des tâches récurrentes." /></div>;
+    return <div className="p-6"><Empty icon={CalendarDotsIcon} title="Aucun collaborateur dans ce service" hint="Ajoutez d'abord un collaborateur pour lui planifier des tâches récurrentes." /></div>;
 
   const rows = missions ?? [];
   const activeCount = rows.filter((m) => m.status === "active").length;
@@ -1048,7 +1251,7 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-semibold"><ClockCountdownIcon className="h-5 w-5 text-amber-500" /> Planifications</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">Faites tourner des missions d'agents automatiquement, à la cadence de votre choix, rapports récurrents, veilles, nettoyages… L'agent exécute la mission et livre ses résultats.</p>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">Faites tourner des missions d'collaborateurs automatiquement, à la cadence de votre choix, rapports récurrents, veilles, nettoyages… Le collaborateur exécute la mission et livre ses résultats.</p>
         </div>
         <Button onClick={() => setEditing("new")}><PlusIcon className="mr-1.5 h-4 w-4" /> Nouvelle planification</Button>
       </div>
@@ -1096,7 +1299,7 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
       />
 
       {isLoading ? <Centered /> : rows.length === 0 ? (
-        <Empty icon={CalendarDotsIcon} title="Aucune tâche planifiée" hint="Créez une planification pour qu'un agent exécute une mission à intervalle régulier." />
+        <Empty icon={CalendarDotsIcon} title="Aucune tâche planifiée" hint="Créez une planification pour qu'un collaborateur exécute une mission à intervalle régulier." />
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           {rows.map((m) => {
@@ -1152,7 +1355,7 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
 
                 {missionOff && (
                   <div className="mt-2 inline-flex items-center gap-1 self-start rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-600 dark:text-amber-400">
-                    <WarningIcon className="h-3 w-3" /> Missions désactivées sur cet agent, activez-les dans ses réglages.
+                    <WarningIcon className="h-3 w-3" /> Missions désactivées sur ce collaborateur, activez-les dans ses réglages.
                   </div>
                 )}
               </div>
@@ -1264,9 +1467,9 @@ function ScheduleEditor({ existing, agents, workspaceId, projectId, onClose, onS
         <div className="space-y-4">
           {/* What */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Agent chargé de la mission">
+            <Field label="Collaborateur chargé de la mission">
               <Select value={agentId} onValueChange={setAgentId}>
-                <SelectTrigger><SelectValue placeholder="Choisir un agent" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Choisir un collaborateur" /></SelectTrigger>
                 <SelectContent>
                   {agents.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
@@ -1282,10 +1485,10 @@ function ScheduleEditor({ existing, agents, workspaceId, projectId, onClose, onS
           </div>
           {selectedAgent && !selectedAgent.mission_enabled && (
             <div className="-mt-1 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
-              <WarningIcon className="h-3 w-3" /> Les missions sont désactivées sur cet agent, la planification ne se déclenchera pas tant qu'elles ne sont pas réactivées.
+              <WarningIcon className="h-3 w-3" /> Les missions sont désactivées sur ce collaborateur, la planification ne se déclenchera pas tant qu'elles ne sont pas réactivées.
             </div>
           )}
-          <Field label="Consigne (ce que l'agent doit faire à chaque exécution)">
+          <Field label="Consigne (ce que le collaborateur doit faire à chaque exécution)">
             <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={3} placeholder="ex. Compile les ventes de la veille par canal, calcule l'évolution et publie un résumé…" />
           </Field>
 
@@ -1461,7 +1664,7 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
       <div className="mx-auto max-w-3xl px-10 py-8">
         <h1 className="mb-8 text-[30px] font-semibold tracking-tight">Memories</h1>
         {(mems ?? []).length === 0 ? (
-          <Empty icon={BrainIcon} title="This workspace's memory is empty." hint="Vos agents la remplissent au fil des conversations." />
+          <Empty icon={BrainIcon} title="This workspace's memory is empty." hint="Vos collaborateurs la remplissent au fil des conversations." />
         ) : (
           <div className="space-y-1.5">
             {(mems ?? []).map((m) => (

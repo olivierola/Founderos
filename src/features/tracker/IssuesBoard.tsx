@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { CircleNotchIcon as Loader2, PlusIcon as Plus } from "@phosphor-icons/react";
 import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { downloadCsv, issuesToCsv } from "./exportIssues";
@@ -87,6 +88,21 @@ export function IssuesBoard({
     queryKey: ["pj_issues", scope],
     queryFn: () => fetchIssues(scope),
   });
+
+  // `?issue=<id>` ouvre la fiche d'un item : c'est ce qui permet de pointer un
+  // item précis depuis l'extérieur du board (la carte d'une tâche sur la page
+  // d'un collaborateur, par exemple). Le paramètre est retiré une fois lu, pour
+  // qu'un retour arrière ne rouvre pas la fiche qu'on vient de fermer.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const wantedIssue = searchParams.get("issue");
+  useEffect(() => {
+    if (!wantedIssue || !issuesQ.data) return;
+    const hit = issuesQ.data.find((i) => i.id === wantedIssue);
+    if (hit) setOpen(hit);
+    const next = new URLSearchParams(searchParams);
+    next.delete("issue");
+    setSearchParams(next, { replace: true });
+  }, [wantedIssue, issuesQ.data, searchParams, setSearchParams]);
   const statesQ = useQuery({ queryKey: ["pj_states", project.id], queryFn: () => fetchStates(project.id) });
   const labelsQ = useQuery({ queryKey: ["pj_labels", project.id], queryFn: () => fetchLabels(project.id) });
   const membersQ = useQuery({

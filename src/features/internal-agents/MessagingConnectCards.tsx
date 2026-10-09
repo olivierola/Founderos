@@ -74,7 +74,7 @@ export function MessagingConnectCards({ agentId, onConnected }: { agentId: strin
         provider="discord"
         agentId={agentId}
         onConnected={onConnected}
-        blurb="Avec la commande /agent, sur votre serveur."
+        blurb="Avec la commande /collaborateur, sur votre serveur."
         fields={[
           { key: "application_id", label: "Application ID" },
           { key: "public_key", label: "Public Key" },
@@ -82,7 +82,7 @@ export function MessagingConnectCards({ agentId, onConnected }: { agentId: strin
         ]}
         steps={[
           <>Sur <span className="font-mono text-foreground">discord.com/developers</span>, créez une application et un bot ; copiez Application ID, Public Key et le jeton du bot.</>,
-          <>Collez-les ici → <span className="font-medium text-foreground">Connecter</span>. La commande <span className="font-mono text-foreground">/agent</span> est créée.</>,
+          <>Collez-les ici → <span className="font-medium text-foreground">Connecter</span>. La commande <span className="font-mono text-foreground">/collaborateur</span> est créée.</>,
           <>Collez l'URL d'interactions qui s'affiche dans <span className="font-medium text-foreground">Interactions Endpoint URL</span>, puis invitez le bot sur votre serveur.</>,
         ]}
       />

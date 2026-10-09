@@ -36,7 +36,7 @@ export function LiveActivity({ text, className }: { text: string; className?: st
         <span
           key={`out-${leaving}`}
           aria-hidden
-          className="agent-activity-out pointer-events-none absolute inset-x-0 top-0 block truncate text-[13px] leading-[1.35rem] text-muted-foreground"
+          className="collaborateur-activity-out pointer-events-none absolute inset-x-0 top-0 block truncate text-[13px] leading-[1.35rem] text-muted-foreground"
         >
           {leaving}
         </span>
@@ -46,7 +46,7 @@ export function LiveActivity({ text, className }: { text: string; className?: st
         // aria-live so a screen reader hears the agent's progress; the visual
         // cross-fade is decorative on top of that.
         aria-live="polite"
-        className="agent-activity-in agent-activity-live block truncate text-[13px] font-medium leading-[1.35rem]"
+        className="collaborateur-activity-in collaborateur-activity-live block truncate text-[13px] font-medium leading-[1.35rem]"
       >
         {current}
       </span>

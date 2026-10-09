@@ -97,21 +97,21 @@ export function HomeHeroHn() {
         <div className="relative pb-10 pt-16 sm:pt-24 lg:pb-14 lg:pt-32">
           <div className="amp-in max-w-[860px]">
             <H as="h1" size="hero">
-              Your enterprise superintelligence. Hired as Cloud collaborators.
+              Your enterprise super intelligence. Hired as Cloud collaborators.
             </H>
             <P className="mt-6 max-w-[560px]">
               Anduran gives you always-alive Cloud collaborators inside your own tenant. They work in the tools you
               already use, ask before they change anything, and keep every decision yours.
             </P>
             <div className="mt-10 flex flex-wrap items-center gap-5">
-              <Btn to="/contact">Book a demo</Btn>
+              <Btn to="/contact" variant="liquid">Book a demo</Btn>
               <Btn to="/product/agents" variant="link">See how it works</Btn>
             </div>
           </div>
 
           {/* The corner card — an approval waiting, where the reference has a video. */}
           <Card className="amp-in mt-12 w-full max-w-[300px] p-2 hn-shadow lg:absolute lg:bottom-14 lg:right-0 lg:mt-0">
-            <ArtPanel art="blue" className="flex h-[150px] items-center justify-center rounded-[14px] px-4">
+            <ArtPanel art="brand" className="flex h-[150px] items-center justify-center rounded-[14px] px-4">
               <div className="w-full rounded-[24px] bg-white p-2.5 text-[#0f1728] hn-shadow-lg">
                 <div className="flex items-center gap-2">
                   <AgentBadge name="Finance collaborator" size={22} />

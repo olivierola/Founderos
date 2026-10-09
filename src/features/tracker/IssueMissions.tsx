@@ -111,7 +111,7 @@ export function IssueMissions({
         <span className="text-12 font-medium">Missions</span>
         <div className="flex-1" />
         <Button size="sm" variant="outline" className="h-7 gap-1.5 text-11" onClick={() => setOpen(true)}>
-          <PlayIcon className="h-3 w-3" /> Confier à un agent
+          <PlayIcon className="h-3 w-3" /> Confier à un collaborateur
         </Button>
       </div>
 
@@ -127,7 +127,7 @@ export function IssueMissions({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-12">{m.title}</span>
                     <span className="block truncate text-10 text-tertiary">
-                      {agent?.name ?? "Agent retiré"} · {formatRelative(m.created_at)}
+                      {agent?.name ?? "Collaborateur retiré"} · {formatRelative(m.created_at)}
                     </span>
                   </span>
                   <RunState status={m.run_status} />
@@ -155,7 +155,7 @@ export function IssueMissions({
         </ul>
       ) : (
         <p className="rounded-md border border-dashed border-border px-3 py-2.5 text-11 leading-snug text-tertiary">
-          Aucune mission. Confier ce work item à un agent lui donne un brief
+          Aucune mission. Confier ce work item à un collaborateur lui donne un brief
           exécutable&nbsp;; ce qu&apos;il produira reviendra s&apos;accrocher ici.
         </p>
       )}
@@ -238,7 +238,7 @@ function AgentBrief({
       <div className="flex items-center gap-2">
         <ClipboardTextIcon className="h-4 w-4 text-muted-foreground" />
         <span className="text-12 font-medium">Travail à faire</span>
-        <span className="text-11 text-tertiary">pour l&apos;agent</span>
+        <span className="text-11 text-tertiary">pour l&apos;collaborateur</span>
       </div>
 
       <TextAreaField
@@ -247,7 +247,7 @@ function AgentBrief({
         onBlur={() => {
           if (brief !== (issue.agent_brief ?? "")) onPatch({ agent_brief: brief });
         }}
-        placeholder="Ce que l'agent doit produire, et à quoi on reconnaîtra que c'est fait."
+        placeholder="Ce que le collaborateur doit produire, et à quoi on reconnaîtra que c'est fait."
         autoResize
         className="min-h-[80px] text-13"
       />
@@ -263,21 +263,21 @@ function AgentBrief({
           checked={armed}
           disabled={!ready && !armed}
           onChange={(v) => onPatch({ agent_autorun: v })}
-          label="Laisser l'agent démarrer seul"
+          label="Laisser le collaborateur démarrer seul"
         />
         <span className="min-w-0 flex-1">
           <span className="block text-12 font-medium">Travail autonome</span>
           <span className="block text-11 leading-snug text-tertiary">
             {!ready && !armed
-              ? "Écrivez d'abord le travail à faire : sans lui, l'agent n'aurait que le titre."
+              ? "Écrivez d'abord le travail à faire : sans lui, le collaborateur n'aurait que le titre."
               : armed
-                ? "L'agent assigné s'en saisira au prochain passage de l'ordonnanceur, et passera l'item en cours."
+                ? "Le collaborateur assigné s'en saisira au prochain passage de l'ordonnanceur, et passera l'item en cours."
                 // Une date de début suffit à planifier le départ (0250) : le dire
                 // ici, sans quoi on armerait par précaution un item qui l'était
                 // déjà par sa date.
                 : issue.start_date
                   ? `L'agent assigné démarrera seul le ${new Date(issue.start_date).toLocaleDateString("fr-FR")}, date de début de l'item.`
-                  : "L'agent démarrera à la date de début de l'item, s'il en a une, ou quand on le lance depuis « Confier à un agent »."}
+                  : "Le collaborateur démarrera à la date de début de l'item, s'il en a une, ou quand on le lance depuis « Confier à un collaborateur »."}
           </span>
         </span>
       </div>
@@ -300,7 +300,7 @@ function AgentBrief({
       {armed && (
         <p className="flex items-start gap-1.5 text-11 leading-snug text-tertiary">
           <WarningCircleIcon className="mt-px h-3.5 w-3.5 shrink-0" />
-          Il faut aussi qu&apos;un agent soit <strong className="font-medium text-foreground">assigné</strong> à
+          Il faut aussi qu&apos;un collaborateur soit <strong className="font-medium text-foreground">assigné</strong> à
           cet item et <strong className="font-medium text-foreground">autorisé en écriture</strong> sur le projet
           (onglet Équipage). Sans les deux, rien ne démarre. Un item dont la date de début
           n&apos;est pas encore arrivée attend cette date.
@@ -377,7 +377,7 @@ function PendingApprovals({
         <WarningCircleIcon className="h-4 w-4 text-amber-600" />
         <span className="text-12 font-medium">
           {approvals.length === 1
-            ? "Un agent attend votre autorisation"
+            ? "Un collaborateur attend votre autorisation"
             : `${approvals.length} actions attendent votre autorisation`}
         </span>
       </div>
@@ -392,7 +392,7 @@ function PendingApprovals({
                 <AgentAvatar agent={agent} size={20} />
                 <div className="min-w-0 flex-1">
                   <p className="text-12">
-                    <span className="font-medium">{agent?.name ?? "Un agent"}</span>
+                    <span className="font-medium">{agent?.name ?? "Un collaborateur"}</span>
                     {" veut "}{what}
                     {detail && <span className="text-tertiary"> — {detail}</span>}
                   </p>
@@ -505,8 +505,8 @@ function MissionDialog({
     <Modal
       open
       onClose={onClose}
-      title="Confier à un agent"
-      description="L'agent démarre aussitôt et rend son travail sur ce work item."
+      title="Confier à un collaborateur"
+      description="Le collaborateur démarre aussitôt et rend son travail sur ce work item."
       busy={launch.isPending}
       footer={
         <>
@@ -523,7 +523,7 @@ function MissionDialog({
             <Select
               value={agentId}
               onChange={setAgentId}
-              placeholder="Choisir un agent…"
+              placeholder="Choisir un collaborateur…"
               options={candidates.map((a) => ({ key: a.id, label: a.name }))}
             />
           </Field>
@@ -568,9 +568,9 @@ function MissionDialog({
         // vient presque toujours d'un périmètre non accordé, pas d'un espace
         // sans agents.
         <p className="rounded-md bg-muted/40 px-3 py-3 text-12 leading-relaxed text-tertiary">
-          Aucun agent n&apos;est autorisé à agir sur ce projet. Ouvrez l&apos;onglet
+          Aucun collaborateur n&apos;est autorisé à agir sur ce projet. Ouvrez l&apos;onglet
           <strong className="font-medium text-foreground"> Équipage</strong> pour en
-          autoriser un, un agent seulement observateur ne peut pas recevoir de mission.
+          autoriser un, un collaborateur seulement observateur ne peut pas recevoir de mission.
         </p>
       )}
     </Modal>

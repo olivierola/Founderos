@@ -272,7 +272,7 @@ export const WIDGET_MODELS: WidgetModel[] = [
   {
     key: "dock",
     label: "Dock",
-    hint: "Barre d'agent toujours posée : état, voix, raccourcis clavier",
+    hint: "Barre de collaborateur toujours posée : état, voix, raccourcis clavier",
     thumb: "dock",
     values: {
       layout: "dock", bot_bubble: "flat", close_icon: "chevron", backdrop: false,

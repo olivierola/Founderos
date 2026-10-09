@@ -10,7 +10,7 @@ import { StatTile, compact } from "@/features/governance/aiops/StatTile";
 // Le tableau LeadSense — un livrable prédéfini (kind « lead_board »).
 //
 // Son contenu est construit par l'outil lead_sense à partir des prospects
-// réellement qualifiés ; l'agent n'y a écrit que le titre, la lecture et les
+// réellement qualifiés ; le collaborateur n'y a écrit que le titre, la lecture et les
 // recommandations. Les chiffres ne sont donc jamais rédigés par un modèle.
 // Le STATUT de chaque prospect, lui, est relu en direct et modifiable ici :
 // le tableau est une photo de la qualification, pas du suivi.
@@ -55,7 +55,7 @@ const STATUS: Array<{ value: string; label: string }> = [
 ];
 
 const SOURCE_LABEL: Record<string, string> = {
-  public_agent: "Agent public", crm: "CRM", form: "Formulaire", email: "E-mail", agent: "Agent",
+  public_agent: "Collaborateur public", crm: "CRM", form: "Formulaire", email: "E-mail", agent: "Agent",
 };
 
 export function LeadBoardView({ board }: { board: LeadBoardDoc }) {

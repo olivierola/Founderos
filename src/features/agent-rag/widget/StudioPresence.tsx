@@ -62,7 +62,7 @@ export function AvatarChoices({ cfg, set }: { cfg: WidgetConfig; set: SetFn }) {
         active={cfg.avatar_type === "bot"}
         onClick={() => set("avatar_type", "bot")}
         title="Bot animé"
-        hint="Un petit corps qui regarde, saute quand l'agent répond"
+        hint="Un petit corps qui regarde, saute quand le collaborateur répond"
       >
         <BotAvatar
           type={(cfg.avatar_bot as (typeof botAvatarTypes)[number]) || "clover"}
@@ -70,6 +70,10 @@ export function AvatarChoices({ cfg, set }: { cfg: WidgetConfig; set: SetFn }) {
           color={accent}
           state="default"
           interactive={false}
+          shading="fabric"
+          furLength={1.8}
+          furDensity={1.9}
+          furFuzz={1}
         />
       </ChoiceCard>
       <ChoiceCard
@@ -89,7 +93,7 @@ export function AvatarChoices({ cfg, set }: { cfg: WidgetConfig; set: SetFn }) {
         active={cfg.avatar_type === "orb"}
         onClick={() => set("avatar_type", "orb")}
         title="Pastille"
-        hint="Dégradé à vos couleurs, glyphe d'agent"
+        hint="Dégradé à vos couleurs, glyphe de collaborateur"
       >
         <span
           className={cn("flex h-16 w-16 items-center justify-center text-white", shape)}
@@ -143,7 +147,7 @@ export function AvatarChoices({ cfg, set }: { cfg: WidgetConfig; set: SetFn }) {
                 cfg.avatar_bot === t ? "border-primary/60 bg-primary/5" : "border-border/60 hover:border-primary/40",
               )}
             >
-              <BotAvatar type={t} size={26} color={accent} interactive={false} seed={0.2} />
+              <BotAvatar type={t} size={26} color={accent} interactive={false} seed={0.2} shading="fabric" furLength={1.8} furDensity={1.9} furFuzz={1} />
             </button>
           ))}
         </div>
@@ -162,12 +166,12 @@ export function ThinkingChoices({ cfg, set }: { cfg: WidgetConfig; set: SetFn })
       <ChoiceCard
         active={(cfg.thinking_style ?? "orb") === "orb"}
         onClick={() => set("thinking_style", "orb")}
-        title="Orbe + ce que fait l'agent"
+        title="Orbe + ce que fait le collaborateur"
         hint="L'orbe cherche, puis rédige ; la phrase le dit en mots"
       >
         <span className="flex max-w-[92%] items-center gap-2 rounded-2xl bg-background/80 px-3 py-2 ring-1 ring-border/60">
           <ThinkingOrb state="searching" size={20} />
-          <span className="agent-activity-live truncate text-xs font-medium">{label}</span>
+          <span className="collaborateur-activity-live truncate text-xs font-medium">{label}</span>
         </span>
       </ChoiceCard>
       <ChoiceCard
@@ -216,7 +220,7 @@ export function VoiceGlowControls({ cfg, set }: { cfg: WidgetConfig; set: SetFn 
         </VoiceBeam>
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-[11px] text-muted-foreground">
-            {on ? (processing ? "Pendant la réponse de l'agent" : "Au repos, elle suit la voix pendant la dictée") : "Lueur désactivée"}
+            {on ? (processing ? "Pendant la réponse du collaborateur" : "Au repos, elle suit la voix pendant la dictée") : "Lueur désactivée"}
           </span>
           <button
             type="button"

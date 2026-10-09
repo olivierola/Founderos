@@ -53,7 +53,7 @@ interface ConnectorRow {
 }
 
 /** Tool kinds that ARE a connector — the rest of the toolbox isn't shown here. */
-const CONNECTOR_KINDS = ["connector_action", "composio_toolkit", "vault_connector"];
+const CONNECTOR_KINDS = ["connector_action", "composio_toolkit", "vault_connector", "custom_connector"];
 
 /** The provider slug a connector tool points at, if any. */
 function connectorSlug(t: ConfigurableTool): string {

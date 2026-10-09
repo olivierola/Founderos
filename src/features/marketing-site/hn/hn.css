@@ -83,83 +83,120 @@ html.hn-root.amp-root body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.22;
-  mix-blend-mode: soft-light;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+/* A slow aurora over the mesh: soft light and shade drift across the panel, so
+   it reads as a living surface rather than a flat gradient. No bright corner
+   highlight. */
 .hn-art::after {
   content: "";
   position: absolute;
-  inset: -25%;
+  inset: -45%;
   z-index: -2;
   pointer-events: none;
-  background: repeating-linear-gradient(
-    168deg,
-    rgba(255, 255, 255, 0) 0px,
-    rgba(255, 255, 255, 0.07) 26px,
-    rgba(255, 255, 255, 0) 64px
-  );
-  filter: blur(14px);
+  background:
+    radial-gradient(34% 44% at 24% 30%, rgba(255, 255, 255, 0.11) 0%, transparent 62%),
+    radial-gradient(40% 50% at 80% 72%, rgba(0, 0, 0, 0.16) 0%, transparent 64%),
+    radial-gradient(30% 40% at 66% 18%, rgba(255, 255, 255, 0.07) 0%, transparent 60%),
+    radial-gradient(36% 46% at 12% 82%, rgba(0, 0, 0, 0.12) 0%, transparent 64%);
+  filter: blur(26px);
+  animation: hn-drift 24s ease-in-out infinite alternate;
+}
+@keyframes hn-drift {
+  from { transform: translate3d(-3%, -2%, 0) scale(1.06) rotate(-1deg); }
+  to   { transform: translate3d(3%, 3%, 0) scale(1.14) rotate(1.5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hn-art::after, .hn-sky::after { animation: none; }
 }
 
-/* azure — the brand panel */
+/* Mesh-gradient panels: several soft colour blobs blended into one organic
+   field. Muted for the varied cards, bright brand blue for the key sections.
+   The class names are kept from the first pass so callers do not change. */
+/* azure, muted */
 .hn-art-blue {
-  background:
-    radial-gradient(70% 80% at 0% 100%, #06235e 0%, rgba(6, 35, 94, 0) 65%),
-    radial-gradient(55% 60% at 100% 0%, #e3efff 0%, rgba(227, 239, 255, 0) 65%),
-    radial-gradient(50% 55% at 75% 85%, #5ea3f7 0%, rgba(94, 163, 247, 0) 70%),
-    linear-gradient(140deg, #0a3a9a 0%, #1663d4 42%, #4f95ef 72%, #2a6fdc 100%);
+  background-color: #2c4866;
+  background-image:
+    radial-gradient(52% 56% at 18% 22%, #4f7199 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #33506f 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #16263c 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #3a5a7e 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #35557a 0px, transparent 60%);
 }
-/* indigo */
+/* indigo, muted */
 .hn-art-violet {
-  background:
-    radial-gradient(70% 80% at 0% 100%, #1c1764 0%, rgba(28, 23, 100, 0) 65%),
-    radial-gradient(55% 60% at 100% 0%, #e7e8ff 0%, rgba(231, 232, 255, 0) 65%),
-    radial-gradient(50% 55% at 75% 85%, #8f93f6 0%, rgba(143, 147, 246, 0) 70%),
-    linear-gradient(140deg, #2b2a9e 0%, #4c4fe0 45%, #8086f2 75%, #3f42cc 100%);
+  background-color: #393a66;
+  background-image:
+    radial-gradient(52% 56% at 18% 22%, #5f6297 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #45487e 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #211f46 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #52548c 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #45477e 0px, transparent 60%);
 }
-/* teal */
+/* teal, muted */
 .hn-art-olive {
-  background:
-    radial-gradient(70% 80% at 0% 100%, #033540 0%, rgba(3, 53, 64, 0) 65%),
-    radial-gradient(55% 60% at 100% 0%, #d9f6fb 0%, rgba(217, 246, 251, 0) 65%),
-    radial-gradient(50% 55% at 75% 85%, #47b8cf 0%, rgba(71, 184, 207, 0) 70%),
-    linear-gradient(140deg, #0a5566 0%, #0f7f96 45%, #46aec4 75%, #0c6a7e 100%);
+  background-color: #295660;
+  background-image:
+    radial-gradient(52% 56% at 18% 22%, #44808a 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #2c5a63 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #0e333a 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #3a7078 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #357078 0px, transparent 60%);
 }
-/* amber — the one warm accent, used sparingly */
+/* terracotta, muted, the one warm accent */
 .hn-art-orange {
-  background:
-    radial-gradient(70% 80% at 0% 100%, #8a2f0a 0%, rgba(138, 47, 10, 0) 65%),
-    radial-gradient(55% 60% at 100% 0%, #fff0df 0%, rgba(255, 240, 223, 0) 65%),
-    radial-gradient(50% 55% at 75% 85%, #f6a15c 0%, rgba(246, 161, 92, 0) 70%),
-    linear-gradient(140deg, #c2410c 0%, #e5692a 45%, #f3a36b 75%, #d4561d 100%);
+  background-color: #7a4e30;
+  background-image:
+    radial-gradient(52% 56% at 18% 22%, #a9774c 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #915a37 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #582d15 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #9c6840 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #8a5a3a 0px, transparent 60%);
 }
-/* sky — light azure, for panels that carry dark UI */
+/* light steel, for panels that carry dark UI */
 .hn-art-pink {
-  background:
-    radial-gradient(70% 80% at 0% 100%, #2f6fd6 0%, rgba(47, 111, 214, 0) 65%),
-    radial-gradient(60% 65% at 100% 0%, #ffffff 0%, rgba(255, 255, 255, 0) 65%),
-    radial-gradient(50% 55% at 70% 85%, #a9cdfb 0%, rgba(169, 205, 251, 0) 70%),
-    linear-gradient(140deg, #6aa3f2 0%, #a7c9f8 45%, #dbe9fd 75%, #8db8f5 100%);
+  background-color: #8299b6;
+  background-image:
+    radial-gradient(52% 56% at 18% 22%, #b7c7db 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #8fa4c0 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #5e789c 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #a3b6cf 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #90a6c2 0px, transparent 60%);
 }
-/* slate — the quiet panel */
+/* slate, the quiet panel */
 .hn-art-gold {
-  background:
-    radial-gradient(70% 80% at 0% 100%, #0b1220 0%, rgba(11, 18, 32, 0) 65%),
-    radial-gradient(55% 60% at 100% 0%, #e2e8f0 0%, rgba(226, 232, 240, 0) 65%),
-    radial-gradient(50% 55% at 75% 85%, #7d8ca3 0%, rgba(125, 140, 163, 0) 70%),
-    linear-gradient(140deg, #1e293b 0%, #3a4a63 45%, #7a8aa3 75%, #2c3a52 100%);
+  background-color: #33435c;
+  background-image:
+    radial-gradient(52% 56% at 18% 22%, #566980 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #32425a 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #0e1626 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #4a5a72 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #44546c 0px, transparent 60%);
+}
+/* brand, the vivid blue kept for the primary sections (hero card, auth panel) */
+.hn-art-brand {
+  background-color: #1a5fcf;
+  background-image:
+    radial-gradient(52% 56% at 18% 20%, #5a9cf2 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #2f74e0 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #0a3a9a 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #1663d4 0px, transparent 48%),
+    radial-gradient(60% 62% at 52% 46%, #3d86ea 0px, transparent 60%);
 }
 
-/* The wide sky band behind the CTA card and the comparison panel. */
+/* The wide sky band behind the CTA card and the comparison panel, vivid blue mesh. */
 .hn-sky {
   position: relative;
   isolation: isolate;
-  background:
-    radial-gradient(45% 90% at 6% 100%, #04205c 0%, rgba(4, 32, 92, 0) 70%),
-    radial-gradient(40% 90% at 80% 45%, #cfe3ff 0%, rgba(207, 227, 255, 0) 70%),
-    radial-gradient(35% 80% at 45% 10%, #4e93ec 0%, rgba(78, 147, 236, 0) 70%),
-    linear-gradient(100deg, #083a9e 0%, #1460d0 35%, #5d9ff1 62%, #2a6ddb 85%, #8fbcf7 100%);
+  background-color: #1663d4;
+  background-image:
+    radial-gradient(48% 70% at 10% 18%, #5a9cf2 0px, transparent 60%),
+    radial-gradient(46% 66% at 82% 18%, #2f74e0 0px, transparent 58%),
+    radial-gradient(50% 74% at 74% 82%, #0a3a9a 0px, transparent 62%),
+    radial-gradient(44% 64% at 30% 86%, #1f5fc8 0px, transparent 56%),
+    radial-gradient(55% 80% at 50% 44%, #3d86ea 0px, transparent 64%);
 }
 .hn-sky::before {
   content: "";
@@ -167,9 +204,22 @@ html.hn-root.amp-root body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.18;
-  mix-blend-mode: soft-light;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.4;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.hn-sky::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(30% 40% at 22% 28%, rgba(255, 255, 255, 0.12) 0%, transparent 62%),
+    radial-gradient(38% 48% at 82% 74%, rgba(0, 0, 0, 0.14) 0%, transparent 64%),
+    radial-gradient(32% 42% at 64% 16%, rgba(255, 255, 255, 0.08) 0%, transparent 60%);
+  filter: blur(30px);
+  animation: hn-drift 30s ease-in-out infinite alternate;
 }
 
 /* The dark bands: deep navy with a faint azure glow at the head, so the

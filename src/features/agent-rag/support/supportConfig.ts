@@ -121,6 +121,6 @@ export const PRIORITY_META: Record<string, { label: string; rank: number }> = {
 export const STATUS_META: Record<string, { label: string }> = {
   open: { label: "À traiter" },
   in_progress: { label: "En cours" },
-  auto: { label: "Traitée par l'agent" },
+  auto: { label: "Traitée par le collaborateur" },
   closed: { label: "Close" },
 };

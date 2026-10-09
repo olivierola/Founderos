@@ -101,6 +101,12 @@ verify_jwt = false
 [functions.security-scan-poll]
 verify_jwt = false
 
+# Le relais d'outils internes n'a qu'un X-Relay-Token (empreinte SHA-256 en
+# base, connector_relays.token_hash). Les autres branches de la fonction
+# vérifient elles-mêmes la clé service ou la session de l'appelant.
+[functions.connector-action]
+verify_jwt = false
+
 # ── WebSocket : le navigateur ne peut pas poser d'en-tête au handshake ───────
 # Le JWT voyage dans la query string et la fonction le vérifie elle-même
 # (deepgram-stream/index.ts:26).

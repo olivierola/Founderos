@@ -243,7 +243,7 @@ export function RoomView({ dashboardId, roomId, workspaceId }: {
                 </Fragment>
               );
             })}
-            {(messages ?? []).length === 0 && <p className="pt-16 text-center text-sm text-muted-foreground">Écrivez pour lancer la room. Taguez un agent avec @ ou demandez-lui de créer un document, une image…</p>}
+            {(messages ?? []).length === 0 && <p className="pt-16 text-center text-sm text-muted-foreground">Écrivez pour lancer la room. Taguez un collaborateur avec @ ou demandez-lui de créer un document, une image…</p>}
           </div>
           </CodeArtifactContext.Provider>
         </div>
@@ -338,7 +338,7 @@ function RoomRunDrawer({ run, onClose, onOpenDeliverable }: { run: { runId: stri
             </section>
           )}
           <section>
-            <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sous-agents</h4>
+            <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sous-collaborateurs</h4>
             <SubAgentInstances parentRunId={run.runId} />
           </section>
           <section>
@@ -412,7 +412,7 @@ function ThinkingRow({ runId, onOpen }: { runId: string | null | undefined; onOp
         "flex items-center gap-2 py-0.5 text-sm text-muted-foreground",
         runId && "rounded-md transition-colors hover:text-foreground",
       )}
-      title={runId ? "Voir l'activité de l'agent" : undefined}
+      title={runId ? "Voir l'activité du collaborateur" : undefined}
     >
       <AgentActivityOrb state={state} /> {ORB_STATE_LABEL[state]}
       {runId && <span className="text-[11px] text-primary underline-offset-2 hover:underline">voir l'activité</span>}

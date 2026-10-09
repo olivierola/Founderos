@@ -9,9 +9,11 @@ import { runTrackerAction, trackerScope } from "./tracker-actions.ts";
 
 export type ApprovalActionKind =
   | "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write"
-  | "tracker_write";
+  | "tracker_write" | "custom_connector";
 
 export interface ApprovalActionInput {
+  /** L'approbation elle-même, quand l'appelant passe la ligne entière. */
+  id?: string;
   action_kind: ApprovalActionKind;
   payload: Record<string, unknown>;
   workspace_id: string | null;
@@ -53,6 +55,28 @@ export async function executeApprovalAction(a: ApprovalActionInput): Promise<{ o
       }),
     });
     return { ok: res.ok, detail: `HTTP ${res.status}\n${(await res.text()).slice(0, 4000)}` };
+  }
+  // Outil interne (0267) : l'appel part avec source « approval », seule porte
+  // qu'accepte connector-action pour un geste destructif. Le journal d'accès y
+  // relie l'approbation.
+  if (a.action_kind === "custom_connector") {
+    if (!base || !key) return { ok: false, detail: "Custom connectors not configured" };
+    const res = await fetch(`${base}/functions/v1/connector-action`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "custom.call", source: "approval",
+        connector_id: String(p.connector_id ?? ""), operation: String(p.operation ?? ""),
+        params: (p.params && typeof p.params === "object") ? p.params : {},
+        raw: (p.raw && typeof p.raw === "object") ? p.raw : undefined,
+        credential_id: p.credential_id ?? null,
+        allowed_operations: Array.isArray(p.allowed_operations) ? p.allowed_operations : null,
+        agent_id: p.agent_id ?? null, run_id: p.run_id ?? null, conversation_id: p.conversation_id ?? null,
+        actor_user_id: p.actor_user_id ?? null, approval_id: a.id ?? null,
+      }),
+    });
+    const out = await res.json().catch(() => ({})) as { ok?: boolean; text?: string; error?: string };
+    return { ok: res.ok && out.ok === true, detail: (out.text ?? out.error ?? `HTTP ${res.status}`).slice(0, 6000) };
   }
   if (a.action_kind === "crm_write") {
     if (!base || !key) return { ok: false, detail: "CRM actions not configured" };
@@ -127,6 +151,7 @@ export function approvalScope(action_kind: string, payload: Record<string, unkno
   if (action_kind === "crm_write") return `crm:${p.action ?? ""}:${canon(p.params)}`;
   if (action_kind === "tracker_write") return `tracker:${p.action ?? ""}:${canon(p.params)}`;
   if (action_kind === "edge_function") return `edge:${p.slug ?? ""}:${canon(p.args)}`;
+  if (action_kind === "custom_connector") return `custom:${p.connector_id ?? ""}:${p.operation ?? ""}:${canon(p.params)}:${canon(p.raw)}:${p.nonce ?? ""}`;
   return `webhook:${toolName}:${canon(p.args)}`;
 }
 
@@ -139,6 +164,10 @@ export function approvalScopePrefix(action_kind: string, payload: Record<string,
   if (action_kind === "connector_action") return `connector:${p.provider ?? ""}`;
   if (action_kind === "crm_write") return `crm`;
   if (action_kind === "edge_function") return `edge:${p.slug ?? ""}`;
+  // « Tout autoriser » sur un outil interne ne couvre que l'opération approuvée,
+  // jamais tout le connecteur : un rollback n'a pas le poids d'une lecture.
+  // Un geste destructif porte un nonce : son approbation ne resservira jamais.
+  if (action_kind === "custom_connector") return `custom:${p.connector_id ?? ""}:${p.operation ?? ""}${p.nonce ? `:${p.nonce}` : ""}`;
   return `webhook:${toolName}`;
 }
 
@@ -148,5 +177,6 @@ export function approvalScopeLabel(action_kind: string, payload: Record<string, 
   if (action_kind === "composio_action") return String(p.toolkit ?? "cet outil");
   if (action_kind === "connector_action") return String(p.provider ?? "cet outil");
   if (action_kind === "crm_write") return "le CRM";
+  if (action_kind === "custom_connector") return `${p.connector_name ?? "cet outil"} · ${p.operation ?? ""}`;
   return toolName || "cet outil";
 }

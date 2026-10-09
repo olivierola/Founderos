@@ -5,31 +5,31 @@ import type { DocSection } from "./types";
 
 export const AGENTS_SECTION: DocSection = {
   key: "agents",
-  label: "Les agents",
+  label: "Les collaborateurs",
   icon: RobotIcon,
   articles: [
     {
       slug: "agents",
-      title: "Les agents du service",
-      summary: "Créer, configurer et suivre les agents qui travaillent dans ce tableau.",
-      keywords: ["agents", "ia", "créer un agent", "roster", "workforce"],
+      title: "Les collaborateurs du service",
+      summary: "Créer, configurer et suivre les collaborateurs qui travaillent dans ce tableau.",
+      keywords: ["agents", "ia", "créer un collaborateur", "roster", "workforce"],
       body: () => (
         <>
           <Lede>
-            Un agent est un collaborateur artificiel rattaché au service. Il a un
+            Un collaborateur est un collaborateur artificiel rattaché au service. Il a un
             nom, un portrait, des instructions, des outils, une mémoire, et il
             apparaît dans le produit partout où une personne apparaît.
           </Lede>
 
-          <H>Créer un agent</H>
+          <H>Créer un collaborateur</H>
           <Steps>
-            <Step>Depuis l'onglet <Ui>Agents</Ui>, le bouton de création.</Step>
+            <Step>Depuis l'onglet <Ui>Collaborateurs</Ui>, le bouton de création.</Step>
             <Step>Partez d'un <strong>modèle</strong> si l'un d'eux correspond, sinon décrivez le rôle en une phrase : la configuration est générée puis reste modifiable.</Step>
             <Step>Réglez ses <strong>outils</strong> : c'est ce qu'il a le droit de faire, et rien de plus.</Step>
             <Step>Attachez-lui des <strong>connaissances</strong> si son travail suppose de connaître vos documents.</Step>
           </Steps>
 
-          <H>Les trois fichiers d'un agent</H>
+          <H>Les trois fichiers d'un collaborateur</H>
           <Defs
             rows={[
               [<>Instructions</>, <>Ce qu'il doit faire, et comment. La partie qu'on modifie le plus souvent.</>],
@@ -45,7 +45,7 @@ export const AGENTS_SECTION: DocSection = {
           </P>
 
           <Callout kind="tip">
-            La configuration d'un agent passe aussi par <strong>l'assistant</strong>
+            La configuration d'un collaborateur passe aussi par <strong>l'assistant</strong>
             du produit, ouvert depuis le rail : lui décrire ce qu'on veut changer est
             souvent plus rapide que de parcourir les onglets.
           </Callout>
@@ -56,13 +56,13 @@ export const AGENTS_SECTION: DocSection = {
     {
       slug: "crew",
       title: "Équipage d'un projet",
-      summary: "Mettre des personnes et des agents sur un projet, et ce que cela autorise.",
+      summary: "Mettre des personnes et des collaborateurs sur un projet, et ce que cela autorise.",
       keywords: ["équipage", "membres", "crew", "rôles", "périmètre", "autorisation"],
       body: () => (
         <>
           <Lede>
             L'onglet <Ui>Équipage</Ui> d'un projet réunit ses deux familles de
-            porteurs : les personnes et les agents. Même page, même vocabulaire, mais pas les mêmes conséquences.
+            porteurs : les personnes et les collaborateurs. Même page, même vocabulaire, mais pas les mêmes conséquences.
           </Lede>
 
           <H>Les personnes : un rang</H>
@@ -79,9 +79,9 @@ export const AGENTS_SECTION: DocSection = {
             un projet ne lui ouvre rien qu'il n'ait déjà.
           </P>
 
-          <H>Les agents : un droit d'agir</H>
+          <H>Les collaborateurs : un droit d'agir</H>
           <Callout kind="warn" title="Cette liste est un périmètre d'écriture">
-            Un agent <strong>absent</strong> de l'équipage ne peut rien modifier dans
+            Un collaborateur <strong>absent</strong> de l'équipage ne peut rien modifier dans
             le projet, même si on lui assigne un work item. Une liste vide veut dire
             « aucun accès », jamais « tous ». C'est l'inverse du réflexe habituel, et
             c'est délibéré.
@@ -101,7 +101,7 @@ export const AGENTS_SECTION: DocSection = {
 
           <Shot
             file="docs/equipage.png"
-            alt="L'onglet Équipage d'un projet : la section Personnes avec leurs rangs, et la section Agents avec leurs droits."
+            alt="L'onglet Équipage d'un projet : la section Personnes avec leurs rangs, et la section Collaborateurs avec leurs droits."
           />
         </>
       ),
@@ -109,13 +109,13 @@ export const AGENTS_SECTION: DocSection = {
 
     {
       slug: "missions",
-      title: "Confier du travail à un agent",
+      title: "Confier du travail à un collaborateur",
       summary: "La différence entre assigner et missionner, et comment lancer une mission.",
       keywords: ["mission", "confier", "lancer", "run", "autonome", "brief"],
       body: () => (
         <>
           <Lede>
-            Assigner un agent à un work item est une <strong>étiquette</strong> : cela
+            Assigner un collaborateur à un work item est une <strong>étiquette</strong> : cela
             dit à qui revient le sujet, cela ne déclenche rien. Une
             <strong> mission</strong> est exécutable, elle porte un brief, des
             critères d'acceptation, et elle démarre un run.
@@ -124,10 +124,10 @@ export const AGENTS_SECTION: DocSection = {
           <H>Lancer une mission</H>
           <Steps>
             <Step>Ouvrez le work item et repérez le bloc <Ui>Missions</Ui>.</Step>
-            <Step><Ui>Confier à un agent</Ui> ouvre le formulaire. Seuls les agents <strong>autorisés en écriture</strong> sur le projet y sont proposés.</Step>
+            <Step><Ui>Confier à un collaborateur</Ui> ouvre le formulaire. Seuls les collaborateurs <strong>autorisés en écriture</strong> sur le projet y sont proposés.</Step>
             <Step>Le <strong>brief</strong> est pré-rempli avec la description de l'item ; complétez-le avec le contexte et les contraintes.</Step>
             <Step>Renseignez les <strong>critères d'acceptation</strong> : c'est à eux que le livrable sera comparé.</Step>
-            <Step><Ui>Lancer</Ui>. L'agent démarre aussitôt ; l'écran ne se bloque pas.</Step>
+            <Step><Ui>Lancer</Ui>. Le collaborateur démarre aussitôt ; l'écran ne se bloque pas.</Step>
           </Steps>
 
           <Callout kind="warn" title="Les critères d'acceptation ne sont pas une politesse">
@@ -137,7 +137,7 @@ export const AGENTS_SECTION: DocSection = {
             vérifiable d'un rapport arrivé de nulle part.
           </Callout>
 
-          <H>Ce que l'agent reçoit</H>
+          <H>Ce que le collaborateur reçoit</H>
           <P>
             Le work item lui est transmis avec sa référence, sa description, sa
             priorité et son échéance. Il peut relire son état avant de commencer,
@@ -153,9 +153,9 @@ export const AGENTS_SECTION: DocSection = {
             plusieurs fois se juge à son dernier essai.
           </P>
           <P>
-            La liste se <strong>met à jour seule</strong> tant qu'un agent travaille :
+            La liste se <strong>met à jour seule</strong> tant qu'un collaborateur travaille :
             inutile de recharger la page pour voir passer « en file » à « abouti ».
-            Ce que l'agent produit apparaît <strong>sous la mission</strong> qui l'a
+            Ce que le collaborateur produit apparaît <strong>sous la mission</strong> qui l'a
             produit, et s'ouvre d'un clic, la demande et son résultat restent côte
             à côte.
           </P>
@@ -165,13 +165,13 @@ export const AGENTS_SECTION: DocSection = {
 
     {
       slug: "autonomous-work",
-      title: "Laisser un agent travailler seul",
+      title: "Laisser un collaborateur travailler seul",
       summary: "Le champ « Travail à faire », le démarrage automatique, et ce qui peut l'arrêter.",
       keywords: ["autonome", "autorun", "travail à faire", "brief", "planifié", "ordonnanceur", "disjoncteur"],
       body: () => (
         <>
           <Lede>
-            Un agent assigné à un work item peut s'en saisir <strong>sans qu'on le
+            Un collaborateur assigné à un work item peut s'en saisir <strong>sans qu'on le
             lance</strong> : il lit ce qu'il y a à faire, passe l'item en cours,
             travaille, rend compte et le marque terminé. Il faut pour cela deux
             choses sur l'item, une consigne écrite pour lui, et l'autorisation de
@@ -180,16 +180,16 @@ export const AGENTS_SECTION: DocSection = {
 
           <H>Mettre un item en travail autonome</H>
           <Steps>
-            <Step>Dans <Ui>Équipage</Ui>, autorisez l'agent <strong>en écriture</strong> sur le projet.</Step>
-            <Step>Assignez-le au work item, depuis la fiche ou en lot avec la barre d'actions (menu <Ui>Agent</Ui>).</Step>
-            <Step>Remplissez <Ui>Travail à faire</Ui> : ce que l'agent doit produire, et à quoi on reconnaîtra que c'est fait.</Step>
+            <Step>Dans <Ui>Équipage</Ui>, autorisez le collaborateur <strong>en écriture</strong> sur le projet.</Step>
+            <Step>Assignez-le au work item, depuis la fiche ou en lot avec la barre d'actions (menu <Ui>Collaborateur</Ui>).</Step>
+            <Step>Remplissez <Ui>Travail à faire</Ui> : ce que le collaborateur doit produire, et à quoi on reconnaîtra que c'est fait.</Step>
             <Step>Activez <Ui>Travail autonome</Ui>. L'interrupteur reste grisé tant que le travail à faire est vide.</Step>
           </Steps>
 
           <Callout title="Pourquoi un champ séparé de la description">
             La description s'adresse à <strong>l'équipe</strong> : le contexte,
             l'historique, ce qui a été tenté. Le travail à faire s'adresse à la
-            <strong> machine</strong> : la commande. Quand les deux divergent, l'agent
+            <strong> machine</strong> : la commande. Quand les deux divergent, le collaborateur
             suit le travail à faire.
           </Callout>
 
@@ -202,12 +202,12 @@ export const AGENTS_SECTION: DocSection = {
             <LI>l'item est armé, a un travail à faire, et sa <strong>date de début</strong> est passée s'il en a une ;</LI>
             <LI>il n'est ni terminé ni annulé ;</LI>
             <LI>aucun item qui le <strong>bloque</strong> n'est encore ouvert, on ne rédige pas les notes de version d'une fonctionnalité inachevée ;</LI>
-            <LI>un agent autorisé en écriture lui est assigné ;</LI>
+            <LI>un collaborateur autorisé en écriture lui est assigné ;</LI>
             <LI>rien ne tourne déjà sur cet item.</LI>
           </UL>
           <P>
             Au démarrage, l'item passe <strong>en cours</strong>. Sur le board, un
-            point bleu <strong>pulse</strong> à côté de l'agent tant qu'il travaille.
+            point bleu <strong>pulse</strong> à côté du collaborateur tant qu'il travaille.
           </P>
 
           <H>Comment il rend compte</H>
@@ -228,7 +228,7 @@ export const AGENTS_SECTION: DocSection = {
           <Callout kind="warn" title="Trois échecs d'affilée">
             Si les trois dernières tentatives ont échoué, l'item est
             <strong> mis en pause</strong> : l'ordonnanceur ne le relance plus, pour ne
-            pas dépenser sans fin sur une tâche que l'agent ne sait pas mener. La
+            pas dépenser sans fin sur une tâche que le collaborateur ne sait pas mener. La
             fiche le signale en rouge, et l'item apparaît dans <Ui>En attente de
             vous</Ui> sur la Home. Précisez le travail à faire, puis relancez-le à la
             main : un succès réarme le démarrage automatique.
@@ -239,33 +239,33 @@ export const AGENTS_SECTION: DocSection = {
 
     {
       slug: "mention-agent",
-      title: "Mentionner un agent dans une discussion",
-      summary: "Mettre un agent au travail depuis les commentaires d'un work item.",
+      title: "Mentionner un collaborateur dans une discussion",
+      summary: "Mettre un collaborateur au travail depuis les commentaires d'un work item.",
       keywords: ["mention", "@", "commentaire", "discussion", "répondre", "agent"],
       body: () => (
         <>
           <Lede>
             La discussion d'un work item est l'endroit où se décide le travail. Un
-            agent peut y être <strong>interpellé</strong> comme un collègue : il reçoit
+            collaborateur peut y être <strong>interpellé</strong> comme un collègue : il reçoit
             la demande, travaille sur l'item, et répond dans le même fil.
           </Lede>
 
           <Steps>
-            <Step>Dans le champ de commentaire, tapez <Key>@</Key>. La liste propose les agents <strong>autorisés en écriture</strong> sur le projet.</Step>
+            <Step>Dans le champ de commentaire, tapez <Key>@</Key>. La liste propose les collaborateurs <strong>autorisés en écriture</strong> sur le projet.</Step>
             <Step>Choisissez-en un, à la souris ou avec <Key>↑</Key> <Key>↓</Key> puis <Key>Entrée</Key>.</Step>
-            <Step>Écrivez votre demande. Sous le champ, une ligne bleue confirme qu'un agent se mettra au travail.</Step>
+            <Step>Écrivez votre demande. Sous le champ, une ligne bleue confirme qu'un collaborateur se mettra au travail.</Step>
             <Step><Key>Ctrl</Key>+<Key>Entrée</Key> ou <Ui>Envoyer</Ui>.</Step>
           </Steps>
 
           <P>
-            Le commentaire est publié <strong>avant</strong> que l'agent ne parte : si
+            Le commentaire est publié <strong>avant</strong> que le collaborateur ne parte : si
             son lancement échoue, votre demande reste écrite dans le fil et peut être
             relancée sans être réécrite. Le fil se met à jour seul jusqu'à sa réponse,
-            qui porte son avatar et un badge <Ui>agent</Ui>.
+            qui porte son avatar et un badge <Ui>collaborateur</Ui>.
           </P>
 
           <Callout kind="tip">
-            Effacer une mention avant d'envoyer annule la demande : seuls les agents
+            Effacer une mention avant d'envoyer annule la demande : seuls les collaborateurs
             encore mentionnés <strong>au moment de l'envoi</strong> sont mis au travail.
           </Callout>
         </>
@@ -274,14 +274,14 @@ export const AGENTS_SECTION: DocSection = {
 
     {
       slug: "approvals",
-      title: "Autoriser les actions d'un agent",
+      title: "Autoriser les actions d'un collaborateur",
       summary: "Où apparaissent les demandes d'autorisation, et comment les traiter.",
       keywords: ["autorisation", "approbation", "valider", "refuser", "attente", "notification"],
       body: () => (
         <>
           <Lede>
-            Certaines actions d'un agent attendent qu'une personne les autorise.
-            Pendant ce temps, <strong>l'agent est arrêté</strong> : chaque demande
+            Certaines actions d'un collaborateur attendent qu'une personne les autorise.
+            Pendant ce temps, <strong>le collaborateur est arrêté</strong> : chaque demande
             laissée sans réponse est du travail qui n'avance pas.
           </Lede>
 
@@ -290,15 +290,15 @@ export const AGENTS_SECTION: DocSection = {
             rows={[
               [<>La cloche</>, <>Une notification <strong>« À autoriser »</strong>, en ambre, prévient les personnes qui suivent l'item et celle qui a lancé la mission.</>],
               [<>La Home</>, <>Le bloc <Ui>En attente de vous</Ui> rassemble toutes les demandes du service, et les items mis en pause après trois échecs. Il n'apparaît que s'il y a quelque chose à faire.</>],
-              [<>La fiche de l'item</>, <>En tête du bloc agent : ce que l'agent veut faire, pourquoi, et depuis quand.</>],
+              [<>La fiche de l'item</>, <>En tête du bloc collaborateur : ce que le collaborateur veut faire, pourquoi, et depuis quand.</>],
             ]}
           />
 
           <H>Trancher</H>
           <P>
-            Chaque demande dit ce que l'agent veut faire <strong>en clair</strong>, « modifier un work item », « découper en sous-tâches », suivi du détail
+            Chaque demande dit ce que le collaborateur veut faire <strong>en clair</strong>, « modifier un work item », « découper en sous-tâches », suivi du détail
             et de sa justification. <Ui>Autoriser</Ui> exécute l'action et relance
-            l'agent ; <Ui>Refuser</Ui> la lui refuse, et il continue sans.
+            le collaborateur ; <Ui>Refuser</Ui> la lui refuse, et il continue sans.
           </P>
 
           <Callout kind="warn" title="Répondre vite compte">
@@ -312,13 +312,13 @@ export const AGENTS_SECTION: DocSection = {
 
     {
       slug: "agent-analytics",
-      title: "Statistiques des agents",
+      title: "Statistiques des collaborateurs",
       summary: "Exécutions, coûts, outils et fiabilité, filtrés par projet ou par demandeur.",
       keywords: ["statistiques", "analytics", "coût", "outils", "performance", "dashboard", "export"],
       body: () => (
         <>
           <Lede>
-            L'onglet <Ui>Agents</Ui> des analytics dit ce que la force de travail a
+            L'onglet <Ui>Collaborateurs</Ui> des analytics dit ce que la force de travail a
             produit, ce qu'elle a coûté, et à quel point elle est fiable. Le même
             tableau existe à l'échelle de tout l'espace, dans le dashboard général.
           </Lede>
@@ -331,7 +331,7 @@ export const AGENTS_SECTION: DocSection = {
             <LI><strong>Service</strong>, dans le dashboard général uniquement.</LI>
           </UL>
           <Callout title="Pourquoi un filtre peut écarter des exécutions">
-            Le projet se lit par la mission. Un agent interrogé dans une room
+            Le projet se lit par la mission. Un collaborateur interrogé dans une room
             travaille sans mission, donc sans projet : filtrer par projet écarte ces
             exécutions. Un bandeau dit combien, et pourquoi.
           </Callout>
@@ -339,13 +339,13 @@ export const AGENTS_SECTION: DocSection = {
           <H>Ce qu'on y lit</H>
           <UL>
             <LI>Exécutions et coût <strong>dans le temps</strong>, sur deux graphes séparés.</LI>
-            <LI>Exécutions et <strong>taux de réussite par agent</strong>, à lire ensemble : 100 % sur deux exécutions n'est pas de la fiabilité.</LI>
+            <LI>Exécutions et <strong>taux de réussite par collaborateur</strong>, à lire ensemble : 100 % sur deux exécutions n'est pas de la fiabilité.</LI>
             <LI>Les <strong>outils</strong> : appels, taux d'erreur, répartition par famille.</LI>
             <LI>Les validations humaines, la santé de la boucle de raisonnement, la connaissance.</LI>
           </UL>
           <P>
             Toutes les tables se <strong>cherchent</strong> et s'<strong>exportent en
-            CSV</strong>. Cliquer une ligne d'agent ouvre sa fiche statistique à
+            CSV</strong>. Cliquer une ligne de collaborateur ouvre sa fiche statistique à
             droite : ses outils, ses dernières exécutions une par une, ses livrables.
           </P>
         </>
@@ -355,7 +355,7 @@ export const AGENTS_SECTION: DocSection = {
     {
       slug: "deliverables",
       title: "Livrables et preuve de résultat",
-      summary: "Ce que les agents ont produit, et de quoi le vérifier.",
+      summary: "Ce que les collaborateurs ont produit, et de quoi le vérifier.",
       keywords: ["livrables", "preuve", "résultat", "vérifier", "run", "coût"],
       body: () => (
         <>
@@ -394,7 +394,7 @@ export const AGENTS_SECTION: DocSection = {
           </P>
           <UL>
             <LI>La <strong>demande</strong> d'origine, avec sa référence.</LI>
-            <LI>La <strong>mission</strong> et l'<strong>agent</strong>.</LI>
+            <LI>La <strong>mission</strong> et l'<strong>collaborateur</strong>.</LI>
             <LI>La <strong>durée</strong> et le <strong>coût</strong> du run, deux nombres qui disent ce que la machine a réellement dépensé. Sans eux, « autonome » ne veut rien dire.</LI>
           </UL>
 
@@ -415,16 +415,16 @@ export const AGENTS_SECTION: DocSection = {
         <>
           <Lede>
             Le rail <Ui>Assistant</Ui> regroupe ce qui relève de la conversation et du
-            pilotage des agents, par opposition au rail <Ui>Travail</Ui> qui porte le
+            pilotage des collaborateurs, par opposition au rail <Ui>Travail</Ui> qui porte le
             suivi.
           </Lede>
 
           <Defs
             rows={[
-              [<>Missions</>, <>Le tableau de toutes les missions du service, en colonnes : backlog, en cours, terminées. C'est la vue collective de ce que les agents portent.</>],
+              [<>Missions</>, <>Le tableau de toutes les missions du service, en colonnes : backlog, en cours, terminées. C'est la vue collective de ce que les collaborateurs portent.</>],
               [<>Dashboard</>, <>Les statistiques du service : runs, coûts, taux de réussite, activité récente.</>],
-              [<>Schedules</>, <>Les missions <strong>récurrentes</strong> : un agent qui produit un rapport chaque lundi, une veille quotidienne. Elles se déclenchent seules.</>],
-              [<>Artifacts</>, <>Les documents, présentations et tableurs produits par les agents à l'échelle du service, là où l'onglet Livrables d'un projet reste dans son périmètre.</>],
+              [<>Schedules</>, <>Les missions <strong>récurrentes</strong> : un collaborateur qui produit un rapport chaque lundi, une veille quotidienne. Elles se déclenchent seules.</>],
+              [<>Artifacts</>, <>Les documents, présentations et tableurs produits par les collaborateurs à l'échelle du service, là où l'onglet Livrables d'un projet reste dans son périmètre.</>],
             ]}
           />
 

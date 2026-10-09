@@ -44,7 +44,7 @@ export async function diagnoseAgentInsertError(
   workspaceId: string | null,
 ): Promise<string> {
   const message = error?.message;
-  if (!message) return "Création de l'agent impossible.";
+  if (!message) return "Création du collaborateur impossible.";
 
   // The billing trigger raises check_violation with hint 'billing_limit' and a
   // message that already names the limit reached — pass it through untouched.
@@ -81,7 +81,7 @@ export async function diagnoseAgentInsertError(
   // la relire dans une table où elle n'est pas encore.
   return "Création refusée alors que la base confirme votre session ET votre appartenance à "
     + "l'espace de travail, les deux conditions de la policy d'insertion. C'est donc la policy "
-    + "de LECTURE qui refuse la ligne : la création relit l'agent qu'elle écrit, et PostgreSQL "
+    + "de LECTURE qui refuse la ligne : la création relit le collaborateur qu'elle écrit, et PostgreSQL "
     + "lui applique aussi les policies SELECT, avec le même message. Appliquez la migration "
     + `0220_agent_select_policy_on_insert.sql. Erreur : ${message}`;
 }
@@ -154,7 +154,7 @@ export async function instantiateTemplate(
   // border and which session artifact renderer their deliverables get.
   if (template.studio) upd.studio = template.studio;
   const { error: updErr } = await supabase.from("internal_agents").update(upd).eq("id", agent.id);
-  if (updErr) console.warn("Agent guardrails not applied:", updErr.message);
+  if (updErr) console.warn("Collaborateur guardrails not applied:", updErr.message);
 
   // Activate the template's system skills (progressive-disclosure playbooks).
   if (template.skillSlugs?.length) {

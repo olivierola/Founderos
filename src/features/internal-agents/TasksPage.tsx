@@ -117,7 +117,7 @@ export function AgentTasksPage() {
     <div>
       <PageHeader
         title="Tasks"
-        description="Action items and to-dos filed by your agents (and you). Move them across the board as work progresses."
+        description="Action items and to-dos filed by your collaborateurs (and you). Move them across the board as work progresses."
         actions={<Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" /> New task</Button>}
       />
 
@@ -127,7 +127,7 @@ export function AgentTasksPage() {
         <EmptyState
           icon={ListTodo}
           title="No tasks yet"
-          description="Agents file tasks here with create_task, or add one yourself."
+          description="Collaborateurs file tasks here with create_task, or add one yourself."
           action={<Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" /> Add a task</Button>}
         />
       ) : (
@@ -205,7 +205,7 @@ function TaskCard({ task, onMove, onRemove }: {
       {task.detail && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{task.detail}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         {task.agent_id ? (
-          <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" /> agent</span>
+          <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" /> collaborateur</span>
         ) : (
           <span className="inline-flex items-center gap-1"><UserIcon className="h-3 w-3" /> you</span>
         )}

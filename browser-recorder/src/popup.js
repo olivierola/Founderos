@@ -7,6 +7,8 @@
 import { api, rpc, getSettings, setSettings, startPairing, pollPairing, forgetDevice } from "./api.js";
 
 const $ = (id) => document.getElementById(id);
+// Ouverte dans les réglages du panneau latéral : elle prend la largeur offerte.
+if (new URLSearchParams(location.search).has("embedded")) document.body.classList.add("embedded");
 const show = (name) => {
   for (const s of document.querySelectorAll("section")) s.classList.toggle("on", s.id === `s-${name}`);
 };

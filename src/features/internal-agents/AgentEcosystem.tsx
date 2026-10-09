@@ -112,8 +112,8 @@ export function AgentEcosystemPage() {
         <div className="flex h-full items-center justify-center">
           <EmptyState
             icon={Network}
-            title="No collaborating agents yet"
-            description="Create autonomous agents and enable collaboration on them, they'll be able to message, delegate and share knowledge here."
+            title="No collaborating collaborateurs yet"
+            description="Create autonomous collaborateurs and enable collaboration on them, they'll be able to message, delegate and share knowledge here."
           />
         </div>
       ) : (
@@ -128,7 +128,7 @@ export function AgentEcosystemPage() {
           {/* Floating title (top-left). */}
           <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 shadow-sm backdrop-blur">
             <Network className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium">Agent ecosystem</span>
+            <span className="text-sm font-medium">Collaborateur ecosystem</span>
             <span className="text-xs text-muted-foreground">· {collaborating.length} agents</span>
           </div>
 
@@ -167,7 +167,7 @@ export function AgentEcosystemPage() {
               count={(feed ?? []).length}
             >
               {(feed ?? []).length === 0 ? (
-                <p className="py-6 text-center text-xs text-muted-foreground">No agent messages yet.</p>
+                <p className="py-6 text-center text-xs text-muted-foreground">No collaborateur messages yet.</p>
               ) : (
                 <div className="space-y-1.5">
                   {(feed ?? []).map((m) => (

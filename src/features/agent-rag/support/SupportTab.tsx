@@ -101,7 +101,7 @@ function EmptyNote() {
         <span>
           Aucune demande sur 30 jours. Le tri s'active dans <strong className="text-foreground">Admin → Gouvernance IA → Jugement rapide</strong>,
           usage « ResolveAI, tri des demandes ». En <strong className="text-foreground">Observation</strong>, chaque message est classé et
-          la file se remplit sans rien changer aux réponses de l'agent ; en <strong className="text-foreground">Actif</strong>, les demandes qui
+          la file se remplit sans rien changer aux réponses du collaborateur ; en <strong className="text-foreground">Actif</strong>, les demandes qui
           relèvent de l'équipe reçoivent une réponse prudente qui annonce le relais.
         </span>
       </CardContent>
@@ -162,7 +162,7 @@ function QueuePage({ agent }: { agent: Agent }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
-          {([["todo", "À traiter"], ["auto", "Traitées par l'agent"], ["closed", "Closes"], ["all", "Toutes"]] as Array<[QueueFilter, string]>).map(([k, label]) => (
+          {([["todo", "À traiter"], ["auto", "Traitées par le collaborateur"], ["closed", "Closes"], ["all", "Toutes"]] as Array<[QueueFilter, string]>).map(([k, label]) => (
             <button key={k} type="button" onClick={() => setFilter(k)}
               className={cn("rounded-md px-2.5 py-1.5 text-[11.5px] transition-colors",
                 filter === k ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground")}>
@@ -407,7 +407,7 @@ function InsightsPage({ agent }: { agent: Agent }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatTile label="Demandes" value={compact(stats.total)} hint="30 derniers jours, hors tests" />
-        <StatTile label="Traitées par l'agent" value={stats.automation == null ? "—" : `${Math.round(stats.automation * 100)} %`} hint="sans intervention de l'équipe" />
+        <StatTile label="Traitées par le collaborateur" value={stats.automation == null ? "—" : `${Math.round(stats.automation * 100)} %`} hint="sans intervention de l'équipe" />
         <StatTile label="Confiées à l'équipe" value={compact(stats.handed)} hint="besoin d'une personne" />
         <StatTile label="En attente" value={compact(stats.open)} alert={stats.open > 0 ? "à prendre en charge" : null} hint="rien en attente" />
         <StatTile label="Échéances dépassées" value={compact(stats.breached)} alert={stats.breached > 0 ? "SLA non tenu" : null} hint="SLA tenus" />
@@ -419,7 +419,7 @@ function InsightsPage({ agent }: { agent: Agent }) {
           <div className="mb-1 text-[13px] font-medium">Ce que demandent vos clients</div>
           <div className="mb-4 flex flex-wrap items-center gap-4 text-[11.5px] text-muted-foreground">
             <span>Par intention, sur 30 jours</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: agentColor }} /> traitées par l'agent</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: agentColor }} /> traitées par le collaborateur</span>
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: teamColor }} /> confiées à l'équipe</span>
           </div>
           <div className="space-y-2.5">
@@ -462,7 +462,7 @@ function InsightsPage({ agent }: { agent: Agent }) {
             <tr className="text-left text-[11px] text-muted-foreground">
               <th className="py-1 font-normal">Intention</th>
               <th className="py-1 text-right font-normal">Total</th>
-              <th className="py-1 text-right font-normal">Par l'agent</th>
+              <th className="py-1 text-right font-normal">Par le collaborateur</th>
               <th className="py-1 text-right font-normal">Par l'équipe</th>
             </tr>
           </thead>
@@ -542,7 +542,7 @@ function SetupPage({ agent }: { agent: Agent }) {
                   className="h-8 w-56 text-[13px] font-medium" placeholder="Nom de l'intention" />
                 <label className="flex items-center gap-1.5 text-[12px]">
                   <input type="checkbox" checked={it.auto_reply} onChange={(e) => setIntent(idx, { auto_reply: e.target.checked })} />
-                  L'agent peut traiter seul
+                  Le collaborateur peut traiter seul
                 </label>
                 <div className="ml-auto flex items-center gap-2 text-[12px] text-muted-foreground">
                   Service
@@ -564,7 +564,7 @@ function SetupPage({ agent }: { agent: Agent }) {
                   <Textarea rows={3} value={(it.examples ?? []).join("\n")}
                     onChange={(e) => setIntent(idx, { examples: e.target.value.split("\n") })} className="text-[12px]" />
                 </Field>
-                <Field label="Consigne pour l'agent sur ce type de demande (facultatif)">
+                <Field label="Consigne pour le collaborateur sur ce type de demande (facultatif)">
                   <Textarea rows={3} value={it.playbook ?? ""} onChange={(e) => setIntent(idx, { playbook: e.target.value })}
                     className="text-[12px]" placeholder="ex. Demander le numéro de commande avant toute autre chose." />
                 </Field>
@@ -601,7 +601,7 @@ function SetupPage({ agent }: { agent: Agent }) {
       <Card>
         <CardContent className="space-y-2 p-4">
           <div className="text-[13px] font-medium">Message de relais</div>
-          <p className="text-[12px] text-muted-foreground">Ce que l'agent dit au client quand une demande est confiée à l'équipe (il le traduit dans la langue du client).</p>
+          <p className="text-[12px] text-muted-foreground">Ce que le collaborateur dit au client quand une demande est confiée à l'équipe (il le traduit dans la langue du client).</p>
           <Textarea rows={2} value={cfg.handoff_message} onChange={(e) => update({ ...cfg, handoff_message: e.target.value })} className="text-[12px]" />
         </CardContent>
       </Card>

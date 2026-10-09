@@ -35,6 +35,8 @@ import { SkillEditorPage } from "@/features/internal-agents/SkillEditor";
 import { SkillRecorderPage } from "@/features/internal-agents/SkillRecorder";
 import { TrainingPage } from "@/features/training/TrainingPage";
 import { McpServersPage, McpOAuthCallbackPage } from "@/features/internal-agents/McpServers";
+import { ConnectorOAuthCallbackPage } from "@/features/custom-connectors/OAuthCallback";
+import { CompanionEntry, CompanionPage } from "@/features/companion/CompanionPage";
 import { AgentEcosystemPage } from "@/features/internal-agents/AgentEcosystem";
 import { AgentTasksPage } from "@/features/internal-agents/TasksPage";
 import { OpsOverviewPage } from "@/features/ops/OverviewPage";
@@ -384,6 +386,24 @@ export const router = createBrowserRouter([
     // bounce; it uses the shared session token to finish the exchange.
     path: "/mcp/callback",
     element: <ErrorBoundary><McpOAuthCallbackPage /></ErrorBoundary>,
+  },
+  {
+    // Retour du SSO d'entreprise d'un outil interne (popup), même principe.
+    path: "/connectors/callback",
+    element: <ErrorBoundary><ConnectorOAuthCallbackPage /></ErrorBoundary>,
+  },
+  // The browser extension's side panel (browser-recorder/src/panel.html) frames
+  // these two routes. /companion handles sign-in and picks the project; the
+  // project route is the panel itself. Their framing exception lives in
+  // vercel.json — every other route stays X-Frame-Options: DENY.
+  { path: "/companion", element: <ErrorBoundary><CompanionEntry /></ErrorBoundary> },
+  {
+    path: "/companion/:workspaceSlug/:projectSlug",
+    element: (
+      <ProtectedRoute>
+        <ErrorBoundary><CompanionPage /></ErrorBoundary>
+      </ProtectedRoute>
+    ),
   },
   // Service dashboards render OUTSIDE the AppShell chrome (no top navbar) — a
   // clean single-sidebar workspace. Top-level sibling so it bypasses AppShell.

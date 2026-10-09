@@ -21,6 +21,8 @@ interface ChatComposerProps {
   placeholder?: string;
   models?: Model[];
   footerHint?: string;
+  /** Context chips shown inside the input card (see AgentChatInput). */
+  chips?: React.ReactNode;
   /** Override the outer container width (defaults to a centered max-w-2xl). */
   className?: string;
 }
@@ -42,6 +44,7 @@ export function ChatComposer({
   // The real list: a picker offering models we don't run is worse than none.
   models = CHAT_MODELS,
   footerHint,
+  chips,
   className,
 }: ChatComposerProps) {
   return (
@@ -54,6 +57,7 @@ export function ChatComposer({
         onStop={onStop}
         disabled={disabled || loading}
         models={models}
+        chips={chips}
         onSubmit={(message, model) => {
           if (message.trim() === "") return;
           onSubmit({ message, model, thinking: true });

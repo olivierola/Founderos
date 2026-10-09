@@ -353,7 +353,7 @@ export function TemplateConfigPanel({
         <footer className="flex items-center gap-3 border-t border-border px-5 py-4">
           {linked === 0 && needs.length > 0 && (
             <span className="text-xs text-muted-foreground">
-              Aucune application connectée : l'agent se crée, mais restera limité à ses outils internes.
+              Aucune application connectée : le collaborateur se crée, mais restera limité à ses outils internes.
             </span>
           )}
           <Button onClick={create} disabled={busy || !name.trim()} className="ml-auto rounded-xl">

@@ -227,7 +227,7 @@ export function IssueDetailPanel({
           />
 
           {/* Les ressources AVANT les missions : on ne confie un travail — à
-              quelqu'un ou à un agent — qu'une fois dit sur QUOI il porte.
+              quelqu'un ou à un collaborateur — qu'une fois dit sur QUOI il porte.
               L'ordre de la fiche est l'ordre de la pensée. */}
           <Resources issue={issue} project={project} />
 
@@ -319,7 +319,7 @@ function PropertyGrid({
       // Juste APRÈS les personnes, jamais fondu avec elles : la ligne doit
       // dire d'un coup d'œil si c'est une machine ou quelqu'un qui s'en
       // occupe. Les deux ne se relancent pas de la même façon.
-      label: "Agents",
+      label: "Collaborateurs",
       control: (
         <AgentPicker
           dashboardId={dashboardId ?? project.dashboard_id ?? ""}
@@ -661,7 +661,7 @@ function Resources({ issue, project }: { issue: PjIssue; project: PjProject }) {
       {!attached.length && (
         <p className="text-12 text-muted-foreground">
           Aucune ressource. Rattachez le dépôt, le document ou les données sur lesquels porte cet
-          item, les agents s'en serviront.
+          item, les collaborateurs s'en serviront.
         </p>
       )}
 
@@ -844,7 +844,7 @@ Répondez-lui en commentaire sur ce même item, avec ce que vous avez fait ou tr
               <p className="flex items-center gap-2 text-12">
                 <span className="font-medium">{c.agent_name ?? agent?.name ?? memberName(author)}</span>
                 {c.agent_id && (
-                  <span className="rounded bg-primary/10 px-1 text-10 font-medium text-primary">agent</span>
+                  <span className="rounded bg-primary/10 px-1 text-10 font-medium text-primary">collaborateur</span>
                 )}
                 <span className="text-muted-foreground">{formatDate(c.created_at)}</span>
                 {c.edited_at && <span className="text-muted-foreground">(modifié)</span>}

@@ -37,14 +37,14 @@ const SECTIONS: { key: SectionKey; label: string; icon: PhosphorIcon }[] = [
   { key: "general", label: "Général", icon: SlidersIcon },
   { key: "navigation", label: "Navigation", icon: SquaresFourIcon },
   { key: "assistant", label: "Assistant", icon: SparkleIcon },
-  { key: "agents", label: "Agents", icon: RobotIcon },
+  { key: "agents", label: "Collaborateurs", icon: RobotIcon },
   { key: "rooms", label: "Rooms", icon: ChatsCircleIcon },
   { key: "danger", label: "Zone de danger", icon: WarningIcon },
 ];
 
 // Nav items that can be hidden (Home and Settings always stay reachable).
 const HIDEABLE: { slug: DashboardTabSlug; label: string; icon: PhosphorIcon }[] = [
-  { slug: "agents", label: "Agents", icon: RobotIcon },
+  { slug: "agents", label: "Collaborateurs", icon: RobotIcon },
   { slug: "projects", label: "Projets", icon: KanbanIcon },
   { slug: "schedules", label: "Schedules", icon: CalendarDotsIcon },
   { slug: "memory", label: "Workspace memory", icon: BrainIcon },
@@ -305,7 +305,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                   politique d'entreprise imposée d'en haut. */}
               <Field
                 label="Mission du service"
-                hint="Une phrase. Elle est envoyée aux agents d'ici, et lue par ceux des autres services dans l'annuaire."
+                hint="Une phrase. Elle est envoyée aux collaborateurs d'ici, et lue par ceux des autres services dans l'annuaire."
               >
                 <Input
                   value={mission} onChange={(e) => setMission(e.target.value)}
@@ -314,7 +314,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
               </Field>
               <Field
                 label="Travail venu des autres services"
-                hint="Vos agents restent libres de parler à tout le monde : ce réglage ne porte que sur le travail qu'on peut vous imposer."
+                hint="Vos collaborateurs restent libres de parler à tout le monde : ce réglage ne porte que sur le travail qu'on peut vous imposer."
               >
                 <div className="space-y-1.5">
                   {COLLABORATION_POLICIES.map((p) => (
@@ -386,7 +386,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
 
           {section === "assistant" && (
             !assistant ? (
-              <Card title="Assistant du service" desc="L'agent par défaut de ce dashboard.">
+              <Card title="Assistant du service" desc="Le collaborateur par défaut de ce dashboard.">
                 <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border p-8 text-center">
                   <SparkleIcon className="h-6 w-6 text-muted-foreground/60" />
                   <p className="text-sm text-muted-foreground">Ce service n'a pas encore d'assistant.</p>
@@ -411,7 +411,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                   </Field>
                   <Field label="Instructions">
                     <Textarea rows={5} value={assistant.instructions ?? ""} onChange={(e) => setA({ instructions: e.target.value })}
-                      placeholder="ex. Réponds en français. Délègue la rédaction à l'agent Contenu." />
+                      placeholder="ex. Réponds en français. Délègue la rédaction au collaborateur Contenu." />
                   </Field>
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Modèle">
@@ -437,7 +437,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                   </div>
                   <Row
                     icon={ShareNetworkIcon} label="Mode essaim"
-                    desc="Découper une tâche en sous-agents parallèles."
+                    desc="Découper une tâche en sous-collaborateurs parallèles."
                     checked={assistant.swarm_enabled ?? true}
                     onChange={(on) => setA({ swarm_enabled: on })}
                   />
@@ -455,8 +455,8 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
           {section === "agents" && (
             <>
               <Card
-                title="Valeurs par défaut des nouveaux agents"
-                desc="Les agents existants ne changent pas ; un template garde son environnement et son budget."
+                title="Valeurs par défaut des nouveaux collaborateurs"
+                desc="Les collaborateurs existants ne changent pas ; un template garde son environnement et son budget."
               >
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Modèle">
@@ -490,7 +490,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                 </Field>
                 <Row
                   icon={ShareNetworkIcon} label="Mode essaim autorisé"
-                  desc="Sous-agents parallèles autorisés."
+                  desc="Sous-collaborateurs parallèles autorisés."
                   checked={settings.agent_defaults.swarm_enabled}
                   onChange={(on) => patch({ agent_defaults: { ...settings.agent_defaults, swarm_enabled: on } })}
                 />
@@ -502,10 +502,10 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                 />
               </Card>
 
-              <Card title={`Agents du service (${others.length})`} desc="Les réglages d'un agent priment sur ces défauts.">
+              <Card title={`Agents du service (${others.length})`} desc="Les réglages d'un collaborateur priment sur ces défauts.">
                 {others.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                    Aucun agent pour l'instant.
+                    Aucun collaborateur pour l'instant.
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -560,7 +560,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
             <Card title="Zone de danger" icon={WarningIcon} tone="danger">
               <DangerRow
                 title="Supprimer toutes les rooms"
-                desc="Les agents et leurs livrables restent."
+                desc="Les collaborateurs et leurs livrables restent."
                 action="Supprimer les rooms"
                 onConfirm={async () => {
                   const list = await fetchRooms(dashboard.id);
@@ -575,7 +575,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
               />
               <DangerRow
                 title="Supprimer ce dashboard"
-                desc="Ses agents sont dissociés, pas supprimés."
+                desc="Ses collaborateurs sont dissociés, pas supprimés."
                 action="Supprimer le dashboard"
                 onConfirm={async () => {
                   await deleteServiceDashboard(dashboard.id);

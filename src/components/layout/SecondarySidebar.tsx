@@ -229,7 +229,7 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
             onRoster ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
           )}
         >
-          <RobotIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Agents
+          <RobotIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Collaborateurs
         </button>
 
         {/* ── Knowledge base ── */}

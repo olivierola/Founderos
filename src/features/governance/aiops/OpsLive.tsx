@@ -299,7 +299,7 @@ export function GovOpsLivePage() {
       ) : null; })()}
 
       {sel?.kind === "agent" && (
-        <DetailSheet onClose={() => setSel(null)} title={sel.name} subtitle="Agent">
+        <DetailSheet onClose={() => setSel(null)} title={sel.name} subtitle="Collaborateur">
           <DetailSection title="Déploiement">
             {sel.deployment ? (
               <>

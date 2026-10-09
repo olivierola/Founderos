@@ -74,9 +74,9 @@ export function SubAgentInstances({ parentRunId }: { parentRunId: string }) {
     <div className="my-2 rounded-xl border border-border/60 bg-muted/30 p-2.5">
       <div className="mb-2 flex items-center gap-1.5 px-0.5 text-[11px] font-medium text-muted-foreground">
         <Boxes className="h-3.5 w-3.5" />
-        Sous-agents en parallèle
+        Sous-collaborateurs en parallèle
         <span className="rounded bg-secondary/60 px-1.5 py-0.5 tabular-nums">{children.length}</span>
-        {anyActive && <AgentActivityOrb state="weaving" label="Sous-agents en cours" />}
+        {anyActive && <AgentActivityOrb state="weaving" label="Sous-collaborateurs en cours" />}
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {children.map((c) => {
@@ -136,7 +136,7 @@ function SubAgentFlowDrawer({ runId, onClose }: { runId: string; onClose: () => 
       <div className="absolute inset-y-0 right-0 flex w-[min(480px,92vw)] flex-col border-l border-border bg-background shadow-2xl duration-200 animate-in slide-in-from-right">
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
           <span className="flex items-center gap-2 text-sm font-medium">
-            <GitBranchPlus className="h-4 w-4" /> Flow du sous-agent
+            <GitBranchPlus className="h-4 w-4" /> Flow du sous-collaborateur
           </span>
           <button
             onClick={onClose}

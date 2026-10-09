@@ -78,9 +78,9 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
     accent: "#0891b2",
     defaultName: "Assistant SAV",
     seed: {
-      description: "Agent de support client (SAV) branché sur votre base de connaissances.",
+      description: "Collaborateur de support client (SAV) branché sur votre base de connaissances.",
       persona:
-        "Tu es un agent de support client (SAV) pour notre organisation. Tu es patient, empathique et orienté résolution.",
+        "Tu es un collaborateur de support client (SAV) pour notre organisation. Tu es patient, empathique et orienté résolution.",
       instructions: [
         "## Rôle",
         "- Aider les clients à résoudre leurs problèmes en t'appuyant STRICTEMENT sur la base de connaissances fournie.",
@@ -156,7 +156,7 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
     accent: "#16a34a",
     defaultName: "Point info",
     seed: {
-      description: "Agent de renseignement grand public : répond aux questions courantes et oriente.",
+      description: "Collaborateur de renseignement grand public : répond aux questions courantes et oriente.",
       persona:
         "Tu es un point d'information pour le grand public. Tu donnes des renseignements factuels et orientes les gens vers la bonne ressource.",
       instructions: [
@@ -195,7 +195,7 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
     accent: "#ea580c",
     defaultName: "Guide d'onboarding",
     seed: {
-      description: "Agent d'onboarding : guide les nouveaux utilisateurs dans l'application (mode guidé activé).",
+      description: "Collaborateur d'onboarding : guide les nouveaux utilisateurs dans l'application (mode guidé activé).",
       persona:
         "Tu es un guide d'onboarding intégré à notre produit. Tu accompagnes les nouveaux utilisateurs pas à pas jusqu'à leur premier succès.",
       instructions: [
@@ -241,7 +241,7 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
       // Read-only: this agent advises. Cart mutations belong to the template
       // below, where enabling them is a deliberate choice.
       allowedTools: ["search_shop_catalog", "get_product_details", "search_shop_policies_and_faqs"],
-      note: "Endpoint public de votre boutique, sans clé d'API. L'agent pourra lire le catalogue et vos politiques, pas modifier de panier.",
+      note: "Endpoint public de votre boutique, sans clé d'API. Le collaborateur pourra lire le catalogue et vos politiques, pas modifier de panier.",
     },
     seed: {
       description: "Conseiller de vente branché en direct sur le catalogue Shopify via MCP.",
@@ -290,7 +290,7 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
         "search_shop_catalog", "get_product_details", "search_shop_policies_and_faqs",
         "get_cart", "update_cart",
       ],
-      note: "Inclut les opérations de panier : l'agent pourra ajouter des articles au panier du visiteur pendant la conversation.",
+      note: "Inclut les opérations de panier : le collaborateur pourra ajouter des articles au panier du visiteur pendant la conversation.",
     },
     seed: {
       description: "Assistant d'achat qui construit le panier avec le client, via le MCP Storefront.",
@@ -327,11 +327,11 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
     key: "mcp_custom",
     emoji: "🔌",
     icon3d: "puzzle",
-    label: "Agent connecté (MCP)",
+    label: "Collaborateur connecté (MCP)",
     tagline: "Branchez n'importe quel serveur MCP et choisissez ses outils.",
     category: "Connecté",
     accent: "#0891b2",
-    defaultName: "Agent connecté",
+    defaultName: "Collaborateur connecté",
     mcp: {
       kind: "url",
       name: "Serveur MCP",
@@ -343,7 +343,7 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
       note: "Les outils sont découverts à la connexion. Aucun n'est autorisé tant que vous ne les cochez pas dans l'onglet E-commerce.",
     },
     seed: {
-      description: "Agent public dont les capacités viennent d'un serveur MCP de votre choix.",
+      description: "Collaborateur public dont les capacités viennent d'un serveur MCP de votre choix.",
       persona: "Tu es un assistant client branché sur les systèmes de notre organisation.",
       instructions: [
         "## Rôle",
@@ -373,7 +373,7 @@ export const PUBLIC_AGENT_PRESETS: PublicAgentPreset[] = [
     label: "Vierge",
     tagline: "Partir d'une page blanche et tout configurer soi-même.",
     accent: "#2F2FE4",
-    defaultName: "Agent public",
+    defaultName: "Collaborateur public",
     seed: {
       description: "",
       persona: "",

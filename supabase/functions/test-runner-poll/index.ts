@@ -29,6 +29,15 @@
 //        carries { stop } when the user pressed stop in the app
 //   { mode: "rec_finish", recording_id, duration_ms? } → close the recording and
 //        kick off the LLM synthesis that writes the skill
+//
+// The BROWSER COMPANION (the extension's side panel, 0269) rides the same
+// device identity:
+//   { mode: "companion_lease", open, bubbles? } → the panel is open (renewed
+//        every minute) or just closed; the lease is what allows a page read
+//   { mode: "companion_ask", text, context?, agent_id?, conversation_id? } →
+//        a question asked from a bubble or the context menu, panel closed
+//   { mode: "companion_feed", since } → replies, questions and approvals of
+//        the user's companion conversations, shown as bubbles panel closed
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
@@ -542,9 +551,243 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, coach_until: until, origins });
     }
 
+    // ── COMPAGNON (panneau latéral, 0269) ────────────────────────────────────
+    // Le panneau parle à l'app par l'iframe, avec la session de la personne.
+    // Ces modes-ci servent ce que l'iframe ne peut pas faire : savoir que le
+    // panneau est ouvert (le bail), et répondre quand il est FERMÉ (bulles).
+
+    // companion_lease — le panneau vient de s'ouvrir (renouvelé chaque minute)
+    // ou de se fermer. Le bail est court : un navigateur tué ne laisse pas une
+    // lecture de page autorisée derrière lui plus de deux minutes.
+    if (mode === "companion_lease") {
+      if (!auth.deviceId) {
+        return jsonResponse({ ok: false, message: "Réservé à un appareil appairé" }, { status: 403 });
+      }
+      const open = body.open === true;
+      const patch: Record<string, unknown> = {
+        companion_until: open ? new Date(Date.now() + 150_000).toISOString() : null,
+      };
+      if (typeof body.bubbles === "boolean") patch.companion_bubbles = body.bubbles;
+      const { data: dev } = await admin.from("recorder_devices")
+        .update(patch).eq("id", auth.deviceId)
+        .select("companion_until, companion_bubbles, user_id").maybeSingle();
+      // Fermer le panneau retire le mandat de lecture : une lecture en vol n'a
+      // plus personne devant elle.
+      if (!open) {
+        await admin.from("browser_commands")
+          .update({ status: "expired", finished_at: new Date().toISOString(), error: "panneau fermé" })
+          .eq("device_id", auth.deviceId).eq("channel", "companion").eq("action", "look")
+          .in("status", ["pending", "running"]);
+      }
+      return jsonResponse({
+        ok: true,
+        companion_until: dev?.companion_until ?? null,
+        bubbles: dev?.companion_bubbles !== false,
+        linked_user: !!dev?.user_id,
+      });
+    }
+
+    // companion_ask — une question posée sans le panneau : réponse à une bulle,
+    // menu contextuel. Même chemin que le chat de l'app (message persistant, run
+    // durable), seul l'appelant change : l'appareil, au nom de son utilisateur.
+    if (mode === "companion_ask") {
+      if (!auth.deviceId) {
+        return jsonResponse({ ok: false, message: "Réservé à un appareil appairé" }, { status: 403 });
+      }
+      const text = String(body.text ?? "").trim();
+      const context = String(body.context ?? "").trim();
+      if (!text && !context) return jsonResponse({ ok: false, message: "text required" }, { status: 400 });
+
+      const { data: dev } = await admin.from("recorder_devices")
+        .select("user_id, workspace_id").eq("id", auth.deviceId).maybeSingle();
+      const userId = (dev as { user_id?: string | null } | null)?.user_id ?? null;
+      const workspaceId = (dev as { workspace_id?: string | null } | null)?.workspace_id ?? null;
+      if (!userId || !workspaceId) {
+        return jsonResponse({ ok: false, message: "Appareil sans utilisateur : refaites l'appairage depuis le panneau." }, { status: 403 });
+      }
+
+      type Agent = { id: string; name: string; workspace_id: string; project_id: string; accent_color: string | null; is_archived: boolean | null };
+      const AGENT_COLS = "id, name, workspace_id, project_id, accent_color, is_archived";
+      const canUse = async (agentId: string): Promise<Agent | null> => {
+        const { data: a } = await admin.from("internal_agents").select(AGENT_COLS).eq("id", agentId).maybeSingle();
+        const agent = a as Agent | null;
+        if (!agent || agent.is_archived || agent.workspace_id !== workspaceId) return null;
+        const { data: ok } = await admin.rpc("has_internal_agent_access", { p_agent_id: agentId, p_user_id: userId });
+        return ok ? agent : null;
+      };
+
+      let agent: Agent | null = null;
+      let conversationId: string | null = null;
+
+      // 1. Une conversation désignée (répondre à une bulle) : elle doit être à
+      //    cette personne, et elle fixe le collaborateur.
+      if (body.conversation_id) {
+        const { data: conv } = await admin.from("internal_agent_conversations")
+          .select("id, agent_id, user_id").eq("id", String(body.conversation_id)).maybeSingle();
+        const c = conv as { id: string; agent_id: string; user_id: string | null } | null;
+        if (!c || c.user_id !== userId) return jsonResponse({ ok: false, message: "Conversation introuvable" }, { status: 404 });
+        agent = await canUse(c.agent_id);
+        conversationId = c.id;
+      }
+      // 2. Un collaborateur désigné (celui du panneau, mémorisé par l'extension).
+      if (!agent && body.agent_id) agent = await canUse(String(body.agent_id));
+      // 3. Le dernier avec qui la personne a parlé depuis le navigateur, puis
+      //    l'assistant du service, puis le plus récent : jamais « choisissez
+      //    d'abord un collaborateur » pour une question posée d'un clic.
+      if (!agent) {
+        const { data: last } = await admin.from("internal_agent_conversations")
+          .select("agent_id").eq("user_id", userId).eq("origin", "companion")
+          .order("updated_at", { ascending: false }).limit(1);
+        const lastId = (last ?? [])[0]?.agent_id as string | undefined;
+        if (lastId) agent = await canUse(lastId);
+      }
+      if (!agent) {
+        const { data: pool } = await admin.from("internal_agents").select(AGENT_COLS + ", is_orchestrator")
+          .eq("workspace_id", workspaceId).eq("is_archived", false)
+          .order("is_orchestrator", { ascending: false }).order("updated_at", { ascending: false }).limit(10);
+        for (const a of (pool ?? []) as Agent[]) {
+          agent = await canUse(a.id);
+          if (agent) break;
+        }
+      }
+      if (!agent) return jsonResponse({ ok: false, message: "Aucun collaborateur disponible pour ce compte." }, { status: 404 });
+
+      // Une question posée depuis le navigateur prolonge le dernier échange du
+      // même collaborateur s'il est récent : « et en anglais ? » doit trouver
+      // sa question d'avant. Au-delà de six heures, c'est un autre sujet.
+      if (!conversationId) {
+        const since = new Date(Date.now() - 6 * 3600_000).toISOString();
+        const { data: recent } = await admin.from("internal_agent_conversations")
+          .select("id").eq("user_id", userId).eq("agent_id", agent.id).eq("origin", "companion")
+          .gte("updated_at", since).order("updated_at", { ascending: false }).limit(1);
+        conversationId = ((recent ?? [])[0] as { id?: string } | undefined)?.id ?? null;
+      }
+      if (!conversationId) {
+        const { data: created, error } = await admin.from("internal_agent_conversations").insert({
+          agent_id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id,
+          user_id: userId, title: (text || "Page partagée").slice(0, 60), origin: "companion",
+        }).select("id").single();
+        if (error || !created) return jsonResponse({ ok: false, message: error?.message ?? "conversation" }, { status: 500 });
+        conversationId = (created as { id: string }).id;
+      }
+
+      const content = [text, context.slice(0, 40_000)].filter(Boolean).join("\n\n");
+      const { error: msgErr } = await admin.from("internal_agent_messages")
+        .insert({ conversation_id: conversationId, agent_id: agent.id, role: "user", content });
+      if (msgErr) return jsonResponse({ ok: false, message: msgErr.message }, { status: 500 });
+      await admin.from("internal_agent_conversations")
+        .update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+
+      // Le run se lance comme depuis l'app — en service, parce qu'aucune
+      // session utilisateur n'existe ici ; l'accès vient d'être vérifié.
+      let runId: string | null = null;
+      const base = Deno.env.get("SUPABASE_URL");
+      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (base && key) {
+        try {
+          const res = await fetch(`${base}/functions/v1/internal-agent-run`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ agent_id: agent.id, mode: "chat", conversation_id: conversationId }),
+            signal: AbortSignal.timeout(25_000),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            return jsonResponse({ ok: false, message: (json as { error?: string }).error ?? `HTTP ${res.status}`, conversation_id: conversationId }, { status: res.status });
+          }
+          runId = (json as { run_id?: string }).run_id ?? null;
+        } catch (e) {
+          return jsonResponse({ ok: false, message: e instanceof Error ? e.message : String(e), conversation_id: conversationId }, { status: 502 });
+        }
+      }
+      return jsonResponse({
+        ok: true, conversation_id: conversationId, run_id: runId,
+        agent: { id: agent.id, name: agent.name, accent_color: agent.accent_color },
+      });
+    }
+
+    // companion_feed — ce qui s'est passé dans les conversations ouvertes depuis
+    // le navigateur : une réponse, une question à choix, une validation en
+    // attente. L'extension en fait des bulles quand le panneau est fermé, et un
+    // compteur sur son icône. Rien d'autre ne remonte : pas les conversations
+    // de l'app, pas celles d'un collègue.
+    if (mode === "companion_feed") {
+      if (!auth.deviceId) {
+        return jsonResponse({ ok: false, message: "Réservé à un appareil appairé" }, { status: 403 });
+      }
+      const { data: dev } = await admin.from("recorder_devices")
+        .select("user_id").eq("id", auth.deviceId).maybeSingle();
+      const userId = (dev as { user_id?: string | null } | null)?.user_id ?? null;
+      if (!userId) return jsonResponse({ ok: true, items: [], now: new Date().toISOString() });
+
+      const nowIso = new Date().toISOString();
+      // Un curseur absent ou très ancien (navigateur rouvert le lendemain) ne
+      // doit pas déverser la journée en bulles : une heure au plus.
+      const floor = Date.now() - 3600_000;
+      const sinceMs = Math.max(floor, Date.parse(String(body.since ?? "")) || Date.now() - 120_000);
+      const since = new Date(sinceMs).toISOString();
+
+      const { data: convs } = await admin.from("internal_agent_conversations")
+        .select("id, agent_id, title").eq("user_id", userId).eq("origin", "companion")
+        .gte("updated_at", new Date(sinceMs - 600_000).toISOString())
+        .order("updated_at", { ascending: false }).limit(20);
+      const convList = (convs ?? []) as Array<{ id: string; agent_id: string; title: string | null }>;
+      if (!convList.length) return jsonResponse({ ok: true, items: [], now: nowIso });
+
+      const convIds = convList.map((c) => c.id);
+      const agentIds = [...new Set(convList.map((c) => c.agent_id))];
+      const [{ data: msgs }, { data: approvals }, { data: agents }, { data: running }] = await Promise.all([
+        admin.from("internal_agent_messages")
+          .select("id, conversation_id, agent_id, content, ui_blocks, created_at")
+          .in("conversation_id", convIds).eq("role", "assistant").gt("created_at", since)
+          .order("created_at").limit(20),
+        admin.from("internal_agent_approvals")
+          .select("id, conversation_id, agent_id, tool_name, reason, requested_at")
+          .in("conversation_id", convIds).eq("status", "pending").gt("requested_at", since).limit(10),
+        admin.from("internal_agents")
+          .select("id, name, accent_color, avatar_url, service_dashboard_id, project_id").in("id", agentIds),
+        admin.from("internal_agent_run_state").select("conversation_id").in("conversation_id", convIds),
+      ]);
+      const agentById = new Map(((agents ?? []) as Array<{ id: string; name: string; accent_color: string | null; avatar_url: string | null; service_dashboard_id: string | null; project_id: string }>).map((a) => [a.id, a]));
+      const busy = new Set(((running ?? []) as Array<{ conversation_id: string }>).map((r) => r.conversation_id));
+      const agentOf = (id: string) => {
+        const a = agentById.get(id);
+        return a
+          ? { id: a.id, name: a.name, accent_color: a.accent_color, avatar_url: a.avatar_url?.startsWith("http") ? a.avatar_url : null, service_dashboard_id: a.service_dashboard_id, project_id: a.project_id }
+          : { id, name: "Collaborateur", accent_color: null, avatar_url: null, service_dashboard_id: null, project_id: null };
+      };
+
+      const items: Array<Record<string, unknown>> = [];
+      for (const m of (msgs ?? []) as Array<{ id: string; conversation_id: string; agent_id: string; content: string | null; ui_blocks: unknown; created_at: string }>) {
+        const text = String(m.content ?? "").replace(/\[\[ui:\d+\]\]/g, "").trim();
+        const blocks = Array.isArray(m.ui_blocks) ? m.ui_blocks as Array<{ component?: string; props?: Record<string, unknown> }> : [];
+        const opts = blocks.find((b) => b?.component === "options")?.props?.options;
+        // Un message de progression (« je regarde ça ») pendant que le run tourne
+        // n'est pas une réponse : il ne mérite pas d'interrompre quelqu'un.
+        const interim = busy.has(m.conversation_id) && !Array.isArray(opts);
+        if (!text && !Array.isArray(opts)) continue;
+        items.push({
+          id: `m:${m.id}`, kind: Array.isArray(opts) ? "question" : "reply", interim,
+          conversation_id: m.conversation_id, agent: agentOf(m.agent_id),
+          text: text.slice(0, 1200), options: Array.isArray(opts) ? (opts as unknown[]).map(String).slice(0, 6) : [],
+          at: m.created_at,
+        });
+      }
+      for (const a of (approvals ?? []) as Array<{ id: string; conversation_id: string; agent_id: string; tool_name: string; reason: string | null; requested_at: string }>) {
+        items.push({
+          id: `a:${a.id}`, kind: "approval", interim: false,
+          conversation_id: a.conversation_id, agent: agentOf(a.agent_id),
+          text: (a.reason || `Demande votre accord pour « ${a.tool_name} ».`).slice(0, 600),
+          options: [], at: a.requested_at,
+        });
+      }
+      items.sort((x, y) => String(x.at).localeCompare(String(y.at)));
+      return jsonResponse({ ok: true, items, now: nowIso, busy: [...busy] });
+    }
+
     // rec_control_poll — l'extension réclame les ordres en attente.
     //
-    // Un seul appel sert les deux canaux, parce qu'un seul battement doit
+    // Un seul appel sert tous les canaux, parce qu'un seul battement doit
     // suffire : l'extension n'a pas à savoir combien de pouvoirs existent. Ce
     // qu'elle reçoit dépend de ce qui est armé, et rien d'autre.
     if (mode === "rec_control_poll") {
@@ -552,15 +795,18 @@ Deno.serve(async (req) => {
         return jsonResponse({ ok: false, message: "Réservé à un appareil appairé" }, { status: 403 });
       }
       const { data: dev } = await admin.from("recorder_devices")
-        .select("control_until, control_origins, coach_until, coach_origins")
+        .select("control_until, control_origins, coach_until, coach_origins, companion_until, companion_bubbles")
         .eq("id", auth.deviceId).maybeSingle();
 
       const armed = !!dev?.control_until && Date.parse(dev.control_until) > Date.now();
       const coachArmed = !!dev?.coach_until && Date.parse(dev.coach_until) > Date.now();
-      if (!armed && !coachArmed) {
+      // Le compagnon : panneau ouvert (bail), ou bulles autorisées panneau fermé.
+      const companionOpen = !!dev?.companion_until && Date.parse(dev.companion_until) > Date.now();
+      const companionBubbles = dev?.companion_bubbles !== false;
+      if (!armed && !coachArmed && !companionOpen && !companionBubbles) {
         // Rien d'armé : on ne remet AUCUN ordre. L'extension n'a même pas à
         // savoir qu'il en existait.
-        return jsonResponse({ ok: true, armed: false, coach_armed: false, commands: [] });
+        return jsonResponse({ ok: true, armed: false, coach_armed: false, companion_open: false, commands: [] });
       }
 
       const nowIso = new Date().toISOString();
@@ -574,14 +820,32 @@ Deno.serve(async (req) => {
       // promesse du mode formation tient, avant même la liste blanche de
       // l'extension : un ordre de pilotage n'est jamais REMIS à un appareil
       // armé pour la seule formation.
-      const channels = armed ? ["control", "coach"] : ["coach"];
-      const { data: queued } = await admin.from("browser_commands")
-        .select("id, action, params, channel")
-        .eq("device_id", auth.deviceId).eq("status", "pending")
-        .in("channel", channels)
-        .order("created_at").limit(5);
+      const channels: string[] = [];
+      if (armed) channels.push("control", "coach");
+      else if (coachArmed) channels.push("coach");
+      if (companionOpen || companionBubbles) channels.push("companion");
+      const { data: queuedRaw } = channels.length
+        ? await admin.from("browser_commands")
+          .select("id, action, params, channel")
+          .eq("device_id", auth.deviceId).eq("status", "pending")
+          .in("channel", channels)
+          .order("created_at").limit(5)
+        : { data: [] };
 
-      const ids = (queued ?? []).map((c: { id: string }) => c.id);
+      // Panneau fermé, une LECTURE de page n'est jamais remise : elle échoue
+      // tout de suite, avec la raison, plutôt que d'attendre une ouverture qui
+      // lui donnerait un mandat qu'elle n'avait pas en étant émise.
+      const refused = companionOpen ? [] : (queuedRaw ?? []).filter((c: { channel: string; action: string }) =>
+        c.channel === "companion" && c.action === "look");
+      if (refused.length) {
+        await admin.from("browser_commands").update({
+          status: "failed", finished_at: nowIso,
+          error: "panneau fermé : la page ne peut être lue que panneau ouvert",
+        }).in("id", refused.map((c: { id: string }) => c.id));
+      }
+      const queued = (queuedRaw ?? []).filter((c: { id: string }) => !refused.some((r: { id: string }) => r.id === c.id));
+
+      const ids = queued.map((c: { id: string }) => c.id);
       if (ids.length) {
         await admin.from("browser_commands")
           .update({ status: "running", claimed_at: nowIso }).in("id", ids);
@@ -594,7 +858,9 @@ Deno.serve(async (req) => {
         coach_armed: coachArmed,
         coach_until: dev?.coach_until ?? null,
         coach_origins: dev?.coach_origins ?? [],
-        commands: queued ?? [],
+        companion_open: companionOpen,
+        companion_bubbles: companionBubbles,
+        commands: queued,
       });
     }
 

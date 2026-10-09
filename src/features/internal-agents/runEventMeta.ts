@@ -140,7 +140,7 @@ const FAMILY_BY_TOOL: Array<[RegExp, string]> = [
   [/^(spawn_parallel_agents|create_agent|list_team_agents|send_message_to_agent)$/, "handoff"],
   [/^(ask_user|say)$/, "messaging"],
   // Guider quelqu'un dans SON écran n'est ni du web ni de la messagerie : la
-  // timeline doit distinguer « l'agent a cliqué » de « l'agent a montré ».
+  // timeline doit distinguer « le collaborateur a cliqué » de « l'agent a montré ».
   [/^(guide_user|training)$/, "training"],
   [/^(update_todos|update_plan_step|use_skill|read_skill_file|load_toolset|need_tools)$/, "planning"],
   [/^send_email$/, "email"],
@@ -222,7 +222,7 @@ export function orbStateForRun(
   return "working";
 }
 
-/** Short French verb for the state, for the one-word "agent is …" labels. */
+/** Short French verb for the state, for the one-word "collaborateur is …" labels. */
 export const ORB_STATE_LABEL: Record<AgentOrbState, string> = {
   working: "travaille…",
   searching: "recherche…",

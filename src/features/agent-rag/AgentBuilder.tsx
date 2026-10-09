@@ -275,7 +275,7 @@ function KnowledgeTab({ agent, workspaceId, projectId }: { agent: Agent; workspa
           </div>
           <div className="font-semibold">No documents found</div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {sources && sources.length > 0 ? "No documents match your filters." : "This agent has no attached documents yet."}
+            {sources && sources.length > 0 ? "No documents match your filters." : "This collaborateur has no attached documents yet."}
           </p>
           <Button className="mt-4" onClick={() => openDialog("text")}><Plus className="h-4 w-4" /> Add document</Button>
         </div>
@@ -825,7 +825,7 @@ function OnboardingSettings({ agent }: { agent: Agent }) {
 // The workspace MCP registry (mcp_servers) is shared with the internal agents;
 // what this tab owns is the attach side (rag_agent_mcp_servers) and, above all,
 // the per-tool allowlist — a public agent is driven by anonymous traffic, so
-// "the server exposes it" is not the same as "the agent may call it".
+// "the server exposes it" is not the same as "the collaborateur may call it".
 const MCP_STORE_PRESETS = [
   {
     key: "shopify",
@@ -934,7 +934,7 @@ function EcommerceTab({ agent, sub, workspaceId }: {
   const grantedCount = (attached ?? []).reduce((n, a) => n + (a.allowed_tools?.length ?? 0), 0);
   const inertReason = !needsMigration && (attached ?? []).length > 0
     ? (!agent.tool_use_enabled
-        ? "« Autoriser cet agent à appeler des outils » est désactivé (onglet Boutique)."
+        ? "« Autoriser ce collaborateur à appeler des outils » est désactivé (onglet Boutique)."
         : grantedCount === 0
           ? "Aucun outil n'est coché (onglet Outils), une liste vide n'autorise rien."
           : null)
@@ -957,7 +957,7 @@ function EcommerceTab({ agent, sub, workspaceId }: {
       {inertReason && (
         <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs leading-relaxed">
           <div className="font-semibold text-amber-600 dark:text-amber-400">
-            Serveur connecté, mais l'agent n'appellera aucun outil
+            Serveur connecté, mais le collaborateur n'appellera aucun outil
           </div>
           <p className="mt-1 text-muted-foreground">
             {inertReason} Tant que c'est le cas, l'agent répond uniquement depuis sa base de
@@ -1036,7 +1036,7 @@ function McpStoreServers({ agent, workspaceId, servers, attached, onChanged }: {
       if (attErr) throw attErr;
 
       setInput(""); setName(""); setAuthHeader("");
-      setOkMsg(`${test.count ?? 0} outil(s) détecté(s). Choisissez ceux que l'agent peut utiliser dans l'onglet Outils.`);
+      setOkMsg(`${test.count ?? 0} outil(s) détecté(s). Choisissez ceux que le collaborateur peut utiliser dans l'onglet Outils.`);
       onChanged();
     } catch (e) {
       setError(writeError(e));
@@ -1144,7 +1144,7 @@ function McpStoreServers({ agent, workspaceId, servers, attached, onChanged }: {
                     </Button>
                     <MiniSwitch
                       checked={on} onChange={(v) => toggleAttach(s, v)}
-                      title={on ? "Détacher de cet agent" : "Attacher à cet agent"}
+                      title={on ? "Détacher de ce collaborateur" : "Attacher à ce collaborateur"}
                     />
                   </div>
                 </div>
@@ -1153,15 +1153,15 @@ function McpStoreServers({ agent, workspaceId, servers, attached, onChanged }: {
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          Le registre MCP est partagé avec les agents internes. Activer un serveur ici l'attache
-          à cet agent public uniquement.
+          Le registre MCP est partagé avec les collaborateurs internes. Activer un serveur ici l'attache
+          à ce collaborateur public uniquement.
         </p>
       </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">Utilisation des outils</h2>
         <SoftToggle
-          label="Autoriser cet agent à appeler des outils"
+          label="Autoriser ce collaborateur à appeler des outils"
           checked={agent.tool_use_enabled}
           onChange={(v) => saveAgent({ tool_use_enabled: v })}
         />
@@ -1224,7 +1224,7 @@ function McpToolGrants({ agent, servers, attached, onChanged }: {
         <p className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
       )}
       <p className="rounded-xl bg-muted/50 p-3.5 text-xs leading-relaxed text-muted-foreground">
-        Cochez les outils que l'agent peut appeler. Rien n'est autorisé par défaut : ce widget est
+        Cochez les outils que le collaborateur peut appeler. Rien n'est autorisé par défaut : ce widget est
         exposé à tout internet, et un serveur boutique publie les opérations de panier à côté de la
         simple recherche catalogue.
       </p>
@@ -1296,7 +1296,7 @@ function McpToolActivity({ agent }: { agent: Agent }) {
   });
 
   if ((calls ?? []).length === 0) {
-    return <EmptyState icon={Package} title="Aucun appel d'outil" description="Les appels faits par l'agent pour vos visiteurs apparaîtront ici." />;
+    return <EmptyState icon={Package} title="Aucun appel d'outil" description="Les appels faits par le collaborateur pour vos visiteurs apparaîtront ici." />;
   }
 
   return (
@@ -1365,7 +1365,7 @@ function PublicSettingsTab({ agent }: { agent: Agent }) {
         <SoftInput value={form.description} onChange={(e) => upd("description", e.target.value)} />
       </SoftField>
       <SoftField label="Persona">
-        <SoftInput value={form.persona} onChange={(e) => upd("persona", e.target.value)} placeholder="Tu es un agent de support…" />
+        <SoftInput value={form.persona} onChange={(e) => upd("persona", e.target.value)} placeholder="Tu es un collaborateur de support…" />
       </SoftField>
       <SoftField label="Instructions">
         <SoftTextarea value={form.instructions} onChange={(e) => upd("instructions", e.target.value)} rows={4} />

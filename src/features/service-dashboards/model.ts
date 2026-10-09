@@ -22,7 +22,7 @@ export interface ServiceDashboard {
 
 // ── Frontière de service (migration 0213) ────────────────────────────────────
 // L'isolation des dashboards était jusqu'ici une isolation d'UI : au runtime,
-// n'importe quel agent du projet pouvait déléguer à n'importe quel autre. Ce
+// n'importe quel collaborateur du projet pouvait déléguer à n'importe quel autre. Ce
 // réglage rend la frontière réelle — et surtout, il la rend VISIBLE : un agent
 // voit dans l'annuaire si un service accepte du travail venu d'ailleurs avant
 // de lui en envoyer.
@@ -31,7 +31,7 @@ export type CollaborationPolicy = "open" | "on_request" | "closed";
 export const COLLABORATION_POLICIES: Array<{
   id: CollaborationPolicy; label: string; hint: string;
 }> = [
-  { id: "open", label: "Ouvert", hint: "N'importe quel agent de l'entreprise peut confier du travail à ce service." },
+  { id: "open", label: "Ouvert", hint: "N'importe quel collaborateur de l'entreprise peut confier du travail à ce service." },
   { id: "on_request", label: "Sur demande", hint: "Le travail venu d'un autre service arrive dans le backlog et attend un humain d'ici." },
   { id: "closed", label: "Fermé", hint: "Ce service n'exécute que ce qui vient de lui. Les autres peuvent encore lui poser des questions." },
 ];
@@ -149,7 +149,7 @@ export interface DashboardAsset {
 
 export const ASSET_KINDS: { kind: AssetKind; label: string; icon: string; placeholder: string; hasValue: boolean }[] = [
   { kind: "human", label: "Personne", icon: "User", placeholder: "email ou nom", hasValue: true },
-  { kind: "agent", label: "Agent", icon: "Bot", placeholder: "nom de l'agent", hasValue: false },
+  { kind: "agent", label: "Agent", icon: "Bot", placeholder: "nom du collaborateur", hasValue: false },
   { kind: "repo", label: "Dépôt GitHub", icon: "Github", placeholder: "owner/repo", hasValue: true },
   { kind: "link", label: "Lien", icon: "Link", placeholder: "https://…", hasValue: true },
   { kind: "file", label: "Fichier", icon: "FileText", placeholder: "URL du fichier", hasValue: true },
@@ -306,7 +306,7 @@ export async function applyAgentDefaults(
   // the whole update, silently dropping the other defaults with it. The
   // service's approval default is applied to the tools granted at creation.
   const { error } = await supabase.from("internal_agents").update(upd).eq("id", agentId);
-  if (error) console.warn("Agent defaults not applied:", error.message);
+  if (error) console.warn("Collaborateur defaults not applied:", error.message);
 }
 
 export async function fetchAssets(dashboardId: string): Promise<DashboardAsset[]> {

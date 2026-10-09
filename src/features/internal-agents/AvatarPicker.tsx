@@ -81,7 +81,7 @@ export function AvatarPicker({
   return (
     <div className="rounded-xl border border-border p-2">
       <div className="mb-2 flex items-center justify-between px-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Corps de l'agent</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Corps du collaborateur</span>
         <button
           type="button"
           onClick={() => onChange("")}
@@ -105,13 +105,13 @@ export function AvatarPicker({
               chosen === t ? "border-primary ring-2 ring-primary" : "border-border hover:border-primary/50",
             )}
           >
-            <BotAvatar type={t} size={40} color={accentColor || undefined} interactive={false} seed={0.13} />
+            <BotAvatar type={t} size={40} color={accentColor || undefined} interactive={false} seed={0.13} shading="fabric" furLength={1.8} furDensity={1.9} furFuzz={1} />
           </button>
         ))}
       </div>
       <p className="px-1 pt-2 text-[11px] text-muted-foreground">
         Chaque corps a sa couleur ; celle de l'agent la remplace quand elle est définie.
-        {name ? " En automatique, le nom de l'agent décide." : ""}
+        {name ? " En automatique, le nom du collaborateur décide." : ""}
       </p>
     </div>
   );

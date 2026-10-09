@@ -106,7 +106,7 @@ export function CrewPage({
         actions={
           <>
             <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setAdding("agent")}>
-              <RobotIcon className="h-3.5 w-3.5" /> Agent
+              <RobotIcon className="h-3.5 w-3.5" /> Collaborateur
             </Button>
             <Button size="sm" className="h-8 gap-1.5" onClick={() => setAdding("member")}>
               <PlusIcon className="h-3.5 w-3.5" /> Personne
@@ -120,13 +120,13 @@ export function CrewPage({
           <EmptyState
             illustration={<PeopleIllustration className="w-full" />}
             title="Personne sur ce projet"
-            hint="Ajoutez les personnes qui y travaillent, et les agents autorisés à y agir."
+            hint="Ajoutez les personnes qui y travaillent, et les collaborateurs autorisés à y agir."
             action={
               <Button size="sm" onClick={() => setAdding("member")}>Ajouter une personne</Button>
             }
             secondaryAction={
               <Button size="sm" variant="outline" onClick={() => setAdding("agent")}>
-                Autoriser un agent
+                Autoriser un collaborateur
               </Button>
             }
           />
@@ -197,7 +197,7 @@ export function CrewPage({
             </section>
 
             <section>
-              <SectionTitle>Agents</SectionTitle>
+              <SectionTitle>Collaborateurs</SectionTitle>
               {agentRows.length ? (
                 <ul className="mt-1.5 overflow-hidden rounded-lg border border-border">
                   {agentRows.map((row) => {
@@ -211,7 +211,7 @@ export function CrewPage({
                         <AgentAvatar agent={a} size={28} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-13">
-                            {a?.name ?? "Agent retiré"}
+                            {a?.name ?? "Collaborateur retiré"}
                           </span>
                           <span className="block text-11 text-tertiary">
                             {row.role === "observer"
@@ -256,11 +256,11 @@ export function CrewPage({
                   compact
                   className="mt-1.5"
                   icon={<RobotIcon className="h-4 w-4" />}
-                  title="Aucun agent autorisé"
-                  hint="Tant que cette liste est vide, aucun agent ne peut agir sur ce projet."
+                  title="Aucun collaborateur autorisé"
+                  hint="Tant que cette liste est vide, aucun collaborateur ne peut agir sur ce projet."
                   action={
                     <Button size="sm" variant="outline" onClick={() => setAdding("agent")}>
-                      Autoriser un agent
+                      Autoriser un collaborateur
                     </Button>
                   }
                 />
@@ -271,7 +271,7 @@ export function CrewPage({
                   justifié, pas au moment où on vient d'en accorder un. */}
               <p className="mt-2 flex items-start gap-1.5 text-11 leading-snug text-tertiary">
                 <WarningCircleIcon className="mt-px h-3.5 w-3.5 shrink-0" />
-                Cette liste est un périmètre d&apos;écriture : un agent absent d&apos;ici ne peut
+                Cette liste est un périmètre d&apos;écriture : un collaborateur absent d&apos;ici ne peut
                 rien modifier dans le projet, même si on lui assigne un work item.
               </p>
             </section>
@@ -454,7 +454,7 @@ function AddAgentDialog({
     <Modal
       open
       onClose={onClose}
-      title="Autoriser un agent"
+      title="Autoriser un collaborateur"
       description="Il pourra agir sur ce projet, dans la limite du rôle choisi."
       busy={busy}
     >
@@ -462,7 +462,7 @@ function AddAgentDialog({
         <TextField
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Chercher un agent…"
+          placeholder="Chercher un collaborateur…"
           autoFocus
         />
         <div className="w-32 shrink-0">
@@ -482,7 +482,7 @@ function AddAgentDialog({
           permet d'en faire quelque chose. */}
       {role === "contributor" && (
         <p className="rounded-md bg-muted/40 px-2.5 py-2 text-11 leading-snug text-tertiary">
-          L&apos;agent recevra l&apos;outil de suivi de travail, borné à ce projet.
+          L&apos;collaborateur recevra l&apos;outil de suivi de travail, borné à ce projet.
           Le retirer d&apos;ici lui en retire l&apos;accès aussitôt.
         </p>
       )}
@@ -504,10 +504,10 @@ function AddAgentDialog({
         ) : (
           <p className="px-2 py-6 text-center text-12 text-placeholder">
             {query
-              ? "Aucun agent ne correspond."
+              ? "Aucun collaborateur ne correspond."
               : roster.length
-                ? "Tous les agents disponibles sont déjà autorisés."
-                : "Aucun agent dans cet espace de travail."}
+                ? "Tous les collaborateurs disponibles sont déjà autorisés."
+                : "Aucun collaborateur dans cet espace de travail."}
           </p>
         )}
       </div>

@@ -100,8 +100,13 @@ export function AgentIdentity({
   //  · FOOTPRINT. The canvas is 1.5× the body (room for the hop). Left in the
   //    flow it pushed everything around; centred in a box of exactly `size`, the
   //    body matches the portraits it replaces and the jump just overflows.
-  const dense = typeof window !== "undefined" && (window.devicePixelRatio || 1) >= 1.5;
-  const ss = !dense && size >= 40 ? 2 : 1;
+  // Netteté : la lib cale le backing canvas à `size × min(2, dpr)`. Sur un écran
+  // standard (dpr 1) un petit avatar n'est donc pas suréchantillonné et bave.
+  // On rend volontairement plus grand puis on réduit en CSS pour viser ~3× de
+  // backing partout, quel que soit l'écran (vrai supersampling).
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  const libMult = Math.min(2, dpr);
+  const ss = Math.max(1, Math.min(3, Math.round((3 / libMult) * 100) / 100));
 
   return (
     <span
@@ -121,7 +126,11 @@ export function AgentIdentity({
           color={accentColor || undefined}
           interactive={interactive}
           paused={paused}
-          aria-label={seed ? `${seed}, avatar` : "Avatar de l'agent"}
+          shading="fabric"
+          furLength={2.3}
+          furDensity={2}
+          furFuzz={1}
+          aria-label={seed ? `${seed}, avatar` : "Avatar"}
         />
       </span>
     </span>

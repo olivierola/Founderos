@@ -6,7 +6,7 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // Topbar breadcrumb — a page can publish extra breadcrumb segments (beyond the
 // workspace/project chips) into the main navbar breadcrumb. Used by the CRM
-// record view to surface "Autonomous agents / Support Concierge" up in the
+// record view to surface "Autonomous collaborateurs / Support Concierge" up in the
 // navbar instead of a separate breadcrumb bar inside the page. When a page
 // publishes nothing, the Topbar falls back to the module/sub derived from the
 // route.

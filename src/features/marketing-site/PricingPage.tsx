@@ -110,7 +110,7 @@ const GUARANTEES = [
 ];
 
 const PRICING_FAQ = [
-  { q: "What is a credit?", a: "One unit of superintelligence work. Credits cover what your Cloud collaborators actually spend at the model providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5." },
+  { q: "What is a credit?", a: "One unit of super intelligence work. Credits cover what your Cloud collaborators actually spend at the model providers: language models, vectorisation, transcription. A conversational reply costs about 20 credits, a full mission 300 to 800, indexing a 100-page document about 5." },
   { q: "What happens when I run out?", a: "Cloud collaborators stop cleanly and keep whatever they already produced, so nothing is lost mid-run. You can buy a credit pack (it never expires) or move up a plan; either restores service immediately." },
   { q: "Can I change plans later?", a: "Yes, anytime. Upgrading is instant and restarts your billing period with the new allowance; downgrading applies at the end of the current period." },
   { q: "How does annual billing work?", a: "Annual plans are billed once a year for the price of ten months, about 17% off versus monthly." },

@@ -12,7 +12,7 @@ import { useOutcomeColors, useRatingScale, useSequential } from "./vizRamps";
 import { CHANNEL_LABELS, OUTCOME_LABELS, RATING_LABELS, reasonLabel, reasonSlot, REASON_HINTS } from "./labels";
 import { measured, pct, pointsDelta, nf, type AgentAnalytics } from "./useAgentAnalytics";
 
-// Page Performance — ce que l'agent public abat, et ce qu'en pensent les gens.
+// Page Performance — ce que le collaborateur public abat, et ce qu'en pensent les gens.
 //
 // Quatre taux, une distribution de satisfaction, les motifs derrière les votes,
 // et l'entonnoir qui relie le tout. Chaque taux affiche sa phrase « X sur Y » :
@@ -65,7 +65,7 @@ export function PerformancePage({ data, agentName }: { data: AgentAnalytics; age
       color: seq[3],
     }));
     const stage1: FunnelNode[] = [
-      { key: "inv:yes", label: "Agent impliqué", value: t.involved, color: seq[3] },
+      { key: "inv:yes", label: "Collaborateur impliqué", value: t.involved, color: seq[3] },
       { key: "inv:no", label: "Sans échange", value: notInvolved, color: outcomeColors.unknown },
     ];
     const stage2: FunnelNode[] = [
@@ -105,7 +105,7 @@ export function PerformancePage({ data, agentName }: { data: AgentAnalytics; age
         <div className="space-y-4">
           <RateCard
             title="Taux d'automatisation"
-            hint="Part des conversations mesurées que l'agent a menées jusqu'à une réponse appuyée sur sa base ou sur un outil."
+            hint="Part des conversations mesurées que le collaborateur a menées jusqu'à une réponse appuyée sur sa base ou sur un outil."
             sentence={<>{nf.format(t.resolved)} conversations résolues par {agentName} sur {nf.format(mes)} mesurées</>}
             value={automation}
             delta={pointsDelta(automation, pct(prev.resolved, prevMes))}
@@ -117,7 +117,7 @@ export function PerformancePage({ data, agentName }: { data: AgentAnalytics; age
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <RateCard
               title="Taux d'implication"
-              hint="Conversations où l'agent a réellement répondu, sur l'ensemble des conversations ouvertes."
+              hint="Conversations où le collaborateur a réellement répondu, sur l'ensemble des conversations ouvertes."
               sentence={<>L'agent est intervenu dans {nf.format(t.involved)} des {nf.format(t.total)} conversations ouvertes</>}
               value={involvement}
               delta={pointsDelta(involvement, pct(prev.involved, prev.total))}
@@ -127,7 +127,7 @@ export function PerformancePage({ data, agentName }: { data: AgentAnalytics; age
             />
             <RateCard
               title="Taux de résolution"
-              hint="Parmi les conversations où l'agent est intervenu, celles qui se terminent par une réponse fondée."
+              hint="Parmi les conversations où le collaborateur est intervenu, celles qui se terminent par une réponse fondée."
               sentence={<>{nf.format(t.resolved)} résolues sur {nf.format(t.involved)} où l'agent est intervenu</>}
               value={resolution}
               delta={pointsDelta(resolution, pct(prev.resolved, prev.involved))}

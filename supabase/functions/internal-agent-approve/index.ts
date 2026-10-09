@@ -14,7 +14,7 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { applyApprovalDecision } from "../_shared/channel-approval.ts";
+import { applyApprovalDecision, resumeAfterLateDecision } from "../_shared/channel-approval.ts";
 
 interface ApprovalRow {
   id: string;
@@ -42,9 +42,11 @@ Deno.serve(async (req) => {
     if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
     const userId = userData.user.id;
 
-    const { approval_id, decision } = (await req.json()) as {
+    const { approval_id, decision, source } = (await req.json()) as {
       approval_id?: string;
       decision?: string;
+      /** Where the click happened, told to the collaborator when it resumes. */
+      source?: string;
     };
     if (!approval_id || (decision !== "approve" && decision !== "approve_all" && decision !== "reject")) {
       return jsonResponse({ error: "approval_id and decision (approve|approve_all|reject) required" }, { status: 400 });
@@ -90,6 +92,12 @@ Deno.serve(async (req) => {
     if (outcome.status === "already_decided") {
       return jsonResponse({ error: outcome.detail }, { status: 409 });
     }
+    // A decision taken after the collaborator stopped waiting (the inbox is
+    // usually minutes or hours later) would otherwise land in the void.
+    await resumeAfterLateDecision(
+      admin, approval as never, decision as "approve" | "approve_all" | "reject", outcome,
+      source === "inbox" ? "dans la boîte « À valider »" : "dans l'application",
+    );
     if (decision === "reject") return jsonResponse({ ok: true, status: "rejected" });
     return jsonResponse({ ok: outcome.ok, status: outcome.status, detail: outcome.detail.slice(0, 1000) });
   } catch (e) {

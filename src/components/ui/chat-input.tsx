@@ -93,7 +93,7 @@ export interface PastedContent {
 // agents / actions, so a hint never promises something that does nothing.
 function buildTips(hasMentions: boolean, hasSlash: boolean, base: string): string[] {
   const tips = [base];
-  if (hasMentions) tips.push("Tapez @ pour parler à un agent en particulier");
+  if (hasMentions) tips.push("Tapez @ pour parler à un collaborateur en particulier");
   if (hasSlash) tips.push("Tapez / pour demander un livrable : document, tableur, image…");
   tips.push("Glissez un fichier ici, PDF, image, CSV, il part avec le message");
   tips.push("Cliquez le micro pour dicter au lieu d'écrire");
@@ -489,10 +489,10 @@ export function ChatInput({
       {/* @ mention menu — sober (Avatar + name + status dot), AssigneeUser style */}
       {mentionAgents.length > 0 && mentionQuery !== null && (
         <div className={cn("absolute left-1 z-40 w-[224px] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lg", menuSide)}>
-          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Taguer un agent</div>
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Taguer un collaborateur</div>
           <div className="max-h-64 overflow-y-auto">
             {filteredMentionAgents.length === 0 ? (
-              <div className="px-2 py-2 text-xs text-muted-foreground">Aucun agent.</div>
+              <div className="px-2 py-2 text-xs text-muted-foreground">Aucun collaborateur.</div>
             ) : filteredMentionAgents.map((a) => (
               <button key={a.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(a)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent">
                 <span className="relative shrink-0">
@@ -575,9 +575,9 @@ export function ChatInput({
               <Plus className="h-[18px] w-[18px]" />
             </button>
             {mentionAgents.length > 0 && (
-              <button type="button" onClick={openMentionMenu} className={cn(PILL, mentionQuery !== null && PILL_ON)} title="Taguer un agent (@)">
+              <button type="button" onClick={openMentionMenu} className={cn(PILL, mentionQuery !== null && PILL_ON)} title="Taguer un collaborateur (@)">
                 <AtSign className="h-3.5 w-3.5" />
-                Agents
+                Collaborateurs
                 <ChevronDown className="h-3.5 w-3.5 opacity-60" />
               </button>
             )}

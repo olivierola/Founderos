@@ -92,7 +92,7 @@ export function LeadSenseSettings() {
             </button>
           ))}
         </div>
-        <span className="text-[11px] text-muted-foreground">Partagée par tous les agents du projet</span>
+        <span className="text-[11px] text-muted-foreground">Partagée par tous les collaborateurs du projet</span>
         <Button size="sm" className="ml-auto h-7 text-[11.5px]" disabled={!dirty || saving} onClick={save}>
           {saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />} Enregistrer
         </Button>

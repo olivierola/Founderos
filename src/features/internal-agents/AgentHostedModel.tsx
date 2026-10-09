@@ -102,7 +102,7 @@ export function AgentHostedModelCard({ agent, disabled }: { agent: InternalAgent
     <div className="rounded-lg border border-border/60 p-4">
       <div className="flex items-center gap-2">
         <Cpu className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">Modèle de l'agent</span>
+        <span className="text-sm font-medium">Modèle du collaborateur</span>
         {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">

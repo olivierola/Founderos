@@ -94,7 +94,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
     invalidate();
   };
   const disconnect = async (id: string) => {
-    if (!(await confirm("Disconnect this channel? The agent stops responding there."))) return;
+    if (!(await confirm("Disconnect this channel? The collaborateur stops responding there."))) return;
     await supabase.from("internal_agent_channels").delete().eq("id", id);
     invalidate();
   };
@@ -139,7 +139,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
 
       {slackStatus === "connected" && (
         <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400">
-          <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Slack connecté. Invitez le bot dans un canal, puis @mentionnez l'agent.</span>
+          <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Slack connecté. Invitez le bot dans un canal, puis @mentionnez le collaborateur.</span>
           <button onClick={clearStatus} className="opacity-70 hover:opacity-100">Dismiss</button>
         </div>
       )}

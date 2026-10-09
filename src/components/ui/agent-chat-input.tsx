@@ -62,6 +62,10 @@ export interface AgentChatInputProps {
   /** Blocks sending (the field stays editable). */
   disabled?: boolean;
   models?: ChatModel[];
+  /** Context the host attached (the browser panel's page, selection, element),
+   *  shown as chips inside the card next to pasted blocks. The host owns them:
+   *  it decides what they mean when the message is sent. */
+  chips?: React.ReactNode;
   className?: string;
 }
 
@@ -74,6 +78,7 @@ export function AgentChatInput({
   onStop,
   disabled = false,
   models = [],
+  chips,
   className,
 }: AgentChatInputProps) {
   const [local, setLocal] = useState("");
@@ -165,8 +170,9 @@ export function AgentChatInput({
           if (e.target === e.currentTarget) { e.preventDefault(); taRef.current?.focus(); }
         }}
       >
-        {blocks.length > 0 && (
+        {(blocks.length > 0 || chips) && (
           <div className="flex flex-wrap gap-1.5 px-4 pt-3.5">
+            {chips}
             {blocks.map((b) => (
               <span
                 key={b.id}

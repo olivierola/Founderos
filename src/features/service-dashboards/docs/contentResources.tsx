@@ -16,7 +16,7 @@ export const RESOURCES_SECTION: DocSection = {
       body: () => (
         <>
           <Lede>
-            La mémoire est ce sur quoi les agents s'appuient pour répondre autrement
+            La mémoire est ce sur quoi les collaborateurs s'appuient pour répondre autrement
             qu'en généralités. Elle se lit sous trois angles.
           </Lede>
 
@@ -29,15 +29,15 @@ export const RESOURCES_SECTION: DocSection = {
           />
 
           <Callout kind="warn">
-            Une mémoire fausse est pire qu'une mémoire vide : l'agent y puise avec la
+            Une mémoire fausse est pire qu'une mémoire vide : le collaborateur y puise avec la
             même assurance. Quand une information change, corrigez-la ici, la
             corriger dans une conversation ne la remplace pas.
           </Callout>
 
-          <H>Rattacher des connaissances à un agent</H>
+          <H>Rattacher des connaissances à un collaborateur</H>
           <P>
-            Les collections de connaissances s'activent <strong>par agent</strong>. Un
-            agent sans collection attachée ne cherche nulle part ; un agent qui les a
+            Les collections de connaissances s'activent <strong>par collaborateur</strong>. Un
+            collaborateur sans collection attachée ne cherche nulle part ; un collaborateur qui les a
             toutes cherche partout, ce qui coûte du temps et dilue les réponses.
           </P>
         </>
@@ -47,20 +47,20 @@ export const RESOURCES_SECTION: DocSection = {
     {
       slug: "connectors",
       title: "Connexions",
-      summary: "Les outils externes que les agents peuvent atteindre.",
+      summary: "Les outils externes que les collaborateurs peuvent atteindre.",
       keywords: ["connexions", "connecteurs", "intégrations", "oauth", "mcp", "outils externes"],
       body: () => (
         <>
           <Lede>
-            Une connexion donne à un agent l'accès à un service extérieur, une boîte
-            mail, un CRM, un dépôt de code. Sans connexion, un agent ne peut agir que
+            Une connexion donne à un collaborateur l'accès à un service extérieur, une boîte
+            mail, un CRM, un dépôt de code. Sans connexion, un collaborateur ne peut agir que
             dans FounderOS.
           </Lede>
 
           <Defs
             rows={[
-              [<>Connexions de l'espace</>, <>Des comptes partagés, utilisables par tous les agents du tableau. Pour les outils de l'équipe.</>],
-              [<>Mes connexions</>, <>Vos propres comptes. Un agent agit alors <strong>en votre nom</strong>, ce qui est parfois exactement ce qu'on veut, et parfois pas du tout.</>],
+              [<>Connexions de l'espace</>, <>Des comptes partagés, utilisables par tous les collaborateurs du tableau. Pour les outils de l'équipe.</>],
+              [<>Mes connexions</>, <>Vos propres comptes. Un collaborateur agit alors <strong>en votre nom</strong>, ce qui est parfois exactement ce qu'on veut, et parfois pas du tout.</>],
             ]}
           />
 
@@ -73,14 +73,14 @@ export const RESOURCES_SECTION: DocSection = {
           <P>
             À la connexion, le tiroir montre les <strong>actions</strong> que le
             branchement autorise. Lisez-les : c'est la seule occasion de voir ce que
-            l'agent pourra faire avant qu'il le fasse.
+            le collaborateur pourra faire avant qu'il le fasse.
           </P>
 
           <H>Serveurs MCP</H>
           <P>
-            Au-delà des connecteurs, un agent peut recevoir des outils fournis par un
+            Au-delà des connecteurs, un collaborateur peut recevoir des outils fournis par un
             serveur <strong>MCP</strong> distant, déclaré dans l'espace puis attaché à
-            l'agent. Ses outils apparaissent alors dans sa liste comme les autres.
+            le collaborateur. Ses outils apparaissent alors dans sa liste comme les autres.
           </P>
         </>
       ),
@@ -89,7 +89,7 @@ export const RESOURCES_SECTION: DocSection = {
     {
       slug: "workflows",
       title: "Workflows",
-      summary: "Des procédures écrites que les agents exécutent.",
+      summary: "Des procédures écrites que les collaborateurs exécutent.",
       keywords: ["workflows", "automatisation", "procédure", "enchaînement"],
       body: () => (
         <>
@@ -106,7 +106,7 @@ export const RESOURCES_SECTION: DocSection = {
           </P>
 
           <UL>
-            <LI>Les <strong>blocs</strong> sont les actions : appeler un agent, écrire quelque part, attendre une validation.</LI>
+            <LI>Les <strong>blocs</strong> sont les actions : appeler un collaborateur, écrire quelque part, attendre une validation.</LI>
             <LI>Le texte autour porte les conditions et les intentions.</LI>
             <LI>Un workflow se déclenche à la demande, sur planification, ou par un événement.</LI>
           </UL>
@@ -117,7 +117,7 @@ export const RESOURCES_SECTION: DocSection = {
     {
       slug: "settings",
       title: "Paramètres du service",
-      summary: "Général, navigation, assistant, agents, rooms, zone de danger.",
+      summary: "Général, navigation, assistant, collaborateurs, rooms, zone de danger.",
       keywords: ["paramètres", "réglages", "settings", "supprimer", "renommer"],
       body: () => (
         <>
@@ -131,7 +131,7 @@ export const RESOURCES_SECTION: DocSection = {
               [<>Général</>, <>Nom, icône et description du tableau.</>],
               [<>Navigation</>, <>Quelles destinations apparaissent dans le panneau, et sur quel écran le tableau s'ouvre.</>],
               [<>Assistant</>, <>Le comportement de l'assistant du produit dans ce tableau.</>],
-              [<>Agents</>, <>Les réglages communs aux agents du service : modèle par défaut, budgets, approbations.</>],
+              [<>Collaborateurs</>, <>Les réglages communs aux collaborateurs du service : modèle par défaut, budgets, approbations.</>],
               [<>Rooms</>, <>La création et la visibilité des salons.</>],
               [<>Zone de danger</>, <>Suppression du tableau. Irréversible, et elle emporte les projets qu'il contient.</>],
             ]}
@@ -145,10 +145,10 @@ export const RESOURCES_SECTION: DocSection = {
 
           <H>Modèles et coûts</H>
           <P>
-            Deux modèles sont proposés pour les agents, et le choix se fait aussi
+            Deux modèles sont proposés pour les collaborateurs, et le choix se fait aussi
             depuis le composeur d'une conversation. Le coût de chaque run est
             comptabilisé et remonte dans <Ui>Dashboard</Ui> et dans les livrables :
-            c'est ce qui rend l'usage des agents pilotable plutôt que subi.
+            c'est ce qui rend l'usage des collaborateurs pilotable plutôt que subi.
           </P>
         </>
       ),

@@ -70,8 +70,8 @@ export function AgentPicker({ projectId, selectedAgentId, onSelect, emptyHint }:
     return (
       <EmptyState
         icon={Bot}
-        title="No RAG agent yet"
-        description={emptyHint ?? "Create an agent first in the Agents tab to set up onboarding."}
+        title="No RAG collaborateur yet"
+        description={emptyHint ?? "Create an collaborateur first in the Collaborateurs tab to set up onboarding."}
       />
     );
   }

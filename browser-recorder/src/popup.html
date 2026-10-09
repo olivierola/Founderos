@@ -40,13 +40,14 @@
     .stack > * + * { margin-top: 8px; }
     select { width:100%; box-sizing:border-box; padding:7px 8px; margin-bottom:10px; border-radius:8px; font:inherit; background:Canvas; color:CanvasText; border:1px solid color-mix(in srgb, CanvasText 18%, transparent); }
     .panel { margin:14px 0; padding:12px; border-radius:10px; background:color-mix(in srgb, CanvasText 5%, transparent); }
+    body.embedded { width: auto; padding: 4px 2px; background: transparent; }
     section { display: none; }
     section.on { display: block; }
   </style>
 </head>
 <body>
-  <h1>Skill Recorder</h1>
-  <p class="sub" id="sub">FounderOS</p>
+  <h1>Appareil, pilotage et formation</h1>
+  <p class="sub" id="sub">Anduran</p>
 
   <!-- 1. URL du projet -->
   <section id="s-setup">
@@ -58,7 +59,7 @@
 
   <!-- 2. Appairage -->
   <section id="s-pair">
-    <p class="muted">Saisissez ce code dans FounderOS&nbsp;: <em>Skills → Enregistrer une démonstration</em>.</p>
+    <p class="muted">Ouvrez le panneau des collaborateurs connecté à votre compte&nbsp;: l'appairage s'y fait tout seul. Sinon, saisissez ce code dans Anduran&nbsp;: <em>Skills, Enregistrer une démonstration</em>.</p>
     <div class="code" id="code">••••-••••</div>
     <p class="muted" id="pair-hint">En attente de la saisie…</p>
     <div class="stack">
@@ -73,11 +74,11 @@
 
     <div class="panel">
       <div class="row" style="margin:0 0 6px">
-        <strong style="font-size:12px">Pilotage par un agent</strong>
+        <strong style="font-size:12px">Pilotage par un collaborateur</strong>
         <span class="muted" id="ctl-state" style="margin-left:auto">désactivé</span>
       </div>
       <p class="muted" style="margin:0 0 8px">
-        Un agent pourra cliquer et saisir dans vos onglets, avec vos sessions.
+        Un collaborateur pourra cliquer et saisir dans vos onglets, avec vos sessions.
         N'autorisez que le temps nécessaire.
       </p>
       <label for="ctl-scope">Périmètre</label>
@@ -101,7 +102,7 @@
         <span class="muted" id="coach-state" style="margin-left:auto">désactivé</span>
       </div>
       <p class="muted" style="margin:0 0 8px">
-        Un agent vous guide dans l'outil&nbsp;: il entoure le bon bouton et vous
+        Un collaborateur vous guide dans l'outil&nbsp;: il entoure le bon bouton et vous
         dit quoi faire. Il ne clique jamais à votre place.
       </p>
       <label for="coach-scope">Périmètre</label>

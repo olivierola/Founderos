@@ -75,8 +75,8 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
         <RobotIcon className="h-7 w-7 text-muted-foreground/50" />
-        <div className="text-sm font-medium">Agent introuvable</div>
-        <button onClick={() => navigate(`${sbase}/agents`)} className="text-xs text-muted-foreground underline">Retour aux agents</button>
+        <div className="text-sm font-medium">Collaborateur introuvable</div>
+        <button onClick={() => navigate(`${sbase}/agents`)} className="text-xs text-muted-foreground underline">Retour aux collaborateurs</button>
       </div>
     );
   }
@@ -96,7 +96,7 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
         <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2 py-1 shadow-sm backdrop-blur">
           <button
             onClick={() => navigate(`${sbase}/agents`)}
-            title="Retour aux agents"
+            title="Retour aux collaborateurs"
             className="rounded-full p-0.5 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeftIcon className="h-3.5 w-3.5" />
@@ -107,7 +107,7 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
           <span className="max-w-[160px] truncate text-xs font-semibold leading-tight">{agent.name}</span>
           <span
             className={cn("h-1.5 w-1.5 rounded-full", agent.enabled ? "bg-emerald-500" : "bg-muted-foreground/40")}
-            title={agent.enabled ? "Agent public en ligne" : "Agent public désactivé"}
+            title={agent.enabled ? "Collaborateur public en ligne" : "Collaborateur public désactivé"}
           />
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AuthSection,
   type AuthSocialProvider,
@@ -8,14 +8,23 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 
+/** Where to land after signing in. Only the browser panel asks for a return
+ *  (it logs in inside its own frame); any other value falls back to /orgs, so
+ *  the parameter cannot be used to bounce someone to an arbitrary page. */
+function safeNext(raw: string | null): string {
+  return raw && /^\/companion(\/|\?|$)/.test(raw) ? raw : "/orgs";
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = safeNext(params.get("next"));
   const { session, loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!authLoading && session) {
-    return <Navigate to="/orgs" replace />;
+    return <Navigate to={next} replace />;
   }
 
   async function handleLogin({ email, password }: AuthSubmitPayload) {
@@ -27,7 +36,7 @@ export function LoginPage() {
       setError(err.message);
       return;
     }
-    navigate("/orgs", { replace: true });
+    navigate(next, { replace: true });
   }
 
   // The provider must be enabled in the Supabase dashboard (Auth → Providers);
@@ -37,7 +46,7 @@ export function LoginPage() {
     setError(null);
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/orgs` },
+      options: { redirectTo: `${window.location.origin}${next}` },
     });
     if (err) {
       setSubmitting(false);

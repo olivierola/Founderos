@@ -44,7 +44,7 @@ function useAgentDashboard(agentId?: string) {
 function Resolving() {
   return (
     <div className="flex h-full items-center justify-center py-20 text-sm text-muted-foreground">
-      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Ouverture de l'agent…
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Ouverture du collaborateur…
     </div>
   );
 }

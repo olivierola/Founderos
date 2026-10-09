@@ -722,7 +722,7 @@ export interface TrackerAgent {
  * Les agents du service, ceux qu'on peut mettre sur du travail.
  *
  * Le filtre est is_archived, PAS status. La distinction a son importance :
- * la création d'agent du produit n'écrit pas de statut, donc tout agent cree
+ * la création d'collaborateur du produit n'écrit pas de statut, donc tout agent cree
  * normalement reste en « draft ». Filtrer sur « active » vidait la liste de
  * tous les agents existants — la seule chose que ce filtre excluait, c'était
  * l'intégralité du contenu.
@@ -811,7 +811,7 @@ export async function setIssueAgents(
   })));
 }
 
-/** Le périmètre d'un agent : les projets où il a le droit d'agir. */
+/** Le périmètre d'un collaborateur : les projets où il a le droit d'agir. */
 export async function fetchProjectAgents(pjProjectId: string): Promise<
   Array<{ agent_id: string; role: string }>
 > {
@@ -917,7 +917,7 @@ export async function fetchActivity(issueId: string): Promise<PjActivity[]> {
 
 /**
  * Écrit une ligne de journal que la base ne peut PAS déduire seule — un
- * contexte métier, une action d'agent, une étape d'import.
+ * contexte métier, une action d'collaborateur, une étape d'import.
  *
  * Les changements de champs, eux, ne passent plus par ici : depuis 0222 ils
  * sont journalisés par trigger, ce qui est la seule façon d'obtenir un journal
@@ -2193,7 +2193,7 @@ export async function fetchProjectDeliverables(pjProjectId: string): Promise<Pro
  *      que c'est fait, et ce qu'on attend en sortie. Elle est rattachée au work
  *      item, ce qui transformera le livrable en preuve ;
  *   2. le RUN est la tentative d'exécution, créé en file d'attente ;
- *   3. l'agent est assigné au work item s'il ne l'était pas — sans quoi le
+ *   3. le collaborateur est assigné au work item s'il ne l'était pas — sans quoi le
  *      board montrerait un item que personne ne porte pendant qu'une machine
  *      travaille dessus ;
  *   4. le worker est réveillé. L'appel est SANS ATTENTE de résultat : un run
@@ -2263,7 +2263,7 @@ export async function assignMission(input: {
 }
 
 /**
- * Les actions qu'un agent ne peut pas faire sans qu'on l'y autorise, sur CET
+ * Les actions qu'un collaborateur ne peut pas faire sans qu'on l'y autorise, sur CET
  * item.
  *
  * Elles n'apparaissaient nulle part dans le module. Une demande d'autorisation

@@ -695,7 +695,7 @@ export function OnboardingTreePage() {
     <div>
       <PageHeader
         title="Carte de l'app"
-        description="Scannez le dépôt pour construire la carte de votre app, l'agent d'onboarding s'en sert pour guider les utilisateurs."
+        description="Scannez le dépôt pour construire la carte de votre app, le collaborateur d'onboarding s'en sert pour guider les utilisateurs."
         actions={
           <div className="flex items-center gap-2">
             {(repos ?? []).length > 1 && (
