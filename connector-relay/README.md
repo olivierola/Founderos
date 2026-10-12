@@ -37,8 +37,6 @@ Exemple Kubernetes : un connecteur « Kubernetes API » avec un profil relais `t
 
 ## Installation
 
-Avec des serveurs MCP à joindre dans le même cluster, préférez la **passerelle d'entreprise** : ce relais et les serveurs MCP dans un seul pod, les serveurs sur la boucle locale ([docs/install](../docs/install/README.md#mode-cloud--la-passerelle-dentreprise), chart `deploy/helm/founderos-gateway`). Le relais seul s'installe comme suit.
-
 1. Dans FounderOS : **Ressources → Outils internes → Relais → Nouveau relais**. Copiez le jeton (montré une seule fois).
 2. Déployez.
 
@@ -84,19 +82,9 @@ node --env-file=.env src/index.js
 | `RELAY_ALLOWED_BINARIES` | vide | CLI autorisées (`helm,kubectl`) |
 | `RELAY_DENIED_SUBCOMMANDS` | gestes destructifs helm/kubectl | `binaire:sous-commande` |
 | `RELAY_CA_FILE` | | Autorité de certification interne (PEM) |
-| `RELAY_CLIENT_CERT_FILE`, `RELAY_CLIENT_KEY_FILE` | | Certificat client du relais (PEM), relu quand il change |
-| `RELAY_CLIENT_CERT_HOSTS` | vide | Hôtes auxquels le relais présente ce certificat (serveurs MCP en mTLS), mêmes motifs que `RELAY_ALLOWED_HOSTS` |
 | `RELAY_CONCURRENCY` | 4 | Requêtes simultanées |
 | `RELAY_MAX_BYTES` | 1048576 | Taille maximale d'une réponse |
 | `RELAY_HEALTH_PORT` | désactivé | Sonde `GET /healthz` (200 si FounderOS a répondu dans les 90 s) |
-
-## Serveurs MCP et identité déléguée
-
-Le relais joint aussi les **serveurs MCP** installés chez vous : un serveur MCP déclaré dans FounderOS avec ce relais reçoit, par lui, les requêtes JSON-RPC des agents.
-- Ajoutez son hôte à `RELAY_ALLOWED_HOSTS`.
-- S'il exige un certificat client (mTLS), à `RELAY_CLIENT_CERT_HOSTS`.
-
-Un outil appelé **au nom de la personne** (identité déléguée, ou contexte signé par FounderOS) reçoit un jeton court émis pour cet appel. Il voyage chiffré dans la file : FounderOS ne le déchiffre qu'au moment où le relais réclame la tâche, puis l'efface.
 
 ## Exploitation
 

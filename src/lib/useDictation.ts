@@ -1,7 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { functionUrl } from "@/lib/edge";
 import { supabase } from "@/lib/supabase";
-import { SUPABASE_ANON_KEY } from "@/lib/runtime-config";
 
 // Live (streaming) speech-to-text. Captures raw PCM from the mic, streams it to
 // the deepgram-stream edge WebSocket (which proxies Deepgram, keeping the key
@@ -10,7 +8,8 @@ import { SUPABASE_ANON_KEY } from "@/lib/runtime-config";
 // resets on each start(), so the caller composes it with its own baseline.
 // Shared by every chat composer so dictation behaves the same everywhere.
 
-const ANON = SUPABASE_ANON_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 function floatToInt16(input: Float32Array): ArrayBuffer {
   const out = new Int16Array(input.length);
@@ -87,7 +86,7 @@ export function useDictation(onText: (dictated: string) => void) {
 
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token ?? "";
-    const wsUrl = `${functionUrl("deepgram-stream").replace(/^http/, "ws")}`
+    const wsUrl = `${SUPABASE_URL.replace(/^http/, "ws")}/functions/v1/deepgram-stream`
       + `?apikey=${encodeURIComponent(ANON)}&token=${encodeURIComponent(token)}`
       + `&sample_rate=${Math.round(ctx.sampleRate)}&encoding=linear16`;
     const ws = new WebSocket(wsUrl);

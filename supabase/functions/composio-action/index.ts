@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     // Discovery: no tool_slug → list the toolkit's available tools.
     if (!tool_slug) {
       const cap = Math.min(Math.max(limit ?? 30, 1), 100);
-      const tools = await composio.tools.getRawComposioTools({ toolkits: [toolkit], limit: cap } as Parameters<typeof composio.tools.getRawComposioTools>[0]);
+      const tools = await composio.tools.getRawComposioTools({ toolkits: [toolkit], limit: cap } as Record<string, unknown>);
       const list = (Array.isArray(tools) ? tools : []) as Array<Record<string, unknown>>;
       return jsonResponse({
         toolkit,

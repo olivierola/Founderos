@@ -8,9 +8,7 @@
 //     → match the in-flight authorization by `state`, exchange the code for
 //       tokens, store them, mark the server connected, and cache its tools.
 //
-// `start` and `config` require the right to EDIT the server (RLS, 0279) : a
-// connection is shared by the whole workspace, so connecting it with one's own
-// account, or changing where its tokens go, is a change to the server.
+// The `start` action verifies the caller can access the server (user JWT / RLS).
 // The `callback` is matched by the secret `state` and runs with the service role
 // (secrets live in mcp_oauth_secrets, which has no RLS policy).
 
@@ -20,7 +18,6 @@ import { mcpDiscoverTools } from "../_shared/mcp-client.ts";
 import {
   discoverOAuth, registerClient, buildAuthorizeUrl, exchangeCode, pkce, randomState,
 } from "../_shared/mcp-oauth.ts";
-import { loadMcpHeaders } from "../_shared/mcp-headers.ts";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -38,14 +35,12 @@ Deno.serve(async (req) => {
       if (!serverId || !/^https?:\/\//i.test(redirectUri)) {
         return jsonResponse({ ok: false, error: "server_id et redirect_uri (http(s)) sont requis" }, { status: 400 });
       }
-      // Edit check via the caller's RLS-scoped client: an update only returns
-      // the row when the policy lets this person modify it.
+      // Access check via the caller's RLS-scoped client.
       const user = createUserClient(req);
-      const { data: srv } = await user.from("mcp_servers").update({ updated_at: new Date().toISOString() })
-        .eq("id", serverId).select("id, url, oauth").maybeSingle();
-      if (!srv) return jsonResponse({ ok: false, error: "Serveur introuvable, ou modification réservée aux admins et à la personne qui l'a ajouté." }, { status: 403 });
+      const { data: srv } = await user.from("mcp_servers").select("id, url, headers, oauth").eq("id", serverId).maybeSingle();
+      if (!srv) return jsonResponse({ ok: false, error: "serveur introuvable ou accès refusé" }, { status: 404 });
 
-      const staticHeaders = (await loadMcpHeaders(admin, [serverId])).get(serverId) ?? {};
+      const staticHeaders = srv.headers && typeof srv.headers === "object" ? srv.headers as Record<string, string> : {};
       const prevOauth = (srv.oauth && typeof srv.oauth === "object") ? srv.oauth as Record<string, any> : {};
 
       // Endpoints: use the manually-configured ones if present, else discover.
@@ -135,7 +130,7 @@ Deno.serve(async (req) => {
         .select("server_id, code_verifier, client_secret, redirect_uri").eq("state", state).maybeSingle();
       if (!sec?.server_id) return jsonResponse({ ok: false, error: "state invalide ou expiré" }, { status: 400 });
 
-      const { data: srv } = await admin.from("mcp_servers").select("id, url, oauth").eq("id", sec.server_id).maybeSingle();
+      const { data: srv } = await admin.from("mcp_servers").select("id, url, headers, oauth").eq("id", sec.server_id).maybeSingle();
       if (!srv) return jsonResponse({ ok: false, error: "serveur introuvable" }, { status: 404 });
       const oauth = (srv.oauth && typeof srv.oauth === "object") ? srv.oauth as Record<string, any> : {};
 
@@ -173,7 +168,7 @@ Deno.serve(async (req) => {
 
       // Discover tools now that we're authenticated, and cache them. Heal a stale
       // /sse↔/mcp URL if the sibling is what actually answered.
-      const staticHeaders = (await loadMcpHeaders(admin, [srv.id])).get(srv.id) ?? {};
+      const staticHeaders = srv.headers && typeof srv.headers === "object" ? srv.headers as Record<string, string> : {};
       const { tools, error, usedUrl } = await mcpDiscoverTools(String(srv.url), { ...staticHeaders, Authorization: `Bearer ${tok.access_token}` });
       const patch: Record<string, unknown> = {
         cached_tools: error ? [] : tools,
@@ -195,9 +190,8 @@ Deno.serve(async (req) => {
       const serverId = String(body.server_id ?? "");
       if (!serverId) return jsonResponse({ ok: false, error: "server_id requis" }, { status: 400 });
       const user = createUserClient(req);
-      const { data: srv } = await user.from("mcp_servers").update({ updated_at: new Date().toISOString() })
-        .eq("id", serverId).select("id, oauth").maybeSingle();
-      if (!srv) return jsonResponse({ ok: false, error: "Serveur introuvable, ou modification réservée aux admins et à la personne qui l'a ajouté." }, { status: 403 });
+      const { data: srv } = await user.from("mcp_servers").select("id, oauth").eq("id", serverId).maybeSingle();
+      if (!srv) return jsonResponse({ ok: false, error: "serveur introuvable ou accès refusé" }, { status: 404 });
 
       const oauth = (srv.oauth && typeof srv.oauth === "object") ? { ...srv.oauth as Record<string, any> } : {};
       const setStr = (key: string, val: unknown) => { if (val !== undefined) oauth[key] = String(val).trim() || null; };
@@ -208,8 +202,6 @@ Deno.serve(async (req) => {
       setStr("token_endpoint", body.token_endpoint);
       setStr("resource", body.resource);
 
-      // A changed endpoint or client_id clears the stored tokens AND client
-      // secret (trigger, 0279): the secret below must then be sent again.
       await admin.from("mcp_servers").update({ auth_mode: "oauth", oauth, updated_at: new Date().toISOString() }).eq("id", serverId);
 
       // Only touch the secret when the caller actually sent one.

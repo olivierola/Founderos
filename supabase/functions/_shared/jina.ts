@@ -1,11 +1,7 @@
 // Jina AI embeddings helper. jina-embeddings-v3 → 1024-dim vectors.
-// Requires JINA_API_KEY in the function secrets — except on a deployment pinned
-// to a gateway (LLM_UPSTREAM=litellm or azure, see llm-upstream.ts), where the
-// vectors come from its text-embedding-3 model, cut to the same 1024 dimensions
-// so the pgvector columns stay as they are.
+// Requires JINA_API_KEY in the function secrets.
 
 import { meterJinaTokens, type MeterScope } from "./metering.ts";
-import { adaptChatBody, llmAuthHeaders, pinnedUpstream, type PinnedUpstream } from "./llm-upstream.ts";
 
 const JINA_URL = "https://api.jina.ai/v1/embeddings";
 const MODEL = "jina-embeddings-v3";
@@ -32,8 +28,6 @@ export async function embedTexts(
   task: "retrieval.query" | "retrieval.passage" = "retrieval.passage",
   scope?: MeterScope,
 ): Promise<number[][]> {
-  const pinned = pinnedUpstream();
-  if (pinned) return await embedWithUpstream(pinned, texts);
   const apiKey = Deno.env.get("JINA_API_KEY");
   if (!apiKey) throw new Error("JINA_API_KEY is not configured");
   if (texts.length === 0) return [];
@@ -85,48 +79,6 @@ export async function embedTexts(
     }
   }
   throw new Error(`Jina embedding failed after retries — ${lastErr}`);
-}
-
-// text-embedding-3 has no query/passage distinction (Jina's `task`): the same
-// vector space serves both sides. Not metered: the customer pays its gateway.
-async function embedWithUpstream(up: PinnedUpstream, texts: string[]): Promise<number[][]> {
-  if (!up.embeddingModel) {
-    throw new Error(up.kind === "litellm"
-      ? "LLM_UPSTREAM=litellm : renseignez LLM_EMBEDDING_MODEL (l'alias LiteLLM des embeddings)."
-      : "LLM_UPSTREAM=azure : renseignez AZURE_OPENAI_EMBEDDING_DEPLOYMENT (text-embedding-3-small ou -large).");
-  }
-  if (texts.length === 0) return [];
-  const url = `${up.baseUrl}/embeddings`;
-  const label = up.kind === "litellm" ? "LLM gateway" : "Azure OpenAI";
-  // Only the gateway's user/metadata are added here: the body has no chat field.
-  const body = JSON.stringify(adaptChatBody(url, { model: up.embeddingModel, input: texts, dimensions: 1024 }));
-  let lastErr = "";
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 800 * attempt));
-    let res: Response;
-    try {
-      res = await fetchWithTimeout(
-        url,
-        { method: "POST", headers: { ...(await llmAuthHeaders(url, "")), "Content-Type": "application/json" }, body },
-        30_000,
-      );
-    } catch (e) {
-      lastErr = e instanceof Error && e.name === "AbortError" ? "request timed out after 30s" : String(e);
-      continue;
-    }
-    if (res.ok) {
-      const json = await res.json();
-      const data = (json.data ?? []).sort((a: any, b: any) => a.index - b.index);
-      const vectors = data.map((d: any) => d.embedding as number[]);
-      if (vectors.length !== texts.length) {
-        throw new Error(`${label} returned ${vectors.length} vectors for ${texts.length} inputs`);
-      }
-      return vectors;
-    }
-    lastErr = `${label} ${res.status}: ${(await res.text()).slice(0, 200)}`;
-    if (res.status !== 429 && res.status < 500) throw new Error(lastErr);
-  }
-  throw new Error(`${label} embedding failed after retries — ${lastErr}`);
 }
 
 // Naive token-ish chunker: split text into ~maxChars chunks on paragraph/sentence

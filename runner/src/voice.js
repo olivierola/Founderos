@@ -14,7 +14,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { createClient } from "@supabase/supabase-js";
 import {
-  SUPABASE_URL, FUNCTIONS_URL, SERVICE_KEY, VOICE_WS_PORT, DEEPGRAM_API_KEY,
+  SUPABASE_URL, SERVICE_KEY, VOICE_WS_PORT, DEEPGRAM_API_KEY,
   VOICE_TTS_MODEL, VOICE_STT_MODEL, VOICE_STT_LANGUAGE, ts,
 } from "./env.js";
 
@@ -24,7 +24,7 @@ const supa = SERVICE_KEY ? createClient(SUPABASE_URL, SERVICE_KEY, { auth: { per
 async function aiTurn({ projectId, workspaceId, history, ragCollectionId }) {
   // Reuse support-engine's portal_reply (KB-grounded, concise) for voice turns.
   const lastUser = [...history].reverse().find((h) => h.role === "caller")?.text ?? "";
-  const res = await fetch(`${FUNCTIONS_URL}/functions/v1/support-engine`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/support-engine`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
     body: JSON.stringify({

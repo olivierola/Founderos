@@ -31,11 +31,7 @@ export type AuthScheme =
   | "oauth2_client_credentials"
   | "oauth2_authorization_code"
   | "session_login"
-  | "mtls"
-  // Au nom de la personne ET de l'agent : jeton émis par l'IdP de l'entreprise (G1).
-  | "delegated"
-  // Contexte utilisateur signé par FounderOS (user-context.ts).
-  | "signed_context";
+  | "mtls";
 
 export interface OpParam {
   name: string;
@@ -90,12 +86,6 @@ export interface ConnectorPolicy {
   trace_headers: boolean;
   /** Opération utilisée par « Tester la connexion ». */
   test_operation?: string;
-  /**
-   * G3 : l'audience du jeton d'approbation signé par FounderOS, envoyé à l'outil
-   * dans X-Approval-Token avec chaque appel approuvé. Vide : pas de jeton.
-   * L'outil le vérifie avec le JWKS de FounderOS (/functions/v1/approval-jwks).
-   */
-  approval_audience?: string;
 }
 
 export interface AuthConfig {
@@ -117,8 +107,6 @@ export interface AuthConfig {
   scope?: string;
   audience?: string;
   client_auth?: "body" | "basic";
-  // delegated / signed_context : le fournisseur qui délègue (auth_ref), s'il y en a plusieurs.
-  provider?: string;
   // session_login
   login_path?: string;
   login_method?: "POST" | "PUT";
@@ -140,8 +128,6 @@ export const AUTH_SCHEMES: Array<{ key: AuthScheme; label: string; hint: string 
   { key: "oauth2_authorization_code", label: "SSO utilisateur (OAuth2 + PKCE)", hint: "Une personne se connecte via le SSO de l'entreprise ; les appels partent sous son identité." },
   { key: "session_login", label: "Connexion par session", hint: "Un appel de login renvoie un jeton (Argo CD session, Vault AppRole ou Kubernetes)." },
   { key: "mtls", label: "Certificat client (mTLS)", hint: "Certificat et clé détenus par le relais. Relais obligatoire." },
-  { key: "delegated", label: "Au nom de la personne (identité déléguée)", hint: "L'IdP de l'entreprise émet, à chaque appel, un jeton court qui porte la personne ET l'agent (échange de jeton, ou On-Behalf-Of chez Entra ID). Réglage : Authentification → Délégation aux agents." },
-  { key: "signed_context", label: "Contexte signé par FounderOS", hint: "FounderOS atteste qui agit dans un JWT court (personne, agent, rôles), vérifiable par son JWKS. Pour un IdP sans échange de jeton, ou un outil maison." },
 ];
 
 // ── Normalisation ────────────────────────────────────────────────────────────
@@ -322,8 +308,6 @@ export function normalizePolicy(raw: unknown): ConnectorPolicy {
   if (!p.raw_methods.length) p.raw_methods = ["GET"];
   const test = asStr(r.test_operation).trim();
   if (test) p.test_operation = test;
-  const audience = asStr(r.approval_audience).trim();
-  if (/^[A-Za-z0-9._:\/-]{1,200}$/.test(audience)) p.approval_audience = audience;
   return p;
 }
 
@@ -331,7 +315,7 @@ export function normalizeAuthConfig(raw: unknown): AuthConfig {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const out: AuthConfig = {};
   for (const k of ["header", "prefix", "name", "username", "token_url", "authorize_url", "issuer", "client_id",
-    "scope", "audience", "provider", "login_path", "token_path", "ttl_path"] as const) {
+    "scope", "audience", "login_path", "token_path", "ttl_path"] as const) {
     if (typeof r[k] === "string") (out as Record<string, unknown>)[k] = (r[k] as string).slice(0, 500);
   }
   if (r.in === "query" || r.in === "header") out.in = r.in;
@@ -412,9 +396,7 @@ export function connectorSetupIssues(c: ConnectorLike, credentialsCount?: number
   if (scheme === "session_login" && !cfg.login_path) issues.push("Chemin de connexion (login_path) à renseigner.");
   if (scheme === "headers" && !(cfg.header_names ?? []).length) issues.push("Nommez au moins un en-tête secret.");
   if (scheme === "api_key" && !cfg.name) issues.push("Nom de l'en-tête ou du paramètre de la clé à renseigner.");
-  if ((scheme === "delegated" || scheme === "signed_context") && !cfg.audience) issues.push("Audience de l'outil (son client auprès de l'IdP) à renseigner.");
-  // Identité déléguée et contexte signé : aucun secret par profil, tout vient de l'IdP ou de FounderOS.
-  if (credentialsCount !== undefined && scheme !== "none" && scheme !== "delegated" && scheme !== "signed_context" && credentialsCount === 0) {
+  if (credentialsCount !== undefined && scheme !== "none" && credentialsCount === 0) {
     issues.push(scheme === "oauth2_authorization_code" ? "Personne ne s'est encore connecté via le SSO." : "Aucun identifiant enregistré.");
   }
   return issues;
@@ -623,79 +605,6 @@ export const CONNECTOR_TEMPLATES: ConnectorTemplate[] = [
         params: [p("alertname", "Nom de l'alerte.", { required: true }), p("starts_at", "Début RFC3339.", { required: true }), p("ends_at", "Fin RFC3339.", { required: true }), p("comment", "Raison.", { required: true })] },
       { name: "expire_silence", description: "Lever un silence.", method: "DELETE", path: "/api/v2/silence/{silence_id}", risk: "write",
         params: [p("silence_id", "Identifiant du silence.", { required: true })] },
-    ],
-  },
-  {
-    key: "prtg",
-    name: "PRTG Network Monitor",
-    category: "Observabilité",
-    description: "Supervision réseau et serveurs : capteurs en alerte, équipements, historique et journal ; acquittement et pause sous approbation.",
-    docs: "https://www.paessler.com/manuals/prtg/http_api",
-    base_url_hint: "https://prtg.interne.exemple",
-    default_transport: "relay",
-    auth_scheme: "api_key",
-    auth_config: { in: "query", name: "apitoken" },
-    policy: { test_operation: "list_sensors_by_status" },
-    setup_notes:
-      "Créez un utilisateur PRTG dédié, en lecture seule, limité aux groupes utiles, puis Paramètres du compte → Clés d'API → une clé en lecture. " +
-      "L'acquittement, la pause et le scan demandent une clé en lecture-écriture : mettez-la dans un second profil d'identifiants, réservé aux collaborateurs qui en ont besoin. " +
-      "PRTG présente souvent un certificat interne : donnez son autorité au relais (RELAY_CA_FILE). Les identifiants d'objets (id) sont les objid de PRTG.",
-    operations: [
-      { name: "list_sensors_by_status", description: "Capteurs dans un état donné (par défaut : en panne), avec équipement, groupe, message et dernière valeur.", method: "GET", path: "/api/table.json",
-        query: { content: "sensors", columns: "objid,probe,group,device,sensor,status,message,lastvalue,priority,downtimesince", filter_status: "{status}", count: "{count}" }, risk: "read",
-        params: [
-          p("status", "5 en panne, 4 avertissement, 10 inhabituel, 14 panne partielle, 13 panne acquittée, 7 en pause.", { enum: ["5", "4", "10", "14", "13", "7"], default: "5" }),
-          { name: "count", type: "number", description: "Nombre maximal de lignes.", default: 200 },
-        ] },
-      { name: "list_object_sensors", description: "Capteurs sous un équipement ou un groupe, avec leur état.", method: "GET", path: "/api/table.json",
-        query: { content: "sensors", columns: "objid,device,sensor,status,message,lastvalue,lastcheck", id: "{object_id}" }, risk: "read",
-        params: [{ name: "object_id", type: "number", description: "objid de l'équipement ou du groupe.", required: true }] },
-      { name: "list_devices", description: "Équipements supervisés et le décompte de leurs capteurs par état (sous un groupe si précisé).", method: "GET", path: "/api/table.json",
-        query: { content: "devices", columns: "objid,probe,group,device,host,status,message,upsens,downsens,partialdownsens,warnsens,pausedsens", id: "{group_id}", count: "{count}" }, risk: "read",
-        params: [
-          { name: "group_id", type: "number", description: "objid d'un groupe (optionnel)." },
-          { name: "count", type: "number", description: "Nombre maximal de lignes.", default: 500 },
-        ] },
-      { name: "find_devices", description: "Chercher un équipement par une partie de son nom.", method: "GET", path: "/api/table.json",
-        query: { content: "devices", columns: "objid,group,device,host,status,message", filter_device: "@sub({name})" }, risk: "read",
-        params: [p("name", "Partie du nom de l'équipement.", { required: true, pattern: "[^()]{1,100}" })] },
-      { name: "get_sensor_details", description: "Détail d'un capteur : état, dernier message, intervalle, équipement parent.", method: "GET", path: "/api/getsensordetails.json",
-        query: { id: "{sensor_id}" }, risk: "read",
-        params: [{ name: "sensor_id", type: "number", description: "objid du capteur.", required: true }] },
-      { name: "get_sensor_channels", description: "Canaux d'un capteur et leur dernière valeur.", method: "GET", path: "/api/table.json",
-        query: { content: "channels", columns: "objid,name,lastvalue", id: "{sensor_id}" }, risk: "read",
-        params: [{ name: "sensor_id", type: "number", description: "objid du capteur.", required: true }] },
-      { name: "get_historic_data", description: "Historique d'un capteur sur une période, moyenné.", method: "GET", path: "/api/historicdata.json",
-        query: { id: "{sensor_id}", sdate: "{start}", edate: "{end}", avg: "{avg_seconds}", usecaption: "1" }, risk: "read",
-        params: [
-          { name: "sensor_id", type: "number", description: "objid du capteur.", required: true },
-          p("start", "Début, format AAAA-MM-JJ-hh-mm-ss.", { required: true, pattern: "\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}" }),
-          p("end", "Fin, même format.", { required: true, pattern: "\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}" }),
-          { name: "avg_seconds", type: "number", description: "Intervalle de moyenne en secondes (0 : valeurs brutes, volumineux).", default: 3600 },
-        ] },
-      { name: "list_messages", description: "Journal PRTG (changements d'état, acquittements) d'un objet ou de tout le serveur.", method: "GET", path: "/api/table.json",
-        query: { content: "messages", columns: "objid,datetime,parent,type,name,status,message", id: "{object_id}", filter_drel: "{period}", count: "{count}" }, risk: "read",
-        params: [
-          { name: "object_id", type: "number", description: "objid (optionnel : tout le serveur)." },
-          p("period", "Période.", { enum: ["today", "yesterday", "7days", "30days"], default: "today" }),
-          { name: "count", type: "number", description: "Nombre maximal de lignes.", default: 100 },
-        ] },
-      { name: "acknowledge_alarm", description: "Acquitter un capteur en panne, avec un message.", method: "GET", path: "/api/acknowledgealarm.htm",
-        query: { id: "{sensor_id}", ackmsg: "{message}" }, risk: "write",
-        params: [{ name: "sensor_id", type: "number", description: "objid du capteur.", required: true }, p("message", "Message d'acquittement.", { required: true })] },
-      { name: "pause_object", description: "Mettre en pause un capteur, un équipement ou un groupe pour une durée.", method: "GET", path: "/api/pauseobjectfor.htm",
-        query: { id: "{object_id}", duration: "{minutes}", pausemsg: "{message}" }, risk: "write",
-        params: [
-          { name: "object_id", type: "number", description: "objid à mettre en pause.", required: true },
-          { name: "minutes", type: "number", description: "Durée en minutes.", required: true },
-          p("message", "Raison de la pause.", { required: true }),
-        ] },
-      { name: "resume_object", description: "Reprendre la supervision d'un objet en pause.", method: "GET", path: "/api/pause.htm",
-        query: { id: "{object_id}", action: "1" }, risk: "write",
-        params: [{ name: "object_id", type: "number", description: "objid à reprendre.", required: true }] },
-      { name: "scan_now", description: "Relancer immédiatement la mesure d'un capteur ou de tous les capteurs d'un objet.", method: "GET", path: "/api/scannow.htm",
-        query: { id: "{object_id}" }, risk: "write",
-        params: [{ name: "object_id", type: "number", description: "objid à scanner.", required: true }] },
     ],
   },
   {

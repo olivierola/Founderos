@@ -28,7 +28,7 @@
 // une activité Bot Framework dont le JWT est vérifié par teams-gateway.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { executeApprovalAction, approvalScopePrefix, type ApprovalExecOptions } from "./approval-exec.ts";
+import { executeApprovalAction, approvalScopePrefix } from "./approval-exec.ts";
 import { teamsSendActivity } from "./teams.ts";
 import { isMessagingProvider, sendMessagingApproval, type MessagingProvider } from "./messaging.ts";
 
@@ -206,9 +206,6 @@ export async function applyApprovalDecision(
   decision: "approve" | "approve_all" | "reject",
   decidedBy: string | null,
   decidedVia?: string,
-  /** Action en production (mcp-approval.ts) : le jeton d'approbation signé, et
-   *  la trace à conserver (demandeur, approbateur, jeton). */
-  exec?: ApprovalExecOptions & { trace?: Record<string, unknown> },
 ): Promise<{ ok: boolean; status: string; detail: string }> {
   const now = new Date().toISOString();
 
@@ -224,19 +221,17 @@ export async function applyApprovalDecision(
 
   // Marquée d'abord, exécutée ensuite : le passage à « approved » réclame la
   // ligne, et deux clics simultanés ne l'exécutent pas deux fois.
-  const { data: claimed, error: claimError } = await admin.from("internal_agent_approvals")
+  const { data: claimed } = await admin.from("internal_agent_approvals")
     .update({ status: "approved", decided_by: decidedBy, decided_at: now })
     .eq("id", approval.id).eq("status", "pending")
     .select("id");
-  // Refus de la base (0275 : quatre yeux, échéance) : on le dit tel quel.
-  if (claimError) return { ok: false, status: "refused", detail: claimError.message };
   if (!claimed || (claimed as unknown[]).length === 0) {
     return { ok: false, status: "already_decided", detail: "Cette demande a déjà été traitée." };
   }
 
   let outcome: { ok: boolean; detail: string };
   try {
-    outcome = await executeApprovalAction(approval as never, exec);
+    outcome = await executeApprovalAction(approval as never);
   } catch (e) {
     outcome = { ok: false, detail: e instanceof Error ? e.message : String(e) };
   }
@@ -252,7 +247,6 @@ export async function applyApprovalDecision(
       detail: outcome.detail,
       ...(grantScope ? { grant_scope: grantScope } : {}),
       ...(decidedVia ? { decided_via: decidedVia } : {}),
-      ...(exec?.trace ? { approval: exec.trace } : {}),
     },
     error_message: outcome.ok ? null : outcome.detail.slice(0, 500),
   }).eq("id", approval.id);

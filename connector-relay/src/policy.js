@@ -51,19 +51,6 @@ function matchHost(host, port, pattern) {
   return host === patHost;
 }
 
-/** Hôtes auxquels le relais présente son certificat client (serveurs MCP en mTLS). */
-export const CLIENT_CERT_HOSTS = list(process.env.RELAY_CLIENT_CERT_HOSTS);
-
-/** Le relais doit-il présenter son certificat client à cette URL ? */
-export function clientCertWanted(rawUrl) {
-  if (!CLIENT_CERT_HOSTS.length) return false;
-  let u;
-  try { u = new URL(rawUrl); } catch { return false; }
-  if (u.protocol !== "https:") return false;
-  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  return CLIENT_CERT_HOSTS.some((pat) => matchHost(host, u.port || "443", pat));
-}
-
 /** L'URL est-elle dans la liste blanche du relais ? */
 export function hostAllowed(rawUrl) {
   let u;

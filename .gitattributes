@@ -1,3 +1,0 @@
-backend/src/edge/** linguist-generated=true
-# Scripts exécutés dans les images Linux (G5) : toujours en LF, même extraits sous Windows.
-*.sh text eol=lf

@@ -19,12 +19,9 @@
 //   custom.discover_oidc      owner/admin  : lire /.well-known/openid-configuration
 //   relay.create / relay.rotate / relay.revoke   owner/admin (le jeton n'est montré qu'une fois)
 //   relay.claim / relay.complete                 le relais, en-tête X-Relay-Token
-//   mcp.token_push            un serveur MCP livre son jeton tournant (0285) ; en Bearer,
-//                             le jeton que FounderOS détient (MCP/src/lib/rotating-token.ts)
 //
 // verify_jwt est désactivé pour cette fonction (le relais n'a qu'un jeton de
-// relais, un serveur MCP que son jeton d'API) : chaque branche authentifie
-// elle-même son appelant.
+// relais) : chaque branche authentifie elle-même son appelant.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
@@ -35,7 +32,6 @@ import {
   authenticateRelay, discoverOidc, executeCall, loadConnector, newRelayToken, oauthCallback, oauthStart,
   relayClaim, relayComplete, saveCredential,
 } from "../_shared/custom-connectors.ts";
-import { acceptPushedMcpToken } from "../_shared/mcp-api-token.ts";
 
 type Admin = ReturnType<typeof createServiceClient>;
 
@@ -59,21 +55,6 @@ function isServiceCall(req: Request): boolean {
 }
 
 async function handleCustom(req: Request, admin: Admin, mode: string, body: Record<string, unknown>): Promise<Response> {
-  // ── Un serveur MCP livre son jeton tournant ──────────────────────────────
-  // Pas de session : la preuve est le jeton que FounderOS détient, en Bearer.
-  if (mode === "mcp.token_push") {
-    const presented = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-    const next = String(body.token ?? "").trim();
-    const out = await acceptPushedMcpToken(admin, presented, next);
-    // Jamais le jeton : son id, et les serveurs mis à jour.
-    console.log(JSON.stringify({
-      ts: new Date().toISOString(), level: out.status === 200 ? "info" : "warn", event: "mcp_token_push",
-      status: out.status, token_id: /^mcpt_([a-z0-9]{8})_/.exec(next)?.[1] ?? null,
-      servers: out.servers ?? [], unchanged: out.body.unchanged ?? false,
-    }));
-    return jsonResponse(out.body, { status: out.status });
-  }
-
   // ── Le relais ─────────────────────────────────────────────────────────────
   if (mode === "relay.claim" || mode === "relay.complete") {
     const relay = await authenticateRelay(admin, req.headers.get("x-relay-token"));

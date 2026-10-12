@@ -10,13 +10,10 @@ import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm, usePromptText } from "@/components/ConfirmProvider";
 import { cn } from "@/lib/utils";
-import { functionsBaseUrl } from "@/lib/edge";
 import { type ConnectorRelay, connectorAction, qk, relayOnline, relativeTime } from "./api";
 import { Pill, Segmented } from "./ui";
 
-// Le relais appelle <FOUNDEROS_URL>/functions/v1/connector-action : le backend
-// Express quand il est configuré, sinon Supabase.
-const SUPABASE_URL = functionsBaseUrl("connector-action");
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 function installSnippets(token: string): Record<"docker" | "helm" | "env", string> {
   return {

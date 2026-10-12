@@ -645,8 +645,7 @@ Deno.serve(async (req) => {
         const { data: pool } = await admin.from("internal_agents").select(AGENT_COLS + ", is_orchestrator")
           .eq("workspace_id", workspaceId).eq("is_archived", false)
           .order("is_orchestrator", { ascending: false }).order("updated_at", { ascending: false }).limit(10);
-        // The select string is concatenated, so supabase-js can't infer the row type.
-        for (const a of (pool ?? []) as unknown as Agent[]) {
+        for (const a of (pool ?? []) as Agent[]) {
           agent = await canUse(a.id);
           if (agent) break;
         }

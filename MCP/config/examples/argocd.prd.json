@@ -1,6 +1,0 @@
-{
-  "url": "https://openshift-gitops-server.openshift-gitops.svc",
-  "caFile": "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
-  "token": { "type": "kv", "path": "mcp/prd/argocd/project-role", "key": "token" },
-  "projects": ["team-a", "team-b"]
-}

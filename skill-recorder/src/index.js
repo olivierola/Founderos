@@ -76,8 +76,7 @@ const WORKSPACE_ID = process.env.RECORDER_WORKSPACE_ID || null;
 const PROFILE_DIR = resolve(process.env.RECORDER_PROFILE_DIR || "./.profile");
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 3000;
 const MAX_RECORDING_MS = (Number(process.env.MAX_RECORDING_MIN) || 45) * 60_000;
-// Hôte des fonctions : le backend Express une fois basculé, Supabase sinon.
-const POLL_URL = `${process.env.FUNCTIONS_URL || SUPABASE_URL}/functions/v1/test-runner-poll`;
+const POLL_URL = `${SUPABASE_URL}/functions/v1/test-runner-poll`;
 
 // Validation au démarrage. Une valeur de gabarit laissée en place ne produit
 // qu'un « fetch failed » toutes les 3 s : le message doit tomber ICI, une fois,

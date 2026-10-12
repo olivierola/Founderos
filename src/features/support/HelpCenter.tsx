@@ -9,8 +9,6 @@ import {
 } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { functionUrl } from "@/lib/edge";
-import { SUPABASE_ANON_KEY } from "@/lib/runtime-config";
 
 // Public, unauthenticated help center. Data comes from the support-voice fn's
 // portal_config / portal_ask public actions (service-role internally).
@@ -19,12 +17,10 @@ interface PortalConfig { title: string; brand_color: string | null; welcome: str
 interface Article { id: string; title: string; body: string | null; category: string | null; helpful_yes: number; helpful_no: number }
 
 async function portalCall(action: "portal_config" | "portal_ask", publicKey: string, body: Record<string, unknown> = {}) {
-  const url = functionUrl(`support-voice?action=${action}`);
-  const anon = SUPABASE_ANON_KEY;
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/support-voice?action=${action}`;
   const res = await fetch(url, {
     method: "POST",
-    // La passerelle exige un JWT dans Authorization ; la clé anon en est un.
-    headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}` },
+    headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
     body: JSON.stringify({ public_key: publicKey, ...body }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "Request failed");

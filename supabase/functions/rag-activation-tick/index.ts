@@ -350,8 +350,8 @@ Deno.serve(async (req) => {
         if (!routeMatches(r.on_route, route)) return false;
         if ((r.min_seconds_on_page ?? 0) > secondsOnPage) return false;
         if (signal.type === "rage_click" && (signal.rage_clicks ?? 0) < (r.rage_click_threshold ?? 4)) return false;
-        if ((signal.type as string) === "low_score" && score >= (r.score_below ?? 0)) return false;
-        if ((r.trigger_type as string) === "feature_unused" && r.unused_feature && features.has(r.unused_feature)) return false;
+        if (signal.type === "low_score" && score >= (r.score_below ?? 0)) return false;
+        if (r.trigger_type === "feature_unused" && r.unused_feature && features.has(r.unused_feature)) return false;
         return true;
       });
 

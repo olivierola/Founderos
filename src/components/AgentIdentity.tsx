@@ -1,34 +1,54 @@
 import { useMemo } from "react";
-import { BotAvatar, type BotAvatarState } from "bot-avatars";
+import { BotAvatar, botAvatarTypes, type BotAvatarState, type BotAvatarType } from "bot-avatars";
 import { cn } from "@/lib/utils";
-import { BOT_PREFIX, autoBody, botAvatarLookProps, nameHash, parseBotLook } from "@/lib/bot-avatar-look";
+import { AgentAvatar } from "@/features/internal-agents/AvatarPicker";
 
 // An agent's visual identity: an ANIMATED bot (bot-avatars) rather than the
 // frozen DiceBear portrait it used to be. One component, so every surface —
 // roster, room thread, chat header, mission cards — shows the same agent as
 // the same creature.
 //
-// What the avatar studio chose — body, colour, texture, hat… — is read from
-// `avatar_url` (see bot-avatar-look.ts), and from nothing else: not from the
-// agent's accent, which only some surfaces passed, so one agent came out in
-// two colours. Left unchosen, the body is derived from the agent's name and
-// wears its own colour; the animation offset always is, so a row of them never
-// blinks in unison. A portrait the user actually uploaded still wins: it is
-// their choice, not a default.
+// The shape and the animation offset are derived from the agent's name, so an
+// agent always gets its own body and a row of them never blinks in unison; the
+// colour follows the agent's accent when it has one. A portrait the user
+// actually uploaded still wins: it is their choice, not a default.
 
 const GENERATED_HOSTS = ["dicebear.com", "api.dicebear"];
+/** A body chosen by hand in the picker, stored in `avatar_url` as `bot:star`
+ *  — no migration needed, and it reads for itself in the database. */
+const BOT_PREFIX = "bot:";
+
+export const isBotAvatar = (url: string | null | undefined): boolean => !!url?.startsWith(BOT_PREFIX);
+export const botAvatarValue = (type: BotAvatarType): string => `${BOT_PREFIX}${type}`;
+
+/** The chosen body, or null when nothing was chosen (the name decides). */
+function chosenType(url: string | null | undefined): BotAvatarType | null {
+  if (!isBotAvatar(url)) return null;
+  const t = url!.slice(BOT_PREFIX.length) as BotAvatarType;
+  return botAvatarTypes.includes(t) ? t : null;
+}
 
 /** True for the auto-assigned portrait services — those are the "frozen
  *  avatars" the bots replace, as opposed to a real uploaded image. */
 function isGeneratedPortrait(url: string | null | undefined): boolean {
   if (!url) return true;
-  if (url.startsWith(BOT_PREFIX)) return true;
+  if (isBotAvatar(url)) return true;
   return GENERATED_HOSTS.some((h) => url.includes(h));
+}
+
+/** Stable 32-bit hash — same agent, same body, on every screen and reload. */
+function hash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }
 
 export function AgentIdentity({
   url, seed, size = 32, rounded = "rounded-2xl", className, state = "default",
-  face = "eyes", interactive = true, paused,
+  accentColor, face = "eyes", interactive = true, paused,
 }: {
   style?: "avatar" | "orb" | null;
   url?: string | null;
@@ -40,7 +60,8 @@ export function AgentIdentity({
   className?: string;
   /** What the agent is doing: working = hops and spins, sleeping = at rest. */
   state?: BotAvatarState;
-  /** The face, when the studio did not choose one. */
+  /** Tints the body; defaults to the shape's own colour. */
+  accentColor?: string | null;
   face?: "eyes" | "mouth";
   /** The eyes follow the pointer and a click makes it hop. Off in dense lists. */
   interactive?: boolean;
@@ -49,10 +70,13 @@ export function AgentIdentity({
   lightOrb?: boolean;
 }) {
   const key = seed || "agent";
-  const { look, offset } = useMemo(() => ({
-    look: botAvatarLookProps(parseBotLook(url) ?? {}, autoBody(key)),
-    offset: ((nameHash(key) >>> 8) % 1000) / 1000,
-  }), [key, url]);
+  const { type, offset } = useMemo(() => {
+    const h = hash(key);
+    return {
+      type: chosenType(url) ?? (botAvatarTypes[h % botAvatarTypes.length] as BotAvatarType),
+      offset: ((h >>> 8) % 1000) / 1000,
+    };
+  }, [key, url]);
 
   // A portrait the user uploaded stays a portrait.
   if (url && !isGeneratedPortrait(url)) {
@@ -61,7 +85,7 @@ export function AgentIdentity({
         className={cn("inline-block shrink-0 overflow-hidden", rounded, className)}
         style={{ width: size, height: size }}
       >
-        <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" draggable={false} />
+        <AgentAvatar url={url} seed={seed} className="h-full w-full" />
       </span>
     );
   }
@@ -80,19 +104,9 @@ export function AgentIdentity({
   // standard (dpr 1) un petit avatar n'est donc pas suréchantillonné et bave.
   // On rend volontairement plus grand puis on réduit en CSS pour viser ~3× de
   // backing partout, quel que soit l'écran (vrai supersampling).
-  // Plafonné pour les GRANDS avatars, et serré : chaque image de l'animation
-  // redessine tout le canvas puis l'envoie à la carte graphique, et ce coût
-  // croît avec le carré de la taille de rendu — la fourrure, calculée à cette
-  // taille, aussi. Une grille de cartes à 100 px rendues à 216 (×1,5 de marge
-  // pour le saut, ×dpr) ramait au point que les sauts paraissaient au ralenti.
-  // Au-delà de ~32 px, les pixels de l'écran suffisent à la netteté : le
-  // suréchantillonnage décroît avec la taille et s'éteint vers 96 px.
   const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
   const libMult = Math.min(2, dpr);
-  const MAX_RENDER_PX = 96;
-  // Arrondi au centième, comme avant : la taille de rendu fait partie de la
-  // clé de cache de la librairie, une valeur flottante instable la viderait.
-  const ss = Math.max(1, Math.round(Math.min(3 / libMult, MAX_RENDER_PX / (size * libMult)) * 100) / 100);
+  const ss = Math.max(1, Math.min(3, Math.round((3 / libMult) * 100) / 100));
 
   return (
     <span
@@ -104,13 +118,18 @@ export function AgentIdentity({
         style={{ transform: `translate(-50%, -50%) scale(${1 / ss})` }}
       >
         <BotAvatar
+          type={type}
           face={face}
-          {...look}
           state={state}
           size={size * ss}
           seed={offset}
+          color={accentColor || undefined}
           interactive={interactive}
           paused={paused}
+          shading="fabric"
+          furLength={2.3}
+          furDensity={2}
+          furFuzz={1}
           aria-label={seed ? `${seed}, avatar` : "Avatar"}
         />
       </span>

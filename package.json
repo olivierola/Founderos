@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:backend": "npm --prefix backend run dev",
     "build": "tsc -b && vite build",
     "build:onboarding-agent": "vite build --config vite.onboarding-agent.config.ts",
     "build:widget-voice": "vite build --config vite.widget-voice.config.ts",

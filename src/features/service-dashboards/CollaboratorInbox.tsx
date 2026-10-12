@@ -499,7 +499,7 @@ function InboxRow({ rowRef, ...p }: RowProps & { rowRef: (el: HTMLLIElement | nu
           <AgentIdentity
             style={(item.agent_avatar_style as "avatar" | "orb" | null) ?? "orb"}
             url={item.agent_avatar_url} seed={item.agent_name} size={30}
-            rounded="rounded-full"
+            rounded="rounded-full" accentColor={item.agent_accent}
           />
         </button>
 

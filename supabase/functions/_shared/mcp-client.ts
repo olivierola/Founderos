@@ -11,20 +11,6 @@ export interface McpTool {
 
 const PROTOCOL_VERSION = "2025-06-18";
 
-// Installation dédiée : le backend Node installe ici un fetch qui présente le
-// certificat client mTLS de FounderOS aux serveurs MCP internes
-// (backend/src/compat/mtls.ts). Sous Deno, rien n'est installé : fetch natif.
-//
-// Un serveur derrière le pare-feu du client passe par son relais : l'appelant
-// fournit alors son propre transport (`opts.fetch`, mcp-relay.ts).
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
-const mcpFetch: FetchLike = (input, init) =>
-  ((globalThis as { __mcpFetch?: FetchLike }).__mcpFetch ?? fetch)(input, init);
-
-export interface McpTransportOptions {
-  fetch?: FetchLike;
-}
-
 function baseHeaders(headers: Record<string, string>, sessionId?: string): Record<string, string> {
   const h: Record<string, string> = {
     "Content-Type": "application/json",
@@ -58,9 +44,8 @@ function parseRpcBody(text: string, contentType: string): any {
 async function rpc(
   url: string, headers: Record<string, string>, sessionId: string | undefined,
   method: string, params: Record<string, unknown> | undefined, id: number,
-  f: FetchLike = mcpFetch,
 ): Promise<{ result?: any; error?: any; sessionId?: string; httpStatus: number }> {
-  const res = await f(url, {
+  const res = await fetch(url, {
     method: "POST",
     headers: baseHeaders(headers, sessionId),
     body: JSON.stringify({ jsonrpc: "2.0", id, method, ...(params ? { params } : {}) }),
@@ -76,9 +61,9 @@ async function rpc(
   return { result: obj.result, error: obj.error, sessionId: newSession ?? undefined, httpStatus: res.status };
 }
 
-async function notify(url: string, headers: Record<string, string>, sessionId: string | undefined, method: string, f: FetchLike = mcpFetch): Promise<void> {
+async function notify(url: string, headers: Record<string, string>, sessionId: string | undefined, method: string): Promise<void> {
   try {
-    await f(url, {
+    await fetch(url, {
       method: "POST",
       headers: baseHeaders(headers, sessionId),
       body: JSON.stringify({ jsonrpc: "2.0", method }),
@@ -88,14 +73,14 @@ async function notify(url: string, headers: Record<string, string>, sessionId: s
 
 // initialize + notifications/initialized → returns the session id (if the server
 // is stateful and issues one).
-async function handshake(url: string, headers: Record<string, string>, f: FetchLike = mcpFetch): Promise<{ sessionId?: string; error?: any }> {
+async function handshake(url: string, headers: Record<string, string>): Promise<{ sessionId?: string; error?: any }> {
   const init = await rpc(url, headers, undefined, "initialize", {
     protocolVersion: PROTOCOL_VERSION,
     capabilities: {},
     clientInfo: { name: "founderos", version: "1.0" },
-  }, 1, f);
+  }, 1);
   if (init.error) return { error: init.error };
-  await notify(url, headers, init.sessionId, "notifications/initialized", f);
+  await notify(url, headers, init.sessionId, "notifications/initialized");
   return { sessionId: init.sessionId };
 }
 
@@ -108,14 +93,14 @@ export function siblingMcpUrl(url: string): string | null {
 }
 
 async function discoverOnce(
-  url: string, headers: Record<string, string>, f: FetchLike = mcpFetch,
+  url: string, headers: Record<string, string>,
 ): Promise<{ tools: McpTool[]; error?: string; is404?: boolean }> {
-  const hs = await handshake(url, headers, f);
+  const hs = await handshake(url, headers);
   if (hs.error) {
     const msg = typeof hs.error === "string" ? hs.error : (hs.error?.message ?? "initialize failed");
     return { tools: [], error: msg, is404: hs.error?.code === 404 || /not found|\b404\b/i.test(msg) };
   }
-  const list = await rpc(url, headers, hs.sessionId, "tools/list", {}, 2, f);
+  const list = await rpc(url, headers, hs.sessionId, "tools/list", {}, 2);
   if (list.error) {
     const msg = list.error?.message ?? "tools/list failed";
     return { tools: [], error: msg, is404: list.error?.code === 404 || /not found|\b404\b/i.test(msg) };
@@ -133,16 +118,15 @@ async function discoverOnce(
 // Returns the discovered tools + the URL that actually worked (so the caller can
 // heal a stale /sse-vs-/mcp URL in the DB).
 export async function mcpDiscoverTools(
-  url: string, headers: Record<string, string>, opts: McpTransportOptions = {},
+  url: string, headers: Record<string, string>,
 ): Promise<{ tools: McpTool[]; error?: string; usedUrl: string }> {
-  const f = opts.fetch ?? mcpFetch;
   try {
-    let r = await discoverOnce(url, headers, f);
+    let r = await discoverOnce(url, headers);
     let used = url;
     if (r.error && r.is404) {
       const sib = siblingMcpUrl(url);
       if (sib) {
-        const r2 = await discoverOnce(sib, headers, f);
+        const r2 = await discoverOnce(sib, headers);
         if (!r2.error) { r = r2; used = sib; }
       }
     }
@@ -158,12 +142,10 @@ export async function mcpDiscoverTools(
 export async function mcpCallTool(
   url: string, headers: Record<string, string>, name: string, args: Record<string, unknown>,
   session?: { id?: string },
-  opts: McpTransportOptions = {},
 ): Promise<string> {
-  const f = opts.fetch ?? mcpFetch;
   const ensureSession = async (): Promise<{ sessionId?: string; error?: string }> => {
     if (session?.id) return { sessionId: session.id };
-    const hs = await handshake(url, headers, f);
+    const hs = await handshake(url, headers);
     if (hs.error) return { error: typeof hs.error === "string" ? hs.error : (hs.error?.message ?? "initialize failed") };
     if (session) session.id = hs.sessionId;
     return { sessionId: hs.sessionId };
@@ -171,14 +153,14 @@ export async function mcpCallTool(
 
   const s1 = await ensureSession();
   if (s1.error) return `ERROR: MCP initialize failed — ${s1.error}`;
-  let call = await rpc(url, headers, s1.sessionId, "tools/call", { name, arguments: args ?? {} }, (Date.now() % 100000) + 3, f);
+  let call = await rpc(url, headers, s1.sessionId, "tools/call", { name, arguments: args ?? {} }, (Date.now() % 100000) + 3);
 
   // Stale session (404 / "session") → drop it and retry once with a fresh handshake.
   if (call.error && (call.httpStatus === 404 || /session/i.test(String(call.error?.message ?? "")))) {
     if (session) session.id = undefined;
     const s2 = await ensureSession();
     if (!s2.error) {
-      call = await rpc(url, headers, s2.sessionId, "tools/call", { name, arguments: args ?? {} }, (Date.now() % 100000) + 4, f);
+      call = await rpc(url, headers, s2.sessionId, "tools/call", { name, arguments: args ?? {} }, (Date.now() % 100000) + 4);
     }
   }
 

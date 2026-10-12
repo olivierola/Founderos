@@ -33,9 +33,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   if (loading) return <AppLoadingSkeleton />;
 
   if (!session) {
-    // Ces pages-là reviennent après la connexion (Login.tsx, safeNext).
-    const back = location.pathname === "/setup" || location.pathname === "/sso-setup" ? `?next=${encodeURIComponent(location.pathname)}` : "";
-    return <Navigate to={`/login${back}`} state={{ from: location }} replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   // Legacy bookmark guard: /app/default/default was the old placeholder.

@@ -1,7 +1,0 @@
-# Contexte de l'image des migrations (BuildKit, à la place du .dockerignore de
-# la racine) : le runner et supabase/migrations, rien d'autre.
-*
-!deploy/migrations/package.json
-!deploy/migrations/runner.mjs
-!deploy/migrations/migrate.mjs
-!supabase/migrations

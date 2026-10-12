@@ -53,14 +53,6 @@ import {
   loadTypesafeConfig as loadTypesafeConfigTs,
 } from "./typesafe.ts";
 import { mcpCallTool, type McpTool } from "./mcp-client.ts";
-import { mcpRequestHeaders, opaPreDecision, resolveRequester, type McpTokenExchangeAuth } from "./mcp-auth.ts";
-import { buildMcpApprovalPayload, notifyApprovers, notifyPrdApprovers, parseApprovalRequired } from "./mcp-approval.ts";
-import { approvalColumns, describeApprovers, resolveApprovalPolicy, type ApproverRule } from "./approval-policy.ts";
-import { callIdentity, classifyMcpResult, reportApproval, reportToolCall, traceIdFor, type McpCallStatus } from "./mcp-observe.ts";
-import { relayFetchFor } from "./mcp-relay.ts";
-import { apiTokenHeaders, apiTokenSubject } from "./mcp-api-token.ts";
-import { mergeMcpHeaders } from "./mcp-headers.ts";
-import { IdpError } from "./idp-tokens.ts";
 import {
   type ConnectorOperation,
   normalizeOperations as normalizeConnectorOperations,
@@ -132,20 +124,13 @@ export interface CustomConnectorSnapshot {
   read_only: boolean;
   approval: "writes" | "all" | "destructive_only";
   description: string | null;
-  /** development, staging, production (0277) : la portée des règles d'approbation (G3). */
-  environment?: string | null;
 }
 
 export interface ApprovalRequest {
   tool_name: string;
-  action_kind: "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write" | "tracker_write" | "custom_connector" | "mcp_tool";
+  action_kind: "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write" | "tracker_write" | "custom_connector";
   payload: Record<string, unknown>;
   reason: string | null;
-  /** mcp_tool (0275) : la personne pour qui l'agent agit, et l'échéance. */
-  requested_by?: string | null;
-  expires_at?: string;
-  /** Règle d'approbation (G3, 0281) : sa copie, gardée sur la demande. */
-  policy?: { quorum: number; approver_rule: ApproverRule; policy_id: string | null; policy_name: string; environment: string | null };
 }
 
 export interface InternalToolContext {
@@ -172,7 +157,7 @@ export interface InternalToolContext {
   requestApproval: (r: ApprovalRequest) => Promise<string>;
   /** Append a run event (no-op when runId is null). The union lists every kind
    *  the runtime actually emits — it must stay in sync with the
-   *  internal_agent_run_events kind CHECK constraint (migrations 0164, 0181). */
+   *  internal_agent_run_events kind CHECK constraint (migration 0164). */
   logEvent: (
     kind:
       | "tool_call" | "tool_result" | "status" | "log" | "error" | "plan" | "plan_step"
@@ -211,18 +196,9 @@ export interface InternalToolContext {
   /** MCP servers attached to this agent. Their (cached) tools are exposed as
    *  namespaced mcp_<server>_<tool> tools, executed via JSON-RPC tools/call to
    *  the remote server (edge-side). */
-  mcpServers?: Array<{
-    id: string; name: string; url: string; headers: Record<string, string>; tools: McpTool[]; auth?: McpTokenExchangeAuth;
-    /** Joint par le relais du client (G2). */
-    relayId?: string | null;
-    environment?: string | null;
-    /** Jeton d'API du serveur (0278) : le mode par défaut des serveurs internes. */
-    apiToken?: { token: string; audience: string | null; cluster: string | null };
-  }>;
+  mcpServers?: Array<{ id: string; name: string; url: string; headers: Record<string, string>; tools: McpTool[] }>;
   /** Per-run MCP session cache (server id → session), reused across tool calls. */
   mcpSessions?: Map<string, { id?: string }>;
-  /** Who token-exchange MCP calls act for, resolved once per run (mcp-auth.ts). */
-  mcpRequester?: string | null;
   /** Internal tools (custom connectors, 0267) this agent was granted, active and
    *  in scope, with their declared operations — loaded once per run so the tool
    *  schema can carry a real operation enum. Undefined: not preloaded (the tool
@@ -376,9 +352,6 @@ async function awaitInlineApproval(
   summary: string,
   /** PolicyGuard : relie la décision journalisée à l'approbation créée. */
   onApprovalId?: (id: string) => void,
-  /** Action en production (D6) : une autre personne tranche, jamais d'exécution
-   *  automatique, échéance fixe. */
-  opts: { fourEyes?: { expiresAt: string; notify: (id: string) => Promise<void>; who: string; quorum: number } } = {},
 ): Promise<string> {
   // Already approved this EXACT call earlier in the conversation? Auto-run it so
   // we never re-ask for something the user already granted — a different action
@@ -404,7 +377,7 @@ async function awaitInlineApproval(
     const toolkitGranted = (prior ?? []).some(
       (a: { result?: { grant_scope?: string } | null }) => (a.result?.grant_scope ?? "") === prefix,
     );
-    if ((exact || toolkitGranted) && !opts.fourEyes) {
+    if (exact || toolkitGranted) {
       const outcome = await executeApprovalAction({
         action_kind: req.action_kind, payload: req.payload, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
       });
@@ -424,32 +397,16 @@ async function awaitInlineApproval(
 
   const id = await ctx.requestApproval(req);
   onApprovalId?.(id);
-  const fourEyes = opts.fourEyes;
-  if (fourEyes) await fourEyes.notify(id).catch(() => {});
-  const until = fourEyes
-    ? new Date(fourEyes.expiresAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: defaultTimezone() })
-    : "";
   if (!ctx.conversationId) {
-    return fourEyes
-      ? `⏳ Action « ${summary} » soumise à approbation (id ${id}). Il faut ${fourEyes.who}, autre(s) que le demandeur, dans « Approbations » avant ${until} ; elle s'exécutera alors. Ne la redemande pas.`
-      : `⏳ Action « ${summary} » mise en attente d'approbation (id ${id}). Elle attend une décision dans « À valider » (module Travail) et s'exécutera dès qu'elle sera autorisée.`;
+    return `⏳ Action « ${summary} » mise en attente d'approbation (id ${id}). Elle attend une décision dans « À valider » (module Travail) et s'exécutera dès qu'elle sera autorisée.`;
   }
 
   // Surface the approval inline, live, while the run keeps turning.
   await ctx.admin.from("internal_agent_messages").insert({
     conversation_id: ctx.conversationId, agent_id: ctx.agentId, role: "assistant",
-    content: fourEyes
-      ? `🔐 Action soumise à approbation : **${summary}**. Il faut ${fourEyes.who}, autre(s) que le demandeur, avant ${until} (Administration → Approbations). Je continue dès la décision.`
-      : `🔐 J'ai besoin de ton feu vert pour : **${summary}**. Approuve ou refuse juste en dessous — je patiente et je continue dès ta décision.`,
+    content: `🔐 J'ai besoin de ton feu vert pour : **${summary}**. Approuve ou refuse juste en dessous — je patiente et je continue dès ta décision.`,
     run_id: ctx.runId,
-    ui_blocks: [{
-      component: "approval",
-      props: {
-        approval_id: id, tool: req.tool_name, summary,
-        scope_label: fourEyes ? "" : approvalScopeLabel(req.action_kind, req.payload, req.tool_name),
-        ...(fourEyes ? { four_eyes: true, expires_at: fourEyes.expiresAt, quorum: fourEyes.quorum, approvers: fourEyes.who } : {}),
-      },
-    }],
+    ui_blocks: [{ component: "approval", props: { approval_id: id, tool: req.tool_name, summary, scope_label: approvalScopeLabel(req.action_kind, req.payload, req.tool_name) } }],
   }).then(() => {}, () => {});
   await ctx.admin.from("internal_agent_conversations")
     .update({ updated_at: new Date().toISOString() }).eq("id", ctx.conversationId).then(() => {}, () => {});
@@ -479,17 +436,11 @@ async function awaitInlineApproval(
     if (st === "rejected") {
       return `❌ L'utilisateur a REFUSÉ l'action « ${summary} ». Ne la refais pas — adapte-toi ou propose une alternative, puis poursuis.`;
     }
-    if (st === "expired") {
-      return `⌛ La demande d'approbation pour « ${summary} » a expiré sans décision. Rien n'a été exécuté : signale-le, ne relance pas l'action de toi-même.`;
-    }
     const detail = (data as { result?: { detail?: string } } | null)?.result?.detail ?? "";
     if (st === "failed") {
       return `⚠️ Action « ${summary} » approuvée, mais l'exécution a échoué : ${((data as { error_message?: string } | null)?.error_message ?? detail).slice(0, 1500)}`;
     }
     return `✅ Action « ${summary} » approuvée et exécutée. Résultat :\n${detail.slice(0, 6000) || "(ok)"}`;
-  }
-  if (fourEyes) {
-    return `⏳ Action « ${summary} » toujours en attente d'approbation (${fourEyes.who}, jusqu'à ${until}). Elle s'exécutera dès sa validation et le résultat te sera transmis. Ne la redemande pas.`;
   }
   return `⏳ Toujours en attente de ton approbation pour « ${summary} » — approuve/refuse au-dessus quand tu veux, puis dis-moi de continuer.`;
 }
@@ -1015,7 +966,7 @@ export async function writeAgentMemory(
         "id, kind, content, importance, is_pinned, source, recall_count, last_recalled_at, updated_at, created_at");
       // Pre-0249 schema: rank on importance and age alone.
       if (poolErr) ({ data: pool } = await candidates("id, kind, content, importance, is_pinned, source, updated_at, created_at"));
-      const ids = pickEvictions((pool ?? []) as unknown as MemoryRow[], (count ?? 0) - MEMORY_CAP + 1);
+      const ids = pickEvictions((pool ?? []) as MemoryRow[], (count ?? 0) - MEMORY_CAP + 1);
       if (ids.length === 0) {
         return { status: "full", error: `memory store is full (${MEMORY_CAP}) and every entry is pinned or human-written` };
       }
@@ -1828,7 +1779,7 @@ export async function loadCustomConnectorSnapshots(
   }
   if (!ids.length) return [];
   const { data } = await admin.from("custom_connectors")
-    .select("id, name, slug, description, base_url, transport, operations, policy, status, project_id, service_dashboard_id, environment")
+    .select("id, name, slug, description, base_url, transport, operations, policy, status, project_id, service_dashboard_id")
     .in("id", ids).eq("status", "active").eq("project_id", opts.projectId);
   return ((data ?? []) as Array<Record<string, unknown>>)
     .filter((c) => !c.service_dashboard_id || c.service_dashboard_id === opts.serviceDashboardId)
@@ -1841,7 +1792,6 @@ export async function loadCustomConnectorSnapshots(
         operations: normalizeConnectorOperations(c.operations),
         allow_raw: policy.allow_raw, raw_methods: policy.raw_methods, path_allowlist: policy.path_allowlist,
         read_only: policy.read_only, approval: policy.approval,
-        environment: (c.environment as string | null) ?? null,
       } satisfies CustomConnectorSnapshot;
     });
 }
@@ -4950,7 +4900,7 @@ export function buildInternalToolset(
       if (res.status === "duplicate") return "Already in memory — nothing saved (no need to save it again).";
       if (res.status === "merged") return `Merged into an existing memory that said nearly the same thing (${kind}, importance ${importance}).`;
       if (res.status === "full" || res.status === "failed") return `ERROR: ${res.error}`;
-      return `Memory saved (${kind}, importance ${importance})${"evicted" in res && res.evicted ? ` — ${res.evicted} stale memory evicted to make room` : ""}.`;
+      return `Memory saved (${kind}, importance ${importance})${res.evicted ? ` — ${res.evicted} stale memory evicted to make room` : ""}.`;
     },
   });
   tools.set("search_memory", {
@@ -5884,103 +5834,7 @@ export function buildInternalToolset(
             if (!ctx.mcpSessions) ctx.mcpSessions = new Map();
             let sess = ctx.mcpSessions.get(server.id);
             if (!sess) { sess = {}; ctx.mcpSessions.set(server.id, sess); }
-            let headers = server.headers ?? {};
-            // Audit et métriques (D7) : un événement par appel, quelle qu'en soit l'issue.
-            const started = Date.now();
-            let requester: string | null = null;
-            let preDecision: string | null = null;
-            const report = (status: McpCallStatus, reason: string | null) => reportToolCall({
-              trace_id: traceIdFor(ctx.runId), session_id: ctx.runId ?? null,
-              user: requester, ...callIdentity(headers), agent: ctx.agentName ?? ctx.agentId,
-              workspace_id: ctx.workspaceId, mcp_server: server.name, cluster: server.auth?.cluster ?? server.apiToken?.cluster ?? null,
-              tool: t.name, status, reason, policy_decision: preDecision, approval_id: null,
-              duration_ms: Date.now() - started,
-            });
-            // Installation dédiée : un jeton d'appel par appel, émis par Keycloak
-            // au nom de la personne ET de l'agent, pour ce seul serveur.
-            // Serveur derrière le pare-feu du client : par son relais (G2).
-            const transport = server.relayId
-              ? { fetch: relayFetchFor(ctx.admin, { relayId: server.relayId, workspaceId: ctx.workspaceId, mcpServerId: server.id }) }
-              : {};
-            if (server.apiToken) {
-              // Le jeton du serveur, la personne et l'agent pour l'audit : ajoutés
-              // ici, côté serveur — le modèle ne voit jamais le jeton.
-              requester = await resolveRequester(ctx);
-              headers = mergeMcpHeaders(headers,
-                apiTokenHeaders({ token: server.apiToken.token, userId: requester, agentName: ctx.agentName ?? ctx.agentId, runId: ctx.runId }));
-            } else if (server.auth) {
-              try {
-                requester = await resolveRequester(ctx);
-                headers = mergeMcpHeaders(headers, await mcpRequestHeaders(ctx.admin, {
-                  url: server.url, auth: server.auth, agent: { id: ctx.agentId, name: ctx.agentName },
-                  userId: requester, tool: t.name, runId: ctx.runId, viaRelay: !!server.relayId,
-                }));
-              } catch (e) {
-                report("error", e instanceof IdpError ? e.code : "call_token");
-                return `ERROR: ${e instanceof Error ? e.message : String(e)}`;
-              }
-              const pre = await opaPreDecision({
-                tool: t.name,
-                cluster: server.auth.cluster,
-                targetCluster: typeof args.cluster === "string" ? args.cluster : server.auth.cluster,
-                callToken: headers.Authorization.slice("Bearer ".length),
-              });
-              if (pre) preDecision = pre.decision === "deny" ? `deny:${pre.reason}` : pre.decision;
-              if (pre?.decision === "deny") {
-                report("denied", pre.reason || null);
-                return `ERROR: refusé par la politique d'accès (${pre.reason}). Ce tool n'est pas autorisé pour cette personne ou cet agent : ne réessaie pas, signale-le.`;
-              }
-            }
-            const out = await mcpCallTool(server.url, headers, t.name, args, sess, transport);
-            const outcome = classifyMcpResult(out);
-            report(outcome.status, outcome.reason);
-            // Action soumise à approbation par le serveur (D6) : on enregistre
-            // la demande, une autre personne la valide, FounderOS rejoue.
-            const required = server.auth || server.apiToken ? parseApprovalRequired(out) : null;
-            if (!required) return out;
-            try {
-              const payload = server.apiToken
-                ? buildMcpApprovalPayload({
-                  server: { id: server.id, name: server.name, apiTokenAudience: server.apiToken.audience }, args, required,
-                  requesterSub: apiTokenSubject(server.apiToken.token, requester),
-                })
-                : buildMcpApprovalPayload({
-                  server: { id: server.id, name: server.name, auth: server.auth! }, args, required,
-                  callToken: headers.Authorization.slice("Bearer ".length),
-                });
-              // Règle d'approbation (G3) : la plus précise pour ce serveur, cet
-              // environnement et ce tool ; sans règle, le défaut d'avant.
-              const policy = (await resolveApprovalPolicy(ctx.admin, ctx.workspaceId, {
-                kind: "mcp", connectionId: server.id, environment: server.environment ?? null, risk: "write", operation: required.tool,
-              }))!;
-              const cols = approvalColumns(policy, server.environment);
-              const expiresAt = cols.expires_at;
-              const who = describeApprovers(policy);
-              return await awaitInlineApproval(ctx, {
-                tool_name: toolName, action_kind: "mcp_tool",
-                payload: payload as unknown as Record<string, unknown>,
-                reason: required.message || null,
-                requested_by: await resolveRequester(ctx),
-                expires_at: expiresAt,
-                policy: { quorum: cols.quorum, approver_rule: cols.approver_rule, policy_id: cols.policy_id, policy_name: cols.policy_name, environment: cols.environment },
-              }, `${required.tool} sur ${required.target_cluster} (${server.name})`, undefined, {
-                fourEyes: {
-                  expiresAt, who, quorum: policy.quorum,
-                  notify: (id) => {
-                    reportApproval({
-                      approval_id: id, status: "requested", tool: payload.tool, target_cluster: payload.target_cluster,
-                      requester: payload.requester_sub, approver: null,
-                    });
-                    return notifyPrdApprovers({
-                      approvalId: id, agentName: ctx.agentName, payload, expiresAt, who,
-                      admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId,
-                    });
-                  },
-                },
-              });
-            } catch (e) {
-              return `ERROR: demande d'approbation impossible — ${e instanceof Error ? e.message : String(e)}`;
-            }
+            return await mcpCallTool(server.url, server.headers ?? {}, t.name, args, sess);
           },
         });
         mcpNames.push(toolName);
@@ -6800,14 +6654,9 @@ export function buildInternalToolset(
 
         const hard = risk === "destructive" || snap.approval === "all";
         const soft = risk === "write" && snap.approval !== "destructive_only";
-        // Règle d'approbation (G3) : pour sa portée, elle IMPOSE l'approbation et
-        // dit qui la donne. Elle ne la retire jamais : sans règle, rien ne change.
-        const approvalPolicy = risk === "read" ? null : await resolveApprovalPolicy(ctx.admin, ctx.workspaceId, {
-          kind: "custom_connector", connectionId: snap.id, environment: snap.environment ?? null, risk, operation,
-        });
         const g = await gate(ctx, {
           tool: `ext:${snap.slug}`, action: operation, params,
-          legacyApproval: hard || !!approvalPolicy || (soft && !ctx.autopilot), knownWrite: risk !== "read",
+          legacyApproval: hard || (soft && !ctx.autopilot), knownWrite: risk !== "read",
         });
         if (g.decision === "block") return g.message!;
 
@@ -6815,35 +6664,14 @@ export function buildInternalToolset(
           connector_id: snap.id, connector_name: snap.name, operation, params, raw,
           credential_id: credentialId, allowed_operations: granted.length ? granted : null,
           agent_id: ctx.agentId, run_id: ctx.runId, conversation_id: ctx.conversationId ?? null,
-          // La personne pour qui l'agent agit : la même que pour ses appels MCP
-          // (identité déléguée ou contexte signé, G2).
-          actor_user_id: (await resolveRequester(ctx)) ?? ctx.userId ?? null, risk,
+          actor_user_id: ctx.actingUserId ?? ctx.userId ?? null, risk,
           // A destructive gesture is approved ONCE: its scope never matches again.
           ...(risk === "destructive" ? { nonce: crypto.randomUUID() } : {}),
         };
-        if (hard || approvalPolicy || g.decision === "approve") {
+        if (hard || g.decision === "approve") {
           let shown = "";
           try { shown = JSON.stringify(raw ? { [raw.method]: raw.path } : params); } catch { /* vide */ }
           const summary = `${snap.name} · ${operation}${shown && shown !== "{}" ? ` ${shown.slice(0, 140)}` : ""}${risk === "destructive" ? " (irréversible)" : ""}`;
-          if (approvalPolicy) {
-            const cols = approvalColumns(approvalPolicy, snap.environment);
-            const who = describeApprovers(approvalPolicy);
-            return await awaitInlineApproval(ctx, {
-              tool_name: toolName, action_kind: "custom_connector", payload, reason: str(args.reason) || null,
-              requested_by: (payload.actor_user_id as string | null) ?? null,
-              expires_at: cols.expires_at,
-              policy: { quorum: cols.quorum, approver_rule: cols.approver_rule, policy_id: cols.policy_id, policy_name: cols.policy_name, environment: cols.environment },
-            }, summary, g.linkApproval, {
-              fourEyes: {
-                expiresAt: cols.expires_at, who, quorum: approvalPolicy.quorum,
-                notify: (id) => notifyApprovers({
-                  approvalId: id, agentName: ctx.agentName, summary, expiresAt: cols.expires_at, who,
-                  details: { connector: snap.name, operation, environment: snap.environment ?? null, risk },
-                  admin: ctx.admin, workspaceId: ctx.workspaceId, projectId: ctx.projectId,
-                }),
-              },
-            });
-          }
           return await awaitInlineApproval(ctx, {
             tool_name: toolName, action_kind: "custom_connector", payload, reason: str(args.reason) || null,
           }, summary, g.linkApproval);
@@ -8398,7 +8226,7 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
 };
 
 function buildCapabilityTree(
-  tools: Map<string, { def: { name: string; description: string }; hidden?: boolean; family?: ToolFamily }>,
+  tools: Map<string, { def: { name: string; description: string }; hidden?: boolean; family?: ToolFamily } & Record<string, unknown>>,
   sandboxGuidance: string[],
   legacyLines: string[],
   defaultFamilies: ToolFamily[] = [...FAMILY_ORDER],

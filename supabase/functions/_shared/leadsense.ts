@@ -232,7 +232,7 @@ export async function enrichFromCrm(admin: Admin, projectId: string, email: stri
     const { data } = await admin.from("crm_records")
       .select("id, object_id, data, crm_objects(slug, title_property)")
       .eq("project_id", projectId).or(ors.join(",")).limit(8);
-    for (const r of (data ?? []) as unknown as Array<{
+    for (const r of (data ?? []) as Array<{
       id: string; data: Record<string, unknown>;
       crm_objects: { slug: string; title_property: string | null } | null;
     }>) {

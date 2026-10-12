@@ -27,53 +27,33 @@ import {
 import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { MCP_CATALOG, catalogReadyCount, type McpCatalogEntry } from "./mcpCatalog";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 
 interface McpTool { name: string; description?: string }
-type AuthMode = "none" | "header" | "oauth" | "token_exchange" | "signed_context" | "api_token";
-const identityMode = (m: AuthMode) => m === "token_exchange" || m === "signed_context";
+type AuthMode = "none" | "header" | "oauth";
 interface McpServer {
   id: string;
   name: string;
   description: string | null;
   transport: "http" | "sse";
   url: string;
-  /** En-têtes statiques (0280) : leurs noms et un aperçu, jamais les valeurs. */
-  header_hints?: Record<string, string> | null;
+  headers: Record<string, string>;
   enabled: boolean;
   cached_tools: McpTool[];
   status: "ok" | "error" | null;
   last_error: string | null;
   last_checked_at: string | null;
   auth_mode: AuthMode;
-  /** token_exchange : client Keycloak du serveur et cluster qui l'héberge. */
-  auth_config?: { audience?: string; cluster?: string; provider?: string } | null;
-  /** Joint par le relais du client (G2). */
-  relay_id?: string | null;
-  environment?: "development" | "staging" | "production" | null;
-  /** Jeton d'API enregistré (0278) : son indice seulement, jamais le jeton. */
-  token_hint?: string | null;
-  /** Jeton tournant (0285) : quand le jeton a été reçu, et s'il a été saisi ou livré par le serveur. */
-  token_received_at?: string | null;
-  token_origin?: "manual" | "push" | null;
-  oauth: { status?: "connecting" | "connected" | "disconnected" | "error"; connected_at?: string } & Record<string, unknown>;
-  created_by?: string | null;
+  oauth: { status?: "connecting" | "connected" | "error"; connected_at?: string } & Record<string, unknown>;
 }
 
 export function McpServersPage() {
   const confirm = useConfirm();
   const toast = useToast();
-  const { workspaceId, role } = useCurrentContext();
-  const { user } = useAuth();
-  // Mêmes règles que la RLS (0279) : les membres ajoutent des serveurs et
-  // modifient les leurs ; les admins, tous ; les lecteurs, aucun.
-  const isAdmin = role === "owner" || role === "admin";
-  const canCreate = isAdmin || role === "member";
-  const canEdit = (s: McpServer) => isAdmin || (role === "member" && !!user && s.created_by === user.id);
+  const { workspaceId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<McpServer | null | "new">(null);
   const [testing, setTesting] = useState<string | null>(null);
@@ -149,15 +129,7 @@ export function McpServersPage() {
             Branchez des serveurs MCP distants (Streamable HTTP / SSE) : leurs outils deviennent
             disponibles pour vos agents une fois attachés depuis Personnaliser → MCP.
           </p>
-          {role && !isAdmin && (
-            <p className="mt-1.5 max-w-lg text-[11px] text-muted-foreground">
-              {canCreate
-                ? "Vous modifiez les serveurs que vous avez ajoutés ; les autres sont gérés par les admins de l'espace."
-                : "Lecture seule : les serveurs sont gérés par les membres qui les ont ajoutés et par les admins de l'espace."}
-            </p>
-          )}
         </div>
-        {canCreate && (
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="outline" size="sm" className="rounded-full" onClick={() => setCatalogOpen(true)}>
             <LayoutGrid className="mr-1 h-4 w-4" /> Catalogue
@@ -166,7 +138,6 @@ export function McpServersPage() {
             <Plus className="mr-1 h-4 w-4" /> Ajouter un serveur
           </Button>
         </div>
-        )}
       </div>
 
       {isLoading ? (
@@ -175,17 +146,14 @@ export function McpServersPage() {
         <div className="flex flex-col items-center gap-3 py-16 text-center">
           <Plug className="h-8 w-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">Aucun serveur MCP pour le moment.</p>
-          {canCreate && (
-            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setEditing("new")}>
-              <Plus className="mr-1 h-4 w-4" /> Ajouter votre premier serveur
-            </Button>
-          )}
+          <Button variant="outline" size="sm" className="rounded-full" onClick={() => setEditing("new")}>
+            <Plus className="mr-1 h-4 w-4" /> Ajouter votre premier serveur
+          </Button>
         </div>
       ) : (
         <div className="space-y-3">
           {list.map((s) => {
             const isOpen = expanded === s.id;
-            const editable = canEdit(s);
             return (
               <div key={s.id} className={cn("rounded-xl border bg-card/40 p-4", s.enabled ? "border-border" : "border-dashed border-border/70 opacity-70")}>
                 <div className="flex items-start justify-between gap-3">
@@ -198,18 +166,6 @@ export function McpServersPage() {
                           ? <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400"><LogIn className="h-3 w-3" /> OAuth connecté</span>
                           : <span className="text-[10px] text-amber-600 dark:text-amber-400">OAuth · non connecté</span>
                       )}
-                      {identityMode(s.auth_mode) && (
-                        <span className="text-[10px] text-sky-600 dark:text-sky-400" title={s.auth_mode === "signed_context" ? "Contexte signé par FounderOS à chaque appel : la personne et l'agent" : "Jeton d'appel émis par l'IdP de l'entreprise à chaque appel, au nom de la personne et de l'agent"}>
-                          {s.auth_mode === "signed_context" ? "Contexte signé" : "Identité déléguée"} · {s.auth_config?.audience}
-                        </span>
-                      )}
-                      {s.auth_mode === "api_token" && (
-                        <span className={s.token_hint ? "text-[10px] text-sky-600 dark:text-sky-400" : "text-[10px] text-amber-600 dark:text-amber-400"}>
-                          Jeton d'API · {s.token_hint ?? "à saisir"}{s.token_origin === "push" ? " · tournant" : ""}
-                        </span>
-                      )}
-                      {s.relay_id && <span className="text-[10px] text-violet-600 dark:text-violet-400">par relais</span>}
-                      {s.environment === "production" && <span className="text-[10px] text-red-600 dark:text-red-400">production</span>}
                       {s.status === "ok" && <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-3 w-3" /> OK</span>}
                       {s.status === "error" && <span className="inline-flex items-center gap-1 text-[10px] text-destructive"><XCircle className="h-3 w-3" /> Erreur</span>}
                     </div>
@@ -217,7 +173,7 @@ export function McpServersPage() {
                     {s.description && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{s.description}</p>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    {s.auth_mode === "oauth" && editable && (
+                    {s.auth_mode === "oauth" && (
                       <Button variant="outline" size="sm" className="h-7 rounded-full px-2.5 text-xs" onClick={() => connect(s)}>
                         <LogIn className="h-3 w-3" />
                         <span className="ml-1">{s.oauth?.status === "connected" ? "Reconnecter" : "Se connecter"}</span>
@@ -227,7 +183,6 @@ export function McpServersPage() {
                       {testing === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                       <span className="ml-1">Tester</span>
                     </Button>
-                    {editable && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Actions">
@@ -241,7 +196,6 @@ export function McpServersPage() {
                         <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => remove(s)}><Trash2 className="mr-2 h-3.5 w-3.5" /> Supprimer</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                    )}
                   </div>
                 </div>
 
@@ -425,29 +379,10 @@ function McpServerDialog({
   const [oauthScope, setOauthScope] = useState<string>((server?.oauth?.scope as string) ?? "");
   const [oauthClientName, setOauthClientName] = useState<string>((server?.oauth?.client_name as string) ?? preset?.clientName ?? "");
   const [url, setUrl] = useState(server?.url ?? preset?.url ?? "");
-  const [teAudience, setTeAudience] = useState<string>(server?.auth_config?.audience ?? "");
-  const [teCluster, setTeCluster] = useState<string>(server?.auth_config?.cluster ?? "");
-  const [teProvider, setTeProvider] = useState<string>(server?.auth_config?.provider ?? "");
-  const [relayId, setRelayId] = useState<string>(server?.relay_id ?? "");
-  const [environment, setEnvironment] = useState<string>(server?.environment ?? "");
-  const { data: relays } = useQuery({
-    queryKey: ["connector-relays", workspaceId],
-    enabled: !!workspaceId,
-    queryFn: async () => {
-      const { data } = await supabase.from("connector_relays").select("id, name, status, last_seen_at")
-        .eq("workspace_id", workspaceId!).eq("status", "active").order("name");
-      return (data ?? []) as Array<{ id: string; name: string; status: string; last_seen_at: string | null }>;
-    },
-  });
-  // En-têtes : les enregistrés arrivent sans valeur (seulement l'aperçu) ; une
-  // valeur laissée vide garde l'enregistrée, tant que la destination ne change pas.
-  const storedHints = server?.header_hints ?? {};
-  const [headers, setHeaders] = useState<Array<{ k: string; v: string; orig?: string }>>(
-    Object.keys(storedHints).map((k) => ({ k, v: "", orig: k })),
+  const [headers, setHeaders] = useState<Array<{ k: string; v: string }>>(
+    server?.headers ? Object.entries(server.headers).map(([k, v]) => ({ k, v: String(v) })) : [],
   );
   const [saving, setSaving] = useState(false);
-  // Jeton d'API : saisi ici, envoyé une fois au serveur, jamais relu.
-  const [apiToken, setApiToken] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -456,53 +391,13 @@ function McpServerDialog({
     for (const { k, v } of headers) if (k.trim()) o[k.trim()] = v;
     return o;
   };
-  const headersDirty = headers.length !== Object.keys(storedHints).length
-    || headers.some((h) => h.v !== "" || h.k.trim() !== h.orig);
   const urlValid = /^https?:\/\//i.test(url.trim());
-  const authConfig = () => identityMode(authMode)
-    ? { audience: teAudience.trim(), ...(teCluster.trim() ? { cluster: teCluster.trim() } : {}), ...(teProvider.trim() ? { provider: teProvider.trim() } : {}) }
-    : authMode === "api_token"
-      ? { ...(teAudience.trim() ? { audience: teAudience.trim() } : {}), ...(teCluster.trim() ? { cluster: teCluster.trim() } : {}) }
-      : {};
-  // Le jeton enregistré est lié à sa destination (garde de la migration 0278) :
-  // autre origine d'URL ou autre relais, il est effacé et doit être ressaisi.
-  const originOf = (u: string) => (/^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]+/.exec(u.trim())?.[0] ?? "").toLowerCase();
-  const keptToken = !!server?.token_hint && server.auth_mode === "api_token"
-    && originOf(url) === originOf(server.url) && relayId === (server.relay_id ?? "");
-  // Les en-têtes enregistrés sont liés à leur destination, comme le jeton (0280).
-  const keptHeaders = !!server && originOf(url) === originOf(server.url) && relayId === (server.relay_id ?? "");
-  const headerIssue = authMode !== "header" ? null
-    : headers.some((h) => h.k.trim() && !h.v && !(h.orig === h.k.trim() && keptHeaders))
-      ? (headers.some((h) => h.orig && !h.v) && !keptHeaders
-        ? "L'adresse ou le relais a changé : les valeurs enregistrées seront effacées. Ressaisissez-les."
-        : "Saisissez la valeur de chaque nouvel en-tête.")
-      : null;
-  const tokenValid = authMode !== "api_token"
-    ? true
-    : apiToken.trim() ? /^[A-Za-z0-9._~+/=-]{16,4096}$/.test(apiToken.trim()) : keptToken;
-  // Mêmes formes que la contrainte de la migration 0276 (audience Entra : api://…).
-  const teValid = authMode === "api_token"
-    ? tokenValid && (!teAudience.trim() || /^[A-Za-z0-9._:/-]{1,200}$/.test(teAudience.trim())) && (!teCluster.trim() || /^[a-z0-9-]{1,30}$/.test(teCluster.trim()))
-    : !identityMode(authMode) || (
-    /^[A-Za-z0-9._:/-]{1,200}$/.test(teAudience.trim())
-    && (!teCluster.trim() || /^[a-z0-9-]{1,30}$/.test(teCluster.trim()))
-    && (!teProvider.trim() || /^custom:[a-z0-9][a-z0-9-]{0,40}$/.test(teProvider.trim()))
-  );
 
   async function testDraft() {
     setTesting(true); setTestResult(null);
     try {
-      // Hors mode « en-têtes », les en-têtes enregistrés servent encore, mais ne
-      // suivent pas une autre destination : le test les omet alors.
-      const draftHeaders = authMode === "header" ? headersObj() : keptHeaders ? headersObj() : {};
       const res = await callEdge<{ ok: boolean; error?: string; count?: number }>("mcp-gateway", {
-        action: "test", url: url.trim(), headers: draftHeaders, transport,
-        ...(server ? { draft_of: server.id } : {}),
-        ...(identityMode(authMode) ? { auth_mode: authMode, auth_config: authConfig() } : {}),
-        ...(authMode === "api_token" ? { auth_mode: authMode, api_token: apiToken.trim() } : {}),
-        ...(relayId ? { relay_id: relayId } : {}),
-        // Serveur déjà enregistré, jeton non ressaisi : le test utilise le jeton enregistré.
-        ...(authMode === "api_token" && !apiToken.trim() && keptToken && server ? { server_id: server.id } : {}),
+        action: "test", url: url.trim(), headers: headersObj(), transport,
       });
       setTestResult(res.ok
         ? { ok: true, msg: `Connexion OK, ${res.count ?? 0} outil(s) découvert(s).` }
@@ -515,7 +410,7 @@ function McpServerDialog({
   }
 
   async function save() {
-    if (!name.trim() || !urlValid || !teValid || headerIssue || !workspaceId) return;
+    if (!name.trim() || !urlValid || !workspaceId) return;
     setSaving(true);
     try {
       const payload = {
@@ -523,10 +418,8 @@ function McpServerDialog({
         description: description.trim() || null,
         transport,
         auth_mode: authMode,
-        auth_config: authConfig(),
         url: url.trim(),
-        relay_id: relayId || null,
-        environment: environment || null,
+        headers: headersObj(),
         updated_at: new Date().toISOString(),
       };
       let serverId = server?.id;
@@ -538,15 +431,6 @@ function McpServerDialog({
           .insert({ ...payload, workspace_id: workspaceId }).select("id").single();
         if (error) { toast.error(error.message); return; }
         serverId = (data as { id: string }).id;
-      }
-      // En-têtes : envoyés une fois, chiffrés côté serveur, jamais relus (0280).
-      if (serverId && authMode === "header" && headersDirty) {
-        const set = await callEdge<{ ok: boolean; error?: string }>("mcp-gateway", { action: "set_headers", server_id: serverId, headers: headersObj() });
-        if (!set.ok) { toast.error(set.error ?? "En-têtes refusés"); return; }
-      }
-      if (serverId && authMode === "api_token" && apiToken.trim()) {
-        const set = await callEdge<{ ok: boolean; error?: string }>("mcp-gateway", { action: "set_token", server_id: serverId, token: apiToken.trim() });
-        if (!set.ok) { toast.error(set.error ?? "Jeton refusé"); return; }
       }
       if (serverId) {
         if (authMode === "oauth") {
@@ -603,11 +487,6 @@ function McpServerDialog({
             <label className="mb-1 block text-xs font-medium text-muted-foreground">URL du serveur</label>
             <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.exemple.com/mcp" />
             {url && !urlValid && <p className="mt-1 text-[10px] text-destructive">L'URL doit commencer par http(s)://</p>}
-            {urlValid && !relayId && /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/i.test(url.trim()) && (
-              <p className="mt-1 text-[10px] text-destructive">
-                Une adresse en boucle locale ne se joint que par le relais de la passerelle d'entreprise : choisissez-le dans « Accès ».
-              </p>
-            )}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Description (optionnel)</label>
@@ -618,113 +497,10 @@ function McpServerDialog({
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Authentification</label>
             <select value={authMode} onChange={(e) => setAuthMode(e.target.value as AuthMode)} className={inputCls}>
-              <option value="api_token">Jeton d'API du serveur (recommandé pour vos serveurs internes)</option>
               <option value="none">Aucune (serveur ouvert)</option>
               <option value="header">Header statique (token / clé d'API)</option>
               <option value="oauth">OAuth 2.1 (connexion interactive)</option>
-              <option value="token_exchange">Identité déléguée par l'IdP de l'entreprise (serveur interne)</option>
-              <option value="signed_context">Contexte signé par FounderOS (serveur interne)</option>
             </select>
-          </div>
-
-          {/* Installation dédiée : jeton d'appel au nom de la personne et de l'agent */}
-          {authMode === "api_token" && (
-            <div className="space-y-2.5 rounded-lg border border-border bg-secondary/30 p-3">
-              <p className="text-[11px] text-muted-foreground">
-                À l'installation du serveur MCP :{" "}
-                <code className="rounded bg-muted px-1">npm run token -- seed</code> affiche le jeton de la période. Collez-le ici une
-                fois : ensuite, le serveur change de jeton chaque jour et livre lui-même le nouveau à FounderOS. Un jeton fixe
-                (<code className="rounded bg-muted px-1">npm run token -- generate</code>) se colle de la même façon. FounderOS le garde
-                chiffré et le présente à chaque appel d'un agent, avec la personne et l'agent pour l'audit. Le modèle ne le voit jamais.
-              </p>
-              <div>
-                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Jeton d'API</label>
-                <Input type="password" autoComplete="off" value={apiToken} onChange={(e) => setApiToken(e.target.value)}
-                  placeholder={keptToken ? `Enregistré : ${server!.token_hint} — laisser vide pour le conserver` : server?.token_hint ? "Nouvelle adresse ou nouveau relais : ressaisissez le jeton" : "mcpt_…"} className="h-8 font-mono" />
-                {keptToken && server?.token_received_at && (
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    {server.token_origin === "push" ? "Dernier jeton livré par le serveur" : "Jeton saisi"} le {new Date(server.token_received_at).toLocaleString()}.
-                    {server.token_origin === "push" ? " Les suivants arrivent seuls." : ""}
-                  </p>
-                )}
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  Serveur qui ne reconnaît plus le jeton (FounderOS arrêté plus de 7 jours) :{" "}
-                  <code className="rounded bg-muted px-1">npm run token -- current</code> sur le serveur, puis collez le jeton affiché.
-                </p>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Audience (pour les approbations)</label>
-                  <Input value={teAudience} onChange={(e) => setTeAudience(e.target.value)} placeholder="mcp-prd" className="h-8" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Cluster (catalogue des tools)</label>
-                  <Input value={teCluster} onChange={(e) => setTeCluster(e.target.value)} placeholder="prd" list="mcp-cluster-hints" className="h-8" />
-                </div>
-              </div>
-              <p className="text-[10px] text-muted-foreground">L'audience est le MCP_AUDIENCE du serveur : elle n'est requise que si des tools demandent une approbation (actions en production).</p>
-              {!teValid && <p className="text-[10px] text-destructive">{tokenValid ? "Audience ou cluster invalide."
-                : server?.token_hint && !keptToken && !apiToken.trim()
-                  ? "L'adresse ou le relais a changé : le jeton enregistré sera effacé à l'enregistrement. Ressaisissez-le."
-                  : "Saisissez le jeton (16 caractères au moins, sans espace)."}</p>}
-            </div>
-          )}
-
-          {identityMode(authMode) && (
-            <div className="space-y-2.5 rounded-lg border border-border bg-secondary/30 p-3">
-              <p className="text-[11px] text-muted-foreground">
-                {authMode === "signed_context"
-                  ? "À chaque appel, FounderOS signe un contexte court (personne, agent, rôles) pour ce seul serveur. Le serveur le vérifie avec le JWKS de FounderOS (IDP_ISSUER = l'émetteur des approbations, IDP_JWKS_URL = /functions/v1/approval-jwks)."
-                  : "À chaque appel, FounderOS demande à l'IdP de l'entreprise un jeton court pour ce seul serveur, au nom de la personne pour qui l'agent agit et de l'agent lui-même (échange de jeton, ou On-Behalf-Of chez Entra ID)."}
-                {" "}En direct, le serveur doit être interne (https, hôte de MCP_INTERNAL_HOSTS) ; par un relais, c'est sa liste blanche qui décide.
-              </p>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <div>
-                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Audience du serveur</label>
-                  <Input value={teAudience} onChange={(e) => setTeAudience(e.target.value)} placeholder="mcp-prd ou api://mcp-prd" className="h-8" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Cluster ou environnement</label>
-                  <Input value={teCluster} onChange={(e) => setTeCluster(e.target.value)} placeholder="prd" list="mcp-cluster-hints" className="h-8" />
-                  <datalist id="mcp-cluster-hints">
-                    {["dev", "recette", "prd", "hub", "ips", "sdb", "npr"].map((c) => <option key={c} value={c} />)}
-                  </datalist>
-                </div>
-                {authMode === "token_exchange" && (
-                  <div>
-                    <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Fournisseur (si plusieurs délèguent)</label>
-                    <Input value={teProvider} onChange={(e) => setTeProvider(e.target.value)} placeholder="custom:entra" className="h-8" />
-                  </div>
-                )}
-              </div>
-              {teAudience && !teValid && <p className="text-[10px] text-destructive">Audience, cluster ou fournisseur invalide.</p>}
-            </div>
-          )}
-
-          {/* Accès réseau et environnement (G2) */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Accès</label>
-              <select value={relayId} onChange={(e) => setRelayId(e.target.value)} className={inputCls}>
-                <option value="">En direct</option>
-                {(relays ?? []).map((r) => <option key={r.id} value={r.id}>Par le relais « {r.name} »</option>)}
-              </select>
-              {relayId && (
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  Ajoutez l'hôte du serveur à RELAY_ALLOWED_HOSTS, et à RELAY_CLIENT_CERT_HOSTS s'il exige un certificat client.
-                  Serveur MCP de la passerelle d'entreprise : <code className="rounded bg-muted px-1">http://127.0.0.1:8443/mcp</code>, déjà autorisé.
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Environnement</label>
-              <select value={environment} onChange={(e) => setEnvironment(e.target.value)} className={inputCls}>
-                <option value="">Non précisé</option>
-                <option value="development">Développement</option>
-                <option value="staging">Recette</option>
-                <option value="production">Production</option>
-              </select>
-            </div>
           </div>
 
           {/* Static headers — only for header auth */}
@@ -741,20 +517,13 @@ function McpServerDialog({
                 {headers.map((h, i) => (
                   <div key={i} className="flex items-center gap-1.5">
                     <Input value={h.k} onChange={(e) => setHeaders((hs) => hs.map((x, j) => j === i ? { ...x, k: e.target.value } : x))} placeholder="Header" className="h-8 flex-1" />
-                    <Input
-                      type="password" autoComplete="off" value={h.v}
-                      onChange={(e) => setHeaders((hs) => hs.map((x, j) => j === i ? { ...x, v: e.target.value } : x))}
-                      placeholder={h.orig && h.orig === h.k.trim() && keptHeaders ? `${storedHints[h.orig]} — vide : conservé` : "Valeur"}
-                      className="h-8 flex-1 font-mono"
-                    />
+                    <Input value={h.v} onChange={(e) => setHeaders((hs) => hs.map((x, j) => j === i ? { ...x, v: e.target.value } : x))} placeholder="Valeur" className="h-8 flex-1" />
                     <button onClick={() => setHeaders((hs) => hs.filter((_, j) => j !== i))} className="rounded p-1 text-muted-foreground hover:text-destructive">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 ))}
               </div>
-              <p className="mt-1 text-[10px] text-muted-foreground">Les valeurs sont chiffrées et ne se relisent plus, même pour vous : seul un aperçu reste visible.</p>
-              {headerIssue && <p className="mt-1 text-[10px] text-destructive">{headerIssue}</p>}
             </div>
           )}
 
@@ -808,7 +577,7 @@ function McpServerDialog({
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onClose}>Annuler</Button>
-            <Button size="sm" onClick={save} disabled={saving || !name.trim() || !urlValid || !teValid || !!headerIssue}>
+            <Button size="sm" onClick={save} disabled={saving || !name.trim() || !urlValid}>
               {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
               {server ? "Enregistrer" : "Ajouter"}
             </Button>

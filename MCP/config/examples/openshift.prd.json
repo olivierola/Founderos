@@ -1,6 +1,0 @@
-{
-  "api": { "url": "https://kubernetes.default.svc", "caFile": "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt" },
-  "namespaces": ["app-a-prd", "app-b-prd"],
-  "readCredential": { "type": "vault-k8s", "role": "ocp-reader" },
-  "writeCredential": { "type": "vault-k8s", "role": "ocp-prd-restarter" }
-}

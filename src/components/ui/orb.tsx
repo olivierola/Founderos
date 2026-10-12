@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
+import { useEffect, useRef, type FC } from "react";
 import { Renderer, Program, Mesh, Triangle, Vec3 } from "ogl";
 
 // WebGL "AI" orb (reactbits Orb, built on ogl). Each instance owns a GL context,
@@ -10,8 +10,6 @@ interface OrbProps {
   rotateOnHover?: boolean;
   forceHoverState?: boolean;
   className?: string;
-  /** Drawn instead when the browser gives no WebGL context. */
-  fallback?: ReactNode;
 }
 
 export const Orb: FC<OrbProps> = ({
@@ -20,10 +18,8 @@ export const Orb: FC<OrbProps> = ({
   rotateOnHover = true,
   forceHoverState = false,
   className,
-  fallback = null,
 }) => {
   const ctnDom = useRef<HTMLDivElement>(null);
-  const [noGl, setNoGl] = useState(false);
 
   const vert = /* glsl */ `
     precision highp float;
@@ -187,16 +183,7 @@ export const Orb: FC<OrbProps> = ({
     const container = ctnDom.current;
     if (!container) return;
 
-    // The browser may refuse a context: WebGL blocked after a GPU reset, turned
-    // off, or past its context limit. getContext then returns null and ogl
-    // throws on it — which took the whole route down with it. Fall back instead.
-    let renderer: Renderer;
-    try {
-      renderer = new Renderer({ alpha: true, premultipliedAlpha: false });
-    } catch {
-      setNoGl(true);
-      return;
-    }
+    const renderer = new Renderer({ alpha: true, premultipliedAlpha: false });
     const gl = renderer.gl;
     gl.clearColor(0, 0, 0, 0);
     container.appendChild(gl.canvas);
@@ -279,7 +266,6 @@ export const Orb: FC<OrbProps> = ({
     };
   }, [hue, hoverIntensity, rotateOnHover, forceHoverState]);
 
-  if (noGl) return <>{fallback}</>;
   return <div ref={ctnDom} className={className} style={{ width: "100%", height: "100%" }} />;
 };
 

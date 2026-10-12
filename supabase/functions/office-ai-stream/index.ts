@@ -15,7 +15,6 @@ import { handleCors, jsonResponse, corsHeaders } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import { loadGrounding, groundingPromptBlock, searchKnowledge } from "../_shared/office-rag.ts";
-import { adaptChatBody, pinnedChatTarget } from "../_shared/llm-upstream.ts";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
@@ -59,19 +58,15 @@ async function* streamGroq(
   messages: { role: string; content: string }[],
   signal: AbortSignal,
 ): AsyncGenerator<string> {
-  // A deployment pinned to a gateway (LiteLLM, Azure) streams from it instead.
-  const pinned = await pinnedChatTarget();
   const apiKey = Deno.env.get("GROQ_API_KEY");
-  if (!pinned && !apiKey) throw new Error("GROQ_API_KEY not configured");
-  const url = pinned?.url ?? GROQ_URL;
-  const body = { model: pinned?.model ?? GROQ_MODEL, messages, temperature: 0.5, max_tokens: 1500, stream: true };
-  const res = await fetch(url, {
+  if (!apiKey) throw new Error("GROQ_API_KEY not configured");
+  const res = await fetch(GROQ_URL, {
     method: "POST",
-    headers: { ...(pinned?.headers ?? { Authorization: `Bearer ${apiKey}` }), "Content-Type": "application/json" },
-    body: JSON.stringify(adaptChatBody(url, body)),
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: GROQ_MODEL, messages, temperature: 0.5, max_tokens: 1500, stream: true }),
     signal,
   });
-  if (!res.ok || !res.body) throw new Error(`${pinned ? "LLM gateway" : "Groq"} ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok || !res.body) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

@@ -11,7 +11,7 @@ import {
   DotsThreeIcon, PencilSimpleIcon, TrashIcon, HashIcon, SidebarSimpleIcon, UsersThreeIcon, UserIcon,
   TargetIcon, GlobeIcon, FlowArrowIcon, KanbanIcon, FlagIcon, EyeIcon,
   ArrowsClockwiseIcon, StackIcon, NotePencilIcon, ArchiveIcon, PushPinIcon, PackageIcon,
-  PushPinSlashIcon, BookOpenIcon, TrayIcon, WrenchIcon, RocketLaunchIcon,
+  PushPinSlashIcon, BookOpenIcon, TrayIcon, WrenchIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import {
@@ -48,6 +48,7 @@ import { DashboardMissionsTab } from "./RoomMissions";
 import { TrackerTab } from "@/features/tracker/TrackerTab";
 import { fetchProjects as fetchTrackerProjects } from "@/features/tracker/model";
 import { ProjectLogo } from "@/features/tracker/LogoPicker";
+import { CreateWorkItemModal } from "@/features/tracker/CreateWorkItem";
 import { ComposioCatalog } from "@/features/integrations/ComposioCatalog";
 import { CustomConnectorsPage } from "@/features/custom-connectors/CustomConnectorsPage";
 import { WorkflowsList } from "@/features/workflows/WorkflowsList";
@@ -73,7 +74,7 @@ const RAIL: { key: RailKey; label: string; icon: PhosphorIcon; tab: DashboardTab
   // Le suivi de travail EN TÊTE : c'est le module principal du service, celui
   // où l'on passe la journée. Il porte l'accueil, les projets, les rooms et les
   // messages — c'est-à-dire le travail et ce qu'on en dit, au même endroit.
-  { key: "projects", label: "Intelligence Space", icon: KanbanIcon, tab: "projects" },
+  { key: "projects", label: "Travail", icon: KanbanIcon, tab: "projects" },
   // Home reste, en second : sa page d'assistant et ses onglets secondaires
   // (missions, statistiques, planifications) n'ont pas disparu, ils ne sont
   // simplement plus la première chose qu'on voit.
@@ -260,7 +261,7 @@ export function ServiceDashboardPage() {
 
   const railItems = RAIL.filter((r) => r.key === "home" || !hidden(r.key));
   const panelTitle = rail === "home" ? "Assistant"
-    : rail === "projects" ? "Intelligence Space"
+    : rail === "projects" ? "Travail"
     : rail === "resources" ? "Ressources"
     : rail === "docs" ? "Documentation" : "Settings";
 
@@ -805,6 +806,7 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
   activeProjectId?: string; activeView?: string; activeSection?: string;
 }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data: projects } = useQuery({
     queryKey: ["pj_projects", dashboardId],
     queryFn: () => fetchTrackerProjects(dashboardId),
@@ -816,6 +818,7 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
   // barre changer sous ses doigts, et non deviner le résultat depuis une liste
   // de cases à cocher ailleurs.
   const [customizing, setCustomizing] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [openPersonal, setOpenPersonal] = useState(true);
   const [openSpace, setOpenSpace] = useState(true);
   const [openProjects, setOpenProjects] = useState(true);
@@ -865,17 +868,18 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
 
   return (
     <div>
-      {/* Le bouton du haut déploie un collaborateur : c'est l'entrée de
-          l'Intelligence Space. Créer un work item reste à portée sur le board
-          des work items, là où on le range. */}
+      {/* Le bouton de création tient le haut de la barre, comme dans Plane :
+          noter une tâche est le geste le plus fréquent du module, et le faire
+          descendre au niveau des destinations le mettrait à égalité avec des
+          liens qu'on clique dix fois moins souvent. */}
       <div className="px-2.5 pb-1">
         <button
           type="button"
-          onClick={() => navigate(`${base}/agents/new`)}
+          onClick={() => setCreating(true)}
           className="flex h-8 w-full items-center gap-2 rounded-lg border border-sidebar-border/60 bg-sidebar-accent/70 px-2.5 text-[13.5px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
         >
-          <RocketLaunchIcon weight="bold" className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate text-left">Deploy collaborator</span>
+          <PlusIcon weight="bold" className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-left">Nouveau work item</span>
         </button>
       </div>
 
@@ -949,6 +953,17 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
             <p className="px-2.5 py-1.5 text-[12px] text-muted-foreground">Aucun projet.</p>
           )}
         </nav>
+      )}
+
+      {creating && (
+        <CreateWorkItemModal
+          dashboardId={dashboardId}
+          // Le projet ouvert est pré-choisi : depuis un projet on crée pour lui
+          // neuf fois sur dix, et depuis l'espace on choisit.
+          projectId={activeProjectId ?? null}
+          onClose={() => setCreating(false)}
+          onCreated={() => qc.invalidateQueries({ queryKey: ["pj_issues"] })}
+        />
       )}
     </div>
   );

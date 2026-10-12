@@ -19,7 +19,6 @@ import { runToolRounds, type ToolDef } from "../_shared/ai.ts";
 import { classifyTier, modelForTier } from "../_shared/model-router.ts";
 import { mcpCallTool } from "../_shared/mcp-client.ts";
 import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
-import { loadMcpHeaders, mergeMcpHeaders } from "../_shared/mcp-headers.ts";
 
 type Admin = ReturnType<typeof createServiceClient>;
 interface VibeMcpServer { id: string; name: string; url: string; headers: Record<string, string>; tools: { name: string; description?: string; inputSchema?: Record<string, unknown> }[] }
@@ -29,22 +28,17 @@ interface VibeMcpServer { id: string; name: string; url: string; headers: Record
 async function loadVibeMcpServers(admin: Admin, projectId: string): Promise<VibeMcpServer[]> {
   const { data } = await admin
     .from("vibe_mcp_servers")
-    .select("server:mcp_servers(id, name, url, enabled, cached_tools, auth_mode, oauth, relay_id)")
+    .select("server:mcp_servers(id, name, url, headers, enabled, cached_tools, auth_mode, oauth)")
     .eq("project_id", projectId);
   const rows = ((data ?? []) as Record<string, unknown>[])
     .map((r) => r.server as Record<string, unknown> | null)
-    .filter((s): s is Record<string, unknown> => !!s && !!s.enabled)
-    // Les serveurs internes (échange de jeton, contexte signé, relais) n'ont de
-    // sens que pour un agent qui agit au nom d'une personne identifiée : pas
-    // pour le studio de code.
-    .filter((s) => !["token_exchange", "signed_context", "api_token"].includes(String(s.auth_mode)) && !s.relay_id);
+    .filter((s): s is Record<string, unknown> => !!s && !!s.enabled);
   const out: VibeMcpServer[] = [];
-  const staticHeaders = await loadMcpHeaders(admin, rows.map((s) => String(s.id)));
   for (const s of rows) {
-    let headers: Record<string, string> = { ...(staticHeaders.get(String(s.id)) ?? {}) };
+    let headers: Record<string, string> = s.headers && typeof s.headers === "object" ? { ...(s.headers as Record<string, string>) } : {};
     if (s.auth_mode === "oauth") {
       const token = await ensureAccessToken(admin, { id: String(s.id), oauth: (s.oauth as Record<string, unknown>) || {} });
-      if (token) headers = mergeMcpHeaders(headers, { Authorization: `Bearer ${token}` });
+      if (token) headers = { ...headers, Authorization: `Bearer ${token}` };
     }
     out.push({
       id: String(s.id), name: String(s.name), url: String(s.url), headers,

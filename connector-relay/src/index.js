@@ -15,8 +15,6 @@
 //   RELAY_CONCURRENCY         requêtes simultanées (défaut 4)
 //   RELAY_MAX_BYTES           taille maximale d'une réponse (défaut 1 Mo)
 //   RELAY_CA_FILE             autorité de certification interne (PEM)
-//   RELAY_CLIENT_CERT_FILE, RELAY_CLIENT_KEY_FILE  certificat client du relais (serveurs MCP en mTLS)
-//   RELAY_CLIENT_CERT_HOSTS   hôtes auxquels le présenter (mêmes motifs que RELAY_ALLOWED_HOSTS)
 //   RELAY_HEALTH_PORT         port d'une sonde /healthz (désactivé si absent)
 
 import os from "node:os";

@@ -1,32 +1,4 @@
 import { supabase } from "@/lib/supabase";
-import { API_URL, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/runtime-config";
-
-/**
- * Avec VITE_API_URL, toutes les fonctions partent vers le backend Express
- * (backend/), sauf celles listées ici, qui restent sur les edge functions
- * Supabase. Sans VITE_API_URL, tout reste sur Supabase comme avant.
- * Ajouter un nom ici est le retour arrière d'une fonction, sans redéploiement
- * du backend.
- */
-const EDGE_ONLY = new Set([
-  // L'URL de redirection OAuth est déclarée dans l'app Slack. À retirer une
-  // fois <backend>/functions/v1/slack-gateway ajoutée à ses « Redirect URLs ».
-  "slack-gateway",
-]);
-
-/** L'origine (sans /functions/v1) qui sert la fonction `name` : le backend
- *  Express, ou Supabase. C'est l'URL à donner aux clients qui composent
- *  eux-mêmes le chemin (relais, extension navigateur). */
-export function functionsBaseUrl(name: string): string {
-  const apiUrl = API_URL;
-  if (apiUrl && !EDGE_ONLY.has(name.split("?")[0])) return apiUrl.replace(/\/$/, "");
-  return SUPABASE_URL;
-}
-
-/** `name` peut porter une query string : "automation-receiver?sentinel=admin". */
-export function functionUrl(name: string): string {
-  return `${functionsBaseUrl(name)}/functions/v1/${name}`;
-}
 
 async function authHeader(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
@@ -40,10 +12,10 @@ export async function callEdge<T = unknown>(
   /** Abort the in-flight call (a composer's stop button, an unmounting view). */
   signal?: AbortSignal,
 ): Promise<T> {
-  const url = functionUrl(name);
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    apikey: SUPABASE_ANON_KEY,
+    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
     ...(await authHeader()),
   };
   const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal });

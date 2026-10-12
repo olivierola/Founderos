@@ -17,8 +17,6 @@ function loadEnv() {
 loadEnv();
 
 export const SUPABASE_URL = process.env.SUPABASE_URL;
-// Hôte des fonctions : le backend Express une fois basculé, Supabase sinon.
-export const FUNCTIONS_URL = process.env.FUNCTIONS_URL || SUPABASE_URL;
 export const RUNNER_TOKEN = process.env.RUNNER_TOKEN;
 export const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 export const RUNNER_ID = process.env.RUNNER_ID || `${os.hostname()}-${process.pid}`;
@@ -41,7 +39,7 @@ export const ts = () => new Date().toISOString();
 
 // POST to an edge function with the runner token. Returns parsed JSON.
 export async function rpc(fn, body) {
-  const res = await fetch(`${FUNCTIONS_URL}/functions/v1/${fn}`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Runner-Token": RUNNER_TOKEN },
     body: JSON.stringify(body),

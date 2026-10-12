@@ -5,7 +5,6 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { SUPABASE_ANON_KEY } from "@/lib/runtime-config";
 
 interface State {
   error: Error | null;
@@ -14,8 +13,7 @@ interface State {
 // Lazy-import to avoid bundling edge call paths in error boundary teardown.
 async function reportToBackend(err: Error) {
   try {
-    const { functionUrl } = await import("@/lib/edge");
-    const url = functionUrl("report-error");
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/report-error`;
     // Find current workspace_id from URL: /app/<ws>/<proj>/...
     const m = location.pathname.match(/^\/app\/([^/]+)\/([^/]+)/);
     if (!m) return;
@@ -33,9 +31,7 @@ async function reportToBackend(err: Error) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: SUPABASE_ANON_KEY,
-        // La passerelle exige un JWT dans Authorization ; la clé anon en est un.
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
       },
       body: JSON.stringify({
         workspace_id: ws.id,

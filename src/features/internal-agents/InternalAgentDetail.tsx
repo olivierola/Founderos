@@ -1399,6 +1399,7 @@ export function ChatTab({
             url={agent.avatar_url}
             seed={agent.name}
             size={compact ? 56 : 88}
+            accentColor={agent.accent_color}
             state={isBusy ? "working" : agent.is_archived ? "sleeping" : "default"}
             className={compact ? "mb-3" : "mb-4"}
           />
@@ -3904,9 +3905,14 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
             </SoftField>
           </div>
 
-          {/* Visual identity — the avatar studio, with its own live preview. */}
+          {/* Visual identity — pick an illustrated avatar (DiceBear library). */}
           <SoftField label="Avatar">
-            <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} accentColor={agent.accent_color} name={agent.name} />
+            <div className="flex items-start gap-3">
+              <AgentIdentity url={avatarUrl} seed={agent.name} size={56} rounded="rounded-2xl" className="mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} accentColor={agent.accent_color} name={agent.name} />
+              </div>
+            </div>
           </SoftField>
 
           {/* Two models, both real. "GPT-4" used to sit in this list and led
@@ -4469,7 +4475,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
         {/* Overview */}
         <div className="rounded-xl border border-border bg-card/40 p-4">
           <div className="flex items-center gap-2">
-            <AgentIdentity url={agent.avatar_url} seed={agent.name} size={36} rounded="rounded-lg" />
+            <AgentIdentity url={agent.avatar_url} seed={agent.name} size={36} rounded="rounded-lg" accentColor={agent.accent_color} />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">#{channelName}-collab</div>
               <div className="truncate text-[11px] text-muted-foreground">{agent.role ?? "Collaboration inter-collaborateurs"}</div>

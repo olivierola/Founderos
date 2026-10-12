@@ -21,11 +21,6 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4
 import { decryptSecret, encryptSecret } from "./crypto.ts";
 import { assertSafeUrl } from "./ssrf.ts";
 import { pkce, randomState } from "./mcp-oauth.ts";
-import { mcpCallToken } from "./mcp-auth.ts";
-import { decodeJwtPayload, IdpError, subjectOfClaims } from "./idp-tokens.ts";
-import { signUserContext } from "./user-context.ts";
-import { signFounderosToken } from "./founderos-jwt.ts";
-import { reportToolCall, traceIdFor } from "./mcp-observe.ts";
 import {
   type AuthConfig, type AuthScheme, type ConnectorOperation, type ConnectorPolicy, type OpParam, type Risk,
   normalizeAuthConfig, normalizeOperations, normalizePolicy, placeholders, secretFieldsFor,
@@ -49,8 +44,6 @@ export interface ConnectorRow {
   policy: unknown;
   status: "draft" | "active" | "disabled";
   version: number;
-  /** development, staging, production (0277) ; null : non précisé. */
-  environment?: string | null;
 }
 
 interface CredentialRow {
@@ -83,7 +76,7 @@ interface RelayRow {
 }
 
 const CONNECTOR_COLS =
-  "id, workspace_id, project_id, service_dashboard_id, name, slug, base_url, transport, relay_id, auth_scheme, auth_config, operations, policy, status, version, environment";
+  "id, workspace_id, project_id, service_dashboard_id, name, slug, base_url, transport, relay_id, auth_scheme, auth_config, operations, policy, status, version";
 
 // ── Petits outils ────────────────────────────────────────────────────────────
 
@@ -472,33 +465,13 @@ async function relayRoundTrip(
   c: ConnectorRow,
   credentialId: string | null,
   req: JobRequest,
-  jobSecrets?: Record<string, string>,
 ): Promise<TransportResult & { relay_name: string }> {
   if (!c.relay_id) throw new CallError("Aucun relais n'est rattaché à ce connecteur.", "blocked");
-  return await relayJob(admin, {
-    relayId: c.relay_id, workspaceId: c.workspace_id, connectorId: c.id, credentialId, jobSecrets,
-  }, req);
-}
-
-/**
- * Une tâche pour le relais, d'un outil interne ou d'un serveur MCP (G2).
- * `jobSecrets` : des secrets propres à cette tâche (jeton délégué, contexte
- * signé), mis en file chiffrés ; la requête n'en porte que les marqueurs
- * {{secret:nom}}, remplis au moment où le relais la réclame.
- */
-export async function relayJob(
-  admin: SupabaseClient,
-  target: {
-    relayId: string; workspaceId: string; connectorId?: string | null; credentialId?: string | null;
-    mcpServerId?: string | null; jobSecrets?: Record<string, string>;
-  },
-  req: JobRequest,
-): Promise<TransportResult & { relay_name: string }> {
   const { data: relay } = await admin.from("connector_relays")
-    .select("id, workspace_id, project_id, name, status, last_seen_at").eq("id", target.relayId).maybeSingle();
+    .select("id, workspace_id, project_id, name, status, last_seen_at").eq("id", c.relay_id).maybeSingle();
   const r = relay as RelayRow | null;
-  if (!r || r.status !== "active") throw new CallError("Le relais est révoqué ou introuvable.", "blocked");
-  if (r.workspace_id !== target.workspaceId) throw new CallError("Relais d'un autre espace.", "blocked");
+  if (!r || r.status !== "active") throw new CallError("Le relais de ce connecteur est révoqué ou introuvable.", "blocked");
+  if (r.workspace_id !== c.workspace_id) throw new CallError("Relais d'un autre espace.", "blocked");
   const seen = r.last_seen_at ? Date.parse(r.last_seen_at) : 0;
   if (Date.now() - seen > RELAY_STALE_MS) {
     const since = seen ? `dernier contact ${new Date(seen).toISOString()}` : "jamais connecté";
@@ -506,14 +479,9 @@ export async function relayJob(
   }
 
   const waitMs = Math.min(req.timeout_ms + 8_000, 60_000);
-  const sealed = target.jobSecrets && Object.keys(target.jobSecrets).length
-    ? await encryptSecret(JSON.stringify(target.jobSecrets))
-    : null;
   const { data: job, error } = await admin.from("connector_relay_jobs").insert({
-    relay_id: r.id, workspace_id: target.workspaceId,
-    connector_id: target.connectorId ?? null, credential_id: target.credentialId ?? null, mcp_server_id: target.mcpServerId ?? null,
+    relay_id: r.id, workspace_id: c.workspace_id, connector_id: c.id, credential_id: credentialId,
     request: req, expires_at: new Date(Date.now() + waitMs).toISOString(),
-    ...(sealed ? { job_secrets_enc: sealed.ciphertext, job_secrets_iv: sealed.iv } : {}),
   }).select("id").single();
   if (error || !job) throw new CallError(`File du relais indisponible : ${error?.message ?? "inconnu"}`);
 
@@ -829,115 +797,6 @@ export async function loadConnector(admin: SupabaseClient, id: string): Promise<
 
 const RAW_OP: ConnectorOperation = { name: "request", description: "Requête brute", risk: "read", params: [] };
 
-/**
- * Le jeton d'un appel en identité déléguée (l'IdP, au nom de la personne et de
- * l'agent) ou en contexte signé (FounderOS). Note dans le journal qui agit.
- */
-async function perCallToken(admin: SupabaseClient, c: ConnectorRow, input: CallInput, draft: AuditDraft): Promise<{ token: string; sub: string | null; azp: string | null }> {
-  const cfg = normalizeAuthConfig(c.auth_config);
-  if (!cfg.audience) throw new CallError("Audience de l'outil non renseignée.", "blocked");
-  let token: string;
-  try {
-    if (c.auth_scheme === "delegated") {
-      if (!input.agentId) {
-        throw new CallError("L'identité déléguée exige un collaborateur : testez cet outil depuis un agent.", "blocked");
-      }
-      token = await mcpCallToken(admin, {
-        userId: input.actorUserId ?? null, agent: { id: input.agentId, name: draft.agent_name ?? null },
-        audience: cfg.audience, scope: cfg.scope, provider: cfg.provider ?? null,
-      });
-    } else {
-      token = await signUserContext(admin, {
-        audience: cfg.audience, userId: input.actorUserId ?? null,
-        agent: input.agentId ? { id: input.agentId, name: draft.agent_name ?? null } : { id: "founderos-test", name: "founderos-test" },
-        runId: input.runId ?? null, scope: cfg.scope ?? null,
-      });
-    }
-  } catch (e) {
-    if (e instanceof CallError) throw e;
-    // Pas de session SSO, IdP qui refuse : l'appel est refusé, avec la raison.
-    throw new CallError(e instanceof Error ? e.message : String(e), e instanceof IdpError ? "blocked" : "error");
-  }
-  const claims = decodeJwtPayload(token);
-  const sub = subjectOfClaims(claims) || null;
-  const azp = typeof claims.azp === "string" ? claims.azp : typeof claims.appid === "string" ? claims.appid : null;
-  draft.identity = `${sub ?? "?"} via ${azp ?? "?"}`.slice(0, 200);
-  return { token, sub, azp };
-}
-
-/**
- * Le jeton d'approbation d'un appel approuvé (G3). Signé seulement si la
- * demande existe, vise ce connecteur et cette opération, et vient d'être
- * approuvée : la base l'a acceptée (quatre yeux, quorum, échéance, 0281).
- *
- *   iss  APPROVAL_ISSUER   aud  approval_audience du connecteur   typ JWT
- *   sub  la personne au nom de qui l'agent agissait   jti  la demande
- *   approver, approvers   connector, operation
- *   method, path, body_sha256   la requête exacte (query : pour information,
- *                               un paramètre d'authentification peut s'y ajouter)
- *   exp - iat = 300
- */
-async function approvalTokenForCall(
-  admin: SupabaseClient, c: ConnectorRow, input: CallInput, audience: string,
-  req: { method?: string; url?: string; body?: string | null },
-): Promise<string> {
-  const { data } = await admin.from("internal_agent_approvals")
-    .select("id, action_kind, status, payload, requested_by, decided_by, quorum").eq("id", input.approvalId!).maybeSingle();
-  const a = data as {
-    id: string; action_kind: string; status: string; payload: Record<string, unknown> | null;
-    requested_by: string | null; decided_by: string | null; quorum: number | null;
-  } | null;
-  if (!a || a.action_kind !== "custom_connector" || a.status !== "approved"
-      || a.payload?.connector_id !== c.id || a.payload?.operation !== input.operation) {
-    throw new CallError("Approbation introuvable, ou pas pour cet appel : rien n'est envoyé à l'outil.", "blocked");
-  }
-  let approvers: string[] = [];
-  if (a.quorum != null) {
-    const { data: votes } = await admin.from("internal_agent_approval_votes")
-      .select("idp_sub, created_at").eq("approval_id", a.id).order("created_at");
-    approvers = ((votes ?? []) as Array<{ idp_sub: string }>).map((v) => v.idp_sub);
-  } else if (a.decided_by) {
-    approvers = [a.decided_by];
-  }
-  if (!approvers.length) throw new CallError("Approbation sans approbateur : rien n'est envoyé à l'outil.", "blocked");
-  const url = new URL(String(req.url));
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(req.body ?? ""));
-  const { token } = await signFounderosToken({
-    typ: "JWT",
-    audience,
-    subject: a.requested_by ?? input.actorUserId ?? "service",
-    ttlS: 300,
-    jti: a.id,
-    claims: {
-      approver: approvers[approvers.length - 1],
-      approvers,
-      connector: c.slug,
-      operation: input.operation,
-      method: String(req.method ?? "GET").toUpperCase(),
-      path: url.pathname,
-      query: url.search,
-      body_sha256: [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join(""),
-    },
-  });
-  return token;
-}
-
-/** Audit et métriques communs aux outils internes et aux serveurs MCP (D7). */
-function observeCall(
-  c: ConnectorRow, input: CallInput, draft: AuditDraft, status: "ok" | "error" | "denied",
-  who: { sub: string | null; azp: string | null },
-): void {
-  reportToolCall({
-    trace_id: traceIdFor(input.runId), session_id: input.runId ?? null,
-    user: input.actorUserId ?? null, user_sub: who.sub,
-    agent: draft.agent_name ?? input.agentId ?? null, agent_client: who.azp,
-    workspace_id: c.workspace_id, mcp_server: `connector:${c.slug}`, cluster: c.environment ?? null,
-    tool: draft.operation ?? input.operation, status,
-    reason: status === "ok" ? null : (draft.error ?? null)?.slice(0, 120) ?? null,
-    policy_decision: draft.decision, approval_id: input.approvalId ?? null, duration_ms: draft.duration_ms ?? 0,
-  });
-}
-
 export async function executeCall(admin: SupabaseClient, input: CallInput): Promise<CallOutcome> {
   const callId = crypto.randomUUID();
   const c = await loadConnector(admin, input.connectorId);
@@ -952,8 +811,6 @@ export async function executeCall(admin: SupabaseClient, input: CallInput): Prom
     conversation_id: input.conversationId ?? null, actor_user_id: input.actorUserId ?? null,
     approval_id: input.approvalId ?? null, decision: "error",
   };
-  // Qui agit, quand le jeton est émis pour cet appel (identité déléguée, contexte signé).
-  let who: { sub: string | null; azp: string | null } = { sub: null, azp: null };
 
   try {
     if (c.status !== "active" && input.source !== "test") {
@@ -1013,11 +870,9 @@ export async function executeCall(admin: SupabaseClient, input: CallInput): Prom
       throw new CallError(`Débit maximal atteint (${policy.rate_limit_per_min} appels par minute).`, "blocked");
     }
 
-    // L'identifiant. Identité déléguée et contexte signé n'ont pas de profil :
-    // le jeton vient de l'IdP, ou de FounderOS, à chaque appel.
+    // L'identifiant.
     let cred: CredentialRow | null = null;
-    const perCall = c.auth_scheme === "delegated" || c.auth_scheme === "signed_context";
-    if (c.auth_scheme !== "none" && !perCall) {
+    if (c.auth_scheme !== "none") {
       const creds = await loadCredentials(admin, c.id);
       cred = input.credentialId ? creds.find((x) => x.id === input.credentialId) ?? null : creds[0] ?? null;
       if (!cred) {
@@ -1083,43 +938,11 @@ export async function executeCall(admin: SupabaseClient, input: CallInput): Prom
       }
       req = {
         type: "http", method, url: url.toString(), headers, body,
-        timeout_ms: timeout, max_bytes: maxBytes, apply_auth: c.auth_scheme !== "none" && !perCall, placeholder_encoding: "raw",
+        timeout_ms: timeout, max_bytes: maxBytes, apply_auth: c.auth_scheme !== "none", placeholder_encoding: "raw",
       };
       draft.method = method;
       draft.target = url.pathname.slice(0, 300);
       draft.request_bytes = body ? new TextEncoder().encode(body).byteLength : 0;
-    }
-
-    // Identité déléguée ou contexte signé : un jeton pour CET appel. Par le
-    // relais, il voyage chiffré (secret de tâche) ; la requête n'en porte que
-    // le marqueur.
-    let jobSecrets: Record<string, string> | undefined;
-    if (perCall && req.type === "http") {
-      const minted = await perCallToken(admin, c, input, draft);
-      who = { sub: minted.sub, azp: minted.azp };
-      const token = minted.token;
-      const cfg = normalizeAuthConfig(c.auth_config);
-      const header = cfg.header || "Authorization";
-      const prefix = cfg.prefix ?? "Bearer ";
-      if (c.transport === "relay") {
-        jobSecrets = { __identity: token };
-        req = { ...req, headers: { ...(req.headers ?? {}), [header]: `${prefix}{{secret:__identity}}` } };
-      } else {
-        req = { ...req, headers: { ...(req.headers ?? {}), [header]: `${prefix}${token}` } };
-      }
-    }
-
-    // Appel approuvé (G3) : l'outil qui le demande reçoit un jeton d'approbation
-    // signé par FounderOS, lié à CETTE requête. Comme le jeton d'identité, il ne
-    // passe dans la file du relais que chiffré.
-    if (policy.approval_audience && input.source === "approval" && input.approvalId && req.type === "http") {
-      const token = await approvalTokenForCall(admin, c, input, policy.approval_audience, req);
-      if (c.transport === "relay") {
-        jobSecrets = { ...(jobSecrets ?? {}), __approval: token };
-        req = { ...req, headers: { ...(req.headers ?? {}), "X-Approval-Token": "{{secret:__approval}}" } };
-      } else {
-        req = { ...req, headers: { ...(req.headers ?? {}), "X-Approval-Token": token } };
-      }
     }
 
     // Le transport.
@@ -1128,7 +951,7 @@ export async function executeCall(admin: SupabaseClient, input: CallInput): Prom
       if (c.auth_scheme === "oauth2_authorization_code" && cred) {
         await ensureAuthCodeToken(admin, c, cred);
       }
-      res = await relayRoundTrip(admin, c, cred?.id ?? null, req, jobSecrets);
+      res = await relayRoundTrip(admin, c, cred?.id ?? null, req);
     } else {
       const authed = await applyDirectAuth(admin, c, cred, req);
       res = await directFetch(authed);
@@ -1169,7 +992,6 @@ export async function executeCall(admin: SupabaseClient, input: CallInput): Prom
     const ok = res.status >= 200 && res.status < 400;
     if (!ok) draft.error = res.error ?? `HTTP ${res.status}`;
     await audit(admin, callId, draft);
-    observeCall(c, input, draft, ok ? "ok" : res.status === 401 || res.status === 403 ? "denied" : "error", who);
     if (cred) {
       admin.from("custom_connector_credentials").update({ last_used_at: new Date().toISOString() }).eq("id", cred.id).then(() => {}, () => {});
     }
@@ -1192,7 +1014,6 @@ export async function executeCall(admin: SupabaseClient, input: CallInput): Prom
     draft.decision = ce.decision;
     draft.error = ce.message;
     await audit(admin, callId, draft);
-    observeCall(c, input, draft, ce.decision === "blocked" ? "denied" : "error", who);
     return { ok: false, decision: ce.decision, call_id: callId, text: `${ce.decision === "blocked" ? "REFUSÉ" : "ERREUR"} : ${ce.message}` };
   }
 }
@@ -1417,27 +1238,9 @@ export async function newRelayToken(): Promise<{ token: string; hash: string; hi
   return { token, hash: await sha256Hex(token), hint: token.slice(-4) };
 }
 
-/**
- * La requête que le relais exécute : les marqueurs {{secret:x}} des secrets
- * propres à la tâche, remplis. Pure : testable sans base.
- */
-export function materializeJobRequest(req: JobRequest, jobSecrets: Record<string, string>): JobRequest {
-  return Object.keys(jobSecrets).length ? fillRequest(req, jobSecrets) : req;
-}
-
 /** Ce que le relais reçoit : la requête, secrets résolus si le cloud les détient. */
-async function claimPayload(admin: SupabaseClient, job: {
-  id: string; request: JobRequest; connector_id: string | null; credential_id: string | null;
-  job_secrets_enc?: string | null; job_secrets_iv?: string | null;
-}) {
-  // Secrets propres à la tâche (jeton délégué, contexte signé) : déchiffrés
-  // maintenant, puis effacés de la file — ils ne resservent jamais.
-  let jobSecrets: Record<string, string> = {};
-  if (job.job_secrets_enc && job.job_secrets_iv) {
-    try { jobSecrets = JSON.parse(await decryptSecret(job.job_secrets_enc, job.job_secrets_iv)); } catch { /* tâche sans secret */ }
-    await admin.from("connector_relay_jobs").update({ job_secrets_enc: null, job_secrets_iv: null }).eq("id", job.id);
-  }
-  const req = materializeJobRequest(job.request, jobSecrets);
+async function claimPayload(admin: SupabaseClient, job: { id: string; request: JobRequest; connector_id: string | null; credential_id: string | null }) {
+  const req = job.request;
   let cred: CredentialRow | null = null;
   let c: ConnectorRow | null = null;
   if (job.connector_id) c = await loadConnector(admin, job.connector_id);

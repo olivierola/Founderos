@@ -113,14 +113,14 @@ Deno.serve(async (req) => {
       // the new ones. The id lands on this workspace's connector row below.
       const created = await composio.authConfigs.create(toolkit, {
         name: `Anduran — ${toolkit}`, type: "use_custom_auth", authScheme: auth_scheme, credentials,
-      } as Parameters<typeof composio.authConfigs.create>[1]);
+      } as Record<string, unknown>);
       authConfigId = created.id;
     } else if (cached?.auth_config_id) {
       authConfigId = cached.auth_config_id;
     } else {
       const created = isOAuth
         ? await composio.authConfigs.create(toolkit, { name: `Anduran — ${toolkit}`, type: "use_composio_managed_auth" })
-        : await composio.authConfigs.create(toolkit, { name: `Anduran — ${toolkit}`, type: "use_custom_auth", authScheme: auth_scheme, credentials: {} } as Parameters<typeof composio.authConfigs.create>[1]);
+        : await composio.authConfigs.create(toolkit, { name: `Anduran — ${toolkit}`, type: "use_custom_auth", authScheme: auth_scheme, credentials: {} } as Record<string, unknown>);
       authConfigId = created.id;
       await admin.from("composio_auth_configs").insert({ toolkit_slug: toolkit, auth_scheme, auth_config_id: authConfigId });
     }

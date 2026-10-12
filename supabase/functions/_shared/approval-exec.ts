@@ -6,11 +6,10 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { runTrackerAction, trackerScope } from "./tracker-actions.ts";
-import { executeMcpApproval } from "./mcp-approval.ts";
 
 export type ApprovalActionKind =
   | "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write"
-  | "tracker_write" | "custom_connector" | "mcp_tool";
+  | "tracker_write" | "custom_connector";
 
 export interface ApprovalActionInput {
   /** L'approbation elle-même, quand l'appelant passe la ligne entière. */
@@ -19,36 +18,12 @@ export interface ApprovalActionInput {
   payload: Record<string, unknown>;
   workspace_id: string | null;
   project_id: string | null;
-  /** mcp_tool : l'agent et le demandeur au nom de qui l'appel est rejoué. */
-  agent_id?: string | null;
-  run_id?: string | null;
-  requested_by?: string | null;
 }
 
-export interface ApprovalExecOptions {
-  /** mcp_tool : le jeton d'approbation signé après validation (mcp-approval.ts). */
-  approvalToken?: string;
-}
-
-export async function executeApprovalAction(
-  a: ApprovalActionInput,
-  opts: ApprovalExecOptions = {},
-): Promise<{ ok: boolean; detail: string }> {
+export async function executeApprovalAction(a: ApprovalActionInput): Promise<{ ok: boolean; detail: string }> {
   const base = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const p = a.payload ?? {};
-
-  // Action en production (D6) : rejouée seulement avec le jeton signé après la
-  // validation d'un approbateur. Aucune autre porte, pas même une autorisation
-  // déjà donnée plus tôt dans la conversation.
-  if (a.action_kind === "mcp_tool") {
-    if (!opts.approvalToken) {
-      return { ok: false, detail: "Action en production : elle ne s'exécute qu'après la validation d'un approbateur." };
-    }
-    if (!base || !key) return { ok: false, detail: "MCP approvals not configured" };
-    const admin = createClient(base, key, { auth: { persistSession: false } });
-    return await executeMcpApproval(admin, a, opts.approvalToken);
-  }
 
   if (a.action_kind === "connector_action") {
     if (!base || !key) return { ok: false, detail: "Connector actions not configured" };
@@ -177,7 +152,6 @@ export function approvalScope(action_kind: string, payload: Record<string, unkno
   if (action_kind === "tracker_write") return `tracker:${p.action ?? ""}:${canon(p.params)}`;
   if (action_kind === "edge_function") return `edge:${p.slug ?? ""}:${canon(p.args)}`;
   if (action_kind === "custom_connector") return `custom:${p.connector_id ?? ""}:${p.operation ?? ""}:${canon(p.params)}:${canon(p.raw)}:${p.nonce ?? ""}`;
-  if (action_kind === "mcp_tool") return `mcp:${p.server_id ?? ""}:${p.tool ?? ""}:${p.params_hash ?? ""}`;
   return `webhook:${toolName}:${canon(p.args)}`;
 }
 
@@ -194,9 +168,6 @@ export function approvalScopePrefix(action_kind: string, payload: Record<string,
   // jamais tout le connecteur : un rollback n'a pas le poids d'une lecture.
   // Un geste destructif porte un nonce : son approbation ne resservira jamais.
   if (action_kind === "custom_connector") return `custom:${p.connector_id ?? ""}:${p.operation ?? ""}${p.nonce ? `:${p.nonce}` : ""}`;
-  // Une action en production ne s'accorde jamais en bloc : le préfixe est celui
-  // de l'action exacte, et internal-agent-approve refuse approve_all.
-  if (action_kind === "mcp_tool") return `mcp:${p.server_id ?? ""}:${p.tool ?? ""}:${p.params_hash ?? ""}`;
   return `webhook:${toolName}`;
 }
 
@@ -207,6 +178,5 @@ export function approvalScopeLabel(action_kind: string, payload: Record<string, 
   if (action_kind === "connector_action") return String(p.provider ?? "cet outil");
   if (action_kind === "crm_write") return "le CRM";
   if (action_kind === "custom_connector") return `${p.connector_name ?? "cet outil"} · ${p.operation ?? ""}`;
-  if (action_kind === "mcp_tool") return `${p.tool ?? "action"} sur ${p.target_cluster ?? "?"}`;
   return toolName || "cet outil";
 }

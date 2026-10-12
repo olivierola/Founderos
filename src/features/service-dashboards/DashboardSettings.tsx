@@ -400,7 +400,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                     <AgentIdentity url={assistant.avatar_url} seed={assistant.name} size={56} rounded="rounded-2xl" className="mt-0.5 border border-border" />
                     <div className="min-w-0 flex-1 space-y-3">
                       <Field label="Nom"><Input value={assistant.name} onChange={(e) => setA({ name: e.target.value })} /></Field>
-                      <Field label="Avatar"><AvatarPicker value={assistant.avatar_url} onChange={(v) => setA({ avatar_url: v })} name={assistant.name} /></Field>
+                      <Field label="Avatar"><AvatarPicker value={assistant.avatar_url} onChange={(v) => setA({ avatar_url: v })} /></Field>
                     </div>
                   </div>
                 </Card>

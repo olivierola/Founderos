@@ -1,9 +1,0 @@
-apiVersion: v2
-name: founderos-gateway
-description: >-
-  Passerelle d'entreprise FounderOS (G7) : le relais sortant et les serveurs MCP
-  du cluster, dans un seul pod, sans aucun port entrant. Le seul composant à
-  installer chez le client quand FounderOS est en cloud.
-type: application
-version: 0.1.0
-appVersion: "0.1.0"
