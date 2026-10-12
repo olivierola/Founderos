@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   AuthSection,
   type AuthSocialProvider,
@@ -8,6 +9,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { readAttribution } from "@/lib/attribution";
+import { fetchLoginOptions } from "@/features/sso/api";
 
 export function SignupPage() {
   const navigate = useNavigate();
@@ -15,9 +17,15 @@ export function SignupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const { data: sso } = useQuery({ queryKey: ["sso-login-options"], queryFn: fetchLoginOptions, staleTime: 60_000 });
 
   if (!authLoading && session) {
     return <Navigate to="/onboarding" replace />;
+  }
+  // Accounts of an SSO-only organisation are created by its identity provider,
+  // on first sign-in.
+  if (sso?.sso_only && sso.providers.length) {
+    return <Navigate to="/login" replace />;
   }
 
   async function handleSignup({
@@ -81,7 +89,7 @@ export function SignupPage() {
       error={error}
       info={info}
       onSubmit={handleSignup}
-      onSocial={handleSocial}
+      onSocial={sso?.providers.length ? undefined : handleSocial}
     />
   );
 }

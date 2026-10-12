@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mcp-server
+description: Un serveur MCP de la plateforme agentique (namespace ai-mcp), avec OPA en sidecar.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

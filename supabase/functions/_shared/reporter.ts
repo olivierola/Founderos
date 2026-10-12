@@ -574,7 +574,7 @@ export async function writeReport(deps: ReporterDeps, brief: ReportBrief): Promi
       try {
         published = await publish(deps, reporter, draft);
         await logChild("status", {
-          message: `Budget de tours épuisé avant la publication — brouillon publié tel quel (${draft.blocks.length} blocs).`,
+          message: `Budget de tours épuisé avant la publication — brouillon publié tel quel (${draft.blocks?.length ?? 0} blocs).`,
         });
       } catch (e) {
         await logChild("tool_error", {

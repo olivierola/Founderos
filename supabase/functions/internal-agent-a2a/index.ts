@@ -121,10 +121,16 @@ Deno.serve(async (req) => {
         if (!(await insertArtifact(admin, art.kind, art.title, art.content, scope))) throw new Error("enregistrement du document impossible");
       },
       requestApproval: async (r) => {
-        const { data } = await admin.from("internal_agent_approvals").insert({
+        // Mêmes champs que le run principal : demandeur, échéance et copie de la
+        // règle (0275, 0281). Sans eux, la base refusait une action en production.
+        const { data, error } = await admin.from("internal_agent_approvals").insert({
           agent_id: a.id, workspace_id: a.workspace_id, project_id: a.project_id,
           tool_name: r.tool_name, action_kind: r.action_kind, payload: r.payload, reason: r.reason,
+          ...(r.requested_by !== undefined ? { requested_by: r.requested_by } : {}),
+          ...(r.expires_at ? { expires_at: r.expires_at } : {}),
+          ...(r.policy ?? {}),
         }).select("id").single();
+        if (error || !data) throw new Error(`Could not queue approval: ${error?.message ?? "no row"}`);
         return (data as { id: string }).id;
       },
       logEvent: async () => {},

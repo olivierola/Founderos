@@ -538,7 +538,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
           className="min-w-0 flex-1 bg-transparent text-[26px] font-semibold tracking-tight placeholder:text-muted-foreground/50 focus:outline-none"
         />
       </div>
-      {avatarOpen && <div className="mt-4"><AvatarPicker value={avatar} onChange={(v) => { setAvatar(v); setAvatarOpen(false); }} /></div>}
+      {avatarOpen && <div className="mt-4"><AvatarPicker value={avatar} onChange={setAvatar} name={name} onDone={() => setAvatarOpen(false)} /></div>}
 
       <div className="my-6 border-t border-border/60" />
 

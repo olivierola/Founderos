@@ -608,7 +608,6 @@ export function CompanionPage() {
                   url={a.avatar_url}
                   seed={a.name}
                   size={28}
-                  accentColor={a.accent_color}
                   state={working ? "working" : "default"}
                   interactive={false}
                   paused={!working && !selected}
@@ -735,7 +734,7 @@ function AllCollaboratorsMenu({ agents, busy, onSelect }: {
         <div className="max-h-80 overflow-y-auto">
           {list.map((a) => (
             <DropdownMenuItem key={a.id} onClick={() => onSelect(a.id)} className="gap-2.5 rounded-xl">
-              <AgentIdentity style={a.avatar_style} url={a.avatar_url} seed={a.name} size={24} accentColor={a.accent_color} interactive={false} paused rounded="rounded-full" />
+              <AgentIdentity style={a.avatar_style} url={a.avatar_url} seed={a.name} size={24} interactive={false} paused rounded="rounded-full" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs font-medium">{a.name}</span>
                 <span className="block truncate text-[10.5px] text-muted-foreground">{a.role || a.description || "Collaborateur"}</span>

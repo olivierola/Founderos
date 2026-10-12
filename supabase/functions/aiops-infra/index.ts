@@ -267,7 +267,7 @@ async function accrueJobCost(admin: ReturnType<typeof createServiceClient>, job:
 // An unauthenticated endpoint is legitimate (a vLLM/Ollama server on the
 // company's own network), so the Authorization header is only sent when there
 // is actually a key — some servers reject a bare "Bearer ".
-const cloudHeaders = (apiKey: string) => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
+const cloudHeaders = (apiKey: string): Record<string, string> => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
 
 async function cloudListModels(baseUrl: string, apiKey: string) {
   const res = await fetch(`${trimSlash(baseUrl)}/models`, { headers: cloudHeaders(apiKey) });
@@ -766,7 +766,7 @@ Deno.serve(async (req) => {
 
         // ── RunPod pod (real) ────────────────────────────────────────────────
         const pod = await runpodCreatePod(apiKey, {
-          name: name || `founderos-${Date.now().toString(36)}`,
+          name: (name as string | undefined) || `founderos-${Date.now().toString(36)}`,
           gpuTypeId: String(gpu_type_id), image: vllmImage, gpuCount, cloudType,
           dockerArgs: args.join(" "),
         });

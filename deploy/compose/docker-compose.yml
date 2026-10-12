@@ -1,0 +1,82 @@
+# FounderOS sur une machine virtuelle unique (G5) : petites équipes, essai.
+#
+# Supabase est fourni : le plus simple sur la même machine est son docker compose
+# officiel (https://supabase.com/docs/guides/self-hosting/docker), dont
+# l'installateur prépare aussi les clés (deploy/installer, cible vm).
+#
+#   node deploy/installer/founderos-config.mjs founderos.yaml --out deploy/compose
+#   docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env up -d
+#
+# Images publiées par défaut ; `--build` les construit depuis ce dépôt.
+
+name: founderos
+
+services:
+  # Les migrations de supabase/migrations, avant le backend. Relancer ne rejoue rien.
+  migrate:
+    image: ${FOUNDEROS_REGISTRY:-ghcr.io/founderos}/migrations:${FOUNDEROS_TAG:-0.1.0}
+    build: { context: ../.., dockerfile: deploy/migrations/Dockerfile }
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est requis}
+    restart: "no"
+    networks: [founderos, supabase]
+
+  backend:
+    image: ${FOUNDEROS_REGISTRY:-ghcr.io/founderos}/backend:${FOUNDEROS_TAG:-0.1.0}
+    build: { context: ../../backend }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    env_file: [.env]
+    environment:
+      PORT: "8787"
+      SUPABASE_URL: ${SUPABASE_INTERNAL_URL:-${SUPABASE_URL}}
+      FUNCTIONS_URL: ${FOUNDEROS_API_URL:?FOUNDEROS_API_URL est requis}
+      APP_BASE_URL: ${FOUNDEROS_WEB_URL:?FOUNDEROS_WEB_URL est requis}
+      APP_URL: ${FOUNDEROS_WEB_URL}
+      APPROVAL_ISSUER: ${FOUNDEROS_API_URL}
+      TRUST_PROXY: "1"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # index.ts laisse 25 s aux tâches de fond sur SIGTERM.
+    stop_grace_period: 35s
+    restart: unless-stopped
+    networks: [founderos, supabase]
+
+  web:
+    image: ${FOUNDEROS_REGISTRY:-ghcr.io/founderos}/web:${FOUNDEROS_TAG:-0.1.0}
+    build: { context: ../.., dockerfile: deploy/spa/Dockerfile }
+    environment:
+      FOUNDEROS_SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL est requis}
+      FOUNDEROS_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?SUPABASE_ANON_KEY est requis}
+      FOUNDEROS_API_URL: ${FOUNDEROS_API_URL}
+    restart: unless-stopped
+    networks: [founderos]
+
+  # HTTPS automatique (Let's Encrypt) pour l'interface et le backend. Sur un réseau
+  # sans accès Internet : CADDY_TLS=internal (autorité de Caddy) ou vos certificats.
+  proxy:
+    image: caddy:2.8
+    depends_on: [backend, web]
+    ports: ["80:80", "443:443"]
+    environment:
+      FOUNDEROS_WEB_HOST: ${FOUNDEROS_WEB_HOST:?FOUNDEROS_WEB_HOST est requis}
+      FOUNDEROS_API_HOST: ${FOUNDEROS_API_HOST:?FOUNDEROS_API_HOST est requis}
+      CADDY_TLS: ${CADDY_TLS:-auto}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    restart: unless-stopped
+    networks: [founderos]
+
+networks:
+  founderos: {}
+  # Le réseau du compose Supabase (son nom par défaut : supabase_default).
+  supabase:
+    external: true
+    name: ${SUPABASE_NETWORK:-supabase_default}
+
+volumes:
+  caddy-data: {}

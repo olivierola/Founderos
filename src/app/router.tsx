@@ -111,6 +111,11 @@ import { SettingsRolesPage } from "@/features/settings/Roles";
 import { SettingsBillingPage } from "@/features/settings/Billing";
 import { SubscribeRedirectPage } from "@/features/settings/SubscribeRedirect";
 import { SettingsSecurityPage } from "@/features/settings/Security2FA";
+import { SsoSettingsPage } from "@/features/sso/SsoSettingsPage";
+import { SsoSetupPage } from "@/features/sso/SsoSetup";
+import { InstallationPage } from "@/features/installation/InstallationPage";
+import { SetupPage } from "@/features/installation/SetupPage";
+import { PrdApprovalsPage } from "@/features/prd-approvals/PrdApprovalsPage";
 
 // Admin dashboard (single-sidebar) — new page(s) + the mapping of its tabs to
 // the existing settings/integrations/governance page components.
@@ -277,6 +282,9 @@ const ADMIN_PAGES: Record<string, PageEl> = {
   workspaces: <SettingsProjectsPage />,
   repositories: <RepositoriesPage />,
   security: <SettingsSecurityPage />,
+  sso: <SsoSettingsPage />,
+  "approbations-prd": <PrdApprovalsPage />,
+  installation: <InstallationPage />,
   // ── Abonnements ──
   subscription: <AdminSubscriptionPage />,
   usage: <AdminUsagePage />,
@@ -362,6 +370,25 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <BillingSuccessPage />
+      </ProtectedRoute>
+    ),
+  },
+  // Lien « Set up SSO » de la page de connexion : envoie un owner ou un admin
+  // vers Administration → Authentification de son organisation.
+  // Premier démarrage d'une installation (G5) : l'adresse donnée par l'installateur.
+  {
+    path: "/setup",
+    element: (
+      <ProtectedRoute>
+        <SetupPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/sso-setup",
+    element: (
+      <ProtectedRoute>
+        <SsoSetupPage />
       </ProtectedRoute>
     ),
   },

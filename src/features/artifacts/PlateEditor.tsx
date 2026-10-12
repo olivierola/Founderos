@@ -5,12 +5,14 @@ import { aiChatPlugin } from "@/components/ai-kit";
 import { EditorKit } from "@/components/editor-kit";
 import { Editor, EditorContainer } from "@/components/ui/editor";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { functionUrl } from "@/lib/edge";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { toRichValue } from "./shared";
+import { SUPABASE_ANON_KEY } from "@/lib/runtime-config";
 
-const STREAM_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/office-ai-stream`;
-const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const STREAM_URL = functionUrl("office-ai-stream");
+const ANON = SUPABASE_ANON_KEY;
 
 // Full Plate editor (playground-grade fixed toolbar with the "more" dropdown,
 // drag handle, tables, media, AI menu, slash commands…) wired for the artifact

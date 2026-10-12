@@ -1,7 +1,8 @@
 {
   "version": "5",
   "remote": {
-    "https://esm.sh/@supabase/supabase-js@2.45.4": "1108d69216995335d057dbd15907caaf514a4d1ef082f097050573b9d589a57c"
+    "https://esm.sh/@supabase/supabase-js@2.45.4": "1108d69216995335d057dbd15907caaf514a4d1ef082f097050573b9d589a57c",
+    "https://esm.sh/jose@5.9.6": "8c535558ee938997693933217d3f71cdbb97f968cc9b5385ab442664458aa576"
   },
   "workspace": {
     "packageJson": {
@@ -111,7 +112,7 @@
         "npm:@vitejs/plugin-react@^4.3.2",
         "npm:ai@^6.0.204",
         "npm:autoprefixer@^10.4.20",
-        "npm:bot-avatars@~0.1.2",
+        "npm:bot-avatars@~0.2.2",
         "npm:class-variance-authority@0.7",
         "npm:clsx@^2.1.1",
         "npm:cmdk@^1.1.1",

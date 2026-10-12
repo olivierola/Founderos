@@ -1,0 +1,21 @@
+{{- if .Values.certManager.enabled }}
+# Certificat serveur, signé par l'AC interne de la plateforme, 30 jours.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "mcp.name" . }}
+  labels: {{- include "mcp.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "mcp.tlsSecret" . }}
+  duration: {{ .Values.certManager.duration }}
+  renewBefore: {{ .Values.certManager.renewBefore }}
+  commonName: {{ .Values.route.host | default (include "mcp.name" .) }}
+  dnsNames:
+    {{- with .Values.route.host }}
+    - {{ . }}
+    {{- end }}
+    - {{ include "mcp.name" . }}.{{ .Release.Namespace }}.svc
+  usages: [server auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+  issuerRef: { kind: {{ .Values.certManager.issuerKind }}, name: {{ .Values.certManager.issuerName }} }
+{{- end }}

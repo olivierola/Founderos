@@ -5,7 +5,8 @@
 
 // Node 18+ ships a global fetch — no dependency needed.
 
-const RUNNER_POLL_URL = `${process.env.SUPABASE_URL}/functions/v1/ops-runner-poll`;
+// Hôte des fonctions : le backend Express une fois basculé, Supabase sinon.
+const RUNNER_POLL_URL = `${process.env.FUNCTIONS_URL || process.env.SUPABASE_URL}/functions/v1/ops-runner-poll`;
 const TOKEN = process.env.RUNNER_TOKEN;
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL not set");

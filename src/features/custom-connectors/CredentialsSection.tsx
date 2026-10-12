@@ -67,6 +67,17 @@ export function CredentialsSection({ connector, credentials, readOnly, dirty, on
       </div>
     );
   }
+  if (connector.auth_scheme === "delegated" || connector.auth_scheme === "signed_context") {
+    return (
+      <div>
+        <SectionTitle>Identifiants</SectionTitle>
+        <p className="text-xs text-muted-foreground">
+          Rien à enregistrer : chaque appel part au nom de la personne pour qui l'agent agit, avec un jeton émis pour cet appel seul
+          {connector.auth_scheme === "delegated" ? " par l'IdP de l'entreprise" : ", signé par FounderOS"}.
+        </p>
+      </div>
+    );
+  }
 
   async function revoke(c: ConnectorCredential) {
     if (!(await confirm({

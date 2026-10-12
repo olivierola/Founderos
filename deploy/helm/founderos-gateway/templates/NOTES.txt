@@ -1,0 +1,26 @@
+Passerelle FounderOS installée : {{ include "gw.fullname" . }} ({{ .Release.Namespace }}).
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gw.fullname" . }} -c relay -f
+
+Le relais apparaît « en ligne » dans FounderOS (Ressources → Outils internes → Relais)
+au premier contact. Liste blanche : {{ include "gw.allowedHosts" . | default "(vide : tout est refusé)" }}
+{{- if include "gw.mcpEnabled" . }}
+
+Serveurs MCP ({{ join ", " .Values.mcp.servers }}, cluster {{ .Values.mcp.cluster }}) sur la boucle locale du pod.
+Dans FounderOS : Serveurs MCP → Ajouter
+  - accès : par le relais de cette passerelle
+  - adresse : http://127.0.0.1:{{ .Values.mcp.port }}/mcp
+  {{- if eq .Values.mcp.auth.mode "rotating" }}
+  - authentification : Jeton d'API, celui qu'affiche token-cli seed (ou current). Le serveur livre
+    ensuite lui-même chaque nouveau jeton (graine : Secret {{ include "gw.seedSecret" . }}, clé seed)
+  {{- else if eq .Values.mcp.auth.mode "token" }}
+  - authentification : Jeton d'API (le jeton affiché par token-cli generate ; son empreinte
+    est dans le Secret {{ include "gw.tokensSecret" . }}, clé tokens.json)
+  {{- else }}
+  - authentification : Identité déléguée par l'IdP (audience {{ default (printf "mcp-%s" .Values.mcp.cluster) .Values.mcp.audience }})
+  {{- end }}
+{{- if eq .Values.opa.mode "builtin" }}
+
+ATTENTION : opa.mode=builtin, décision locale sans OPA. Pour un essai seulement.
+{{- end }}
+{{- end }}

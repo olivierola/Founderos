@@ -21,12 +21,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
-import { callEdge } from "@/lib/edge";
+import { callEdge, functionUrl } from "@/lib/edge";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { StatTile, compact } from "./StatTile";
 import { ALERT_STATUS_LABEL, CATEGORY_LABEL, PRIORITY_LABEL } from "@/features/internal-agents/sentinel/SocBoardView";
+import { SUPABASE_ANON_KEY } from "@/lib/runtime-config";
 
 // SentinelFlow — le triage SOC.
 //
@@ -46,7 +47,7 @@ import { ALERT_STATUS_LABEL, CATEGORY_LABEL, PRIORITY_LABEL } from "@/features/i
 type Tab = "alerts" | "sources" | "assets" | "rules" | "remediations";
 
 const ADMIN_FN = "automation-receiver?sentinel=admin";
-const hookUrl = (token: string) => `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/automation-receiver?sentinel=${token}`;
+const hookUrl = (token: string) => functionUrl(`automation-receiver?sentinel=${token}`);
 const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
@@ -77,8 +78,8 @@ export function GovSentinelFlowPage() {
     queryKey: ["sentinel_presets"],
     staleTime: 3600_000,
     queryFn: async () => {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/automation-receiver?sentinel=presets`, {
-        headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+      const res = await fetch(functionUrl("automation-receiver?sentinel=presets"), {
+        headers: { apikey: SUPABASE_ANON_KEY },
       });
       const j = await res.json().catch(() => ({}));
       return ((j as { presets?: Preset[] }).presets ?? []) as Preset[];

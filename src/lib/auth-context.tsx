@@ -1,7 +1,39 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { callEdge } from "@/lib/edge";
 import { persistAttributionToUser } from "@/lib/attribution";
+import { API_URL } from "@/lib/runtime-config";
+
+/** Connexion par le SSO de l'entreprise (fournisseur OIDC « custom:… » de Supabase Auth). */
+const isEnterpriseSso = (user: User | null | undefined) =>
+  String(user?.app_metadata?.provider ?? "").startsWith("custom:");
+
+/**
+ * Installation dédiée : au retour du SSO, supabase-js expose UNE fois le jeton
+ * de rafraîchissement de l'IdP de l'entreprise. On le remet au backend
+ * (fonction idp-token), qui le garde chiffré pour les appels d'outils faits au
+ * nom de cette personne, si ce fournisseur délègue aux agents
+ * (docs/enterprise-generalisation.md G1). Le navigateur ne le conserve pas.
+ */
+async function handOverIdpToken(session: Session): Promise<void> {
+  const token = session.provider_refresh_token;
+  if (!token || !API_URL || !isEnterpriseSso(session.user)) return;
+  // Une session restaurée peut réémettre un jeton déjà remis (et déjà tourné
+  // côté serveur) : on ne le renvoie pas.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  const marker = `fos-idp-handover:${Array.from(new Uint8Array(digest).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("")}`;
+  try {
+    if (localStorage.getItem(marker)) return;
+  } catch { /* stockage indisponible : le serveur déduplique aussi */ }
+  try {
+    await callEdge("idp-token", { action: "store", refresh_token: token, provider: session.user.app_metadata?.provider });
+    try { localStorage.setItem(marker, "1"); } catch { /* ignoré */ }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("[sso] jeton SSO non conservé : les agents ne pourront pas agir en votre nom.", err);
+  }
+}
 
 interface AuthContextValue {
   session: Session | null;
@@ -22,8 +54,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
+      // Hors du rappel : supabase-js déconseille d'y attendre un autre appel auth
+      // (callEdge relit la session).
+      if (event === "SIGNED_IN" && newSession?.provider_refresh_token) {
+        setTimeout(() => void handOverIdpToken(newSession), 0);
+      }
     });
 
     return () => subscription.subscription.unsubscribe();
@@ -45,6 +82,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user: session?.user ?? null,
     loading,
     signOut: async () => {
+      // Le jeton SSO conservé pour les agents est oublié et invalidé avant la
+      // fin de la session (il faut encore le JWT pour appeler le backend).
+      if (API_URL && isEnterpriseSso(session?.user)) {
+        await callEdge("idp-token", { action: "revoke", provider: session?.user.app_metadata?.provider }).catch(() => {});
+      }
       await supabase.auth.signOut();
     },
   };

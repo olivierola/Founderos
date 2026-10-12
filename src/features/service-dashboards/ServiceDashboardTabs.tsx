@@ -523,6 +523,7 @@ function AgentGallery({ title, dot, agents, counts, activity, waitingByAgent, fo
           return (
             <CatalogCard
               key={a.id}
+              variant="portrait"
               className={cn(a.studio && "studio-border")}
               onClick={() => onOpen(a.id)}
               action={
@@ -530,7 +531,9 @@ function AgentGallery({ title, dot, agents, counts, activity, waitingByAgent, fo
                   <DropdownMenuTrigger asChild>
                     <button
                       title="Déplacer"
-                      className="rounded-lg border border-border/70 bg-background/90 p-1 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
+                      // La carte est noire dans les deux thèmes : le bouton
+                      // aussi, sinon il ferait une pastille blanche en clair.
+                      className="rounded-full border border-white/10 bg-black/60 p-1.5 text-white/70 backdrop-blur transition-colors hover:bg-white/10 hover:text-white"
                     >
                       <DotsThreeIcon className="h-4 w-4" />
                     </button>
@@ -553,7 +556,7 @@ function AgentGallery({ title, dot, agents, counts, activity, waitingByAgent, fo
               }
               glyph={
                 <AgentIdentity
-                  style={a.avatar_style} url={a.avatar_url} seed={a.name} size={54} rounded="rounded-xl"
+                  style={a.avatar_style} url={a.avatar_url} seed={a.name} size={100} rounded="rounded-3xl"
                   state={act?.live ? "working" : "default"}
                 />
               }
@@ -883,7 +886,7 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
             headerLeading={
               <div className="flex h-9 items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2.5 shadow-sm backdrop-blur">
                 <button onClick={() => navigate(`${sbase}/agents`)} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground" title="Retour aux collaborateurs"><ArrowLeftIcon className="h-3.5 w-3.5" /></button>
-                <AgentIdentity style={agent.avatar_style ?? "orb"} url={agent.avatar_url} seed={agent.name} size={22} rounded="rounded-full" accentColor={agent.accent_color} />
+                <AgentIdentity style={agent.avatar_style ?? "orb"} url={agent.avatar_url} seed={agent.name} size={22} rounded="rounded-full" />
                 <span className="max-w-[160px] truncate text-xs font-semibold leading-tight">{agent.name}</span>
               </div>
             }

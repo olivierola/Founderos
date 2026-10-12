@@ -1,0 +1,56 @@
+{{- $hosts := list (dict "name" "web" "host" (include "founderos.host" (include "founderos.webUrl" .)) "port" "http")
+                  (dict "name" "backend" "host" (include "founderos.host" (include "founderos.backendUrl" .)) "port" "http") }}
+{{- if eq .Values.platform "openshift" }}
+{{- range $hosts }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ $.Release.Name }}-{{ .name }}
+  labels:
+    {{- include "founderos.labels" $ | nindent 4 }}
+    {{- with $.Values.route.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  host: {{ .host }}
+  to: { kind: Service, name: {{ $.Release.Name }}-{{ .name }} }
+  port: { targetPort: {{ .port }} }
+  tls: { termination: {{ $.Values.route.tlsTermination }}, insecureEdgeTerminationPolicy: Redirect }
+{{- end }}
+{{- else if eq .Values.platform "kubernetes" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "founderos.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tlsSecretName }}
+  tls:
+    - secretName: {{ .Values.ingress.tlsSecretName }}
+      hosts:
+        {{- range $hosts }}
+        - {{ .host }}
+        {{- end }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ $.Release.Name }}-{{ .name }}, port: { name: {{ .port }} } } }
+    {{- end }}
+{{- else }}
+{{- fail "platform : kubernetes ou openshift" }}
+{{- end }}

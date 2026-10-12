@@ -1,5 +1,9 @@
 // AI router: Groq for fast / classification / JSON-extract, DeepSeek for deep code analysis.
 // Per spec section 13. Both providers expose OpenAI-compatible REST endpoints.
+// A deployment can pin every call to one gateway instead (LLM_UPSTREAM=litellm
+// or azure, see llm-upstream.ts): routing and failover then stop.
+
+import { adaptChatBody, llmAuthHeaders, pinnedUpstream, upstreamModelFor } from "./llm-upstream.ts";
 
 export type AiTask =
   | "summary"
@@ -58,6 +62,14 @@ interface CallOpts {
 export interface EndpointOverride { baseUrl: string; apiKey?: string; model?: string }
 const chatCompletionsUrl = (baseUrl: string) => `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
+/** The deployment's pinned upstream as an endpoint, when there is one. Treated
+ *  like any custom endpoint downstream (`pinned`: no squeeze-to-Groq budget, no
+ *  cross-provider failover); its credentials are added by postChat. */
+function pinnedEndpoint(requestedModel?: string): EndpointOverride | undefined {
+  const up = pinnedUpstream();
+  return up ? { baseUrl: up.baseUrl, model: upstreamModelFor(up, requestedModel) } : undefined;
+}
+
 interface ChatResponse {
   choices: { message: { content: string }; finish_reason?: string }[];
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
@@ -73,7 +85,7 @@ export async function callAi(opts: CallOpts): Promise<{ content: string; provide
     throw new Error("LLM calls are disabled by environment (LLM_GLOBAL_BLOCK=1)");
   }
   const provider = opts.provider ?? routeAiRequest(opts.task);
-  const ep = opts.endpoint;
+  const ep = opts.endpoint ?? pinnedEndpoint(opts.model);
   const apiKey = ep ? (ep.apiKey ?? "") : (provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY"));
   if (!ep && !apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
 
@@ -480,7 +492,7 @@ export async function callAiWithTools(opts: ToolLoopOpts): Promise<ToolLoopResul
     throw new Error("LLM calls are disabled by environment (LLM_GLOBAL_BLOCK=1)");
   }
   const provider = opts.provider ?? "groq";
-  const ep = opts.endpoint;
+  const ep = opts.endpoint ?? pinnedEndpoint(opts.model);
   const apiKey = ep ? (ep.apiKey ?? "") : (provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY"));
   if (!ep && !apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
   const url = ep ? chatCompletionsUrl(ep.baseUrl) : TOOL_ENDPOINTS[provider];
@@ -772,7 +784,7 @@ export interface ToolRoundsResult {
 export async function runToolRounds(opts: ToolRoundsOpts): Promise<ToolRoundsResult> {
   if (Deno.env.get("LLM_GLOBAL_BLOCK") === "1") throw new Error("LLM calls are disabled (LLM_GLOBAL_BLOCK=1)");
   const provider = opts.provider ?? "deepseek";
-  const ep = opts.endpoint;
+  const ep = opts.endpoint ?? pinnedEndpoint(opts.model);
   const apiKey = ep ? (ep.apiKey ?? "") : (provider === "groq" ? Deno.env.get("GROQ_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY"));
   if (!ep && !apiKey) throw new Error(`${provider.toUpperCase()}_API_KEY is not configured`);
   const url = ep ? chatCompletionsUrl(ep.baseUrl) : TOOL_ENDPOINTS[provider];
@@ -1123,14 +1135,19 @@ async function postChat(
   body: Record<string, unknown>,
 ): Promise<ToolChatResponse> {
   let lastErr = "";
+  // Every chat request of this module leaves through here, so this is where a
+  // pinned deployment refuses any other host (llmAuthHeaders throws) and where
+  // the body is adapted to Azure's dialect.
+  // No key → no header at all. A self-hosted endpoint (vLLM/Ollama on the
+  // company network) is often unauthenticated, and some of them reject a bare
+  // "Bearer " outright.
+  const authHeaders = await llmAuthHeaders(url, apiKey);
+  const payload = JSON.stringify(adaptChatBody(url, body));
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(url, {
       method: "POST",
-      // No key → no header at all. A self-hosted endpoint (vLLM/Ollama on the
-      // company network) is often unauthenticated, and some of them reject a
-      // bare "Bearer " outright.
-      headers: { ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}), "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: payload,
     });
     if (res.ok) return (await res.json()) as ToolChatResponse;
     const text = await res.text();

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { functionsBaseUrl } from "@/lib/edge";
 import type { PageCapture, PickedElement } from "./contextBlocks";
 
 /**
@@ -139,7 +140,9 @@ export function useCompanionBridge(opts: { signedIn: boolean } & Handlers) {
   // panel is what makes pairing possible.
   useEffect(() => {
     if (!inPanel) return;
-    post({ type: "ready", supabaseUrl: import.meta.env.VITE_SUPABASE_URL, user: opts.signedIn });
+    // `supabaseUrl` is the extension's name for the base it appends
+    // /functions/v1/test-runner-poll to: the Express backend when there is one.
+    post({ type: "ready", supabaseUrl: functionsBaseUrl("test-runner-poll"), user: opts.signedIn });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inPanel, opts.signedIn]);
 

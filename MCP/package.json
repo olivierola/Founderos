@@ -1,0 +1,28 @@
+{
+  "name": "founderos-mcp-servers",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Serveurs MCP de la plateforme agentique interne : observabilité, flotte ACM, OpenShift, Argo CD, GitHub, PRTG.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"test/**/*.test.ts\"",
+    "token": "tsx src/token-cli.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "jose": "6.2.12",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "founderos-migrations",
+  "private": true,
+  "type": "module",
+  "description": "Applique supabase/migrations à la base d'une installation (Job du chart, service du docker-compose).",
+  "scripts": {
+    "migrate": "node migrate.mjs",
+    "test": "node --test runner.test.mjs"
+  },
+  "dependencies": {
+    "postgres": "3.4.5"
+  }
+}

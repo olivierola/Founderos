@@ -19,6 +19,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { mcpCallTool, type McpTool } from "./mcp-client.ts";
 import { ensureAccessToken } from "./mcp-oauth.ts";
+import { loadMcpHeaders, mergeMcpHeaders } from "./mcp-headers.ts";
 import type { ToolDef } from "./ai.ts";
 
 export interface ProductCard {
@@ -72,20 +73,24 @@ export async function loadPublicAgentTools(
 ): Promise<PublicAgentTools> {
   const { data } = await admin
     .from("rag_agent_mcp_servers")
-    .select("allowed_tools, server:mcp_servers(id, name, url, headers, enabled, cached_tools, auth_mode, oauth)")
+    .select("allowed_tools, server:mcp_servers(id, name, url, enabled, cached_tools, auth_mode, oauth, relay_id)")
     .eq("agent_id", agent.id);
 
   const rows = (data ?? []) as Array<{ allowed_tools: string[] | null; server: any }>;
   const servers: AttachedServer[] = [];
+  const staticHeaders = await loadMcpHeaders(admin, rows.map((r) => r.server?.id).filter(Boolean));
 
   for (const row of rows) {
     const s = row.server;
     if (!s || !s.enabled) continue;
+    // Un agent public parle à des visiteurs anonymes : jamais aux serveurs MCP
+    // internes de l'entreprise (échange de jeton, au nom d'un salarié identifié).
+    if (["token_exchange", "signed_context", "api_token"].includes(s.auth_mode) || s.relay_id) continue;
 
-    let headers: Record<string, string> = s.headers && typeof s.headers === "object" ? { ...s.headers } : {};
+    let headers: Record<string, string> = { ...(staticHeaders.get(s.id) ?? {}) };
     if (s.auth_mode === "oauth") {
       const token = await ensureAccessToken(admin, { id: s.id, oauth: s.oauth || {} });
-      if (token) headers = { ...headers, Authorization: `Bearer ${token}` };
+      if (token) headers = mergeMcpHeaders(headers, { Authorization: `Bearer ${token}` });
     }
 
     const cached: McpTool[] = Array.isArray(s.cached_tools) ? s.cached_tools : [];

@@ -42,3 +42,11 @@ Alternances_Venus/
 Attestation-*.html
 *.xlsx
 ~$*.xlsx
+
+# Installateur (G5) : secrets générés, jamais versionnés.
+founderos.secrets.json
+secrets.generated.yaml
+supabase.env
+deploy/compose/.env
+/founderos.yaml
+/install/

@@ -1,0 +1,22 @@
+# Le proxy HTTPS de la machine virtuelle (deploy/compose/docker-compose.yml).
+# CADDY_TLS=auto (défaut) : certificats Let's Encrypt, la machine doit être
+# joignable sur 80 et 443 depuis Internet. CADDY_TLS=internal : l'autorité de
+# Caddy, pour un réseau sans accès Internet (à faire approuver par les postes).
+
+(tls_auto) {
+}
+
+(tls_internal) {
+	tls internal
+}
+
+{$FOUNDEROS_WEB_HOST} {
+	import tls_{$CADDY_TLS:auto}
+	reverse_proxy web:8080
+}
+
+{$FOUNDEROS_API_HOST} {
+	import tls_{$CADDY_TLS:auto}
+	# Les métriques (port 9090) ne sont jamais publiées par le proxy.
+	reverse_proxy backend:8787
+}

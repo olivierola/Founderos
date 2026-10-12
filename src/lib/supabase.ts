@@ -1,15 +1,15 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./runtime-config";
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const url = SUPABASE_URL;
+const anonKey = SUPABASE_ANON_KEY;
 
 if (!url || !anonKey) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    "[Anduran] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Copy .env.example to .env and fill them in.",
+  throw new Error(
+    "Missing Supabase URL or anon key: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY at build time, or FOUNDEROS_SUPABASE_URL and FOUNDEROS_SUPABASE_ANON_KEY in the interface container.",
   );
 }
 
-export const supabase: SupabaseClient = createClient(url ?? "http://localhost", anonKey ?? "anon", {
+export const supabase: SupabaseClient = createClient(url, anonKey, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });

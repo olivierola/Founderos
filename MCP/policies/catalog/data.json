@@ -1,0 +1,61 @@
+{
+  "_comment": "Catalogue des tools : source unique, lue par OPA (data.catalog) et par les serveurs MCP. Un tool absent de tools[<cluster>] n'est pas enregistré sur ce cluster : il n'existe pas pour l'agent.",
+  "tools": {
+    "hub": [
+      "metrics_query", "logs_query", "alerts_list", "dashboard_find", "db_health", "alert_silence_create",
+      "fleet_search", "policy_compliance"
+    ],
+    "ips": [
+      "pods_list", "pod_logs", "events_list", "deployment_status", "deployment_restart",
+      "app_status", "app_diff", "app_history", "app_sync",
+      "pr_create", "sensors_down"
+    ],
+    "sdb": [
+      "pods_list", "pod_logs", "events_list", "deployment_status", "deployment_restart",
+      "app_status", "app_diff", "app_history", "app_sync"
+    ],
+    "npr": [
+      "pods_list", "pod_logs", "events_list", "deployment_status", "deployment_restart",
+      "app_status", "app_diff", "app_history", "app_sync"
+    ],
+    "prd": [
+      "pods_list", "pod_logs", "events_list", "deployment_status", "deployment_restart",
+      "app_status", "app_diff", "app_history"
+    ]
+  },
+  "scopes": {
+    "metrics_query": "obs:read",
+    "logs_query": "obs:read",
+    "alerts_list": "obs:read",
+    "dashboard_find": "obs:read",
+    "db_health": "obs:read",
+    "alert_silence_create": "alert:silence",
+    "fleet_search": "fleet:read",
+    "policy_compliance": "fleet:read",
+    "pods_list": "ocp:read",
+    "pod_logs": "ocp:read",
+    "events_list": "ocp:read",
+    "deployment_status": "ocp:read",
+    "deployment_restart": "ocp:restart",
+    "app_status": "argocd:read",
+    "app_diff": "argocd:read",
+    "app_history": "argocd:read",
+    "app_sync": "argocd:sync",
+    "pr_create": "git:pr",
+    "sensors_down": "prtg:read"
+  },
+  "write_tools": ["alert_silence_create", "deployment_restart", "app_sync", "pr_create"],
+  "_comment_target_clusters": "Les outils du Hub et d'IPS agissent pour le compte d'un cluster cible (paramètre cluster de silence, cluster du déploiement visé). approval_required s'applique au cluster CIBLE.",
+  "approval_required": {
+    "prd": ["deployment_restart", "alert_silence_create"]
+  },
+  "role_scopes": {
+    "ai-ops-reader": ["obs:read", "fleet:read", "ocp:read", "argocd:read", "prtg:read"],
+    "ai-ops-operator": [
+      "obs:read", "fleet:read", "ocp:read", "argocd:read", "prtg:read",
+      "ocp:restart", "argocd:sync", "alert:silence", "git:pr"
+    ],
+    "ai-ops-prd-approver": []
+  },
+  "approver_role": "ai-ops-prd-approver"
+}

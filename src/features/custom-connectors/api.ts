@@ -34,6 +34,8 @@ export interface CustomConnector {
   last_test_ok: boolean | null;
   last_test_detail: string | null;
   version: number;
+  /** development, staging, production (0277) ; null : non précisé. */
+  environment?: "development" | "staging" | "production" | null;
   created_at: string;
   updated_at: string;
 }

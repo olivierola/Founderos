@@ -41,18 +41,22 @@ export function AgentOrb({ size = 32, className, glow = true, accentColor }: {
     ? `0 0 10px 0 ${accentColor && /^#([0-9a-f]{6})$/i.test(accentColor) ? accentColor + "40" : "rgba(120,90,255,0.28)"}`
     : undefined;
 
+  const cssOrb = (
+    <SiriOrb
+      size={size}
+      animationDuration={16}
+      colors={hsl ? {
+        c1: `hsl(${hsl[0]} ${Math.min(Math.max(hsl[1], 62), 95)}% ${Math.min(Math.max(hsl[2], 58), 72)}%)`,
+        c2: `hsl(${(hsl[0] + 34) % 360} ${Math.min(Math.max(hsl[1], 55), 90)}% 70%)`,
+        c3: `hsl(${(hsl[0] + 330) % 360} ${Math.min(Math.max(hsl[1], 55), 90)}% 66%)`,
+      } : undefined}
+    />
+  );
   const inner = size >= OGL_MIN
     // WebGL orb — hue rotates the base violet (~270°) toward the accent hue.
-    ? <Orb hue={hsl ? (((hsl[0] - 270) % 360) + 360) % 360 : 0} hoverIntensity={0.3} rotateOnHover forceHoverState={false} />
-    : <SiriOrb
-        size={size}
-        animationDuration={16}
-        colors={hsl ? {
-          c1: `hsl(${hsl[0]} ${Math.min(Math.max(hsl[1], 62), 95)}% ${Math.min(Math.max(hsl[2], 58), 72)}%)`,
-          c2: `hsl(${(hsl[0] + 34) % 360} ${Math.min(Math.max(hsl[1], 55), 90)}% 70%)`,
-          c3: `hsl(${(hsl[0] + 330) % 360} ${Math.min(Math.max(hsl[1], 55), 90)}% 66%)`,
-        } : undefined}
-      />;
+    // The CSS orb stands in when the browser gives no WebGL context.
+    ? <Orb hue={hsl ? (((hsl[0] - 270) % 360) + 360) % 360 : 0} hoverIntensity={0.3} rotateOnHover forceHoverState={false} fallback={cssOrb} />
+    : cssOrb;
 
   return (
     <span

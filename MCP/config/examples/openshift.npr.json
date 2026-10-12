@@ -1,0 +1,5 @@
+{
+  "namespaces": ["app-a-int", "app-a-qca", "app-b-int"],
+  "readCredential": { "type": "vault-k8s", "role": "ocp-reader" },
+  "writeCredential": { "type": "vault-k8s", "role": "ocp-operator" }
+}

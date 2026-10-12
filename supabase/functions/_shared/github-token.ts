@@ -144,7 +144,7 @@ function findRepoArray(v: unknown): Record<string, unknown>[] | null {
 // available slugs and try the listing-ish ones, then our known candidates.
 async function repoListingSlugs(composio: ReturnType<typeof getComposio>): Promise<string[]> {
   try {
-    const raw = (await composio.tools.getRawComposioTools({ toolkits: ["github"], limit: 300 } as Record<string, unknown>)) as unknown;
+    const raw = (await composio.tools.getRawComposioTools({ toolkits: ["github"], limit: 300 } as Parameters<typeof composio.tools.getRawComposioTools>[0])) as unknown;
     const list = (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>;
     const discovered = list
       .map((t) => String(t.slug ?? ""))

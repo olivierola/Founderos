@@ -71,6 +71,24 @@ export interface SsrfVerdict {
  * L'URL est-elle sûre à interroger depuis le serveur ?
  * Résout le DNS : un nom qui pointe vers 127.0.0.1 est refusé comme l'IP l'aurait été.
  */
+/** `*` remplace un label DNS entier : *.apps-int.*.interne.exemple. */
+export function hostMatches(host: string, patterns: string[]): boolean {
+  const h = host.toLowerCase();
+  return patterns.some((p) => {
+    const labels = p.toLowerCase().split(".").map((l) => (l === "*" ? "[a-z0-9-]+" : l.replace(/[^a-z0-9-]/g, "\\$&")));
+    return new RegExp(`^${labels.join("\\.")}$`).test(h);
+  });
+}
+
+/**
+ * Installation dédiée : les serveurs MCP internes de l'entreprise
+ * (MCP_INTERNAL_HOSTS). Ils résolvent vers des adresses privées, que la garde
+ * ci-dessous refuserait ; seuls ces noms, en https, y échappent.
+ */
+export function internalHostPatterns(): string[] {
+  return (Deno.env.get("MCP_INTERNAL_HOSTS") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 export async function assertSafeUrl(raw: string): Promise<SsrfVerdict> {
   let url: URL;
   try {
@@ -88,6 +106,8 @@ export async function assertSafeUrl(raw: string): Promise<SsrfVerdict> {
 
   const host = url.hostname.toLowerCase();
   if (!host) return { ok: false, reason: "hôte absent" };
+
+  if (url.protocol === "https:" && hostMatches(host, internalHostPatterns())) return { ok: true };
 
   // Noms qui ne sortent jamais de la machine.
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) {

@@ -457,7 +457,6 @@ function RoomMessageRow({ m, grouped, me, name, avatarUrl, colorOf, mission, sho
             seed={name}
             size={36}
             rounded="rounded-full"
-            accentColor={accent}
             // The bot works while this turn is still being written.
             state={m.status === "thinking" ? "working" : "default"}
           />

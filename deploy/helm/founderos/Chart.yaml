@@ -1,0 +1,10 @@
+apiVersion: v2
+name: founderos
+description: >-
+  FounderOS installé chez le client : backend Express, interface, migrations de la base.
+  Supabase est fourni (auto-hébergé ou service géré) ; les serveurs MCP, le relais,
+  LiteLLM et OPA s'installent avec leurs propres charts (docs/install).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [founderos, agents, supabase]

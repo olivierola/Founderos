@@ -116,7 +116,7 @@ async function handleAdmin(req: Request): Promise<Response> {
   let source: (SourceRow & { token_hint: string | null }) | null = null;
   if (body.source_id) {
     const { data } = await admin.from("sentinel_sources").select("*").eq("id", String(body.source_id)).maybeSingle();
-    source = data as typeof source;
+    source = data as (SourceRow & { token_hint: string | null }) | null;
     if (!source) return jsonResponse({ error: "Source introuvable" }, { status: 404 });
   }
   const workspaceId = source?.workspace_id ?? String(body.workspace_id ?? "");

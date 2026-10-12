@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    {{- include "founderos.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: backend }
+  template:
+    metadata:
+      labels:
+        {{- include "founderos.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+      annotations:
+        # Un changement de variables redémarre les pods.
+        checksum/config: {{ include (print $.Template.BasePath "/backend-config.yaml") . | sha256sum | trunc 16 }}
+    spec:
+      {{- include "founderos.pullSecrets" . | nindent 6 }}
+      # index.ts laisse 25 s aux tâches de fond sur SIGTERM.
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: backend
+          image: {{ include "founderos.image" (list . .Values.images.backend) }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8787 }
+            - { name: mgmt, containerPort: {{ .Values.backend.metrics.port }} }
+          envFrom:
+            - configMapRef: { name: {{ .Release.Name }}-backend }
+            - secretRef: { name: {{ .Values.backend.existingSecret }} }
+          env:
+            - name: SUPABASE_ANON_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.supabase.existingSecret }}, key: anonKey } }
+            - name: SUPABASE_SERVICE_ROLE_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.supabase.existingSecret }}, key: serviceRoleKey } }
+            - name: SUPABASE_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Values.supabase.existingSecret }}, key: jwtSecret, optional: true } }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    {{- include "founderos.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: backend }
+  ports:
+    - { name: http, port: 8787, targetPort: http }
+    # Métriques : jamais exposées par l'Ingress ou la Route, seulement au ServiceMonitor.
+    - { name: mgmt, port: {{ .Values.backend.metrics.port }}, targetPort: mgmt }
+{{- if .Values.backend.metrics.serviceMonitor }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    {{- include "founderos.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: backend }
+  endpoints:
+    - { port: mgmt, path: /metrics, interval: 30s }
+{{- end }}

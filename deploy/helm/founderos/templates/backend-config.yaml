@@ -1,0 +1,26 @@
+{{- $backendUrl := include "founderos.backendUrl" . }}
+{{- $webUrl := include "founderos.webUrl" . }}
+{{- $supabaseUrl := include "founderos.supabaseUrl" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    {{- include "founderos.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+data:
+  # Variables non secrètes. Celles du catalogue de l'écran Installation y apparaissent verrouillées.
+  SUPABASE_URL: {{ default $supabaseUrl .Values.supabase.internalUrl | trimSuffix "/" | quote }}
+  FUNCTIONS_URL: {{ $backendUrl | quote }}
+  APP_BASE_URL: {{ $webUrl | quote }}
+  APP_URL: {{ $webUrl | quote }}
+  APPROVAL_ISSUER: {{ $backendUrl | quote }}
+  GATEWAY_VERIFY_JWT: {{ .Values.backend.gatewayVerifyJwt | quote }}
+  TRUST_PROXY: {{ .Values.backend.trustProxy | quote }}
+  MGMT_PORT: {{ .Values.backend.metrics.port | quote }}
+  SSO_MODE: {{ .Values.backend.ssoMode | quote }}
+  INSTALLATION_ADMINS: {{ .Values.backend.installationAdmins | quote }}
+  PORT: "8787"
+  {{- range $k, $v := .Values.backend.env }}
+  {{ $k }}: {{ $v | toString | quote }}
+  {{- end }}

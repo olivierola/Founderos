@@ -54,9 +54,13 @@ import {
   buildInternalToolset, RunCancelledError, AwaitingInputError, embedMemoryVector,
   loadCustomConnectorSnapshots,
   writeAgentMemory, touchAgentMemories,
-  type AgentToolRow, type InternalToolContext,
+  type AgentSkill, type AgentToolRow, type InternalToolContext,
 } from "../_shared/internal-agent-tools.ts";
 import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
+import { loadMcpCatalog, resolveRequester, type McpTokenExchangeAuth } from "../_shared/mcp-auth.ts";
+import { currentLlmCaller, setLlmCaller } from "../_shared/llm-context.ts";
+import { loadMcpApiTokens } from "../_shared/mcp-api-token.ts";
+import { loadMcpHeaders, mergeMcpHeaders } from "../_shared/mcp-headers.ts";
 import { teamsSendMessage } from "../_shared/teams.ts";
 import { isMessagingProvider, sendMessagingText } from "../_shared/messaging.ts";
 import {
@@ -800,7 +804,7 @@ async function loadMemorySection(
   // Before migration 0249 the usage columns do not exist, and the select would
   // fail — silently emptying every prompt's memory. Fall back to the old shape.
   if (e1) [{ data: pinned }, { data: top }] = await fetchStatic("id, kind, content, importance, is_pinned, source, updated_at, created_at");
-  const staticRows = [...(pinned ?? []), ...(top ?? [])] as MemoryRow[];
+  const staticRows = [...(pinned ?? []), ...(top ?? [])] as unknown as MemoryRow[];
   if (staticRows.length === 0) return "";
   let rows = staticRows;
 
@@ -979,24 +983,73 @@ async function loadActivatedSkills(
 
 // Load the MCP servers attached to this agent (enabled only) with their cached
 // tool list, so the run loop exposes them without re-handshaking every tick.
+type LoadedMcpServer = {
+  id: string; name: string; url: string; headers: Record<string, string>;
+  tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
+  auth?: McpTokenExchangeAuth;
+  /** Joint par le relais du client (G2). */
+  relayId?: string | null;
+  environment?: string | null;
+  /** Jeton d'API du serveur (0278), déchiffré ici, jamais montré au modèle. */
+  apiToken?: { token: string; audience: string | null; cluster: string | null };
+};
+
 async function loadActivatedMcpServers(
   admin: ReturnType<typeof createServiceClient>,
   agentId: string,
-): Promise<Array<{ id: string; name: string; url: string; headers: Record<string, string>; tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> }>> {
+): Promise<LoadedMcpServer[]> {
   const { data } = await admin
     .from("agent_mcp_servers")
-    .select("server:mcp_servers(id, name, url, headers, enabled, cached_tools, auth_mode, oauth)")
+    .select("server:mcp_servers(id, name, url, enabled, cached_tools, auth_mode, auth_config, oauth, relay_id, environment)")
     .eq("agent_id", agentId);
   const rows = ((data ?? []) as any[]).map((r) => r.server).filter((s: any) => s && s.enabled);
-  const out: Array<{ id: string; name: string; url: string; headers: Record<string, string>; tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> }> = [];
+  const apiTokens = await loadMcpApiTokens(admin, rows.filter((s: any) => s.auth_mode === "api_token").map((s: any) => s.id));
+  // En-têtes statiques (0280) : déchiffrés ici, jamais lus depuis mcp_servers.headers.
+  const staticHeaders = await loadMcpHeaders(admin, rows.map((s: any) => s.id));
+  const out: LoadedMcpServer[] = [];
   for (const s of rows) {
-    let headers: Record<string, string> = s.headers && typeof s.headers === "object" ? { ...s.headers } : {};
+    let headers: Record<string, string> = { ...(staticHeaders.get(s.id) ?? {}) };
+    let tools: LoadedMcpServer["tools"] = Array.isArray(s.cached_tools) ? s.cached_tools : [];
+    let auth: McpTokenExchangeAuth | undefined;
     // OAuth servers: inject a fresh Bearer token (refreshed if near expiry).
     if (s.auth_mode === "oauth") {
       const token = await ensureAccessToken(admin, { id: s.id, oauth: s.oauth || {} });
-      if (token) headers = { ...headers, Authorization: `Bearer ${token}` };
+      if (token) headers = mergeMcpHeaders(headers, { Authorization: `Bearer ${token}` });
     }
-    out.push({ id: s.id, name: s.name, url: s.url, headers, tools: Array.isArray(s.cached_tools) ? s.cached_tools : [] });
+    // Échange de jeton : le jeton se demande à chaque appel (mcp-auth.ts), et
+    // seuls les tools du catalogue existent pour l'agent — un tool que le
+    // serveur annoncerait sans être au catalogue n'est pas exposé.
+    // Contexte signé (G2) : même configuration, jeton signé par FounderOS.
+    if (s.auth_mode === "token_exchange" || s.auth_mode === "signed_context") {
+      const cfg = (s.auth_config ?? {}) as { audience?: string; cluster?: string; provider?: string };
+      if (!cfg.audience) continue;
+      auth = {
+        mode: s.auth_mode, audience: cfg.audience,
+        ...(cfg.cluster ? { cluster: cfg.cluster } : {}), ...(cfg.provider ? { provider: cfg.provider } : {}),
+      };
+      const catalog = await loadMcpCatalog();
+      if (catalog) {
+        const onCluster = cfg.cluster ? new Set(catalog.tools[cfg.cluster] ?? []) : null;
+        tools = tools.filter((t) => catalog.scopes[t.name] && (!onCluster || onCluster.has(t.name)));
+      }
+    }
+    // Jeton d'API (le mode par défaut des serveurs internes) : présenté à chaque appel.
+    let apiToken: LoadedMcpServer["apiToken"];
+    if (s.auth_mode === "api_token") {
+      const token = apiTokens.get(s.id);
+      if (!token) continue; // jeton jamais saisi, ou illisible : le serveur n'est pas exposé
+      const cfg = (s.auth_config ?? {}) as { audience?: string; cluster?: string };
+      apiToken = { token, audience: cfg.audience ?? null, cluster: cfg.cluster ?? null };
+      const catalog = await loadMcpCatalog();
+      if (catalog && cfg.cluster) {
+        const onCluster = new Set(catalog.tools[cfg.cluster] ?? []);
+        tools = tools.filter((t) => catalog.scopes[t.name] && onCluster.has(t.name));
+      }
+    }
+    out.push({
+      id: s.id, name: s.name, url: s.url, headers, tools, ...(auth ? { auth } : {}), ...(apiToken ? { apiToken } : {}),
+      relayId: s.relay_id ?? null, environment: s.environment ?? null,
+    });
   }
   return out;
 }
@@ -1330,6 +1383,9 @@ function makeToolContext(opts: {
           action_kind: r.action_kind,
           payload: r.payload,
           reason: r.reason,
+          ...(r.requested_by !== undefined ? { requested_by: r.requested_by } : {}),
+          ...(r.expires_at ? { expires_at: r.expires_at } : {}),
+          ...(r.policy ?? {}),
         })
         .select("id")
         .single();
@@ -1710,7 +1766,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
         server_name: "runner + sandbox", kind: "service_down", severity: "critical",
         cause: `runner ET sandbox injoignables (${h.note})`,
         impact: `Run interrompu avant le premier appel — mission « ${mission.title} », agent ${agent.name}`,
-      }).catch(() => {});
+      });
       await postMissionReportToChannel(admin, mission.id, msg).catch(() => {});
       return jsonResponse({ ok: false, error: "both execution worlds unreachable", detail: h.note });
     }
@@ -1745,7 +1801,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
         server_name: "sandbox", kind: "service_down", severity: "critical",
         cause: `sandbox injoignable (${probe})`,
         impact: `Run interrompu avant le premier appel — mission « ${mission.title} », agent ${agent.name}`,
-      }).catch(() => {});
+      });
       await postMissionReportToChannel(admin, mission.id, msg).catch(() => {});
       return jsonResponse({ ok: false, error: "sandbox unreachable", detail: probe });
     }
@@ -1775,7 +1831,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
         server_name: "runner", kind: "service_down", severity: "critical",
         cause: `runner injoignable (${probe})`,
         impact: `Run interrompu avant le premier appel — mission « ${mission.title} », agent ${agent.name}`,
-      }).catch(() => {});
+      });
       await postMissionReportToChannel(admin, mission.id, msg).catch(() => {});
       return jsonResponse({ ok: false, error: "runner unreachable", detail: probe });
     }
@@ -2860,6 +2916,12 @@ async function runMissionTick(runId: string, msgId: number | null) {
     ctx.actingUserId = (convo as { user_id?: string | null } | null)?.user_id ?? null;
   }
   if (roomBinding?.room_id) ctx.serviceRoomId = roomBinding.room_id;
+  // Les appels de modèle de ce tick partent avec la clé de l'agent et au nom de
+  // la même personne que ses appels MCP (passerelle LiteLLM, llm-upstream.ts).
+  // Sans contexte (Deno), rien à renseigner : pas de lecture en plus.
+  if (currentLlmCaller()) {
+    setLlmCaller({ agentId: agent.id, agentName: agent.name, runId, userId: await resolveRequester(ctx) });
+  }
   // ── Guardrails (runtime enforcement) ──────────────────────────────────────
   // Loaded once per tick. Two passes, and elles ne couvrent pas les mêmes
   // règles : l'expression régulière attrape ce qui s'écrit (un numéro de carte),
@@ -2886,6 +2948,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
     makeChildContext: (childRunId) => {
       const c = makeToolContext({ admin, agent, runId: childRunId, missionId: null, conversationId: null, delegationDepth: (ctx.delegationDepth ?? 0) + 1, runtimeConfig });
       c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.customConnectors = ctx.customConnectors; c.isSubagent = true;
+      // Un sous-agent agit pour la même personne que son parent : ses appels MCP
+      // portent la même identité.
+      c.actingUserId = ctx.actingUserId; c.mcpRequester = ctx.mcpRequester;
       return c;
     },
     // Un sous-agent n'hérite ni de la mémoire ni de l'initiative — mais il
@@ -3666,7 +3731,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
         server_name: "sandbox", kind: "service_down", severity: "critical",
         cause: "sandbox unreachable (3+ résultats consécutifs)",
         impact: `Run interrompu — mission « ${mission?.title ?? ""} », agent ${agent.name}`,
-      }).catch(() => {});
+      });
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
       return jsonResponse({ ok: false, failed: true, reason: "sandbox unreachable" });
@@ -4681,9 +4746,11 @@ Deno.serve(async (req) => {
         p_user_id: userData.user.id,
       });
       if (!allowed) return jsonResponse({ error: "Not authorized for this agent" }, { status: 403 });
+      setLlmCaller({ userId: userData.user.id });
     }
 
     const { agent, tools } = await loadAgentAndTools(agent_id);
+    setLlmCaller({ agentId: agent.id, agentName: agent.name, runId: run_id ?? null });
 
     // ── Quota : on refuse AVANT d'engager la dépense ─────────────────────────
     // Démarrer un run sans crédits produit un échec au deuxième tour et un

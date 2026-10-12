@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { functionUrl } from "@/lib/edge";
 import { supabase } from "@/lib/supabase";
+import { SUPABASE_ANON_KEY } from "@/lib/runtime-config";
 
 // Narration HORODATÉE — la moitié "voix" de l'enregistrement de compétence.
 //
@@ -18,8 +20,7 @@ import { supabase } from "@/lib/supabase";
 // Le reste (capture PCM, proxy deepgram-stream) est identique à useDictation :
 // même socket, même clé côté serveur.
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const ANON = SUPABASE_ANON_KEY;
 
 function floatToInt16(input: Float32Array): ArrayBuffer {
   const out = new Int16Array(input.length);
@@ -119,7 +120,7 @@ export function useNarration({ originMs, onSegment }: UseNarrationOptions) {
 
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token ?? "";
-    const wsUrl = `${SUPABASE_URL.replace(/^http/, "ws")}/functions/v1/deepgram-stream`
+    const wsUrl = `${functionUrl("deepgram-stream").replace(/^http/, "ws")}`
       + `?apikey=${encodeURIComponent(ANON)}&token=${encodeURIComponent(token)}`
       + `&sample_rate=${Math.round(ctx.sampleRate)}&encoding=linear16`;
     const ws = new WebSocket(wsUrl);

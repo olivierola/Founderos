@@ -28,6 +28,7 @@ interface Draft {
   base_url: string;
   transport: "direct" | "relay";
   relay_id: string | null;
+  environment: "" | "development" | "staging" | "production";
   scoped: boolean;
   auth_scheme: AuthScheme;
   auth_config: AuthConfig;
@@ -43,6 +44,7 @@ function toDraft(c: CustomConnector): Draft {
     base_url: c.base_url,
     transport: c.transport,
     relay_id: c.relay_id,
+    environment: c.environment ?? "",
     scoped: !!c.service_dashboard_id,
     auth_scheme: c.auth_scheme,
     auth_config: normalizeAuthConfig(c.auth_config),
@@ -110,6 +112,7 @@ export function ConnectorEditor({ connector, credentials, relays, serviceDashboa
       base_url: draft.base_url.trim(),
       transport: draft.transport,
       relay_id: draft.transport === "relay" ? draft.relay_id : null,
+      environment: draft.environment || null,
       service_dashboard_id: draft.scoped ? (connector.service_dashboard_id ?? serviceDashboardId) : null,
       auth_scheme: draft.auth_scheme,
       auth_config: normalizeAuthConfig(draft.auth_config),
@@ -270,6 +273,14 @@ export function ConnectorEditor({ connector, credentials, relays, serviceDashboa
                 <p className="text-[11px] text-amber-600">Aucun relais pour l'instant : créez-en un dans l'onglet « Relais » de cette page.</p>
               )}
             </div>
+            <Field label="Environnement" hint="Ce que touche cet outil. Les politiques d'approbation s'appuient dessus : une écriture en production peut exiger une validation.">
+              <select className={selectCls} disabled={readOnly} value={draft.environment} onChange={(e) => set({ environment: e.target.value as Draft["environment"] })}>
+                <option value="">Non précisé</option>
+                <option value="development">Développement</option>
+                <option value="staging">Recette</option>
+                <option value="production">Production</option>
+              </select>
+            </Field>
             <Field label="Notes de mise en place" hint="Ce qu'il reste à faire à la main, pour vous ou un collègue.">
               <textarea className={cn(textareaCls, "font-sans text-xs")} rows={3} disabled={readOnly} value={draft.setup_notes}
                 onChange={(e) => set({ setup_notes: e.target.value })} />
@@ -453,6 +464,30 @@ function AuthConfigEditor({ draft, readOnly, setScheme, setCfg, connectorId }: {
           </div>
         </>
       )}
+      {(scheme === "delegated" || scheme === "signed_context") && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Audience de l'outil" hint={scheme === "delegated" ? "Son client auprès de l'IdP (Keycloak, Okta), ou api://… chez Entra ID." : "Ce que l'outil attend dans « aud » du contexte signé."}>
+              <input className={cn(inputCls, "font-mono")} disabled={readOnly} placeholder="argocd ou api://argocd" value={cfg.audience ?? ""} onChange={(e) => setCfg({ audience: e.target.value })} />
+            </Field>
+            <Field label="Scope (optionnel)" hint="Demandé pour chaque appel : les droits de l'agent ET de la personne le limitent.">
+              <input className={inputCls} disabled={readOnly} value={cfg.scope ?? ""} onChange={(e) => setCfg({ scope: e.target.value })} />
+            </Field>
+            {scheme === "delegated" && (
+              <Field label="Fournisseur (si plusieurs délèguent)" hint="Ex. custom:entra. Vide : le seul fournisseur qui délègue.">
+                <input className={inputCls} disabled={readOnly} placeholder="custom:entra" value={cfg.provider ?? ""} onChange={(e) => setCfg({ provider: e.target.value })} />
+              </Field>
+            )}
+            <Field label="En-tête"><input className={inputCls} disabled={readOnly} value={cfg.header ?? "Authorization"} onChange={(e) => setCfg({ header: e.target.value })} /></Field>
+            <Field label="Préfixe"><input className={inputCls} disabled={readOnly} value={cfg.prefix ?? "Bearer "} onChange={(e) => setCfg({ prefix: e.target.value })} /></Field>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {scheme === "delegated"
+              ? "Aucun secret à saisir : à chaque appel, l'IdP de l'entreprise émet un jeton court au nom de la personne et de l'agent (Administration → Authentification → Délégation aux agents). Par le relais, ce jeton voyage chiffré."
+              : "Aucun secret à saisir : FounderOS signe, à chaque appel, qui agit (personne, agent, rôles). L'outil le vérifie avec le JWKS de FounderOS : /functions/v1/approval-jwks."}
+          </p>
+        </>
+      )}
       {scheme === "mtls" && (
         <p className="text-xs text-muted-foreground">Le certificat client et sa clé se placent dans un profil, de préférence détenu par le relais (file:/chemin/vers/client.pem).</p>
       )}
@@ -482,6 +517,16 @@ function PolicyEditor({ policy, setPolicy, readOnly }: { policy: ConnectorPolicy
               <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{o.d}</span>
             </button>
           ))}
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Qui approuve, combien de personnes et en combien de temps : Administration → Approbations → Règles. Une règle qui
+          s'applique à cet outil impose l'approbation.
+        </p>
+        <div className="mt-3">
+          <Field label="Jeton d'approbation envoyé à l'outil (audience)" hint="Facultatif. Avec chaque appel approuvé, l'outil reçoit X-Approval-Token : un jeton signé par FounderOS, lié à la requête (méthode, chemin, empreinte du corps) et aux approbateurs. Il se vérifie avec /functions/v1/approval-jwks. Vide : pas de jeton.">
+            <input className={inputCls} disabled={readOnly} defaultValue={policy.approval_audience ?? ""} placeholder="argocd-approvals"
+              onBlur={(e) => setPolicy({ approval_audience: e.target.value.trim() || undefined })} />
+          </Field>
         </div>
       </div>
       <Toggle disabled={readOnly} checked={policy.read_only} onChange={(v) => setPolicy({ read_only: v })}

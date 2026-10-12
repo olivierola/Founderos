@@ -5,8 +5,10 @@ import type { FormEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRightIcon as ArrowRight,
+  BuildingsIcon,
   CircleNotchIcon as Loader2,
   HandPalmIcon,
+  KeyIcon,
   SparkleIcon,
   StackIcon,
 } from "@phosphor-icons/react";
@@ -32,6 +34,14 @@ export type AuthSubmitPayload = {
 
 export type AuthSocialProvider = "google" | "apple";
 
+/* A company identity provider (Entra ID, Keycloak, a SAML IdP), configured by
+   the organisation's admins. */
+export type AuthSsoProvider = {
+  id: string;
+  label: string;
+  preset: "entra" | "keycloak" | "generic";
+};
+
 const LINK =
   "font-medium text-[#006edd] underline-offset-4 transition-colors hover:text-[#0057c2] hover:underline dark:text-[#5aa8ff] dark:hover:text-[#8cc2ff]";
 
@@ -42,6 +52,11 @@ export function AuthSection({
   info,
   onSubmit,
   onSocial,
+  ssoProviders,
+  onSso,
+  passwordEnabled = true,
+  ssoSetupHref,
+  onSsoDiscover,
 }: {
   mode: AuthMode;
   submitting?: boolean;
@@ -49,8 +64,20 @@ export function AuthSection({
   info?: string | null;
   onSubmit: (payload: AuthSubmitPayload) => void;
   onSocial?: (provider: AuthSocialProvider) => void;
+  ssoProviders?: AuthSsoProvider[];
+  onSso?: (id: string) => void;
+  /* False when the organisation signs in through its SSO only: the email form,
+     the social buttons and the sign-up link go away. */
+  passwordEnabled?: boolean;
+  /* Login only: where an owner or admin goes to connect the company's identity
+     provider. The page behind it asks for a session like any other. */
+  ssoSetupHref?: string;
+  /* Login only, shared instance: the address finds its company's provider. */
+  onSsoDiscover?: (email: string) => void;
 }) {
   const isSignup = mode === "signup";
+  const hasSso = !!onSso && !!ssoProviders?.length;
+  const showSocial = passwordEnabled && !!onSocial;
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -58,6 +85,8 @@ export function AuthSection({
   const [password, setPassword] = useState("");
   const [marketingOptOut, setMarketingOptOut] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [ssoStep, setSsoStep] = useState(false);
+  const canDiscover = !submitting && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
 
   const canSubmit =
     !submitting &&
@@ -103,31 +132,78 @@ export function AuthSection({
               </p>
             </div>
 
-            {onSocial && (
-              <>
-                <div className="mt-10 grid gap-3 sm:grid-cols-2">
+            {hasSso && (
+              <div className="mt-10 grid gap-3">
+                {ssoProviders!.map((p) => (
                   <SocialButton
-                    icon={<GoogleIcon />}
-                    label={`${isSignup ? "Sign up" : "Sign in"} with Google`}
-                    onClick={() => onSocial("google")}
+                    key={p.id}
+                    icon={<SsoIcon preset={p.preset} />}
+                    label={`Continue with ${p.label}`}
+                    onClick={() => onSso!(p.id)}
                     disabled={submitting}
                   />
-                  <SocialButton
-                    icon={<AppleIcon />}
-                    label={`${isSignup ? "Sign up" : "Sign in"} with Apple`}
-                    onClick={() => onSocial("apple")}
-                    disabled={submitting}
-                  />
-                </div>
-
-                <div className="my-8 flex items-center gap-4 text-[14px] text-[#6b7385] dark:text-white/45">
-                  <span className="h-px flex-1 bg-[#e6e9ef] dark:bg-white/10" />
-                  or with your email
-                  <span className="h-px flex-1 bg-[#e6e9ef] dark:bg-white/10" />
-                </div>
-              </>
+                ))}
+              </div>
             )}
 
+            {!isSignup && onSsoDiscover && (
+              <div className="mt-10">
+                {ssoStep ? (
+                  <form
+                    className="grid gap-3"
+                    onSubmit={(e) => { e.preventDefault(); if (canDiscover) onSsoDiscover(email.trim()); }}
+                    noValidate
+                  >
+                    <FieldBox label="Work email" type="email" name="email" autoComplete="email" required value={email} onValueChange={setEmail} />
+                    <button
+                      type="submit"
+                      disabled={!canDiscover}
+                      className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0f1728] text-[16px] font-medium tracking-[-0.02em] text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#0f1728]"
+                    >
+                      {submitting ? <Loader2 className="size-5 animate-spin" /> : <BuildingsIcon className="size-5" />}
+                      Continue with company SSO
+                    </button>
+                    <button type="button" onClick={() => setSsoStep(false)} className="text-[14px] text-[#4b5567] hover:underline dark:text-white/60">
+                      Back
+                    </button>
+                  </form>
+                ) : (
+                  <SocialButton
+                    icon={<BuildingsIcon className="size-5" />}
+                    label="Continue with company SSO"
+                    onClick={() => setSsoStep(true)}
+                    disabled={submitting}
+                  />
+                )}
+              </div>
+            )}
+
+            {showSocial && !ssoStep && (
+              <div className="mt-10 grid gap-3 sm:grid-cols-2">
+                <SocialButton
+                  icon={<GoogleIcon />}
+                  label={`${isSignup ? "Sign up" : "Sign in"} with Google`}
+                  onClick={() => onSocial!("google")}
+                  disabled={submitting}
+                />
+                <SocialButton
+                  icon={<AppleIcon />}
+                  label={`${isSignup ? "Sign up" : "Sign in"} with Apple`}
+                  onClick={() => onSocial!("apple")}
+                  disabled={submitting}
+                />
+              </div>
+            )}
+
+            {passwordEnabled && !ssoStep && (hasSso || showSocial || (!isSignup && onSsoDiscover)) && (
+              <div className="my-8 flex items-center gap-4 text-[14px] text-[#6b7385] dark:text-white/45">
+                <span className="h-px flex-1 bg-[#e6e9ef] dark:bg-white/10" />
+                or with your email
+                <span className="h-px flex-1 bg-[#e6e9ef] dark:bg-white/10" />
+              </div>
+            )}
+
+            {passwordEnabled && !ssoStep && (
             <form className="space-y-3" onSubmit={handleSubmit} noValidate>
               {isSignup && (
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -208,10 +284,12 @@ export function AuthSection({
                 )}
               </button>
             </form>
+            )}
 
             {info && <p className="mt-5 text-[15px] text-emerald-600 dark:text-emerald-400">{info}</p>}
             {error && <p className="mt-5 text-[15px] text-red-600 dark:text-red-400">{error}</p>}
 
+            {passwordEnabled && (
             <p className="mt-8 text-[15px] text-[#4b5567] dark:text-white/60">
               {isSignup ? (
                 <>
@@ -229,6 +307,19 @@ export function AuthSection({
                 </>
               )}
             </p>
+            )}
+
+            {!isSignup && ssoSetupHref && (
+              <p className="mt-3 flex items-center gap-2 text-[14px] text-[#4b5567] dark:text-white/50">
+                <BuildingsIcon className="size-4 shrink-0" />
+                <span>
+                  Company identity provider?{" "}
+                  <Link to={ssoSetupHref} className={LINK}>
+                    Set up SSO
+                  </Link>
+                </span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -415,6 +506,21 @@ function GoogleIcon() {
       />
     </svg>
   );
+}
+
+function SsoIcon({ preset }: { preset: AuthSsoProvider["preset"] }) {
+  if (preset === "entra") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true">
+        <path fill="#f25022" d="M1 1h10v10H1z" />
+        <path fill="#7fba00" d="M12 1h10v10H12z" />
+        <path fill="#00a4ef" d="M1 12h10v10H1z" />
+        <path fill="#ffb900" d="M12 12h10v10H12z" />
+      </svg>
+    );
+  }
+  if (preset === "keycloak") return <KeyIcon className="size-[18px] text-[#006edd] dark:text-[#5aa8ff]" />;
+  return <BuildingsIcon className="size-[18px] text-[#006edd] dark:text-[#5aa8ff]" />;
 }
 
 function AppleIcon() {

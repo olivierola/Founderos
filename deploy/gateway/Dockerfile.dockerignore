@@ -1,0 +1,16 @@
+# Contexte de l'image de la passerelle (BuildKit, à la place du .dockerignore
+# de la racine) : le lanceur, le relais et les sources des serveurs MCP.
+*
+!deploy/gateway/gateway.mjs
+!deploy/gateway/plan.mjs
+!connector-relay/package.json
+!connector-relay/src
+connector-relay/src/**/*.test.js
+!MCP/package.json
+!MCP/package-lock.json
+!MCP/tsconfig.json
+!MCP/tsconfig.build.json
+!MCP/src
+MCP/src/**/*.test.ts
+!MCP/policies/ai_tools.rego
+!MCP/policies/catalog

@@ -1,0 +1,17 @@
+FounderOS est installé dans {{ .Release.Namespace }}.
+
+  Interface : {{ include "founderos.webUrl" . }}
+  Backend   : {{ include "founderos.backendUrl" . }}
+
+Premier démarrage :
+  1. Suivez les migrations :  kubectl -n {{ .Release.Namespace }} logs job/{{ .Release.Name }}-migrations -f
+  2. Ouvrez {{ include "founderos.webUrl" . }}/setup et créez le premier compte (e-mail et mot de passe).
+{{- if .Values.backend.installationAdmins }}
+     Les adresses de INSTALLATION_ADMINS administrent l'installation : {{ .Values.backend.installationAdmins }}
+{{- else }}
+     Instance neuve : ce premier compte rattache l'installation à son organisation.
+{{- end }}
+  3. L'assistant enchaîne : diagnostic de chaque brique, SSO de l'entreprise, premier agent.
+
+Les secrets restent dans {{ .Values.backend.existingSecret }} et {{ .Values.supabase.existingSecret }}.
+Les réglages sans secret se font aussi dans Administration → Installation ; ceux de backend.env y apparaissent verrouillés.

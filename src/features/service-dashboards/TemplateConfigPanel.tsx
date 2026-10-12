@@ -193,7 +193,7 @@ export function TemplateConfigPanel({
         </header>
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
-          {avatarOpen && <AvatarPicker value={avatar} onChange={(v) => { setAvatar(v); setAvatarOpen(false); }} />}
+          {avatarOpen && <AvatarPicker value={avatar} onChange={setAvatar} name={name || template.key} onDone={() => setAvatarOpen(false)} />}
 
           <section>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Description</label>

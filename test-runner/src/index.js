@@ -46,7 +46,8 @@ const RUNNER_TOKEN = process.env.RUNNER_TOKEN;
 const RUNNER_ID = process.env.RUNNER_ID || `${os.hostname()}-${process.pid}`;
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 3000;
 const MAX_STEPS = Number(process.env.MAX_STEPS) || 40;
-const POLL_URL = `${SUPABASE_URL}/functions/v1/test-runner-poll`;
+// Hôte des fonctions : le backend Express une fois basculé, Supabase sinon.
+const POLL_URL = `${process.env.FUNCTIONS_URL || SUPABASE_URL}/functions/v1/test-runner-poll`;
 
 if (!SUPABASE_URL || !RUNNER_TOKEN) {
   console.error("SUPABASE_URL and RUNNER_TOKEN are required.");

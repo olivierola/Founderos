@@ -19,11 +19,22 @@ port = 54323
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
-additional_redirect_urls = ["http://localhost:5173/onboarding"]
+# Le retour d'un SSO (Keycloak, Entra) vise la page demandée, /orgs le plus
+# souvent : sans ce motif, l'Auth retombe sur site_url.
+additional_redirect_urls = ["http://localhost:5173/onboarding", "http://localhost:5173/**"]
 jwt_expiry = 3600
 enable_signup = true
 enable_anonymous_sign_ins = false
 enable_manual_linking = false
+
+# Départs (version allégée de G6) : désactiver quelqu'un dans l'IdP l'empêche
+# d'ouvrir une session, pas de garder celle qu'il a déjà. Sans borne, une
+# session Supabase dure tant que le navigateur la rafraîchit. Avec celles-ci,
+# elle se ferme d'elle-même : au plus 24 h, ou 8 h sans activité.
+# Auto-hébergé : GOTRUE_SESSIONS_TIMEBOX et GOTRUE_SESSIONS_INACTIVITY_TIMEOUT.
+[auth.sessions]
+timebox = "24h"
+inactivity_timeout = "8h"
 
 [auth.email]
 enable_signup = true
@@ -102,9 +113,32 @@ verify_jwt = false
 verify_jwt = false
 
 # Le relais d'outils internes n'a qu'un X-Relay-Token (empreinte SHA-256 en
-# base, connector_relays.token_hash). Les autres branches de la fonction
-# vérifient elles-mêmes la clé service ou la session de l'appelant.
+# base, connector_relays.token_hash). Un serveur MCP qui livre son jeton
+# tournant (mode mcp.token_push, 0285) présente le jeton que FounderOS détient
+# (empreinte en base, puis comparaison à temps constant du jeton déchiffré).
+# Les autres branches de la fonction vérifient elles-mêmes la clé service ou
+# la session de l'appelant.
 [functions.connector-action]
+verify_jwt = false
+
+# simulation-prepare : les actions runner présentent X-Runner-Token
+# (runnerAuthorized), les actions utilisateur une session vérifiée dans la
+# fonction. Avec la vérification à la passerelle, le runner (runner/src) était
+# refusé avant d'atteindre la fonction.
+[functions.simulation-prepare]
+verify_jwt = false
+
+# ── SDK analytics : publics par conception (FOS-10) ──────────────────────────
+# Les SDK serveur s'authentifient par une clé d'API FounderOS
+# (`Authorization: Bearer fos_…`), qui n'est pas un JWT ; le SDK navigateur
+# tourne chez des visiteurs anonymes et n'envoie au mieux que `apikey`
+# (_shared/sdk-sources.ts). Les deux recoupent projet et workspace avant
+# d'écrire (FOS-10). ingest-session-replay borne aussi le débit (FOS-15) ;
+# track-event ne le fait pas encore.
+[functions.track-event]
+verify_jwt = false
+
+[functions.ingest-session-replay]
 verify_jwt = false
 
 # ── WebSocket : le navigateur ne peut pas poser d'en-tête au handshake ───────

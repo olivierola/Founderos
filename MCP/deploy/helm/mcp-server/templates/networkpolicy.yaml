@@ -1,0 +1,37 @@
+# Le refus par défaut du namespace ai-mcp est imposé par une politique ACM.
+# Celles-ci n'ouvrent que le nécessaire : le routeur vers le port MCP, les
+# sondes et la supervision vers le port de gestion.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mcp.name" . }}-from-router
+  labels: {{- include "mcp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "mcp.selector" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              policy-group.network.openshift.io/ingress: ""
+      ports: [{ port: 8443, protocol: TCP }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mcp.name" . }}-mgmt
+  labels: {{- include "mcp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "mcp.selector" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              policy-group.network.openshift.io/host-network: ""
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: monitoring
+      ports: [{ port: 9090, protocol: TCP }, { port: 8282, protocol: TCP }]

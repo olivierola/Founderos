@@ -1,0 +1,285 @@
+{{- $mcp := include "gw.mcpEnabled" . -}}
+{{- if and $mcp (not .Values.mcp.cluster) }}{{ fail "mcp.cluster est obligatoire avec mcp.servers" }}{{ end -}}
+{{- if and $mcp (eq .Values.mcp.auth.mode "oidc") (not .Values.mcp.oidc.issuer) }}{{ fail "mcp.oidc.issuer est obligatoire en mcp.auth.mode=oidc" }}{{ end -}}
+{{- if and $mcp (eq .Values.opa.mode "external") (not .Values.opa.url) }}{{ fail "opa.url est obligatoire en opa.mode=external" }}{{ end -}}
+{{- if and $mcp .Values.vault.enabled (not .Values.vault.addr) }}{{ fail "vault.addr est obligatoire avec vault.enabled" }}{{ end -}}
+{{- $sidecar := and $mcp (eq .Values.opa.mode "sidecar") -}}
+{{- $bundledPolicies := and $mcp (not .Values.opa.policyConfigMap) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gw.fullname" . }}
+  labels: {{- include "gw.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "gw.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "gw.selector" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values.mcp.config | toJson | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "gw.serviceAccount" . }}
+      # Aucun montage automatique : chaque conteneur reçoit, projeté, le seul jeton qu'il lui faut.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      {{- if $bundledPolicies }}
+      # La politique et le catalogue livrés avec l'image, pour OPA et le serveur MCP.
+      initContainers:
+        - name: policies
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "-e", "require('node:fs').cpSync('mcp/policies', '/policies', { recursive: true })"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+          volumeMounts:
+            - { name: policies, mountPath: /policies }
+      {{- end }}
+      containers:
+        # Le relais : seul chemin vers FounderOS, en sortie.
+        - name: relay
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "relay/src/index.js"]
+          env:
+            - name: FOUNDEROS_URL
+              value: {{ required "founderosUrl est requis" .Values.founderosUrl | quote }}
+            - name: RELAY_TOKEN
+              valueFrom:
+                secretKeyRef: { name: {{ include "gw.relaySecret" . }}, key: RELAY_TOKEN }
+            - { name: RELAY_ALLOWED_HOSTS, value: {{ include "gw.allowedHosts" . | quote }} }
+            - { name: RELAY_ALLOWED_BINARIES, value: {{ .Values.relay.allowedBinaries | quote }} }
+            - { name: RELAY_DENIED_SUBCOMMANDS, value: {{ .Values.relay.deniedSubcommands | quote }} }
+            - { name: RELAY_CONCURRENCY, value: {{ .Values.relay.concurrency | quote }} }
+            - { name: RELAY_HEALTH_PORT, value: "8080" }
+            {{- if .Values.relay.caConfigMap }}
+            - { name: RELAY_CA_FILE, value: /etc/founderos-ca/ca.pem }
+            {{- end }}
+            {{- range .Values.relay.secretEnv }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef: { name: {{ .secretName }}, key: {{ .secretKey }} }
+            {{- end }}
+          ports:
+            - { name: health, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: health }
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 4
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.relay.resources | nindent 12 }}
+          volumeMounts:
+            - { name: relay-tmp, mountPath: /tmp }
+            {{- if .Values.relay.caConfigMap }}
+            - { name: relay-ca, mountPath: /etc/founderos-ca, readOnly: true }
+            {{- end }}
+            {{- if .Values.relay.kubernetesAccess }}
+            - { name: relay-kube-api, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true }
+            {{- end }}
+        {{- if $mcp }}
+        # Les serveurs MCP : la boucle locale du pod seulement, en clair (le trafic
+        # n'en sort pas). Jeton d'API, OPA, catalogue et approbations s'appliquent.
+        - name: mcp
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "mcp/dist/main.js"]
+          env:
+            - { name: MCP_SERVER, value: {{ join "," .Values.mcp.servers | quote }} }
+            - { name: MCP_CLUSTER, value: {{ .Values.mcp.cluster | quote }} }
+            - { name: MCP_AUDIENCE, value: {{ default (printf "mcp-%s" .Values.mcp.cluster) .Values.mcp.audience | quote }} }
+            - { name: MCP_CONFIG_FILE, value: /etc/mcp/config.json }
+            - { name: CATALOG_FILE, value: /policies/catalog/data.json }
+            - { name: MCP_HOST, value: "127.0.0.1" }
+            - { name: MCP_PORT, value: {{ .Values.mcp.port | quote }} }
+            - { name: MCP_INSECURE_HTTP, value: "1" }
+            - { name: MGMT_HOST, value: "0.0.0.0" }
+            - { name: MGMT_PORT, value: "9090" }
+            - { name: AUTH_MODE, value: {{ .Values.mcp.auth.mode | quote }} }
+            {{- if eq .Values.mcp.auth.mode "rotating" }}
+            - { name: MCP_TOKEN_SEED_FILE, value: /etc/mcp-token-seed/seed }
+            - { name: MCP_TOKEN_PERIOD, value: {{ .Values.mcp.auth.period | quote }} }
+            - { name: MCP_TOKEN_ROLES, value: {{ join "," .Values.mcp.auth.roles | quote }} }
+            # Chaque nouveau jeton part vers FounderOS, en HTTPS sortant, comme le relais.
+            - { name: MCP_FOUNDEROS_URL, value: {{ .Values.founderosUrl | quote }} }
+            {{- else if eq .Values.mcp.auth.mode "token" }}
+            - { name: MCP_TOKENS_FILE, value: /etc/mcp-tokens/tokens.json }
+            {{- else }}
+            - { name: IDP_ISSUER, value: {{ .Values.mcp.oidc.issuer | quote }} }
+            {{- with .Values.mcp.oidc.jwksUrl }}
+            - { name: IDP_JWKS_URL, value: {{ . | quote }} }
+            {{- end }}
+            {{- with .Values.mcp.oidc.allowedAgents }}
+            - { name: ALLOWED_AGENTS, value: {{ join "," . | quote }} }
+            {{- end }}
+            {{- with .Values.mcp.oidc.maxTokenLifetime }}
+            - { name: CALL_TOKEN_MAX_LIFETIME, value: {{ . | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- if or .Values.mcp.approval.jwksUrl .Values.mcp.approval.jwksConfigMap }}
+            - { name: APPROVAL_ISSUER, value: {{ required "mcp.approval.issuer est requis avec un JWKS d'approbation" .Values.mcp.approval.issuer | quote }} }
+            {{- with .Values.mcp.approval.audience }}
+            - { name: APPROVAL_AUDIENCE, value: {{ . | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- if .Values.mcp.approval.jwksConfigMap }}
+            - { name: APPROVAL_JWKS_FILE, value: /etc/approval-jwks/jwks.json }
+            {{- else if .Values.mcp.approval.jwksUrl }}
+            - { name: APPROVAL_JWKS_URL, value: {{ .Values.mcp.approval.jwksUrl | quote }} }
+            {{- end }}
+            {{- if eq .Values.opa.mode "sidecar" }}
+            - { name: OPA_URL, value: "http://127.0.0.1:8181" }
+            {{- else if eq .Values.opa.mode "external" }}
+            - { name: OPA_URL, value: {{ .Values.opa.url | quote }} }
+            {{- else }}
+            - { name: POLICY_ENGINE, value: builtin }
+            {{- end }}
+            {{- if .Values.vault.enabled }}
+            - { name: VAULT_ADDR, value: {{ .Values.vault.addr | quote }} }
+            - { name: VAULT_ROLE, value: {{ default (include "gw.fullname" .) .Values.vault.role | quote }} }
+            - { name: VAULT_AUTH_MOUNT, value: {{ default (printf "k8s-%s" .Values.mcp.cluster) .Values.vault.authMount | quote }} }
+            - { name: VAULT_KV_MOUNT, value: {{ .Values.vault.kvMount | quote }} }
+            - { name: VAULT_K8S_SECRETS_MOUNT, value: {{ default (printf "k8s-%s" .Values.mcp.cluster) .Values.vault.k8sSecretsMount | quote }} }
+            - { name: VAULT_JWT_FILE, value: /var/run/secrets/kubernetes.io/serviceaccount/vault-token }
+            {{- if .Values.vault.caConfigMap }}
+            - { name: VAULT_CACERT, value: /etc/vault-ca/ca.crt }
+            {{- end }}
+            {{- end }}
+            {{- range .Values.mcp.secretEnv }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef: { name: {{ .secretName }}, key: {{ .secretKey }} }
+            {{- end }}
+          ports:
+            - { name: mgmt, containerPort: 9090 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: mgmt }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: mgmt }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.mcp.resources | nindent 12 }}
+          volumeMounts:
+            - { name: mcp-config, mountPath: /etc/mcp, readOnly: true }
+            - { name: policies, mountPath: /policies, readOnly: true }
+            - { name: mcp-kube-api, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true }
+            {{- if eq .Values.mcp.auth.mode "rotating" }}
+            - { name: mcp-token-seed, mountPath: /etc/mcp-token-seed, readOnly: true }
+            {{- else if eq .Values.mcp.auth.mode "token" }}
+            - { name: mcp-tokens, mountPath: /etc/mcp-tokens, readOnly: true }
+            {{- end }}
+            {{- if .Values.mcp.approval.jwksConfigMap }}
+            - { name: approval-jwks, mountPath: /etc/approval-jwks, readOnly: true }
+            {{- end }}
+            {{- if and .Values.vault.enabled .Values.vault.caConfigMap }}
+            - { name: vault-ca, mountPath: /etc/vault-ca, readOnly: true }
+            {{- end }}
+        {{- end }}
+        {{- if $sidecar }}
+        # OPA dans le pod : la décision ne dépend d'aucun service extérieur.
+        - name: opa
+          image: {{ .Values.opa.image }}
+          args: ["run", "--server", "--addr=127.0.0.1:8181", "--diagnostic-addr=0.0.0.0:8282", "--log-format=json", "--disable-telemetry", "/policies"]
+          readinessProbe:
+            httpGet: { path: /health, port: 8282 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: policies, mountPath: /policies, readOnly: true }
+        {{- end }}
+      volumes:
+        - name: relay-tmp
+          emptyDir: {}
+        {{- if .Values.relay.caConfigMap }}
+        - name: relay-ca
+          configMap: { name: {{ .Values.relay.caConfigMap }} }
+        {{- end }}
+        {{- if .Values.relay.kubernetesAccess }}
+        - name: relay-kube-api
+          projected:
+            sources:
+              - serviceAccountToken: { path: token, expirationSeconds: 3607 }
+              - configMap: { name: kube-root-ca.crt, items: [{ key: ca.crt, path: ca.crt }] }
+              - downwardAPI: { items: [{ path: namespace, fieldRef: { fieldPath: metadata.namespace } }] }
+        {{- end }}
+        {{- if $mcp }}
+        - name: mcp-config
+          configMap: { name: {{ include "gw.fullname" . }}-mcp-config }
+        {{- if eq .Values.mcp.auth.mode "rotating" }}
+        # La graine du jeton tournant : seul le conteneur du serveur MCP la monte.
+        - name: mcp-token-seed
+          secret: { secretName: {{ include "gw.seedSecret" . }}, items: [{ key: seed, path: seed }] }
+        {{- end }}
+        {{- if eq .Values.mcp.auth.mode "token" }}
+        # Empreintes des jetons d'API, relues à chaud ; le relais ne les monte pas.
+        - name: mcp-tokens
+          secret: { secretName: {{ include "gw.tokensSecret" . }}, items: [{ key: tokens.json, path: tokens.json }] }
+        {{- end }}
+        - name: policies
+          {{- if $bundledPolicies }}
+          emptyDir: {}
+          {{- else }}
+          configMap:
+            name: {{ .Values.opa.policyConfigMap }}
+            items:
+              - { key: ai_tools.rego, path: ai_tools.rego }
+              - { key: catalog.json, path: catalog/data.json }
+          {{- end }}
+        # Le serveur MCP seul : avec Vault, un jeton d'audience Vault de courte
+        # durée ; sans Vault, le jeton du compte de service (identifiant local
+        # { type: file }), borné par rbac.
+        - name: mcp-kube-api
+          projected:
+            sources:
+              {{- if .Values.vault.enabled }}
+              - serviceAccountToken:
+                  path: vault-token
+                  audience: {{ .Values.vault.tokenAudience }}
+                  expirationSeconds: {{ .Values.vault.tokenExpirationSeconds }}
+              {{- else }}
+              - serviceAccountToken: { path: token, expirationSeconds: 3607 }
+              {{- end }}
+              - configMap: { name: kube-root-ca.crt, items: [{ key: ca.crt, path: ca.crt }] }
+              - configMap: { name: openshift-service-ca.crt, optional: true, items: [{ key: service-ca.crt, path: service-ca.crt }] }
+              - downwardAPI: { items: [{ path: namespace, fieldRef: { fieldPath: metadata.namespace } }] }
+        {{- if .Values.mcp.approval.jwksConfigMap }}
+        - name: approval-jwks
+          configMap: { name: {{ .Values.mcp.approval.jwksConfigMap }} }
+        {{- end }}
+        {{- if and .Values.vault.enabled .Values.vault.caConfigMap }}
+        - name: vault-ca
+          configMap: { name: {{ .Values.vault.caConfigMap }} }
+        {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

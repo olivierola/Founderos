@@ -1,0 +1,23 @@
+# Contexte de construction de l'interface (deploy/spa/Dockerfile, depuis la racine) : seuls le
+# code du front et sa configuration de build y entrent. BuildKit lit ce fichier
+# à la place du .dockerignore de la racine.
+node_modules
+dist
+.git
+.env
+.env.*
+!.env.example
+*.log
+backend
+MCP
+# Le front importe des modules partagés de supabase/functions/_shared : seul ce dossier entre.
+supabase/*
+!supabase/functions
+supabase/functions/*
+!supabase/functions/_shared
+docs
+scripts
+runner
+ops-runner
+skill-recorder
+browser-recorder

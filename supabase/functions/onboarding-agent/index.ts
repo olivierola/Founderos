@@ -15,6 +15,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { callerIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
+import { adaptChatBody, pinnedChatTarget } from "../_shared/llm-upstream.ts";
 
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_MODEL = "deepseek-chat";
@@ -152,8 +153,11 @@ Deno.serve(async (req) => {
       if (Deno.env.get("LLM_GLOBAL_BLOCK") === "1") {
         return jsonResponse({ error: "LLM calls are disabled" }, { status: 503 });
       }
+      // A deployment pinned to a gateway (LiteLLM, Azure) answers from it, and
+      // the model the page asks for is ignored: only its aliases exist.
+      const pinned = await pinnedChatTarget();
       const key = Deno.env.get("DEEPSEEK_API_KEY");
-      if (!key) return jsonResponse({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });
+      if (!pinned && !key) return jsonResponse({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });
 
       const { messages, tools, tool_choice, response_format, model, temperature } = body as {
         messages?: unknown; tools?: unknown; tool_choice?: unknown;
@@ -163,17 +167,18 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "messages array required" }, { status: 400 });
       }
 
-      const upstream = await fetch(DEEPSEEK_URL, {
+      const url = pinned?.url ?? DEEPSEEK_URL;
+      const upstream = await fetch(url, {
         method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: model || DEEPSEEK_MODEL,
+        headers: { ...(pinned?.headers ?? { Authorization: `Bearer ${key}` }), "Content-Type": "application/json" },
+        body: JSON.stringify(adaptChatBody(url, {
+          model: pinned?.model ?? (model || DEEPSEEK_MODEL),
           messages,
           ...(tools ? { tools } : {}),
           ...(tool_choice ? { tool_choice } : {}),
           ...(response_format ? { response_format } : {}),
           temperature: typeof temperature === "number" ? temperature : 0.3,
-        }),
+        })),
       });
       // Relay the provider's raw JSON verbatim so page-agent's OpenAIClient
       // parses it natively.

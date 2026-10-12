@@ -9,7 +9,7 @@ import { createUserClient } from "../_shared/supabase-admin.ts";
 
 const DG = "https://api.deepgram.com/v1";
 
-function fromBase64(b64: string): Uint8Array {
+function fromBase64(b64: string) {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);

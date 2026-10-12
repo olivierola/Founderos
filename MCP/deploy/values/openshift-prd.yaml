@@ -1,0 +1,22 @@
+# helm upgrade --install mcp-openshift MCP/deploy/helm/mcp-server -n ai-mcp -f MCP/deploy/values/openshift-prd.yaml
+server: openshift
+cluster: prd
+image:
+  repository: quay.interne.exemple/ai-platform/mcp-openshift
+  tag: "0.1.0"
+route:
+  host: mcp-openshift.apps-int.prd.interne.exemple
+approval:
+  jwksUrl: https://founderos.apps-int.ips.interne.exemple/functions/v1/approval-jwks
+auth:
+  # Jeton tournant (défaut du chart) : graine dans le Secret mcp-token-seed (npm run token -- seed),
+  # chaque nouveau jeton livré à FounderOS. Flux ai-mcp (PRD) → FounderOS en 443 (section 5.5).
+  founderosUrl: https://founderos-api.apps-int.ips.interne.exemple
+vault:
+  # Le Vault de PRD : chaque cluster a le sien.
+  addr: https://vault.prd.interne.exemple:8200
+config:
+  namespaces: [app-a-prd, app-b-prd]
+  readCredential: { type: vault-k8s, role: ocp-reader }
+  # Phase 4 seulement : rôle limité au patch des déploiements (voir la doc, section Vault).
+  writeCredential: { type: vault-k8s, role: ocp-prd-restarter }

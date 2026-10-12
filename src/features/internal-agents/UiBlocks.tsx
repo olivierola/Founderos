@@ -32,6 +32,7 @@ import {
 } from "@phosphor-icons/react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { useCategorical } from "@/features/crm/overview/vizPalette";
 import { chatCard, chatHero, chatAccentText, chatOptionPill } from "@/lib/chatStyles";
@@ -387,18 +388,29 @@ function ApprovalBlock({ props }: { props: Record<string, unknown> }) {
   const approvalId = str(props.approval_id);
   const summary = str(props.summary) || str(props.tool) || "action sensible";
   const scopeLabel = str(props.scope_label);
+  // Soumise à une règle (D6, G3) : d'autres personnes approuvent, avant l'échéance.
+  const fourEyes = props.four_eyes === true;
+  const expiresAt = str(props.expires_at);
+  const who = str(props.approvers) || "1 approbateur : « ai-ops-prd-approver »";
+  const until = expiresAt ? new Date(expiresAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
+  const [note, setNote] = useState<string | null>(null);
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<null | "approve" | "approve_all" | "reject">(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: status } = useQuery({
+  const { data: row } = useQuery({
     queryKey: ["agent_approval_status", approvalId],
     enabled: !!approvalId,
+    refetchInterval: fourEyes ? 15_000 : false,
     queryFn: async () => {
-      const { data } = await supabase.from("internal_agent_approvals").select("status").eq("id", approvalId).maybeSingle();
-      return (data as { status?: string } | null)?.status ?? "pending";
+      const { data } = await supabase.from("internal_agent_approvals").select("status, requested_by").eq("id", approvalId).maybeSingle();
+      const r = data as { status?: string; requested_by?: string | null } | null;
+      return { status: r?.status ?? "pending", requestedBy: r?.requested_by ?? null };
     },
   });
+  const status = row?.status;
+  const isRequester = fourEyes && !!user && row?.requestedBy === user.id;
 
   const decided = !!status && status !== "pending";
   const busy = pending !== null;
@@ -407,7 +419,9 @@ function ApprovalBlock({ props }: { props: Record<string, unknown> }) {
     if (busy || decided || !approvalId) return;
     setPending(decision); setError(null);
     try {
-      await callEdge("internal-agent-approve", { approval_id: approvalId, decision });
+      const out = await callEdge<{ status?: string; detail?: string }>("internal-agent-approve", { approval_id: approvalId, decision });
+      // Règle à quorum : la voix est enregistrée, l'action attend les autres approbateurs.
+      if (out?.status === "pending") setNote(out.detail ?? "Approbation enregistrée.");
       await queryClient.invalidateQueries({ queryKey: ["agent_approval_status", approvalId] });
       // Nudge the chat to pick up the resumed run + its new messages.
       await queryClient.invalidateQueries();
@@ -425,12 +439,28 @@ function ApprovalBlock({ props }: { props: Record<string, unknown> }) {
       </div>
       <p className="mb-3 text-sm text-muted-foreground">{summary}</p>
       {decided ? (
-        <div className={cn("flex items-center gap-1.5 text-sm font-medium", status === "rejected" ? "text-rose-500" : status === "failed" ? "text-amber-500" : "text-emerald-500")}>
-          {status === "rejected" ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-          {status === "rejected" ? "Refusé" : status === "failed" ? "Approuvé, l'exécution a échoué" : "Approuvé et exécuté"}
+        <div className={cn("flex items-center gap-1.5 text-sm font-medium", status === "rejected" || status === "expired" ? "text-rose-500" : status === "failed" ? "text-amber-500" : "text-emerald-500")}>
+          {status === "rejected" || status === "expired" ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+          {status === "rejected" ? "Refusé" : status === "expired" ? "Expiré sans décision" : status === "failed" ? "Approuvé, l'exécution a échoué" : "Approuvé et exécuté"}
         </div>
+      ) : isRequester ? (
+        <>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Action demandée en votre nom : il faut {who}, autre(s) que vous{until ? `, avant ${until}` : ""} (Administration → Approbations).
+          </p>
+          <button disabled={busy} onClick={() => decide("reject")} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50">
+            {pending === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Retirer la demande
+          </button>
+          {error && <p className="mt-2 text-xs text-rose-500">{error}</p>}
+        </>
       ) : (
         <>
+          {fourEyes && expiresAt && (
+            <p className="mb-2 text-xs text-muted-foreground">
+              À valider avant {until} par {who}.
+            </p>
+          )}
+          {note && <p className="mb-2 text-xs text-emerald-600">{note}</p>}
           <div className="flex flex-wrap gap-2">
             <button disabled={busy} onClick={() => decide("approve")} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
               {pending === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approuver

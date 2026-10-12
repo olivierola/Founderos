@@ -1,0 +1,76 @@
+{
+  "realm": "scic",
+  "displayName": "SCIC (dev local)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "groups": [
+    { "name": "sre" },
+    { "name": "admins" }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@scic.local",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "SRE",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "alice", "temporary": false }],
+      "groups": ["/sre"]
+    },
+    {
+      "username": "bob",
+      "email": "bob@scic.local",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Admin",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "bob", "temporary": false }],
+      "groups": ["/admins"]
+    },
+    {
+      "username": "carol",
+      "email": "carol@scic.local",
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "Sans-groupe",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "carol", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "founderos",
+      "name": "FounderOS (dev local)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "founderos-dev-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://127.0.0.1:54321/auth/v1/callback",
+        "http://localhost:54321/auth/v1/callback"
+      ],
+      "webOrigins": ["+"],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

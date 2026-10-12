@@ -1,0 +1,81 @@
+# Valeurs du chart FounderOS (G5). Le plus simple : les générer à partir de
+# founderos.yaml (deploy/installer/founderos-config.mjs), puis
+#   helm upgrade --install founderos deploy/helm/founderos -n founderos -f values.generated.yaml
+
+# kubernetes : un Ingress par hôte. openshift : une Route par hôte.
+platform: kubernetes
+
+images:
+  registry: ghcr.io/founderos
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  backend: backend
+  web: web
+  migrations: migrations
+
+# Supabase de l'installation, fourni : auto-hébergé (docker compose ou chart de la
+# communauté) ou service géré. Le chart ne le déploie pas.
+supabase:
+  # Adresse publique (navigateur et backend).
+  url: ""
+  # Adresse interne au cluster pour le backend, si elle diffère (ex. http://kong.supabase.svc:8000).
+  internalUrl: ""
+  # Secret existant, clés : anonKey, serviceRoleKey, databaseUrl, et en option jwtSecret.
+  existingSecret: founderos-supabase
+
+backend:
+  replicas: 2
+  # Adresse publique du backend : appels du navigateur, webhooks, JWKS des approbations.
+  publicUrl: ""
+  # Secret existant des secrets du backend (CREDENTIAL_ENCRYPTION_KEY, APPROVAL_SIGNING_KEY,
+  # LLM_API_KEY…). Créé par l'installateur, Vault ou External Secrets.
+  existingSecret: founderos-backend
+  # Administrateurs de l'installation (Administration → Installation) : adresses e-mail.
+  installationAdmins: ""
+  # shared : chaque organisation, ses domaines vérifiés ; dedicated : une organisation « maison » ; off.
+  ssoMode: dedicated
+  # production : la passerelle JWT de Supabase reproduite ; strict : toutes les fonctions.
+  gatewayVerifyJwt: strict
+  trustProxy: "1"
+  # Variables non secrètes en plus. Elles l'emportent sur les réglages faits à l'écran
+  # (Administration → Installation), qui les montre verrouillées.
+  env: {}
+  resources:
+    requests: { cpu: 200m, memory: 384Mi }
+    limits: { memory: 1Gi }
+  metrics:
+    port: 9090
+    serviceMonitor: false
+
+web:
+  replicas: 2
+  # Adresse publique de l'interface.
+  publicUrl: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+migrations:
+  enabled: true
+  # Base migrée à la main avant ce chart : noter jusqu'à cette version sans rejouer.
+  baseline: ""
+  backoffLimit: 2
+
+ingress:
+  className: ""
+  annotations: {}
+  # Secret TLS existant, partagé par les deux hôtes (ou cert-manager par les annotations).
+  tlsSecretName: ""
+
+route:
+  # OpenShift : terminaison edge par le routeur ; le shard d'une Route interne par ses labels.
+  labels: {}
+  tlsTermination: edge
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile: { type: RuntimeDefault }
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities: { drop: [ALL] }

@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
+import { functionUrl } from "@/lib/edge";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -31,8 +32,6 @@ interface ChannelRow {
   enabled: boolean;
   created_at: string;
 }
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 function ProviderBadge({ provider, size = "md" }: { provider: string; size?: "sm" | "md" }) {
   if (MESSAGING_BRANDS[provider]) return <MessagingBadge provider={provider} size={size} />;
@@ -62,7 +61,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
   const [addingTeams, setAddingTeams] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const teamsEndpoint = `${SUPABASE_URL}/functions/v1/teams-gateway`;
+  const teamsEndpoint = functionUrl("teams-gateway");
 
   const { data: channels, isLoading } = useQuery({
     queryKey: ["agent_channels", agent.id],
@@ -77,7 +76,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
   });
 
   const installUrl = useMemo(() => {
-    const u = new URL(`${SUPABASE_URL}/functions/v1/slack-gateway`);
+    const u = new URL(functionUrl("slack-gateway"));
     u.searchParams.set("install", "1");
     u.searchParams.set("agent_id", agent.id);
     u.searchParams.set("return_to", window.location.pathname);

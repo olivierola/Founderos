@@ -1,4 +1,5 @@
 import {
+  StampIcon,
   BuildingsIcon,
   ShieldCheckIcon,
   UsersThreeIcon,
@@ -19,6 +20,7 @@ import {
   SteeringWheelIcon,
   ShieldCheckeredIcon,
   ShieldWarningIcon,
+  IdentificationBadgeIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -58,6 +60,13 @@ export const ADMIN_SECTIONS: AdminNavSection[] = [
       // agent — so it lives here, next to the other connection surfaces.
       { label: "Dépôts", slug: "repositories", icon: GithubLogoIcon },
       { label: "Sécurité", slug: "security", icon: LockKeyIcon },
+      // SSO de l'entreprise : fournisseur d'identité et rôles par groupe.
+      { label: "Authentification", slug: "sso", icon: IdentificationBadgeIcon },
+      // Actions en production demandées par les agents (installation dédiée, D6).
+      // Le slug reste celui de D6 : les liens des notifications déjà envoyées restent valables.
+      { label: "Approbations", slug: "approbations-prd", icon: StampIcon },
+      // Réglages et diagnostic de l'installation (G4), servis par le backend Express.
+      { label: "Installation", slug: "installation", icon: GaugeIcon },
     ],
   },
   {

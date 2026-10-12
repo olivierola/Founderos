@@ -1,0 +1,15 @@
+# Profil Kubernetes : un cluster standard, Ingress NGINX, cert-manager, Supabase auto-hébergé
+# (chart de la communauté supabase-kubernetes) dans le même cluster.
+target: kubernetes
+domain: acme.fr
+supabase:
+  mode: selfhosted
+  internalUrl: http://supabase-kong.supabase.svc:8000
+  dbHost: supabase-db.supabase.svc
+admins: [plateforme-ia@acme.fr]
+sso: { mode: dedicated }
+llm: { gateway: none }
+secrets: { source: generate }
+kubernetes:
+  ingressClass: nginx
+  tlsSecret: founderos-tls
