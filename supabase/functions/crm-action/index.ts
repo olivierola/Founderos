@@ -12,12 +12,15 @@
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
+import { crmEnabled, CRM_DISABLED_MESSAGE } from "../_shared/crm-switch.ts";
 
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
+  // Le CRM est masqué : aucune lecture ni écriture tant qu'il n'est pas rallumé.
+  if (!crmEnabled()) return jsonResponse({ ok: false, error: CRM_DISABLED_MESSAGE }, { status: 410 });
 
   try {
     const admin = createServiceClient();

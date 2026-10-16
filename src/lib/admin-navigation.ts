@@ -1,117 +1,20 @@
-import {
-  StampIcon,
-  BuildingsIcon,
-  ShieldCheckIcon,
-  UsersThreeIcon,
-  KanbanIcon,
-  GithubLogoIcon,
-  LockKeyIcon,
-  SparkleIcon,
-  CreditCardIcon,
-  GaugeIcon,
-  FingerprintIcon,
-  EyeIcon,
-  WalletIcon,
-  SirenIcon,
-  SealCheckIcon,
-  CrosshairIcon,
-  ScalesIcon,
-  FunnelIcon,
-  SteeringWheelIcon,
-  ShieldCheckeredIcon,
-  ShieldWarningIcon,
-  IdentificationBadgeIcon,
-  type Icon,
-} from "@phosphor-icons/react";
-
 /**
- * The Admin dashboard is a self-contained area with a SINGLE left sidebar
- * (unlike the two-sidebar product shell). It consolidates every admin surface
- * — organisation, access, members, workspaces, connectors, subscriptions,
- * billing, AI governance and API — that used to be scattered across the
- * Settings / Integrations / Governance modules. Reached from the top-left
- * dashboard switcher ("Admin"). Route namespace: /app/:ws/:proj/admin/<slug>.
+ * L'ancien dashboard Admin a été fusionné dans AI Workforce : il est devenu le
+ * module « Administration » (zone admin du rail, src/lib/navigation.ts), avec
+ * ses trois sections au complet et ses adresses /admin/<onglet> inchangées. Le
+ * module Gouvernance de la zone Control, qui en doublait une partie, a été
+ * retiré : ses anciennes adresses redirigent ici.
  */
 
-export interface AdminNavItem {
-  label: string;
-  slug: string;
-  icon: Icon;
-}
-
-export interface AdminNavSection {
-  /** Coral, uppercase section label with a small square bullet (see mockup). */
-  label: string;
-  items: AdminNavItem[];
-}
-
-export const ADMIN_SECTIONS: AdminNavSection[] = [
-  {
-    label: "Administration",
-    items: [
-      { label: "Organisation", slug: "organisation", icon: BuildingsIcon },
-      { label: "Accès", slug: "access", icon: ShieldCheckIcon },
-      { label: "Membres", slug: "members", icon: UsersThreeIcon },
-      { label: "Espaces de travail", slug: "workspaces", icon: KanbanIcon },
-      // "Connecteurs" moved to AI Workforce → Connexions (agent/connectors):
-      // connecting an app is about what the agents can act on, not admin.
-      // The Dépôts module left the nav with the "Outils IA" dashboard, but
-      // connecting a repository is a prerequisite of the Vibe Code studio
-      // agent — so it lives here, next to the other connection surfaces.
-      { label: "Dépôts", slug: "repositories", icon: GithubLogoIcon },
-      { label: "Sécurité", slug: "security", icon: LockKeyIcon },
-      // SSO de l'entreprise : fournisseur d'identité et rôles par groupe.
-      { label: "Authentification", slug: "sso", icon: IdentificationBadgeIcon },
-      // Actions en production demandées par les agents (installation dédiée, D6).
-      // Le slug reste celui de D6 : les liens des notifications déjà envoyées restent valables.
-      { label: "Approbations", slug: "approbations-prd", icon: StampIcon },
-      // Réglages et diagnostic de l'installation (G4), servis par le backend Express.
-      { label: "Installation", slug: "installation", icon: GaugeIcon },
-    ],
-  },
-  {
-    label: "Abonnements",
-    items: [
-      { label: "Abonnements", slug: "subscription", icon: SparkleIcon },
-      // Séparé de « Abonnements » : l'un répond « qu'ai-je droit de faire ? »,
-      // l'autre « où sont passés mes crédits ? ». Les mélanger noie la seconde.
-      { label: "Consommation", slug: "usage", icon: GaugeIcon },
-      { label: "Facturation", slug: "billing", icon: CreditCardIcon },
-    ],
-  },
-  {
-    label: "Gouvernance IA",
-    items: [
-      { label: "Guardrails", slug: "gov-guardrails", icon: ShieldCheckIcon },
-      // Juste sous les Guardrails, parce que c'est ce qui les rend applicables :
-      // une règle écrite en français n'était jusqu'ici qu'une documentation.
-      { label: "Jugement rapide", slug: "gov-typesafe", icon: ScalesIcon },
-      { label: "ContextIQ", slug: "gov-contextiq", icon: FunnelIcon },
-      { label: "AgentPilot", slug: "gov-agentpilot", icon: SteeringWheelIcon },
-      { label: "PolicyGuard", slug: "gov-policyguard", icon: ShieldCheckeredIcon },
-      { label: "SentinelFlow", slug: "gov-sentinelflow", icon: ShieldWarningIcon },
-      { label: "Accès agents", slug: "gov-access", icon: FingerprintIcon },
-      { label: "Prompts", slug: "gov-prompts", icon: EyeIcon },
-      { label: "Dépenses", slug: "gov-costs", icon: WalletIcon },
-      { label: "Incidents", slug: "gov-incidents", icon: SirenIcon },
-      { label: "Actions admin", slug: "gov-actions", icon: SealCheckIcon },
-      { label: "Périmètre pentest", slug: "gov-pentest-scope", icon: CrosshairIcon },
-    ],
-  },
-];
-
-/** Landing tab of the Admin dashboard. */
+/** Onglet d'arrivée de l'administration (/admin/<slug>). */
 export const ADMIN_LANDING = "organisation";
 
-/** Flat list of every admin item (for route generation). */
-export const ADMIN_ITEMS: AdminNavItem[] = ADMIN_SECTIONS.flatMap((s) => s.items);
-
-export function findAdminItem(slug: string | undefined): AdminNavItem | undefined {
-  if (!slug) return undefined;
-  return ADMIN_ITEMS.find((i) => i.slug === slug);
-}
-
-/** True when the given pathname is inside the Admin dashboard. */
-export function isAdminRoute(pathname: string): boolean {
-  return /\/app\/[^/]+\/[^/]+\/admin(\/|$)/.test(pathname);
-}
+/** Anciennes adresses du module Gouvernance → leur onglet de l'Administration. */
+export const LEGACY_GOVERNANCE_REDIRECTS: Record<string, string> = {
+  guardrails: "admin/gov-guardrails",
+  "agent-access": "admin/gov-access",
+  prompts: "admin/gov-prompts",
+  costs: "admin/gov-costs",
+  "ops-incidents": "admin/gov-incidents",
+  "ft-security": "admin/gov-security",
+};

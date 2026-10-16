@@ -35,6 +35,8 @@ import { embedTexts, toVectorLiteral } from "./jina.ts";
 // Le cron vit dans son propre module, sans dépendance : l'éditeur en a besoin
 // pour montrer la prochaine échéance, et il ne peut pas importer ce fichier-ci.
 import { nextCronRun } from "./cron.ts";
+import { mcpGrantsOf } from "./workflow-doc.ts";
+import { validateMcpGrants } from "./mcp-servers.ts";
 import { judge as judgeTs, noul as noulTs, readNoul as readNoulTs } from "./typesafe.ts";
 export { nextCronRun };
 
@@ -245,10 +247,15 @@ async function dispatchPlaybook(
   const { data: toolRows } = await admin.from("internal_agent_tools")
     .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", a.id);
 
+  // Les serveurs MCP que les étapes ont choisis (blocs Outil) : ouverts à CE run,
+  // limités aux outils choisis, et recopiés sur les runs à qui il délègue. Un
+  // serveur d'un autre espace, supprimé ou désactivé, n'est pas accordé.
+  const mcpGrants = await validateMcpGrants(admin, wf.workspace_id, mcpGrantsOf(wf.blocks));
   const { data: tr } = await admin.from("internal_agent_runs").insert({
     agent_id: a.id, workspace_id: wf.workspace_id, project_id: wf.project_id,
     run_kind: "primary", status: "running", started_at: new Date().toISOString(),
     triggered_by: a.created_by ?? null,
+    mcp_grants: mcpGrants,
   }).select("id").single();
   const agentRunId = (tr as { id: string } | null)?.id ?? null;
   if (!agentRunId) return null;
@@ -307,6 +314,7 @@ async function dispatchPlaybook(
       "- Un bloc « Contexte pour la suite » vaut à partir de son emplacement et jusqu'à la fin de la branche où il se trouve — pas avant, pas ailleurs.",
       "- **ENTRÉES** : vérifie-les AVANT d'agir. Une entrée obligatoire absente du déclenchement se demande avec ask_user tout de suite — la découvrir au milieu du travail oblige à jeter ce qui a déjà été fait.",
       "- **OUTILS À UTILISER** : la section n'ouvre pas de droits, elle en impose l'usage. Un outil marqué obligatoire doit réellement être appelé — répondre de mémoire là où la procédure dit d'aller chercher est une faute, pas un raccourci.",
+      "- **SERVEURS MCP** : les outils mcp_… qu'une étape cite te sont ouverts pour ce run, limités à ceux-là. Sers-t'en À CETTE ÉTAPE. Si tu la délègues, l'agent reçoit le même accès : nomme-lui les outils dans son brief. Une écriture que le serveur soumet à approbation attend la validation, elle ne se contourne pas.",
       "- **PASSATION** : le brief part au(x) destinataire(s) nommé(s), avec « Ce qui doit revenir » recopié tel quel dans leur consigne. En mode parallèle, spawn_parallel_agents (une sous-tâche par destinataire) ; sinon delegate_mission, l'un après l'autre, en attendant chaque retour. Vérifie le retour contre le contrat avant d'enchaîner ; s'il ne correspond pas, redemande plutôt que de rattraper toi-même.",
       "- **À MÉMORISER** : en fin de run, et seulement si le run a produit un fait durable, enregistre-le avec save_memory — une fois, dans la portée indiquée. Un compte rendu du run n'est pas un fait durable.",
       "- Un livrable au format JSON accompagné d'un schéma doit respecter ce schéma au caractère près : il sera lu par un programme, pas par une personne.",

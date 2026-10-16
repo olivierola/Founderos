@@ -13,6 +13,8 @@ export interface AuditEvent {
   target_cluster: string;
   mcp_server: string;
   tool: string;
+  /** Le tool écrit-il (redémarrage, mise à l'échelle, synchronisation, silence) ? */
+  write?: boolean;
   params: unknown;
   params_hash: string;
   policy_decision: string;
@@ -20,7 +22,9 @@ export interface AuditEvent {
   approver: string | null;
   /** Mode jeton d'API : quel jeton a servi (sa révocation coupe exactement cet accès). */
   token_id?: string | null;
-  status: "ok" | "error" | "denied" | "approval_required" | "invalid";
+  status: "ok" | "error" | "denied" | "approval_required" | "invalid" | "rate_limited" | "busy" | "timeout";
+  /** Les approbateurs d'une règle à quorum. */
+  approvers?: string[];
   duration_ms: number;
   result_bytes: number;
   error?: string;

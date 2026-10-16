@@ -56,11 +56,9 @@ import {
   writeAgentMemory, touchAgentMemories,
   type AgentSkill, type AgentToolRow, type InternalToolContext,
 } from "../_shared/internal-agent-tools.ts";
-import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
-import { loadMcpCatalog, resolveRequester, type McpTokenExchangeAuth } from "../_shared/mcp-auth.ts";
+import { resolveRequester } from "../_shared/mcp-auth.ts";
 import { currentLlmCaller, setLlmCaller } from "../_shared/llm-context.ts";
-import { loadMcpApiTokens } from "../_shared/mcp-api-token.ts";
-import { loadMcpHeaders, mergeMcpHeaders } from "../_shared/mcp-headers.ts";
+import { loadRunMcpServers } from "../_shared/mcp-servers.ts";
 import { teamsSendMessage } from "../_shared/teams.ts";
 import { isMessagingProvider, sendMessagingText } from "../_shared/messaging.ts";
 import {
@@ -981,78 +979,8 @@ async function loadActivatedSkills(
     }));
 }
 
-// Load the MCP servers attached to this agent (enabled only) with their cached
-// tool list, so the run loop exposes them without re-handshaking every tick.
-type LoadedMcpServer = {
-  id: string; name: string; url: string; headers: Record<string, string>;
-  tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
-  auth?: McpTokenExchangeAuth;
-  /** Joint par le relais du client (G2). */
-  relayId?: string | null;
-  environment?: string | null;
-  /** Jeton d'API du serveur (0278), déchiffré ici, jamais montré au modèle. */
-  apiToken?: { token: string; audience: string | null; cluster: string | null };
-};
-
-async function loadActivatedMcpServers(
-  admin: ReturnType<typeof createServiceClient>,
-  agentId: string,
-): Promise<LoadedMcpServer[]> {
-  const { data } = await admin
-    .from("agent_mcp_servers")
-    .select("server:mcp_servers(id, name, url, enabled, cached_tools, auth_mode, auth_config, oauth, relay_id, environment)")
-    .eq("agent_id", agentId);
-  const rows = ((data ?? []) as any[]).map((r) => r.server).filter((s: any) => s && s.enabled);
-  const apiTokens = await loadMcpApiTokens(admin, rows.filter((s: any) => s.auth_mode === "api_token").map((s: any) => s.id));
-  // En-têtes statiques (0280) : déchiffrés ici, jamais lus depuis mcp_servers.headers.
-  const staticHeaders = await loadMcpHeaders(admin, rows.map((s: any) => s.id));
-  const out: LoadedMcpServer[] = [];
-  for (const s of rows) {
-    let headers: Record<string, string> = { ...(staticHeaders.get(s.id) ?? {}) };
-    let tools: LoadedMcpServer["tools"] = Array.isArray(s.cached_tools) ? s.cached_tools : [];
-    let auth: McpTokenExchangeAuth | undefined;
-    // OAuth servers: inject a fresh Bearer token (refreshed if near expiry).
-    if (s.auth_mode === "oauth") {
-      const token = await ensureAccessToken(admin, { id: s.id, oauth: s.oauth || {} });
-      if (token) headers = mergeMcpHeaders(headers, { Authorization: `Bearer ${token}` });
-    }
-    // Échange de jeton : le jeton se demande à chaque appel (mcp-auth.ts), et
-    // seuls les tools du catalogue existent pour l'agent — un tool que le
-    // serveur annoncerait sans être au catalogue n'est pas exposé.
-    // Contexte signé (G2) : même configuration, jeton signé par FounderOS.
-    if (s.auth_mode === "token_exchange" || s.auth_mode === "signed_context") {
-      const cfg = (s.auth_config ?? {}) as { audience?: string; cluster?: string; provider?: string };
-      if (!cfg.audience) continue;
-      auth = {
-        mode: s.auth_mode, audience: cfg.audience,
-        ...(cfg.cluster ? { cluster: cfg.cluster } : {}), ...(cfg.provider ? { provider: cfg.provider } : {}),
-      };
-      const catalog = await loadMcpCatalog();
-      if (catalog) {
-        const onCluster = cfg.cluster ? new Set(catalog.tools[cfg.cluster] ?? []) : null;
-        tools = tools.filter((t) => catalog.scopes[t.name] && (!onCluster || onCluster.has(t.name)));
-      }
-    }
-    // Jeton d'API (le mode par défaut des serveurs internes) : présenté à chaque appel.
-    let apiToken: LoadedMcpServer["apiToken"];
-    if (s.auth_mode === "api_token") {
-      const token = apiTokens.get(s.id);
-      if (!token) continue; // jeton jamais saisi, ou illisible : le serveur n'est pas exposé
-      const cfg = (s.auth_config ?? {}) as { audience?: string; cluster?: string };
-      apiToken = { token, audience: cfg.audience ?? null, cluster: cfg.cluster ?? null };
-      const catalog = await loadMcpCatalog();
-      if (catalog && cfg.cluster) {
-        const onCluster = new Set(catalog.tools[cfg.cluster] ?? []);
-        tools = tools.filter((t) => catalog.scopes[t.name] && onCluster.has(t.name));
-      }
-    }
-    out.push({
-      id: s.id, name: s.name, url: s.url, headers, tools, ...(auth ? { auth } : {}), ...(apiToken ? { apiToken } : {}),
-      relayId: s.relay_id ?? null, environment: s.environment ?? null,
-    });
-  }
-  return out;
-}
+// Les serveurs MCP du run : activés sur l'agent, plus ceux accordés au run par
+// un workflow (limités aux outils choisis) — voir _shared/mcp-servers.ts.
 
 function nextRunAt(schedule: string, from: Date): string {
   const d = new Date(from);
@@ -1526,7 +1454,7 @@ async function initChatRun(
     loadCompanySection(admin, agent),
   ]);
   ctx.skills = chatSkills;
-  ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  ctx.mcpServers = await loadRunMcpServers(admin, agent.id, ctx.runId);
   ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
     agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
   });
@@ -1847,7 +1775,7 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
     loadCompanySection(admin, agent),
   ]);
   ctx.skills = missionSkills;
-  ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  ctx.mcpServers = await loadRunMcpServers(admin, agent.id, ctx.runId);
   ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
     agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
   });
@@ -2900,7 +2828,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
   // annoncé au premier tour aurait disparu au suivant.
   ctx.companion = !state.mission_id && await isCompanionConversation(admin, state.conversation_id);
   ctx.skills = await loadActivatedSkills(admin, agent.id);
-  ctx.mcpServers = await loadActivatedMcpServers(admin, agent.id);
+  ctx.mcpServers = await loadRunMcpServers(admin, agent.id, ctx.runId);
   ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
     agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
   });

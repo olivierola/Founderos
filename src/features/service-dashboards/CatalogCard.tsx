@@ -217,7 +217,7 @@ function PortraitCard({
   const poke = () => {
     const now = performance.now();
     if (disabled || now - lastPoke.current < POKE_COOLDOWN_MS || reducedMotion()) return;
-    const canvas = stageRef.current?.querySelector<HTMLCanvasElement>("canvas[data-bot-avatar]");
+    const canvas = stageRef.current?.querySelector<HTMLCanvasElement>("canvas[data-bot-avatar], canvas[data-human-avatar]");
     if (!canvas) return; // un portrait téléversé : rien à faire sauter
     lastPoke.current = now;
     poking.current = true;

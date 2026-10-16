@@ -7,7 +7,7 @@ import { Brand, Eyebrow, H, P } from "../HnKit";
    setup GUARANTEES — a count of capabilities, not a performance figure. */
 
 const ROWS = [
-  { label: <>A chatbot</>, guarantees: ["Answers questions"], width: "33%", tone: "bg-[#cfd5df]" },
+  { label: <>A chatbot</>, guarantees: ["Answers questions"], width: "33%", tone: "bg-[#d4d4dc]" },
   { label: <>A Cloud collaborator with tool access</>, guarantees: ["Answers", "Acts on your systems"], width: "66%", tone: "bg-[#84b6f4]" },
   {
     label: (
@@ -17,7 +17,7 @@ const ROWS = [
     ),
     guarantees: ["Answers", "Acts", "Every write approved & logged"],
     width: "100%",
-    tone: "bg-[#006edd]",
+    tone: "bg-[#4f1ad6]",
   },
 ];
 
@@ -31,22 +31,22 @@ export function HomeCompareHn() {
           <P className="mt-3">
             Any Cloud collaborator can demo well. What makes one safe to run on your real systems is everything around it.
           </P>
-          <div className="mt-8 border-t border-[#e5e5e5] pt-6 text-[16px] leading-[1.4] text-[#4b5567]">
-            <span className="font-medium text-[#006edd]">3 of 3</span> guarantees on every Anduran Cloud collaborator: it reads,
+          <div className="mt-8 border-t border-[#e5e5e5] pt-6 text-[16px] leading-[1.4] text-[#5c5c66]">
+            <span className="font-medium text-[#4f1ad6]">3 of 3</span> guarantees on every Anduran Cloud collaborator: it reads,
             it acts, and nothing it writes leaves without you.
           </div>
         </div>
         <div className="flex flex-col justify-center gap-8">
           {ROWS.map((r, i) => (
             <div key={i}>
-              <div className="text-[15px] font-medium text-[#0f1728]">{r.label}</div>
+              <div className="text-[15px] font-medium text-[#0d0d0d]">{r.label}</div>
               <div className="mt-2 h-2 w-full rounded-full bg-[#ececec]">
                 <div className={`h-2 rounded-full ${r.tone}`} style={{ width: r.width }} />
               </div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 {r.guarantees.map((g) => (
-                  <span key={g} className="flex items-center gap-1 text-[13px] text-[#4b5567]">
-                    <Check weight="bold" className="h-3 w-3 text-[#006edd]" /> {g}
+                  <span key={g} className="flex items-center gap-1 text-[13px] text-[#5c5c66]">
+                    <Check weight="bold" className="h-3 w-3 text-[#4f1ad6]" /> {g}
                   </span>
                 ))}
               </div>

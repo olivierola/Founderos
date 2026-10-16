@@ -24,10 +24,16 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import {
-  cleanArgs, codeToolOf, declaredVars, flowEdges, normalizeVarName, outputVarOf,
+  cleanArgs, codeToolOf, declaredVars, flowEdges, mcpSelectionsOf, normalizeVarName, outputVarOf,
   roleOf, varsOf,
   type WfGraph, type WfNode,
 } from "./workflow-doc.ts";
+import { loadWorkspaceMcpServer } from "./mcp-servers.ts";
+import { mcpCallTool } from "./mcp-client.ts";
+import { apiTokenHeaders } from "./mcp-api-token.ts";
+import { mergeMcpHeaders } from "./mcp-headers.ts";
+import { relayFetchFor } from "./mcp-relay.ts";
+import { callIdentity, classifyMcpResult, reportToolCall, traceIdFor } from "./mcp-observe.ts";
 import { judge as judgeTs, noul as noulTs, readNoul as readNoulTs } from "./typesafe.ts";
 
 type Admin = SupabaseClient;
@@ -312,6 +318,54 @@ const CODE_TIMEOUT_MS = 90_000;
  *  milieu d'une écriture par le couperet de la plateforme. */
 const RUN_BUDGET_MS = 130_000;
 
+/**
+ * Appeler un outil d'un serveur MCP de l'espace, sans agent.
+ *
+ * Même préparation que pour un agent (_shared/mcp-servers.ts) : en-têtes
+ * déchiffrés, jeton d'API, relais, outils filtrés par le catalogue. Deux
+ * différences assumées : personne n'est « au nom de qui » l'automatisation agit,
+ * donc un serveur en échange de jeton est refusé ; et personne ne peut valider
+ * une écriture soumise à approbation, donc elle échoue avec la consigne d'en
+ * faire une étape de procédure.
+ */
+async function callMcpTool(rc: RunCtx, serverId: string, tool: string, args: Record<string, unknown>): Promise<unknown> {
+  const server = await loadWorkspaceMcpServer(rc.admin, rc.workspaceId, serverId);
+  if (!server) throw new Error("Serveur MCP introuvable, désactivé, ou sans jeton enregistré.");
+  if (server.auth) {
+    throw new Error(`${server.name} agit au nom d'une personne (échange de jeton) : une automatisation n'a personne pour qui agir. Faites de cette étape une procédure.`);
+  }
+  if (!server.tools.some((t) => t.name === tool)) {
+    throw new Error(`« ${tool} » n'est pas exposé par ${server.name} : relancez sa découverte, ou vérifiez le catalogue du cluster.`);
+  }
+  let headers = server.headers ?? {};
+  if (server.apiToken) {
+    headers = mergeMcpHeaders(headers, apiTokenHeaders({
+      token: server.apiToken.token, userId: null, agentName: `workflow ${rc.workflowId.slice(0, 8)}`, runId: rc.runId,
+    }));
+  }
+  const transport = server.relayId
+    ? { fetch: relayFetchFor(rc.admin, { relayId: server.relayId, workspaceId: rc.workspaceId, mcpServerId: server.id }) }
+    : {};
+  const started = Date.now();
+  const out = await mcpCallTool(server.url, headers, tool, args, {}, transport);
+  const outcome = classifyMcpResult(out);
+  reportToolCall({
+    trace_id: traceIdFor(rc.runId), session_id: rc.runId, user: null, ...callIdentity(headers),
+    agent: `workflow:${rc.workflowId}`, workspace_id: rc.workspaceId, mcp_server: server.name,
+    cluster: server.apiToken?.cluster ?? null, tool, status: outcome.status, reason: outcome.reason,
+    policy_decision: null, approval_id: null, duration_ms: Date.now() - started,
+  });
+  if (outcome.status === "approval_required") {
+    throw new Error("Action soumise à approbation par le serveur MCP : une automatisation ne peut pas attendre une validation humaine. Faites de cette étape une procédure (l'agent demandera l'approbation).");
+  }
+  if (outcome.status !== "ok") throw new Error(out.replace(/^ERROR:\s*/, "").slice(0, 500));
+  try {
+    return JSON.parse(out);
+  } catch {
+    return out;
+  }
+}
+
 /** Appeler l'action d'un connecteur. Le routage dépend de la SOURCE du
  *  connecteur : une app branchée en interne passe par `connector-action` (clé
  *  déchiffrée côté serveur), une app branchée via Composio par `composio-action`.
@@ -505,7 +559,23 @@ export async function runAutomation(admin: Admin, opts: {
         const retries = retriesOf(d);
         const onRetry = (n: number) => { attempts = n + 1; };
 
-        if (lang && str(d.code).trim()) {
+        const mcp = mcpSelectionsOf(d);
+        if (mcp.length) {
+          // Un appel exact : UN outil d'UN serveur. Un jeu d'outils se confie à
+          // un agent (procédure), qui choisit lequel appeler ; le moteur, lui,
+          // n'a rien pour choisir.
+          if (mcp.length !== 1 || mcp[0].tools.length !== 1) {
+            throw new Error("Une automatisation appelle UN outil d'UN serveur MCP : choisissez-en un seul, ou faites de cette étape une procédure.");
+          }
+          const [sel] = mcp;
+          const params = (resolveTemplates(cleanArgs(d.args), rc.data) ?? {}) as Record<string, unknown>;
+          // On ne sait pas si l'outil écrit : on ne rejoue que ce que le serveur
+          // a refusé avant de l'exécuter.
+          result = await withRetries(() => callMcpTool(rc, sel.server_id, sel.tools[0], params), retries, {
+            onRetry, canRetry: isRejectedBeforeRun,
+          });
+          input = { mcp_server: sel.server_name, tool: sel.tools[0], params };
+        } else if (lang && str(d.code).trim()) {
           // Les gabarits sont résolus DANS le code avant exécution : c'est ce
           // qui permet d'écrire `total = {{deals.total}}` et d'obtenir la
           // valeur du pas précédent, sans exposer d'interpréteur.

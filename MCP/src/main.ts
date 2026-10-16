@@ -1,11 +1,11 @@
 // Point d'entrée : un processus = un serveur MCP sur un cluster.
 //
 //   MCP_SERVER            observability | fleet | openshift | argocd | git | prtg, ou plusieurs
-//                         séparés par des virgules : un serveur par cluster (openshift,argocd),
+//                         séparés par des virgules : un serveur par cluster (openshift,argocd,…),
 //                         configuration { "openshift": {…}, "argocd": {…} }, audience mcp-<cluster>
 //   MCP_CLUSTER           hub | ips | sdb | npr | prd
 //   MCP_CONFIG_FILE       configuration JSON du serveur (ConfigMap), défaut /etc/mcp/config.json
-//   MCP_AUDIENCE          audience attendue dans le jeton d'appel (client Keycloak du serveur),
+//   MCP_AUDIENCE          audience des jetons d'approbation (et des jetons d'IdP en mode oidc),
 //                         défaut mcp-<outil>-<cluster> (un module) ou mcp-<cluster> (plusieurs)
 //   AUTH_MODE             rotating (défaut si MCP_TOKEN_SEED_FILE), token (défaut si MCP_TOKENS_FILE) ou oidc
 //   MCP_TOKEN_SEED_FILE   rotating : la graine du jeton tournant (Secret monté) — npm run token -- seed
@@ -27,9 +27,13 @@
 //   APPROVAL_JWKS_FILE    à la place de l'URL : le JWKS dans une ConfigMap (cluster qui ne joint pas FounderOS)
 //   APPROVAL_AUDIENCE     audience des jetons d'approbation, si elle diffère de MCP_AUDIENCE (Entra ID :
 //                         FounderOS signe pour api://…, le jeton d'appel porte l'ID d'application)
-//   OPA_URL               ex. http://opa.ai-mcp.svc:8181 ; POLICY_ENGINE=builtin pour s'en passer (dev)
+//   OPA_URL               ex. http://127.0.0.1:8181 (sidecar) ; POLICY_ENGINE=builtin pour s'en passer (dev)
+//   MCP_K8S_API_URL       API Kubernetes pour les identifiants k8s-token (défaut : celle du cluster du pod)
+//   MCP_RATE_PER_MINUTE   appels par minute et par appelant (défaut 120), MCP_RATE_BURST (défaut 30)
+//   MCP_MAX_CONCURRENCY   tools exécutés en même temps (défaut 16)
+//   MCP_TOOL_TIMEOUT      durée maximale d'un tool (défaut 30s)
 //   VAULT_ADDR, VAULT_ROLE, VAULT_AUTH_MOUNT, VAULT_KV_MOUNT, VAULT_K8S_SECRETS_MOUNT, VAULT_CACERT,
-//   VAULT_JWT_FILE (jeton projeté d'audience « vault »)
+//   VAULT_JWT_FILE        en option seulement, pour les identifiants kv et vault-k8s
 //   CATALOG_FILE          catalogue des tools, le même que celui d'OPA
 //   TLS_CERT_FILE, TLS_KEY_FILE, TLS_CLIENT_CA_FILE, MTLS_ALLOWED_CN   (mTLS)
 //   MCP_INSECURE_HTTP=1   HTTP en clair, poste local uniquement
@@ -46,8 +50,11 @@ import { Metrics } from "./lib/metrics.ts";
 import { composeTokenVerifiers, createRotatingTokenVerifier, parseDuration, readSeedFile, TokenPusher } from "./lib/rotating-token.ts";
 import { CLUSTERS, loadCatalog, type Cluster } from "./lib/catalog.ts";
 import { BuiltinPolicyEngine, OpaPolicyEngine, type PolicyEngine } from "./lib/policy.ts";
-import { LocalSecretResolver, VaultSecretResolver, type SecretResolver } from "./lib/secrets.ts";
-import { startServer } from "./lib/server.ts";
+import { KubernetesApi, KubernetesTokenCache } from "./lib/kubernetes.ts";
+import { ApprovalLedger, RateLimiter, Semaphore } from "./lib/limits.ts";
+import { ClusterSecretResolver, VaultSecretResolver, type SecretResolver } from "./lib/secrets.ts";
+import { startServer, type ReadinessCheck } from "./lib/server.ts";
+import { requestJson } from "./lib/http.ts";
 import { resolveServerModule } from "./servers/index.ts";
 
 const env = (k: string) => process.env[k]?.trim() || undefined;
@@ -119,7 +126,9 @@ async function main() {
     policy = new OpaPolicyEngine(required("OPA_URL"));
   }
 
-  const secrets: SecretResolver = env("VAULT_ADDR")
+  // Identifiants : jetons Kubernetes de courte durée et Secrets montés ; Vault
+  // seulement si l'entreprise en a un et le configure.
+  const vault: SecretResolver | undefined = env("VAULT_ADDR")
     ? new VaultSecretResolver({
         addr: env("VAULT_ADDR")!,
         role: env("VAULT_ROLE") ?? module.name,
@@ -130,7 +139,26 @@ async function main() {
         namespace: env("VAULT_NAMESPACE"),
         jwtFile: env("VAULT_JWT_FILE"),
       })
-    : new LocalSecretResolver();
+    : undefined;
+  const secrets = new ClusterSecretResolver({
+    kubernetes: new KubernetesTokenCache(new KubernetesApi({ url: env("MCP_K8S_API_URL") })),
+    vault,
+  });
+
+  // Garde-fous d'exécution.
+  const limits = {
+    rate: new RateLimiter({ perMinute: Number(env("MCP_RATE_PER_MINUTE") ?? 120), burst: Number(env("MCP_RATE_BURST") ?? 30) }),
+    concurrency: new Semaphore(Number(env("MCP_MAX_CONCURRENCY") ?? 16)),
+    timeoutMs: parseDuration(env("MCP_TOOL_TIMEOUT") ?? "30s"),
+    approvals: new ApprovalLedger(),
+  };
+
+  // Vérifications du lanceur : OPA (critique : sans lui, tout est refusé), la livraison du jeton.
+  const checks: ReadinessCheck[] = [];
+  if (env("POLICY_ENGINE") !== "builtin") {
+    const opa = required("OPA_URL").replace(/\/$/, "");
+    checks.push({ name: "opa", critical: true, run: async () => { await requestJson(`${opa}/health`, { timeoutMs: 3000 }); return "OPA répond"; } });
+  }
 
   const tls = env("TLS_CERT_FILE")
     ? {
@@ -158,6 +186,17 @@ async function main() {
     host: env("MCP_HOST") ?? "0.0.0.0",
     mgmtHost: env("MGMT_HOST") ?? env("MCP_HOST") ?? "0.0.0.0",
     metrics,
+    limits,
+    checks: pusher
+      ? [...checks, {
+          name: "jeton:livraison",
+          critical: false,
+          run: async () => {
+            if (!pusher!.delivered()) throw new Error("jeton de la période pas encore livré à FounderOS (voir mcp_token_push_total)");
+            return "jeton de la période livré";
+          },
+        }]
+      : checks,
   });
   pusher?.start();
 

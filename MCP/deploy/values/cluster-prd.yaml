@@ -1,35 +1,39 @@
-# Un seul serveur MCP pour tout le cluster PRD (OpenShift + Argo CD) :
+# Le serveur MCP du cluster PRD (OpenShift + Argo CD) :
 #   helm upgrade --install mcp-prd MCP/deploy/helm/mcp-server -n ai-mcp -f MCP/deploy/values/cluster-prd.yaml
-# Nom mcp-prd, audience mcp-prd, rôle Vault mcp-prd sur le Vault de PRD.
+# Nom mcp-prd, comptes mcp-prd-reader et mcp-prd-operator, jeton tournant livré à FounderOS sur le Hub.
 servers: [openshift, argocd]
 cluster: prd
 image:
   # Même code pour tous les modules : une seule image suffit (MCP_SERVER est posé par le chart).
   repository: quay.interne.exemple/ai-platform/mcp-server
-  tag: "0.1.0"
+  tag: "0.2.0"
 route:
   host: mcp.apps-int.prd.interne.exemple
-approval:
-  # Clés publiques copiées dans une ConfigMap (section 12.2) : la vérification ne dépend pas de FounderOS.
-  jwksConfigMap: approval-jwks
 auth:
-  # Jeton tournant (défaut du chart) : graine dans le Secret mcp-token-seed (npm run token -- seed),
-  # chaque nouveau jeton livré à FounderOS. Flux ai-mcp (PRD) → FounderOS en 443 (section 5.5).
-  founderosUrl: https://founderos-api.apps-int.ips.interne.exemple
-  # Les écritures (redémarrage, sync) restent soumises à approbation en PRD.
+  # Jeton tournant : graine dans le Secret mcp-token-seed (npm run token -- seed), chaque nouveau
+  # jeton livré au backend de FounderOS sur le Hub. Flux ai-mcp (PRD) → Hub en 443.
+  founderosUrl: https://founderos-api.apps-int.hub.interne.exemple
+  # Les écritures (redémarrage, mise à l'échelle) restent soumises à approbation en PRD.
   roles: [ai-ops-reader, ai-ops-operator]
-vault:
-  # Le Vault de PRD : chaque cluster a le sien.
-  addr: https://vault.prd.interne.exemple:8200
+approval:
+  # Clés publiques des jetons d'approbation, copiées dans une ConfigMap : la vérification ne dépend pas de FounderOS.
+  jwksConfigMap: approval-jwks
+rbac:
+  # Lecture dans les namespaces de config.openshift.namespaces ; écriture limitée au redémarrage et à la mise à l'échelle.
+  write:
+    enabled: true
+    clusterRole: ai-prd-restarter
+secretMounts:
+  - { name: argocd, secretName: mcp-argocd }
 config:
   openshift:
     api: { url: https://kubernetes.default.svc, caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
     namespaces: [app-a-prd, app-b-prd]
-    readCredential: { type: vault-k8s, role: ocp-reader }
-    # Phase 4 seulement : rôle limité au patch des déploiements (section 8.1).
-    writeCredential: { type: vault-k8s, role: ocp-prd-restarter }
+    readCredential: { type: k8s-token, serviceAccount: mcp-prd-reader }
+    writeCredential: { type: k8s-token, serviceAccount: mcp-prd-operator }
+    maxReplicas: 10
   argocd:
     url: https://openshift-gitops-server.openshift-gitops.svc
     caFile: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
-    token: { type: kv, path: mcp/prd/argocd/project-role, key: token }
+    token: { type: file, path: /etc/mcp-secrets/argocd/token }
     projects: [team-a, team-b]

@@ -21,6 +21,16 @@ data:
   SSO_MODE: {{ .Values.backend.ssoMode | quote }}
   INSTALLATION_ADMINS: {{ .Values.backend.installationAdmins | quote }}
   PORT: "8787"
+  {{- with .Values.mcp.internalHosts }}
+  MCP_INTERNAL_HOSTS: {{ join "," . | quote }}
+  {{- end }}
+  {{- if .Values.mcp.clientCert.secretName }}
+  MCP_CLIENT_CERT_FILE: /etc/founderos/mcp-client/tls.crt
+  MCP_CLIENT_KEY_FILE: /etc/founderos/mcp-client/tls.key
+  {{- end }}
+  {{- if .Values.mcp.clientCert.caConfigMap }}
+  MCP_CA_FILE: /etc/founderos/mcp-ca/ca.crt
+  {{- end }}
   {{- range $k, $v := .Values.backend.env }}
   {{ $k }}: {{ $v | toString | quote }}
   {{- end }}

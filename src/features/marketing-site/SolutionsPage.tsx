@@ -45,23 +45,23 @@ export function SolutionsPage() {
       </HnHero>
 
       {/* ══ The six ═════════════════════════════════════════════════════════ */}
-      <section className="bg-[#f7f8fb] pb-16 lg:pb-24">
+      <section className="bg-[#f5f5f8] pb-16 lg:pb-24">
         <Container>
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
             {SOLUTIONS.map((s) => (
               <Card key={s.slug} hover className="flex flex-col overflow-hidden">
                 <ArtPanel art={SOLUTION_ART[s.slug] ?? "blue"} className="flex h-[220px] items-end p-4 sm:h-[260px]">
-                  <span className="rounded-[14px] bg-white/90 px-2.5 py-1.5 text-[14px] font-medium text-[#0f1728]">{s.num}</span>
+                  <span className="rounded-[14px] bg-white/90 px-2.5 py-1.5 text-[14px] font-medium text-[#0d0d0d]">{s.num}</span>
                 </ArtPanel>
                 <div className="flex flex-1 flex-col p-4 pb-6">
-                  <h2 className="text-[20px] font-medium leading-[1.3] text-[#0f1728]">{s.menu.label}</h2>
-                  <p className="mt-1 text-[18px] leading-[1.3] text-[#4b5567]">{s.lead}</p>
+                  <h2 className="text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">{s.menu.label}</h2>
+                  <p className="mt-1 text-[18px] leading-[1.3] text-[#5c5c66]">{s.lead}</p>
                   <ul className="mt-5 space-y-2">
                     {s.meta.map((m) => (
-                      <li key={m.label} className="flex items-start gap-2 text-[15px] leading-[1.4] text-[#0f1728]">
-                        <CheckCircle weight="fill" className="mt-0.5 h-4 w-4 shrink-0 text-[#006edd]" />
+                      <li key={m.label} className="flex items-start gap-2 text-[15px] leading-[1.4] text-[#0d0d0d]">
+                        <CheckCircle weight="fill" className="mt-0.5 h-4 w-4 shrink-0 text-[#4f1ad6]" />
                         <span>
-                          <span className="text-[#4b5567]">{m.label}:</span> {m.value}
+                          <span className="text-[#5c5c66]">{m.label}:</span> {m.value}
                         </span>
                       </li>
                     ))}
@@ -77,10 +77,10 @@ export function SolutionsPage() {
       </section>
 
       {/* ══ Facts strip ════════════════════════════════════════════════════ */}
-      <section className="border-y border-[#e6e9ef] bg-[#f7f8fb]">
+      <section className="border-y border-[#e8e8ee] bg-[#f5f5f8]">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4">
           {FACTS.map((f, i) => (
-            <div key={f.label} className={`px-8 py-10 lg:px-12 ${i ? "border-t border-[#e6e9ef] sm:border-l sm:border-t-0" : ""}`}>
+            <div key={f.label} className={`px-8 py-10 lg:px-12 ${i ? "border-t border-[#e8e8ee] sm:border-l sm:border-t-0" : ""}`}>
               <Fact value={f.value} label={f.label} />
             </div>
           ))}
@@ -99,7 +99,7 @@ export function SolutionsPage() {
           <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {METHOD.map((m) => (
               <div key={m.tag} className="flex flex-col items-center text-center">
-                <span className="rounded-full bg-[#006edd] px-4 py-2 text-[16px] font-medium leading-none">{m.tag}</span>
+                <span className="rounded-full bg-[#4f1ad6] px-4 py-2 text-[16px] font-medium leading-none">{m.tag}</span>
                 <div className="mt-4 w-full rounded-[14px] border border-white/10 bg-white/[0.05] px-4 py-3 text-[18px] font-medium">
                   {m.title}
                 </div>
@@ -123,7 +123,7 @@ export function SolutionsPage() {
           <UseCaseCarousel />
         </div>
         <Container className="mt-6 text-center">
-          <Link to="/use-cases" className="text-[16px] font-medium text-[#006edd] hover:text-[#0057c2]">
+          <Link to="/use-cases" className="text-[16px] font-medium text-[#4f1ad6] hover:text-[#4314b8]">
             See all use cases
           </Link>
         </Container>

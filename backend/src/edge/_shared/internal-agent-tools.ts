@@ -64,6 +64,8 @@ import { callIdentity, classifyMcpResult, reportApproval, reportToolCall, traceI
 import { relayFetchFor } from "./mcp-relay.ts";
 import { apiTokenHeaders, apiTokenSubject } from "./mcp-api-token.ts";
 import { mergeMcpHeaders } from "./mcp-headers.ts";
+import { runMcpGrants } from "./mcp-servers.ts";
+import { crmEnabled, isCrmTable } from "./crm-switch.ts";
 import { IdpError } from "./idp-tokens.ts";
 import {
   type ConnectorOperation,
@@ -6258,6 +6260,8 @@ export function buildInternalToolset(
             `N'attends pas son résultat dans ce run — signale-le dans ton rapport et continue avec ce que tu peux faire toi-même.`;
         }
         // Launch the delegated mission immediately (fire-and-forget run).
+        // L'étape déléguée garde les outils MCP que le workflow lui a donnés :
+        // les accès du run qui délègue sont recopiés sur celui du délégué.
         const { data: run } = await ctx.admin
           .from("internal_agent_runs")
           .insert({
@@ -6267,6 +6271,7 @@ export function buildInternalToolset(
             project_id: ctx.projectId,
             status: "queued",
             triggered_via: "api",
+            mcp_grants: await runMcpGrants(ctx.admin, ctx.runId),
           })
           .select("id")
           .single();
@@ -6499,7 +6504,9 @@ export function buildInternalToolset(
         enabled
           .filter((r) => r.kind === "db_read")
           .flatMap((r) => (Array.isArray(r.config?.tables) ? (r.config.tables as string[]) : []))
-          .filter((t) => typeof t === "string" && /^[a-zA-Z0-9_]+$/.test(t)),
+          .filter((t) => typeof t === "string" && /^[a-zA-Z0-9_]+$/.test(t))
+          // Le CRM masqué ne se lit pas non plus par ce détour.
+          .filter((t) => crmEnabled() || !isCrmTable(t)),
       ),
     ];
     tools.set("query_table", {
@@ -6872,7 +6879,8 @@ export function buildInternalToolset(
   // Reads (list_objects/search_records/get_record) run directly; writes
   // (create/update/delete_record) are queued for human approval unless the
   // agent is on autopilot — same safe default as the other write tools.
-  if (hasKind("crm")) {
+  // Le CRM masqué n'offre pas d'outil, même à un agent qui en a reçu un (crm-switch.ts).
+  if (hasKind("crm") && crmEnabled()) {
     const CRM_WRITE = new Set(["create_record", "update_record", "delete_record", "link_records", "unlink_records"]);
     tools.set("crm", {
       def: {
@@ -7084,8 +7092,10 @@ export function buildInternalToolset(
             if (seen.has(`public_agent:${t.id}`)) continue;
             out.push({ source: "public_agent", source_ref: t.id, message: t.first_message, last_message: t.last_message, at: t.created_at });
           }
-          const { data: objs } = await ctx.admin.from("crm_objects").select("id, slug")
-            .eq("project_id", ctx.projectId).in("slug", ["people", "leads", "contacts", "prospects"]);
+          const { data: objs } = crmEnabled()
+            ? await ctx.admin.from("crm_objects").select("id, slug")
+              .eq("project_id", ctx.projectId).in("slug", ["people", "leads", "contacts", "prospects"])
+            : { data: [] };
           const objIds = ((objs ?? []) as Array<{ id: string }>).map((o) => o.id);
           if (objIds.length) {
             const { data: recs } = await ctx.admin.from("crm_records").select("id, data, created_at")

@@ -51,6 +51,28 @@ spec:
             {{- toYaml .Values.backend.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          {{- if or .Values.mcp.clientCert.secretName .Values.mcp.clientCert.caConfigMap }}
+          volumeMounts:
+            {{- if .Values.mcp.clientCert.secretName }}
+            - { name: mcp-client, mountPath: /etc/founderos/mcp-client, readOnly: true }
+            {{- end }}
+            {{- if .Values.mcp.clientCert.caConfigMap }}
+            - { name: mcp-ca, mountPath: /etc/founderos/mcp-ca, readOnly: true }
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.mcp.clientCert.secretName .Values.mcp.clientCert.caConfigMap }}
+      volumes:
+        {{- with .Values.mcp.clientCert.secretName }}
+        # Certificat client vers les serveurs MCP : cert-manager le renouvelle dans le
+        # Secret, le volume suit (pas de subPath) et backend/src/compat/mtls.ts le relit.
+        - name: mcp-client
+          secret: { secretName: {{ . }} }
+        {{- end }}
+        {{- with .Values.mcp.clientCert.caConfigMap }}
+        - name: mcp-ca
+          configMap: { name: {{ . }} }
+        {{- end }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

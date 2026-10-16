@@ -9,6 +9,7 @@ import {
   CheckIcon as Check,
   ShieldCheckIcon as ShieldCheck,
   PaletteIcon as Palette,
+  BookOpenIcon as BookOpen,
 } from "@phosphor-icons/react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -45,7 +46,8 @@ function Tile({ name }: { name: string }) {
 /**
  * Profile + org switcher, pinned to the foot of a per-service sidebar
  * (ServiceDashboardShell has no top navbar, so account access lives here).
- * `compact` renders just the avatar tile — the icon rail's bottom slot.
+ * The full form fills its row, beside the assistant and theme buttons;
+ * `compact` renders just the avatar tile — the folded sidebar's bottom slot.
  */
 /**
  * Les deux systèmes visuels installés.
@@ -82,7 +84,7 @@ export function SidebarProfileFooter({ compact }: { compact?: boolean } = {}) {
   const base = workspace && project ? `/app/${workspace.slug}/${project.slug}` : "/orgs";
 
   return (
-    <div className={cn(compact ? "p-0" : "border-t border-border/60 p-2")}>
+    <div className={cn(compact ? "p-0" : "min-w-0 flex-1")}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           {compact ? (
@@ -146,6 +148,14 @@ export function SidebarProfileFooter({ compact }: { compact?: boolean } = {}) {
           {dashboardId && (
             <DropdownMenuItem className="rounded-xl" onSelect={() => navigate(`${base}/service/${dashboardId}/settings`)}>
               <Settings className="mr-2 h-4 w-4" /> Paramètres du service
+            </DropdownMenuItem>
+          )}
+          {/* La documentation a quitté la barre latérale pour ce menu, avec les
+              paramètres : deux pages qu'on ouvre rarement, chacune avec sa
+              propre navigation. */}
+          {dashboardId && (
+            <DropdownMenuItem className="rounded-xl" onSelect={() => navigate(`${base}/service/${dashboardId}/docs`)}>
+              <BookOpen className="mr-2 h-4 w-4" /> Documentation
             </DropdownMenuItem>
           )}
           {/* One theme, one place. It repaints every dashboard at once, so

@@ -3,12 +3,18 @@ import { botAvatarTypes, type BotAvatarShading, type BotAvatarState } from "bot-
 import { ArrowCounterClockwise, Check, Shuffle } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { AgentIdentity } from "@/components/AgentIdentity";
-import { SoftColor, SoftRange, SoftToggle } from "@/components/ui/soft-form";
+import { SoftToggle } from "@/components/ui/soft-form";
 import {
   BOT_PREFIX, FACES, GLASSES, HATS, HOUSE_LOOK, LANDINGS, NUMBER_SPECS, SHADINGS,
   autoBody, bodyColor, bodyLabel, bodyType, botBodies, parseBotLook, serializeBotLook,
-  type BotBody, type BotLook, type LookGroup, type NumberSpec,
+  type BotBody, type BotLook, type LookGroup,
 } from "@/lib/bot-avatar-look";
+import {
+  HUMAN_PREFIX, isHumanAvatar, parseHumanLook, resolveHumanLook, serializeHumanLook, type HumanLook,
+} from "@/lib/human-avatar-look";
+import { Chips, ColourField, HEX6, LookSlider, Section, Swatch, sameColour } from "./studio-controls";
+import { HUMAN_TABS, HumanAvatarControls, randomHumanLook, type HumanTab } from "./HumanAvatarControls";
+import { webglAvailable } from "@/components/human-avatar/webgl";
 
 /* ------------------------------------------------------------------ *
  * Illustrated agent portraits via the DiceBear library. Agents keep a
@@ -66,13 +72,21 @@ const styleFromUrl = (url: string | null | undefined): string => {
 };
 
 /* ------------------------------------------------------------------ *
- * Avatar studio — every setting bot-avatars has, plus the bodies we drew.
+ * Avatar studio — every setting bot-avatars has, plus the bodies we drew,
+ * and a second kind of avatar: 3D humanoids.
  *
  * It replaced the DiceBear gallery, then the bare body grid: agents are living
- * bots, and now they can be dressed. The whole look is stored in `avatar_url`
- * (`bot:drop?color=…&hat=crown`, see bot-avatar-look.ts), so nothing migrates;
- * « Réinitialiser » clears it and the agent's name picks the body again.
+ * bots, and now they can be dressed — or be people. The whole look is stored
+ * in `avatar_url` (`bot:drop?color=…&hat=crown`, see bot-avatar-look.ts;
+ * `human:?hair=bun…`, see human-avatar-look.ts), so nothing migrates;
+ * « Réinitialiser » goes back to what the agent's name picks.
  * ------------------------------------------------------------------ */
+
+type Kind = "bot" | "human";
+const KINDS: { value: Kind; label: string }[] = [
+  { value: "bot", label: "Robot" },
+  { value: "human", label: "Humain 3D" },
+];
 
 type Tab = "body" | "colour" | "material" | "wear" | "light" | "motion";
 const TABS: { id: Tab; label: string }[] = [
@@ -99,7 +113,13 @@ const PREVIEW_STATES: { value: BotAvatarState; label: string }[] = [
   { value: "working", label: "Au travail" },
   { value: "sleeping", label: "Endormi" },
 ];
-const PREVIEW_SIZES = [120, 64, 32].map((px) => ({ value: px, label: `${px}px` }));
+const PREVIEW_SIZES = [180, 72, 32].map((px) => ({ value: px, label: `${px}px` }));
+/** Avatars live on light pages and on black cards: the preview shows both. */
+const STAGES = [
+  { value: "light", label: "Fond clair" },
+  { value: "dark", label: "Fond sombre" },
+] as const;
+type Stage = (typeof STAGES)[number]["value"];
 
 const isStock = (b: BotBody) => (botAvatarTypes as string[]).includes(b);
 const STOCK_BODIES = botBodies.filter(isStock);
@@ -111,9 +131,7 @@ const THUMB_KEYS: (keyof BotLook)[] = [
   "color", "brightness", "saturation", "ink", "face", "shading", "hat", "glasses", "headphones", "bowTie", "accessoryColor",
 ];
 
-const HEX6 = /^#[0-9a-f]{6}$/i;
-const sameColour = (a: string | undefined, b: string) => !!a && a.toLowerCase() === b.toLowerCase();
-const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)];
+const pick =<T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)];
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -130,9 +148,14 @@ export function AvatarPicker({
   accentColor,
   name,
   onDone,
+  variant = "compact",
 }: {
   value: string | null;
   onChange: (url: string) => void;
+  /** « page »: the studio is the whole page (the agent's Avatar tab) — a big
+   *  preview that stays in view, the agent seen where it appears, no inner
+   *  scrolling box. « compact »: a field among others. */
+  variant?: "compact" | "page";
   /** The agent's accent, offered among the colours. */
   accentColor?: string | null;
   /** The agent's name — drives the automatic body. */
@@ -141,10 +164,16 @@ export function AvatarPicker({
   onDone?: () => void;
 }) {
   const seed = name || "agent";
+  // Both drafts are kept, so going from robot to human and back loses neither.
+  const [kind, setKind] = useState<Kind>(() => (isHumanAvatar(value) ? "human" : "bot"));
   const [look, setLook] = useState<BotLook>(() => parseBotLook(value) ?? {});
+  const [human, setHuman] = useState<HumanLook>(() => parseHumanLook(value) ?? {});
   const [tab, setTab] = useState<Tab>("body");
+  const [humanTab, setHumanTab] = useState<HumanTab>("presets");
+  const [stage, setStage] = useState<Stage>("light");
   const [previewState, setPreviewState] = useState<BotAvatarState>("default");
-  const [previewSize, setPreviewSize] = useState(120);
+  const page = variant === "page";
+  const [previewSize, setPreviewSize] = useState(page ? 260 : 180);
 
   // The draft lives here and reaches the parent a beat later: a slider fires
   // on every pixel, and the parent can be a whole agent page re-rendering.
@@ -168,14 +197,40 @@ export function AvatarPicker({
     if ((value ?? "") === sent.current) return;
     sent.current = value ?? "";
     pending.current = null;
-    setLook(parseBotLook(value) ?? {});
+    if (isHumanAvatar(value)) {
+      setKind("human");
+      setHuman(parseHumanLook(value) ?? {});
+    } else {
+      setKind("bot");
+      setLook(parseBotLook(value) ?? {});
+    }
   }, [value]);
 
-  const commit = (next: BotLook) => {
-    setLook(next);
-    pending.current = serializeBotLook(next);
+  const emit = (v: string) => {
+    pending.current = v;
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(flush, 180);
+  };
+  const commit = (next: BotLook) => {
+    setLook(next);
+    emit(serializeBotLook(next));
+  };
+  const commitHuman = (next: HumanLook) => {
+    setHuman(next);
+    emit(serializeHumanLook(next));
+  };
+  /** Sets one trait of the person; undefined hands it back to the name. A
+   *  switched-off flag is kept: it may be overriding the name's « on ». */
+  const setHumanTrait = (key: keyof HumanLook, v: HumanLook[keyof HumanLook] | undefined) => {
+    const next = { ...human } as Record<string, unknown>;
+    if (v === undefined) delete next[key];
+    else next[key] = v;
+    commitHuman(next as HumanLook);
+  };
+  const switchKind = (k: Kind) => {
+    if (k === kind) return;
+    setKind(k);
+    emit(k === "human" ? serializeHumanLook(human) : serializeBotLook(look));
   };
   /** Sets one setting; undefined (or a switched-off flag) removes it. */
   const set = <K extends keyof BotLook>(key: K, v: BotLook[K] | undefined) => {
@@ -192,9 +247,15 @@ export function AvatarPicker({
   // The canvases follow a beat behind as well: each new fur or light value is
   // a new bake, and a drag would queue dozens of them.
   const shown = useDebounced(look, 150);
-  const shownValue = serializeBotLook(shown);
+  const shownValue = useDebounced(kind === "human" ? serializeHumanLook(human) : serializeBotLook(look), 150);
   // Untouched, an uploaded portrait is still what the agent wears.
-  const previewUrl = shownValue || (value && !value.startsWith(BOT_PREFIX) ? value : "");
+  const previewUrl = shownValue
+    || (value && !value.startsWith(BOT_PREFIX) && !value.startsWith(HUMAN_PREFIX) ? value : "");
+  const humanResolved = useMemo(() => resolveHumanLook(human, seed), [human, seed]);
+  const humanAuto = useMemo(() => resolveHumanLook({}, seed), [seed]);
+  // The tiles redraw a beat behind, like the preview: a colour dragged
+  // through the picker would otherwise redraw a whole grid at every step.
+  const humanThumb = useDebounced(human, 150);
   const thumbLook = useMemo(
     () => Object.fromEntries(THUMB_KEYS.filter((k) => shown[k] !== undefined).map((k) => [k, shown[k]])) as BotLook,
     [shown],
@@ -243,27 +304,100 @@ export function AvatarPicker({
   const accent = accentColor && HEX6.test(accentColor) ? accentColor : null;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border">
-      <div className="grid sm:grid-cols-[172px_minmax(0,1fr)]">
+    // overflow-clip, not hidden: it rounds the corners without becoming a
+    // scroll container, which would keep the page variant's preview from
+    // sticking while the settings scroll.
+    <div className={cn("overflow-clip border border-border", page ? "rounded-2xl" : "rounded-xl")}>
+      {/* The two kinds side by side, each showing what this agent would look
+          like as it — a pair of words alone went unnoticed. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Type d'avatar</span>
+        <div className="flex gap-2">
+          {KINDS.map((k) => (
+            <button
+              key={k.value}
+              type="button"
+              aria-pressed={kind === k.value}
+              onClick={() => switchKind(k.value)}
+              className={cn(
+                "flex items-center gap-2 rounded-xl border py-1.5 pl-1.5 pr-3 text-xs transition-colors",
+                kind === k.value
+                  ? "border-primary bg-primary/10 font-medium text-foreground ring-1 ring-primary/40"
+                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground",
+              )}
+            >
+              <AgentIdentity
+                url={k.value === "human" ? serializeHumanLook(human) : serializeBotLook(shown)}
+                seed={seed}
+                size={30}
+                interactive={false}
+                paused
+              />
+              {k.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {kind === "human" && !webglAvailable() && (
+        <p className="border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300">
+          Ce navigateur refuse WebGL en ce moment : les humains s'affichent dans leur version 2D, sans relief.
+          Pour la 3D, redémarrez le navigateur ou activez l'accélération matérielle dans ses paramètres.
+        </p>
+      )}
+      <div className={cn("grid", page ? "lg:grid-cols-[360px_minmax(0,1fr)]" : "sm:grid-cols-[224px_minmax(0,1fr)]")}>
         {/* The preview — the real component, so what is seen here is what every screen shows. */}
-        <div className="flex flex-col items-center gap-2.5 border-b border-border p-3 sm:border-b-0 sm:border-r">
-          <div className="flex h-[164px] w-full items-center justify-center rounded-xl bg-muted/40">
+        <div
+          className={cn(
+            "flex flex-col items-center gap-2.5 border-b border-border p-3",
+            // Below the page's floating tab bar.
+            page ? "lg:sticky lg:top-24 lg:self-start lg:border-b-0 lg:border-r lg:p-4" : "sm:border-b-0 sm:border-r",
+          )}
+        >
+          <div
+            data-theme={stage}
+            className={cn(
+              "flex w-full items-center justify-center rounded-2xl ring-1 ring-inset transition-colors",
+              page ? "h-[340px]" : "h-[220px]",
+              stage === "dark"
+                ? "bg-[radial-gradient(circle_at_50%_40%,#23232b,#09090b)] ring-white/10"
+                : "bg-[radial-gradient(circle_at_50%_40%,#ffffff,#eceef3)] ring-black/5",
+            )}
+          >
             <AgentIdentity url={previewUrl} seed={seed} size={previewSize} state={previewState} />
           </div>
+          <Chips size="sm" options={[...STAGES]} value={stage} onChange={setStage} />
           <Chips size="sm" options={PREVIEW_STATES} value={previewState} onChange={setPreviewState} />
-          <Chips size="sm" options={PREVIEW_SIZES} value={previewSize} onChange={setPreviewSize} />
+          {page ? (
+            // Where the agent will be seen: a list row, the chat, a card.
+            <div className="grid w-full grid-cols-3 gap-1.5">
+              {[
+                { size: 24, label: "Liste" },
+                { size: 44, label: "Chat" },
+                { size: 72, label: "Carte" },
+              ].map((c) => (
+                <div key={c.label} data-theme={stage} className={cn("flex h-[96px] flex-col items-center justify-end gap-1.5 rounded-xl pb-2 ring-1 ring-inset", stage === "dark" ? "bg-[#0b0b0f] ring-white/10" : "bg-muted/40 ring-black/5")}>
+                  <div className="flex flex-1 items-center">
+                    <AgentIdentity url={previewUrl} seed={seed} size={c.size} state={previewState} interactive={false} />
+                  </div>
+                  <span className={cn("text-[10px]", stage === "dark" ? "text-white/60" : "text-muted-foreground")}>{c.label}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Chips size="sm" options={PREVIEW_SIZES} value={previewSize} onChange={setPreviewSize} />
+          )}
           <div className="grid w-full grid-cols-2 gap-1.5 pt-1">
             <button
               type="button"
-              onClick={surprise}
+              onClick={() => (kind === "human" ? commitHuman(randomHumanLook()) : surprise())}
               className="flex items-center justify-center gap-1 rounded-lg bg-muted/60 px-2 py-1.5 text-[11px] transition-colors hover:bg-muted"
             >
               <Shuffle className="h-3.5 w-3.5" /> Surprise
             </button>
             <button
               type="button"
-              onClick={() => commit({})}
-              title="Revenir au corps et à la couleur que le nom choisit"
+              onClick={() => (kind === "human" ? commitHuman({}) : commit({}))}
+              title="Revenir à ce que le nom choisit"
               className="flex items-center justify-center gap-1 rounded-lg bg-muted/60 px-2 py-1.5 text-[11px] transition-colors hover:bg-muted"
             >
               <ArrowCounterClockwise className="h-3.5 w-3.5" /> Réinitialiser
@@ -280,27 +414,42 @@ export function AvatarPicker({
           )}
         </div>
 
-        <div className="min-w-0 p-3">
-          <div role="tablist" className="mb-3 flex flex-wrap gap-1 border-b border-border pb-2">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "rounded-lg px-2.5 py-1 text-xs transition-colors",
-                  tab === t.id ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
+        <div className={cn("min-w-0", page ? "p-4" : "p-3")}>
+          <div role="tablist" className={cn("mb-3 flex flex-wrap gap-1 border-b border-border pb-2", page && "mb-5")}>
+            {(kind === "human" ? HUMAN_TABS : TABS).map((t) => {
+              const selected = kind === "human" ? humanTab === t.id : tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => (kind === "human" ? setHumanTab(t.id as HumanTab) : setTab(t.id as Tab))}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1 text-xs transition-colors",
+                    selected ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
 
-          <div className="max-h-[340px] space-y-4 overflow-y-auto scrollbar-slim pr-1">
-            {tab === "body" && (
+          <div className={cn("space-y-5", !page && "max-h-[480px] overflow-y-auto scrollbar-slim pr-1")}>
+            {kind === "human" && (
+              <HumanAvatarControls
+                tab={humanTab}
+                look={human}
+                thumb={humanThumb}
+                resolved={humanResolved}
+                auto={humanAuto}
+                seed={seed}
+                set={setHumanTrait}
+                apply={commitHuman}
+              />
+            )}
+            {kind === "bot" && tab === "body" && (
               <>
                 <Section label="Corps" hint={look.body ? undefined : "En automatique, le nom du collaborateur choisit le corps."}>
                   <button
@@ -324,7 +473,7 @@ export function AvatarPicker({
               </>
             )}
 
-            {tab === "colour" && (
+            {kind === "bot" && tab === "colour" && (
               <>
                 <Section label="Couleur du corps">
                   <div className="flex flex-wrap items-center gap-2">
@@ -351,7 +500,7 @@ export function AvatarPicker({
               </>
             )}
 
-            {tab === "material" && (
+            {kind === "bot" && tab === "material" && (
               <>
                 <Section label="Texture">
                   <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -377,7 +526,7 @@ export function AvatarPicker({
               </>
             )}
 
-            {tab === "wear" && (
+            {kind === "bot" && tab === "wear" && (
               <>
                 <Section label="Chapeau">
                   <Chips options={HATS} value={look.hat ?? "none"} onChange={(v) => set("hat", v === "none" ? undefined : v)} />
@@ -402,13 +551,13 @@ export function AvatarPicker({
               </>
             )}
 
-            {tab === "light" && (
+            {kind === "bot" && tab === "light" && (
               shading === "flat"
                 ? <p className="text-xs text-muted-foreground">La texture « Mat » n'a pas d'éclairage : choisissez-en une autre dans Matière pour régler la lumière.</p>
                 : <Section label="Éclairage">{sliders("light")}</Section>
             )}
 
-            {tab === "motion" && (
+            {kind === "bot" && tab === "motion" && (
               <>
                 <Section label="Mouvements" hint="« Au travail », sous l'aperçu, montre les sauts en série.">{sliders("motion")}</Section>
                 <Section label="Atterrissage">
@@ -427,114 +576,3 @@ export function AvatarPicker({
   );
 }
 
-function Section({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      {children}
-      {hint && <p className="mt-1.5 text-[11px] text-muted-foreground">{hint}</p>}
-    </section>
-  );
-}
-
-function Chips<T extends string | number>({ options, value, onChange, size = "md" }: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-  size?: "sm" | "md";
-}) {
-  return (
-    <div className={cn("flex flex-wrap", size === "sm" ? "justify-center gap-1" : "gap-1.5")}>
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          type="button"
-          aria-pressed={o.value === value}
-          onClick={() => onChange(o.value)}
-          className={cn(
-            "rounded-full transition-colors",
-            size === "sm" ? "px-2 py-0.5 text-[10px]" : "px-3 py-1 text-[11px]",
-            o.value === value
-              ? "bg-foreground font-medium text-background"
-              : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Swatch({ colour, active, onClick, title }: { colour: string; active: boolean; onClick: () => void; title?: string }) {
-  return (
-    <button
-      type="button"
-      title={title ?? colour}
-      aria-label={title ?? colour}
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "h-6 w-6 shrink-0 rounded-full ring-1 ring-inset ring-black/10 transition-transform hover:scale-110",
-        active && "outline outline-2 outline-offset-2 outline-primary",
-      )}
-      style={{ background: colour }}
-    />
-  );
-}
-
-/** A hex field that lets a half-typed value sit until it is a colour. */
-function ColourField({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  return (
-    <SoftColor
-      value={draft}
-      onChange={(v) => {
-        setDraft(v);
-        if (HEX6.test(v)) onChange(v.toLowerCase());
-      }}
-      className="mt-2 max-w-[220px]"
-    />
-  );
-}
-
-function LookSlider({ spec, value, def, onChange }: {
-  spec: NumberSpec;
-  value: number | undefined;
-  /** What the library draws when unset; null when it decides by itself. */
-  def: number | null;
-  onChange: (v: number | undefined) => void;
-}) {
-  const at = value ?? def ?? (spec.min + spec.max) / 2;
-  const fmt = (n: number) => (spec.step >= 1 ? String(Math.round(n)) : n.toFixed(2));
-  const reading = value === undefined && def === null ? "auto" : at === 0 && spec.zero ? spec.zero : `${fmt(at)}${spec.unit ?? ""}`;
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2 text-[11px]">
-        <span className="truncate text-muted-foreground">{spec.label}</span>
-        <span className="flex shrink-0 items-center gap-1 tabular-nums">
-          <span className={value === undefined ? "text-muted-foreground/70" : "font-medium"}>{reading}</span>
-          {value !== undefined && (
-            <button
-              type="button"
-              onClick={() => onChange(undefined)}
-              title="Revenir à la valeur par défaut"
-              className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <ArrowCounterClockwise className="h-3 w-3" />
-            </button>
-          )}
-        </span>
-      </div>
-      <SoftRange
-        min={spec.min}
-        max={spec.max}
-        step={spec.step}
-        value={at}
-        aria-label={spec.label}
-        onChange={(e) => onChange(Number(e.currentTarget.value))}
-      />
-    </div>
-  );
-}

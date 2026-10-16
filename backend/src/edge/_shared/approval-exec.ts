@@ -11,6 +11,7 @@ import { Deno, FUNCTIONS_URL } from "../../compat/index.ts";
 import { createClient } from "@supabase/supabase-js";
 import { runTrackerAction, trackerScope } from "./tracker-actions.ts";
 import { executeMcpApproval } from "./mcp-approval.ts";
+import { crmEnabled, CRM_DISABLED_MESSAGE } from "./crm-switch.ts";
 
 export type ApprovalActionKind =
   | "edge_function" | "webhook" | "connector_action" | "composio_action" | "crm_write"
@@ -108,6 +109,7 @@ export async function executeApprovalAction(
     return { ok: res.ok && out.ok === true, detail: (out.text ?? out.error ?? `HTTP ${res.status}`).slice(0, 6000) };
   }
   if (a.action_kind === "crm_write") {
+    if (!crmEnabled()) return { ok: false, detail: CRM_DISABLED_MESSAGE };
     if (!base || !key) return { ok: false, detail: "CRM actions not configured" };
     const res = await fetch(`${FUNCTIONS_URL}/functions/v1/crm-action`, {
       method: "POST",

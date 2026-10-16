@@ -3,12 +3,12 @@
 // joignable, IPS par défaut dans le catalogue.
 //
 // API HTTP classique de PRTG, clé d'API en lecture dans le paramètre apitoken
-// (KV de Vault, secret/mcp/ips/prtg/). La clé n'apparaît ni dans l'audit ni dans les erreurs.
+// (Secret monté). La clé n'apparaît ni dans l'audit ni dans les erreurs.
 
 import { z } from "zod";
 import { request, UpstreamError } from "../lib/http.ts";
-import { credentialRefSchema } from "../lib/secrets.ts";
-import type { ServerModule } from "../lib/server.ts";
+import { credentialRefSchema, type SecretResolver } from "../lib/secrets.ts";
+import type { ReadinessCheck, ServerModule } from "../lib/server.ts";
 import { defineTool } from "../lib/tool.ts";
 
 export const prtgConfig = z.object({
@@ -26,26 +26,28 @@ function prtgDate(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
 }
 
+/** GET sur l'API de PRTG, clé en paramètre ; jamais l'URL dans l'erreur : elle porte la clé. */
+function prtgGet(config: PrtgConfig, secrets: SecretResolver) {
+  const base = config.url.replace(/\/$/, "");
+  return async <T>(path: string, params: Record<string, string>, repeat: Array<[string, string]> = [], timeoutMs = 20_000): Promise<T> => {
+    const q = new URLSearchParams(params);
+    for (const [k, v] of repeat) q.append(k, v);
+    q.set("apitoken", await secrets.resolve(config.apiKey, {}));
+    const res = await request(`${base}${path}?${q}`, { caFile: config.caFile, timeoutMs });
+    if (res.status !== 200) throw new UpstreamError(`PRTG a répondu ${res.status} sur ${path}`, res.status);
+    try {
+      return JSON.parse(res.text) as T;
+    } catch {
+      throw new UpstreamError(`PRTG : réponse non JSON sur ${path}`);
+    }
+  };
+}
+
 export const prtgServer: ServerModule<PrtgConfig> = {
   name: "mcp-prtg",
   configSchema: prtgConfig,
   createTools({ config, secrets }) {
-    const base = config.url.replace(/\/$/, "");
-
-    const get = async <T>(path: string, params: Record<string, string>, repeat: Array<[string, string]> = []): Promise<T> => {
-      const q = new URLSearchParams(params);
-      for (const [k, v] of repeat) q.append(k, v);
-      const key = await secrets.resolve(config.apiKey, {});
-      q.set("apitoken", key);
-      const res = await request(`${base}${path}?${q}`, { caFile: config.caFile, timeoutMs: 20_000 });
-      // Jamais l'URL dans l'erreur : elle porte la clé.
-      if (res.status !== 200) throw new UpstreamError(`PRTG a répondu ${res.status} sur ${path}`, res.status);
-      try {
-        return JSON.parse(res.text) as T;
-      } catch {
-        throw new UpstreamError(`PRTG : réponse non JSON sur ${path}`);
-      }
-    };
+    const get = prtgGet(config, secrets);
 
     return [
       defineTool({
@@ -76,5 +78,18 @@ export const prtgServer: ServerModule<PrtgConfig> = {
         },
       }),
     ];
+  },
+
+  // La clé d'API est acceptée.
+  checks({ config, secrets }): ReadinessCheck[] {
+    const get = prtgGet(config, secrets);
+    return [{
+      name: "prtg:api",
+      critical: false,
+      async run() {
+        const s = await get<{ Version?: string }>("/api/status.json", {}, [], 10_000);
+        return s?.Version ? `PRTG ${s.Version} répond` : "PRTG répond";
+      },
+    }];
   },
 };

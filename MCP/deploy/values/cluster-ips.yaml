@@ -1,0 +1,45 @@
+# Le serveur MCP du cluster IPS (OpenShift, Argo CD, GitHub, PRTG).
+#   helm upgrade --install mcp-ips MCP/deploy/helm/mcp-server -n ai-mcp -f MCP/deploy/values/cluster-ips.yaml
+servers: [openshift, argocd, git, prtg]
+cluster: ips
+image:
+  repository: quay.interne.exemple/ai-platform/mcp-server
+  tag: "0.2.0"
+route:
+  host: mcp.apps-int.ips.interne.exemple
+auth:
+  founderosUrl: https://founderos-api.apps-int.hub.interne.exemple
+  roles: [ai-ops-reader, ai-ops-operator]
+approval:
+  jwksConfigMap: approval-jwks
+rbac:
+  write:
+    enabled: true
+    clusterRole: ai-operator
+secretMounts:
+  - { name: argocd, secretName: mcp-argocd }
+  - { name: github-app, secretName: mcp-github-app }
+  - { name: prtg, secretName: mcp-prtg }
+config:
+  openshift:
+    namespaces: [platform-tools]
+    readCredential: { type: k8s-token, serviceAccount: mcp-ips-reader }
+    writeCredential: { type: k8s-token, serviceAccount: mcp-ips-operator }
+  argocd:
+    url: https://openshift-gitops-server.openshift-gitops.svc
+    caFile: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+    token: { type: file, path: /etc/mcp-secrets/argocd/token }
+    projects: [platform]
+  git:
+    apiUrl: https://api.github.com
+    appId: "123456"
+    installationId: "7890123"
+    privateKey: { type: file, path: /etc/mcp-secrets/github-app/private_key }
+    repos:
+      entreprise/app-a-config: { paths: ["helm/values-*.yaml", "overlays/**"], base: main }
+    maxFiles: 10
+    maxFileBytes: 100000
+  prtg:
+    url: https://prtg.interne.exemple
+    caFile: /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+    apiKey: { type: file, path: /etc/mcp-secrets/prtg/api_key }

@@ -1,4 +1,5 @@
 import { AgentInternalToolsTab } from "@/features/custom-connectors/AgentInternalToolsTab";
+import { AgentAvatarTab } from "@/features/internal-agents/AgentAvatarTab";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -10,7 +11,7 @@ import {
   ChartBarIcon, PlugsConnectedIcon, PlayIcon, PauseIcon, TrashIcon, ClockCountdownIcon,
   WarningIcon, CalendarBlankIcon, CalendarCheckIcon, ArrowsClockwiseIcon, TimerIcon,
   FolderPlusIcon, DotsThreeIcon, SparkleIcon, GlobeIcon, MonitorPlayIcon, TerminalWindowIcon,
-  RocketLaunchIcon, PackageIcon, TrayIcon, ShieldCheckIcon, ListChecksIcon,
+  RocketLaunchIcon, PackageIcon, TrayIcon, ShieldCheckIcon, ListChecksIcon, SmileyIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,7 @@ import {
 import type { RangeKey } from "@/features/crm/overview/crmStats";
 import { firstOccurrenceLocal, toAlignment, type Cadence, type Cadenced } from "./scheduleCadence";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { RagSourcesPanel } from "@/features/rag-center/RagSourcesPanel";
 
 // Agents scoped to this dashboard drive every other tab (rooms, schedules,
 // activity, artifacts are all their conversations / missions / runs / outputs).
@@ -769,7 +771,7 @@ function FolderDialog({ open, folder, onClose, onSave, onDelete }: {
 // (the Missions board — it belongs to the dashboard, not to a settings page —
 // and Analytics) or a second door onto the same subject (MCP is a tool provider,
 // so it lives with the tools; Memory is now a section of Général).
-type AgentDetailTab = "settings" | "instructions" | "skills" | "connectors" | "automations" | "autonomy";
+type AgentDetailTab = "settings" | "avatar" | "instructions" | "skills" | "connectors" | "automations" | "autonomy";
 
 // The leaf components behind these (SettingsTab, SkillsTab, …) are the exact
 // same ones the standalone page uses — reused directly instead of through the
@@ -777,6 +779,8 @@ type AgentDetailTab = "settings" | "instructions" | "skills" | "connectors" | "a
 // page's own tab strip.
 const AGENT_DETAIL_TABS: { key: AgentDetailTab; label: string; icon: any }[] = [
   { key: "settings", label: "Général", icon: GearSixIcon },
+  // The avatar studio, out of the general form: the agent's face deserves a page.
+  { key: "avatar", label: "Avatar", icon: SmileyIcon },
   { key: "instructions", label: "Fichiers", icon: FileTextIcon },
   { key: "skills", label: "Compétences", icon: LightningIcon },
   { key: "connectors", label: "Outils", icon: PlugsConnectedIcon },
@@ -1098,6 +1102,7 @@ export function AgentConfigInDashboard({ dashboardId, agentId }: { dashboardId: 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl px-6 pb-10" style={{ paddingTop: barHeight + 28 }}>
           {tab === "settings" && <SettingsTab agent={agent} embedded />}
+          {tab === "avatar" && <AgentAvatarTab agent={agent} />}
           {tab === "instructions" && <InstructionsEditor agent={agent} />}
           {tab === "skills" && <SkillsTab agentId={agent.id} />}
           {/* One tab for everything the agent can reach: the apps connected to
@@ -1591,13 +1596,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 // survives inside its "Vue d'ensemble" tab.
 // ── Workspace memory — what the agents have learned about the team (facts,
 // preferences, learnings, context), workspace-wide. Replaces the old Activity tab.
-const MEM_LABEL: Record<string, string> = { fact: "Fait", preference: "Préférence", learning: "Appris", context: "Contexte" };
-const MEM_STYLE: Record<string, string> = {
-  fact: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  preference: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-  learning: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  context: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-};
 interface MemoryRow { id: string; agent_id: string | null; kind: string; content: string; source: string; importance: number; is_pinned: boolean; created_at: string }
 
 function useWorkspaceMemory(workspaceId: string, limit = 100) {
@@ -1616,13 +1614,15 @@ function useWorkspaceMemory(workspaceId: string, limit = 100) {
 
 // Workspace memory + Assets merged into one tab, toggled by a floating top-left
 // switcher. Memory renders as a point-graph (clusters by kind + similarity links).
-export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view = "graph" }: {
+export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view = "graph", part = null, onPart }: {
   workspaceId: string; dashboardId: string; projectId: string;
-  /** Driven by the sidebar panel: graph | memories | sources. */
+  /** Driven by the sidebar panel: graph | sources. */
   view?: string;
+  /** Sources : null (éléments du service) ou "rag" (collections vectorisées). */
+  part?: string | null;
+  onPart?: (part: string | null) => void;
 }) {
   const { data: agents } = useDashboardAgents(dashboardId);
-  const nameOf = new Map((agents ?? []).map((a) => [a.id, a.name]));
   const { data: mems, isLoading } = useWorkspaceMemory(workspaceId);
 
   // The memory graph should hold EVERYTHING about the service — not only what
@@ -1656,38 +1656,34 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
   });
   const graphNodes = useMemo(() => [...(mems ?? []), ...(extraNodes ?? [])], [mems, extraNodes]);
 
-  // "Sources" is the assets hub; "Memories" the flat list; "Graph" the canvas.
+  // "Sources" : les éléments du service, et le RAG (collections vectorisées) ;
+  // "Graph" : le canevas. La liste « Memories » a été retirée : ses souvenirs
+  // sont des nœuds du graphe.
   if (view === "sources") {
-    return <div className="h-full"><AssetsHub dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} /></div>;
-  }
-  if (isLoading) return <Centered />;
-
-  if (view === "memories") {
     return (
-      <div className="mx-auto max-w-3xl px-10 py-8">
-        <h1 className="mb-8 text-[30px] font-semibold tracking-tight">Memories</h1>
-        {(mems ?? []).length === 0 ? (
-          <Empty icon={BrainIcon} title="This workspace's memory is empty." hint="Vos collaborateurs la remplissent au fil des conversations." />
-        ) : (
-          <div className="space-y-1.5">
-            {(mems ?? []).map((m) => (
-              <div key={m.id} className="flex items-start gap-3 rounded-xl border border-border/70 p-3">
-                <span className={cn("mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium", MEM_STYLE[m.kind] ?? MEM_STYLE.fact)}>
-                  {MEM_LABEL[m.kind] ?? m.kind}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm">{m.content}</span>
-                  <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                    {m.agent_id ? nameOf.get(m.agent_id) ?? "Agent" : "Workspace"} · {fmt(m.created_at)}
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="flex h-full flex-col">
+        <div className="flex shrink-0 gap-1 border-b border-border/60 px-6 pt-3">
+          {([[null, "Éléments"], ["rag", "RAG"]] as const).map(([p, label]) => (
+            <button
+              key={label} onClick={() => onPart?.(p)}
+              className={cn(
+                "-mb-px border-b-2 px-3 pb-2 text-sm transition-colors",
+                (part ?? null) === p ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {part === "rag"
+            ? <RagSourcesPanel workspaceId={workspaceId} projectId={projectId} />
+            : <AssetsHub dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} />}
+        </div>
       </div>
     );
   }
+  if (isLoading) return <Centered />;
 
   return (
     <div className="relative h-full">

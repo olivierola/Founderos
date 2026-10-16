@@ -12,8 +12,8 @@ import { HnHero } from "./hn/HnPage";
 
    `tiles`, `fill`, `size` and `tail` are accepted and ignored. */
 
-export const PAPER_FRAME = "#4b5567";
-export const PAPER_INK = "#0b1220";
+export const PAPER_FRAME = "#5c5c66";
+export const PAPER_INK = "#0a0a0a";
 export { PAPER_ACCENT } from "./PaperKit";
 
 const TILE_KEYS = ["secure", "adopt", "scale", "foundation"] as const;

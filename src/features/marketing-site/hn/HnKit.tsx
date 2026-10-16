@@ -8,30 +8,31 @@ import {
 } from "@phosphor-icons/react";
 import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
-import { Liquid, BLUE_LIQUID } from "./LiquidButton";
 import "./hn.css";
 
 /* ══ The Hunar vocabulary ════════════════════════════════════════════════════
-   Every marketing page is built from these. The register: Geist at 400/500
-   with a tight track, one blue, warm off-white bands alternating with
-   near-black ones, 4px controls and 8px cards, and gradient artwork where the
-   reference uses photographs.
+   Every marketing page is built from these. Since 2026-10-15 the type and
+   colour follow scalable.framer.website: Satoshi at 500 with a tight track
+   (-0.04em on titles, -0.02em elsewhere), Instrument Serif italic for the
+   accent words of a title (`Em`), one violet (#4f1ad6), neutral ink #0d0d0d on
+   #f5f5f8 bands alternating with near-black ones, 10px buttons, 12–24px
+   cards, and gradient artwork where the reference uses photographs.
 
    Everything states its own ink. These land inside pages whose roots still
    carry older skins, and a component that inherits its colour eventually
    renders blue on blue.                                                       */
 
 export const HN = {
-  ink: "#0f1728",
-  body: "#344054",
-  grey: "#4b5567",
-  bg: "#f7f8fb",
-  soft: "#f5f7fa",
-  line: "#e6e9ef",
-  dark: "#0f1728",
-  blue: "#006edd",
-  blueLight: "#5aa8ff",
-  blue50: "#eaf2ff",
+  ink: "#0d0d0d",
+  body: "#333333",
+  grey: "#5c5c66",
+  bg: "#f5f5f8",
+  soft: "#f8f8fa",
+  line: "#e8e8ee",
+  dark: "#0d0d0d",
+  blue: "#4f1ad6",
+  blueLight: "#9b7bf4",
+  blue50: "#f1edfe",
 } as const;
 
 export type IconType = ComponentType<{ className?: string; weight?: "regular" | "bold" | "fill" | "duotone" | "light" | "thin"; style?: CSSProperties }>;
@@ -133,11 +134,11 @@ export function Band({
       id={id}
       className={cn(
         "relative",
-        tone === "white" && "bg-white text-[#0f1728]",
-        tone === "bg" && "bg-[#f7f8fb] text-[#0f1728]",
-        tone === "blue-50" && "bg-[#f3f7fe] text-[#0f1728]",
+        tone === "white" && "bg-white text-[#0d0d0d]",
+        tone === "bg" && "bg-[#f5f5f8] text-[#0d0d0d]",
+        tone === "blue-50" && "bg-[#f6f3fe] text-[#0d0d0d]",
         tone === "dark" && "hn-dark text-white",
-        rule && tone !== "dark" && "border-t border-[#e6e9ef]",
+        rule && tone !== "dark" && "border-t border-[#e8e8ee]",
         className,
       )}
     >
@@ -152,7 +153,7 @@ export function Band({
    artwork; ours is set in Audiowide, the closest open font (rounded square
    corners, wide caps). Sized so the lockup is ~28px tall, like theirs. */
 export function Brand({ tone = "ink", size = "md" }: { tone?: "ink" | "white"; size?: "md" | "lg" }) {
-  const color = tone === "white" ? "#ffffff" : "#0f1728";
+  const color = tone === "white" ? "#ffffff" : "#0d0d0d";
   return (
     <span className="flex items-center gap-2.5" style={{ color }}>
       <Logo size={size === "lg" ? 26 : 22} color={color} />
@@ -169,7 +170,7 @@ export function Brand({ tone = "ink", size = "md" }: { tone?: "ink" | "white"; s
 /** The product lockup for the bubbles: the mark, ANDURAN and the product
     word, all in Audiowide — the navbar's lettering. */
 export function ProductMark({ word, tone = "white", size = 20 }: { word: string; tone?: "white" | "ink"; size?: number }) {
-  const color = tone === "white" ? "#ffffff" : "#0f1728";
+  const color = tone === "white" ? "#ffffff" : "#0d0d0d";
   return (
     <span className="inline-flex items-center gap-2" style={{ color }}>
       <Logo size={size} color={color} />
@@ -232,12 +233,20 @@ export function Eyebrow({
 }
 
 /* ── Headings ───────────────────────────────────────────────────────────── */
+// The reference's scale: 72 / 60 / 40 for the hero, 52 / 36 for a section,
+// 24 and 20 for the smaller titles, all at 500.
 const H_SIZE = {
-  hero: "text-[44px] sm:text-[56px] lg:text-[64px] leading-[1] tracking-[-0.04em]",
-  section: "text-[28px] sm:text-[32px] leading-[1.2] tracking-[-0.04em]",
-  sub: "text-[24px] leading-[1.2] tracking-[-0.04em]",
-  card: "text-[20px] leading-[1.3] tracking-normal",
+  hero: "text-[40px] sm:text-[60px] lg:text-[72px] leading-[1.1] tracking-[-0.04em]",
+  section: "text-[34px] sm:text-[44px] lg:text-[52px] leading-[1.1] tracking-[-0.04em]",
+  sub: "text-[24px] leading-[1.2] tracking-[-0.02em]",
+  card: "text-[20px] leading-[1.3] tracking-[-0.02em]",
 } as const;
+
+/** The accent words of a title, in Instrument Serif italic — the reference's
+    signature ("Manage your sales and analytics in *one place*"). */
+export function Em({ children }: { children: ReactNode }) {
+  return <em className="hn-em">{children}</em>;
+}
 
 export function H({
   children,
@@ -257,7 +266,7 @@ export function H({
       className={cn(
         H_SIZE[size],
         "text-balance font-medium",
-        tone === "white" ? "text-white" : "text-[#0f1728]",
+        tone === "white" ? "text-white" : "text-[#0d0d0d]",
         className,
       )}
     >
@@ -280,11 +289,12 @@ export function P({
   return (
     <p
       className={cn(
-        size === "lg" && "text-[18px] leading-[1.3]",
-        size === "md" && "text-[16px] leading-[1.4]",
-        size === "sm" && "text-[14px] leading-[1.45]",
-        tone === "grey" && "text-[#4b5567]",
-        tone === "ink" && "text-[#0f1728]",
+        "tracking-[-0.02em]",
+        size === "lg" && "text-[18px] leading-[1.5]",
+        size === "md" && "text-[16px] leading-[1.5]",
+        size === "sm" && "text-[14px] leading-[1.5]",
+        tone === "grey" && "text-[#5c5c66]",
+        tone === "ink" && "text-[#0d0d0d]",
         tone === "white" && "text-white",
         tone === "dim" && "text-white/75",
         className,
@@ -355,23 +365,28 @@ export function Head({
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────────
-   Small radius, medium weight, a chevron riding along. `primary` is the blue
-   slab, `secondary` the white one with a hairline, `link` the bare blue text
+   10px corners, medium weight, a chevron riding along. `primary` is the ink
+   slab, `secondary` the white one with a hairline, `link` the bare violet text
    the reference uses under every card, `ghost` the outline on dark bands. */
 // The tri-colour system: black is the primary CTA (highest contrast on the
-// white ground), blue the accent for secondary actions and inline links, white
-// the one used on dark bands. `blue` keeps a full-colour button where the
-// accent should lead rather than the black slab.
-type BtnVariant = "primary" | "blue" | "secondary" | "link" | "link-light" | "ghost" | "white" | "liquid";
+// light ground), violet the accent for secondary actions and inline links,
+// white the one used on dark bands. `blue` (the name predates the violet)
+// keeps a full-colour button where the accent should lead rather than the
+// black slab.
+type BtnVariant = "primary" | "blue" | "cta" | "secondary" | "link" | "link-light" | "ghost" | "white";
 
-const BTN: Record<Exclude<BtnVariant, "liquid">, string> = {
-  primary: "h-11 rounded-full bg-[#0f1728] px-5 text-white hover:bg-[#1c2740]",
-  blue: "h-11 rounded-full bg-[#006edd] px-5 text-white hover:bg-[#0057c2]",
-  secondary: "h-11 rounded-full border border-[#e6e9ef] bg-white px-5 text-[#0f1728] hover:border-[#cfd5df]",
-  white: "h-11 rounded-full bg-white px-5 text-[#0f1728] hover:bg-white/90",
-  ghost: "h-11 rounded-full border border-white/20 bg-white/[0.04] px-5 text-white hover:bg-white/[0.08]",
-  link: "text-[#006edd] hover:text-[#0057c2]",
-  "link-light": "text-[#5aa8ff] hover:text-[#8cc2ff]",
+// `cta` is the reference's "Book your demo": a flat violet slab with 10px
+// corners, a hairline of its own colour and a barely-there drop. No motion
+// beyond the colour change and the chevron.
+const BTN: Record<BtnVariant, string> = {
+  primary: "h-11 rounded-[10px] bg-[#0d0d0d] px-5 text-white hover:bg-[#262629]",
+  blue: "h-11 rounded-[10px] bg-[#4f1ad6] px-5 text-white hover:bg-[#4314b8]",
+  cta: "h-11 rounded-[10px] bg-[#4f1ad6] px-5 text-white shadow-[0_4px_10px_-2px_rgba(0,0,0,0.05),0_2px_2px_-1px_rgba(0,0,0,0.1),0_0_0_1px_rgba(79,26,214,0.12)] hover:bg-[#4314b8]",
+  secondary: "h-11 rounded-[10px] border border-[#e8e8ee] bg-white px-5 text-[#0d0d0d] hover:border-[#d4d4dc]",
+  white: "h-11 rounded-[10px] bg-white px-5 text-[#0d0d0d] hover:bg-white/90",
+  ghost: "h-11 rounded-[10px] border border-white/20 bg-white/[0.04] px-5 text-white hover:bg-white/[0.08]",
+  link: "text-[#4f1ad6] hover:text-[#4314b8]",
+  "link-light": "text-[#9b7bf4] hover:text-[#bea9f9]",
 };
 
 export function Btn({
@@ -393,16 +408,12 @@ export function Btn({
   className?: string;
   children: ReactNode;
 }) {
-  const liquid = variant === "liquid";
-  const [hover, setHover] = useState(false);
   const cls = cn(
     "group inline-flex items-center justify-center gap-1.5 whitespace-nowrap text-[16px] font-medium leading-none tracking-[-0.02em] transition-colors",
-    liquid
-      ? "relative h-12 overflow-hidden rounded-full px-6 text-white hn-shadow"
-      : BTN[variant],
+    BTN[variant],
     className,
   );
-  const label = (
+  const inner = (
     <>
       {children}
       {chevron && (
@@ -410,23 +421,9 @@ export function Btn({
       )}
     </>
   );
-  const inner = liquid ? (
-    <>
-      <span aria-hidden className="absolute inset-0 rounded-full bg-black" />
-      <span aria-hidden className="absolute inset-0 overflow-hidden rounded-full">
-        <Liquid isHovered={hover} colors={BLUE_LIQUID} />
-      </span>
-      <span className="relative z-10 inline-flex items-center gap-1.5 [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]">{label}</span>
-    </>
-  ) : (
-    label
-  );
-  const hoverProps = liquid
-    ? { onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) }
-    : {};
-  if (to) return <Link to={to} onClick={onClick} className={cls} {...hoverProps}>{inner}</Link>;
-  if (href) return <a href={href} onClick={onClick} className={cls} target="_blank" rel="noopener noreferrer" {...hoverProps}>{inner}</a>;
-  return <button type={type} onClick={onClick} className={cls} {...hoverProps}>{inner}</button>;
+  if (to) return <Link to={to} onClick={onClick} className={cls}>{inner}</Link>;
+  if (href) return <a href={href} onClick={onClick} className={cls} target="_blank" rel="noopener noreferrer">{inner}</a>;
+  return <button type={type} onClick={onClick} className={cls}>{inner}</button>;
 }
 
 /* ── Surfaces ───────────────────────────────────────────────────────────── */
@@ -448,8 +445,8 @@ export function Card({
       className={cn(
         "hn-card rounded-[24px] border",
         hover && "hn-hover",
-        tone === "white" && "border-[#e6e9ef] bg-white",
-        tone === "bg" && "border-[#e6e9ef] bg-[#f7f8fb]",
+        tone === "white" && "border-[#e8e8ee] bg-white",
+        tone === "bg" && "border-[#e8e8ee] bg-[#f5f5f8]",
         tone === "dark" && "border-white/10 bg-white/[0.05]",
         className,
       )}
@@ -478,7 +475,7 @@ export function IconTile({ icon: Icon, tone = "light", className }: { icon: Icon
     <span
       className={cn(
         "hn-icon grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border",
-        tone === "light" ? "border-[#e6e9ef] bg-white text-[#006edd]" : "border-white/10 bg-white/[0.04] text-white",
+        tone === "light" ? "border-[#e8e8ee] bg-white text-[#4f1ad6]" : "border-white/10 bg-white/[0.04] text-white",
         className,
       )}
     >
@@ -510,10 +507,10 @@ export function FeatureCard({
         <IconTile icon={icon} />
       )}
       <div className="mt-auto pt-10">
-        <h3 className={cn("text-[20px] font-medium leading-[1.3]", dark ? "text-white" : "text-[#0f1728]")}>
+        <h3 className={cn("text-[20px] font-medium leading-[1.3]", dark ? "text-white" : "text-[#0d0d0d]")}>
           {title}
         </h3>
-        <p className={cn("mt-2 text-[18px] leading-[1.3]", dark ? "text-white/75" : "text-[#4b5567]")}>{body}</p>
+        <p className={cn("mt-2 text-[18px] leading-[1.3]", dark ? "text-white/75" : "text-[#5c5c66]")}>{body}</p>
       </div>
     </Card>
   );
@@ -529,9 +526,9 @@ export function Chip({ children, tone = "light", className }: { children: ReactN
     <span
       className={cn(
         "hn-chip inline-flex items-center rounded-full border px-3.5 py-2 text-[16px] font-medium leading-none tracking-[-0.02em]",
-        tone === "light" && "border-[#e6e9ef] bg-white text-[#0f1728]",
+        tone === "light" && "border-[#e8e8ee] bg-white text-[#0d0d0d]",
         tone === "dark" && "border-white/10 bg-white/[0.05] text-white",
-        tone === "blue" && "border-transparent bg-[#006edd] text-white",
+        tone === "blue" && "border-transparent bg-[#4f1ad6] text-white",
         className,
       )}
     >
@@ -560,25 +557,25 @@ export function AccordionList({
   const set = onChange ?? setOwn;
   const dark = tone === "dark";
   return (
-    <div className={cn("border-t", dark ? "border-white/10" : "border-[#e6e9ef]")}>
+    <div className={cn("border-t", dark ? "border-white/10" : "border-[#e8e8ee]")}>
       {items.map((it, i) => {
         const on = i === open;
         return (
-          <div key={it.title} className={cn("border-b", dark ? "border-white/10" : "border-[#e6e9ef]")}>
+          <div key={it.title} className={cn("border-b", dark ? "border-white/10" : "border-[#e8e8ee]")}>
             <button
               type="button"
               aria-expanded={on}
               onClick={() => set(i)}
               className={cn(
                 "flex w-full items-center justify-between gap-4 px-6 py-5 text-left text-[20px] font-medium leading-[1.3]",
-                dark ? "text-white" : "text-[#0f1728]",
+                dark ? "text-white" : "text-[#0d0d0d]",
               )}
             >
               {it.title}
             </button>
             <div className={cn("grid transition-[grid-template-rows] duration-300", on ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
               <div className="overflow-hidden">
-                <p className={cn("px-6 pb-6 text-[18px] leading-[1.3]", dark ? "text-white/75" : "text-[#4b5567]")}>{it.body}</p>
+                <p className={cn("px-6 pb-6 text-[18px] leading-[1.3]", dark ? "text-white/75" : "text-[#5c5c66]")}>{it.body}</p>
               </div>
             </div>
           </div>
@@ -603,17 +600,17 @@ export function FaqGrid({ items }: { items: { q: string; a: string }[] }) {
             const i = c * half + j;
             const on = open === i;
             return (
-              <div key={f.q} className="rounded-[20px] border border-[#e6e9ef] bg-[#f7f8fb]">
+              <div key={f.q} className="rounded-[20px] border border-[#e8e8ee] bg-[#f5f5f8]">
                 <button
                   type="button"
                   aria-expanded={on}
                   onClick={() => setOpen(on ? null : i)}
-                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-[16px] leading-[1.35] tracking-[-0.01em] text-[#0f1728]"
+                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-[16px] leading-[1.35] tracking-[-0.01em] text-[#0d0d0d]"
                 >
                   {f.q}
                   {on ? <Minus className="h-4 w-4 shrink-0" /> : <Plus className="h-4 w-4 shrink-0" />}
                 </button>
-                {on && <p className="px-5 pb-5 text-[15px] leading-[1.5] text-[#4b5567]">{f.a}</p>}
+                {on && <p className="px-5 pb-5 text-[15px] leading-[1.5] text-[#5c5c66]">{f.a}</p>}
               </div>
             );
           })}
@@ -636,7 +633,7 @@ export function CarouselButtons({ onPrev, onNext, className }: { onPrev: () => v
           type="button"
           aria-label={b.label}
           onClick={b.on}
-          className="grid h-11 w-11 place-items-center rounded-full bg-[#006edd] text-white transition-colors hover:bg-[#0057c2]"
+          className="grid h-11 w-11 place-items-center rounded-full bg-[#4f1ad6] text-white transition-colors hover:bg-[#4314b8]"
         >
           <CaretRight weight="bold" className={cn("h-3.5 w-3.5", b.flip && "rotate-180")} />
         </button>
@@ -649,10 +646,10 @@ export function CarouselButtons({ onPrev, onNext, className }: { onPrev: () => v
 export function Fact({ value, label, tone = "light" }: { value: ReactNode; label: ReactNode; tone?: "light" | "dark" }) {
   return (
     <div>
-      <div className={cn("text-[32px] font-medium leading-[1.2] tracking-[-0.04em]", tone === "dark" ? "text-white" : "text-[#0f1728]")}>
+      <div className={cn("text-[32px] font-medium leading-[1.2] tracking-[-0.04em]", tone === "dark" ? "text-white" : "text-[#0d0d0d]")}>
         {value}
       </div>
-      <div className={cn("mt-1 text-[18px] leading-[1.3]", tone === "dark" ? "text-white/75" : "text-[#4b5567]")}>{label}</div>
+      <div className={cn("mt-1 text-[18px] leading-[1.3]", tone === "dark" ? "text-white/75" : "text-[#5c5c66]")}>{label}</div>
     </div>
   );
 }

@@ -44,11 +44,9 @@ const SECTIONS: { key: SectionKey; label: string; icon: PhosphorIcon }[] = [
 
 // Nav items that can be hidden (Home and Settings always stay reachable).
 const HIDEABLE: { slug: DashboardTabSlug; label: string; icon: PhosphorIcon }[] = [
+  // L'Intelligence Space (projects) est toujours visible : c'est l'entrée du service.
   { slug: "agents", label: "Collaborateurs", icon: RobotIcon },
-  { slug: "projects", label: "Projets", icon: KanbanIcon },
-  { slug: "schedules", label: "Schedules", icon: CalendarDotsIcon },
-  { slug: "memory", label: "Workspace memory", icon: BrainIcon },
-  { slug: "artifacts", label: "Artifacts", icon: FilesIcon },
+  { slug: "memory", label: "Mémoire et sources", icon: BrainIcon },
   { slug: "connectors", label: "Connecteurs", icon: PlugIcon },
 ];
 
@@ -342,7 +340,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
 
           {section === "navigation" && (
             <>
-              <Card title="Onglets visibles" desc="Home et Paramètres restent toujours accessibles.">
+              <Card title="Onglets visibles" desc="L'Intelligence Space et les Paramètres restent toujours accessibles.">
                 <div className="space-y-1.5">
                   {HIDEABLE.map((t) => {
                     const hidden = settings.hidden_tabs.includes(t.slug);
@@ -356,7 +354,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                             ? settings.hidden_tabs.filter((s) => s !== t.slug)
                             : [...settings.hidden_tabs, t.slug],
                           // Never leave the dashboard opening on a tab it hides.
-                          ...(!on && settings.landing === t.slug ? { landing: "home" as DashboardTabSlug } : {}),
+                          ...(!on && settings.landing === t.slug ? { landing: "projects" as DashboardTabSlug } : {}),
                         })}
                       />
                     );
@@ -369,7 +367,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                     value={settings.landing}
                     onChange={(v) => patch({ landing: v as DashboardTabSlug })}
                     options={[
-                      { value: "home", label: "Home" },
+                      { value: "projects", label: "Intelligence Space" },
                       ...HIDEABLE.filter((t) => !settings.hidden_tabs.includes(t.slug)).map((t) => ({ value: t.slug, label: t.label })),
                     ]}
                   />

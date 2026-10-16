@@ -1,25 +1,37 @@
 {
-  "_comment": "Catalogue des tools : source unique, lue par OPA (data.catalog) et par les serveurs MCP. Un tool absent de tools[<cluster>] n'est pas enregistré sur ce cluster : il n'existe pas pour l'agent.",
+  "_comment": "Catalogue des tools : source unique, lue par OPA (data.catalog) et par les serveurs MCP. Un serveur par cluster ; un tool absent de tools[<cluster>] n'est pas enregistré sur ce cluster : il n'existe pas pour l'agent.",
   "tools": {
     "hub": [
       "metrics_query", "logs_query", "alerts_list", "dashboard_find", "db_health", "alert_silence_create",
-      "fleet_search", "policy_compliance"
+      "fleet_search", "policy_compliance",
+      "pods_list", "pod_logs", "events_list", "deployment_status", "namespace_overview",
+      "resource_list", "resource_get", "rollout_history", "pod_metrics",
+      "deployment_restart", "deployment_scale",
+      "app_status", "app_diff", "app_history", "app_sync"
     ],
     "ips": [
-      "pods_list", "pod_logs", "events_list", "deployment_status", "deployment_restart",
+      "pods_list", "pod_logs", "events_list", "deployment_status", "namespace_overview",
+      "resource_list", "resource_get", "rollout_history", "pod_metrics",
+      "deployment_restart", "deployment_scale",
       "app_status", "app_diff", "app_history", "app_sync",
       "pr_create", "sensors_down"
     ],
     "sdb": [
-      "pods_list", "pod_logs", "events_list", "deployment_status", "deployment_restart",
+      "pods_list", "pod_logs", "events_list", "deployment_status", "namespace_overview",
+      "resource_list", "resource_get", "rollout_history", "pod_metrics",
+      "deployment_restart", "deployment_scale",
       "app_status", "app_diff", "app_history", "app_sync"
     ],
     "npr": [
-      "pods_list", "pod_logs", "events_list", "deployment_status", "deployment_restart",
+      "pods_list", "pod_logs", "events_list", "deployment_status", "namespace_overview",
+      "resource_list", "resource_get", "rollout_history", "pod_metrics",
+      "deployment_restart", "deployment_scale",
       "app_status", "app_diff", "app_history", "app_sync"
     ],
     "prd": [
-      "pods_list", "pod_logs", "events_list", "deployment_status", "deployment_restart",
+      "pods_list", "pod_logs", "events_list", "deployment_status", "namespace_overview",
+      "resource_list", "resource_get", "rollout_history", "pod_metrics",
+      "deployment_restart", "deployment_scale",
       "app_status", "app_diff", "app_history"
     ]
   },
@@ -36,7 +48,13 @@
     "pod_logs": "ocp:read",
     "events_list": "ocp:read",
     "deployment_status": "ocp:read",
+    "namespace_overview": "ocp:read",
+    "resource_list": "ocp:read",
+    "resource_get": "ocp:read",
+    "rollout_history": "ocp:read",
+    "pod_metrics": "ocp:read",
     "deployment_restart": "ocp:restart",
+    "deployment_scale": "ocp:scale",
     "app_status": "argocd:read",
     "app_diff": "argocd:read",
     "app_history": "argocd:read",
@@ -44,16 +62,18 @@
     "pr_create": "git:pr",
     "sensors_down": "prtg:read"
   },
-  "write_tools": ["alert_silence_create", "deployment_restart", "app_sync", "pr_create"],
-  "_comment_target_clusters": "Les outils du Hub et d'IPS agissent pour le compte d'un cluster cible (paramètre cluster de silence, cluster du déploiement visé). approval_required s'applique au cluster CIBLE.",
+  "write_tools": ["alert_silence_create", "deployment_restart", "deployment_scale", "app_sync", "pr_create"],
+  "_comment_target_clusters": "Les outils du Hub agissent pour le compte d'un cluster cible (paramètre cluster d'un silence). approval_required s'applique au cluster CIBLE.",
+  "_comment_hub_approval": "Le Hub porte FounderOS et son serveur MCP : redémarrer, dimensionner ou synchroniser y exige une approbation, comme en PRD.",
   "approval_required": {
-    "prd": ["deployment_restart", "alert_silence_create"]
+    "hub": ["deployment_restart", "deployment_scale", "app_sync"],
+    "prd": ["deployment_restart", "deployment_scale", "alert_silence_create"]
   },
   "role_scopes": {
     "ai-ops-reader": ["obs:read", "fleet:read", "ocp:read", "argocd:read", "prtg:read"],
     "ai-ops-operator": [
       "obs:read", "fleet:read", "ocp:read", "argocd:read", "prtg:read",
-      "ocp:restart", "argocd:sync", "alert:silence", "git:pr"
+      "ocp:restart", "ocp:scale", "argocd:sync", "alert:silence", "git:pr"
     ],
     "ai-ops-prd-approver": []
   },

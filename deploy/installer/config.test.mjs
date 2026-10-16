@@ -14,8 +14,8 @@ const profile = (name) => yaml.load(readFileSync(path.join(import.meta.dirname, 
 const example = () => yaml.load(readFileSync(path.join(import.meta.dirname, "founderos.example.yaml"), "utf8"));
 
 describe("founderos.yaml", () => {
-  it("l'exemple et les trois profils sont valables", () => {
-    for (const c of [example(), profile("kubernetes"), profile("openshift-scic"), profile("vm")]) assert.ok(normalizeConfig(c));
+  it("l'exemple et les quatre profils sont valables", () => {
+    for (const c of [example(), profile("kubernetes"), profile("openshift-hub"), profile("openshift-scic"), profile("vm")]) assert.ok(normalizeConfig(c));
   });
 
   it("les adresses se déduisent du domaine, ou se donnent", () => {
@@ -110,6 +110,39 @@ describe("sorties", () => {
     const [backend] = externalSecrets(cfg);
     assert.equal(backend.spec.secretStoreRef.name, "vault-ips");
     assert.ok(backend.spec.data.every((d) => d.remoteRef.key === "secret/data/founderos"));
+  });
+
+  it("OpenShift Hub : Azure OpenAI en direct, SSO dédié, secrets générés (ni Vault ni LiteLLM)", () => {
+    const cfg = normalizeConfig(profile("openshift-hub"));
+    const values = helmValues(cfg);
+    assert.equal(values.platform, "openshift");
+    assert.deepEqual(values.route.labels, { shard: "internal" });
+    assert.equal(values.backend.ssoMode, "dedicated");
+    assert.deepEqual(values.backend.env, {
+      LLM_UPSTREAM: "azure", AZURE_OPENAI_BASE_URL: "https://entreprise-founderos.openai.azure.com/openai/v1",
+      AZURE_OPENAI_DEPLOYMENT: "gpt-6-luna", AZURE_OPENAI_DEPLOYMENT_HEAVY: "gpt-6-sol",
+    });
+    assert.equal(values.supabase.internalUrl, "http://founderos-sb-kong.founderos.svc:8000");
+    assert.equal(cfg.secrets.source, "generate");
+    const [backend] = k8sSecrets(cfg, generateSecrets(cfg));
+    assert.deepEqual(Object.keys(backend.stringData).sort(), ["APPROVAL_SIGNING_KEY", "CREDENTIAL_ENCRYPTION_KEY"], "la clé Azure vient de LLM_API_KEY, jamais du fichier");
+    assert.deepEqual(values.mcp, {
+      internalHosts: ["mcp.apps-int.*.interne.exemple"],
+      clientCert: {
+        secretName: "founderos-mcp-client", caConfigMap: "platform-internal-ca-bundle",
+        certManager: { enabled: true, issuerKind: "ClusterIssuer", issuerName: "platform-internal-ca", commonName: "founderos-ai-platform" },
+      },
+    });
+  });
+
+  it("serveurs MCP : motifs d'hôtes valides, un certificat qui sert à quelque chose", () => {
+    const hub = profile("openshift-hub");
+    assert.throws(() => normalizeConfig({ ...hub, mcp: { internalHosts: ["https://mcp.x.fr"] } }), /mcp\.internalHosts/);
+    assert.throws(() => normalizeConfig({ ...hub, mcp: { clientCert: { issuer: "ca" } } }), /sans mcp\.internalHosts/);
+    assert.throws(() => normalizeConfig({ ...hub, mcp: { internalHosts: ["mcp.x.fr"], clientCert: { issuer: "ca", secretName: "s" } } }), /pas les deux/);
+    const existing = helmValues(normalizeConfig({ ...hub, mcp: { internalHosts: ["mcp.x.fr"], clientCert: { secretName: "mon-cert" } } }));
+    assert.deepEqual(existing.mcp.clientCert, { secretName: "mon-cert", caConfigMap: "", certManager: { enabled: false } });
+    assert.equal(helmValues(normalizeConfig(profile("kubernetes"))).mcp, undefined, "sans section mcp, rien n'est ajouté");
   });
 
   it("VM : un .env que docker compose lit, clé PEM comprise", () => {

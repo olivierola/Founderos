@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { AgentBadge } from "../AgentBadge";
-import { ArtPanel, Btn, CarouselButtons, Head, type Art } from "../HnKit";
+import { ArtPanel, Btn, CarouselButtons, Em, Head, type Art } from "../HnKit";
 import { AuditMock, CheckPipelineMock, KeysMock, RunMock, TaskCard } from "../Mocks";
 
 /* ══ Meet the agents ═════════════════════════════════════════════════════════
@@ -69,7 +69,7 @@ export function HomeAgentsHn() {
           split
           tone="dark"
           eyebrow="Meet your Cloud collaborators"
-          title="Specialised Cloud collaborators for every team."
+          title={<>Specialised Cloud collaborators for <Em>every team.</Em></>}
           lead="Each Cloud collaborator works inside your systems, follows the rules you set, and hands back finished work, ready for your approval."
         >
           <Btn to="/contact" variant="white">Book a live demo</Btn>
@@ -157,7 +157,7 @@ export function HomeDifferentHn() {
               <>
                 Why teams trust
                 <br />
-                Anduran with real work
+                Anduran with <Em>real work</Em>
               </>
             }
             lead="Putting a Cloud collaborator on real systems is risky at four precise moments: the write, the audit, the key and the model. Anduran is built around each of them."

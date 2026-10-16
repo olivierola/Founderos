@@ -48,6 +48,28 @@ backend:
     port: 9090
     serviceMonitor: false
 
+# Serveurs MCP des clusters (architecture Hub, docs/architecture-hub.md) : les hôtes
+# que le backend peut joindre, et le certificat client mTLS qu'il leur présente.
+mcp:
+  # Motifs d'hôtes (* remplace un label DNS), ex. [mcp.apps-int.*.interne.exemple].
+  # Vide : aucun serveur MCP interne (seulement par un relais ou en HTTPS public).
+  internalHosts: []
+  clientCert:
+    # Secret TLS (tls.crt, tls.key). Vide : pas de certificat client.
+    secretName: ""
+    # ConfigMap de l'AC interne (clé ca.crt) qui signe les certificats des serveurs MCP.
+    # Vide : autorités du système.
+    caConfigMap: ""
+    # cert-manager crée et renouvelle secretName ; le backend relit le certificat sans
+    # redémarrer. Le CN doit figurer dans tls.allowedClientCNs des serveurs MCP.
+    certManager:
+      enabled: false
+      issuerKind: ClusterIssuer
+      issuerName: platform-internal-ca
+      commonName: founderos-ai-platform
+      duration: 720h
+      renewBefore: 168h
+
 web:
   replicas: 2
   # Adresse publique de l'interface.

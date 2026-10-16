@@ -1,0 +1,19 @@
+{{- if and .Values.mcp.clientCert.certManager.enabled .Values.mcp.clientCert.secretName }}
+# Certificat client mTLS de FounderOS vers les serveurs MCP des clusters.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Release.Name }}-mcp-client
+  labels:
+    {{- include "founderos.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.mcp.clientCert.secretName }}
+  commonName: {{ .Values.mcp.clientCert.certManager.commonName }}
+  usages: [client auth, digital signature, key encipherment]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+  duration: {{ .Values.mcp.clientCert.certManager.duration }}
+  renewBefore: {{ .Values.mcp.clientCert.certManager.renewBefore }}
+  issuerRef:
+    kind: {{ .Values.mcp.clientCert.certManager.issuerKind }}
+    name: {{ .Values.mcp.clientCert.certManager.issuerName }}
+{{- end }}

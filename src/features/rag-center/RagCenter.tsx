@@ -28,7 +28,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { callEdge } from "@/lib/edge";
+import { ingestFile, ingestText, ingestUrl, setActivation } from "./api";
 import { cn } from "@/lib/utils";
 import { useConfirm } from "@/components/ConfirmProvider";
 
@@ -271,28 +271,14 @@ function AddSourceDialog({ open, onClose, onAdded, collection, workspaceId, proj
   function reset() { setTitle(""); setContent(""); setUrl(""); setType("text"); }
 
   async function ingestTextUrl() {
-    const payload: Record<string, unknown> = {
-      workspace_id: workspaceId, project_id: projectId, collection_id: collection.id,
-      type, title: title || type,
-    };
-    if (type === "text") payload.content = content;
-    if (type === "url") payload.url = url;
-    await callEdge("rag-ingest", payload);
+    const scope = { workspaceId: workspaceId!, projectId: projectId!, collectionId: collection.id };
+    if (type === "text") await ingestText(scope, title || type, content);
+    if (type === "url") await ingestUrl(scope, url, title || undefined);
   }
 
   async function uploadFile(files: FileList | null) {
     if (!files || !workspaceId || !projectId) return;
-    const MAX_BYTES = 15 * 1024 * 1024;
-    for (const file of Array.from(files)) {
-      if (file.size > MAX_BYTES) throw new Error(`"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB, the limit is 15 MB.`);
-      const path = `${projectId}/collection-${collection.id}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
-      const { error: upErr } = await supabase.storage.from("rag-docs").upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
-      if (upErr) throw new Error(upErr.message);
-      await callEdge("rag-extract-file", {
-        workspace_id: workspaceId, project_id: projectId, collection_id: collection.id,
-        title: file.name, storage_path: path, mime: file.type,
-      });
-    }
+    for (const file of Array.from(files)) await ingestFile({ workspaceId, projectId, collectionId: collection.id }, file);
   }
 
   async function submit(files?: FileList | null) {
@@ -369,48 +355,13 @@ function ActivationPanel({ collection }: { collection: Collection }) {
 
   const activeIds = useMemo(() => new Set((activations ?? []).filter((a) => a.agent_kind === "internal_agent").map((a) => a.agent_id)), [activations]);
 
-  // Activation = (1) link row for tracking + (2) ensure the internal agent has a
-  // rag_search tool whose config.collection_ids includes this collection.
+  // Activation = (1) link row for tracking + (2) the agent's rag_search tool
+  // recomputed from the link table (api.ts, setActivation).
   async function toggle(agentId: string, on: boolean) {
     if (!workspaceId || !projectId) return;
-    if (on) {
-      await supabase.from("rag_collection_agents").insert({
-        workspace_id: workspaceId, project_id: projectId, collection_id: collection.id,
-        agent_kind: "internal_agent", agent_id: agentId,
-      });
-      await syncAgentTool(agentId);
-    } else {
-      await supabase.from("rag_collection_agents").delete()
-        .eq("collection_id", collection.id).eq("agent_kind", "internal_agent").eq("agent_id", agentId);
-      await syncAgentTool(agentId);
-    }
+    await setActivation({ workspaceId, projectId, collectionId: collection.id, agentId, on });
     queryClient.invalidateQueries({ queryKey: ["rag_collection_agents", collection.id] });
     queryClient.invalidateQueries({ queryKey: ["rag_collection_stats", collection.id] });
-  }
-
-  // Recompute the agent's rag_search tool config from the link table so the
-  // runner searches exactly the activated collections.
-  async function syncAgentTool(agentId: string) {
-    const { data: links } = await supabase.from("rag_collection_agents")
-      .select("collection_id").eq("agent_kind", "internal_agent").eq("agent_id", agentId);
-    const ids = (links ?? []).map((l) => (l as { collection_id: string }).collection_id);
-    const { data: tool } = await supabase.from("internal_agent_tools")
-      .select("id, config").eq("agent_id", agentId).eq("kind", "rag_search").maybeSingle();
-    if (ids.length === 0) {
-      // No collections left — reset config (keep the tool so the agent still has KB access project-wide).
-      if (tool) await supabase.from("internal_agent_tools").update({ config: {} }).eq("id", (tool as { id: string }).id);
-      return;
-    }
-    if (tool) {
-      await supabase.from("internal_agent_tools").update({
-        config: { ...(tool as { config?: object }).config, collection_ids: ids },
-      }).eq("id", (tool as { id: string }).id);
-    } else {
-      await supabase.from("internal_agent_tools").insert({
-        agent_id: agentId, kind: "rag_search", name: "Knowledge (RAG Center)",
-        description: "Search activated knowledge collections.", config: { collection_ids: ids }, requires_approval: false,
-      });
-    }
   }
 
   return (

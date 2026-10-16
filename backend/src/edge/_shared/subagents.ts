@@ -16,6 +16,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callAiWithTools, type ChatMessage, type EndpointOverride } from "./ai.ts";
 import { buildInternalToolset, type AgentToolRow, type InternalToolContext } from "./internal-agent-tools.ts";
+import { runMcpGrants } from "./mcp-servers.ts";
 
 /** How many sub-agents run CONCURRENTLY per wave; the rest run in later waves.
  *  Bounds concurrent LLM load (NOT the total number of sub-agents). Kept modest
@@ -97,6 +98,8 @@ async function runOne(deps: SubagentDeps, subtask: Subtask): Promise<{ label: st
     agent_id: deps.agentId, workspace_id: deps.workspaceId, project_id: deps.projectId,
     mission_id: null, parent_run_id: deps.parentRunId, run_kind: "subagent", label, is_ephemeral: true,
     status: "running", started_at: new Date().toISOString(), triggered_by: deps.createdBy ?? null,
+    // Les accès MCP accordés au run parent (un workflow) valent pour ses sous-agents.
+    mcp_grants: await runMcpGrants(admin, deps.parentRunId),
   }).select("id").single();
   if (insErr || !child) return { label, output: `ERROR: could not start sub-agent (${insErr?.message ?? "no row"})`, ok: false };
   const childRunId = (child as { id: string }).id;

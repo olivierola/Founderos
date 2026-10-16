@@ -1,0 +1,82 @@
+{{- if .Values.rbac.create }}
+{{- $name := include "mcp.name" . }}
+{{- $namespaces := include "mcp.rbacNamespaces" . | fromJsonArray }}
+# Comptes dédiés : le serveur demande leurs jetons (10 minutes, API TokenRequest),
+# il ne les détient pas. Aucun jeton durable n'est monté nulle part.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}-reader
+  labels: {{- include "mcp.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- if .Values.rbac.write.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}-operator
+  labels: {{- include "mcp.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- end }}
+---
+# Le compte du pod ne peut que demander les jetons de ces comptes-là.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-token-requester
+  labels: {{- include "mcp.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    verbs: [create]
+    resourceNames:
+      - {{ $name }}-reader
+      {{- if .Values.rbac.write.enabled }}
+      - {{ $name }}-operator
+      {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-token-requester
+  labels: {{- include "mcp.labels" . | nindent 4 }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $name }}-token-requester }
+subjects:
+  - { kind: ServiceAccount, name: {{ $name }}, namespace: {{ $.Release.Namespace }} }
+{{- range $ns := $namespaces }}
+---
+# Lecture dans {{ $ns }}, et nulle part ailleurs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-reader
+  namespace: {{ $ns }}
+  labels: {{- include "mcp.labels" $ | nindent 4 }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ $.Values.rbac.readClusterRole }} }
+subjects:
+  - { kind: ServiceAccount, name: {{ $name }}-reader, namespace: {{ $.Release.Namespace }} }
+{{- if $.Values.rbac.write.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-operator
+  namespace: {{ $ns }}
+  labels: {{- include "mcp.labels" $ | nindent 4 }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ $.Values.rbac.write.clusterRole }} }
+subjects:
+  - { kind: ServiceAccount, name: {{ $name }}-operator, namespace: {{ $.Release.Namespace }} }
+{{- end }}
+{{- end }}
+{{- range $role := .Values.rbac.clusterWide }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}-reader-{{ $role }}
+  labels: {{- include "mcp.labels" $ | nindent 4 }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ $role }} }
+subjects:
+  - { kind: ServiceAccount, name: {{ $name }}-reader, namespace: {{ $.Release.Namespace }} }
+{{- end }}
+{{- end }}

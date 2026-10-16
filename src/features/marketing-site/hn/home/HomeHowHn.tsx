@@ -7,7 +7,7 @@ import {
   HandPalmIcon as HandPalm,
   PlugsConnectedIcon as Plugs,
 } from "@phosphor-icons/react";
-import { ArtPanel, Btn, Container, Eyebrow, FeatureCard, H, Head, P, ProductMark, ProductShot, type Art } from "../HnKit";
+import { ArtPanel, Btn, Container, Em, Eyebrow, FeatureCard, H, Head, P, ProductMark, ProductShot, type Art } from "../HnKit";
 import {
   StepConnectMock,
   StepGuardrailsMock,
@@ -35,7 +35,7 @@ export function HomeAgentsBandHn() {
           <div className="pb-16 lg:pb-28">
             <Eyebrow tone="white">{p.bestFor}</Eyebrow>
             <H tone="white" size="hero" className="mt-5 max-w-[14ch] !text-[40px] sm:!text-[48px]">
-              Your first Cloud collaborator, live in minutes
+              Your first Cloud collaborator, live <Em>in minutes</Em>
             </H>
             <P tone="dim" className="mt-5 max-w-[36ch]">
               Start from a template, add your company context, connect your tools, and hand your Cloud collaborator its first
@@ -71,11 +71,11 @@ const FEATURES = [
 
 export function HomeFeaturesHn() {
   return (
-    <section className="bg-[#f3f7fe] py-20 lg:py-24">
+    <section className="bg-[#f6f3fe] py-20 lg:py-24">
       <Container narrow>
         <Head
           eyebrow="Platform"
-          title="Everything a Cloud collaborator needs to deliver real work"
+          title={<>Everything a Cloud collaborator needs to deliver <Em>real work</Em></>}
           lead="Connect your tools, give Cloud collaborators knowledge and missions, and stay in control of every action they take."
         />
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -108,8 +108,8 @@ function StepCard({ s }: { s: (typeof STEPS)[number] }) {
       <ArtPanel art={s.art} className="flex h-[320px] items-center justify-center rounded-[24px] p-6 sm:h-[460px] sm:p-10 lg:h-[min(548px,calc(100vh-380px))] lg:p-12">
         <div className="w-full max-w-[520px] lg:[zoom:1.25]">{s.mock}</div>
       </ArtPanel>
-      <h3 className="mt-6 text-[20px] font-medium leading-[1.3] text-[#0f1728]">{s.title}</h3>
-      <p className="mt-1 text-[18px] leading-[1.3] text-[#4b5567]">{s.body}</p>
+      <h3 className="mt-6 text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">{s.title}</h3>
+      <p className="mt-1 text-[18px] leading-[1.3] text-[#5c5c66]">{s.body}</p>
     </div>
   );
 }
@@ -153,7 +153,7 @@ export function HomeHowHn() {
       <Head
         split
         eyebrow="How it works"
-        title="From first Cloud collaborator to first result, no engineering required"
+        title={<>From first Cloud collaborator to first result, <Em>no engineering required</Em></>}
         lead="Pick a template, describe the job in plain language, connect your tools and set the approvals. Then watch your Cloud collaborator work, and review every step."
       />
     </Container>
@@ -161,7 +161,7 @@ export function HomeHowHn() {
 
   if (!wide) {
     return (
-      <section className="border-t border-[#e6e9ef] bg-white pb-20">
+      <section className="border-t border-[#e8e8ee] bg-white pb-20">
         {head}
         <div className="mt-12 flex snap-x snap-mandatory gap-6 overflow-x-auto px-5 pb-2 sm:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {STEPS.map((s) => (
@@ -173,7 +173,7 @@ export function HomeHowHn() {
   }
 
   return (
-    <section className="border-t border-[#e6e9ef] bg-white">
+    <section className="border-t border-[#e8e8ee] bg-white">
       <div ref={runway} style={{ height: `${STEPS.length * 70}vh` }} className="relative">
         <div className="sticky top-[72px] flex h-[calc(100vh-72px)] flex-col overflow-hidden">
           {head}

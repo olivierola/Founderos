@@ -8,6 +8,13 @@
 //   Port de gestion    GET /healthz, /readyz, /metrics — HTTP simple, jamais
 //   (9090)             exposé par une Route : les sondes du kubelet et Prometheus
 //                      ne présentent pas de certificat client.
+//
+// Vérifications : chaque module déclare les siennes (droits RBAC de ses comptes
+// dans chaque namespace autorisé, par exemple), le lanceur ajoute OPA et la
+// livraison du jeton. Elles tournent au démarrage puis chaque minute. /readyz
+// renvoie leur état ; seule une vérification critique en échec (OPA injoignable)
+// retire le pod du service. Une autre en échec le signale « dégradé », dans
+// /readyz, dans les journaux et dans mcp_check_ok.
 
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -23,7 +30,7 @@ import { toolsForCluster, type Catalog, type Cluster } from "./catalog.ts";
 import { Metrics } from "./metrics.ts";
 import type { PolicyEngine } from "./policy.ts";
 import type { SecretResolver } from "./secrets.ts";
-import { executeTool, type AnyToolSpec, type ToolContext, type ToolRuntime } from "./tool.ts";
+import { executeTool, type AnyToolSpec, type ToolContext, type ToolLimits, type ToolRuntime } from "./tool.ts";
 import type { z } from "zod";
 
 export interface ServerDeps<C> {
@@ -32,11 +39,29 @@ export interface ServerDeps<C> {
   secrets: SecretResolver;
 }
 
+/** Une vérification : rend un détail si elle passe, lève une erreur sinon. */
+export interface ReadinessCheck {
+  name: string;
+  /** Critique : en échec, le pod sort du service (/readyz en 503). */
+  critical: boolean;
+  run(): Promise<string | void>;
+}
+
+export interface CheckState {
+  name: string;
+  critical: boolean;
+  ok: boolean;
+  detail: string;
+  at: string;
+}
+
 export interface ServerModule<C = unknown> {
   /** Nom du serveur, et audience attendue par défaut : mcp-<outil>. */
   name: string;
   configSchema: z.ZodType<C>;
   createTools(deps: ServerDeps<C>): AnyToolSpec[];
+  /** Ce que le module vérifie au démarrage et chaque minute (droits, joignabilité). */
+  checks?(deps: ServerDeps<C>): ReadinessCheck[];
 }
 
 export interface TlsOptions {
@@ -69,12 +94,22 @@ export interface StartOptions {
   /** Port de gestion (/metrics) : par défaut le même hôte que le port MCP. La passerelle
    *  d'entreprise (G7) met le port MCP sur la boucle locale et laisse /metrics joignable. */
   mgmtHost?: string;
+  /** Débit par appelant, exécutions simultanées, délai, jetons d'approbation consommés. */
+  limits?: ToolLimits;
+  /** Vérifications en plus de celles du module (OPA, livraison du jeton). */
+  checks?: ReadinessCheck[];
+  /** Intervalle des vérifications (défaut 60 s ; 0 : au démarrage seulement). */
+  checkIntervalMs?: number;
 }
 
 export interface RunningServer {
   mcp: Server;
   mgmt: Server;
   tools: string[];
+  /** L'état des vérifications, après leur premier passage. */
+  checks(): CheckState[];
+  /** Relance les vérifications maintenant (tests, diagnostic). */
+  runChecks(): Promise<CheckState[]>;
   close(): Promise<void>;
 }
 
@@ -145,7 +180,44 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     audit: opts.audit ?? stdoutAudit,
     metrics,
     maxResultBytes: opts.maxResultBytes ?? 64 * 1024,
+    limits: opts.limits,
   };
+
+  // Vérifications : celles du module, puis celles du lanceur.
+  const checks = [...(opts.module.checks?.(deps) ?? []), ...(opts.checks ?? [])];
+  let state: CheckState[] = [];
+  let ran = false;
+  const runChecks = async (): Promise<CheckState[]> => {
+    const results = await Promise.all(checks.map(async (c): Promise<CheckState> => {
+      const at = new Date().toISOString();
+      try {
+        const detail = await Promise.race([
+          c.run(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("délai dépassé (15 s)")), 15_000).unref()),
+        ]);
+        return { name: c.name, critical: c.critical, ok: true, detail: detail || "ok", at };
+      } catch (err) {
+        return { name: c.name, critical: c.critical, ok: false, detail: (err as Error).message.slice(0, 500), at };
+      }
+    }));
+    for (const r of results) {
+      metrics.checks.set({ check: r.name }, r.ok ? 1 : 0);
+      const before = state.find((s) => s.name === r.name);
+      if (!r.ok && (!before || before.ok)) {
+        console.warn(JSON.stringify({ ts: r.at, level: r.critical ? "error" : "warn", msg: "vérification en échec", check: r.name, critical: r.critical, detail: r.detail }));
+      } else if (r.ok && before && !before.ok) {
+        console.log(JSON.stringify({ ts: r.at, level: "info", msg: "vérification rétablie", check: r.name }));
+      }
+    }
+    state = results;
+    ran = true;
+    return results;
+  };
+  const checkTimer = checks.length && (opts.checkIntervalMs ?? 60_000) > 0
+    ? setInterval(() => void runChecks(), opts.checkIntervalMs ?? 60_000)
+    : null;
+  checkTimer?.unref();
+  void runChecks();
 
   async function handleMcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -242,7 +314,21 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
 
   const mgmt = createHttpServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
-    if (path === "/healthz" || path === "/readyz") return sendJson(res, 200, { ok: true, server: opts.module.name, cluster: opts.cluster });
+    // Vivant : le processus répond. Prêt : aucune vérification critique en échec.
+    if (path === "/healthz") return sendJson(res, 200, { ok: true, server: opts.module.name, cluster: opts.cluster });
+    if (path === "/readyz") {
+      if (checks.length && !ran) return sendJson(res, 503, { ready: false, reason: "vérifications en cours" });
+      const failedCritical = state.filter((s) => s.critical && !s.ok);
+      const degraded = state.filter((s) => !s.critical && !s.ok);
+      return sendJson(res, failedCritical.length ? 503 : 200, {
+        ready: failedCritical.length === 0,
+        degraded: degraded.length > 0,
+        server: opts.module.name,
+        cluster: opts.cluster,
+        tools: tools.length,
+        checks: state,
+      });
+    }
     if (path === "/metrics") {
       res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" });
       return res.end(metrics.render());
@@ -258,7 +344,10 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     mcp,
     mgmt,
     tools: tools.map((t) => t.name),
+    checks: () => state,
+    runChecks,
     close: async () => {
+      if (checkTimer) clearInterval(checkTimer);
       const closing = Promise.all([
         new Promise<void>((r) => mcp.close(() => r())),
         new Promise<void>((r) => mgmt.close(() => r())),

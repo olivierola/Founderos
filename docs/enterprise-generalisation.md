@@ -2,6 +2,8 @@
 
 L'installation SCIC (`docs/openshift-implementation.md`) a été construite pour une infrastructure précise : OpenShift, Keycloak, un Vault par cluster, LiteLLM vers Azure OpenAI.
 
+Depuis le 12/10/2026, l'architecture retenue pour l'infrastructure interne est l'[architecture Hub](architecture-hub.md). FounderOS y tourne sur le Hub, avec un serveur MCP par cluster et Azure OpenAI en direct, sans Keycloak ni Vault. Elle s'appuie sur ce que ce plan a rendu général : SSO réglable, jeton tournant, installateur.
+
 Ce plan en tire un produit que **n'importe quelle entreprise** peut :
 - **installer chez elle**, sur Kubernetes, OpenShift ou une machine virtuelle ;
 - ou **utiliser depuis le cloud FounderOS**, en le connectant à ses outils internes sans ouvrir de port entrant.
@@ -166,7 +168,8 @@ L'échange de jeton demande, pour chaque entreprise, un IdP compatible, un clien
    Le serveur MCP :
    - compare le jeton à celui du jour et de la veille, en temps constant ;
    - accorde les rôles et scopes du jeton (`auth.roles`) ;
-   - applique ensuite, comme avant, OPA, le catalogue de son cluster, les identifiants du Vault de son cluster et les approbations en production.
+   - applique ensuite, comme avant, OPA, le catalogue de son cluster et les approbations (en production et sur le Hub) ;
+   - agit avec les identifiants de son cluster : jetons courts par TokenRequest pour Kubernetes, Secrets montés pour les outils, ou Vault si l'installation en a un.
 
 Les jetons fixes (`auth.mode: token`, `npm run token -- generate`, empreintes dans le Secret `mcp-tokens`) restent disponibles, pour un serveur qui ne peut pas joindre FounderOS.
 

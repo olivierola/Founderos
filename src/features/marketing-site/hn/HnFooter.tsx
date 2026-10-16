@@ -73,7 +73,7 @@ export function HnCta({
   return (
     <section className="hn-sky relative overflow-hidden px-5 py-14 sm:py-16">
       <div className="mx-auto flex min-h-[250px] max-w-[550px] flex-col justify-between rounded-[24px] bg-white p-6 shadow-[0_30px_60px_-30px_rgba(0,30,90,0.6)]">
-        <h2 className="max-w-[400px] text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728] sm:text-[32px]">
+        <h2 className="max-w-[400px] text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d] sm:text-[32px]">
           {title}
         </h2>
         <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
@@ -86,13 +86,13 @@ export function HnCta({
                 rel="noopener noreferrer"
                 aria-label={`Ask ${a.label} about Anduran`}
                 title={`Ask ${a.label} about Anduran`}
-                className="text-[#0f1728] transition-transform hover:-translate-y-0.5"
+                className="text-[#0d0d0d] transition-transform hover:-translate-y-0.5"
               >
                 {a.icon}
               </a>
             ))}
           </div>
-          <Btn to={to} variant="liquid">{button}</Btn>
+          <Btn to={to} variant="cta">{button}</Btn>
         </div>
       </div>
     </section>
@@ -103,10 +103,10 @@ export function HnFooter({ cta = true }: { cta?: boolean }) {
   return (
     <>
       {cta && <HnCta />}
-      <footer className="bg-[#f7f8fb] text-[#0f1728]">
+      <footer className="bg-[#f5f5f8] text-[#0d0d0d]">
         <div>
-          <div className="grid border-b border-[#e6e9ef] md:grid-cols-[312px_1fr]">
-            <p className="border-b border-[#e6e9ef] px-6 py-8 text-[18px] leading-[1.3] text-[#4b5567] md:border-b-0 md:border-r lg:px-12">
+          <div className="grid border-b border-[#e8e8ee] md:grid-cols-[312px_1fr]">
+            <p className="border-b border-[#e8e8ee] px-6 py-8 text-[18px] leading-[1.3] text-[#5c5c66] md:border-b-0 md:border-r lg:px-12">
               Enterprise super intelligence, running inside your own tenant.
             </p>
             <div className="flex items-center justify-start px-6 py-8 md:justify-end lg:px-12">
@@ -115,27 +115,27 @@ export function HnFooter({ cta = true }: { cta?: boolean }) {
           </div>
 
           <div className="grid md:grid-cols-[312px_1fr]">
-            <div className="flex flex-col justify-between border-b border-[#e6e9ef] md:border-b-0 md:border-r">
-              <div className="flex items-center gap-6 border-b border-[#e6e9ef] px-6 py-5 text-[16px] lg:px-12">
-                <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="hover:text-[#006edd]">
+            <div className="flex flex-col justify-between border-b border-[#e8e8ee] md:border-b-0 md:border-r">
+              <div className="flex items-center gap-6 border-b border-[#e8e8ee] px-6 py-5 text-[16px] lg:px-12">
+                <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="hover:text-[#4f1ad6]">
                   LinkedIn
                 </a>
-                <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="hover:text-[#006edd]">
+                <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="hover:text-[#4f1ad6]">
                   X
                 </a>
                 <a
                   href="https://github.com/olivierola/Founderos"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 hover:text-[#006edd]"
+                  className="flex items-center gap-1.5 hover:text-[#4f1ad6]"
                 >
                   <Si path={siGithub.path} className="h-4 w-4" />
                   GitHub
                 </a>
               </div>
               <div className="px-6 py-6 text-[14px] leading-[1.6] lg:px-12">
-                <div className="text-[#0f1728]">Anduran</div>
-                <a href="mailto:hello@founderos.dev" className="text-[#4b5567] hover:text-[#006edd]">
+                <div className="text-[#0d0d0d]">Anduran</div>
+                <a href="mailto:hello@founderos.dev" className="text-[#5c5c66] hover:text-[#4f1ad6]">
                   hello@founderos.dev
                 </a>
               </div>
@@ -143,12 +143,12 @@ export function HnFooter({ cta = true }: { cta?: boolean }) {
 
             <div className="grid grid-cols-2 sm:grid-cols-4">
               {COLUMNS.map((col, i) => (
-                <div key={col.title} className={i < COLUMNS.length - 1 ? "sm:border-r sm:border-[#e6e9ef]" : ""}>
-                  <div className="border-b border-[#e6e9ef] px-6 py-5 text-[17px] text-[#4b5567] sm:px-8">{col.title}</div>
+                <div key={col.title} className={i < COLUMNS.length - 1 ? "sm:border-r sm:border-[#e8e8ee]" : ""}>
+                  <div className="border-b border-[#e8e8ee] px-6 py-5 text-[17px] text-[#5c5c66] sm:px-8">{col.title}</div>
                   <ul className="space-y-3 px-6 py-6 sm:px-8">
                     {col.links.map((l) => (
                       <li key={l.label}>
-                        <Link to={l.to} className="text-[16px] text-[#0f1728] transition-colors hover:text-[#006edd]">
+                        <Link to={l.to} className="text-[16px] text-[#0d0d0d] transition-colors hover:text-[#4f1ad6]">
                           {l.label}
                         </Link>
                       </li>
@@ -159,11 +159,11 @@ export function HnFooter({ cta = true }: { cta?: boolean }) {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-[#e6e9ef] px-6 py-10 text-[17px] text-[#4b5567] sm:flex-row sm:items-center sm:justify-between lg:px-12">
+          <div className="flex flex-col gap-3 border-t border-[#e8e8ee] px-6 py-10 text-[17px] text-[#5c5c66] sm:flex-row sm:items-center sm:justify-between lg:px-12">
             <span>© {new Date().getFullYear()} Anduran | All rights reserved.</span>
             <span className="flex gap-6">
-              <Link to="/docs" className="hover:text-[#006edd]">Privacy</Link>
-              <Link to="/docs" className="hover:text-[#006edd]">Terms</Link>
+              <Link to="/docs" className="hover:text-[#4f1ad6]">Privacy</Link>
+              <Link to="/docs" className="hover:text-[#4f1ad6]">Terms</Link>
             </span>
           </div>
         </div>

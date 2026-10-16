@@ -2,13 +2,14 @@
 // AppProjects autorisés. app_sync n'est pas au catalogue de PRD : la production
 // converge uniquement depuis Git.
 //
-// Identifiant : jeton d'un rôle de projet Argo CD, en KV dans Vault (secret/mcp/<cluster>/argocd/) ;
-// le rôle lui-même ne donne que get (et sync hors PRD) sur ses applications.
+// Identifiant : jeton d'un rôle de projet Argo CD, dans un Secret monté
+// (/etc/mcp-secrets/argocd/token) ; le rôle lui-même ne donne que get (et sync
+// hors PRD) sur ses applications.
 
 import { z } from "zod";
 import { requestJson } from "../lib/http.ts";
 import { credentialRefSchema } from "../lib/secrets.ts";
-import type { ServerModule } from "../lib/server.ts";
+import type { ReadinessCheck, ServerModule } from "../lib/server.ts";
 import { defineTool, ToolInputError } from "../lib/tool.ts";
 
 export const argocdConfig = z.object({
@@ -103,7 +104,7 @@ export const argocdServer: ServerModule<ArgocdConfig> = {
 
       defineTool({
         name: "app_sync",
-        description: "Synchronise une application depuis Git (sans prune). Absent en PRD.",
+        description: "Synchronise une application depuis Git (sans prune). Une synchronisation déjà en cours n'est pas relancée. dry_run : simulation par Argo CD. Absent en PRD.",
         write: true,
         input: {
           app: APP_NAME,
@@ -111,7 +112,12 @@ export const argocdServer: ServerModule<ArgocdConfig> = {
           dry_run: z.boolean().default(false),
         },
         async run({ app, revision, dry_run }) {
-          await getApp(app);
+          const current = await getApp(app);
+          // Un agent qui relance après un délai dépassé ne double pas l'opération.
+          const op = current.status?.operationState;
+          if (op?.phase === "Running") {
+            return { app, dry_run, unchanged: true, operation: "Running", message: "une opération est déjà en cours : rien n'est relancé" };
+          }
           const res = await requestJson<Application>(`${base}/api/v1/applications/${encodeURIComponent(app)}/sync`, {
             method: "POST", headers: await headers(), caFile: config.caFile,
             json: { prune: false, dryRun: dry_run, ...(revision ? { revision } : {}) },
@@ -120,5 +126,26 @@ export const argocdServer: ServerModule<ArgocdConfig> = {
         },
       }),
     ];
+  },
+
+  // Le jeton du rôle de projet est valable et voit chaque projet autorisé.
+  checks({ config, secrets }): ReadinessCheck[] {
+    const base = config.url.replace(/\/$/, "");
+    return [{
+      name: "argocd:projets",
+      critical: false,
+      async run() {
+        const headers = { Authorization: `Bearer ${await secrets.resolve(config.token, {})}` };
+        const counts: string[] = [];
+        for (const p of config.projects) {
+          const res = await requestJson<{ items?: unknown[] | null }>(
+            `${base}/api/v1/applications?${new URLSearchParams({ projects: p, fields: "items.metadata.name" })}`,
+            { headers, caFile: config.caFile, timeoutMs: 10_000 },
+          );
+          counts.push(`${p} : ${res?.items?.length ?? 0} application(s)`);
+        }
+        return counts.join(" ; ");
+      },
+    }];
   },
 };

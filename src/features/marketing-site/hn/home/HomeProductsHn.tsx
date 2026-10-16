@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { Link } from "react-router-dom";
-import { ArtPanel, Btn, CarouselButtons, Chip, Container, Head, ProductShot } from "../HnKit";
+import { ArtPanel, Btn, CarouselButtons, Chip, Container, Em, Head, ProductShot } from "../HnKit";
 import { TaskCard } from "../Mocks";
 import { PRODUCTS } from "../site";
 import { USE_CASES } from "../useCases";
@@ -12,22 +12,22 @@ import { USE_CASES } from "../useCases";
    the capture tilts up. */
 export function HomeProductsHn() {
   return (
-    <section className="border-t border-[#e6e9ef] bg-white py-20 lg:py-28">
+    <section className="border-t border-[#e8e8ee] bg-white py-20 lg:py-28">
       <Container>
         <Head
           eyebrow="Products"
-          title="One platform to deploy, run and govern Cloud collaborators."
+          title={<>One platform to deploy, run and govern <Em>Cloud collaborators.</Em></>}
           lead="Build Cloud collaborators for every team, then keep them accountable with approvals, policies and a complete audit trail."
         />
-        <div className="mt-16 grid overflow-hidden rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] md:grid-cols-2">
+        <div className="mt-16 grid overflow-hidden rounded-[24px] border border-[#e8e8ee] bg-[#f5f5f8] md:grid-cols-2">
           {PRODUCTS.map((p, i) => (
             <div
               key={p.slug}
-              className={`group hn-hover hn-hover-flat overflow-hidden ${i === 0 ? "border-b border-[#e6e9ef] md:border-b-0 md:border-r" : ""}`}
+              className={`group hn-hover hn-hover-flat overflow-hidden ${i === 0 ? "border-b border-[#e8e8ee] md:border-b-0 md:border-r" : ""}`}
             >
               <div className="px-8 pt-10">
-                <h3 className="text-[24px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728]">{p.name}</h3>
-                <p className="mt-2 max-w-[500px] text-[18px] leading-[1.3] text-[#4b5567]">{p.blurb}</p>
+                <h3 className="text-[24px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d]">{p.name}</h3>
+                <p className="mt-2 max-w-[500px] text-[18px] leading-[1.3] text-[#5c5c66]">{p.blurb}</p>
                 <Btn to={`/product/${p.slug}`} variant="link" className="mt-5">
                   Learn about {p.slug === "agents" ? "agents" : "govern"}
                 </Btn>
@@ -60,16 +60,16 @@ export function UseCaseCarousel({ className }: { className?: string }) {
         {USE_CASES.map((u) => (
           <article
             key={u.slug}
-            className="grid w-[86vw] max-w-[1000px] shrink-0 snap-start gap-6 rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-6 hn-shadow sm:w-[80vw] md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]"
+            className="grid w-[86vw] max-w-[1000px] shrink-0 snap-start gap-6 rounded-[24px] border border-[#e8e8ee] bg-[#f5f5f8] p-6 hn-shadow sm:w-[80vw] md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]"
           >
             <div className="flex flex-col">
               <Chip className="self-start">{u.team}</Chip>
-              <h3 className="mt-6 text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728] sm:text-[32px]">{u.title}</h3>
-              <div className="mt-8 divide-y divide-[#e6e9ef]">
+              <h3 className="mt-6 text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d] sm:text-[32px]">{u.title}</h3>
+              <div className="mt-8 divide-y divide-[#e8e8ee]">
                 {u.facts.map((f) => (
                   <div key={f.head} className="py-4 first:pt-0">
-                    <div className="text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728]">{f.head}</div>
-                    <div className="mt-1 text-[18px] leading-[1.3] text-[#4b5567]">{f.label}</div>
+                    <div className="text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d]">{f.head}</div>
+                    <div className="mt-1 text-[18px] leading-[1.3] text-[#5c5c66]">{f.label}</div>
                   </div>
                 ))}
               </div>
@@ -90,7 +90,7 @@ export function UseCaseCarousel({ className }: { className?: string }) {
 
 export function HomeUseCasesHn() {
   return (
-    <section className="border-t border-[#e6e9ef] bg-white py-20 lg:py-24">
+    <section className="border-t border-[#e8e8ee] bg-white py-20 lg:py-24">
       <Container>
         <Head
           eyebrow="Use cases"
@@ -98,7 +98,7 @@ export function HomeUseCasesHn() {
             <>
               Built for the work your
               <br />
-              teams do every day.
+              teams do <Em>every day.</Em>
             </>
           }
           lead="See how Cloud collaborators handle finance, hiring, reporting, operations and governance, step by step."
@@ -108,10 +108,10 @@ export function HomeUseCasesHn() {
         <UseCaseCarousel />
       </div>
       <Container className="mt-4 flex flex-col items-center gap-3 text-center">
-        <Link to="/use-cases" className="text-[16px] font-medium text-[#006edd] hover:text-[#0057c2]">
+        <Link to="/use-cases" className="text-[16px] font-medium text-[#4f1ad6] hover:text-[#4314b8]">
           See all use cases
         </Link>
-        <span className="text-[13px] text-[#8a94a6]">Illustrative workflows with sample data, not customer results.</span>
+        <span className="text-[13px] text-[#8f8f99]">Illustrative workflows with sample data, not customer results.</span>
       </Container>
     </section>
   );

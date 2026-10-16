@@ -1,7 +1,9 @@
-// rag-ingest — ingest a knowledge source into an agent's vector store.
-// Body: { workspace_id, project_id, agent_id, type, title, content?, url? }
+// rag-ingest — ingest a knowledge source into an agent's or a collection's vector store.
+// Body: { workspace_id, project_id, agent_id | collection_id, type, title, content?, url? }
 //   type: "text" | "url" | "saas_structure"
-// Chunks the content, embeds with Jina, stores rows in rag_chunks.
+// Chunks the content, embeds it (Jina, or the pinned gateway's embedding model),
+// stores rows in rag_chunks.
+// Body { action: "search", … } : essai de recherche sur des collections (voir searchCollections).
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
@@ -97,6 +99,61 @@ function structureToText(structure: any): string {
   return lines.join("\n").trim();
 }
 
+/**
+ * Recherche vectorielle sur des collections du projet : la question est
+ * vectorisée comme une requête, puis comparée aux passages (match_rag_collection_chunks).
+ * Body : { action: "search", workspace_id, project_id, collection_ids, query, limit? }.
+ */
+async function searchCollections(userId: string, body: Record<string, unknown>): Promise<Response> {
+  const workspace_id = String(body.workspace_id ?? "");
+  const project_id = String(body.project_id ?? "");
+  const query = String(body.query ?? "").trim().slice(0, 2000);
+  const ids = Array.isArray(body.collection_ids) ? body.collection_ids.map(String).slice(0, 20) : [];
+  const limit = Math.min(Math.max(Number(body.limit) || 5, 1), 20);
+  if (!workspace_id || !project_id || !query || ids.length === 0) {
+    return jsonResponse({ error: "workspace_id, project_id, collection_ids et query requis" }, { status: 400 });
+  }
+  const admin = createServiceClient();
+  const { data: m } = await admin.from("workspace_members").select("role")
+    .eq("workspace_id", workspace_id).eq("user_id", userId).maybeSingle();
+  if (!m) return jsonResponse({ error: "Not authorized" }, { status: 403 });
+  // Le client de service passe outre les RLS : seules les collections de CE projet sont cherchées.
+  const { data: owned } = await admin.from("rag_collections").select("id, name")
+    .eq("project_id", project_id).eq("workspace_id", workspace_id).in("id", ids);
+  const allowed = (owned ?? []) as Array<{ id: string; name: string }>;
+  if (allowed.length === 0) return jsonResponse({ hits: [] });
+
+  try {
+    await assertCredits(workspace_id, { minimum: 1 });
+  } catch (e) {
+    if (isQuotaError(e)) return quotaErrorResponse(e);
+    throw e;
+  }
+  const [vector] = await embedTexts([query], "retrieval.query", { workspace_id, project_id, feature: "rag-search" });
+  const { data: matches, error } = await admin.rpc("match_rag_collection_chunks", {
+    p_collection_ids: allowed.map((c) => c.id), p_query_embedding: toVectorLiteral(vector ?? []), p_match_count: limit,
+  });
+  if (error) return jsonResponse({ error: error.message }, { status: 500 });
+  const rows = (matches ?? []) as Array<{ id: string; content: string; collection_id: string; similarity: number }>;
+  // Le titre de la source de chaque passage, pour qu'on sache d'où il vient.
+  const { data: chunkSources } = rows.length
+    ? await admin.from("rag_chunks").select("id, source_id").in("id", rows.map((r) => r.id))
+    : { data: [] };
+  const sourceOf = new Map(((chunkSources ?? []) as Array<{ id: string; source_id: string }>).map((c) => [c.id, c.source_id]));
+  const sourceIds = [...new Set([...sourceOf.values()].filter(Boolean))];
+  const { data: sources } = sourceIds.length
+    ? await admin.from("rag_sources").select("id, title").in("id", sourceIds)
+    : { data: [] };
+  const titleOf = new Map(((sources ?? []) as Array<{ id: string; title: string }>).map((s) => [s.id, s.title]));
+  const nameOf = new Map(allowed.map((c) => [c.id, c.name]));
+  return jsonResponse({
+    hits: rows.map((r) => ({
+      id: r.id, similarity: Math.round(r.similarity * 1000) / 1000, content: r.content,
+      collection: nameOf.get(r.collection_id) ?? null, source: titleOf.get(sourceOf.get(r.id) ?? "") ?? null,
+    })),
+  });
+}
+
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -107,7 +164,12 @@ Deno.serve(async (req) => {
     const { data: userData } = await userClient.auth.getUser();
     if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
 
-    const { workspace_id, project_id, agent_id, collection_id, type, title, content, url, structure } = await req.json();
+    const body = await req.json();
+    // Essai de recherche sur des collections (Ressources › Sources › RAG) : le même
+    // chemin que l'outil rag_search des agents, pour vérifier ce qu'ils trouveront.
+    if (body?.action === "search") return await searchCollections(userData.user.id, body);
+
+    const { workspace_id, project_id, agent_id, collection_id, type, title, content, url, structure } = body;
     if (!workspace_id || !project_id || (!agent_id && !collection_id) || !type || !title) {
       return jsonResponse({ error: "workspace_id, project_id, type, title and one of agent_id|collection_id required" }, { status: 400 });
     }

@@ -230,7 +230,7 @@ export function Eyebrow({ children, className }: { children: ReactNode; classNam
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 text-[16px] font-medium leading-none tracking-[-0.01em] text-[#006edd]",
+        "inline-flex items-center gap-1.5 text-[16px] font-medium leading-none tracking-[-0.01em] text-[#4f1ad6]",
         className,
       )}
     >
@@ -274,7 +274,7 @@ export function CtaPrimary({ children, className }: { children: ReactNode; class
   return (
     <span
       className={cn(
-        "group inline-flex h-11 items-center gap-1.5 rounded-full bg-[#006edd] px-3.5 text-[16px] font-medium tracking-[-0.01em] text-white transition-colors hover:bg-[#0057c2]",
+        "group inline-flex h-11 items-center gap-1.5 rounded-[10px] bg-[#4f1ad6] px-3.5 text-[16px] font-medium tracking-[-0.01em] text-white transition-colors hover:bg-[#4314b8]",
         className,
       )}
     >
@@ -290,7 +290,7 @@ export function CtaPill({ children, className }: { children: ReactNode; classNam
   return (
     <span
       className={cn(
-        "group inline-flex items-center gap-2.5 rounded-full bg-[#2b2b2b] px-7 py-3.5 text-[15px] font-medium text-white shadow-[0_12px_28px_-14px_rgba(0,0,7,0.8)] transition-colors hover:bg-[#0d0d0d]",
+        "group inline-flex items-center gap-2.5 rounded-[10px] bg-[#2b2b2b] px-7 py-3.5 text-[15px] font-medium text-white shadow-[0_12px_28px_-14px_rgba(0,0,7,0.8)] transition-colors hover:bg-[#0d0d0d]",
         className,
       )}
     >
@@ -304,7 +304,7 @@ export function CtaGhost({ children, className }: { children: ReactNode; classNa
   return (
     <span
       className={cn(
-        "group inline-flex h-11 items-center gap-1.5 rounded-full border border-[#e6e9ef] bg-white px-3 text-[16px] font-medium tracking-[-0.01em] text-[#0f1728] transition-colors hover:border-[#cfd5df]",
+        "group inline-flex h-11 items-center gap-1.5 rounded-[10px] border border-[#e8e8ee] bg-white px-3 text-[16px] font-medium tracking-[-0.01em] text-[#0d0d0d] transition-colors hover:border-[#d4d4dc]",
         className,
       )}
     >
@@ -380,12 +380,12 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full px-3.5 text-[16px] font-medium leading-none tracking-[-0.01em] transition-colors duration-200",
+        "inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[10px] px-3.5 text-[16px] font-medium leading-none tracking-[-0.01em] transition-colors duration-200",
         // Solid is the blue slab of the Hunar register.
-        variant === "solid" && "bg-[#006edd] text-white hover:bg-[#0057c2]",
+        variant === "solid" && "bg-[#4f1ad6] text-white hover:bg-[#4314b8]",
         variant === "ghost" && "border border-white/20 bg-white/[0.04] text-white hover:bg-white/[0.08]",
         // The white one with a hairline, for light grounds.
-        variant === "light" && "border border-[#e6e9ef] bg-white text-[#0f1728] hover:border-[#cfd5df]",
+        variant === "light" && "border border-[#e8e8ee] bg-white text-[#0d0d0d] hover:border-[#d4d4dc]",
         className,
       )}
     >

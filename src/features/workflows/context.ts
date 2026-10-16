@@ -16,7 +16,9 @@ export {
   // l'éditeur. Une seule implémentation des noms valides, sinon l'éditeur
   // proposerait `{{Mon Canal}}` et le moteur ne le résoudrait jamais.
   varsOf, declaredVars, varNamesOf, normalizeVarName,
+  // Les serveurs MCP d'un bloc Outil : le compilateur les cite, le moteur les ouvre au run.
+  mcpSelectionsOf, mcpToolName,
 } from "../../../supabase/functions/_shared/workflow-doc";
 export type {
-  BlockKind, BlockRole, ContextRef, ContextSourceKind, InputParam, WorkflowVar,
+  BlockKind, BlockRole, ContextRef, ContextSourceKind, InputParam, WorkflowVar, McpSelection,
 } from "../../../supabase/functions/_shared/workflow-doc";

@@ -2,10 +2,8 @@ import { createContext, useContext, useState, useEffect } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { PrimarySidebar } from "./PrimarySidebar";
 import { SecondarySidebar } from "./SecondarySidebar";
-import { AdminSidebar } from "./AdminSidebar";
 import { SubTabBar } from "./SubTabBar";
 import { Topbar } from "./Topbar";
-import { isAdminRoute } from "@/lib/admin-navigation";
 import { TopbarTabsProvider, useTopbarTabs } from "./TopbarTabs";
 import { TopbarBreadcrumbProvider } from "./TopbarBreadcrumb";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -38,7 +36,6 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [primaryExpanded, setPrimaryExpanded] = useState(false);
   const { pathname } = useLocation();
-  const admin = isAdminRoute(pathname);
 
   // Close the drawer whenever the route changes.
   useEffect(() => {
@@ -80,14 +77,8 @@ export function AppShell() {
                   className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
                 />
                 <div className="fixed inset-y-0 left-0 z-50 flex md:hidden">
-                  {admin ? (
-                    <AdminSidebar />
-                  ) : (
-                    <>
-                      <PrimarySidebar />
-                      <SecondarySidebar />
-                    </>
-                  )}
+                  <PrimarySidebar />
+                  <SecondarySidebar />
                 </div>
               </>
             )}
@@ -95,16 +86,10 @@ export function AppShell() {
             {/* Everything under the navbar is ONE rounded panel (sidebars +
                 content) floating on the soft-black chrome — the "arrondi". */}
             <div className="flex flex-1 overflow-hidden rounded-t-2xl border-t border-white/10 bg-background">
-              {/* Desktop sidebars — the Admin dashboard uses a single sidebar. */}
+              {/* Desktop sidebars — the same two everywhere, administration included. */}
               <div className="hidden md:flex">
-                {admin ? (
-                  <AdminSidebar />
-                ) : (
-                  <>
-                    <PrimarySidebar />
-                    <SecondarySidebar />
-                  </>
-                )}
+                <PrimarySidebar />
+                <SecondarySidebar />
               </div>
 
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -220,9 +205,7 @@ function isFullbleedRoute(pathname: string): boolean {
   if (/\/app\/[^/]+\/[^/]+\/test-runs(\/.*)?$/.test(pathname)) return true;
   if (/\/app\/[^/]+\/[^/]+\/vibe-code(\/.*)?$/.test(pathname)) return true;
   if (/\/app\/[^/]+\/[^/]+\/repos\/repo\/[^/]+/.test(pathname)) return true;
-  // CRM full record view (crm/workspace/<obj>/<recordId>) — Attio-style.
-  if (/\/app\/[^/]+\/[^/]+\/crm\/workspace\/[^/]+\/[^/]+/.test(pathname)) return true;
-  // Module project detail view — sidebar + tabs, same pattern as CRM record view.
+  // Module project detail view — sidebar + tabs.
   if (/\/app\/[^/]+\/[^/]+\/[^/]+\/project\/[^/]+/.test(pathname)) return true;
   return false;
 }

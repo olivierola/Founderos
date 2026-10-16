@@ -145,7 +145,11 @@ describe("jeton d'approbation : signé par FounderOS, vérifié par le serveur M
     const signed = await sign();
     assert.equal(signed.exp - signed.iat, 300);
     const verified = await (await verifier())(signed.token, expected);
-    assert.deepEqual(verified, { id: "ap-1", tool: "deployment_restart", target_cluster: "prd", params_hash: HASH, approver: "kc-bob", approvers: ["kc-bob"] });
+    assert.deepEqual(verified, {
+      id: "ap-1", tool: "deployment_restart", target_cluster: "prd", params_hash: HASH, approver: "kc-bob", approvers: ["kc-bob"],
+      // L'échéance sert au registre des approbations du serveur (un jeton, une exécution).
+      expiresAt: signed.exp * 1000,
+    });
   });
 
   it("règle à quorum (G3) : le jeton porte tous les approbateurs, le dernier compris", async () => {

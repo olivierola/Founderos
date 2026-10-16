@@ -1,0 +1,30 @@
+# Le serveur MCP du cluster NPR (OpenShift + Argo CD).
+#   helm upgrade --install mcp-npr MCP/deploy/helm/mcp-server -n ai-mcp -f MCP/deploy/values/cluster-npr.yaml
+servers: [openshift, argocd]
+cluster: npr
+image:
+  repository: quay.interne.exemple/ai-platform/mcp-server
+  tag: "0.2.0"
+route:
+  host: mcp.apps-int.npr.interne.exemple
+auth:
+  founderosUrl: https://founderos-api.apps-int.hub.interne.exemple
+  roles: [ai-ops-reader, ai-ops-operator]
+approval:
+  jwksConfigMap: approval-jwks
+rbac:
+  write:
+    enabled: true
+    clusterRole: ai-operator
+secretMounts:
+  - { name: argocd, secretName: mcp-argocd }
+config:
+  openshift:
+    namespaces: [app-a-int, app-a-qca]
+    readCredential: { type: k8s-token, serviceAccount: mcp-npr-reader }
+    writeCredential: { type: k8s-token, serviceAccount: mcp-npr-operator }
+  argocd:
+    url: https://openshift-gitops-server.openshift-gitops.svc
+    caFile: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+    token: { type: file, path: /etc/mcp-secrets/argocd/token }
+    projects: [team-a]

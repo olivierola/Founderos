@@ -107,7 +107,10 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
 export function normalizeSettings(raw: unknown): DashboardSettings {
   const s = (raw ?? {}) as Partial<DashboardSettings> & Record<string, unknown>;
   return {
-    landing: (s.landing as DashboardTabSlug) ?? DEFAULT_DASHBOARD_SETTINGS.landing,
+    // Une page d'accueil retirée (l'espace Assistant, les Schedules, les Artifacts)
+    // ramène à l'Intelligence Space plutôt qu'à une redirection à chaque ouverture.
+    landing: s.landing && !["home", "schedules", "missions", "artifacts"].includes(String(s.landing))
+      ? (s.landing as DashboardTabSlug) : DEFAULT_DASHBOARD_SETTINGS.landing,
     hidden_tabs: Array.isArray(s.hidden_tabs) ? (s.hidden_tabs as DashboardTabSlug[]) : [],
     sidebar_collapsed: s.sidebar_collapsed === true,
     theme: (s.theme as DashboardTheme) ?? "system",
@@ -336,6 +339,8 @@ export async function deleteAsset(id: string) {
 export interface Room { id: string; title: string; created_at: string; updated_at: string }
 export interface RoomMessage {
   id: string;
+  room_id: string;
+  workspace_id: string;
   author_kind: "user" | "agent" | "system";
   user_id: string | null;
   agent_id: string | null;
@@ -428,6 +433,52 @@ export async function addRoomAgent(roomId: string, agentId: string) {
 }
 export async function removeRoomAgent(roomId: string, agentId: string) {
   await supabase.from("service_room_agents").delete().eq("room_id", roomId).eq("agent_id", agentId);
+}
+
+// ── Réactions & personnes d'une room (migration 0287) ───────────────────────
+
+export interface RoomReaction { message_id: string; user_id: string; emoji: string }
+
+/** Les réactions d'une room. `null` quand la table n'existe pas encore (0287
+ *  non appliquée) : l'interface masque alors les réactions plutôt que
+ *  d'afficher des boutons qui échoueraient. */
+export async function fetchRoomReactions(roomId: string): Promise<RoomReaction[] | null> {
+  const { data, error } = await supabase.from("service_room_message_reactions")
+    .select("message_id, user_id, emoji").eq("room_id", roomId);
+  if (error) return null;
+  return (data ?? []) as RoomReaction[];
+}
+
+/**
+ * Pose ou retire une réaction. Posée sur le message d'un AGENT, elle le
+ * prévient (service-room-post, op "react") : il décide lui-même s'il y a
+ * quelque chose à répondre. Retirer une réaction ne le dérange pas.
+ */
+export async function toggleRoomReaction(
+  msg: { id: string; room_id: string; workspace_id: string; author_kind: string },
+  userId: string, emoji: string, on: boolean,
+) {
+  if (on) {
+    const { error } = await supabase.from("service_room_message_reactions")
+      .insert({ message_id: msg.id, room_id: msg.room_id, workspace_id: msg.workspace_id, user_id: userId, emoji });
+    if (error) throw new Error(error.message);
+    if (msg.author_kind === "agent") {
+      await callEdge("service-room-post", { op: "react", message_id: msg.id, emoji }).catch(() => {});
+    }
+  } else {
+    await supabase.from("service_room_message_reactions")
+      .delete().eq("message_id", msg.id).eq("user_id", userId).eq("emoji", emoji);
+  }
+}
+
+export interface RoomPerson { id: string; name: string; avatar_url: string | null }
+
+/** Les personnes d'une room — son créateur, qui y a écrit ou réagi — avec leur
+ *  nom et leur avatar. Vide tant que 0287 n'est pas appliquée. */
+export async function fetchRoomPeople(roomId: string): Promise<RoomPerson[]> {
+  const { data, error } = await supabase.rpc("room_member_profiles", { p_room: roomId });
+  if (error) return [];
+  return (data ?? []) as RoomPerson[];
 }
 
 export async function postRoomMessage(

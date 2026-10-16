@@ -99,7 +99,6 @@ import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { InstructionsEditor } from "./InstructionsEditor";
-import { AvatarPicker } from "./AvatarPicker";
 import { AgentChannelsTab } from "./AgentChannelsTab";
 import { AgentHostedModelCard } from "./AgentHostedModel";
 import { AgentAutomationsTab } from "./AgentAutomationsTab";
@@ -112,6 +111,7 @@ import { WorkspaceTab } from "./WorkspaceTab";
 import { chatUserBubble } from "@/lib/chatStyles";
 import { UserMessageBody, splitContextBlocks } from "@/features/companion/contextBlocks";
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { isHumanAvatar } from "@/lib/human-avatar-look";
 import { BrandLogo } from "@/components/BrandLogo";
 import { toolSummary, orbStateForRun } from "./runEventMeta";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "./connectorActionProviders";
@@ -1393,20 +1393,43 @@ export function ChatTab({
       {isEmpty ? (
         // Perplexity-style hero: centered title + composer + suggestion cards.
         <div className={cn("flex flex-1 flex-col items-center justify-center", compact ? "overflow-y-auto px-3 pb-4 pt-14" : "px-6 pb-10")}>
-          {/* Either the avatar OR the living orb — the agent's chosen identity. */}
-          <AgentIdentity
-            style={agent.avatar_style}
-            url={agent.avatar_url}
-            seed={agent.name}
-            size={compact ? 56 : 88}
-            state={isBusy ? "working" : agent.is_archived ? "sleeping" : "default"}
-            className={compact ? "mb-3" : "mb-4"}
-          />
-          <h1 className={cn("font-semibold tracking-tight text-foreground", compact ? "text-xl" : "text-3xl")}>{agent.name}</h1>
+          {/* The name, large and heavy, fading downward into the page. The
+              bottom padding keeps descenders inside the clipped gradient. */}
+          <h1
+            className={cn(
+              "bg-gradient-to-b from-foreground via-foreground/80 to-foreground/25 bg-clip-text pb-1 text-center font-extrabold leading-tight tracking-tight text-transparent",
+              compact ? "text-3xl" : "text-5xl md:text-6xl",
+            )}
+          >
+            {agent.name}
+          </h1>
           {agent.description && (
             <p className={cn("mt-2 max-w-md text-center text-muted-foreground", compact ? "line-clamp-2 text-xs" : "text-sm")}>{agent.description}</p>
           )}
-          <div className={cn("w-full max-w-2xl", compact ? "mt-5" : "mt-7")}>
+          {/* The agent stands above the composer. A person stands just behind
+              it, like someone behind a desk — the bottom of the bust barely
+              sunk under the frosted glass; a bot stands clear of it. */}
+          {(() => {
+            const size = compact ? 150 : 260;
+            const human = isHumanAvatar(agent.avatar_url);
+            return (
+              <div
+                className={cn("pointer-events-none relative z-0 flex justify-center", compact ? "mt-3" : "mt-5")}
+                style={{ marginBottom: human ? -Math.round(size * 0.08) : compact ? 10 : 16 }}
+              >
+                <span className="pointer-events-auto">
+                  <AgentIdentity
+                    style={agent.avatar_style}
+                    url={agent.avatar_url}
+                    seed={agent.name}
+                    size={size}
+                    state={isBusy ? "working" : agent.is_archived ? "sleeping" : "default"}
+                  />
+                </span>
+              </div>
+            );
+          })()}
+          <div className="relative z-10 w-full max-w-2xl">
             <ChatComposer
               chips={composerChips}
               value={input}
@@ -3736,7 +3759,6 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
 
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description ?? "");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(agent.avatar_url);
   const [model, setModel] = useState(agent.model);
   const [temperature, setTemperature] = useState(agent.temperature);
   const [chatEnabled, setChatEnabled] = useState(agent.chat_enabled);
@@ -3788,7 +3810,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
 
   // Deep-link to a section via ?s=<key>; legacy keys resolve to the section that
   // absorbed them (see settingsSectionFor).
-  const [settingsParams] = useSearchParams();
+  const [settingsParams, setSettingsParams] = useSearchParams();
   const sParam = settingsSectionFor(settingsParams.get("s"));
   const [section, setSection] = useState<SettingsSectionKey>(sParam ?? "general");
   // Publish the settings sub-tabs to the Topbar (where the breadcrumb was).
@@ -3829,8 +3851,8 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
         .update({
           name,
           description,
-          avatar_url: avatarUrl,
-          avatar_style: "avatar",
+          // The avatar is saved by its own tab (AgentAvatarTab); written here
+          // too, a save of this form would put back the avatar it loaded with.
           // Save what the select SHOWS: a legacy row on "gpt-4" (or on nothing)
           // displays as DeepSeek, which is what the runtime already gave it, so
           // it must not be written back as a value no provider answers to.
@@ -3904,9 +3926,21 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
             </SoftField>
           </div>
 
-          {/* Visual identity — the avatar studio, with its own live preview. */}
+          {/* Visual identity — composed in its own tab now; here, the face and the way there. */}
           <SoftField label="Avatar">
-            <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} accentColor={agent.accent_color} name={agent.name} />
+            <div className="flex items-center gap-4 rounded-2xl bg-muted/40 p-3">
+              <AgentIdentity url={agent.avatar_url} seed={agent.name} size={56} rounded="rounded-2xl" />
+              <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                Robot animé ou humain en 3D, forme, couleurs, tenue, accessoires : tout se règle dans l'onglet Avatar.
+              </p>
+              <button
+                type="button"
+                onClick={() => setSettingsParams((p) => { const n = new URLSearchParams(p); n.set("t", "avatar"); n.delete("s"); return n; })}
+                className="shrink-0 rounded-full bg-foreground px-3.5 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-90"
+              >
+                Personnaliser l'avatar
+              </button>
+            </div>
           </SoftField>
 
           {/* Two models, both real. "GPT-4" used to sit in this list and led

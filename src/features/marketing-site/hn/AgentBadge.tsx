@@ -24,18 +24,18 @@ import { cn } from "@/lib/utils";
 type Role = { match: RegExp; icon: typeof SparkleIcon; tint: string; ink: string };
 
 const ROLES: Role[] = [
-  { match: /financ|ledger|invoice/i, icon: ReceiptIcon, tint: "#eaf2ff", ink: "#0b5ed7" },
+  { match: /financ|ledger|invoice/i, icon: ReceiptIcon, tint: "#f1edfe", ink: "#4f1ad6" },
   { match: /recruit|hr\b|hiring/i, icon: UserFocusIcon, tint: "#eef0ff", ink: "#4447d6" },
   { match: /support|help/i, icon: HeadsetIcon, tint: "#e6f7fa", ink: "#0b7285" },
-  { match: /report|writer/i, icon: FileTextIcon, tint: "#f1f3f7", ink: "#344054" },
+  { match: /report|writer/i, icon: FileTextIcon, tint: "#f1f1f5", ink: "#333333" },
   { match: /sales|crm/i, icon: ChartLineUpIcon, tint: "#fff3e8", ink: "#c2510c" },
   { match: /ops|operation|supply/i, icon: TruckIcon, tint: "#e6f7fa", ink: "#0b7285" },
-  { match: /legal|contract/i, icon: ScalesIcon, tint: "#f1f3f7", ink: "#344054" },
+  { match: /legal|contract/i, icon: ScalesIcon, tint: "#f1f1f5", ink: "#333333" },
   { match: /govern|audit|policy/i, icon: ShieldCheckIcon, tint: "#eef0ff", ink: "#4447d6" },
-  { match: /readiness|assess/i, icon: GaugeIcon, tint: "#eaf2ff", ink: "#0b5ed7" },
+  { match: /readiness|assess/i, icon: GaugeIcon, tint: "#f1edfe", ink: "#4f1ad6" },
   { match: /foundation|data/i, icon: TreeStructureIcon, tint: "#e6f7fa", ink: "#0b7285" },
   { match: /adoption|champion/i, icon: UsersThreeIcon, tint: "#fff3e8", ink: "#c2510c" },
-  { match: /run|managed/i, icon: ArrowsClockwiseIcon, tint: "#f1f3f7", ink: "#344054" },
+  { match: /run|managed/i, icon: ArrowsClockwiseIcon, tint: "#f1f1f5", ink: "#333333" },
 ];
 
 export function AgentBadge({
@@ -65,7 +65,7 @@ export function AgentBadge({
         width: size,
         height: size,
         borderRadius: Math.max(6, Math.round(size * 0.32)),
-        ...(glass ? {} : { background: role?.tint ?? "#eaf2ff", color: role?.ink ?? "#0b5ed7" }),
+        ...(glass ? {} : { background: role?.tint ?? "#f1edfe", color: role?.ink ?? "#4f1ad6" }),
       }}
     >
       <Icon weight="duotone" style={{ width: size * 0.55, height: size * 0.55 }} />

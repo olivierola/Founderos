@@ -8,7 +8,7 @@ import { z } from "zod";
 import { CLUSTERS, type Cluster } from "../lib/catalog.ts";
 import { requestJson } from "../lib/http.ts";
 import { credentialRefSchema } from "../lib/secrets.ts";
-import type { ServerModule } from "../lib/server.ts";
+import type { ReadinessCheck, ServerModule } from "../lib/server.ts";
 import { defineTool } from "../lib/tool.ts";
 
 const FORBIDDEN_KINDS = new Set(["secret", "serviceaccounttoken", "tokenreview"]);
@@ -115,6 +115,36 @@ export const fleetServer: ServerModule<FleetConfig> = {
           return rows.filter((r) => !only_non_compliant || r.compliant !== "Compliant");
         },
       }),
+    ];
+  },
+
+  // ACM Search répond, et le compte lit les politiques du Hub.
+  checks({ config, secrets }): ReadinessCheck[] {
+    const s = config.search;
+    const h = config.hubApi;
+    return [
+      {
+        name: "flotte:recherche",
+        critical: false,
+        async run() {
+          const res = await requestJson<{ errors?: Array<{ message: string }> }>(s.url, {
+            method: "POST", headers: { Authorization: `Bearer ${await secrets.resolve(s.token, {})}` }, caFile: s.caFile, timeoutMs: 10_000,
+            json: { operationName: "searchResult", query: SEARCH_QUERY, variables: { input: [{ keywords: [], filters: [{ property: "kind", values: ["Namespace"] }], limit: 1 }] } },
+          });
+          if (res?.errors?.length) throw new Error(`ACM Search : ${res.errors.map((e) => e.message).join(" ; ")}`);
+          return "ACM Search répond";
+        },
+      },
+      {
+        name: "flotte:politiques",
+        critical: false,
+        async run() {
+          await requestJson(`${h.url.replace(/\/$/, "")}/apis/policy.open-cluster-management.io/v1/policies?limit=1`, {
+            headers: { Authorization: `Bearer ${await secrets.resolve(h.token, {})}` }, caFile: h.caFile, timeoutMs: 10_000,
+          });
+          return "politiques ACM lisibles";
+        },
+      },
     ];
   },
 };

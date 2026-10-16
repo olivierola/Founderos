@@ -1,5 +1,15 @@
 {
-  "namespaces": ["app-a-int", "app-a-qca", "app-b-int"],
-  "readCredential": { "type": "vault-k8s", "role": "ocp-reader" },
-  "writeCredential": { "type": "vault-k8s", "role": "ocp-operator" }
+  "namespaces": [
+    "app-a-int",
+    "app-a-qca",
+    "app-b-int"
+  ],
+  "readCredential": {
+    "type": "k8s-token",
+    "serviceAccount": "mcp-npr-reader"
+  },
+  "writeCredential": {
+    "type": "k8s-token",
+    "serviceAccount": "mcp-npr-operator"
+  }
 }

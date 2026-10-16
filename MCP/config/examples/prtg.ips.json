@@ -1,5 +1,8 @@
 {
   "url": "https://prtg.interne.exemple",
   "caFile": "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
-  "apiKey": { "type": "kv", "path": "mcp/ips/prtg/api", "key": "api_key" }
+  "apiKey": {
+    "type": "file",
+    "path": "/etc/mcp-secrets/prtg/api_key"
+  }
 }

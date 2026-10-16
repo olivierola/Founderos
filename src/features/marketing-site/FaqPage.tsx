@@ -235,7 +235,7 @@ export function FaqPage() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search the questions…"
             aria-label="Search the questions"
-            className="h-12 w-full rounded-full border border-black/[0.08] bg-white/80 pl-11 pr-4 text-[15px] text-[#000007] shadow-[0_10px_30px_-18px_rgba(0,0,7,0.35)] outline-none backdrop-blur-xl transition-colors placeholder:text-black/35 focus:border-black/20"
+            className="h-12 w-full rounded-[10px] border border-black/[0.08] bg-white/80 pl-11 pr-4 text-[15px] text-[#000007] shadow-[0_10px_30px_-18px_rgba(0,0,7,0.35)] outline-none backdrop-blur-xl transition-colors placeholder:text-black/35 focus:border-black/20"
           />
         </div>
       </PageHero>
@@ -271,7 +271,7 @@ export function FaqPage() {
                     </p>
                     <Link
                       to="/contact"
-                      className="mt-8 inline-block rounded-full bg-[#2b2b2b] px-6 py-3 text-[14.5px] font-medium text-white transition-colors hover:bg-[#0d0d0d]"
+                      className="mt-8 inline-block rounded-[10px] bg-[#2b2b2b] px-6 py-3 text-[14.5px] font-medium text-white transition-colors hover:bg-[#0d0d0d]"
                     >
                       Ask your question
                     </Link>

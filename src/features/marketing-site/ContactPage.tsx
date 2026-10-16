@@ -25,8 +25,8 @@ import { Btn, Card, H, P } from "./hn/HnKit";
    · the status line is `role="status"`, so the outcome is announced instead of
      only appearing.                                                          */
 
-const INK = "#0f1728";
-const GREY = "#4b5567";
+const INK = "#0d0d0d";
+const GREY = "#5c5c66";
 
 const REASONS = [
   { value: "sales", label: "Sales / Enterprise" },
@@ -83,7 +83,7 @@ function Field({
 }
 
 const inputClass =
-  "h-11 w-full rounded-full border bg-white px-4 text-[16px] text-[#0f1728] outline-none transition-colors placeholder:text-[#8a94a6] focus:border-[#006edd]";
+  "h-11 w-full rounded-[10px] border bg-white px-4 text-[16px] text-[#0d0d0d] outline-none transition-colors placeholder:text-[#8f8f99] focus:border-[#4f1ad6]";
 
 export function ContactPage() {
   const [reason, setReason] = useState("sales");
@@ -146,7 +146,7 @@ export function ContactPage() {
 
   return (
     <HnPage>
-      <section className="bg-[#f7f8fb]">
+      <section className="bg-[#f5f5f8]">
         <div className="mx-auto w-full max-w-[1046px] px-5 pb-20 pt-16 sm:px-12 lg:pt-24">
           <H as="h1" size="hero">Get in touch</H>
           <P className="mt-4 max-w-[640px]">
@@ -155,25 +155,25 @@ export function ContactPage() {
 
           <div className="mt-10 grid gap-4 sm:grid-cols-2">
             <Card hover className="p-6">
-              <div className="text-[18px] leading-[1.3] text-[#4b5567]">General inquiries</div>
-              <a href="mailto:hello@founderos.dev" className="mt-6 block text-[24px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728] hover:text-[#006edd]">
+              <div className="text-[18px] leading-[1.3] text-[#5c5c66]">General inquiries</div>
+              <a href="mailto:hello@founderos.dev" className="mt-6 block text-[24px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d] hover:text-[#4f1ad6]">
                 hello@founderos.dev
               </a>
             </Card>
             <Card hover className="p-6">
-              <div className="text-[18px] leading-[1.3] text-[#4b5567]">Where we work</div>
-              <div className="mt-6 text-[24px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728]">
+              <div className="text-[18px] leading-[1.3] text-[#5c5c66]">Where we work</div>
+              <div className="mt-6 text-[24px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d]">
                 {OFFICES.map((o) => o.city).join(" · ")}
               </div>
-              <div className="mt-2 text-[16px] text-[#4b5567]">Data stays in the EU. Cloud collaborators run in your tenant, in your region.</div>
+              <div className="mt-2 text-[16px] text-[#5c5c66]">Data stays in the EU. Cloud collaborators run in your tenant, in your region.</div>
             </Card>
           </div>
 
           {/* ══ The form — the reference's "Sales" card, opened up ═══════════ */}
           <Card className="mt-4 p-6 sm:p-8">
-            <div className="text-[18px] leading-[1.3] text-[#4b5567]">Sales, support and everything else</div>
+            <div className="text-[18px] leading-[1.3] text-[#5c5c66]">Sales, support and everything else</div>
             <form onSubmit={handleSubmit} noValidate className="mt-6">
-              <div className="text-[16px] font-medium text-[#0f1728]">What is this about?</div>
+              <div className="text-[16px] font-medium text-[#0d0d0d]">What is this about?</div>
               <div role="radiogroup" aria-label="Reason" className="mt-3 flex flex-wrap gap-2">
                 {REASONS.map((r, i) => {
                   const on = r.value === reason;
@@ -187,8 +187,8 @@ export function ContactPage() {
                       tabIndex={on ? 0 : -1}
                       onClick={() => setReason(r.value)}
                       onKeyDown={(e) => onReasonKey(e, i)}
-                      className={`rounded-full border px-3.5 py-2 text-[16px] font-medium leading-none tracking-[-0.02em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006edd]/40 ${
-                        on ? "border-[#006edd] bg-[#006edd] text-white" : "border-[#e6e9ef] bg-white text-[#0f1728] hover:border-[#cfd5df]"
+                      className={`rounded-full border px-3.5 py-2 text-[16px] font-medium leading-none tracking-[-0.02em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4f1ad6]/40 ${
+                        on ? "border-[#4f1ad6] bg-[#4f1ad6] text-white" : "border-[#e8e8ee] bg-white text-[#0d0d0d] hover:border-[#d4d4dc]"
                       }`}
                     >
                       {r.label}
@@ -208,7 +208,7 @@ export function ContactPage() {
                       aria-invalid={bad}
                       aria-describedby={describedBy}
                       className={inputClass}
-                      style={{ borderColor: bad ? "#B42318" : "#e6e9ef" }}
+                      style={{ borderColor: bad ? "#B42318" : "#e8e8ee" }}
                     />
                   )}
                 </Field>
@@ -223,7 +223,7 @@ export function ContactPage() {
                       aria-invalid={bad}
                       aria-describedby={describedBy}
                       className={inputClass}
-                      style={{ borderColor: bad ? "#B42318" : "#e6e9ef" }}
+                      style={{ borderColor: bad ? "#B42318" : "#e8e8ee" }}
                     />
                   )}
                 </Field>
@@ -238,7 +238,7 @@ export function ContactPage() {
                       autoComplete="organization"
                       aria-describedby={describedBy}
                       className={inputClass}
-                      style={{ borderColor: "#e6e9ef" }}
+                      style={{ borderColor: "#e8e8ee" }}
                     />
                   )}
                 </Field>
@@ -258,18 +258,18 @@ export function ContactPage() {
                       onChange={(e) => setMessage(e.target.value)}
                       aria-invalid={bad}
                       aria-describedby={describedBy}
-                      className="w-full rounded-[18px] border bg-white px-4 py-3 text-[16px] leading-[1.5] text-[#0f1728] outline-none transition-colors placeholder:text-[#8a94a6] focus:border-[#006edd]"
-                      style={{ borderColor: bad ? "#B42318" : "#e6e9ef" }}
+                      className="w-full rounded-[18px] border bg-white px-4 py-3 text-[16px] leading-[1.5] text-[#0d0d0d] outline-none transition-colors placeholder:text-[#8f8f99] focus:border-[#4f1ad6]"
+                      style={{ borderColor: bad ? "#B42318" : "#e8e8ee" }}
                     />
                   )}
                 </Field>
               </div>
 
-              <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-[#e6e9ef] pt-6">
+              <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-[#e8e8ee] pt-6">
                 <Btn type="submit">{status === "sending" ? "Opening your mail app…" : "Send message"}</Btn>
                 {/* Said before the click, not after: this opens a mail client,
                     which is not what "Send" usually means. */}
-                <span className="text-[15px] text-[#4b5567]">Opens your mail app with the message filled in.</span>
+                <span className="text-[15px] text-[#5c5c66]">Opens your mail app with the message filled in.</span>
               </div>
               <p className="mt-3 text-[15px]" role="status" aria-live="polite">
                 {status === "sent" && <span className="text-[#1a7f3c]">Your mail app should be open with the message ready to send.</span>}
@@ -280,8 +280,8 @@ export function ContactPage() {
 
           <Card className="mt-4 flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="text-[18px] leading-[1.3] text-[#4b5567]">Not sure yet?</div>
-              <div className="mt-2 text-[18px] leading-[1.3] text-[#0f1728]">
+              <div className="text-[18px] leading-[1.3] text-[#5c5c66]">Not sure yet?</div>
+              <div className="mt-2 text-[18px] leading-[1.3] text-[#0d0d0d]">
                 The readiness assessment is a standalone engagement: two to three weeks, a scored roadmap, and no
                 commitment after it.
               </div>

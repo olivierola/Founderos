@@ -12,7 +12,8 @@ Pour installer FounderOS lui-même, la démarche est la même dans les trois cas
 | Profil | Pour qui | Fichier de départ |
 | --- | --- | --- |
 | Kubernetes | Un cluster standard (Ingress, cert-manager) | [`deploy/installer/profiles/kubernetes.yaml`](../../deploy/installer/profiles/kubernetes.yaml) |
-| OpenShift | Un cluster OpenShift ; l'installation SCIC en est un exemple complet | [`deploy/installer/profiles/openshift-scic.yaml`](../../deploy/installer/profiles/openshift-scic.yaml), et [docs/openshift-implementation.md](../openshift-implementation.md) |
+| OpenShift Hub | **L'architecture retenue** : FounderOS sur le cluster Hub, un serveur MCP par cluster, Azure OpenAI en direct, ni Keycloak ni Vault | [`deploy/installer/profiles/openshift-hub.yaml`](../../deploy/installer/profiles/openshift-hub.yaml), et [docs/architecture-hub.md](../architecture-hub.md) |
+| OpenShift (variante SCIC) | Keycloak, Vault et LiteLLM ; variante précédente | [`deploy/installer/profiles/openshift-scic.yaml`](../../deploy/installer/profiles/openshift-scic.yaml), et [docs/openshift-implementation.md](../openshift-implementation.md) |
 | Machine virtuelle | Petites équipes, essai : une machine Linux avec Docker | [`deploy/installer/profiles/vm.yaml`](../../deploy/installer/profiles/vm.yaml) |
 
 ## Ce qui est installé, et ce qui ne l'est pas
@@ -25,13 +26,13 @@ Pour installer FounderOS lui-même, la démarche est la même dans les trois cas
 | Supabase | **fourni** | Auto-hébergé ([compose officiel](https://supabase.com/docs/guides/self-hosting/docker) ou chart de la communauté), ou service géré. L'installateur prépare ses clés (`supabase.env`). |
 | Serveurs MCP | leur chart, sur **chaque** cluster cible ; ou la passerelle | [MCP/README.md](../../MCP/README.md) : jeton d'API généré à l'installation |
 | Relais | son chart, dans le réseau du client ; ou la passerelle | [connector-relay/README.md](../../connector-relay/README.md) |
-| LiteLLM | son chart amont, si vous imposez une passerelle | Puis `llm.gateway: litellm` dans `founderos.yaml` |
+| LiteLLM | son chart amont, seulement si vous imposez une passerelle | Puis `llm.gateway: litellm` dans `founderos.yaml`. Le profil Hub s'en passe : `llm.gateway: azure` |
 | OPA | en sidecar des serveurs MCP | Déjà dans leur chart |
 
 ## 1. Décrire l'installation
 
 ```bash
-cp deploy/installer/profiles/kubernetes.yaml founderos.yaml   # ou openshift-scic.yaml, vm.yaml
+cp deploy/installer/profiles/openshift-hub.yaml founderos.yaml   # ou kubernetes.yaml, openshift-scic.yaml, vm.yaml
 ```
 
 Les champs sont commentés dans [`founderos.example.yaml`](../../deploy/installer/founderos.example.yaml) :
@@ -41,13 +42,17 @@ Les champs sont commentés dans [`founderos.example.yaml`](../../deploy/installe
 - `supabase.mode` : `selfhosted` (l'installateur génère ses clés) ou `provided` (une instance existante).
 - `admins` : les administrateurs de l'installation (Administration → Installation).
 - `sso.mode` : `dedicated` (une entreprise) ou `shared` (plusieurs organisations, domaines vérifiés).
-- `llm.gateway` : `none`, `litellm` ou `azure`.
+- `llm.gateway` : `none`, `litellm` ou `azure` (Azure OpenAI en direct, API v1 : `llm.azure.url`, `deployment`, `heavyDeployment`).
+- `mcp` (Kubernetes et OpenShift) : les serveurs MCP des clusters que le backend joint en direct.
+  - `internalHosts` : motifs de leurs hôtes, ex. `mcp.apps-int.*.interne.exemple` ;
+  - `clientCert.issuer` : le ClusterIssuer cert-manager qui émet le certificat client mTLS (CN `founderos-ai-platform`), ou `clientCert.secretName` pour un Secret existant ;
+  - `clientCert.caConfigMap` : l'AC interne qui signe les certificats des serveurs.
 - `secrets.source` :
   - `generate` : l'installateur crée les clés ;
   - `vault` : des ExternalSecret les recopient de Vault ;
   - `existing` : les Secrets existent déjà.
 
-Aucun secret ne s'écrit dans `founderos.yaml`. Une clé LiteLLM s'exporte avant de lancer l'installateur (`export LLM_API_KEY=…`).
+Aucun secret ne s'écrit dans `founderos.yaml`. La clé Azure OpenAI (ou LiteLLM) s'exporte avant de lancer l'installateur (`export LLM_API_KEY=…`).
 
 ## 2. Lancer l'installateur
 

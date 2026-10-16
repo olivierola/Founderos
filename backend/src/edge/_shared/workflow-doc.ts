@@ -91,11 +91,13 @@ export const BLOCK_DOC: Record<BlockKind, BlockDoc> = {
   rule: { role: "qualifier", compiles: "## Règles", attachLabel: "Règle", defaults: { label: "", body: "" } },
   context: { role: "qualifier", compiles: "## Contexte", attachLabel: "Contexte", defaults: { label: "", body: "", refs: [], scope: "global" } },
   resource: { role: "qualifier", compiles: "## Ressources", attachLabel: "Ressource", defaults: { label: "", body: "" } },
-  // Un outil, à deux niveaux de précision : une CAPACITÉ (« cherche sur le
-  // web ») ou une ACTION nommée sur une app connectée (« hubspot →
-  // list_deals »). La seconde est ce qui fait d'un workflow une automatisation :
-  // l'agent ne choisit plus l'appel, il l'exécute.
-  tool: { role: "qualifier", compiles: "## Outils à utiliser", attachLabel: "Outil imposé", defaults: { label: "", body: "", tool: "web_search", required: true, provider: "", action: "", args: {}, code: "", output_var: "" } },
+  // Un outil, à trois niveaux de précision : une CAPACITÉ (« cherche sur le
+  // web »), une ACTION nommée sur une app connectée (« hubspot → list_deals »),
+  // ou des SERVEURS MCP (tool = "mcp") avec tous leurs outils ou une sélection.
+  // L'action est ce qui fait d'un workflow une automatisation : l'agent ne
+  // choisit plus l'appel, il l'exécute. Les serveurs MCP d'une procédure sont
+  // ouverts au run qui l'exécute (workflow-engine.ts, mcpGrantsOf).
+  tool: { role: "qualifier", compiles: "## Outils à utiliser", attachLabel: "Outil imposé", defaults: { label: "", body: "", tool: "web_search", required: true, provider: "", action: "", args: {}, code: "", output_var: "", mcp: [] } },
   deliverable: { role: "qualifier", compiles: "## Livrables", attachLabel: "Produit", defaults: { label: "", body: "", format: "report" } },
   memory: { role: "qualifier", compiles: "## À mémoriser", attachLabel: "À mémoriser", defaults: { label: "", body: "", scope: "team" } },
   // Un intertitre dans la procédure. Il ne fait rien : il NOMME un passage, ce
@@ -523,7 +525,79 @@ export function varNamesOf(graph: WfGraph): string[] {
   return names;
 }
 
+/**
+ * Un serveur MCP retenu par un bloc Outil : TOUS ses outils (`tools` vide) ou
+ * une sélection. Un bloc peut en retenir plusieurs — « les outils de lecture
+ * de mcp-prd, et tout mcp-hub » — et c'est ce qui donne à une étape le jeu
+ * d'outils exact dont elle a besoin, ni plus ni moins.
+ */
+export interface McpSelection { server_id: string; server_name: string; tools: string[] }
+
+/** Le jeu d'outils MCP qu'un run obtient d'un workflow : par serveur, tous ses
+ *  outils (`tools` vide) ou ceux nommés. */
+export interface McpGrant { server_id: string; tools: string[] }
+
+const MCP_NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+
+/** Les serveurs MCP d'un bloc Outil, nettoyés : un serveur une seule fois, des
+ *  noms d'outils plausibles, au plus 20 serveurs et 100 outils chacun. */
+export function mcpSelectionsOf(data: Record<string, unknown> | null | undefined): McpSelection[] {
+  if (str(data?.tool).trim() !== "mcp") return [];
+  const raw = Array.isArray(data?.mcp) ? (data!.mcp as unknown[]) : [];
+  const out: McpSelection[] = [];
+  for (const r of raw.slice(0, 20)) {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const id = str(o.server_id).trim();
+    if (!id || out.some((s) => s.server_id === id)) continue;
+    const tools = (Array.isArray(o.tools) ? o.tools : []).map((t) => str(t).trim()).filter((t) => MCP_NAME_RE.test(t));
+    out.push({ server_id: id, server_name: str(o.server_name).trim() || id.slice(0, 8), tools: [...new Set(tools)].slice(0, 100) });
+  }
+  return out;
+}
+
+/**
+ * Ce que les blocs Outil d'un workflow ouvrent comme accès MCP au run qui
+ * l'exécute : l'union par serveur, et « tous ses outils » l'emporte sur une
+ * sélection. Le moteur valide ensuite chaque serveur (même projet, activé).
+ */
+export function mcpGrantsOf(graph: WfGraph): McpGrant[] {
+  const byServer = new Map<string, Set<string> | "all">();
+  for (const n of graph.nodes) {
+    if (n.type !== "tool") continue;
+    for (const s of mcpSelectionsOf(n.data)) {
+      const prev = byServer.get(s.server_id);
+      if (prev === "all" || s.tools.length === 0) { byServer.set(s.server_id, "all"); continue; }
+      const set = prev ?? new Set<string>();
+      for (const t of s.tools) set.add(t);
+      byServer.set(s.server_id, set);
+    }
+  }
+  return [...byServer].map(([server_id, v]) => ({ server_id, tools: v === "all" ? [] : [...v].sort() }));
+}
+
+/** Le nom d'outil qu'un agent voit pour un outil MCP (internal-agent-tools.ts) :
+ *  `mcp_<serveur>_<outil>`. Le playbook le cite tel quel, pour que la consigne
+ *  désigne exactement ce que l'agent peut appeler. */
+export function mcpToolName(serverName: string, tool: string): string {
+  const slug = serverName.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase() || "mcp";
+  return `mcp_${slug}_${tool}`.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 60);
+}
+
 export function toolCall(data: Record<string, unknown> | null | undefined): { text: string; isAction: boolean } {
+  const mcp = mcpSelectionsOf(data);
+  if (mcp.length) {
+    // UN outil d'UN serveur, avec des arguments : c'est un appel exact, comme
+    // une action d'app. Sinon c'est un jeu d'outils que l'étape met à
+    // disposition — et impose, si le bloc est obligatoire.
+    const clean = cleanArgs(data?.args);
+    if (mcp.length === 1 && mcp[0].tools.length === 1 && Object.keys(clean).length > 0) {
+      return { text: "`" + mcpToolName(mcp[0].server_name, mcp[0].tools[0]) + "` avec " + JSON.stringify(clean), isAction: true };
+    }
+    const text = mcp.map((s) => s.tools.length
+      ? `serveur MCP « ${s.server_name} » : ${s.tools.map((t) => "`" + mcpToolName(s.server_name, t) + "`").join(", ")}`
+      : `serveur MCP « ${s.server_name} » : tous ses outils (\`${mcpToolName(s.server_name, "")}*\`)`).join(" ; ");
+    return { text, isAction: false };
+  }
   const provider = str(data?.provider).trim();
   const action = str(data?.action).trim();
   if (provider && action) {

@@ -54,6 +54,15 @@ llm:
   # La clé n'est jamais écrite ici : exportez LLM_API_KEY avant de lancer l'installateur
   # (ou rangez-la dans Vault, ou ajoutez-la au Secret du backend).
 
+# Kubernetes et OpenShift : les serveurs MCP des clusters, joints en direct en mTLS
+# (architecture Hub, docs/architecture-hub.md).
+# mcp:
+#   internalHosts: [mcp.apps-int.*.acme.fr]      # motifs des hôtes ; * remplace un label
+#   clientCert:
+#     issuer: platform-internal-ca               # ClusterIssuer cert-manager (CN founderos-ai-platform)
+#     # secretName: founderos-mcp-client         # ou un Secret TLS existant, à la place d'issuer
+#     caConfigMap: platform-internal-ca-bundle   # AC des certificats des serveurs (clé ca.crt)
+
 secrets:
   # generate : l'installateur crée les clés (chiffrement, signature, Supabase) ;
   # vault : des ExternalSecret les recopient de Vault ; existing : les Secrets existent déjà.

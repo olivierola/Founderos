@@ -18,14 +18,14 @@ export const SERVERS: Record<string, ServerModule<any>> = {
 };
 
 /**
- * Un serveur par cluster : plusieurs modules derrière un seul point d'accès
- * MCP (MCP_SERVER=openshift,argocd). Une audience Keycloak (`mcp-<cluster>`),
- * un certificat, un rôle Vault par cluster, et FounderOS ne déclare qu'un
- * serveur par cluster.
+ * Un serveur par cluster : tous les modules utiles à ce cluster derrière un
+ * seul point d'accès MCP (MCP_SERVER=openshift,argocd,observability). Un jeton
+ * tournant, un certificat et un jeu de comptes de service par cluster ; FounderOS
+ * ne déclare qu'un serveur par cluster.
  *
  * Chaque module garde sa configuration (`{ "openshift": {…}, "argocd": {…} }`),
- * ses identifiants Vault et ses contrôles. Les trois verrous ne changent pas :
- * jeton d'appel, décision OPA par tool, identifiant éphémère.
+ * ses identifiants, ses contrôles et ses vérifications. Les verrous ne changent
+ * pas : jeton d'appel, décision OPA par tool, identifiant de courte durée.
  */
 export function combineModules(keys: string[]): ServerModule<Record<string, unknown>> {
   const unique = [...new Set(keys)];
@@ -47,6 +47,9 @@ export function combineModules(keys: string[]): ServerModule<Record<string, unkn
         seen.add(t.name);
       }
       return tools;
+    },
+    checks(deps) {
+      return modules.flatMap(([k, m]) => m.checks?.({ ...deps, config: deps.config[k] }) ?? []);
     },
   };
 }

@@ -222,17 +222,17 @@ export function DocsPage() {
               <div className="relative max-w-md">
                 <Search
                   aria-hidden
-                  className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a94a6]"
+                  className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8f8f99]"
                 />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   aria-label="Search the documentation"
                   placeholder="Search, approval, credits, MCP…"
-                  className="h-12 w-full rounded-full border border-[#e6e9ef] bg-white pl-11 pr-4 text-[14.5px] text-[#0f1728]  outline-none transition-colors placeholder:text-[#8a94a6] focus:border-[#006edd]"
+                  className="h-12 w-full rounded-[10px] border border-[#e8e8ee] bg-white pl-11 pr-4 text-[14.5px] text-[#0d0d0d]  outline-none transition-colors placeholder:text-[#8f8f99] focus:border-[#4f1ad6]"
                 />
               </div>
-              <p className="mt-3 pl-1 text-[13px] text-[#4b5567]" role="status">
+              <p className="mt-3 pl-1 text-[13px] text-[#5c5c66]" role="status">
                 {query.trim()
                   ? `${shown.length} topic${shown.length > 1 ? "s" : ""} out of ${TOPICS.length}`
                   : `${TOPICS.length} topics`}
@@ -240,8 +240,8 @@ export function DocsPage() {
             </Reveal>
 
             {shown.length === 0 ? (
-              <div className="mt-12 rounded-[24px] bg-[#f5f7fa] p-8">
-                <p className="text-[15.5px] leading-[1.6] text-[#0f1728]">
+              <div className="mt-12 rounded-[24px] bg-[#f8f8fa] p-8">
+                <p className="text-[15.5px] leading-[1.6] text-[#0d0d0d]">
                   Nothing on “{query.trim()}” yet. Write to us: what is missing here is usually what we should
                   have explained first.
                 </p>
@@ -268,19 +268,19 @@ export function DocsPage() {
                         <Reveal key={t.id} delay={Math.min(i, 3) * 70} className="h-full">
                           <article
                             id={t.id}
-                            className="hn-card hn-hover h-full rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-7 sm:p-9"
+                            className="hn-card hn-hover h-full rounded-[24px] border border-[#e8e8ee] bg-[#f5f5f8] p-7 sm:p-9"
                           >
                             <MonoLabel>{t.section}</MonoLabel>
-                            <h3 className="mt-4 text-[21px] font-semibold leading-[1.2] tracking-[-0.035em] text-[#0f1728] sm:text-[23px]">
+                            <h3 className="mt-4 text-[21px] font-semibold leading-[1.2] tracking-[-0.035em] text-[#0d0d0d] sm:text-[23px]">
                               {t.title}
                             </h3>
-                            <p className="mt-4 text-[15px] leading-[1.6] text-[#4b5567]">{t.body}</p>
+                            <p className="mt-4 text-[15px] leading-[1.6] text-[#5c5c66]">{t.body}</p>
                             {t.points && (
-                              <ul className="mt-6 space-y-3 border-t border-[#e6e9ef] pt-6">
+                              <ul className="mt-6 space-y-3 border-t border-[#e8e8ee] pt-6">
                                 {t.points.map((p) => (
-                                  <li key={p} className="flex gap-3 text-[14px] leading-[1.5] text-[#0f1728]">
+                                  <li key={p} className="flex gap-3 text-[14px] leading-[1.5] text-[#0d0d0d]">
                                     <span className="mt-[1px]">
-                                      <CheckCircle weight="fill" className="h-5 w-5 text-[#006edd]" />
+                                      <CheckCircle weight="fill" className="h-5 w-5 text-[#4f1ad6]" />
                                     </span>
                                     <span>{p}</span>
                                   </li>
@@ -296,10 +296,10 @@ export function DocsPage() {
             )}
 
             <Reveal delay={120}>
-              <div className="mt-16 flex flex-col gap-6 rounded-[24px] bg-[#f5f7fa] p-8 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-16 flex flex-col gap-6 rounded-[24px] bg-[#f8f8fa] p-8 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <MonoLabel>What this page does not cover yet</MonoLabel>
-                  <p className="mt-4 max-w-[64ch] text-[15px] leading-[1.6] text-[#0f1728]">
+                  <p className="mt-4 max-w-[64ch] text-[15px] leading-[1.6] text-[#0d0d0d]">
                     There is no public API reference or step-by-step integration guide yet. We will not link to
                     pages that do not exist: when those guides are written, they will appear here. Until then, a
                     question sent through the contact form gets a real answer.

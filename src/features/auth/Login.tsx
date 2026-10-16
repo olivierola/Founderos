@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { Provider } from "@supabase/supabase-js";
@@ -30,8 +30,22 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The company SSO, when this installation has one. Until it is known the form
-  // stays hidden, so an SSO-only organisation never flashes a password field.
-  const { data: sso } = useQuery({ queryKey: ["sso-login-options"], queryFn: fetchLoginOptions, staleTime: 60_000 });
+  // stays hidden, so an SSO-only organisation never flashes a password field —
+  // but only for a moment: a query that never settles (paused by a browser
+  // that believes it is offline, a request left hanging) used to leave the
+  // page with no form at all. `networkMode: "always"` runs it regardless of
+  // what the browser says about the network.
+  const { data: sso, isError: ssoFailed } = useQuery({
+    queryKey: ["sso-login-options"],
+    queryFn: fetchLoginOptions,
+    staleTime: 60_000,
+    networkMode: "always",
+  });
+  const [waitedForSso, setWaitedForSso] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setWaitedForSso(true), 1500);
+    return () => window.clearTimeout(t);
+  }, []);
 
   if (!authLoading && session) {
     return <Navigate to={next} replace />;
@@ -135,7 +149,7 @@ export function LoginPage() {
       ssoProviders={sso?.providers.map((p) => ({ id: p.id, label: p.name, preset: p.preset }))}
       onSso={handleSso}
       onSsoDiscover={sso?.discovery ? handleSsoDiscover : undefined}
-      passwordEnabled={!!sso && !(sso.sso_only && hasSso)}
+      passwordEnabled={sso ? !(sso.sso_only && hasSso) : waitedForSso || ssoFailed}
       ssoSetupHref={settingUpSso ? undefined : `/login?next=${encodeURIComponent(SSO_SETUP_PATH)}`}
     />
   );

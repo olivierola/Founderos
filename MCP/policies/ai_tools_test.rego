@@ -31,6 +31,11 @@ test_operator_restart_prd_needs_approval if {
 	tools.decision == "approval_required" with input as {"tool": "deployment_restart", "cluster": "prd", "target_cluster": "prd", "params_hash": "h", "token": operator}
 }
 
+test_operator_restart_hub_needs_approval if {
+	tools.decision == "approval_required" with input as {"tool": "deployment_restart", "cluster": "hub", "target_cluster": "hub", "params_hash": "h", "token": operator}
+	tools.decision == "approval_required" with input as {"tool": "app_sync", "cluster": "hub", "target_cluster": "hub", "params_hash": "h", "token": operator}
+}
+
 test_prd_restart_allowed_with_approval_from_someone_else if {
 	approval := {"id": "a1", "tool": "deployment_restart", "target_cluster": "prd", "params_hash": "h", "approver": "u-carol"}
 	tools.decision == "allow" with input as {"tool": "deployment_restart", "cluster": "prd", "target_cluster": "prd", "params_hash": "h", "token": operator, "approval": approval}

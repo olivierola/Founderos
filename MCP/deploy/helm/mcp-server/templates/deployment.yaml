@@ -63,7 +63,9 @@ spec:
             {{- if .Values.opa.enabled }}
             - { name: OPA_URL, value: "http://127.0.0.1:8181" }
             {{- end }}
-            - { name: VAULT_ADDR, value: {{ .Values.vault.addr | quote }} }
+            {{- if .Values.vault.enabled }}
+            # Vault, en option : identifiants kv et vault-k8s.
+            - { name: VAULT_ADDR, value: {{ required "vault.addr est obligatoire avec vault.enabled" .Values.vault.addr | quote }} }
             - { name: VAULT_ROLE, value: {{ default (include "mcp.name" .) .Values.vault.role | quote }} }
             - { name: VAULT_AUTH_MOUNT, value: {{ default "kubernetes" .Values.vault.authMount | quote }} }
             - { name: VAULT_KV_MOUNT, value: {{ .Values.vault.kvMount | quote }} }
@@ -72,6 +74,11 @@ spec:
             {{- if .Values.vault.caConfigMap }}
             - { name: VAULT_CACERT, value: /etc/vault-ca/ca.crt }
             {{- end }}
+            {{- end }}
+            - { name: MCP_RATE_PER_MINUTE, value: {{ .Values.limits.ratePerMinute | quote }} }
+            - { name: MCP_RATE_BURST, value: {{ .Values.limits.burst | quote }} }
+            - { name: MCP_MAX_CONCURRENCY, value: {{ .Values.limits.maxConcurrency | quote }} }
+            - { name: MCP_TOOL_TIMEOUT, value: {{ .Values.limits.toolTimeout | quote }} }
             - { name: TLS_CERT_FILE, value: /etc/mcp-tls/tls.crt }
             - { name: TLS_KEY_FILE, value: /etc/mcp-tls/tls.key }
             - { name: TLS_CLIENT_CA_FILE, value: /etc/mcp-client-ca/ca.crt }
@@ -104,15 +111,17 @@ spec:
             - { name: client-ca, mountPath: /etc/mcp-client-ca, readOnly: true }
             - { name: policies, mountPath: /policies, readOnly: true }
             - { name: kube-api-access, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true }
-            {{- if .Values.vault.caConfigMap }}
+            {{- if and .Values.vault.enabled .Values.vault.caConfigMap }}
             - { name: vault-ca, mountPath: /etc/vault-ca, readOnly: true }
+            {{- end }}
+            {{- range .Values.secretMounts }}
+            - { name: secret-{{ .name }}, mountPath: {{ .mountPath | default (printf "/etc/mcp-secrets/%s" .name) }}, readOnly: true }
             {{- end }}
             {{- if .Values.approval.jwksConfigMap }}
             - { name: approval-jwks, mountPath: /etc/approval-jwks, readOnly: true }
             {{- end }}
         {{- if .Values.opa.enabled }}
-        # OPA local au pod : les serveurs MCP de PRD ne sortent que vers leurs
-        # outils, Vault et le DNS — pas vers un OPA central sur IPS.
+        # OPA local au pod : la décision ne dépend d'aucun service extérieur.
         - name: opa
           image: {{ .Values.opa.image }}
           args: ["run", "--server", "--addr=127.0.0.1:8181", "--diagnostic-addr=0.0.0.0:8282", "--log-format=json", "--disable-telemetry", "/policies"]
@@ -155,24 +164,36 @@ spec:
             items:
               - { key: ai_tools.rego, path: ai_tools.rego }
               - { key: catalog.json, path: catalog/data.json }
-        # Remplace le montage automatique : jeton d'audience Vault valable
-        # 10 minutes, plus les AC du cluster (API Kubernetes, services OpenShift).
+        # Remplace le montage automatique : le jeton du pod (une heure, renouvelé
+        # par le kubelet), dont le seul droit est de demander les jetons courts
+        # des comptes dédiés (rbac.yaml) ; les AC du cluster ; son namespace.
         - name: kube-api-access
           projected:
             sources:
+              - serviceAccountToken: { path: token, expirationSeconds: 3607 }
+              {{- if .Values.vault.enabled }}
               - serviceAccountToken:
                   path: vault-token
                   audience: {{ .Values.vault.tokenAudience }}
                   expirationSeconds: {{ .Values.vault.tokenExpirationSeconds }}
+              {{- end }}
               - configMap:
                   name: kube-root-ca.crt
                   items: [{ key: ca.crt, path: ca.crt }]
               - configMap:
                   name: openshift-service-ca.crt
+                  optional: true
                   items: [{ key: service-ca.crt, path: service-ca.crt }]
-        {{- if .Values.vault.caConfigMap }}
+              - downwardAPI:
+                  items: [{ path: namespace, fieldRef: { fieldPath: metadata.namespace } }]
+        {{- if and .Values.vault.enabled .Values.vault.caConfigMap }}
         - name: vault-ca
           configMap: { name: {{ .Values.vault.caConfigMap }} }
+        {{- end }}
+        {{- range .Values.secretMounts }}
+        # Identifiant d'outil (jeton Argo CD, Grafana, clé PRTG…) : relu à chaque appel.
+        - name: secret-{{ .name }}
+          secret: { secretName: {{ .secretName }} }
         {{- end }}
         {{- if .Values.approval.jwksConfigMap }}
         # Clés publiques des jetons d'approbation (clé jwks.json), relues à chaque changement

@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { BotAvatar, type BotAvatarState } from "bot-avatars";
 import { cn } from "@/lib/utils";
 import { BOT_PREFIX, autoBody, botAvatarLookProps, nameHash, parseBotLook } from "@/lib/bot-avatar-look";
+import { HUMAN_PREFIX, parseHumanLook } from "@/lib/human-avatar-look";
+import { HumanAvatar } from "@/components/human-avatar/HumanAvatar";
 
 // An agent's visual identity: an ANIMATED bot (bot-avatars) rather than the
 // frozen DiceBear portrait it used to be. One component, so every surface —
@@ -15,6 +17,11 @@ import { BOT_PREFIX, autoBody, botAvatarLookProps, nameHash, parseBotLook } from
 // wears its own colour; the animation offset always is, so a row of them never
 // blinks in unison. A portrait the user actually uploaded still wins: it is
 // their choice, not a default.
+//
+// The studio also makes 3D humanoids (`human:…`, see human-avatar-look.ts),
+// on the same contract — the value says everything, the name fills the gaps
+// — drawn by the shared WebGL engine, with the bot standing in when the
+// browser gives no WebGL.
 
 const GENERATED_HOSTS = ["dicebear.com", "api.dicebear"];
 
@@ -22,13 +29,13 @@ const GENERATED_HOSTS = ["dicebear.com", "api.dicebear"];
  *  avatars" the bots replace, as opposed to a real uploaded image. */
 function isGeneratedPortrait(url: string | null | undefined): boolean {
   if (!url) return true;
-  if (url.startsWith(BOT_PREFIX)) return true;
+  if (url.startsWith(BOT_PREFIX) || url.startsWith(HUMAN_PREFIX)) return true;
   return GENERATED_HOSTS.some((h) => url.includes(h));
 }
 
 export function AgentIdentity({
   url, seed, size = 32, rounded = "rounded-2xl", className, state = "default",
-  face = "eyes", interactive = true, paused,
+  face = "eyes", interactive = true, paused, framing,
 }: {
   style?: "avatar" | "orb" | null;
   url?: string | null;
@@ -45,12 +52,16 @@ export function AgentIdentity({
   /** The eyes follow the pointer and a click makes it hop. Off in dense lists. */
   interactive?: boolean;
   paused?: boolean;
+  /** A person only: the head and shoulders, or the bust. By default the head
+   *  below 48 px, where a whole bust would leave a face of a few pixels. */
+  framing?: "head" | "bust";
   glow?: boolean;
   lightOrb?: boolean;
 }) {
   const key = seed || "agent";
-  const { look, offset } = useMemo(() => ({
+  const { look, human, offset } = useMemo(() => ({
     look: botAvatarLookProps(parseBotLook(url) ?? {}, autoBody(key)),
+    human: parseHumanLook(url),
     offset: ((nameHash(key) >>> 8) % 1000) / 1000,
   }), [key, url]);
 
@@ -94,26 +105,42 @@ export function AgentIdentity({
   // clé de cache de la librairie, une valeur flottante instable la viderait.
   const ss = Math.max(1, Math.round(Math.min(3 / libMult, MAX_RENDER_PX / (size * libMult)) * 100) / 100);
 
+  const bot = (
+    <span
+      className="absolute left-1/2 top-1/2 leading-none"
+      style={{ transform: `translate(-50%, -50%) scale(${1 / ss})` }}
+    >
+      <BotAvatar
+        face={face}
+        {...look}
+        state={state}
+        size={size * ss}
+        seed={offset}
+        interactive={interactive}
+        paused={paused}
+        aria-label={seed ? `${seed}, avatar` : "Avatar"}
+      />
+    </span>
+  );
+
   return (
     <span
       className={cn("relative inline-block shrink-0 align-middle", className)}
       style={{ width: size, height: size }}
     >
-      <span
-        className="absolute left-1/2 top-1/2 leading-none"
-        style={{ transform: `translate(-50%, -50%) scale(${1 / ss})` }}
-      >
-        <BotAvatar
-          face={face}
-          {...look}
+      {human ? (
+        <HumanAvatar
+          look={human}
+          seed={key}
+          size={size}
           state={state}
-          size={size * ss}
-          seed={offset}
           interactive={interactive}
           paused={paused}
-          aria-label={seed ? `${seed}, avatar` : "Avatar"}
+          closeUp={framing ? framing === "head" : undefined}
+          fallback={bot}
+          label={seed ? `${seed}, avatar` : "Avatar"}
         />
-      </span>
+      ) : bot}
     </span>
   );
 }

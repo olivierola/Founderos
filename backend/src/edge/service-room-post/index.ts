@@ -10,7 +10,7 @@ import { defineHandler } from "../../compat/index.ts";
 // service_room_messages.
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { type ChatMessage } from "../_shared/ai.ts";
+import { callAi, type ChatMessage } from "../_shared/ai.ts";
 import { type InternalToolContext, type AgentToolRow, type ArtifactDraft } from "../_shared/internal-agent-tools.ts";
 import { runParallelSubagents } from "../_shared/subagents.ts";
 import { classifyTier, modelForTier, resolveProvider } from "../_shared/model-router.ts";
@@ -126,6 +126,32 @@ export default defineHandler(async (req) => {
       });
       if ("error" in created) return jsonResponse({ error: created.error }, { status: created.status });
       return jsonResponse({ ok: true, mission_id: created.missionId });
+    }
+
+    // A reaction (👍 👎 ❤️…) on an agent's message reaches that agent. The row
+    // itself is written client-side under RLS (0287); this only lets the agent
+    // decide whether it has something to say about it. Folded in here for the
+    // same reason as the ops above: the function ceiling.
+    if (str(body.op) === "react") {
+      const messageId = str(body.message_id);
+      const emoji = str(body.emoji).trim().slice(0, 16);
+      if (!messageId || !emoji) return jsonResponse({ error: "message_id and emoji required" }, { status: 400 });
+      const admin = createServiceClient();
+      const { data: row } = await admin.from("service_room_messages")
+        .select("id, room_id, workspace_id, project_id, author_kind, agent_id, content, status, mission_id, created_at")
+        .eq("id", messageId).maybeSingle();
+      if (!row) return jsonResponse({ error: "Message not found" }, { status: 404 });
+      const msg = row as ReactedMessage;
+      const { data: mem } = await admin.from("workspace_members").select("role")
+        .eq("workspace_id", msg.workspace_id).eq("user_id", userId).maybeSingle();
+      if (!mem) return jsonResponse({ error: "Not authorized" }, { status: 403 });
+      if (msg.author_kind !== "agent" || !msg.agent_id || msg.status !== "done") {
+        return jsonResponse({ ok: true, notified: false });
+      }
+      const er1 = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+      const job = answerReaction(admin, msg, emoji, userId).catch((e) => console.error("reaction reply failed", e));
+      if (er1?.waitUntil) er1.waitUntil(job); else await job;
+      return jsonResponse({ ok: true, notified: true });
     }
 
     const roomId = str(body.room_id);
@@ -256,6 +282,78 @@ export default defineHandler(async (req) => {
     return jsonResponse({ error: e instanceof Error ? e.message : "Erreur serveur" }, { status: 500 });
   }
 });
+
+interface ReactedMessage {
+  id: string; room_id: string; workspace_id: string; project_id: string;
+  author_kind: string; agent_id: string | null; content: string; status: string;
+  mission_id: string | null; created_at: string;
+}
+
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/**
+ * Une réaction sur le message d'un agent le PRÉVIENT sans l'obliger à
+ * répondre — comme un collègue qui voit un 👍 sous son message et passe à la
+ * suite, ou un 👎 et demande ce qui cloche. Un appel court, sans outils ni
+ * run : on ne relance pas un tour complet (outils, sous-agents, livrables) pour
+ * un emoji. S'il répond, sa réponse arrive dans le fil comme n'importe quel
+ * message ; sinon, rien ne bouge.
+ */
+async function answerReaction(admin: Admin, msg: ReactedMessage, emoji: string, userId: string) {
+  // Une rafale de réactions ne doit pas produire une rafale de réponses : si
+  // l'agent a déjà reparlé depuis ce message dans les deux dernières minutes,
+  // il a déjà eu l'occasion de réagir.
+  const since = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { data: spoke } = await admin.from("service_room_messages")
+    .select("id").eq("room_id", msg.room_id).eq("agent_id", msg.agent_id!)
+    .gt("created_at", msg.created_at).gt("created_at", since).limit(1).maybeSingle();
+  if (spoke) return;
+
+  const { data: agent } = await admin.from("internal_agents")
+    .select("id, name, persona, model").eq("id", msg.agent_id!).maybeSingle();
+  if (!agent) return;
+  const a = agent as { id: string; name: string; persona: string | null; model: string | null };
+  const { data: room } = await admin.from("service_rooms").select("title").eq("id", msg.room_id).maybeSingle();
+  const { data: who } = await admin.auth.admin.getUserById(userId);
+  const meta = (who?.user?.user_metadata ?? {}) as { full_name?: string; name?: string };
+  const person = meta.full_name || meta.name || who?.user?.email?.split("@")[0] || "Un membre de la room";
+
+  // Le fil juste avant, pour que la réaction se lise dans son contexte.
+  const { data: before } = await admin.from("service_room_messages")
+    .select("author_kind, agent_id, content").eq("room_id", msg.room_id).eq("status", "done")
+    .lte("created_at", msg.created_at).order("created_at", { ascending: false }).limit(6);
+  const thread = ((before ?? []) as Array<{ author_kind: string; agent_id: string | null; content: string }>)
+    .reverse()
+    .filter((m) => m.content.trim())
+    .map((m) => `${m.author_kind === "user" ? "[Humain]" : m.agent_id === a.id ? "[Toi]" : "[Autre collaborateur]"} ${clip(m.content, 600)}`)
+    .join("\n\n");
+
+  const res = await callAi({
+    task: "chat_simple",
+    // Sur SON fournisseur, comme ses autres tours : une réponse à une réaction
+    // reste la voix du même agent.
+    provider: resolveProvider(a.model),
+    temperature: 0.5,
+    maxTokens: 220,
+    systemPrompt: [
+      `Tu es ${a.name}${a.persona ? ` — ${a.persona}` : ""}, un collaborateur IA dans la room « ${(room as { title?: string } | null)?.title ?? "room"} ».`,
+      `${person} vient de réagir ${emoji} à l'un de tes messages.`,
+      "Une réaction n'appelle pas toujours de réponse : dans une messagerie, on ne répond presque jamais à un 👍.",
+      "Réponds seulement si c'est utile. Une réaction négative ou perplexe (👎, 😕, 🤔…) mérite une courte question ou une proposition de correction ; une réaction positive n'appelle le plus souvent rien.",
+      "Si tu ne réponds pas, renvoie exactement NO_REPLY.",
+      "Sinon : une ou deux phrases, dans la langue de la conversation, adressées à la personne, sans formule creuse ni remerciement appuyé.",
+    ].join("\n"),
+    userPrompt: `Le fil, jusqu'au message concerné :\n\n${thread}\n\nRéaction de ${person} : ${emoji}`,
+  });
+  const reply = res.content.trim();
+  if (!reply || /NO_REPLY/i.test(reply)) return;
+
+  await admin.from("service_room_messages").insert({
+    room_id: msg.room_id, workspace_id: msg.workspace_id, project_id: msg.project_id,
+    author_kind: "agent", agent_id: a.id, content: reply, status: "done", mission_id: msg.mission_id,
+  });
+  await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", msg.room_id);
+}
 
 /**
  * Create a mission from the board form.

@@ -142,7 +142,7 @@ export function ChangelogPage() {
               <div className="lg:sticky lg:top-28 lg:self-start">
                 <Reveal>
                   <SectionTitle frame={`${CHANGELOG.length} entries,`} claim="newest first" />
-                  <p className="mt-6 max-w-[40ch] text-[15px] leading-[1.6] text-[#4b5567]">
+                  <p className="mt-6 max-w-[40ch] text-[15px] leading-[1.6] text-[#5c5c66]">
                     An entry is written when the thing is in production, not when it is merged. If a feature is
                     not here, it has not shipped yet.
                   </p>
@@ -157,9 +157,9 @@ export function ChangelogPage() {
               <ol className="space-y-2.5">
                 {CHANGELOG.map((e, i) => (
                   <Reveal key={e.date + e.title} delay={Math.min(i, 4) * 70}>
-                    <li className="hn-card hn-hover rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-7 sm:p-9">
+                    <li className="hn-card hn-hover rounded-[24px] border border-[#e8e8ee] bg-[#f5f5f8] p-7 sm:p-9">
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="flex items-center gap-2 text-[13px] font-semibold text-[#4b5567]">
+                        <span className="flex items-center gap-2 text-[13px] font-semibold text-[#5c5c66]">
                           <History className="h-4 w-4" />
                           {fmtDate(e.date)}
                         </span>
@@ -167,14 +167,14 @@ export function ChangelogPage() {
                           {KIND_LABEL[e.tag]}
                         </Chip>
                       </div>
-                      <h3 className="mt-4 text-balance text-[21px] font-semibold leading-[1.2] tracking-[-0.035em] text-[#0f1728] sm:text-[24px]">
+                      <h3 className="mt-4 text-balance text-[21px] font-semibold leading-[1.2] tracking-[-0.035em] text-[#0d0d0d] sm:text-[24px]">
                         {e.title}
                       </h3>
-                      <ul className="mt-6 space-y-3 border-t border-[#e6e9ef] pt-6">
+                      <ul className="mt-6 space-y-3 border-t border-[#e8e8ee] pt-6">
                         {e.items.map((it) => (
-                          <li key={it} className="flex gap-3 text-[14.5px] leading-[1.5] text-[#0f1728]">
+                          <li key={it} className="flex gap-3 text-[14.5px] leading-[1.5] text-[#0d0d0d]">
                             <span className="mt-[1px]">
-                              <CheckCircle weight="fill" className="h-5 w-5 text-[#006edd]" />
+                              <CheckCircle weight="fill" className="h-5 w-5 text-[#4f1ad6]" />
                             </span>
                             <span>{it}</span>
                           </li>

@@ -54,6 +54,13 @@ import {
   GitPullRequestIcon,
   GitForkIcon,
   TargetIcon,
+  StampIcon,
+  IdentificationBadgeIcon,
+  FunnelIcon,
+  SteeringWheelIcon,
+  ShieldCheckeredIcon,
+  ShieldWarningIcon,
+  CrosshairIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -72,9 +79,10 @@ export interface SubNavItem {
  * Product zones — the top-level story the PrimarySidebar tells, top to bottom.
  * RUN = where the AI workforce does the work · CONTROL = the governance/control
  * plane an enterprise buyer (RSSI / Head of AI) signs off on · CONNECT = the
- * hands (integrations) and the workspace/security settings.
+ * hands (integrations) · ADMIN = l'organisation, les accès, l'installation et
+ * l'abonnement (l'ancien dashboard Admin, fusionné ici).
  */
-export type ZoneId = "run" | "control" | "connect";
+export type ZoneId = "run" | "control" | "connect" | "admin";
 
 export interface Zone {
   id: ZoneId;
@@ -88,6 +96,7 @@ export const ZONES: Zone[] = [
   { id: "run", label: "Run" },
   { id: "control", label: "Control", emphasis: true },
   { id: "connect", label: "Connect" },
+  { id: "admin", label: "Administration" },
 ];
 
 /**
@@ -114,8 +123,10 @@ export interface DashboardDef {
   /** Tailwind bg class for the icon tile in the switcher. */
   color: string;
 }
+// Un seul dashboard depuis la fusion avec l'Admin : les agents, leur gouvernance
+// et l'administration de l'organisation, dans le même rail.
 export const DASHBOARDS: DashboardDef[] = [
-  { id: "workforce", label: "AI Workforce", description: "Vos agents IA au travail", icon: RobotIcon, color: "bg-primary" },
+  { id: "workforce", label: "AI Workforce", description: "Agents, gouvernance et administration", icon: RobotIcon, color: "bg-primary" },
 ];
 
 export interface ModuleNavItem {
@@ -192,13 +203,19 @@ export function itemsInGroup(module: ModuleNavItem, group: string): SubNavItem[]
   return out;
 }
 
-/** The 3 AI-control-plane modules (share the same page namespace). */
-const AIOPS_MODULE_SLUGS = ["governance", "aiops", "finetuning"];
+/** The AI-control-plane modules (share the same page namespace). La
+ *  Gouvernance a rejoint l'Administration : ses onglets y sont en gov-*. */
+const AIOPS_MODULE_SLUGS = ["aiops", "finetuning"];
+const GOVERNANCE_TO_ADMIN: Record<string, string> = {
+  guardrails: "gov-guardrails", "agent-access": "gov-access", prompts: "gov-prompts",
+  costs: "gov-costs", "ops-incidents": "gov-incidents", "ft-security": "gov-security",
+};
 /** Full path to an AI Ops/Governance/Fine-tuning tab, resolving which of the 3
  *  modules owns it — so cross-module links keep working after the split. */
 export function aiopsTabPath(ws: string, proj: string, slug: string): string {
-  const mod = MODULES.find((m) => AIOPS_MODULE_SLUGS.includes(m.slug) && m.subItems.some((s) => s.slug === slug));
-  return `/app/${ws}/${proj}/${mod?.slug ?? "governance"}/${slug}`;
+  if (GOVERNANCE_TO_ADMIN[slug]) return `/app/${ws}/${proj}/admin/${GOVERNANCE_TO_ADMIN[slug]}`;
+  const mod = [...MODULES, ...HIDDEN_MODULES].find((m) => AIOPS_MODULE_SLUGS.includes(m.slug) && m.subItems.some((s) => s.slug === slug));
+  return `/app/${ws}/${proj}/${mod?.slug ?? "aiops"}/${slug}`;
 }
 
 export const MODULES: ModuleNavItem[] = [
@@ -219,19 +236,6 @@ export const MODULES: ModuleNavItem[] = [
   // l'exécute. Un produit qui ouvre sur la liste des agents vend un builder ;
   // un produit qui ouvre sur l'entreprise vend une workforce.
   {
-    slug: "company",
-    label: "Entreprise",
-    icon: BuildingsIcon,
-    color: "text-amber-400/70",
-    zone: "run",
-    subItems: [
-      { label: "Contexte", slug: "context", icon: BuildingsIcon },
-      { label: "Objectifs", slug: "objectives", icon: TargetIcon },
-      { label: "Carte", slug: "graph", icon: GitForkIcon },
-      { label: "ROI", slug: "roi", icon: CoinsIcon },
-    ],
-  },
-  {
     slug: "agent",
     label: "AI Workforce",
     icon: RobotIcon,
@@ -244,7 +248,6 @@ export const MODULES: ModuleNavItem[] = [
     // before they could find anyone.
     subItems: [
       { label: "Agents", slug: "agents", group: "Agents", icon: RobotIcon },
-      { label: "Base de connaissances", slug: "collections", group: "Connaissances", icon: BooksIcon },
       { label: "Skills", slug: "skills", group: "Compétences", icon: PuzzlePieceIcon },
       // Les parcours qui apprennent un outil à quelqu'un, guidés dans l'outil même
       // par l'extension (0218). Ils vivent à côté des Skills parce qu'ils en sont
@@ -254,24 +257,6 @@ export const MODULES: ModuleNavItem[] = [
       // Connecteurs is NOT here: a connection belongs to one service dashboard
       // (or to one person inside it) — see migration 0177. It lives as a tab of
       // the dashboard that owns it.
-    ],
-  },
-  {
-    slug: "crm",
-    label: "CRM",
-    icon: HandshakeIcon,
-    color: "text-emerald-400/60",
-    zone: "run",
-    // Projects live inside the CRM as records now (the standalone Projects
-    // super-module was retired). Simulations & App Testing moved to the "Outils
-    // IA" dashboard as their own modules.
-    subItems: [
-      // ── Dashboard (on top) ──
-      { label: "Overview", slug: "overview", group: "Dashboard", icon: ChartLineUpIcon },
-      { label: "Custom Dashboards", slug: "admin-custom-dashboards", icon: ChartPieIcon },
-      { label: "Alerts", slug: "admin-alerts", icon: BellIcon },
-      // ── CRM (below the dashboard) ──
-      { label: "Records", slug: "workspace", group: "CRM", icon: TableIcon },
     ],
   },
   // ── Support & PM supprimés (2026-07-17) après évaluation : tickets, projets,
@@ -287,19 +272,91 @@ export const MODULES: ModuleNavItem[] = [
   // HIDDEN_MODULES en bas de fichier).
   // ── Zone CONTROL — the AI control plane, split into 3 full modules ───────
   // Standard modules: their sub-items render as onglets in the SecondarySidebar.
+  // ── Zone ADMIN — l'ancien dashboard Admin, fusionné ici. Le slug « admin »
+  // garde les adresses /admin/<onglet> : les liens envoyés restent valables. ──
   {
-    slug: "governance",
-    label: "AI Governance",
-    icon: ScalesIcon,
-    color: "text-indigo-400/60",
-    zone: "control",
+    slug: "admin",
+    label: "Administration",
+    icon: GearSixIcon,
+    color: "text-muted-foreground",
+    zone: "admin",
+    // Les trois sections de l'ancien dashboard Admin, au complet et dans son
+    // ordre. (« Connecteurs » en était sorti avant la fusion : connecter une app
+    // relève de ce que les agents peuvent faire, voir les Connexions du service.)
     subItems: [
-      { label: "Guardrails", slug: "guardrails", icon: ShieldCheckIcon },
-      { label: "Accès agents", slug: "agent-access", icon: FingerprintIcon },
-      { label: "Prompts", slug: "prompts", icon: EyeIcon },
-      { label: "Dépenses", slug: "costs", icon: WalletIcon },
-      { label: "Incidents ops", slug: "ops-incidents", icon: SirenIcon },
-      { label: "Security", slug: "ft-security", icon: ShieldStarIcon },
+      { label: "Organisation", slug: "organisation", group: "Administration", icon: BuildingsIcon },
+      { label: "Accès", slug: "access", icon: ShieldCheckIcon },
+      { label: "Membres", slug: "members", icon: UsersThreeIcon },
+      { label: "Espaces de travail", slug: "workspaces", icon: KanbanIcon },
+      // Connecter un dépôt est un préalable de l'agent Vibe Code.
+      { label: "Dépôts", slug: "repositories", icon: GithubLogoIcon },
+      { label: "Sécurité", slug: "security", icon: LockKeyIcon },
+      // SSO de l'entreprise : fournisseur d'identité et rôles par groupe.
+      { label: "Authentification", slug: "sso", icon: IdentificationBadgeIcon },
+      // Slug de D6 conservé : les liens des notifications déjà envoyées restent valables.
+      { label: "Approbations", slug: "approbations-prd", icon: StampIcon },
+      // Réglages et diagnostic de l'installation (G4), servis par le backend Express.
+      { label: "Installation", slug: "installation", icon: GaugeIcon },
+      // « qu'ai-je le droit de faire ? » et « où sont passés mes crédits ? » : deux onglets.
+      { label: "Abonnements", slug: "subscription", group: "Abonnements", icon: SparkleIcon },
+      { label: "Consommation", slug: "usage", icon: GaugeIcon },
+      { label: "Facturation", slug: "billing", icon: CreditCardIcon },
+      { label: "Guardrails", slug: "gov-guardrails", group: "Gouvernance IA", icon: ShieldCheckIcon },
+      // Juste sous les Guardrails : c'est ce qui les rend applicables.
+      { label: "Jugement rapide", slug: "gov-typesafe", icon: ScalesIcon },
+      { label: "ContextIQ", slug: "gov-contextiq", icon: FunnelIcon },
+      { label: "AgentPilot", slug: "gov-agentpilot", icon: SteeringWheelIcon },
+      { label: "PolicyGuard", slug: "gov-policyguard", icon: ShieldCheckeredIcon },
+      { label: "SentinelFlow", slug: "gov-sentinelflow", icon: ShieldWarningIcon },
+      { label: "Accès agents", slug: "gov-access", icon: FingerprintIcon },
+      { label: "Prompts", slug: "gov-prompts", icon: EyeIcon },
+      { label: "Dépenses", slug: "gov-costs", icon: WalletIcon },
+      { label: "Incidents", slug: "gov-incidents", icon: SirenIcon },
+      { label: "Actions admin", slug: "gov-actions", icon: SealCheckIcon },
+      { label: "Périmètre pentest", slug: "gov-pentest-scope", icon: CrosshairIcon },
+      // Le seul onglet propre à l'ancien module Gouvernance (zone Control).
+      { label: "Sécurité des modèles", slug: "gov-security", icon: ShieldStarIcon },
+    ],
+  },
+  // NOTE: the former "Settings" module was folded into the Admin dashboard,
+  // itself merged into this one as the « Administration » module above. Its
+  // pages are reused there; old settings/* links redirect.
+  // The former "Integrations" module (Connected/Catalog/Credentials Vault/API
+  // Keys/Webhooks/Automation) was folded the same way, into a single
+  // "Connecteurs" tab — just the app catalog + connect action; the other
+  // sub-tabs were dropped, not moved. Old integrations/* links redirect.
+];
+
+/**
+ * Modules routés mais absents de la nav (PrimarySidebar / dashboards). Un
+ * module déplacé ici reste entièrement fonctionnel — deep links, actions CRM,
+ * breadcrumbs et SecondarySidebar (findModule le résout, buildModuleRoutes
+ * génère ses routes) — il disparaît juste du rail. Vide pour l'instant :
+ * support/pm/office/devops ont été re-surfacés dans MODULES le 2026-07-16 le
+ * temps que le user décide ce qu'il garde.
+ */
+/**
+ * Routed but absent from every dashboard. These are the surfaces the studio
+ * agents replaced: you no longer navigate to "Vibe Code" or "Test runs", you
+ * ask the Vibe Coder / QA Pilot agent. Their pages stay reachable by URL
+ * because they remain the configuration and inspection surface behind the
+ * engines the agents drive — connecting a repository, editing the coding
+ * instructions, opening a past run.
+ */
+export const HIDDEN_MODULES: ModuleNavItem[] = [
+  // Retirés de la navigation le 12/10/2026 (installation interne, équipe infra) :
+  // leurs pages restent joignables par adresse.
+  {
+    slug: "company",
+    label: "Entreprise",
+    icon: BuildingsIcon,
+    color: "text-amber-400/70",
+    zone: "run",
+    subItems: [
+      { label: "Contexte", slug: "context", icon: BuildingsIcon },
+      { label: "Objectifs", slug: "objectives", icon: TargetIcon },
+      { label: "Carte", slug: "graph", icon: GitForkIcon },
+      { label: "ROI", slug: "roi", icon: CoinsIcon },
     ],
   },
   {
@@ -337,32 +394,6 @@ export const MODULES: ModuleNavItem[] = [
       { label: "Settings", slug: "ft-settings", icon: GearSixIcon },
     ],
   },
-  // NOTE: the former "Settings" module was folded into the Admin dashboard
-  // (single-sidebar area at /admin, reached from the top-left dashboard
-  // switcher). Its pages are reused there; old settings/* links redirect.
-  // The former "Integrations" module (Connected/Catalog/Credentials Vault/API
-  // Keys/Webhooks/Automation) was folded the same way, into a single
-  // "Connecteurs" tab — just the app catalog + connect action; the other
-  // sub-tabs were dropped, not moved. Old integrations/* links redirect.
-];
-
-/**
- * Modules routés mais absents de la nav (PrimarySidebar / dashboards). Un
- * module déplacé ici reste entièrement fonctionnel — deep links, actions CRM,
- * breadcrumbs et SecondarySidebar (findModule le résout, buildModuleRoutes
- * génère ses routes) — il disparaît juste du rail. Vide pour l'instant :
- * support/pm/office/devops ont été re-surfacés dans MODULES le 2026-07-16 le
- * temps que le user décide ce qu'il garde.
- */
-/**
- * Routed but absent from every dashboard. These are the surfaces the studio
- * agents replaced: you no longer navigate to "Vibe Code" or "Test runs", you
- * ask the Vibe Coder / QA Pilot agent. Their pages stay reachable by URL
- * because they remain the configuration and inspection surface behind the
- * engines the agents drive — connecting a repository, editing the coding
- * instructions, opening a past run.
- */
-export const HIDDEN_MODULES: ModuleNavItem[] = [
   // DevOps, retiré de la nav le 2026-08-07. Ses pages restent routées parce
   // qu'elles sont la SEULE surface de configuration du runner auto-hébergé et
   // des serveurs — ce dont dépendent le mode sandbox/runner des agents et le
@@ -422,6 +453,33 @@ export const HIDDEN_MODULES: ModuleNavItem[] = [
       { label: "Fork", slug: "fork", icon: GitForkIcon },
       { label: "Preview", slug: "preview", icon: MonitorIcon },
       { label: "Personnaliser", slug: "customize", icon: FadersIcon },
+    ],
+  },
+];
+
+/**
+ * Modules éteints : ni dans la navigation, ni routés. Le CRM a été masqué le
+ * 12/10/2026 : son code reste, mais aucune route ne mène à ses pages et le
+ * serveur refuse ses appels (supabase/functions/_shared/crm-switch.ts). Pour le
+ * rallumer : le remettre dans MODULES et CRM_ENABLED=1 côté serveur.
+ */
+export const DISABLED_MODULES: ModuleNavItem[] = [
+  {
+    slug: "crm",
+    label: "CRM",
+    icon: HandshakeIcon,
+    color: "text-emerald-400/60",
+    zone: "run",
+    // Projects live inside the CRM as records now (the standalone Projects
+    // super-module was retired). Simulations & App Testing moved to the "Outils
+    // IA" dashboard as their own modules.
+    subItems: [
+      // ── Dashboard (on top) ──
+      { label: "Overview", slug: "overview", group: "Dashboard", icon: ChartLineUpIcon },
+      { label: "Custom Dashboards", slug: "admin-custom-dashboards", icon: ChartPieIcon },
+      { label: "Alerts", slug: "admin-alerts", icon: BellIcon },
+      // ── CRM (below the dashboard) ──
+      { label: "Records", slug: "workspace", group: "CRM", icon: TableIcon },
     ],
   },
 ];

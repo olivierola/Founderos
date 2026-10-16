@@ -13,7 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { SOLUTIONS } from "../../solutions";
 import { POSTS_BY_DATE, formatDate } from "../../blogPosts";
-import { AccordionList, ArtPanel, Btn, Card, Chip, Container, Eyebrow, FeatureCard, H, Head, P, ProductMark, ProductShot, type IconType } from "../HnKit";
+import { AccordionList, ArtPanel, Btn, Card, Chip, Container, Em, Eyebrow, FeatureCard, H, Head, P, ProductMark, ProductShot, type IconType } from "../HnKit";
 import { ChatMock, RunMock, ToolGrid } from "../Mocks";
 import { CATEGORY_ART, PRODUCTS, SOLUTION_ART } from "../site";
 
@@ -34,12 +34,12 @@ export function HomePrincipleHn() {
           <RunMock className="relative w-full max-w-[360px]" />
         </ArtPanel>
         <div>
-          <Chip className="border-[#d7e7fb] bg-[#eaf2ff] font-medium text-[#006edd]">The rule every Cloud collaborator runs under</Chip>
-          <blockquote className="mt-6 text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728]">
+          <Chip className="border-[#d7e7fb] bg-[#f1edfe] font-medium text-[#4f1ad6]">The rule every Cloud collaborator runs under</Chip>
+          <blockquote className="mt-6 text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d]">
             “Read freely. Write only with your approval. Keep a trace of everything.”
           </blockquote>
-          <div className="mt-6 text-[20px] font-medium leading-[1.3] text-[#0f1728]">Every Anduran Cloud collaborator</div>
-          <div className="text-[20px] font-medium leading-[1.3] text-[#4b5567]">unless you switch it to autonomous mode yourself</div>
+          <div className="mt-6 text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">Every Anduran Cloud collaborator</div>
+          <div className="text-[20px] font-medium leading-[1.3] text-[#5c5c66]">unless you switch it to autonomous mode yourself</div>
           <Btn to="/docs" variant="link" className="mt-8">
             Read how it works
           </Btn>
@@ -132,7 +132,7 @@ export function HomeGovernHn() {
         <div className="grid gap-10 px-6 pb-14 pt-20 sm:px-12 lg:grid-cols-2 lg:px-24">
           <div className="self-end">
             <Eyebrow tone="dark">{p.bestFor}</Eyebrow>
-            <H tone="white" className="mt-6 max-w-[18ch]">Governance built in, for teams that answer to an auditor.</H>
+            <H tone="white" className="mt-6 max-w-[18ch]">Governance built in, for teams that answer to <Em>an auditor.</Em></H>
           </div>
           <div className="lg:justify-self-end">
             <span className="inline-flex items-center rounded-full border border-white/15 bg-white/[0.05] px-5 py-3">
@@ -172,11 +172,11 @@ const TRUST = [
 
 export function HomeTrustHn() {
   return (
-    <section className="border-t border-[#e6e9ef] bg-white py-20 lg:py-28">
+    <section className="border-t border-[#e8e8ee] bg-white py-20 lg:py-28">
       <Container narrow>
         <Head
           eyebrow="Security"
-          title="Security and governance by design"
+          title={<>Security and governance <Em>by design</Em></>}
           lead="Every safeguard below is live in the product today, and verifiable. Certifications will appear here once they are issued."
         />
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -210,7 +210,7 @@ export function HomeTrustHn() {
 export function HomeBlogHn() {
   const posts = POSTS_BY_DATE.slice(0, 3);
   return (
-    <section className="border-t border-[#e6e9ef] bg-white py-20 lg:py-24">
+    <section className="border-t border-[#e8e8ee] bg-white py-20 lg:py-24">
       <Container narrow>
         <Head
           align="left"
@@ -219,7 +219,7 @@ export function HomeBlogHn() {
             <>
               Insights on running
               <br />
-              Cloud collaborators in production.
+              Cloud collaborators <Em>in production.</Em>
             </>
           }
           lead="Practical lessons on governance, adoption and engineering, from putting Cloud collaborators to work on real systems."
@@ -232,14 +232,14 @@ export function HomeBlogHn() {
               <Card hover className="h-full overflow-hidden">
                 <ArtPanel art={CATEGORY_ART[p.category] ?? "blue"} className="h-[200px]" />
                 <div className="p-5">
-                  <div className="flex items-center gap-3 text-[14px] text-[#4b5567]">
+                  <div className="flex items-center gap-3 text-[14px] text-[#5c5c66]">
                     <Chip className="px-2 py-1 text-[13px]">{p.category}</Chip>
                     {formatDate(p.date)}
                   </div>
-                  <h3 className="mt-4 text-[20px] font-medium leading-[1.3] text-[#0f1728] transition-colors group-hover:text-[#006edd]">
+                  <h3 className="mt-4 text-[20px] font-medium leading-[1.3] text-[#0d0d0d] transition-colors group-hover:text-[#4f1ad6]">
                     {p.title}
                   </h3>
-                  <p className="mt-2 text-[18px] leading-[1.3] text-[#4b5567]">{p.excerpt}</p>
+                  <p className="mt-2 text-[18px] leading-[1.3] text-[#5c5c66]">{p.excerpt}</p>
                 </div>
               </Card>
             </Link>

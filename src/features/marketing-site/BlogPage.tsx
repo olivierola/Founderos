@@ -34,7 +34,7 @@ export function BlogPage() {
 
   return (
     <HnPage>
-      <section className="bg-[#f7f8fb]">
+      <section className="bg-[#f5f5f8]">
         <Container className="pb-24 pt-16 lg:pt-24">
           <H as="h1" size="hero">All articles</H>
           <P className="mt-4 max-w-[640px]">
@@ -53,7 +53,7 @@ export function BlogPage() {
                     aria-pressed={active}
                     onClick={() => setCategory(c)}
                     className={`rounded-full border px-3.5 py-2 text-[16px] font-medium leading-none tracking-[-0.02em] transition-colors ${
-                      active ? "border-[#006edd] bg-[#006edd] text-white" : "border-[#e6e9ef] bg-white text-[#0f1728] hover:border-[#cfd5df]"
+                      active ? "border-[#4f1ad6] bg-[#4f1ad6] text-white" : "border-[#e8e8ee] bg-white text-[#0d0d0d] hover:border-[#d4d4dc]"
                     }`}
                   >
                     {c === "all" ? "All articles" : c}
@@ -62,40 +62,40 @@ export function BlogPage() {
               })}
             </div>
             <div className="relative w-full sm:max-w-[280px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a94a6]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8f8f99]" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 aria-label="Search articles"
                 placeholder="Search articles…"
-                className="h-10 w-full rounded-full border border-[#e6e9ef] bg-white pl-9 pr-3 text-[16px] text-[#0f1728] outline-none transition-colors placeholder:text-[#8a94a6] focus:border-[#006edd]"
+                className="h-10 w-full rounded-[10px] border border-[#e8e8ee] bg-white pl-9 pr-3 text-[16px] text-[#0d0d0d] outline-none transition-colors placeholder:text-[#8f8f99] focus:border-[#4f1ad6]"
               />
             </div>
           </div>
 
           <div className="mt-14">
             {posts.length === 0 ? (
-              <p className="border-t border-[#e6e9ef] py-10 text-[18px] text-[#4b5567]">
+              <p className="border-t border-[#e8e8ee] py-10 text-[18px] text-[#5c5c66]">
                 Nothing matches yet. Try another category or a shorter search.
               </p>
             ) : (
               posts.map((p) => (
-                <article key={p.slug} className="grid gap-6 border-b border-[#e6e9ef] py-6 first:pt-0 sm:grid-cols-[300px_1fr]">
+                <article key={p.slug} className="grid gap-6 border-b border-[#e8e8ee] py-6 first:pt-0 sm:grid-cols-[300px_1fr]">
                   <Link to={`/blog/${p.slug}`} aria-hidden tabIndex={-1}>
                     <ArtPanel art={CATEGORY_ART[p.category] ?? "blue"} className="h-[150px] rounded-[20px]" />
                   </Link>
                   <div className="flex flex-col justify-center">
                     <div className="flex items-center gap-4">
                       <Chip className="px-2.5 py-1.5 text-[14px]">{p.category}</Chip>
-                      <span className="text-[16px] font-medium tracking-[-0.02em] text-[#4b5567]">{formatDate(p.date)}</span>
+                      <span className="text-[16px] font-medium tracking-[-0.02em] text-[#5c5c66]">{formatDate(p.date)}</span>
                     </div>
                     <Link
                       to={`/blog/${p.slug}`}
-                      className="mt-4 max-w-[750px] text-[18px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728] transition-colors hover:text-[#006edd]"
+                      className="mt-4 max-w-[750px] text-[18px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d] transition-colors hover:text-[#4f1ad6]"
                     >
                       {p.title}
                     </Link>
-                    <p className="mt-2 max-w-[750px] text-[16px] leading-[1.4] text-[#4b5567]">{p.excerpt}</p>
+                    <p className="mt-2 max-w-[750px] text-[16px] leading-[1.4] text-[#5c5c66]">{p.excerpt}</p>
                     <Btn to={`/blog/${p.slug}`} variant="link" className="mt-4 self-start">
                       Read article
                     </Btn>

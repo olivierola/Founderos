@@ -32,19 +32,19 @@ function MenuPanel({ menu, close }: { menu: MenuKey; close: () => void }) {
             key={s.slug}
             to={`/solutions/${s.slug}`}
             onClick={close}
-            className="flex gap-3 rounded-[12px] p-3 transition-colors hover:bg-[#f7f8fb]"
+            className="flex gap-3 rounded-[12px] p-3 transition-colors hover:bg-[#f5f5f8]"
           >
             <span className={`hn-art hn-art-${SOLUTION_ART[s.slug] ?? "blue"} mt-0.5 h-9 w-9 shrink-0 rounded-[14px]`} />
             <span className="min-w-0">
-              <span className="block text-[15px] font-medium tracking-[-0.01em] text-[#0f1728]">{s.menu.label}</span>
-              <span className="mt-0.5 block text-[13.5px] leading-snug text-[#4b5567]">{s.menu.blurb}</span>
+              <span className="block text-[15px] font-medium tracking-[-0.01em] text-[#0d0d0d]">{s.menu.label}</span>
+              <span className="mt-0.5 block text-[13.5px] leading-snug text-[#5c5c66]">{s.menu.blurb}</span>
             </span>
           </Link>
         ))}
         <Link
           to="/solutions"
           onClick={close}
-          className="col-span-2 mt-1 rounded-[12px] border-t border-[#e6e9ef] px-3 pb-1 pt-3 text-[14px] font-medium text-[#006edd] hover:text-[#0057c2]"
+          className="col-span-2 mt-1 rounded-[12px] border-t border-[#e8e8ee] px-3 pb-1 pt-3 text-[14px] font-medium text-[#4f1ad6] hover:text-[#4314b8]"
         >
           All solutions →
         </Link>
@@ -55,10 +55,10 @@ function MenuPanel({ menu, close }: { menu: MenuKey; close: () => void }) {
     return (
       <div className="grid w-[560px] grid-cols-2 gap-2 p-2">
         {PRODUCTS.map((p) => (
-          <Link key={p.slug} to={`/product/${p.slug}`} onClick={close} className="rounded-[12px] p-2 transition-colors hover:bg-[#f7f8fb]">
+          <Link key={p.slug} to={`/product/${p.slug}`} onClick={close} className="rounded-[12px] p-2 transition-colors hover:bg-[#f5f5f8]">
             <span className={`hn-art hn-art-${p.art} block h-24 rounded-[14px]`} />
-            <span className="mt-3 block px-1 text-[15px] font-medium tracking-[-0.01em] text-[#0f1728]">{p.name}</span>
-            <span className="mt-1 block px-1 pb-1 text-[13.5px] leading-snug text-[#4b5567]">{p.blurb}</span>
+            <span className="mt-3 block px-1 text-[15px] font-medium tracking-[-0.01em] text-[#0d0d0d]">{p.name}</span>
+            <span className="mt-1 block px-1 pb-1 text-[13.5px] leading-snug text-[#5c5c66]">{p.blurb}</span>
           </Link>
         ))}
       </div>
@@ -67,9 +67,9 @@ function MenuPanel({ menu, close }: { menu: MenuKey; close: () => void }) {
   return (
     <div className="grid w-[460px] grid-cols-2 gap-1 p-2">
       {RESOURCES.map((r) => (
-        <Link key={r.to} to={r.to} onClick={close} className="rounded-[12px] p-3 transition-colors hover:bg-[#f7f8fb]">
-          <span className="block text-[15px] font-medium tracking-[-0.01em] text-[#0f1728]">{r.label}</span>
-          <span className="mt-0.5 block text-[13.5px] leading-snug text-[#4b5567]">{r.blurb}</span>
+        <Link key={r.to} to={r.to} onClick={close} className="rounded-[12px] p-3 transition-colors hover:bg-[#f5f5f8]">
+          <span className="block text-[15px] font-medium tracking-[-0.01em] text-[#0d0d0d]">{r.label}</span>
+          <span className="mt-0.5 block text-[13.5px] leading-snug text-[#5c5c66]">{r.blurb}</span>
         </Link>
       ))}
     </div>
@@ -105,7 +105,7 @@ export function HnNav() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-[#e6e9ef] bg-white/95 backdrop-blur-md" style={{ height: HN_NAV_H }}>
+      <header className="sticky top-0 z-50 border-b border-[#e8e8ee] bg-white/95 backdrop-blur-md" style={{ height: HN_NAV_H }}>
         <div className="flex h-full w-full items-center gap-14 px-5 sm:px-8 lg:px-12">
           <Link to="/" aria-label="Anduran, home" className="shrink-0">
             <Brand />
@@ -126,7 +126,7 @@ export function HnNav() {
                     onClick={() => setMenu(menu === it.menu ? null : it.menu!)}
                     className={cn(
                       "flex items-center gap-1 py-2 text-[16px] font-medium tracking-[-0.02em] transition-colors",
-                      current(undefined, it.menu) ? "text-[#006edd]" : "text-[#0f1728] hover:text-[#006edd]",
+                      current(undefined, it.menu) ? "text-[#4f1ad6]" : "text-[#0d0d0d] hover:text-[#4f1ad6]",
                     )}
                   >
                     {it.label}
@@ -134,7 +134,7 @@ export function HnNav() {
                   </button>
                   {menu === it.menu && (
                     <div className="absolute left-0 top-full pt-3">
-                      <div className="rounded-[24px] border border-[#e6e9ef] bg-white shadow-[0_24px_60px_-28px_rgba(18,18,18,0.35)]">
+                      <div className="rounded-[24px] border border-[#e8e8ee] bg-white shadow-[0_24px_60px_-28px_rgba(18,18,18,0.35)]">
                         <MenuPanel menu={it.menu} close={() => setMenu(null)} />
                       </div>
                     </div>
@@ -146,7 +146,7 @@ export function HnNav() {
                   to={it.to!}
                   className={cn(
                     "py-2 text-[16px] font-medium tracking-[-0.02em] transition-colors",
-                    current(it.to) ? "text-[#006edd]" : "text-[#0f1728] hover:text-[#006edd]",
+                    current(it.to) ? "text-[#4f1ad6]" : "text-[#0d0d0d] hover:text-[#4f1ad6]",
                   )}
                 >
                   {it.label}
@@ -156,17 +156,17 @@ export function HnNav() {
           </nav>
 
           <div className="ml-auto flex items-center gap-5">
-            <Link to="/login" className="hidden text-[16px] font-medium tracking-[-0.02em] text-[#0f1728] hover:text-[#006edd] sm:block">
+            <Link to="/login" className="hidden text-[16px] font-medium tracking-[-0.02em] text-[#0d0d0d] hover:text-[#4f1ad6] sm:block">
               Sign in
             </Link>
-            <Btn to="/contact" variant="liquid" className="hidden sm:inline-flex">
+            <Btn to="/contact" variant="cta" className="hidden sm:inline-flex">
               Book a demo
             </Btn>
             <button
               type="button"
               aria-label="Open menu"
               onClick={() => setMobile(true)}
-              className="grid h-11 w-11 place-items-center rounded-full border border-[#e6e9ef] text-[#0f1728] lg:hidden"
+              className="grid h-11 w-11 place-items-center rounded-full border border-[#e8e8ee] text-[#0d0d0d] lg:hidden"
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -175,14 +175,14 @@ export function HnNav() {
       </header>
 
       {mobile && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto bg-white px-5 pb-10 pt-5 text-[#0f1728] lg:hidden">
+        <div className="fixed inset-0 z-[60] overflow-y-auto bg-white px-5 pb-10 pt-5 text-[#0d0d0d] lg:hidden">
           <div className="flex items-center justify-between">
             <Brand />
             <button
               type="button"
               aria-label="Close menu"
               onClick={() => setMobile(false)}
-              className="grid h-11 w-11 place-items-center rounded-full border border-[#e6e9ef]"
+              className="grid h-11 w-11 place-items-center rounded-full border border-[#e8e8ee]"
             >
               <X className="h-5 w-5" />
             </button>
@@ -196,7 +196,7 @@ export function HnNav() {
             />
           </div>
           <div className="mt-10 flex flex-col gap-3">
-            <Btn to="/contact" variant="liquid" className="justify-center">Book a demo</Btn>
+            <Btn to="/contact" variant="cta" className="justify-center">Book a demo</Btn>
             <Btn to="/login" variant="secondary" className="justify-center">Sign in</Btn>
           </div>
         </div>
@@ -208,10 +208,10 @@ export function HnNav() {
 function MobileGroup({ title, links }: { title: string; links: { label: string; to: string }[] }) {
   return (
     <div>
-      <div className="text-[14px] text-[#4b5567]">{title}</div>
+      <div className="text-[14px] text-[#5c5c66]">{title}</div>
       <div className="mt-2 flex flex-col">
         {links.map((l) => (
-          <Link key={l.to} to={l.to} className="border-b border-[#e6e9ef] py-3 text-[18px] tracking-[-0.015em]">
+          <Link key={l.to} to={l.to} className="border-b border-[#e8e8ee] py-3 text-[18px] tracking-[-0.015em]">
             {l.label}
           </Link>
         ))}

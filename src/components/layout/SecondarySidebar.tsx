@@ -4,11 +4,10 @@ import {
   KanbanIcon as FolderKanban,
   CircleNotchIcon as Loader2,
 } from "@phosphor-icons/react";
-import { BookOpenIcon, PuzzlePieceIcon, PlugsConnectedIcon, RobotIcon } from "@phosphor-icons/react";
+import { PuzzlePieceIcon, PlugsConnectedIcon, RobotIcon } from "@phosphor-icons/react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ChatConversationsItem } from "./ChatConversationsItem";
-import { CrmObjectsItem } from "./CrmObjectsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -40,12 +39,6 @@ export function SecondarySidebar() {
   // AI HQ is a single full-width dashboard — no second sidebar.
   if (moduleSlug === "hq") return null;
 
-  // CRM full record view (crm/workspace/<obj>/<recordId>) brings its own fields
-  // sidebar → eclipse the objects sidebar entirely.
-  if (moduleSlug === "crm" && segments[appIdx + 4] === "workspace" && segments[appIdx + 6]) {
-    return null;
-  }
-
   // AI Workforce module → show hired agents in sidebar. /agent/builder/* is a
   // bare redirect now, so it gets no sidebar of its own.
   if (moduleSlug === "agent" && segments[appIdx + 4] !== "builder") {
@@ -63,7 +56,8 @@ export function SecondarySidebar() {
     return <VibeCodeSidebar base={base} pathname={location.pathname} search={location.search} />;
   }
 
-  const module = findModule(moduleSlug ?? "crm");
+  // Un module inconnu (ou éteint, comme le CRM) n'a pas de barre secondaire.
+  const module = moduleSlug ? findModule(moduleSlug) : undefined;
 
   // Group children by parent slug. Top-level items = those without a parent.
   const childrenByParent = useMemo(() => {
@@ -147,9 +141,6 @@ export function SecondarySidebar() {
             if ((module.slug === "ai" || module.slug === "agent") && sub.slug === "chat") {
               return <ChatConversationsItem key={sub.slug} to={to} label={sub.label} />;
             }
-            if (module.slug === "crm" && sub.slug === "workspace") {
-              return <CrmObjectsItem key={sub.slug} />;
-            }
             if (kids && kids.length > 0) {
               return (
                 <AccordionNavItem
@@ -205,14 +196,14 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
     return idx >= 0 ? segs[idx + 1] : undefined;
   })();
   const onRoster = agentSeg === "agents" || agentSeg === "public-agents";
-  const onCollections = agentSeg === "collections";
   const onSkills = agentSeg === "skills";
   const onMcp = agentSeg === "mcp";
 
   // No agent is configured here any more — internal ones (0133) and public ones
   // (0195) both live in their service dashboard. This module keeps the roster
-  // (a directory of the whole workforce) and what it shares: knowledge
-  // collections, skills, MCP servers.
+  // (a directory of the whole workforce) and what it shares: skills, MCP
+  // servers. Les collections de connaissances vivent dans le RAG des Sources,
+  // côté service.
   return (
     <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
@@ -230,23 +221,6 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
           )}
         >
           <RobotIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Collaborateurs
-        </button>
-
-        {/* ── Knowledge base ── */}
-        <div className="mt-4 border-t border-border/60 pt-3">
-          <SectionLabel>Base de connaissances</SectionLabel>
-        </div>
-        <button
-          onClick={() => navigate(`${base}/agent/collections`)}
-          className={cn(
-            "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
-            onCollections
-              ? "bg-sidebar-accent font-medium text-foreground"
-              : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-          )}
-        >
-          <BookOpenIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
-          <span className="min-w-0 flex-1 truncate">Collections</span>
         </button>
 
         {/* ── Skills (custom + catalogue) ── */}

@@ -43,7 +43,7 @@ export type AuthSsoProvider = {
 };
 
 const LINK =
-  "font-medium text-[#006edd] underline-offset-4 transition-colors hover:text-[#0057c2] hover:underline dark:text-[#5aa8ff] dark:hover:text-[#8cc2ff]";
+  "font-medium text-[#4f1ad6] underline-offset-4 transition-colors hover:text-[#4314b8] hover:underline dark:text-[#9b7bf4] dark:hover:text-[#bea9f9]";
 
 export function AuthSection({
   mode,
@@ -108,7 +108,7 @@ export function AuthSection({
 
   return (
     <section
-      className="min-h-screen bg-white p-3 text-[#0f1728] antialiased [font-synthesis:none] dark:bg-[#0b1220] dark:text-white"
+      className="min-h-screen bg-white p-3 text-[#0d0d0d] antialiased [font-synthesis:none] dark:bg-[#0a0a0a] dark:text-white"
       style={{ fontFamily: "'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif" }}
     >
       <div className="grid min-h-[calc(100vh-1.5rem)] gap-3 lg:grid-cols-[0.92fr_1.08fr]">
@@ -127,7 +127,7 @@ export function AuthSection({
               <h1 className="text-[36px] font-medium leading-[1.05] tracking-[-0.04em] sm:text-[44px]">
                 {isSignup ? "Create your account" : "Welcome back"}
               </h1>
-              <p className="mt-3 text-[18px] leading-[1.35] text-[#4b5567] dark:text-white/65">
+              <p className="mt-3 text-[18px] leading-[1.35] text-[#5c5c66] dark:text-white/65">
                 {isSignup ? "Hire your first agents in minutes." : "Sign in to your AI workforce."}
               </p>
             </div>
@@ -158,12 +158,12 @@ export function AuthSection({
                     <button
                       type="submit"
                       disabled={!canDiscover}
-                      className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0f1728] text-[16px] font-medium tracking-[-0.02em] text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#0f1728]"
+                      className="flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-[#0d0d0d] text-[16px] font-medium tracking-[-0.02em] text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#0d0d0d]"
                     >
                       {submitting ? <Loader2 className="size-5 animate-spin" /> : <BuildingsIcon className="size-5" />}
                       Continue with company SSO
                     </button>
-                    <button type="button" onClick={() => setSsoStep(false)} className="text-[14px] text-[#4b5567] hover:underline dark:text-white/60">
+                    <button type="button" onClick={() => setSsoStep(false)} className="text-[14px] text-[#5c5c66] hover:underline dark:text-white/60">
                       Back
                     </button>
                   </form>
@@ -196,10 +196,10 @@ export function AuthSection({
             )}
 
             {passwordEnabled && !ssoStep && (hasSso || showSocial || (!isSignup && onSsoDiscover)) && (
-              <div className="my-8 flex items-center gap-4 text-[14px] text-[#6b7385] dark:text-white/45">
-                <span className="h-px flex-1 bg-[#e6e9ef] dark:bg-white/10" />
+              <div className="my-8 flex items-center gap-4 text-[14px] text-[#6e6e78] dark:text-white/45">
+                <span className="h-px flex-1 bg-[#e8e8ee] dark:bg-white/10" />
                 or with your email
-                <span className="h-px flex-1 bg-[#e6e9ef] dark:bg-white/10" />
+                <span className="h-px flex-1 bg-[#e8e8ee] dark:bg-white/10" />
               </div>
             )}
 
@@ -245,7 +245,7 @@ export function AuthSection({
               />
 
               {isSignup ? (
-                <div className="space-y-3 px-1 pt-3 text-[14px] leading-5 text-[#4b5567] dark:text-white/60">
+                <div className="space-y-3 px-1 pt-3 text-[14px] leading-5 text-[#5c5c66] dark:text-white/60">
                   <CheckboxLine checked={marketingOptOut} onCheckedChange={setMarketingOptOut}>
                     I don&apos;t want to receive emails about Anduran feature updates
                   </CheckboxLine>
@@ -261,7 +261,7 @@ export function AuthSection({
                   </CheckboxLine>
                 </div>
               ) : (
-                <div className="px-1 pt-1 text-[14px] text-[#4b5567] dark:text-white/60">
+                <div className="px-1 pt-1 text-[14px] text-[#5c5c66] dark:text-white/60">
                   Trouble signing in?{" "}
                   <Link to="/contact" className={LINK}>
                     Contact support
@@ -272,7 +272,7 @@ export function AuthSection({
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="group !mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#006edd] text-[16px] font-medium tracking-[-0.02em] text-white shadow-[0_14px_30px_-18px_rgba(0,87,194,0.9)] transition-colors hover:bg-[#0057c2] disabled:cursor-not-allowed disabled:bg-[#9fc3ec] disabled:shadow-none dark:disabled:bg-[#1d3a63] dark:disabled:text-white/50"
+                className="group !mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-[#4f1ad6] text-[16px] font-medium tracking-[-0.02em] text-white shadow-[0_14px_30px_-18px_rgba(67,20,184,0.9)] transition-colors hover:bg-[#4314b8] disabled:cursor-not-allowed disabled:bg-[#c4b5f4] disabled:shadow-none dark:disabled:bg-[#2b1957] dark:disabled:text-white/50"
               >
                 {submitting && <Loader2 className="size-5 animate-spin" />}
                 {isSignup ? "Create account" : "Sign in"}
@@ -290,7 +290,7 @@ export function AuthSection({
             {error && <p className="mt-5 text-[15px] text-red-600 dark:text-red-400">{error}</p>}
 
             {passwordEnabled && (
-            <p className="mt-8 text-[15px] text-[#4b5567] dark:text-white/60">
+            <p className="mt-8 text-[15px] text-[#5c5c66] dark:text-white/60">
               {isSignup ? (
                 <>
                   Already have an account?{" "}
@@ -310,7 +310,7 @@ export function AuthSection({
             )}
 
             {!isSignup && ssoSetupHref && (
-              <p className="mt-3 flex items-center gap-2 text-[14px] text-[#4b5567] dark:text-white/50">
+              <p className="mt-3 flex items-center gap-2 text-[14px] text-[#5c5c66] dark:text-white/50">
                 <BuildingsIcon className="size-4 shrink-0" />
                 <span>
                   Company identity provider?{" "}
@@ -345,16 +345,16 @@ export function AuthSection({
               ].map(({ icon: Icon, text }) => (
                 <span
                   key={text}
-                  className="inline-flex items-center gap-2.5 rounded-full bg-white px-4 py-2.5 text-[15px] font-medium text-[#0f1728] shadow-[0_16px_40px_-24px_rgba(4,32,92,0.8)]"
+                  className="inline-flex items-center gap-2.5 rounded-full bg-white px-4 py-2.5 text-[15px] font-medium text-[#0d0d0d] shadow-[0_16px_40px_-24px_rgba(24,8,70,0.8)]"
                 >
-                  <Icon className="size-[18px] text-[#006edd]" />
+                  <Icon className="size-[18px] text-[#4f1ad6]" />
                   {text}
                 </span>
               ))}
             </div>
             <Link
               to="/solutions"
-              className="group mt-8 inline-flex h-11 w-fit items-center gap-2 rounded-full bg-white px-5 text-[15px] font-medium tracking-[-0.02em] text-[#0f1728] transition-colors hover:bg-white/90"
+              className="group mt-8 inline-flex h-11 w-fit items-center gap-2 rounded-[10px] bg-white px-5 text-[15px] font-medium tracking-[-0.02em] text-[#0d0d0d] transition-colors hover:bg-white/90"
             >
               See what the workforce runs
               <ArrowRight
@@ -364,7 +364,7 @@ export function AuthSection({
             </Link>
 
             <div className="relative -mb-10 -mr-10 mt-auto pl-6 pt-12 xl:-mb-14 xl:-mr-14">
-              <div className="overflow-hidden rounded-tl-[14px] border-l border-t border-white/30 bg-white shadow-[0_40px_80px_-30px_rgba(4,32,92,0.85)]">
+              <div className="overflow-hidden rounded-tl-[14px] border-l border-t border-white/30 bg-white shadow-[0_40px_80px_-30px_rgba(24,8,70,0.85)]">
                 <img
                   src="/marketing/product-agents.jpg"
                   alt="The Agents page of Anduran, in a demo workspace"
@@ -395,7 +395,7 @@ function SocialButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex h-12 items-center justify-center gap-2.5 rounded-full border border-[#e6e9ef] bg-white px-4 text-[15px] font-medium leading-none tracking-[-0.02em] text-[#0f1728] transition-colors hover:border-[#cfd6e2] hover:bg-[#f7f8fb] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/15 dark:bg-white/[0.05] dark:text-white dark:hover:bg-white/10"
+      className="flex h-12 items-center justify-center gap-2.5 rounded-[10px] border border-[#e8e8ee] bg-white px-4 text-[15px] font-medium leading-none tracking-[-0.02em] text-[#0d0d0d] transition-colors hover:border-[#d4d4dc] hover:bg-[#f5f5f8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/15 dark:bg-white/[0.05] dark:text-white dark:hover:bg-white/10"
     >
       <span className="shrink-0">{icon}</span>
       <span className="whitespace-nowrap">{label}</span>
@@ -428,7 +428,7 @@ function FieldBox({
   const showLabel = !focused && value.length === 0;
 
   return (
-    <label className="flex h-12 items-center justify-between gap-4 rounded-full border border-[#e6e9ef] bg-white px-5 text-[16px] leading-none transition-[border-color,box-shadow] focus-within:border-[#006edd] focus-within:shadow-[0_0_0_4px_rgba(0,110,221,0.12)] dark:border-white/15 dark:bg-white/[0.05] dark:focus-within:border-[#5aa8ff] dark:focus-within:shadow-[0_0_0_4px_rgba(90,168,255,0.15)]">
+    <label className="flex h-12 items-center justify-between gap-4 rounded-[10px] border border-[#e8e8ee] bg-white px-5 text-[16px] leading-none transition-[border-color,box-shadow] focus-within:border-[#4f1ad6] focus-within:shadow-[0_0_0_4px_rgba(79,26,214,0.12)] dark:border-white/15 dark:bg-white/[0.05] dark:focus-within:border-[#9b7bf4] dark:focus-within:shadow-[0_0_0_4px_rgba(155,123,244,0.15)]">
       <input
         type={type}
         name={name}
@@ -440,9 +440,9 @@ function FieldBox({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onChange={(event) => onValueChange(event.target.value)}
-        className="min-w-0 flex-1 truncate bg-transparent text-[#0f1728] outline-none placeholder:text-black/30 dark:text-white dark:placeholder:text-white/35"
+        className="min-w-0 flex-1 truncate bg-transparent text-[#0d0d0d] outline-none placeholder:text-black/30 dark:text-white dark:placeholder:text-white/35"
       />
-      {showLabel && <span className="shrink-0 text-[#6b7385] dark:text-white/45">{label}</span>}
+      {showLabel && <span className="shrink-0 text-[#6e6e78] dark:text-white/45">{label}</span>}
     </label>
   );
 }
@@ -463,11 +463,11 @@ function CheckboxLine({
           type="checkbox"
           checked={checked}
           onChange={(event) => onCheckedChange(event.target.checked)}
-          className="peer size-full appearance-none rounded-[5px] border border-[#c3cad6] bg-white checked:border-[#006edd] checked:bg-[#006edd] dark:border-white/30 dark:bg-white/5 dark:checked:border-[#5aa8ff] dark:checked:bg-[#5aa8ff]"
+          className="peer size-full appearance-none rounded-[5px] border border-[#c3cad6] bg-white checked:border-[#4f1ad6] checked:bg-[#4f1ad6] dark:border-white/30 dark:bg-white/5 dark:checked:border-[#9b7bf4] dark:checked:bg-[#9b7bf4]"
         />
         <svg
           viewBox="0 0 12 12"
-          className="pointer-events-none absolute inset-0 hidden size-full p-0.5 text-white peer-checked:block dark:text-[#0b1220]"
+          className="pointer-events-none absolute inset-0 hidden size-full p-0.5 text-white peer-checked:block dark:text-[#0a0a0a]"
           fill="none"
           aria-hidden="true"
         >
@@ -519,8 +519,8 @@ function SsoIcon({ preset }: { preset: AuthSsoProvider["preset"] }) {
       </svg>
     );
   }
-  if (preset === "keycloak") return <KeyIcon className="size-[18px] text-[#006edd] dark:text-[#5aa8ff]" />;
-  return <BuildingsIcon className="size-[18px] text-[#006edd] dark:text-[#5aa8ff]" />;
+  if (preset === "keycloak") return <KeyIcon className="size-[18px] text-[#4f1ad6] dark:text-[#9b7bf4]" />;
+  return <BuildingsIcon className="size-[18px] text-[#4f1ad6] dark:text-[#9b7bf4]" />;
 }
 
 function AppleIcon() {

@@ -1,0 +1,51 @@
+# Profil OpenShift, architecture Hub : FounderOS (interface, backend Express,
+# Supabase) sur le cluster Hub ; un serveur MCP par cluster (MCP/deploy/values) ;
+# le modèle sur Azure OpenAI en direct ; le SSO de l'entreprise branché sur
+# l'Auth de Supabase (OIDC ou SAML), sans Keycloak ni Vault.
+#
+#   cp deploy/installer/profiles/openshift-hub.yaml founderos.yaml
+#   export LLM_API_KEY=<clé Azure OpenAI>     # jamais écrite dans ce fichier
+#   node deploy/installer/founderos-config.mjs founderos.yaml --out ./install
+target: openshift
+urls:
+  web: https://founderos.apps-int.hub.interne.exemple
+  api: https://founderos-api.apps-int.hub.interne.exemple
+  supabase: https://founderos-sb.apps-int.hub.interne.exemple
+supabase:
+  # Le chart communautaire de Supabase, sur le Hub, avec les clés de install/supabase.env.
+  mode: selfhosted
+  internalUrl: http://founderos-sb-kong.founderos.svc:8000
+admins: [plateforme-ia@entreprise.interne.exemple]
+sso:
+  # Une installation pour l'entreprise : le fournisseur (Entra ID, ADFS, Okta…) se règle
+  # depuis la page de connexion, lien « Set up SSO ».
+  mode: dedicated
+sessions:
+  timebox: 24h
+  inactivity: 8h
+llm:
+  gateway: azure
+  azure:
+    # API v1 d'Azure OpenAI, en Data Zone EU.
+    url: https://entreprise-founderos.openai.azure.com/openai/v1   # votre ressource, API v1
+    deployment: gpt-6-luna
+    heavyDeployment: gpt-6-sol
+mcp:
+  # Les serveurs MCP des clusters (un par cluster : MCP/deploy/values/cluster-*.yaml),
+  # joints en direct par leur Route interne, en mTLS.
+  internalHosts: [mcp.apps-int.*.interne.exemple]
+  clientCert:
+    # cert-manager émet le certificat client (CN founderos-ai-platform, à mettre dans
+    # tls.allowedClientCNs des serveurs MCP) et le renouvelle.
+    issuer: platform-internal-ca
+    # L'AC interne qui signe les certificats des serveurs MCP (clé ca.crt).
+    caConfigMap: platform-internal-ca-bundle
+secrets:
+  # L'installateur génère les clés (chiffrement, signature des approbations, Supabase) et
+  # les garde d'une exécution à l'autre.
+  source: generate
+images:
+  registry: quay.interne.exemple/ai-platform
+  tag: "2026.10.12"
+openshift:
+  routeLabels: { shard: internal }

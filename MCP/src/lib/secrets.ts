@@ -1,22 +1,34 @@
 // Identifiants vers les outils : jamais dans l'image ni dans la configuration,
-// toujours tirés de Vault au moment de l'appel. Chaque cluster a SON Vault : un
-// serveur ne voit que les secrets et les rôles du Vault de son cluster.
+// résolus au moment de l'appel.
 //
-//   kv        KV v2 (jeton Grafana, clé PRTG, jeton de rôle Argo CD, clé de la
-//             GitHub App) — mis en cache 5 minutes ;
-//   vault-k8s moteur de secrets Kubernetes : un jeton de compte de service
-//             éphémère, lié à ai-reader ou ai-operator, pour UN namespace —
-//             mis en cache jusqu'à 60 s avant son expiration ;
-//   env/file  développement local uniquement.
-//
-// Le serveur s'authentifie auprès de Vault avec le jeton projeté de SON compte
-// de service (méthode kubernetes, rôle mcp-<outil>).
+//   k8s-token  un jeton de courte durée pour un compte de service dédié du
+//              cluster (mcp-<cluster>-reader, mcp-<cluster>-operator), obtenu
+//              par l'API TokenRequest (kubernetes.ts) : le cas par défaut pour
+//              l'API Kubernetes, sans Vault ;
+//   file       un fichier monté depuis un Secret Kubernetes (jeton Argo CD,
+//              Grafana, clé PRTG, clé de la GitHub App), relu à chaque appel
+//              pour suivre ses rotations ;
+//   env        une variable d'environnement (développement) ;
+//   kv,        en option, si l'entreprise a un Vault (VAULT_ADDR) : KV v2, et le
+//   vault-k8s  moteur de secrets Kubernetes de Vault. Le serveur s'y authentifie
+//              avec le jeton projeté de son compte de service.
 
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { requestJson } from "./http.ts";
+import type { KubernetesTokenCache } from "./kubernetes.ts";
+
+const DNS1123 = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
 export const credentialRefSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("k8s-token"),
+    serviceAccount: z.string().regex(DNS1123).max(253),
+    /** Défaut : le namespace du pod. */
+    namespace: z.string().regex(DNS1123).max(63).optional(),
+    /** 600 s au moins (minimum de Kubernetes), une heure au plus. */
+    expirationSeconds: z.number().int().min(600).max(3600).optional(),
+  }),
   z.object({ type: z.literal("kv"), path: z.string().min(1), key: z.string().min(1), mount: z.string().optional() }),
   z.object({ type: z.literal("vault-k8s"), role: z.string().min(1), mount: z.string().optional(), clusterWide: z.boolean().optional() }),
   z.object({ type: z.literal("env"), name: z.string().min(1) }),
@@ -74,6 +86,7 @@ export class VaultSecretResolver implements SecretResolver {
 
   async resolve(ref: CredentialRef, opts: { namespace?: string } = {}): Promise<string> {
     if (ref.type === "env" || ref.type === "file") return resolveLocal(ref);
+    if (ref.type === "k8s-token") throw new Error("k8s-token se résout par l'API Kubernetes, pas par Vault (ClusterSecretResolver)");
 
     const cacheKey = ref.type === "kv"
       ? `kv:${ref.mount ?? ""}:${ref.path}:${ref.key}`
@@ -120,5 +133,23 @@ export class LocalSecretResolver implements SecretResolver {
   async resolve(ref: CredentialRef): Promise<string> {
     if (ref.type !== "env" && ref.type !== "file") throw new Error(`${ref.type} exige Vault (VAULT_ADDR)`);
     return resolveLocal(ref);
+  }
+}
+
+/**
+ * Le résolveur du serveur : env et file en local, k8s-token par l'API
+ * Kubernetes du cluster, kv et vault-k8s par Vault s'il est configuré.
+ */
+export class ClusterSecretResolver implements SecretResolver {
+  constructor(private readonly opts: { kubernetes?: KubernetesTokenCache; vault?: SecretResolver } = {}) {}
+
+  async resolve(ref: CredentialRef, opts: { namespace?: string } = {}): Promise<string> {
+    if (ref.type === "env" || ref.type === "file") return resolveLocal(ref);
+    if (ref.type === "k8s-token") {
+      if (!this.opts.kubernetes) throw new Error("k8s-token : accès à l'API Kubernetes non configuré");
+      return this.opts.kubernetes.token(ref.serviceAccount, { namespace: ref.namespace, expirationSeconds: ref.expirationSeconds });
+    }
+    if (!this.opts.vault) throw new Error(`${ref.type} exige Vault (VAULT_ADDR) ; sans Vault, utilisez k8s-token ou file`);
+    return this.opts.vault.resolve(ref, opts);
   }
 }

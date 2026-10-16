@@ -42,10 +42,10 @@ export function MockWindow({
   right?: ReactNode;
 }) {
   return (
-    <div className={cn("flex overflow-hidden rounded-[24px] border border-[#e6e9ef] bg-white text-[#0f1728] shadow-[0_30px_70px_-40px_rgba(0,30,90,0.5)]", className)}>
-      <div className="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-[#e6e9ef] py-3">
+    <div className={cn("flex overflow-hidden rounded-[24px] border border-[#e8e8ee] bg-white text-[#0d0d0d] shadow-[0_30px_70px_-40px_rgba(0,30,90,0.5)]", className)}>
+      <div className="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-[#e8e8ee] py-3">
         {RAIL.map((I, i) => (
-          <span key={i} className={cn("grid h-6 w-6 place-items-center rounded-[14px]", i === active ? "bg-[#eaf2ff] text-[#006edd]" : "text-[#8a94a6]")}>
+          <span key={i} className={cn("grid h-6 w-6 place-items-center rounded-[14px]", i === active ? "bg-[#f1edfe] text-[#4f1ad6]" : "text-[#8f8f99]")}>
             <I className="h-3.5 w-3.5" />
           </span>
         ))}
@@ -63,10 +63,10 @@ export function MockWindow({
 
 function Status({ s }: { s: "Running" | "Waiting" | "Done" | "Scheduled" }) {
   const map = {
-    Running: "bg-[#eaf2ff] text-[#006edd]",
+    Running: "bg-[#f1edfe] text-[#4f1ad6]",
     Waiting: "bg-[#fff4e0] text-[#a15c00]",
     Done: "bg-[#e7f6ec] text-[#1a7f3c]",
-    Scheduled: "bg-[#eef1f5] text-[#555]",
+    Scheduled: "bg-[#efeff3] text-[#555]",
   } as const;
   return <span className={cn("rounded-full px-2 py-0.5 text-[9.5px] font-medium", map[s])}>{s}</span>;
 }
@@ -87,7 +87,7 @@ export function MissionsMock({ rows = 6, className }: { rows?: number; className
       title="Missions"
       className={className}
       right={
-        <span className="flex items-center gap-1 rounded-[14px] bg-[#0b1220] px-2 py-1 text-[9.5px] font-medium text-white">
+        <span className="flex items-center gap-1 rounded-[14px] bg-[#0a0a0a] px-2 py-1 text-[9.5px] font-medium text-white">
           <Plus className="h-2.5 w-2.5" /> New mission
         </span>
       }
@@ -99,18 +99,18 @@ export function MissionsMock({ rows = 6, className }: { rows?: number; className
           { l: "Scheduled", v: "1" },
           { l: "Done this week", v: "2" },
         ].map((k) => (
-          <div key={k.l} className="rounded-[14px] bg-[#f7f8fb] px-2 py-1.5">
-            <div className="text-[8.5px] text-[#4b5567]">{k.l}</div>
+          <div key={k.l} className="rounded-[14px] bg-[#f5f5f8] px-2 py-1.5">
+            <div className="text-[8.5px] text-[#5c5c66]">{k.l}</div>
             <div className="text-[13px] font-semibold">{k.v}</div>
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center gap-2 rounded-[14px] border border-[#e6e9ef] px-2 py-1 text-[9px] text-[#8a94a6]">
+      <div className="mt-3 flex items-center gap-2 rounded-[14px] border border-[#e8e8ee] px-2 py-1 text-[9px] text-[#8f8f99]">
         <Search className="h-2.5 w-2.5" /> Search missions, Cloud collaborators…
       </div>
       <table className="mt-2 w-full text-left text-[9.5px]">
-        <thead className="text-[#8a94a6]">
-          <tr className="border-b border-[#e6e9ef]">
+        <thead className="text-[#8f8f99]">
+          <tr className="border-b border-[#e8e8ee]">
             <th className="py-1.5 font-normal">Mission</th>
             <th className="font-normal">Status</th>
             <th className="font-normal">Steps</th>
@@ -119,8 +119,8 @@ export function MissionsMock({ rows = 6, className }: { rows?: number; className
         </thead>
         <tbody>
           {MISSIONS.slice(0, rows).map((m) => (
-            <tr key={m.name} className="border-b border-[#eef1f5]">
-              <td className="max-w-[150px] truncate py-1.5 text-[#006edd]">{m.name}</td>
+            <tr key={m.name} className="border-b border-[#efeff3]">
+              <td className="max-w-[150px] truncate py-1.5 text-[#4f1ad6]">{m.name}</td>
               <td><Status s={m.s} /></td>
               <td className="tabular-nums text-[#555]">{m.done} / {m.of}</td>
               <td className="hidden text-[#555] sm:table-cell">{m.agent}</td>
@@ -128,7 +128,7 @@ export function MissionsMock({ rows = 6, className }: { rows?: number; className
           ))}
         </tbody>
       </table>
-      <div className="mt-2 text-[8.5px] text-[#8a94a6]">Sample data</div>
+      <div className="mt-2 text-[8.5px] text-[#8f8f99]">Sample data</div>
     </MockWindow>
   );
 }
@@ -141,18 +141,18 @@ export function RunMock({ className }: { className?: string }) {
     "Flagged 3 lines that disagree, reason attached",
   ];
   return (
-    <div className={cn("rounded-[24px] border border-[#e6e9ef] bg-white p-4 text-[#0f1728] shadow-[0_30px_70px_-40px_rgba(0,30,90,0.5)]", className)}>
+    <div className={cn("rounded-[24px] border border-[#e8e8ee] bg-white p-4 text-[#0d0d0d] shadow-[0_30px_70px_-40px_rgba(0,30,90,0.5)]", className)}>
       <div className="flex items-center gap-2.5">
         <AgentBadge name="Finance collaborator" size={30} />
         <div>
           <div className="text-[12px] font-semibold tracking-[-0.01em]">Finance collaborator</div>
-          <div className="text-[10px] text-[#4b5567]">Reconcile March invoices · sample</div>
+          <div className="text-[10px] text-[#5c5c66]">Reconcile March invoices · sample</div>
         </div>
         <span className="ml-auto"><Status s="Waiting" /></span>
       </div>
       <ul className="mt-3 space-y-1.5">
         {steps.map((s) => (
-          <li key={s} className="flex items-start gap-2 text-[10.5px] text-[#344054]">
+          <li key={s} className="flex items-start gap-2 text-[10.5px] text-[#333333]">
             <CheckCircle weight="fill" className="mt-px h-3 w-3 shrink-0 text-[#1a7f3c]" />
             {s}
           </li>
@@ -164,8 +164,8 @@ export function RunMock({ className }: { className?: string }) {
         </div>
         <div className="mt-1 text-[11px] font-medium">Post a credit note to the finance ledger</div>
         <div className="mt-2 flex gap-1.5">
-          <span className="rounded-[14px] bg-[#006edd] px-2.5 py-1 text-[10px] font-medium text-white">Approve</span>
-          <span className="rounded-[14px] border border-[#e6e9ef] px-2.5 py-1 text-[10px] font-medium">Decline</span>
+          <span className="rounded-[14px] bg-[#4f1ad6] px-2.5 py-1 text-[10px] font-medium text-white">Approve</span>
+          <span className="rounded-[14px] border border-[#e8e8ee] px-2.5 py-1 text-[10px] font-medium">Decline</span>
         </div>
       </div>
     </div>
@@ -185,10 +185,10 @@ export function RegistryMock({ className }: { className?: string }) {
   const tone = (r: string) =>
     r === "High" ? "bg-[#fdecec] text-[#b42318]" : r === "Medium" ? "bg-[#fff4e0] text-[#a15c00]" : "bg-[#e7f6ec] text-[#1a7f3c]";
   return (
-    <MockWindow title="Governance registry" active={4} className={className} right={<span className="text-[9.5px] text-[#4b5567]">5 Cloud collaborators · sample</span>}>
+    <MockWindow title="Governance registry" active={4} className={className} right={<span className="text-[9.5px] text-[#5c5c66]">5 Cloud collaborators · sample</span>}>
       <table className="w-full text-left text-[9.5px]">
-        <thead className="text-[#8a94a6]">
-          <tr className="border-b border-[#e6e9ef]">
+        <thead className="text-[#8f8f99]">
+          <tr className="border-b border-[#e8e8ee]">
             <th className="py-1.5 font-normal">Cloud collaborator</th>
             <th className="font-normal">Risk</th>
             <th className="hidden font-normal sm:table-cell">Tool scope</th>
@@ -197,7 +197,7 @@ export function RegistryMock({ className }: { className?: string }) {
         </thead>
         <tbody>
           {REGISTRY.map((r) => (
-            <tr key={r.agent} className="border-b border-[#eef1f5]">
+            <tr key={r.agent} className="border-b border-[#efeff3]">
               <td className="py-1.5">
                 <span className="flex items-center gap-1.5">
                   <AgentBadge name={r.agent} size={16} />
@@ -211,7 +211,7 @@ export function RegistryMock({ className }: { className?: string }) {
           ))}
         </tbody>
       </table>
-      <div className="mt-2 text-[8.5px] text-[#8a94a6]">* write actions are approval-gated</div>
+      <div className="mt-2 text-[8.5px] text-[#8f8f99]">* write actions are approval-gated</div>
     </MockWindow>
   );
 }
@@ -227,19 +227,19 @@ export function AuditMock({ className }: { className?: string }) {
     ["Run", "run_8f2c…  (open replay)"],
   ];
   return (
-    <div className={cn("rounded-[24px] border border-[#e6e9ef] bg-white p-4 text-[#0f1728] shadow-[0_30px_70px_-40px_rgba(0,30,90,0.5)]", className)}>
+    <div className={cn("rounded-[24px] border border-[#e8e8ee] bg-white p-4 text-[#0d0d0d] shadow-[0_30px_70px_-40px_rgba(0,30,90,0.5)]", className)}>
       <div className="flex items-center gap-2 text-[12px] font-semibold">
-        <ShieldCheck className="h-3.5 w-3.5 text-[#006edd]" /> Audit log · one call
+        <ShieldCheck className="h-3.5 w-3.5 text-[#4f1ad6]" /> Audit log · one call
       </div>
       <dl className="mt-3 space-y-1.5">
         {rows.map(([k, v]) => (
           <div key={k} className="grid grid-cols-[80px_1fr] gap-2 text-[10.5px]">
-            <dt className="text-[#8a94a6]">{k}</dt>
-            <dd className="truncate font-mono text-[10px] text-[#344054]">{v}</dd>
+            <dt className="text-[#8f8f99]">{k}</dt>
+            <dd className="truncate font-mono text-[10px] text-[#333333]">{v}</dd>
           </div>
         ))}
       </dl>
-      <div className="mt-2 text-[8.5px] text-[#8a94a6]">Sample entry</div>
+      <div className="mt-2 text-[8.5px] text-[#8f8f99]">Sample entry</div>
     </div>
   );
 }
@@ -255,11 +255,11 @@ export function ChatMock({
   className?: string;
 }) {
   return (
-    <div className={cn("w-full max-w-[340px] rounded-[18px] bg-white p-4 text-[#0f1728] shadow-[0_30px_60px_-30px_rgba(0,20,60,0.55)]", className)}>
-      <div className="flex items-center gap-2 border-b border-[#eef1f5] pb-3">
+    <div className={cn("w-full max-w-[340px] rounded-[18px] bg-white p-4 text-[#0d0d0d] shadow-[0_30px_60px_-30px_rgba(0,20,60,0.55)]", className)}>
+      <div className="flex items-center gap-2 border-b border-[#efeff3] pb-3">
         <AgentBadge name={agent} size={28} />
         <div className="text-[13px] font-semibold tracking-[-0.01em]">{agent}</div>
-        <span className="ml-auto text-[10px] text-[#8a94a6]">sample</span>
+        <span className="ml-auto text-[10px] text-[#8f8f99]">sample</span>
       </div>
       <div className="mt-3 space-y-2">
         {lines.map((l, i) => (
@@ -267,7 +267,7 @@ export function ChatMock({
             key={i}
             className={cn(
               "max-w-[88%] rounded-[18px] px-3 py-2 text-[12.5px] leading-[1.4]",
-              l.from === "you" ? "ml-auto rounded-br-full bg-[#006edd] text-white" : "rounded-bl-full bg-[#f4f4f3] text-[#0f1728]",
+              l.from === "you" ? "ml-auto rounded-br-full bg-[#4f1ad6] text-white" : "rounded-bl-full bg-[#f4f4f3] text-[#0d0d0d]",
             )}
           >
             {l.text}
@@ -284,20 +284,20 @@ export function StepTemplateMock() {
   const t = ["Finance collaborator", "Recruiting collaborator", "Support collaborator", "Report writer"];
   return (
     <MockWindow title="Create a new Cloud collaborator" active={1}>
-      <div className="text-[10px] text-[#4b5567]">Start from a template</div>
+      <div className="text-[10px] text-[#5c5c66]">Start from a template</div>
       <div className="mt-2 grid grid-cols-4 gap-2">
         {t.map((n, i) => (
-          <div key={n} className={cn("flex flex-col items-center rounded-[12px] border p-2", i === 0 ? "border-[#006edd] bg-[#f3f7fe]" : "border-[#e6e9ef]")}>
+          <div key={n} className={cn("flex flex-col items-center rounded-[12px] border p-2", i === 0 ? "border-[#4f1ad6] bg-[#f6f3fe]" : "border-[#e8e8ee]")}>
             <AgentBadge name={n} size={30} />
             <div className="mt-1.5 text-center text-[9px] leading-tight">{n}</div>
-            <div className={cn("mt-1.5 w-full rounded-full py-0.5 text-center text-[8.5px]", i === 0 ? "bg-[#0b1220] text-white" : "border border-[#e6e9ef]")}>
+            <div className={cn("mt-1.5 w-full rounded-full py-0.5 text-center text-[8.5px]", i === 0 ? "bg-[#0a0a0a] text-white" : "border border-[#e8e8ee]")}>
               {i === 0 ? "Selected" : "Select"}
             </div>
           </div>
         ))}
       </div>
-      <div className="mt-3 text-[10px] text-[#4b5567]">Name</div>
-      <div className="mt-1 rounded-[14px] border border-[#e6e9ef] px-2 py-1.5 text-[10.5px]">Finance collaborator, reconciliation</div>
+      <div className="mt-3 text-[10px] text-[#5c5c66]">Name</div>
+      <div className="mt-1 rounded-[14px] border border-[#e8e8ee] px-2 py-1.5 text-[10.5px]">Finance collaborator, reconciliation</div>
     </MockWindow>
   );
 }
@@ -305,9 +305,9 @@ export function StepTemplateMock() {
 export function StepInstructionsMock() {
   return (
     <MockWindow title="Instructions" active={1}>
-      <div className="text-[10px] text-[#4b5567]">What is this Cloud collaborator's job?</div>
-      <div className="mt-1 rounded-[14px] border border-[#e6e9ef] px-2 py-1.5 text-[10.5px]">Reconcile supplier invoices against purchase orders every month.</div>
-      <div className="mt-2.5 rounded-[14px] border border-[#e6e9ef] bg-[#f7f8fb] p-2 font-mono text-[9.5px] leading-[1.55] text-[#344054]">
+      <div className="text-[10px] text-[#5c5c66]">What is this Cloud collaborator's job?</div>
+      <div className="mt-1 rounded-[14px] border border-[#e8e8ee] px-2 py-1.5 text-[10.5px]">Reconcile supplier invoices against purchase orders every month.</div>
+      <div className="mt-2.5 rounded-[14px] border border-[#e8e8ee] bg-[#f5f5f8] p-2 font-mono text-[9.5px] leading-[1.55] text-[#333333]">
         # Goal
         <br />Match every invoice line to its PO.
         <br /># Rules
@@ -326,17 +326,17 @@ export function StepConnectMock() {
     <MockWindow title="Connectors" active={3}>
       <div className="space-y-1.5">
         {tools.map((t, i) => (
-          <div key={t.name} className="flex items-center gap-2 rounded-[12px] border border-[#e6e9ef] px-2 py-1.5" style={{ color: `#${t.hex}` }}>
+          <div key={t.name} className="flex items-center gap-2 rounded-[12px] border border-[#e8e8ee] px-2 py-1.5" style={{ color: `#${t.hex}` }}>
             <ToolMark tool={t} size={14} />
-            <span className="text-[10.5px] text-[#0f1728]">{t.name}</span>
-            <span className="ml-auto text-[9px] text-[#4b5567]">{i === 0 ? "read · write*" : "read"}</span>
-            <span className={cn("h-3.5 w-6 rounded-full p-0.5", "bg-[#006edd]")}>
+            <span className="text-[10.5px] text-[#0d0d0d]">{t.name}</span>
+            <span className="ml-auto text-[9px] text-[#5c5c66]">{i === 0 ? "read · write*" : "read"}</span>
+            <span className={cn("h-3.5 w-6 rounded-full p-0.5", "bg-[#4f1ad6]")}>
               <span className="ml-auto block h-2.5 w-2.5 rounded-full bg-white" />
             </span>
           </div>
         ))}
       </div>
-      <div className="mt-2 text-[8.5px] text-[#8a94a6]">* write tools stay behind approval</div>
+      <div className="mt-2 text-[8.5px] text-[#8f8f99]">* write tools stay behind approval</div>
     </MockWindow>
   );
 }
@@ -351,11 +351,11 @@ export function StepGuardrailsMock() {
           { t: "Personnel data", d: "Block, outside declared scope", on: true },
           { t: "Autonomous mode", d: "Off", on: false },
         ].map((r) => (
-          <div key={r.t} className="flex items-center gap-2 rounded-[12px] border border-[#e6e9ef] px-2.5 py-2">
+          <div key={r.t} className="flex items-center gap-2 rounded-[12px] border border-[#e8e8ee] px-2.5 py-2">
             <CheckCircle weight="fill" className={cn("h-3.5 w-3.5", r.on ? "text-[#1a7f3c]" : "text-[#d0d0d0]")} />
             <div>
               <div className="text-[10.5px] font-medium">{r.t}</div>
-              <div className="text-[9px] text-[#4b5567]">{r.d}</div>
+              <div className="text-[9px] text-[#5c5c66]">{r.d}</div>
             </div>
           </div>
         ))}
@@ -369,14 +369,14 @@ export function StepLiveMock() {
     <MockWindow title="Live" active={0}>
       <div className="space-y-1.5">
         {MISSIONS.slice(0, 4).map((m) => (
-          <div key={m.name} className="flex items-center gap-2 rounded-[12px] border border-[#e6e9ef] px-2 py-1.5">
+          <div key={m.name} className="flex items-center gap-2 rounded-[12px] border border-[#e8e8ee] px-2 py-1.5">
             <AgentBadge name={m.agent} size={18} />
             <span className="truncate text-[10.5px]">{m.name}</span>
             <span className="ml-auto"><Status s={m.s} /></span>
           </div>
         ))}
       </div>
-      <div className="mt-2 flex items-center gap-1 text-[9px] text-[#4b5567]">
+      <div className="mt-2 flex items-center gap-1 text-[9px] text-[#5c5c66]">
         <Clock className="h-2.5 w-2.5" /> Updated live · sample
       </div>
     </MockWindow>
@@ -389,20 +389,20 @@ export function StepReviewMock() {
       <div className="grid gap-2 sm:grid-cols-[1fr_120px]">
         <div className="space-y-1">
           {["Read invoices", "Match lines to POs", "Flag 3 differences", "Credit note, approved", "Summary sent"].map((s) => (
-            <div key={s} className="flex items-center gap-1.5 text-[10px] text-[#344054]">
+            <div key={s} className="flex items-center gap-1.5 text-[10px] text-[#333333]">
               <Check weight="bold" className="h-2.5 w-2.5 text-[#1a7f3c]" /> {s}
             </div>
           ))}
         </div>
-        <div className="rounded-[14px] bg-[#f7f8fb] p-2 text-[9px] leading-[1.6] text-[#555]">
-          <div className="font-medium text-[#0f1728]">Run</div>
+        <div className="rounded-[14px] bg-[#f5f5f8] p-2 text-[9px] leading-[1.6] text-[#555]">
+          <div className="font-medium text-[#0d0d0d]">Run</div>
           Cloud collaborator: Finance collaborator
           <br />Calls: 14
           <br />Approvals: 1
           <br />Duration: 2m 10s
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-1 text-[9px] text-[#4b5567]">
+      <div className="mt-2 flex items-center gap-1 text-[9px] text-[#5c5c66]">
         <Gauge className="h-2.5 w-2.5" /> Every call logged · sample
       </div>
     </MockWindow>
@@ -431,8 +431,8 @@ export function ToolGrid({ names, className }: { names?: string[]; className?: s
 /** Small white sticker used on artwork panels. */
 export function Sticker({ icon: I, children, className }: { icon?: typeof Plugs; children: ReactNode; className?: string }) {
   return (
-    <div className={cn("flex items-center gap-2 rounded-[24px] bg-white px-3 py-2 text-[12px] font-medium text-[#0f1728] shadow-[0_14px_30px_-16px_rgba(0,20,60,0.5)]", className)}>
-      {I && <I className="h-4 w-4 text-[#006edd]" />}
+    <div className={cn("flex items-center gap-2 rounded-[24px] bg-white px-3 py-2 text-[12px] font-medium text-[#0d0d0d] shadow-[0_14px_30px_-16px_rgba(0,20,60,0.5)]", className)}>
+      {I && <I className="h-4 w-4 text-[#4f1ad6]" />}
       {children}
     </div>
   );
@@ -457,17 +457,17 @@ export function TaskCard({
   className?: string;
 }) {
   return (
-    <div className={cn("w-full max-w-[360px] rounded-[18px] border border-white/60 bg-white p-4 text-[#0f1728] hn-shadow-lg", className)}>
+    <div className={cn("w-full max-w-[360px] rounded-[18px] border border-white/60 bg-white p-4 text-[#0d0d0d] hn-shadow-lg", className)}>
       <div className="flex items-center gap-2.5">
         <AgentBadge name={agent} size={30} />
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">{agent}</div>
-          <div className="truncate text-[11.5px] text-[#4b5567]">{title}</div>
+          <div className="truncate text-[11.5px] text-[#5c5c66]">{title}</div>
         </div>
       </div>
-      <ul className="mt-3.5 space-y-2 border-t border-[#eef1f5] pt-3.5">
+      <ul className="mt-3.5 space-y-2 border-t border-[#efeff3] pt-3.5">
         {steps.map((s) => (
-          <li key={s} className="flex items-start gap-2 text-[12px] leading-[1.4] text-[#344054]">
+          <li key={s} className="flex items-start gap-2 text-[12px] leading-[1.4] text-[#333333]">
             <CheckCircle weight="fill" className="mt-px h-3.5 w-3.5 shrink-0 text-[#12b76a]" />
             {s}
           </li>
@@ -487,31 +487,31 @@ export function TaskCard({
     can only add an approval. */
 export function CheckPipelineMock({ className }: { className?: string }) {
   const rows = [
-    { k: "Action", v: "crm.update_deal_stage", tone: "text-[#0f1728]" },
-    { k: "Check 1 · verbs", v: "“update” → write action", tone: "text-[#0b5ed7]" },
+    { k: "Action", v: "crm.update_deal_stage", tone: "text-[#0d0d0d]" },
+    { k: "Check 1 · verbs", v: "“update” → write action", tone: "text-[#4f1ad6]" },
     { k: "Check 2 · judgement", v: "changes customer data → approval", tone: "text-[#4447d6]" },
     { k: "Result", v: "Waiting for your approval", tone: "text-[#93370d]" },
   ];
   return (
-    <div className={cn("w-full max-w-[380px] rounded-[18px] bg-white p-4 text-[#0f1728] hn-shadow-lg", className)}>
+    <div className={cn("w-full max-w-[380px] rounded-[18px] bg-white p-4 text-[#0d0d0d] hn-shadow-lg", className)}>
       <div className="flex items-center gap-2 text-[13px] font-semibold">
-        <ShieldCheck weight="duotone" className="h-4 w-4 text-[#0b5ed7]" /> Before any write
+        <ShieldCheck weight="duotone" className="h-4 w-4 text-[#4f1ad6]" /> Before any write
       </div>
       <ol className="mt-3 space-y-0">
         {rows.map((r, i) => (
           <li key={r.k} className="relative flex gap-3 pb-3 last:pb-0">
-            <span className="relative z-10 mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full border border-[#cfd5df] bg-white text-[9px] font-semibold text-[#4b5567]">
+            <span className="relative z-10 mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full border border-[#d4d4dc] bg-white text-[9px] font-semibold text-[#5c5c66]">
               {i + 1}
             </span>
-            {i < rows.length - 1 && <span aria-hidden className="absolute left-[7.5px] top-5 h-full w-px bg-[#e6e9ef]" />}
+            {i < rows.length - 1 && <span aria-hidden className="absolute left-[7.5px] top-5 h-full w-px bg-[#e8e8ee]" />}
             <div className="min-w-0">
-              <div className="text-[10.5px] text-[#8a94a6]">{r.k}</div>
+              <div className="text-[10.5px] text-[#8f8f99]">{r.k}</div>
               <div className={cn("truncate text-[12.5px] font-medium", r.tone)}>{r.v}</div>
             </div>
           </li>
         ))}
       </ol>
-      <div className="mt-3 rounded-[12px] bg-[#f7f8fb] px-2.5 py-1.5 text-[10.5px] text-[#4b5567]">The second check can add an approval, never remove one.</div>
+      <div className="mt-3 rounded-[12px] bg-[#f5f5f8] px-2.5 py-1.5 text-[10.5px] text-[#5c5c66]">The second check can add an approval, never remove one.</div>
     </div>
   );
 }
@@ -519,25 +519,25 @@ export function CheckPipelineMock({ className }: { className?: string }) {
 /** Where the keys live and which model runs the agent. */
 export function KeysMock({ className }: { className?: string }) {
   return (
-    <div className={cn("w-full max-w-[380px] rounded-[18px] bg-white p-4 text-[#0f1728] hn-shadow-lg", className)}>
+    <div className={cn("w-full max-w-[380px] rounded-[18px] bg-white p-4 text-[#0d0d0d] hn-shadow-lg", className)}>
       <div className="flex items-center gap-2 text-[13px] font-semibold">
-        <Gear weight="duotone" className="h-4 w-4 text-[#0b5ed7]" /> Finance collaborator · runtime
+        <Gear weight="duotone" className="h-4 w-4 text-[#4f1ad6]" /> Finance collaborator · runtime
       </div>
       <div className="mt-3 space-y-2">
-        <div className="rounded-[12px] border border-[#e6e9ef] px-3 py-2">
-          <div className="text-[10.5px] text-[#8a94a6]">Ledger credentials</div>
+        <div className="rounded-[12px] border border-[#e8e8ee] px-3 py-2">
+          <div className="text-[10.5px] text-[#8f8f99]">Ledger credentials</div>
           <div className="mt-0.5 flex items-center justify-between text-[12px] font-medium">
             <span className="font-mono tracking-[0.1em]">••••••••••••</span>
             <span className="rounded-full bg-[#ecfdf3] px-2 py-0.5 text-[10px] font-medium text-[#067647]">AES-256-GCM</span>
           </div>
         </div>
-        <div className="rounded-[12px] border border-[#e6e9ef] px-3 py-2">
-          <div className="text-[10.5px] text-[#8a94a6]">Model endpoint</div>
-          <div className="mt-0.5 truncate font-mono text-[11px] text-[#344054]">https://llm.internal.yourco.eu/v1</div>
-          <div className="mt-1 text-[10.5px] text-[#4b5567]">OpenAI-compatible · hosted by you</div>
+        <div className="rounded-[12px] border border-[#e8e8ee] px-3 py-2">
+          <div className="text-[10.5px] text-[#8f8f99]">Model endpoint</div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-[#333333]">https://llm.internal.yourco.eu/v1</div>
+          <div className="mt-1 text-[10.5px] text-[#5c5c66]">OpenAI-compatible · hosted by you</div>
         </div>
       </div>
-      <div className="mt-3 text-[10.5px] text-[#8a94a6]">Sample configuration</div>
+      <div className="mt-3 text-[10.5px] text-[#8f8f99]">Sample configuration</div>
     </div>
   );
 }

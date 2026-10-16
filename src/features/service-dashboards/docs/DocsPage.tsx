@@ -175,7 +175,12 @@ function Article({
 
 export function DocsPanel({
   active, onSelect,
-}: { active?: string | null; onSelect: (slug: string | null) => void }) {
+}: {
+  /** L'article ouvert ; `null` sur le sommaire ; `undefined` quand la page
+   *  ouverte n'est pas la documentation (la barre latérale la liste partout). */
+  active?: string | null;
+  onSelect: (slug: string | null) => void;
+}) {
   return (
     <div className="space-y-4 px-2.5 py-2">
       <button
@@ -183,7 +188,7 @@ export function DocsPanel({
         onClick={() => onSelect(null)}
         className={cn(
           "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-13 transition-colors",
-          !active ? "bg-sidebar-accent font-medium text-foreground" : "text-muted-foreground hover:bg-sidebar-accent/60",
+          active === null ? "bg-primary/15 font-medium text-foreground" : "text-muted-foreground hover:bg-sidebar-accent/60",
         )}
       >
         <BookOpenIcon className="h-4 w-4" /> Sommaire
@@ -201,7 +206,7 @@ export function DocsPanel({
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-13 transition-colors",
                   active === a.slug
-                    ? "bg-sidebar-accent font-medium text-foreground"
+                    ? "bg-primary/15 font-medium text-foreground"
                     : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
                 )}
               >

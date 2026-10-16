@@ -169,8 +169,10 @@ export async function instantiateTemplate(
     }
   }
 
-  if (tools.length > 0) {
-    const rows = tools.map((t) => ({
+  // Le CRM est masqué (navigation et serveur) : un outil crm serait inerte.
+  const seeded = tools.filter((t) => t.kind !== "crm");
+  if (seeded.length > 0) {
+    const rows = seeded.map((t) => ({
       agent_id: agent.id,
       kind: t.kind,
       name: t.name,

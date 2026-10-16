@@ -8,14 +8,14 @@ servers: []
 cluster: ""
 
 image:
-  repository: quay.interne.exemple/ai-platform/mcp-openshift
-  tag: "0.1.0"
+  repository: quay.interne.exemple/ai-platform/mcp-server
+  tag: "0.2.0"
   pullPolicy: IfNotPresent
 
 replicas: 2
 
-# Audience attendue dans le jeton d'appel (client Keycloak bearer-only du
-# serveur). Vide : mcp-<server>-<cluster>.
+# Audience attendue dans le jeton d'appel (mode oidc) et dans les jetons
+# d'approbation. Vide : mcp-<cluster> (servers) ou mcp-<server>-<cluster>.
 audience: ""
 
 # Authentification des appels :
@@ -26,6 +26,7 @@ audience: ""
 #   token          : jetons d'API fixes (npm run token -- generate), empreintes dans le
 #                    Secret tokensSecret (clé tokens.json), relues à chaud ;
 #   oidc           : jetons émis par un IdP (échange de jeton, On-Behalf-Of) — voir keycloak.
+# Architecture Hub (docs/architecture-hub.md) : rotating, sans IdP côté serveur.
 auth:
   mode: rotating
   seedSecret: mcp-token-seed
@@ -34,8 +35,8 @@ auth:
   # Rôles du jeton (catalogue) ; les scopes s'en déduisent. En production, les écritures
   # restent soumises à approbation quel que soit le rôle.
   roles: [ai-ops-reader]
-  # Où livrer chaque nouveau jeton : le backend de FounderOS. Flux à ouvrir : ce
-  # namespace vers FounderOS, en HTTPS (docs/openshift-implementation.md, 5.5).
+  # Où livrer chaque nouveau jeton : le backend de FounderOS, sur le Hub. Flux à ouvrir :
+  # ce namespace vers la Route de FounderOS, en HTTPS (docs/architecture-hub.md, flux F4).
   founderosUrl: ""
   # ConfigMap de l'AC de FounderOS (clé ca.crt) ; vide : AC système.
   founderosCaConfigMap: ""
@@ -55,8 +56,9 @@ keycloak:
   allowedAgents: [agent-ops-investigator, agent-ops-change]
 
 approval:
-  # Jetons d'approbation signés par FounderOS (actions PRD). jwksUrl vide : désactivé.
-  issuer: https://founderos.ips.interne.exemple
+  # Jetons d'approbation signés par FounderOS (écritures en PRD et sur le Hub).
+  # jwksUrl et jwksConfigMap vides : désactivé.
+  issuer: https://founderos-api.apps-int.hub.interne.exemple
   jwksUrl: ""
   # À la place de jwksUrl, pour un cluster qui ne joint pas FounderOS : une
   # ConfigMap (clé jwks.json) copiée depuis GET /functions/v1/approval-jwks.
@@ -65,9 +67,46 @@ approval:
   # (Entra ID : l'audience de la connexion côté FounderOS, ex. api://mcp-prd). Vide : la même.
   audience: ""
 
+# Identifiants Kubernetes, sans Vault : deux comptes de service dédiés, liés par
+# RoleBinding dans les seuls namespaces autorisés. Le serveur obtient pour chaque
+# appel un jeton de 10 minutes par l'API TokenRequest (credential { type: k8s-token }).
+#   <nom>-reader    ClusterRole readClusterRole dans chaque namespace
+#   <nom>-operator  ClusterRole write.clusterRole, si write.enabled
+rbac:
+  create: true
+  # Namespaces où lier les comptes ; vide : ceux de config.namespaces ou config.openshift.namespaces.
+  namespaces: []
+  readClusterRole: ai-reader
+  write:
+    enabled: false
+    # ai-operator en SDB et NPR ; ai-prd-restarter en PRD (redémarrage et mise à l'échelle seulement).
+    clusterRole: ai-operator
+  # Crée les ClusterRoles ai-reader, ai-operator, ai-prd-restarter et ai-acm-policy-reader.
+  # Une seule release par cluster doit le faire.
+  clusterRoles:
+    create: true
+  # Liaisons de cluster en plus, pour le compte lecteur (module flotte du Hub) :
+  #   - ai-acm-policy-reader
+  clusterWide: []
+
+# Identifiants des outils, montés depuis des Secrets existants, sous
+# /etc/mcp-secrets/<name>/ (credential { type: file, path: /etc/mcp-secrets/argocd/token }).
+#   - { name: argocd, secretName: mcp-argocd }
+secretMounts: []
+
+# Garde-fous d'exécution.
+limits:
+  # Appels par minute et par appelant, et rafale permise.
+  ratePerMinute: 120
+  burst: 30
+  # Tools exécutés en même temps, et durée maximale d'un tool.
+  maxConcurrency: 16
+  toolTimeout: 30s
+
 vault:
-  # Le Vault de CE cluster : chaque cluster a le sien (docs/openshift-implementation.md, section 8).
-  addr: https://vault.interne.exemple:8200
+  # En option : identifiants kv et vault-k8s, si l'entreprise a un Vault.
+  enabled: false
+  addr: ""
   # Rôle de la méthode kubernetes ; vide : le nom du déploiement (mcp-<server> ou mcp-<cluster>).
   role: ""
   # Méthode kubernetes et moteur de secrets Kubernetes de ce Vault ; vides : kubernetes.

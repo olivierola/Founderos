@@ -8,10 +8,10 @@ import {
   HouseIcon, RobotIcon, BrainIcon, GearSixIcon, ChartBarIcon, CalendarDotsIcon, FilesIcon,
   ChatsCircleIcon, GraphIcon, DatabaseIcon, SlidersIcon, SquaresFourIcon,
   SparkleIcon, WarningIcon, MagnifyingGlassIcon, PlusIcon, CheckIcon, CaretDownIcon,
-  DotsThreeIcon, PencilSimpleIcon, TrashIcon, HashIcon, SidebarSimpleIcon, UsersThreeIcon, UserIcon,
-  TargetIcon, GlobeIcon, FlowArrowIcon, KanbanIcon, FlagIcon, EyeIcon,
-  ArrowsClockwiseIcon, StackIcon, NotePencilIcon, ArchiveIcon, PushPinIcon, PackageIcon,
-  PushPinSlashIcon, BookOpenIcon, TrayIcon, WrenchIcon, RocketLaunchIcon,
+  DotsThreeIcon, PencilSimpleIcon, TrashIcon, HashIcon, SidebarSimpleIcon, UsersThreeIcon,
+  TargetIcon, GlobeIcon, FlowArrowIcon, KanbanIcon, FlagIcon,
+  NotePencilIcon, PushPinIcon, PackageIcon,
+  PushPinSlashIcon, BookOpenIcon, TrayIcon, WrenchIcon, RocketLaunchIcon, PlugsConnectedIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import {
@@ -33,18 +33,17 @@ import { rememberServiceDashboard } from "@/app/PlaneLanding";
 import {
   fetchServiceDashboards, createServiceDashboard, deleteServiceDashboard, fetchRooms, renameRoom, deleteRoom,
   createRoom, deleteEmptyRooms, DEFAULT_DASHBOARD_SETTINGS,
-  type ServiceDashboard, type Room, type DashboardTabSlug,
+  type ServiceDashboard, type Room,
 } from "./model";
 import { RoomView } from "./RoomView";
 import { useCollaboratorInbox } from "./CollaboratorInbox";
 import { SidebarProfileFooter } from "./SidebarProfileFooter";
 import { SidebarGetStarted } from "./GetStarted";
-import { DocsPage, DocsPanel } from "./docs/DocsPage";
+import { DocsPage } from "./docs/DocsPage";
 import {
-  AgentsTab, SchedulesTab, WorkspaceMemoryTab, HomeTab, AgentDetailInDashboard,
+  AgentsTab, WorkspaceMemoryTab, AgentDetailInDashboard,
   AgentConfigInDashboard,
 } from "./ServiceDashboardTabs";
-import { DashboardMissionsTab } from "./RoomMissions";
 import { TrackerTab } from "@/features/tracker/TrackerTab";
 import { fetchProjects as fetchTrackerProjects } from "@/features/tracker/model";
 import { ProjectLogo } from "@/features/tracker/LogoPicker";
@@ -52,7 +51,7 @@ import { ComposioCatalog } from "@/features/integrations/ComposioCatalog";
 import { CustomConnectorsPage } from "@/features/custom-connectors/CustomConnectorsPage";
 import { WorkflowsList } from "@/features/workflows/WorkflowsList";
 import { WorkflowDocument } from "@/features/workflows/WorkflowDocument";
-import { DashboardSettingsTab, DASHBOARD_SETTINGS_SECTIONS, type DashboardSettingsSection } from "./DashboardSettings";
+import { DashboardSettingsTab, type DashboardSettingsSection } from "./DashboardSettings";
 import { CreateAgentPage } from "./CreateAgent";
 import { PublicAgentInDashboard } from "./PublicAgentInDashboard";
 import { fetchAgentFolders } from "./agentFolders";
@@ -63,77 +62,19 @@ import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
 import { useConfirm } from "@/components/ConfirmProvider";
 
 // ── Structure ────────────────────────────────────────────────────────────────
-// Two rails, like the reference: a narrow icon rail holding the top-level
-// sections, and a contextual panel showing that section's own navigation
-// (Home → rooms & agent DMs, Agents → the roster, Memory → its views, Settings
-// → its sections). The content is flush — no floating rounded panel.
-type RailKey = "home" | "projects" | "resources" | "settings" | "docs";
-
-const RAIL: { key: RailKey; label: string; icon: PhosphorIcon; tab: DashboardTabSlug | "settings" }[] = [
-  // Le suivi de travail EN TÊTE : c'est le module principal du service, celui
-  // où l'on passe la journée. Il porte l'accueil, les projets, les rooms et les
-  // messages — c'est-à-dire le travail et ce qu'on en dit, au même endroit.
-  { key: "projects", label: "Intelligence Space", icon: KanbanIcon, tab: "projects" },
-  // Home reste, en second : sa page d'assistant et ses onglets secondaires
-  // (missions, statistiques, planifications) n'ont pas disparu, ils ne sont
-  // simplement plus la première chose qu'on voit.
-  { key: "home", label: "Assistant", icon: HouseIcon, tab: "home" },
-  // Memory + connections + workflows in one section: they are the three things
-  // the workforce DRAWS ON rather than three separate destinations — what it
-  // knows, what it can reach, and what fires around it. Two rail icons for the
-  // first two only made you guess which one held a given setup step.
-  { key: "resources", label: "Ressources", icon: DatabaseIcon, tab: "memory" },
-];
-
-// Tabs that live INSIDE the Home panel rather than on the rail.
-const HOME_NAV: { slug: DashboardTabSlug | "dashboard" | "missions"; label: string; icon: PhosphorIcon }[] = [
-  // Missions first: it is the board where the service's collective work lives,
-  // and it is what people come back to between conversations.
-  { slug: "missions", label: "Missions", icon: TargetIcon },
-  { slug: "schedules", label: "Schedules", icon: CalendarDotsIcon },
-];
-
-// The Ressources panel, in three groups. Each entry carries the tab it routes
-// to, so the merged section keeps the ORIGINAL urls — /memory/:view and
-// /connectors/:scope still resolve, and every deep link that ever shipped keeps
-// working. Only the rail merged; the routes did not.
-const RESOURCE_GROUPS: {
-  label: string;
-  items: { tab: "memory" | "connectors" | "workflows"; key: string; label: string; icon: PhosphorIcon }[];
-}[] = [
-  {
-    label: "Mémoire",
-    items: [
-      { tab: "memory", key: "graph", label: "Graph", icon: GraphIcon },
-      { tab: "memory", key: "memories", label: "Memories", icon: BrainIcon },
-      { tab: "memory", key: "sources", label: "Sources", icon: DatabaseIcon },
-    ],
-  },
-  {
-    // The scope separation is the whole point, so it lives in the navigation
-    // rather than in a chip row: a shared account and someone's own mailbox are
-    // not two filters of one list.
-    label: "Connexions",
-    items: [
-      { tab: "connectors", key: "space", label: "Connexions de l'espace", icon: UsersThreeIcon },
-      { tab: "connectors", key: "personal", label: "Mes connexions", icon: UserIcon },
-      // Les outils hébergés par l'entreprise (Argo CD, Vault, Grafana…), hors
-      // Composio : connecteurs décrits à la main, relais, journal d'accès (0267).
-      { tab: "connectors", key: "internal", label: "Outils internes", icon: WrenchIcon },
-    ],
-  },
-  {
-    label: "Automatisations",
-    items: [
-      { tab: "workflows", key: "list", label: "Workflows", icon: FlowArrowIcon },
-    ],
-  },
-];
-
-const SETTINGS_ICONS: Record<string, PhosphorIcon> = {
-  general: SlidersIcon, navigation: SquaresFourIcon, assistant: SparkleIcon,
-  agents: RobotIcon, rooms: ChatsCircleIcon, danger: WarningIcon,
-};
+// UNE seule barre latérale. Elle a longtemps tenu sur deux colonnes — un rail
+// d'icônes pour les grandes sections, un panneau contextuel pour la navigation
+// de la section choisie — et il fallait deviner quel rail portait une page
+// avant de la voir. Tout est désormais listé au même endroit : le travail
+// (Intelligence Space) et ce sur quoi il s'appuie, puis les rooms. Les
+// paramètres et la documentation sont dans le menu du profil, en bas.
+// Repliée, elle se réduit à une bande étroite qui garde le sélecteur de
+// tableau, de quoi la redéployer et le compte.
+//
+// L'espace « Assistant » (Home, Missions, Schedules, rooms, messages) a été
+// retiré : l'Intelligence Space porte déjà le travail et les rooms, et les
+// conversations avec un agent s'ouvrent depuis l'onglet Agents. Ses adresses
+// redirigent vers l'Intelligence Space (voir plus bas).
 
 export function ServiceDashboardPage() {
   // Même verrou que l'AppShell : cette coque est hors d'AppShell et doit donc
@@ -150,6 +91,15 @@ export function ServiceDashboardPage() {
     if (projectId && dashboardId) rememberServiceDashboard(projectId, dashboardId);
   }, [projectId, dashboardId]);
 
+  // Le violet de marque, le temps qu'on est ici (voir `.sd-brand` dans
+  // globals.css). Sur <html> et pas sur la coque : menus et dialogues sont
+  // rendus en portail, hors de son sous-arbre, et resteraient bleus.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("sd-brand");
+    return () => root.classList.remove("sd-brand");
+  }, []);
+
   const { data: dashboards } = useQuery({
     queryKey: ["service_dashboards", projectId],
     enabled: !!projectId,
@@ -157,7 +107,6 @@ export function ServiceDashboardPage() {
   });
   const current = (dashboards ?? []).find((d) => d.id === dashboardId) ?? null;
   const settings = current?.settings ?? DEFAULT_DASHBOARD_SETTINGS;
-  const hidden = (slug: string) => settings.hidden_tabs.includes(slug as DashboardTabSlug);
 
   const isRoom = tab === "room" && !!sub;
   const isAgent = tab === "agent" && !!sub;
@@ -177,22 +126,6 @@ export function ServiceDashboardPage() {
     : isAgentConfig ? "agent-config"
     : isPublicAgent ? "public"
     : (tab && KNOWN.includes(tab) ? tab : settings.landing);
-  // Which rail entry lights up: agent pages belong to Agents, rooms and the
-  // secondary tabs (missions/dashboard/schedules/artifacts) belong to Home, and
-  // memory + connections + workflows share the merged Ressources section.
-  const RESOURCE_TABS = ["memory", "connectors", "workflows"];
-  // TOUT ce qui touche aux agents appartient au module de travail : le roster,
-  // la fiche d'un collaborateur, sa configuration, un collaborateur public, et jusqu'à sa
-  // création. C'était auparavant un rail séparé, ce qui posait la force de
-  // travail à côté du travail — deux mondes parallèles entre lesquels il fallait
-  // faire l'aller-retour pour savoir qui fait quoi.
-  const rail: RailKey = activeTab === "projects" || activeTab === "agents"
-    || activeTab === "room" || isAgent || isAgentConfig || isPublicAgent || isCreateAgent
-    ? "projects"
-    : RESOURCE_TABS.includes(activeTab) ? "resources"
-    : activeTab === "settings" ? "settings"
-    : activeTab === "docs" ? "docs"
-    : "home";
 
   // Deux onglets ont déménagé dans le module de travail — le Dashboard vers ses
   // analytics, les Artefacts vers son Wiki.
@@ -204,7 +137,11 @@ export function ServiceDashboardPage() {
     if (activeTab === "dashboard") navigate(`${base}/projects/analytics`, { replace: true });
     // Les artefacts ont rejoint le Wiki : mêmes documents, même endroit.
     if (activeTab === "artifacts") navigate(`${base}/projects/wiki`, { replace: true });
-  }, [activeTab, base, navigate]);
+    // L'ancien espace Assistant : son travail et ses rooms sont dans l'Intelligence Space.
+    if (activeTab === "home" || activeTab === "missions" || activeTab === "schedules") navigate(`${base}/projects`, { replace: true });
+    // La liste Memories a quitté Ressources : ses souvenirs sont dans le graphe.
+    if (activeTab === "memory" && sub === "memories") navigate(`${base}/memory/graph`, { replace: true });
+  }, [activeTab, sub, base, navigate]);
 
   /**
    * QUI fait défiler : le contenu, ou son conteneur — jamais les deux.
@@ -238,7 +175,8 @@ export function ServiceDashboardPage() {
   // l'éditeur et pas sur l'onglet.
   const mainScrolls = !SELF_SCROLLING.includes(activeTab) && !isWorkflowEditor;
 
-  // Panel (second sidebar) can be folded away; the rail always stays.
+  // The sidebar folds down to a narrow strip — never to nothing, or there would
+  // be no way back.
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("sd-sidebar-collapsed") === "1"; } catch { return false; }
   });
@@ -258,113 +196,96 @@ export function ServiceDashboardPage() {
   // per-service override would drift out of step the moment they changed the
   // theme somewhere else.
 
-  const railItems = RAIL.filter((r) => r.key === "home" || !hidden(r.key));
-  const panelTitle = rail === "home" ? "Assistant"
-    : rail === "projects" ? "Intelligence Space"
-    : rail === "resources" ? "Ressources"
-    : rail === "docs" ? "Documentation" : "Settings";
-
   return (
     // The SaaS assistant lives here too: internal agents are configured through
     // it (see ToolSetupReminder), and this is now the only place an agent opens.
     <AssistantProvider>
     <div className="flex h-screen w-full overflow-hidden bg-[hsl(var(--sd-ground))] text-foreground">
-      {/* ── Icon rail ── */}
-      <aside className="flex h-full w-[60px] shrink-0 flex-col items-center gap-1.5 py-3">
-        <DashboardSelector current={current} dashboards={dashboards ?? []} />
-        <PanelToggleButton collapsed={collapsed} onToggle={toggleCollapsed} />
-        <div className="mt-1.5 flex flex-1 flex-col items-center gap-1.5">
-          {railItems.map((r) => (
-            <RailButton
-              key={r.key} icon={r.icon} label={r.label} active={rail === r.key}
-              onClick={() => navigate(`${base}/${r.tab}`)}
-            />
-          ))}
-          <RailButton
-            icon={GearSixIcon} label="Paramètres du service" active={rail === "settings"}
-            onClick={() => navigate(`${base}/settings`)}
-          />
-        </div>
-        {/* Same picker as the Topbar's — this space has no navbar, so the
-            theme (and the assistant) have to be reachable from the rail. */}
-        <RailButton
-          icon={BookOpenIcon} label="Documentation" active={rail === "docs"}
-          onClick={() => navigate(`${base}/docs`)}
-        />
-        <AssistantRailButton />
-        <ThemeMenu align="start" className="h-10 w-10 hover:bg-sidebar-accent/60" />
-        <SidebarProfileFooter compact />
-      </aside>
-
-      {/* Panel + content float together as ONE rounded card laid on the ground
-          (the rail keeps the ground colour behind it). */}
-      <div className="flex min-w-0 flex-1 py-2 pr-2">
-        <div className="flex min-w-0 flex-1 overflow-hidden rounded-2xl border border-border/60 bg-background shadow-sm">
-      {/* ── Contextual panel ── */}
+      {/* ── Sidebar ── */}
       <aside className={cn(
-        // Its own tone, a shade off the content it sits next to.
-        "h-full shrink-0 overflow-hidden border-r border-border/60 bg-[hsl(var(--sd-panel))] transition-[width] duration-300 ease-in-out",
-        collapsed ? "w-0" : "w-[268px]",
+        // Ni fond ni bordure : la barre EST le fond, et seul le contenu est
+        // posé dessus. Une teinte propre en ferait une deuxième surface à côté
+        // de la carte, et l'œil ne saurait plus laquelle est la page.
+        "h-full shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out",
+        collapsed ? "w-[60px]" : "w-[300px]",
       )}>
-        <div className="flex h-full w-[268px] flex-col">
-          <PanelHeader title={panelTitle} dashboardId={dashboardId!} base={base} onCollapse={toggleCollapsed} />
+        {collapsed ? (
+          // Repliée : le sélecteur de tableau, de quoi redéployer la barre, et
+          // ce qui doit rester à portée sans elle — l'assistant, le thème, le
+          // compte. Ce tableau n'a pas de navbar pour les porter à sa place.
+          <div className="flex h-full w-[60px] flex-col items-center gap-1.5 pb-3 pt-5">
+            <DashboardSelector current={current} dashboards={dashboards ?? []} />
+            <PanelToggleButton collapsed onToggle={toggleCollapsed} />
+            <div className="flex-1" />
+            <AssistantButton />
+            <ThemeMenu align="start" className="h-10 w-10 hover:bg-sidebar-accent/60" />
+            <SidebarProfileFooter compact />
+          </div>
+        ) : (
+        // Le retrait latéral et la marge du haut écartent la navigation des
+        // bords de l'écran : posée sur le fond, sans cadre, elle a besoin d'air
+        // pour ne pas paraître collée.
+        <div className="flex h-full w-[300px] flex-col px-2 pt-3">
+          <PanelHeader
+            brand={<DashboardSelector current={current} dashboards={dashboards ?? []} label="Intelligence Space" />}
+            dashboardId={dashboardId!} base={base} onCollapse={toggleCollapsed}
+          />
 
-          <div className="min-h-0 flex-1 overflow-y-auto pb-2">
-            {rail === "home" && (
-              <HomePanel base={base} dashboardId={dashboardId!} activeTab={activeTab} sub={sub} hidden={hidden}
-                dashboardName={current?.name ?? "Service"} workspaceId={workspaceId} projectId={projectId} />
-            )}
-            {rail === "projects" && (
-              <>
-                <TrackerPanel
-                  base={base} dashboardId={dashboardId!}
-                  activeProjectId={sub} activeView={sub} activeSection={leaf}
-                />
-                {/* Pas de liste d'collaborateurs ici : l'onglet Agents la porte déjà,
-                    avec ses dossiers et ses cartes. La répéter dans la barre
-                    latérale ne donnait aucun accès nouveau — seulement deux
-                    endroits à parcourir des yeux pour la même information, et
-                    un panneau qu'il fallait faire défiler pour atteindre les
-                    rooms. */}
-                {/* Les rooms SOUS les projets, dans le même panneau. Une room
-                    est une conversation sur du travail : devoir changer de rail
-                    pour passer du board à ce qu'on en dit casse le fil. */}
-                <div className="mx-4 mt-6 border-t border-sidebar-border/60" />
-                <RoomsAndMessages
-                  base={base}
-                  dashboardId={dashboardId!}
-                  activeTab={activeTab}
-                  sub={sub}
-                  dashboardName={current?.name ?? ""}
-                  workspaceId={workspaceId}
-                  projectId={projectId}
-                  // Les messages directs listent les MÊMES agents que l'onglet
-                  // Agents : une troisième énumération de la même chose. Ils
-                  // restent dans le panneau Assistant, où ils voisinent avec ce
-                  // qui relève de la conversation.
-                  showMessages={false}
-                />
-              </>
-            )}
-            {rail === "resources" && (
-              <ResourcesPanel
-                base={base}
-                activeTab={activeTab}
-                activeSub={sub || (activeTab === "connectors" ? "space" : "graph")}
-              />
-            )}
-            {rail === "settings" && <SettingsPanel base={base} active={(sub || "general") as DashboardSettingsSection} />}
-            {rail === "docs" && (
-              <DocsPanel
-                active={sub ?? null}
-                onSelect={(slug) => navigate(slug ? `${base}/docs/${slug}` : `${base}/docs`)}
-              />
-            )}
+          {/* Défile sans barre : posée sur le fond, sans cadre, la navigation
+              n'a pas de bord où une barre de défilement se lirait comme une
+              limite — elle faisait une rayure grise au milieu du fond. */}
+          <div className="min-h-0 flex-1 overflow-y-auto pb-2 scrollbar-hide">
+            <TrackerPanel
+              base={base} dashboardId={dashboardId!}
+              // Les vues et projets du tracker vivent sous /projects : hors de
+              // là, `sub` est une room, une section de réglages… et ne doit
+              // rien allumer ici.
+              activeProjectId={activeTab === "projects" ? sub : undefined}
+              activeView={activeTab === "projects" ? sub : undefined}
+              activeSection={activeTab === "projects" ? leaf : undefined}
+              activeTab={activeTab}
+              activeSub={sub || (activeTab === "connectors" ? "space" : activeTab === "memory" ? "graph" : undefined)}
+            />
+            {/* Pas de liste d'collaborateurs ici : l'onglet Agents la porte déjà,
+                avec ses dossiers et ses cartes. La répéter dans la barre
+                latérale ne donnait aucun accès nouveau — seulement deux
+                endroits à parcourir des yeux pour la même information, et
+                un panneau qu'il fallait faire défiler pour atteindre les
+                rooms. */}
+            {/* Les rooms SOUS les projets. Une room est une conversation sur
+                du travail : la ranger ailleurs que le board casse le fil. */}
+            <div className="mx-4 mt-6 border-t border-sidebar-border/60" />
+            <RoomsAndMessages
+              base={base}
+              dashboardId={dashboardId!}
+              activeTab={activeTab}
+              sub={sub}
+              dashboardName={current?.name ?? ""}
+              workspaceId={workspaceId}
+              projectId={projectId}
+              // Les messages directs listent les MÊMES agents que l'onglet
+              // Agents : une troisième énumération de la même chose.
+              showMessages={false}
+            />
+
+            {/* Paramètres et Documentation ne sont plus listés ici : on y va
+                rarement, ils vivent dans le menu du profil (en bas), et chacune
+                de leurs pages porte sa propre navigation. */}
           </div>
 
-          {(rail === "home" || rail === "projects") && <SidebarGetStarted dashboardId={dashboardId!} />}
+          <SidebarGetStarted dashboardId={dashboardId!} />
+          <div className="flex items-center gap-1 border-t border-border/60 p-2">
+            <SidebarProfileFooter />
+            <AssistantButton className="h-8 w-8 rounded-lg" />
+            <ThemeMenu align="end" className="hover:bg-sidebar-accent/60" />
+          </div>
         </div>
+        )}
       </aside>
+
+      {/* The content alone floats as a rounded card laid on the ground. */}
+      <div className="flex min-w-0 flex-1 py-3 pr-3">
+        <div className="flex min-w-0 flex-1 overflow-hidden rounded-2xl border border-border/60 bg-background shadow-sm">
 
       {/* ── Content ── */}
       <main className={cn(
@@ -389,12 +310,7 @@ export function ServiceDashboardPage() {
           <CreateAgentPage dashboardId={dashboardId!} workspaceId={workspaceId} projectId={projectId} />
         ) : (
           <>
-            {activeTab === "home" && <HomeTab dashboardId={dashboardId!} dashboardName={current.name} workspaceId={workspaceId} projectId={projectId} />}
             {activeTab === "agents" && <AgentsTab dashboardId={dashboardId!} />}
-            {activeTab === "schedules" && <SchedulesTab dashboardId={dashboardId!} workspaceId={workspaceId} projectId={projectId} />}
-            {activeTab === "missions" && (
-              <DashboardMissionsTab dashboardId={dashboardId!} dashboardName={current.name} workspaceId={workspaceId} projectId={projectId} />
-            )}
             {activeTab === "projects" && (
               <TrackerTab
                 dashboardId={dashboardId!} workspaceId={workspaceId} projectId={projectId}
@@ -404,7 +320,13 @@ export function ServiceDashboardPage() {
                 onSelectSection={(s) => navigate(`${base}/projects/${sub}/${s}`)}
               />
             )}
-            {activeTab === "memory" && <WorkspaceMemoryTab workspaceId={workspaceId} dashboardId={dashboardId!} projectId={projectId} view={sub || "graph"} />}
+            {activeTab === "memory" && (
+              <WorkspaceMemoryTab
+                workspaceId={workspaceId} dashboardId={dashboardId!} projectId={projectId} view={sub || "graph"}
+                part={leaf ?? null}
+                onPart={(p) => navigate(p ? `${base}/memory/sources/${p}` : `${base}/memory/sources`)}
+              />
+            )}
             {activeTab === "connectors" && sub === "internal" && <CustomConnectorsPage serviceDashboardId={dashboardId!} />}
             {activeTab === "connectors" && sub !== "internal" && (
               <ComposioCatalog serviceDashboardId={dashboardId!} scope={sub === "personal" ? "personal" : "dashboard"} />
@@ -449,9 +371,9 @@ export function ServiceDashboardPage() {
   );
 }
 
-// Opens the SaaS assistant from the rail — the configuration surface for the
-// agents that live in this dashboard.
-function AssistantRailButton() {
+// Opens the SaaS assistant from the sidebar's foot — the configuration surface
+// for the agents that live in this dashboard.
+function AssistantButton({ className }: { className?: string }) {
   const assistant = useAssistant();
   return (
     <button
@@ -459,8 +381,9 @@ function AssistantRailButton() {
       title="Assistant IA"
       aria-label="Assistant IA"
       className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-xl transition-colors",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
         assistant.open ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+        className,
       )}
     >
       <ChatsCircleIcon weight="duotone" className="h-[18px] w-[18px]" />
@@ -468,9 +391,9 @@ function AssistantRailButton() {
   );
 }
 
-// Folding the panel takes its header — and the header's fold button — with it,
-// so the way back has to sit on the rail, the one column that never folds. Same
-// corner as the button that folded it, so it reads as the same control.
+// Folding the sidebar takes its header — and the header's fold button — with
+// it, so the way back sits in the narrow strip it folds down to. Same corner as
+// the button that folded it, so it reads as the same control.
 function PanelToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const label = collapsed ? "Déployer le panneau" : "Replier le panneau";
   return (
@@ -486,31 +409,16 @@ function PanelToggleButton({ collapsed, onToggle }: { collapsed: boolean; onTogg
   );
 }
 
-function RailButton({ icon: Icon, label, active, onClick }: {
-  icon: PhosphorIcon; label: string; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick} title={label} aria-label={label}
-      className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-xl transition-colors",
-        active ? "bg-sidebar-accent text-foreground" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-      )}
-    >
-      <Icon className="h-[18px] w-[18px]" />
-    </button>
-  );
-}
-
-// Panel header — section title + a search affordance that expands inline.
-function PanelHeader({ title, dashboardId, base, onCollapse }: {
-  title: string; dashboardId: string; base: string; onCollapse: () => void;
+// Sidebar header — the dashboard's logo and name (its switcher), plus a search
+// affordance that expands inline.
+function PanelHeader({ brand, dashboardId, base, onCollapse }: {
+  brand: React.ReactNode; dashboardId: string; base: string; onCollapse: () => void;
 }) {
   const [searching, setSearching] = useState(false);
   return (
     <div className="group/header px-4 pb-2 pt-3.5">
       <div className="flex items-center gap-1">
-        <h1 className="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-tight">{title}</h1>
+        {brand}
         <button
           onClick={() => setSearching((v) => !v)} title="Rechercher"
           className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
@@ -529,53 +437,12 @@ function PanelHeader({ title, dashboardId, base, onCollapse }: {
   );
 }
 
-// ── Home panel — the assistant, the secondary tabs, rooms and agent DMs ──────
-function HomePanel({ base, dashboardId, activeTab, sub, hidden, dashboardName, workspaceId, projectId }: {
-  base: string; dashboardId: string; activeTab: string; sub?: string;
-  hidden: (slug: string) => boolean; dashboardName: string;
-  workspaceId: string | null; projectId: string | null;
-}) {
-  const navigate = useNavigate();
-
-  return (
-    <>
-      <nav className="space-y-0.5 px-2.5">
-        <PanelItem
-          active={activeTab === "home"}
-          onClick={() => navigate(`${base}/home`)}
-          leading={<HouseIcon className="h-4 w-4" />}
-          label="Home"
-        />
-        {HOME_NAV.filter((n) => !hidden(n.slug)).map((n) => (
-          <PanelItem
-            key={n.slug} active={activeTab === n.slug} onClick={() => navigate(`${base}/${n.slug}`)}
-            leading={<n.icon className="h-4 w-4" />} label={n.label}
-          />
-        ))}
-      </nav>
-
-      <div className="mx-4 my-3 border-t border-border/60" />
-
-      <RoomsAndMessages
-        base={base}
-        dashboardId={dashboardId}
-        activeTab={activeTab}
-        sub={sub}
-        dashboardName={dashboardName}
-        workspaceId={workspaceId}
-        projectId={projectId}
-      />
-    </>
-  );
-}
-
 /**
  * Les rooms et les messages directs.
  *
- * Rendus à DEUX endroits : dans le panneau Home et dans celui du module de
- * suivi. C'est délibéré et ce n'est pas une duplication — une room est une
- * conversation sur du travail, et devoir changer de rail pour passer du board
- * à ce qu'on en dit casse le fil de la pensée.
+ * Rendus dans la barre latérale, sous les projets : une room est une
+ * conversation sur du travail, et la ranger ailleurs que le board casse le fil
+ * de la pensée.
  */
 function RoomsAndMessages({
   base, dashboardId, activeTab, sub, dashboardName, workspaceId, projectId,
@@ -688,11 +555,16 @@ function RoomsAndMessages({
  * Il est persisté parce qu'une section qu'on replie est une section dont on ne
  * veut plus : la rouvrir à chaque chargement annulerait le geste. La clé porte
  * l'identifiant du tableau, pour que deux services n'imposent pas l'un à
- * l'autre leur mise en forme.
+ * l'autre leur mise en forme. `defaultOpen` vaut pour qui n'a encore rien
+ * choisi : les paramètres et la documentation partent repliés, on n'y va pas
+ * tous les jours.
  */
-function useCollapsed(key: string): [boolean, () => void] {
+function useCollapsed(key: string, defaultOpen = true): [boolean, () => void] {
   const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem(key) !== "0"; } catch { return true; }
+    try {
+      const saved = localStorage.getItem(key);
+      return saved === null ? defaultOpen : saved !== "0";
+    } catch { return defaultOpen; }
   });
   const toggle = () => setOpen((v) => {
     const next = !v;
@@ -708,45 +580,61 @@ function useCollapsed(key: string): [boolean, () => void] {
 // avant d'atteindre les rooms.
 
 
-/** Memory, connections and workflows under one rail entry, grouped so the three
- *  subjects stay legible instead of becoming one flat list of six links. */
-/**
- * Le panneau du rail Projets : la liste des projets de suivi.
- *
- * Il ne porte QUE la liste, pas les sections d'un projet (work items, cycles,
- * modules…) : celles-ci changent d'un projet à l'autre selon ce qu'il active,
- * et les remonter ici ferait un panneau dont le contenu se réorganise à chaque
- * changement de projet.
- */
 /** Les destinations d'espace du suivi de travail, dans l'ordre de Plane. */
 /**
  * Le premier niveau : ce qui est À MOI.
  *
- * Home, mes brouillons, ce qui m'est assigné, mes notes. Aucune de ces quatre
- * destinations ne dépend d'un projet, et c'est ce qui justifie qu'elles soient
- * au-dessus de tout le reste plutôt que rangées sous « Espace » — on y va pour
- * savoir quoi faire, pas pour consulter l'état d'un chantier.
+ * Home, ce qui attend ma validation, mes notes. Aucune de ces destinations ne
+ * dépend d'un projet, et c'est ce qui justifie qu'elles soient au-dessus de
+ * tout le reste plutôt que rangées sous « Espace » — on y va pour savoir quoi
+ * faire, pas pour consulter l'état d'un chantier.
+ *
+ * Brouillons et Votre travail ont quitté la barre, comme Vues, Archives et
+ * Wiki sous « Espace » : leurs pages existent toujours à leur adresse, elles ne
+ * méritaient simplement pas une ligne permanente.
  */
 const TRACKER_PERSONAL: { slug: string; label: string; icon: PhosphorIcon }[] = [
   { slug: "projects", label: "Home", icon: HouseIcon },
   // Juste sous l'accueil : c'est la question qu'on se pose en arrivant, « est-ce
   // qu'un collaborateur attend quelque chose de moi ? ».
   { slug: "inbox", label: "À valider", icon: TrayIcon },
-  { slug: "drafts", label: "Brouillons", icon: PencilSimpleIcon },
-  { slug: "my-work", label: "Votre travail", icon: UserIcon },
   { slug: "stickies", label: "Notes", icon: NotePencilIcon },
 ];
 
-/** Le second niveau : ce qui est à TOUT LE MONDE. */
-const TRACKER_NAV: { slug: string; label: string; icon: PhosphorIcon }[] = [
-  { slug: "all-projects", label: "Projets", icon: KanbanIcon },
+/** Le second niveau : ce qui est à TOUT LE MONDE. Dans la barre, un projet du
+ *  tracker s'appelle une MISSION — le slug et les tables gardent « project ».
+ *
+ *  La force de travail en tête, puis ce qu'on lui confie et ce qui tourne
+ *  autour, et enfin ce sur quoi elle s'appuie — ce qu'elle sait (Graph,
+ *  Sources) et ce qu'elle atteint (Applications, Outils internes). Ces quatre
+ *  derniers formaient une section « Ressources » à part ; une section de plus
+ *  pour quatre lignes obligeait surtout à se demander où chercher.
+ *
+ *  `at` sort une entrée du tracker : ces pages vivent à leur adresse
+ *  d'origine (/workflows, /memory/:vue, /connectors/:portée), pas sous
+ *  /projects, si bien que chaque lien déjà partagé continue de répondre. C'est
+ *  leur onglet — et leur vue, quand il en a plusieurs — qui les allume.
+ *  « Mes connexions » n'y figure plus ; sa page répond toujours à
+ *  /connectors/personal. */
+const TRACKER_NAV: {
+  slug: string; label: string; icon: PhosphorIcon;
+  at?: { tab: string; sub?: string };
+}[] = [
   { slug: "agents", label: "Super Intelligence", icon: RobotIcon },
+  { slug: "all-projects", label: "Missions", icon: KanbanIcon },
+  { slug: "workflows", label: "Workflows", icon: FlowArrowIcon, at: { tab: "workflows" } },
   { slug: "analytics", label: "Analytics", icon: ChartBarIcon },
-  { slug: "views", label: "Vues", icon: EyeIcon },
-  { slug: "archives", label: "Archives", icon: ArchiveIcon },
   { slug: "boards", label: "Tableaux de bord", icon: SquaresFourIcon },
   { slug: "workgraph", label: "Workgraph", icon: GraphIcon },
-  { slug: "wiki", label: "Wiki", icon: FilesIcon },
+  { slug: "graph", label: "Graph", icon: GraphIcon, at: { tab: "memory", sub: "graph" } },
+  // Sources porte deux parties : les éléments du service, et le RAG
+  // (collections vectorisées, /memory/sources/rag).
+  { slug: "sources", label: "Sources", icon: DatabaseIcon, at: { tab: "memory", sub: "sources" } },
+  // Les applications branchées sur l'espace (Composio), partagées par tous.
+  { slug: "applications", label: "Applications", icon: PlugsConnectedIcon, at: { tab: "connectors", sub: "space" } },
+  // Les outils hébergés par l'entreprise (Argo CD, Vault, Grafana…), hors
+  // Composio : connecteurs décrits à la main, relais, journal d'accès (0267).
+  { slug: "internal-tools", label: "Outils internes", icon: WrenchIcon, at: { tab: "connectors", sub: "internal" } },
 ];
 
 /**
@@ -800,11 +688,19 @@ function PinToggle({ pinned, onToggle, label }: {
   );
 }
 
-function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSection }: {
+function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSection, activeTab, activeSub }: {
   base: string; dashboardId: string;
   activeProjectId?: string; activeView?: string; activeSection?: string;
+  /** L'onglet ouvert, et sa vue. Hors du tracker, « Home » s'allumerait sur
+   *  toutes les autres pages — rooms, réglages… ; et les entrées qui ne sont
+   *  pas des vues du tracker (Workflows, Graph, Applications…) s'allument sur
+   *  leur propre onglet. */
+  activeTab: string;
+  activeSub?: string;
 }) {
   const navigate = useNavigate();
+  const inTracker = activeTab === "projects";
+  const atOf = (slug: string) => TRACKER_NAV.find((n) => n.slug === slug)?.at;
   const { data: projects } = useQuery({
     queryKey: ["pj_projects", dashboardId],
     queryFn: () => fetchTrackerProjects(dashboardId),
@@ -868,11 +764,13 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
       {/* Le bouton du haut déploie un collaborateur : c'est l'entrée de
           l'Intelligence Space. Créer un work item reste à portée sur le board
           des work items, là où on le range. */}
+      {/* En violet de marque : c'est l'action principale de l'espace, la seule
+          de la barre qui porte la couleur pleine. */}
       <div className="px-2.5 pb-1">
         <button
           type="button"
           onClick={() => navigate(`${base}/agents/new`)}
-          className="flex h-8 w-full items-center gap-2 rounded-lg border border-sidebar-border/60 bg-sidebar-accent/70 px-2.5 text-[13.5px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+          className="flex h-9 w-full items-center gap-2 rounded-lg bg-primary px-3 text-[13.5px] font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
         >
           <RocketLaunchIcon weight="bold" className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left">Deploy collaborator</span>
@@ -890,7 +788,7 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
         (slug) => (slug === "projects"
           // « Home » est aussi la destination par défaut : sans projet ouvert
           // ni vue d'espace, c'est lui qui doit s'allumer.
-          ? !activeProjectId && !onSpaceView
+          ? inTracker && !activeProjectId && !onSpaceView
           : activeView === slug),
         (slug) => navigate(`${base}/projects${slug === "projects" ? "" : `/${slug}`}`),
       )}
@@ -916,8 +814,14 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
       />
       {openSpace && renderNav(
         TRACKER_NAV,
-        (slug) => activeView === slug,
-        (slug) => navigate(`${base}/projects/${slug}`),
+        (slug) => {
+          const at = atOf(slug);
+          return at ? activeTab === at.tab && (!at.sub || activeSub === at.sub) : activeView === slug;
+        },
+        (slug) => {
+          const at = atOf(slug);
+          navigate(at ? `${base}/${at.tab}${at.sub ? `/${at.sub}` : ""}` : `${base}/projects/${slug}`);
+        },
       )}
 
       {customizing && (
@@ -928,7 +832,7 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
 
 
       <PanelSection
-        label="Projets"
+        label="Missions"
         open={openProjects}
         onToggle={() => setOpenProjects((v) => !v)}
         count={projects?.length ?? 0}
@@ -946,7 +850,7 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
             />
           ))}
           {!projects?.length && (
-            <p className="px-2.5 py-1.5 text-[12px] text-muted-foreground">Aucun projet.</p>
+            <p className="px-2.5 py-1.5 text-[12px] text-muted-foreground">Aucune mission.</p>
           )}
         </nav>
       )}
@@ -973,13 +877,12 @@ function ProjectNavItem({
 
   const navigate = useNavigate();
 
+  // Cycles, Modules, Views et Pages ont quitté la barre : Livrables porte déjà
+  // ce que le projet produit, et les trois autres découpaient un travail que
+  // les work items suffisent à suivre.
   const SECTIONS: { slug: string; label: string; icon: PhosphorIcon }[] = [
     { slug: "overview", label: "Overview", icon: SquaresFourIcon },
     { slug: "issues", label: "Work items", icon: KanbanIcon },
-    { slug: "cycles", label: "Cycles", icon: ArrowsClockwiseIcon },
-    { slug: "modules", label: "Modules", icon: StackIcon },
-    { slug: "views", label: "Views", icon: EyeIcon },
-    { slug: "pages", label: "Pages", icon: FilesIcon },
     // Qui porte le projet, puis ce qui en sort. Les deux sont ici et pas
     // seulement dans le menu de l'en-tête : cette liste EST la navigation du
     // projet, et une section qui n'y figure pas n'existe pas pour qui ne
@@ -1019,65 +922,6 @@ function ProjectNavItem({
   );
 }
 
-function ResourcesPanel({ base, activeTab, activeSub }: {
-  base: string; activeTab: string; activeSub: string;
-}) {
-  const navigate = useNavigate();
-  return (
-    <div className="space-y-3">
-      {RESOURCE_GROUPS.map((g) => (
-        <div key={g.label}>
-          <div className="px-4 pb-1 text-[12px] text-muted-foreground">{g.label}</div>
-          <nav className="space-y-0.5 px-2.5">
-            {g.items.map((v) => (
-              <PanelItem
-                key={`${v.tab}/${v.key}`}
-                active={activeTab === v.tab && (v.tab === "workflows" || activeSub === v.key)}
-                onClick={() => navigate(v.tab === "workflows" ? `${base}/workflows` : `${base}/${v.tab}/${v.key}`)}
-                leading={<v.icon className="h-4 w-4" />}
-                label={v.label}
-              />
-            ))}
-          </nav>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SettingsPanel({ base, active }: { base: string; active: DashboardSettingsSection }) {
-  const navigate = useNavigate();
-  const main = DASHBOARD_SETTINGS_SECTIONS.filter((s) => s.key !== "danger");
-  const danger = DASHBOARD_SETTINGS_SECTIONS.find((s) => s.key === "danger");
-  return (
-    <>
-      <div className="px-4 pb-1 pt-1 text-[12px] text-muted-foreground">Service</div>
-      <nav className="space-y-0.5 px-2.5">
-        {main.map((s) => {
-          const Icon = SETTINGS_ICONS[s.key] ?? SlidersIcon;
-          return (
-            <PanelItem
-              key={s.key} active={active === s.key} onClick={() => navigate(`${base}/settings/${s.key}`)}
-              leading={<Icon className="h-4 w-4" />} label={s.label}
-            />
-          );
-        })}
-      </nav>
-      {danger && (
-        <>
-          <div className="px-4 pb-1 pt-3 text-[12px] text-muted-foreground">Danger</div>
-          <nav className="space-y-0.5 px-2.5">
-            <PanelItem
-              active={active === "danger"} onClick={() => navigate(`${base}/settings/danger`)}
-              leading={<WarningIcon className="h-4 w-4" />} label={danger.label} tone="danger"
-            />
-          </nav>
-        </>
-      )}
-    </>
-  );
-}
-
 function PanelItem({ active, onClick, leading, label, tone, trailing }: {
   active: boolean; onClick: () => void; leading: React.ReactNode; label: React.ReactNode; tone?: "danger";
   /** Une action propre à la ligne (épingler, par exemple), à sa droite. */
@@ -1091,7 +935,9 @@ function PanelItem({ active, onClick, leading, label, tone, trailing }: {
       className={cn(
         "group/nav flex w-full items-center gap-2.5 rounded-lg pl-2.5 transition-colors",
         trailing ? "pr-1" : "pr-2.5",
-        active ? (tone === "danger" ? "bg-destructive/10 text-destructive" : "bg-sidebar-accent text-foreground")
+        // La ligne active porte le violet de marque : un voile, et l'icône en
+        // couleur pleine. Le gris d'avant se confondait avec le survol.
+        active ? (tone === "danger" ? "bg-destructive/10 text-destructive" : "bg-primary/15 text-foreground")
           : tone === "danger" ? "text-destructive/80 hover:bg-destructive/10"
           : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
       )}
@@ -1103,7 +949,10 @@ function PanelItem({ active, onClick, leading, label, tone, trailing }: {
           active && "font-medium",
         )}
       >
-        <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-muted-foreground">{leading}</span>
+        <span className={cn(
+          "flex h-[18px] w-[18px] shrink-0 items-center justify-center",
+          active && tone !== "danger" ? "text-primary" : "text-muted-foreground",
+        )}>{leading}</span>
         <span className="min-w-0 flex-1 truncate">{label}</span>
       </button>
       {trailing}
@@ -1206,12 +1055,12 @@ function RoomRow({ r, active, base, dashboardId }: { r: Room; active: boolean; b
   }
 
   return (
-    <div className={cn("group flex items-center rounded-lg pr-1 transition-colors", active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60")}>
+    <div className={cn("group flex items-center rounded-lg pr-1 transition-colors", active ? "bg-primary/15" : "hover:bg-sidebar-accent/60")}>
       <button
         onClick={() => navigate(`${base}/room/${r.id}`)}
         className={cn("flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-1.5 text-left text-[13.5px]", active ? "font-medium text-foreground" : "text-sidebar-foreground")}
       >
-        <HashIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <HashIcon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
         <span className="min-w-0 flex-1 truncate">{r.title || "Sans titre"}</span>
       </button>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -1246,8 +1095,11 @@ function RoomRow({ r, active, base, dashboardId }: { r: Room; active: boolean; b
   );
 }
 
-// Dashboard selector — the coloured tile at the top of the rail.
-function DashboardSelector({ current, dashboards }: { current: ServiceDashboard | null; dashboards: ServiceDashboard[] }) {
+// Dashboard selector — the coloured tile at the top of the sidebar. Unfolded,
+// the name sits next to it and opens the same menu; folded, the tile alone.
+function DashboardSelector({ current, dashboards, label }: {
+  current: ServiceDashboard | null; dashboards: ServiceDashboard[]; label?: string;
+}) {
   const confirm = useConfirm();
   const { workspaceSlug, projectSlug } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
@@ -1280,11 +1132,21 @@ function DashboardSelector({ current, dashboards }: { current: ServiceDashboard 
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="rounded-xl transition-transform hover:scale-105" title={current?.name ?? "Dashboard"}>
-            <DashboardTile icon={current?.icon} color={current?.color ?? "bg-indigo-500"} size={34} />
-          </button>
+          {label ? (
+            <button
+              className="-ml-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-sidebar-accent/60"
+              title={current?.name ?? "Dashboard"}
+            >
+              <DashboardTile icon={current?.icon} color={current?.color ?? "bg-indigo-500"} size={26} />
+              <span className="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-tight">{label}</span>
+            </button>
+          ) : (
+            <button className="rounded-xl transition-transform hover:scale-105" title={current?.name ?? "Dashboard"}>
+              <DashboardTile icon={current?.icon} color={current?.color ?? "bg-indigo-500"} size={34} />
+            </button>
+          )}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="right" className="w-64 rounded-2xl p-1.5">
+        <DropdownMenuContent align="start" side={label ? "bottom" : "right"} className="w-64 rounded-2xl p-1.5">
           <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">Dashboards produit</DropdownMenuLabel>
           {DASHBOARDS.map((d) => {
             const Icon = d.icon;

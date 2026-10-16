@@ -18,8 +18,8 @@ import {
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { BLOCK_BY_KIND, blockColorClass, KNOWN_TOOLS, DELIVERABLE_FORMATS } from "./blocks";
 import {
-  paramsOf, agentIdsOf, contextSourceOf, contextBodyOf, varsOf, normalizeVarName,
-  type InputParam, type ContextRef, type WorkflowVar,
+  paramsOf, agentIdsOf, contextSourceOf, contextBodyOf, varsOf, normalizeVarName, mcpSelectionsOf,
+  type InputParam, type ContextRef, type WorkflowVar, type McpSelection,
 } from "./context";
 import { roleOf, targetsOfQualifier, attachmentsByTarget } from "./graph";
 import { Field, TextField, TextArea, Segmented, Picker, Switch, Stepper, ChipPicker, Section } from "./inspector-ui";
@@ -535,7 +535,8 @@ function ToolTarget({ d, projectId, workspaceId, onPatch }: {
 }) {
   const str = (v: unknown) => String(v ?? "");
   const provider = str(d.provider);
-  const isAction = !!provider;
+  const isMcp = str(d.tool) === "mcp";
+  const isAction = !!provider && !isMcp;
 
   // Les apps réellement connectées à CE projet, croisées avec celles qui
   // exposent des actions. Proposer une app non connectée produit un bloc qui
@@ -577,19 +578,24 @@ function ToolTarget({ d, projectId, workspaceId, onPatch }: {
     <>
       <Field label="Ce que ce bloc impose">
         <Segmented
-          value={isAction ? "action" : "capability"}
+          value={isMcp ? "mcp" : isAction ? "action" : "capability"}
           onChange={(v) => onPatch(v === "action"
-            ? { tool: "", provider: providers?.[0] ?? "", action: "" }
-            : { provider: "", action: "", args: {}, tool: "web_search" })}
+            ? { tool: "", provider: providers?.[0] ?? "", action: "", mcp: [] }
+            : v === "mcp"
+              ? { tool: "mcp", provider: "", action: "", args: {}, mcp: [] }
+              : { provider: "", action: "", args: {}, tool: "web_search", mcp: [] })}
           options={[
             { value: "capability", label: "Une capacité", hint: "Recherche, code, appel HTTP…" },
             { value: "action", label: "Une action", hint: "Un appel précis sur une app connectée." },
+            { value: "mcp", label: "Serveurs MCP", hint: "Les outils d'un ou plusieurs serveurs MCP." },
           ]}
-          columns={2}
+          columns={3}
         />
       </Field>
 
-      {!isAction ? (
+      {isMcp ? (
+        <McpTarget d={d} workspaceId={workspaceId} onPatch={onPatch} />
+      ) : !isAction ? (
         <>
           <Field label="Outil" hint="L'agent a déjà sa boîte à outils, ce bloc dit lequel s'impose ici.">
             <Picker
@@ -657,6 +663,131 @@ function ToolTarget({ d, projectId, workspaceId, onPatch }: {
   );
 }
 
+
+interface McpServerRow {
+  id: string; name: string; enabled: boolean; environment: string | null;
+  cached_tools: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, { type?: string; description?: string }> } }> | null;
+}
+
+/**
+ * Les serveurs MCP d'une étape : un ou plusieurs, et pour chacun TOUS ses
+ * outils ou une sélection.
+ *
+ * Dans une procédure, ce jeu d'outils est ouvert au run qui l'exécute (et à
+ * l'agent à qui l'étape est déléguée), limité aux outils choisis ; le document
+ * cite chaque outil sous le nom exact que l'agent appelle. Dans une
+ * automatisation, le moteur appelle lui-même UN outil d'UN serveur, avec les
+ * paramètres écrits ici.
+ *
+ * Les outils proposés sont ceux que le serveur a annoncés à sa dernière
+ * découverte (Ressources › Outils internes › Serveurs MCP) : un outil absent ici
+ * n'existe pas pour l'agent non plus.
+ */
+function McpTarget({ d, workspaceId, onPatch }: {
+  d: Record<string, unknown>;
+  workspaceId: string | null;
+  onPatch: (patch: Record<string, unknown>) => void;
+}) {
+  const selections = mcpSelectionsOf(d);
+  const { data: servers, isLoading } = useQuery({
+    queryKey: ["wf_mcp_servers", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: async () => {
+      const { data } = await supabase.from("mcp_servers")
+        .select("id, name, enabled, environment, cached_tools").eq("workspace_id", workspaceId!).order("name");
+      return (data ?? []) as McpServerRow[];
+    },
+  });
+  const byId = new Map((servers ?? []).map((s) => [s.id, s]));
+  const write = (next: McpSelection[]) => onPatch({ mcp: next });
+
+  const setTools = (serverId: string, tools: string[]) =>
+    write(selections.map((x) => (x.server_id === serverId ? { ...x, tools } : x)));
+
+  // Un seul outil d'un seul serveur : c'est un appel précis, qui peut porter
+  // des paramètres (et que le moteur d'une automatisation sait exécuter).
+  const single = selections.length === 1 && selections[0].tools.length === 1 ? selections[0] : null;
+  const singleSchema = single
+    ? byId.get(single.server_id)?.cached_tools?.find((t) => t.name === single.tools[0])?.inputSchema?.properties ?? {}
+    : null;
+
+  if (isLoading) return <p className="text-[11px] text-muted-foreground">Lecture des serveurs MCP…</p>;
+  if (!servers?.length) {
+    return (
+      <p className="rounded-lg bg-muted/40 p-2.5 text-[11px] leading-snug text-muted-foreground">
+        Aucun serveur MCP dans cet espace. Déclarez-en un dans Ressources › Outils internes › Serveurs MCP.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <Field label="Serveurs" hint="Une étape peut s'appuyer sur plusieurs serveurs, par exemple celui du cluster et celui du Hub.">
+        <ChipPicker
+          selected={selections.map((s) => s.server_id)}
+          onChange={(ids) => {
+            const keep = selections.filter((s) => ids.includes(s.server_id));
+            const added = ids.filter((id) => !keep.some((s) => s.server_id === id))
+              .map((id) => byId.get(id)).filter(Boolean)
+              .map((s) => ({ server_id: s!.id, server_name: s!.name, tools: [] as string[] }));
+            write([...keep, ...added]);
+          }}
+          options={servers.map((s) => ({
+            value: s.id,
+            label: s.enabled ? s.name : `${s.name} · désactivé`,
+            hint: [s.environment, `${s.cached_tools?.length ?? 0} outil(s)`].filter(Boolean).join(" · "),
+          }))}
+        />
+      </Field>
+
+      {selections.map((sel) => {
+        const server = byId.get(sel.server_id);
+        const tools = server?.cached_tools ?? [];
+        const all = sel.tools.length === 0;
+        return (
+          <Field key={sel.server_id} label={`Outils de ${sel.server_name}`}
+            hint={server ? undefined : "Ce serveur n'existe plus : retirez-le de l'étape."}>
+            <div className="space-y-2">
+              <Segmented
+                value={all ? "all" : "some"}
+                onChange={(v) => setTools(sel.server_id, v === "all" ? [] : tools.slice(0, 1).map((t) => t.name))}
+                options={[
+                  { value: "all", label: "Tous ses outils", hint: `${tools.length} outil(s)` },
+                  { value: "some", label: "Une sélection", hint: "Seulement ceux qu'on coche." },
+                ]}
+                columns={2}
+              />
+              {!all && (
+                <ChipPicker
+                  selected={sel.tools}
+                  onChange={(v) => setTools(sel.server_id, v.length ? v : sel.tools)}
+                  options={tools.map((t) => ({ value: t.name, label: t.name, hint: t.description }))}
+                  emptyHint="Ce serveur n'a annoncé aucun outil : relancez sa découverte."
+                />
+              )}
+              {server && !server.enabled && (
+                <p className="text-[11px] text-amber-600">Serveur désactivé : l'étape n'y aura pas accès tant qu'il ne sera pas réactivé.</p>
+              )}
+            </div>
+          </Field>
+        );
+      })}
+
+      {single && singleSchema && (
+        <ActionParams
+          params={singleSchema}
+          args={(d.args ?? {}) as Record<string, unknown>}
+          onChange={(args) => onPatch({ args })}
+        />
+      )}
+      <p className="rounded-lg bg-muted/40 p-2.5 text-[11px] leading-snug text-muted-foreground">
+        Dans une procédure, ces outils sont ouverts au run qui l'exécute, limités à cette sélection. Dans une automatisation,
+        le moteur appelle un seul outil d'un seul serveur, avec ses paramètres. Les écritures restent soumises aux
+        approbations du serveur.
+      </p>
+    </>
+  );
+}
 
 /**
  * Les paramètres d'une action, tels que le connecteur les DÉCLARE.

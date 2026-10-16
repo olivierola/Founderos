@@ -64,6 +64,16 @@ export function normalizeConfig(raw) {
   if (gateway === "litellm" && !URL_RE.test(String(llm.litellm?.url ?? ""))) issues.push("llm.litellm.url : l'URL de LiteLLM (ex. http://litellm.ai-gateway.svc:4000/v1).");
   if (gateway === "azure" && (!URL_RE.test(String(llm.azure?.url ?? "")) || !llm.azure?.deployment)) issues.push("llm.azure.url et llm.azure.deployment : requis.");
 
+  // Serveurs MCP des clusters (architecture Hub) : hôtes joints en direct, certificat client mTLS.
+  const HOST_PATTERN_RE = /^(\*|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.(\*|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))+$/;
+  const mcpRaw = r.mcp ?? {};
+  const internalHosts = [].concat(mcpRaw.internalHosts ?? []).map((h) => String(h).toLowerCase());
+  for (const h of internalHosts) if (!HOST_PATTERN_RE.test(h)) issues.push(`mcp.internalHosts : « ${h} » n'est pas un motif d'hôte (ex. mcp.apps-int.*.interne.exemple).`);
+  const clientCert = mcpRaw.clientCert ?? {};
+  if (clientCert.issuer && clientCert.secretName) issues.push("mcp.clientCert : issuer (cert-manager le crée) ou secretName (Secret existant), pas les deux.");
+  if ((clientCert.issuer || clientCert.secretName) && !internalHosts.length) issues.push("mcp.clientCert : sans mcp.internalHosts, le certificat ne serait présenté à aucun serveur.");
+  if (target === "vm" && internalHosts.length) issues.push("mcp : réservé aux cibles kubernetes et openshift.");
+
   if (issues.length) throw new ConfigError(issues);
   return {
     target, domain, urls,
@@ -82,6 +92,16 @@ export function normalizeConfig(raw) {
     kubernetes: { ingressClass: r.kubernetes?.ingressClass ?? "", tlsSecret: r.kubernetes?.tlsSecret ?? "" },
     openshift: { routeLabels: r.openshift?.routeLabels ?? {} },
     vm: { tls: r.vm?.tls ?? "auto" },
+    mcp: {
+      internalHosts,
+      clientCert: {
+        issuer: clientCert.issuer ? String(clientCert.issuer) : "",
+        issuerKind: String(clientCert.issuerKind ?? "ClusterIssuer"),
+        secretName: clientCert.secretName ? String(clientCert.secretName) : clientCert.issuer ? "founderos-mcp-client" : "",
+        commonName: String(clientCert.commonName ?? "founderos-ai-platform"),
+        caConfigMap: clientCert.caConfigMap ? String(clientCert.caConfigMap) : "",
+      },
+    },
     migrationsBaseline: r.migrations?.baseline ? String(r.migrations.baseline) : "",
   };
 }
@@ -150,6 +170,16 @@ function llmEnv(cfg) {
   return {};
 }
 
+function mcpValues({ internalHosts, clientCert: c }) {
+  return {
+    internalHosts,
+    clientCert: {
+      secretName: c.secretName, caConfigMap: c.caConfigMap,
+      certManager: { enabled: !!c.issuer, ...(c.issuer ? { issuerKind: c.issuerKind, issuerName: c.issuer, commonName: c.commonName } : {}) },
+    },
+  };
+}
+
 /** Les valeurs du chart deploy/helm/founderos (aucun secret). */
 export function helmValues(cfg) {
   return {
@@ -164,6 +194,7 @@ export function helmValues(cfg) {
     migrations: { enabled: true, baseline: cfg.migrationsBaseline },
     ...(cfg.target === "kubernetes" ? { ingress: { className: cfg.kubernetes.ingressClass, tlsSecretName: cfg.kubernetes.tlsSecret } } : {}),
     ...(cfg.target === "openshift" ? { route: { labels: cfg.openshift.routeLabels } } : {}),
+    ...(cfg.mcp.internalHosts.length ? { mcp: mcpValues(cfg.mcp) } : {}),
   };
 }
 

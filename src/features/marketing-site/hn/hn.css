@@ -1,51 +1,78 @@
 /* ══ The Hunar register ══════════════════════════════════════════════════════
-   The marketing site's skin since 2026-10-03, modelled on hunar.ai: Geist set
-   at 400/500 with a tight track, one blue (#006EDD), a warm off-white ground
-   (#f7f8fb) that alternates with near-black bands (#0f1728), small radii
-   (4px controls, 8px cards) and long-exposure gradient artwork instead of
-   photographs.
+   The marketing site's skin since 2026-10-03. The page structure is modelled
+   on hunar.ai; since 2026-10-15 the type, colour and radii follow
+   scalable.framer.website: Satoshi set at 500 with a tight track (-0.04em on
+   titles, -0.02em elsewhere), Instrument Serif italic for a title's accent
+   words, one violet (#4f1ad6), neutral ink (#0d0d0d) on a cool off-white
+   ground (#f5f5f8) that alternates with near-black bands, 10px buttons and
+   12–24px cards, and long-exposure gradient artwork instead of photographs.
 
    Scoped to `.hn` so nothing leaks into the product. Pages that still carry
    `.amplify` keep it for the shared reveal/animation classes; `.hn` wins over
    its dark ground and font stack. */
 
+/* Satoshi (Fontshare, ITF Free Font License), self-hosted: the CSP only lets
+   fonts in from 'self' and Google. */
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/satoshi/Satoshi-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/satoshi/Satoshi-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/satoshi/Satoshi-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 .hn,
 .amplify.hn {
-  --hn-ink: #0f1728;
-  --hn-body: #344054;
-  --hn-grey: #4b5567;
-  --hn-bg: #f7f8fb;
-  --hn-soft: #f5f7fa;
-  --hn-line: #e6e9ef;
-  --hn-dark: #0f1728;
-  --hn-dark-2: #0b1220;
-  --hn-blue: #006edd;
-  --hn-blue-hover: #0057c2;
-  --hn-blue-light: #5aa8ff;
-  --hn-blue-50: #eaf2ff;
-  --hn-blue-100: #e5f0fb;
-  --hn-navy: #0a2c68;
+  --hn-ink: #0d0d0d;
+  --hn-body: #333333;
+  --hn-grey: #5c5c66;
+  --hn-bg: #f5f5f8;
+  --hn-soft: #f8f8fa;
+  --hn-line: #e8e8ee;
+  --hn-dark: #0d0d0d;
+  --hn-dark-2: #0a0a0a;
+  --hn-blue: #4f1ad6;
+  --hn-blue-hover: #4314b8;
+  --hn-blue-light: #9b7bf4;
+  --hn-blue-50: #f1edfe;
+  --hn-blue-100: #ede6fe;
+  --hn-navy: #1c0d3f;
 
   /* The amp tokens the interior pages still read, re-pointed at this palette. */
-  --amp-accent: #006edd;
-  --amp-orange: #006edd;
-  --amp-accent-bright: #5aa8ff;
-  --amp-accent-deep: #006edd;
-  --amp-cyan: #5aa8ff;
+  --amp-accent: #4f1ad6;
+  --amp-orange: #4f1ad6;
+  --amp-accent-bright: #9b7bf4;
+  --amp-accent-deep: #4f1ad6;
+  --amp-cyan: #9b7bf4;
   --amp-on-accent: #ffffff;
-  --amp-muted: #4b5567;
-  --amp-faint: #8a94a6;
-  --amp-line: #e6e9ef;
-  --amp-line-soft: #eef1f5;
-  --amp-panel: #f7f8fb;
-  --amp-panel-hi: #f5f7fa;
+  --amp-muted: #5c5c66;
+  --amp-faint: #8f8f99;
+  --amp-line: #e8e8ee;
+  --amp-line-soft: #efeff3;
+  --amp-panel: #f5f5f8;
+  --amp-panel-hi: #f8f8fa;
 
   background-color: #ffffff;
   color: var(--hn-ink);
-  /* The app sets a 450 "regular" on body (Plane's); the reference is 400. */
-  font-weight: 400;
+  /* The reference sets everything, running text included, in Satoshi Medium. */
+  font-weight: 500;
+  letter-spacing: -0.02em;
   color-scheme: light;
-  font-family: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Satoshi", "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -58,20 +85,31 @@ html.hn-root.amp-root body {
 }
 
 .hn ::selection {
-  background: rgba(0, 110, 221, 0.18);
+  background: rgba(79, 26, 214, 0.18);
+}
+
+/* A title's accent words (HnKit `Em`): Instrument Serif italic at the title's
+   size. The serif runs a size smaller than Satoshi at the same em, so it is
+   nudged up a touch to sit level with the sans. */
+.hn .hn-em {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.04em;
+  letter-spacing: -0.02em;
 }
 
 /* ── Artwork ─────────────────────────────────────────────────────────────────
    Gradient panels instead of photographs. Polished on 2026-10-04: one cool
-   family (navy → azure → ice, indigo, teal, slate) and a single warm accent,
+   family (violet-grey, indigo, teal, graphite, lavender) and a single warm accent,
    so a page of panels reads as one brand rather than a paint chart. Each panel
    is three soft light pools over a base ramp, a fine grain (::before) so the
    colour has texture instead of looking flat on screen, and faint diagonal
    light streaks (::after).
 
    The class names are kept from the first pass so callers do not change:
-     blue → azure, violet → indigo, olive → teal, orange → amber (the accent),
-     pink → sky, gold → slate. */
+     blue → violet-grey, violet → indigo, olive → teal, orange → amber (the accent),
+     pink → lavender, gold → graphite. */
 .hn-art {
   position: relative;
   overflow: hidden;
@@ -113,17 +151,17 @@ html.hn-root.amp-root body {
 }
 
 /* Mesh-gradient panels: several soft colour blobs blended into one organic
-   field. Muted for the varied cards, bright brand blue for the key sections.
+   field. Muted for the varied cards, bright brand violet for the key sections.
    The class names are kept from the first pass so callers do not change. */
-/* azure, muted */
+/* violet-grey, muted (was azure) */
 .hn-art-blue {
-  background-color: #2c4866;
+  background-color: #3a3157;
   background-image:
-    radial-gradient(52% 56% at 18% 22%, #4f7199 0px, transparent 52%),
-    radial-gradient(48% 52% at 82% 12%, #33506f 0px, transparent 48%),
-    radial-gradient(55% 58% at 72% 78%, #16263c 0px, transparent 55%),
-    radial-gradient(48% 50% at 28% 82%, #3a5a7e 0px, transparent 48%),
-    radial-gradient(60% 62% at 55% 48%, #35557a 0px, transparent 60%);
+    radial-gradient(52% 56% at 18% 22%, #5f5389 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #43396a 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #1a1530 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #4d4378 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #463c70 0px, transparent 60%);
 }
 /* indigo, muted */
 .hn-art-violet {
@@ -155,48 +193,48 @@ html.hn-root.amp-root body {
     radial-gradient(48% 50% at 28% 82%, #9c6840 0px, transparent 48%),
     radial-gradient(60% 62% at 55% 48%, #8a5a3a 0px, transparent 60%);
 }
-/* light steel, for panels that carry dark UI */
+/* light lavender-grey, for panels that carry dark UI (was light steel) */
 .hn-art-pink {
-  background-color: #8299b6;
+  background-color: #9a93b4;
   background-image:
-    radial-gradient(52% 56% at 18% 22%, #b7c7db 0px, transparent 52%),
-    radial-gradient(48% 52% at 82% 12%, #8fa4c0 0px, transparent 48%),
-    radial-gradient(55% 58% at 72% 78%, #5e789c 0px, transparent 55%),
-    radial-gradient(48% 50% at 28% 82%, #a3b6cf 0px, transparent 48%),
-    radial-gradient(60% 62% at 55% 48%, #90a6c2 0px, transparent 60%);
+    radial-gradient(52% 56% at 18% 22%, #cbc5de 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #a69fc0 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #6f6892 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #b7b1cf 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #a59fc1 0px, transparent 60%);
 }
-/* slate, the quiet panel */
+/* graphite, the quiet panel: the reference's #141414 cards (was slate) */
 .hn-art-gold {
-  background-color: #33435c;
+  background-color: #1c1b22;
   background-image:
-    radial-gradient(52% 56% at 18% 22%, #566980 0px, transparent 52%),
-    radial-gradient(48% 52% at 82% 12%, #32425a 0px, transparent 48%),
-    radial-gradient(55% 58% at 72% 78%, #0e1626 0px, transparent 55%),
-    radial-gradient(48% 50% at 28% 82%, #4a5a72 0px, transparent 48%),
-    radial-gradient(60% 62% at 55% 48%, #44546c 0px, transparent 60%);
+    radial-gradient(52% 56% at 18% 22%, #393745 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #24232c 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #0a0a0c 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #2f2d3a 0px, transparent 48%),
+    radial-gradient(60% 62% at 55% 48%, #2a2833 0px, transparent 60%);
 }
-/* brand, the vivid blue kept for the primary sections (hero card, auth panel) */
+/* brand, the vivid violet kept for the primary sections (hero card, auth panel) */
 .hn-art-brand {
-  background-color: #1a5fcf;
+  background-color: #4f1ad6;
   background-image:
-    radial-gradient(52% 56% at 18% 20%, #5a9cf2 0px, transparent 52%),
-    radial-gradient(48% 52% at 82% 12%, #2f74e0 0px, transparent 48%),
-    radial-gradient(55% 58% at 72% 78%, #0a3a9a 0px, transparent 55%),
-    radial-gradient(48% 50% at 28% 82%, #1663d4 0px, transparent 48%),
-    radial-gradient(60% 62% at 52% 46%, #3d86ea 0px, transparent 60%);
+    radial-gradient(52% 56% at 18% 20%, #8b6cf0 0px, transparent 52%),
+    radial-gradient(48% 52% at 82% 12%, #5b2ae0 0px, transparent 48%),
+    radial-gradient(55% 58% at 72% 78%, #2a0d8a 0px, transparent 55%),
+    radial-gradient(48% 50% at 28% 82%, #4a18cc 0px, transparent 48%),
+    radial-gradient(60% 62% at 52% 46%, #6d48e8 0px, transparent 60%);
 }
 
-/* The wide sky band behind the CTA card and the comparison panel, vivid blue mesh. */
+/* The wide sky band behind the CTA card and the comparison panel, vivid violet mesh. */
 .hn-sky {
   position: relative;
   isolation: isolate;
-  background-color: #1663d4;
+  background-color: #4a18cc;
   background-image:
-    radial-gradient(48% 70% at 10% 18%, #5a9cf2 0px, transparent 60%),
-    radial-gradient(46% 66% at 82% 18%, #2f74e0 0px, transparent 58%),
-    radial-gradient(50% 74% at 74% 82%, #0a3a9a 0px, transparent 62%),
-    radial-gradient(44% 64% at 30% 86%, #1f5fc8 0px, transparent 56%),
-    radial-gradient(55% 80% at 50% 44%, #3d86ea 0px, transparent 64%);
+    radial-gradient(48% 70% at 10% 18%, #8b6cf0 0px, transparent 60%),
+    radial-gradient(46% 66% at 82% 18%, #5b2ae0 0px, transparent 58%),
+    radial-gradient(50% 74% at 74% 82%, #2a0d8a 0px, transparent 62%),
+    radial-gradient(44% 64% at 30% 86%, #4516c2 0px, transparent 56%),
+    radial-gradient(55% 80% at 50% 44%, #6d48e8 0px, transparent 64%);
 }
 .hn-sky::before {
   content: "";
@@ -222,20 +260,20 @@ html.hn-root.amp-root body {
   animation: hn-drift 30s ease-in-out infinite alternate;
 }
 
-/* The dark bands: deep navy with a faint azure glow at the head, so the
+/* The dark bands: the reference's near-black with a faint violet glow at the head, so the
    section reads as lit rather than as a black slab. */
 .hn-dark {
-  background-color: #0b1220;
+  background-color: #0d0d0d;
   background-image:
-    radial-gradient(60% 40% at 50% 0%, rgba(22, 99, 212, 0.18) 0%, rgba(22, 99, 212, 0) 70%);
+    radial-gradient(60% 40% at 50% 0%, rgba(79, 26, 214, 0.22) 0%, rgba(79, 26, 214, 0) 70%);
 }
 
 /* Product surfaces: a hairline, then a long soft shadow. */
 .hn-shadow {
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 24px 48px -28px rgba(16, 24, 40, 0.28);
+  box-shadow: 0 1px 2px rgba(13, 13, 13, 0.05), 0 24px 48px -28px rgba(13, 13, 13, 0.28);
 }
 .hn-shadow-lg {
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 40px 80px -36px rgba(6, 30, 80, 0.45);
+  box-shadow: 0 1px 2px rgba(13, 13, 13, 0.06), 0 40px 80px -36px rgba(25, 8, 64, 0.45);
 }
 
 /* ── Marquee ─────────────────────────────────────────────────────────────── */
@@ -278,35 +316,35 @@ html.hn-root.amp-root body {
 /* ── Older markup inside the register ───────────────────────────────────────
    The interior pages were written for earlier registers. Three of their
    devices are translated here rather than rewritten in every page: the serif
-   lead becomes Geist, the monospace uppercase labels become Geist medium, and
-   the dark diagram plates (LandingVisuals) take the blue artwork. */
+   lead becomes Satoshi, the monospace uppercase labels become Satoshi medium,
+   and the dark diagram plates (LandingVisuals) take the violet artwork. */
 .hn .font-instrument-serif {
-  font-family: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Satoshi", "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
   font-style: normal;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 .hn .font-mono.uppercase {
-  font-family: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Satoshi", "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
   font-weight: 500;
   letter-spacing: 0.04em;
 }
 .hn .amp-viz {
   border-radius: 8px;
-  background-color: #0b1220;
+  background-color: #0a0a0a;
   background-image:
-    radial-gradient(60% 50% at 80% 0%, rgba(54, 155, 255, 0.35), transparent 70%),
-    radial-gradient(50% 40% at 10% 100%, rgba(0, 110, 221, 0.35), transparent 70%);
-  --vz-accent: #e6f1ff;
-  --vz-neon: #8cc2ff;
-  --vz-line: rgba(108, 182, 255, 0.45);
-  --vz-fill: rgba(108, 182, 255, 0.08);
-  --vz-tile: rgba(108, 182, 255, 0.14);
-  --vz-glow: rgba(54, 155, 255, 0.6);
-  --vz-ink: #0b1220;
+    radial-gradient(60% 50% at 80% 0%, rgba(124, 92, 240, 0.35), transparent 70%),
+    radial-gradient(50% 40% at 10% 100%, rgba(79, 26, 214, 0.35), transparent 70%);
+  --vz-accent: #ede6fe;
+  --vz-neon: #bea9f9;
+  --vz-line: rgba(176, 150, 248, 0.45);
+  --vz-fill: rgba(176, 150, 248, 0.08);
+  --vz-tile: rgba(176, 150, 248, 0.14);
+  --vz-glow: rgba(124, 92, 240, 0.6);
+  --vz-ink: #0a0a0a;
 }
 
 /* ── Card hover ──────────────────────────────────────────────────────────────
-   On hover a card floods with the brand blue: a gradient fades in behind the
+   On hover a card floods with the brand violet: a gradient fades in behind the
    content (::before), the ink turns white, hairlines and icon tiles go glassy,
    and the card lifts by 3px. Artwork inside a card (`.hn-keep`) keeps its own
    colours, so a product mock on a card stays legible. */
@@ -324,14 +362,14 @@ html.hn-root.amp-root body {
   pointer-events: none;
   transition: opacity 0.4s ease;
   background:
-    radial-gradient(80% 90% at 100% 0%, #6bb0ff 0%, rgba(107, 176, 255, 0) 60%),
-    radial-gradient(70% 80% at 0% 100%, #06235e 0%, rgba(6, 35, 94, 0) 65%),
-    linear-gradient(135deg, #0a3a9a 0%, #1663d4 55%, #3d86ea 100%);
+    radial-gradient(80% 90% at 100% 0%, #a68af6 0%, rgba(107, 176, 255, 0) 60%),
+    radial-gradient(70% 80% at 0% 100%, #160838 0%, rgba(6, 35, 94, 0) 65%),
+    linear-gradient(135deg, #2a0d8a 0%, #4a18cc 55%, #6d48e8 100%);
 }
 .hn-hover:hover {
   border-color: transparent;
   translate: 0 -3px;
-  box-shadow: 0 30px 60px -30px rgba(6, 40, 110, 0.55);
+  box-shadow: 0 30px 60px -30px rgba(30, 10, 80, 0.55);
 }
 .hn-hover:hover::before {
   opacity: 1;

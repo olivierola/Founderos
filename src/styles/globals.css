@@ -839,6 +839,62 @@ body {
   --accent-coral: 152 46% 33%;
 }
 
+/* ── Le violet de marque dans le tableau de service ───────────────────────────
+   Le site porte un violet, #4f1ad6 (257° 78 % 47 %), que l'app laissait au
+   seuil : à l'intérieur, l'accent par défaut restait le bleu Hunar. Dans le
+   tableau de service, le violet prend sa place — boutons pleins, élément actif,
+   liens, anneau de focus.
+
+   Seuls les thèmes de MARQUE (Light, Dark, Système — ceux qui ne posent pas de
+   `data-skin`) sont concernés : un thème coloré (Forest, Crimson…) a été choisi
+   pour son accent, et le lui retirer ici serait le contredire.
+
+   `.sd-brand` est posée sur <html> par la coque du tableau, le temps qu'on y
+   est : sur la coque elle-même, les menus et dialogues — rendus en portail,
+   hors de son sous-arbre — seraient restés bleus. */
+:root.sd-brand:not([data-skin]) {
+  --primary: 257 78% 47%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 257 78% 47%;        /* 8:1 sur blanc */
+  --ring: 257 78% 55%;
+  --accent-coral: 257 78% 47%;
+  --accent-teal: 257 80% 40%;         /* le cran de survol */
+}
+:root.sd-brand.dark:not([data-skin]) {
+  /* Dessiné SUR le noir (liens, icônes), le violet de marque tomberait sous
+     3:1 : on l'ouvre, comme le bleu l'était (#5AA8FF). Les boutons pleins
+     gardent le violet franc, texte blanc. */
+  --primary-soft: 257 100% 78%;
+  --ring: 257 90% 68%;
+  /* Le fond (où se pose la barre) descend au noir franc ; la carte du
+     contenu, elle, est un noir plus doux, un cran AU-DESSUS du reste de l'app.
+     C'est l'écart entre les deux, pas la luminosité, qui la fait lire comme
+     posée — et un contenu trop noir collait au fond. */
+  --sd-ground: 0 0% 0%;
+  --background: 220 8% 5.5%;
+}
+:root.sd-brand.light:not([data-skin]) {
+  /* En clair, le fond gris-bleu (93 %) pesait sous une barre qui n'a plus de
+     surface propre : il remonte presque au blanc. La carte du contenu, blanche,
+     reste lisible par son filet et son ombre plutôt que par un fond sombre. */
+  --sd-ground: 220 24% 96.5%;
+
+  /* La scène des cartes de collaborateurs : en sombre elle est noire, comme
+     le fond ; en clair, un encre marine y découpait un trou au milieu de
+     chaque carte blanche. Elle devient un voile du violet de marque. */
+  --catalog-stage: 257 60% 96.5%;
+
+  /* Les textes et les onglets un cran plus affirmés. Les gris de la palette
+     Plane (35 % / 45 %) sont faits pour un contenu qu'on lit toute la
+     journée ; dans une barre posée sur un fond presque blanc, ils
+     s'effaçaient jusqu'à paraître désactivés. */
+  --sidebar-foreground: 221 30% 20%;
+  --text-secondary: 220 24% 24%;
+  --text-tertiary: 220 16% 36%;
+  --text-placeholder: 220 10% 52%;
+  --muted-foreground: 220 16% 36%;
+}
+
 /* Dotted canvas — the agent-in-dashboard page only. */
 .sd-agent-canvas {
   background-color: #fafafb;

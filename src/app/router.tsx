@@ -16,17 +16,12 @@ import { OrganisationsPage } from "@/features/orgs/Organisations";
 import { ProjectsPage } from "@/features/orgs/Projects";
 
 // Overview (merged into Admin panel — kept tabs only)
-import { AlertsPage } from "@/features/overview/Alerts";
-import { CustomDashboardsPage } from "@/features/overview/dashboards/CustomDashboards";
-import { DashboardBuilderPage } from "@/features/overview/dashboards/DashboardBuilder";
 
 import { PublicAgentRedirect } from "@/features/agent-rag/PublicAgentRedirect";
 import { AgentsPage } from "@/features/agent-rag/Agents";
 // The "Agentic Onboarding" module was removed — onboarding is now a public
 // agent with a conditional Onboarding tab in the RAG builder. Old /onboarding/*
 // deep links redirect to the public agents list (see the app children below).
-import { RagCenterPage, RagCollectionDetailPage } from "@/features/rag-center/RagCenter";
-import { KnowledgeCollectionsPage } from "@/features/rag-center/KnowledgeCollections";
 import { SkillsLibraryPage } from "@/features/internal-agents/InternalAgentDetail";
 import {
   InternalAgentRedirect, InternalAgentsIndexRedirect,
@@ -55,9 +50,6 @@ import { OpsJobsPage } from "@/features/ops/JobsPage";
 import { OpsSettingsPage } from "@/features/ops/SettingsPage";
 
 // CRM
-import { CrmWorkspacePage } from "@/features/crm/CrmWorkspace";
-import { CrmOverviewPage } from "@/features/crm/overview/CrmOverview";
-import { RecordViewPage } from "@/features/crm/RecordView";
 // Support module deleted (2026-07-17) — only the public help-center portal
 // survives; tickets live on as CRM records.
 import { HelpCenterPage } from "@/features/support/HelpCenter";
@@ -122,7 +114,7 @@ import { PrdApprovalsPage } from "@/features/prd-approvals/PrdApprovalsPage";
 import { AdminSubscriptionPage } from "@/features/admin/AdminExtras";
 import { AdminUsagePage } from "@/features/admin/AdminUsage";
 import { BillingSuccessPage } from "@/features/settings/BillingSuccess";
-import { ADMIN_ITEMS, ADMIN_LANDING } from "@/lib/admin-navigation";
+import { LEGACY_GOVERNANCE_REDIRECTS } from "@/lib/admin-navigation";
 
 import { MODULES, HIDDEN_MODULES } from "@/lib/navigation";
 
@@ -211,8 +203,6 @@ const PAGES: Record<string, PageEl> = {
   "agent/agents": <AgentsPage />,
   "agent/ecosystem": <AgentEcosystemPage />,
   "agent/tasks": <AgentTasksPage />,
-  "agent/knowledge": <RagCenterPage />,
-  "agent/collections": <KnowledgeCollectionsPage />,
   "agent/skills": <SkillsLibraryPage />,
   // Les parcours qui apprennent un outil à un nouvel arrivant — guidés dans
   // l'outil par l'extension (migration 0218), à partir des skills démontrées.
@@ -233,22 +223,38 @@ const PAGES: Record<string, PageEl> = {
   "devops/settings": <OpsSettingsPage />,
 
   // CRM (Projects, App Testing & Simulations were folded in here)
-  "crm/overview": <CrmOverviewPage />,
-  "crm/workspace": <CrmWorkspacePage />,
-  "crm/admin-custom-dashboards": <CustomDashboardsPage />,
-  "crm/admin-alerts": <AlertsPage />,
 
   // "Outils IA" dashboard modules.
   "repos/list": <RepositoriesPage />,
   "simulations/workspace": <PmSimulationsPage />,
 
   // ── AI Governance module ──
-  "governance/guardrails": <GovGuardrailsPage />,
-  "governance/agent-access": <GovAccessLogsPage />,
-  "governance/prompts": <GovPromptMonitoringPage />,
-  "governance/costs": <GovCostsPage />,
-  "governance/ops-incidents": <GovOpsIncidentsPage />,
-  "governance/ft-security": <GovFtSecurityPage />,
+  // Le module Administration (l'ancien dashboard Admin, au complet) : /admin/<onglet>.
+  "admin/organisation": <SettingsWorkspacePage />,
+  "admin/access": <SettingsRolesPage />,
+  "admin/members": <MembersPage />,
+  "admin/workspaces": <SettingsProjectsPage />,
+  "admin/repositories": <RepositoriesPage />,
+  "admin/security": <SettingsSecurityPage />,
+  "admin/sso": <SsoSettingsPage />,
+  "admin/approbations-prd": <PrdApprovalsPage />,
+  "admin/installation": <InstallationPage />,
+  "admin/subscription": <AdminSubscriptionPage />,
+  "admin/usage": <AdminUsagePage />,
+  "admin/billing": <SettingsBillingPage />,
+  "admin/gov-guardrails": <GovGuardrailsPage />,
+  "admin/gov-typesafe": <GovTypeSafePage />,
+  "admin/gov-contextiq": <GovContextIQPage />,
+  "admin/gov-agentpilot": <GovAgentPilotPage />,
+  "admin/gov-policyguard": <GovPolicyGuardPage />,
+  "admin/gov-sentinelflow": <GovSentinelFlowPage />,
+  "admin/gov-access": <GovAccessLogsPage />,
+  "admin/gov-prompts": <GovPromptMonitoringPage />,
+  "admin/gov-costs": <GovCostsPage />,
+  "admin/gov-incidents": <GovOpsIncidentsPage />,
+  "admin/gov-actions": <AdminActionsQueuePage />,
+  "admin/gov-pentest-scope": <PentestScopePage />,
+  "admin/gov-security": <GovFtSecurityPage />,
   // ── AI Ops module ──
   "aiops/ops-servers": <GovOpsServersPage />,
   "aiops/ops-live": <GovOpsLivePage />,
@@ -269,39 +275,6 @@ const PAGES: Record<string, PageEl> = {
   "finetuning/ft-versions": <GovFtVersionsPage />,
   "finetuning/ft-settings": <GovFtSettingsPage />,
 
-};
-
-/** Admin dashboard — every tab of the single-sidebar admin area maps to a page
- *  component (existing settings/integrations/governance pages, reused, plus the
- *  new subscription/usage/limits pages). Keyed by admin sub-slug. */
-const ADMIN_PAGES: Record<string, PageEl> = {
-  // ── Administration ──
-  organisation: <SettingsWorkspacePage />,
-  access: <SettingsRolesPage />,
-  members: <MembersPage />,
-  workspaces: <SettingsProjectsPage />,
-  repositories: <RepositoriesPage />,
-  security: <SettingsSecurityPage />,
-  sso: <SsoSettingsPage />,
-  "approbations-prd": <PrdApprovalsPage />,
-  installation: <InstallationPage />,
-  // ── Abonnements ──
-  subscription: <AdminSubscriptionPage />,
-  usage: <AdminUsagePage />,
-  billing: <SettingsBillingPage />,
-  // ── Gouvernance IA ──
-  "gov-guardrails": <GovGuardrailsPage />,
-  "gov-typesafe": <GovTypeSafePage />,
-  "gov-contextiq": <GovContextIQPage />,
-  "gov-agentpilot": <GovAgentPilotPage />,
-  "gov-policyguard": <GovPolicyGuardPage />,
-  "gov-sentinelflow": <GovSentinelFlowPage />,
-  "gov-access": <GovAccessLogsPage />,
-  "gov-prompts": <GovPromptMonitoringPage />,
-  "gov-costs": <GovCostsPage />,
-  "gov-incidents": <GovOpsIncidentsPage />,
-  "gov-actions": <AdminActionsQueuePage />,
-  "gov-pentest-scope": <PentestScopePage />,
 };
 
 /** Absolute redirect to /app/:ws/:proj/<to> (slug-based, robust). */
@@ -468,15 +441,12 @@ export const router = createBrowserRouter([
       // Vibe Code module (tabs as onglets via :sub).
       { path: "vibe-code", element: <AbsRedirect to="vibe-code/chat" /> },
       { path: "vibe-code/:sub", element: <ErrorBoundary><VibeCodePage /></ErrorBoundary> },
-      {
-        // Le constructeur de dashboards vit à côté de sa liste (crm/admin-custom-dashboards).
-        path: "crm/dashboard-builder/:dashboardId",
-        element: (
-          <ErrorBoundary>
-            <DashboardBuilderPage />
-          </ErrorBoundary>
-        ),
-      },
+      // Le CRM est masqué : plus aucune de ses pages n'est routée, ses anciennes
+      // adresses ramènent à l'accueil. La Base de connaissances a rejoint le RAG
+      // des Sources, dans le dashboard de service.
+      { path: "crm/*", element: <AbsRedirect to="" /> },
+      { path: "agent/collections", element: <AbsRedirect to="" /> },
+      { path: "agent/knowledge/*", element: <AbsRedirect to="" /> },
       {
         // The public-agent builder became a page of the service dashboard that
         // owns the agent (0195) — this resolves the dashboard and bounces there.
@@ -484,30 +454,6 @@ export const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <PublicAgentRedirect />
-          </ErrorBoundary>
-        ),
-      },
-      {
-        path: "crm/workspace/:objectSlug",
-        element: (
-          <ErrorBoundary>
-            <CrmWorkspacePage />
-          </ErrorBoundary>
-        ),
-      },
-      {
-        path: "crm/workspace/:objectSlug/:recordId",
-        element: (
-          <ErrorBoundary>
-            <RecordViewPage />
-          </ErrorBoundary>
-        ),
-      },
-      {
-        path: "agent/knowledge/:collectionId",
-        element: (
-          <ErrorBoundary>
-            <RagCollectionDetailPage />
           </ErrorBoundary>
         ),
       },
@@ -593,11 +539,11 @@ export const router = createBrowserRouter([
           </ErrorBoundary>
         ),
       },
-      // ── Admin dashboard (single sidebar) — explicit routes, not module-generated ──
-      { path: "admin", element: <AbsRedirect to={`admin/${ADMIN_LANDING}`} /> },
-      ...ADMIN_ITEMS.map((it) => ({
-        path: `admin/${it.slug}`,
-        element: <ErrorBoundary>{ADMIN_PAGES[it.slug] ?? <Navigate to={ADMIN_LANDING} replace />}</ErrorBoundary>,
+      // L'ancien dashboard Admin est le module « admin » (routes générées plus
+      // bas). Le module Gouvernance, qui en doublait une partie, redirige.
+      { path: "governance", element: <AbsRedirect to="admin/gov-guardrails" /> },
+      ...Object.entries(LEGACY_GOVERNANCE_REDIRECTS).map(([from, to]) => ({
+        path: `governance/${from}`, element: <AbsRedirect to={to} />,
       })),
       ...buildModuleRoutes(),
     ],

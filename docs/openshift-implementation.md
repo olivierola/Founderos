@@ -2,6 +2,8 @@
 
 Ce document met en œuvre la *documentation technique de mise en place* (architecture IPS, Hub, SDB, NPR, PRD) avec FounderOS. Il donne, dans l'ordre d'exécution, les commandes, les manifestes et les scripts de chaque étape.
 
+> **Architecture retenue le 12/10/2026 : [l'architecture Hub](architecture-hub.md).** FounderOS tourne sur le Hub, avec un serveur MCP par cluster et Azure OpenAI en direct, sans Keycloak, Vault ni LiteLLM. Ce document décrit la variante précédente. En restent valables, hors les lignes qui touchent Keycloak, Vault ou LiteLLM : le socle OpenShift (5), l'AC interne (6), Supabase (9), les approbations (12.2) et l'exploitation (17).
+
 Il complète deux documents :
 
 - [enterprise-onprem.md](enterprise-onprem.md) : variables du backend, SSO, Azure ;
@@ -146,13 +148,16 @@ Chaque ligne renvoie à sa section et aux tests qui la prouvent. Les compteurs s
 | 11/10/2026 | Mise en production sur le projet Supabase cloud : migrations 0265 à 0284 (0265 à 0271, déjà appliquées à la main, vérifiées rejouables), 100 fonctions redéployées. `sso-admin` n'est pas créé : le projet est à sa limite de 100 fonctions | — | `supabase migration list` aligné jusqu'à 0284 ; `supabase functions list` : les 100 fonctions datées du jour |
 | 12/10/2026 | G7 (généralisation) : passerelle d'entreprise pour le mode cloud. Une image (relais, serveurs MCP, politique OPA), un chart `deploy/helm/founderos-gateway` : un pod, deux conteneurs, serveur MCP sur la boucle locale seulement, aucun port entrant, secrets séparés par conteneur. Un compose pour une machine seule. FounderOS accepte `http://127.0.0.1` par un relais | [docs/install](install/README.md#mode-cloud--la-passerelle-dentreprise) ; [enterprise-generalisation.md](enterprise-generalisation.md) G7 | Test d'acceptation de bout en bout sur le vrai lanceur, le vrai relais et le vrai serveur MCP (`enterprise-gateway.e2e.test.ts`, 6 étapes) ; 7 tests du lanceur (`deploy/gateway/plan.test.mjs`) ; `helm lint` et `helm template` (relais seul, configuration complète, 4 refus) ; backend 286/286 |
 | 12/10/2026 | Jeton d'API tournant des serveurs MCP, par défaut : calculé chaque jour depuis une graine qui ne quitte pas le serveur (toutes les répliques ont le même, sans rien partager), livré par le serveur lui-même à FounderOS avec pour preuve le jeton détenu, rattrapage sur 7 jours ; l'ancien jeton reste accepté un jour. Correction : **un Vault par cluster**, pas un Vault partagé (E9, sections 0, 5.5, 6, 8, 11.2, 17 ; charts et valeurs) | 12.3, 11.5, 17.1, 17.3 ; [enterprise-generalisation.md](enterprise-generalisation.md) 5 bis | 15 tests MCP (`rotating-token.test.ts`) ; 6 tests de réception (`mcp-token-push.test.ts`) ; 4 étapes de bout en bout contre le vrai serveur MCP et le vrai livreur (`mcp-rotating-token.e2e.test.ts`) ; 0285 (8 contrôles PGlite) ; `helm lint` et `helm template` des 4 fichiers de valeurs et de la passerelle ; backend 296/296 |
+| 12/10/2026 | **Architecture Hub** ([architecture-hub.md](architecture-hub.md)) : FounderOS (interface, backend, Supabase) sur le Hub, un serveur MCP par cluster, Azure OpenAI en direct, ni Keycloak, ni Vault, ni LiteLLM. Serveurs MCP : identifiants Kubernetes par TokenRequest (comptes `-reader` et `-operator` liés dans les seuls namespaces autorisés, jeton de 10 minutes, le compte du pod ne peut que les demander), jetons des outils en Secrets montés, Vault devenu optionnel ; garde-fous (débit par appelant, exécutions simultanées, délai, jeton d'approbation à usage unique hors simulation, codes d'erreur stables) ; disponibilité (`/readyz`, droits vérifiés par SelfSubjectAccessReview, `mcp_check_ok`) ; module OpenShift porté à 11 tools (vue d'ensemble, ressources sans jamais un Secret, historique, métriques, mise à l'échelle plafonnée, simulation côté API) ; écritures du Hub sous approbation ; valeurs Helm des 5 clusters. FounderOS : certificat client mTLS vers les serveurs MCP et hôtes autorisés, dans le chart et l'installateur ; profil `openshift-hub` | [architecture-hub.md](architecture-hub.md) ; [MCP/README.md](../MCP/README.md) ; [docs/install](install/README.md) | MCP 173 tests, dont contrat des tools (9 : simulation de chaque écriture, vérifications de chaque module, paramètres bornés, catalogue, approbations Hub et PRD, valeurs de chaque cluster), mTLS par vraie poignée de main (3), garde-fous (9), Kubernetes (5), OpenShift (11), disponibilité (3) ; `opa test` 17/17 ; installateur (2 tests) ; `helm lint` des 5 valeurs MCP et du chart FounderOS, rendu du profil Hub de bout en bout |
+| 12/10/2026 | **Refonte du front.** Un seul dashboard : l'Admin fusionné dans AI Workforce, module « Administration » avec ses 24 onglets en trois sections (Administration, Abonnements, Gouvernance IA) à leurs adresses /admin/… ; le module Gouvernance qui en doublait la moitié retiré, ses adresses redirigent. Service : l'espace « Assistant » (Home, Missions, Schedules, rooms, messages) retiré, ses adresses redirigent vers l'Intelligence Space ; « Memories » retiré des Ressources ; Sources gagne une partie **RAG** (collections, texte, page web ou fichier vectorisés par le pipeline existant, suivi de l'état, activation sur les collaborateurs, essai de recherche par la même requête que l'outil rag_search, action `search` de rag-ingest). **Workflows et serveurs MCP** : le bloc Outil d'une étape vise un ou plusieurs serveurs MCP, tous leurs outils ou une sélection ; le playbook cite chaque outil sous le nom que l'agent appelle ; le run d'une procédure reçoit ces serveurs, limités aux outils choisis (0286, `internal_agent_runs.mcp_grants`), et une délégation ou un sous-agent en hérite ; une automatisation appelle elle-même UN outil d'UN serveur (refus explicite pour un jeu d'outils, un serveur en échange de jeton ou une écriture soumise à approbation). Chargement des serveurs MCP partagé (`_shared/mcp-servers.ts`). Navigation resserrée : Entreprise, Fine-tuning Studio et AI Ops hors du rail (pages joignables par adresse), Base de connaissances retirée (son atelier Document AI et son éditeur de procédures repris dans le RAG des Sources) ; **CRM masqué** : code conservé, plus aucune route, et plus aucun appel serveur tant que `CRM_ENABLED` n'est pas à 1 (crm-action répond 410, ni outil crm ni tables crm_* pour les agents, LeadSense et approbations crm_write coupés) | [MCP/README.md](../MCP/README.md) ; ce journal | 11 tests (`workflow-mcp.test.ts`, dont un appel MCP réel contre un faux serveur) ; 3 tests (`crm-switch.test.ts`) ; backend 310/310 ; typecheck du front et `vite build` propres ; 25 onglets d'administration vérifiés routés |
 
 Dernière exécution complète, le 12/10/2026 :
-- backend : 296/296 tests et typecheck propre (il couvre le code des edge functions, porté dans `backend/src/edge`) ;
+- backend : 310/310 tests et typecheck propre (il couvre le code des edge functions, porté dans `backend/src/edge`) ;
 - relais : 3/3 tests ;
-- serveurs MCP : 124/124 tests, typecheck et build propres ; `opa test` 16/16 ;
-- installateur, migrations et passerelle (`deploy/`) : 27/27 tests, plus 1 réservé aux signaux POSIX, sauté sous Windows ;
-- interface : typecheck propre.
+- serveurs MCP : 173/173 tests, typecheck et build propres ; `opa test` 17/17 ;
+- installateur, migrations et passerelle (`deploy/`) : 29/29 tests, plus 1 réservé aux signaux POSIX, sauté sous Windows ;
+- charts : `helm lint` propre (serveur MCP avec les valeurs des 5 clusters, FounderOS, passerelle) ;
+- interface : typecheck et `vite build` propres.
 
 ---
 
@@ -1716,7 +1721,7 @@ Exemple avec External Secrets, à adapter si vous utilisez Vault Agent. Le magas
 oc --context $CTX_IPS apply -f - <<YAML
 apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
-metadata: { name: vault }
+metadata: { name: vault-ips }   # le Vault d'IPS
 spec:
   provider:
     vault:
@@ -1737,7 +1742,7 @@ kind: ExternalSecret
 metadata: { name: founderos-backend, namespace: ai-platform }
 spec:
   refreshInterval: 15m
-  secretStoreRef: { kind: ClusterSecretStore, name: vault }
+  secretStoreRef: { kind: ClusterSecretStore, name: vault-ips }
   target: { name: founderos-backend-env }
   data:
     - { secretKey: SUPABASE_ANON_KEY,         remoteRef: { key: founderos/supabase, property: anon_key } }

@@ -170,9 +170,13 @@ export const qk = {
 /** Appelée sans session, depuis la page de connexion. Une erreur (migration
  *  absente, réseau) vaut « pas de SSO » : la connexion par mot de passe reste. */
 export async function fetchLoginOptions(): Promise<SsoLoginOptions> {
-  const { data, error } = await supabase.rpc("sso_login_options");
-  if (error || !data) return { sso_only: false, providers: [] };
-  return data as SsoLoginOptions;
+  const fallback: SsoLoginOptions = { sso_only: false, providers: [] };
+  // The sign-in form waits for this answer; a request that never comes back
+  // must not leave the page without a form. After a few seconds, no SSO.
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+  const answer = await Promise.race([supabase.rpc("sso_login_options"), timeout]);
+  if (!answer || answer.error || !answer.data) return fallback;
+  return answer.data as SsoLoginOptions;
 }
 
 /** Mode partagé : le fournisseur SSO d'une adresse, ou null. Appelée sans session. */

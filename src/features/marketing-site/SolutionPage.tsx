@@ -101,7 +101,7 @@ export function SolutionPage() {
         note={
           <div>
             <div className="max-w-[320px]">Works on the systems you already run</div>
-            <div className="mt-5 flex flex-wrap items-center gap-7 text-[#7a8496]">
+            <div className="mt-5 flex flex-wrap items-center gap-7 text-[#7d7d87]">
               {MARKS.map((t) => (
                 <span key={t.name} className="flex items-center gap-1.5">
                   <span style={{ color: `#${t.hex}` }} className="flex"><ToolMark tool={t} size={18} /></span>
@@ -124,18 +124,18 @@ export function SolutionPage() {
       <section className="bg-white py-16 lg:py-20">
         <Container narrow className="grid gap-6 lg:grid-cols-[1fr_1fr]">
           <Card tone="bg" className="flex flex-col p-6 sm:p-8">
-            <h2 className="text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728] sm:text-[32px]">
+            <h2 className="text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d] sm:text-[32px]">
               “{solution.problem.title}”
             </h2>
-            <p className="mt-6 text-[18px] leading-[1.3] text-[#4b5567]">{solution.problem.body}</p>
+            <p className="mt-6 text-[18px] leading-[1.3] text-[#5c5c66]">{solution.problem.body}</p>
             <div className="mt-auto pt-10">
-              <div className="text-[20px] font-medium leading-[1.3] text-[#0f1728]">The problem</div>
-              <div className="text-[20px] font-medium leading-[1.3] text-[#4b5567]">{solution.menu.label}</div>
+              <div className="text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">The problem</div>
+              <div className="text-[20px] font-medium leading-[1.3] text-[#5c5c66]">{solution.menu.label}</div>
             </div>
           </Card>
           <ArtPanel art={art} className="flex min-h-[420px] flex-col justify-center gap-3 rounded-[24px] p-8">
             {solution.problem.points.map((pt) => (
-              <div key={pt} className="flex items-start gap-3 rounded-[24px] bg-white/90 px-4 py-3 text-[16px] leading-[1.35] text-[#0f1728] backdrop-blur-sm">
+              <div key={pt} className="flex items-start gap-3 rounded-[24px] bg-white/90 px-4 py-3 text-[16px] leading-[1.35] text-[#0d0d0d] backdrop-blur-sm">
                 <WarningCircle weight="fill" className="mt-0.5 h-5 w-5 shrink-0 text-[#d97706]" />
                 {pt}
               </div>
@@ -162,10 +162,10 @@ export function SolutionPage() {
               </div>
             </div>
             <ArtPanel art={art} className="flex min-h-[460px] items-center justify-center rounded-[28px] p-8">
-              <div className="w-full max-w-[420px] rounded-[18px] bg-white p-5 text-[#0f1728] shadow-[0_30px_60px_-30px_rgba(0,20,60,0.55)]">
-                <div className="text-[14px] text-[#4b5567]">Step {open + 1} of {solution.approach.steps.length}</div>
+              <div className="w-full max-w-[420px] rounded-[18px] bg-white p-5 text-[#0d0d0d] shadow-[0_30px_60px_-30px_rgba(0,20,60,0.55)]">
+                <div className="text-[14px] text-[#5c5c66]">Step {open + 1} of {solution.approach.steps.length}</div>
                 <div className="mt-1 text-[24px] font-medium leading-[1.2] tracking-[-0.04em]">{solution.approach.steps[open]?.t}</div>
-                <p className="mt-3 text-[16px] leading-[1.4] text-[#4b5567]">{solution.approach.steps[open]?.b}</p>
+                <p className="mt-3 text-[16px] leading-[1.4] text-[#5c5c66]">{solution.approach.steps[open]?.b}</p>
               </div>
             </ArtPanel>
           </div>
@@ -176,8 +176,8 @@ export function SolutionPage() {
                 <Card key={m.label} tone="bg" hover className="flex min-h-[200px] flex-col p-4">
                   <Icon className="h-8 w-8 text-[#c9c9c9]" />
                   <div className="mt-auto pt-10">
-                    <div className="text-[20px] font-medium leading-[1.3] text-[#0f1728]">{m.label}</div>
-                    <div className="mt-1 text-[18px] leading-[1.3] text-[#4b5567]">{m.value}</div>
+                    <div className="text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">{m.label}</div>
+                    <div className="mt-1 text-[18px] leading-[1.3] text-[#5c5c66]">{m.value}</div>
                   </div>
                 </Card>
               );
@@ -187,24 +187,24 @@ export function SolutionPage() {
       </section>
 
       {/* ══ What you walk away with ════════════════════════════════════════ */}
-      <section className="border-t border-[#e6e9ef] bg-[#f7f8fb] py-16 lg:py-24">
+      <section className="border-t border-[#e8e8ee] bg-[#f5f5f8] py-16 lg:py-24">
         <Container narrow className="grid gap-10 lg:grid-cols-2 lg:gap-16">
           <div>
             <Head align="left" eyebrow="Deliverables" title="Everything on this list is yours to keep" />
             {solution.proof && (
-              <div className="mt-10 border-l-2 border-[#006edd] pl-5">
-                <div className="text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728]">
+              <div className="mt-10 border-l-2 border-[#4f1ad6] pl-5">
+                <div className="text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d]">
                   {solution.proof.figure}
-                  <span className="text-[#006edd]">{solution.proof.unit}</span>
+                  <span className="text-[#4f1ad6]">{solution.proof.unit}</span>
                 </div>
-                <div className="mt-1 max-w-[320px] text-[18px] leading-[1.3] text-[#4b5567]">{solution.proof.label}</div>
+                <div className="mt-1 max-w-[320px] text-[18px] leading-[1.3] text-[#5c5c66]">{solution.proof.label}</div>
               </div>
             )}
           </div>
           <ul className="space-y-3">
             {solution.deliverables.map((d) => (
-              <li key={d} className="hn-card hn-hover flex items-start gap-3 rounded-[24px] border border-[#e6e9ef] bg-white px-5 py-4 text-[18px] leading-[1.3] text-[#0f1728]">
-                <CheckCircle weight="fill" className="mt-0.5 h-5 w-5 shrink-0 text-[#006edd]" />
+              <li key={d} className="hn-card hn-hover flex items-start gap-3 rounded-[24px] border border-[#e8e8ee] bg-white px-5 py-4 text-[18px] leading-[1.3] text-[#0d0d0d]">
+                <CheckCircle weight="fill" className="mt-0.5 h-5 w-5 shrink-0 text-[#4f1ad6]" />
                 {d}
               </li>
             ))}
@@ -213,7 +213,7 @@ export function SolutionPage() {
       </section>
 
       {/* ══ Use cases ══════════════════════════════════════════════════════ */}
-      <section className="border-t border-[#e6e9ef] bg-white py-16 lg:py-24">
+      <section className="border-t border-[#e8e8ee] bg-white py-16 lg:py-24">
         <Container>
           <Head
             eyebrow="Use cases"
@@ -240,17 +240,17 @@ export function SolutionPage() {
       </section>
 
       {/* ══ The other solutions ════════════════════════════════════════════ */}
-      <section className="border-t border-[#e6e9ef] bg-[#f7f8fb] py-16">
+      <section className="border-t border-[#e8e8ee] bg-[#f5f5f8] py-16">
         <Container narrow>
-          <div className="text-[16px] font-medium text-[#4b5567]">The other solutions</div>
+          <div className="text-[16px] font-medium text-[#5c5c66]">The other solutions</div>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {others.map((s) => (
               <Link key={s.slug} to={`/solutions/${s.slug}`} className="group">
                 <Card hover className="h-full overflow-hidden">
                   <ArtPanel art={SOLUTION_ART[s.slug] ?? "blue"} className="h-20" />
                   <div className="p-4">
-                    <div className="text-[16px] font-medium leading-[1.3] text-[#0f1728] group-hover:text-[#006edd]">{s.menu.label}</div>
-                    <div className="mt-1 text-[14px] leading-[1.4] text-[#4b5567]">{s.menu.blurb}</div>
+                    <div className="text-[16px] font-medium leading-[1.3] text-[#0d0d0d] group-hover:text-[#4f1ad6]">{s.menu.label}</div>
+                    <div className="mt-1 text-[14px] leading-[1.4] text-[#5c5c66]">{s.menu.blurb}</div>
                   </div>
                 </Card>
               </Link>

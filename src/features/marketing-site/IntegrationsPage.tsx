@@ -118,10 +118,10 @@ export function IntegrationsPage() {
             <div className="grid gap-2.5 sm:grid-cols-3">
               {PRINCIPLES.map((c, i) => (
                 <Reveal key={c.t} delay={i * 80} className="h-full">
-                  <div className="hn-card hn-hover h-full rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-7">
+                  <div className="hn-card hn-hover h-full rounded-[24px] border border-[#e8e8ee] bg-[#f5f5f8] p-7">
                     <IconTile icon={c.icon} />
-                    <div className="mt-5 text-[17px] font-semibold tracking-[-0.025em] text-[#0f1728]">{c.t}</div>
-                    <p className="mt-2 text-[14.5px] leading-[1.55] text-[#4b5567]">{c.b}</p>
+                    <div className="mt-5 text-[17px] font-semibold tracking-[-0.025em] text-[#0d0d0d]">{c.t}</div>
+                    <p className="mt-2 text-[14.5px] leading-[1.55] text-[#5c5c66]">{c.b}</p>
                   </div>
                 </Reveal>
               ))}
@@ -137,18 +137,18 @@ export function IntegrationsPage() {
 
             {/* ── Search + categories ──────────────────────────────────────── */}
             <Reveal delay={90}>
-              <div className="mt-10 flex flex-col gap-4 rounded-[24px] bg-[#f5f7fa] p-3 sm:flex-row sm:items-start">
+              <div className="mt-10 flex flex-col gap-4 rounded-[24px] bg-[#f8f8fa] p-3 sm:flex-row sm:items-start">
                 <div className="relative w-full shrink-0 sm:max-w-xs">
                   <Search
                     aria-hidden
-                    className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a94a6]"
+                    className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8f8f99]"
                   />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     aria-label="Search a tool"
                     placeholder="Search a tool…"
-                    className="h-11 w-full rounded-full border border-[#e6e9ef] bg-white pl-11 pr-4 text-[14px] text-[#0f1728] outline-none transition-colors placeholder:text-[#8a94a6] focus:border-[#006edd]"
+                    className="h-11 w-full rounded-[10px] border border-[#e8e8ee] bg-white pl-11 pr-4 text-[14px] text-[#0d0d0d] outline-none transition-colors placeholder:text-[#8f8f99] focus:border-[#4f1ad6]"
                   />
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -162,7 +162,7 @@ export function IntegrationsPage() {
                           onClick={() => setActiveCat(c)}
                           aria-pressed={active}
                           className={`rounded-full border px-3.5 py-2 text-[14px] transition-colors ${
-                            active ? "border-[#006edd] bg-[#006edd] text-white" : "border-[#e6e9ef] bg-white text-[#0f1728] hover:border-[#cfd5df]"
+                            active ? "border-[#4f1ad6] bg-[#4f1ad6] text-white" : "border-[#e8e8ee] bg-white text-[#0d0d0d] hover:border-[#d4d4dc]"
                           }`}
                         >
                           {c === "all" ? "All" : label(c)}{" "}
@@ -177,7 +177,7 @@ export function IntegrationsPage() {
 
             {/* ── The list ─────────────────────────────────────────────────── */}
             {list.length === 0 ? (
-              <p className="mt-12 text-[15px] text-[#4b5567]">
+              <p className="mt-12 text-[15px] text-[#5c5c66]">
                 No tool matches. Tell us which one you need, we add them.
               </p>
             ) : (
@@ -187,16 +187,16 @@ export function IntegrationsPage() {
                   return (
                     <li
                       key={p.slug}
-                      className="hn-card hn-hover flex items-center gap-3.5 rounded-[24px] border border-[#e6e9ef] bg-white px-4 py-3.5 shadow-[0_14px_30px_-26px_rgba(17,16,17,0.4)]"
+                      className="hn-card hn-hover flex items-center gap-3.5 rounded-[24px] border border-[#e8e8ee] bg-white px-4 py-3.5 shadow-[0_14px_30px_-26px_rgba(17,16,17,0.4)]"
                     >
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] border border-[#e6e9ef] bg-white text-[#006edd] hn-icon">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] border border-[#e8e8ee] bg-white text-[#4f1ad6] hn-icon">
                         <Icon className="h-[18px] w-[18px]" />
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-[15px] font-semibold tracking-[-0.02em] text-[#0f1728]">
+                        <span className="block truncate text-[15px] font-semibold tracking-[-0.02em] text-[#0d0d0d]">
                           {p.name}
                         </span>
-                        <span className="mt-0.5 block text-[12.5px] text-[#8a94a6]">{label(p.category)}</span>
+                        <span className="mt-0.5 block text-[12.5px] text-[#8f8f99]">{label(p.category)}</span>
                       </span>
                     </li>
                   );
@@ -205,11 +205,11 @@ export function IntegrationsPage() {
             )}
 
             <Reveal delay={120}>
-              <div className="mt-10 flex flex-col gap-6 rounded-[24px] bg-[#f5f7fa] p-8 sm:flex-row sm:items-center">
+              <div className="mt-10 flex flex-col gap-6 rounded-[24px] bg-[#f8f8fa] p-8 sm:flex-row sm:items-center">
                 <IconTile icon={Plugs} />
                 <div className="flex-1">
                   <MonoLabel>And what is not on the list</MonoLabel>
-                  <p className="mt-4 max-w-[62ch] text-[15px] leading-[1.6] text-[#0f1728]">
+                  <p className="mt-4 max-w-[62ch] text-[15px] leading-[1.6] text-[#0d0d0d]">
                     A Cloud collaborator can also receive tools from a remote MCP server, yours, or a vendor's, with OAuth or
                     an authentication header. That is the route for an internal system that will never have a
                     ready-made connector.

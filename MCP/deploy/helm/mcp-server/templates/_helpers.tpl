@@ -33,3 +33,16 @@ app.kubernetes.io/name: {{ include "mcp.name" . }}
 {{- define "mcp.tlsSecret" -}}
 {{- default (printf "%s-tls" (include "mcp.name" .)) .Values.tls.secretName -}}
 {{- end -}}
+
+{{/* Namespaces où lier les comptes dédiés : rbac.namespaces, sinon ceux de la configuration OpenShift. */}}
+{{- define "mcp.rbacNamespaces" -}}
+{{- $ns := .Values.rbac.namespaces -}}
+{{- if not $ns -}}
+{{- if .Values.config.openshift -}}
+{{- $ns = .Values.config.openshift.namespaces | default list -}}
+{{- else -}}
+{{- $ns = .Values.config.namespaces | default list -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $ns -}}
+{{- end -}}

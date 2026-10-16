@@ -243,15 +243,15 @@ function FeatureTile({ f, wide }: { f: Feature; wide?: boolean }) {
   return (
     <Card tone="dark" hover className={`grid gap-6 p-5 ${wide ? "md:col-span-2 md:grid-cols-2 md:items-center" : ""}`}>
       <div>
-        <SealCheck weight="fill" className="h-5 w-5 text-[#5aa8ff]" />
+        <SealCheck weight="fill" className="h-5 w-5 text-[#9b7bf4]" />
         <h3 className="mt-4 text-[20px] font-medium leading-[1.3] text-white">{f.title}</h3>
         <p className="mt-1 text-[16px] leading-[1.4] text-white/75">{f.body}</p>
       </div>
       <ArtPanel art={f.art} className="flex min-h-[180px] items-center justify-center rounded-[14px] p-5">
         <div className="w-full max-w-[280px] space-y-1.5">
           {f.sample.map((s) => (
-            <div key={s} className="flex items-center gap-2 rounded-[12px] bg-white/85 px-3 py-2 text-[12.5px] text-[#0f1728] backdrop-blur-sm">
-              <CheckCircle weight="fill" className="h-3.5 w-3.5 shrink-0 text-[#006edd]" />
+            <div key={s} className="flex items-center gap-2 rounded-[12px] bg-white/85 px-3 py-2 text-[12.5px] text-[#0d0d0d] backdrop-blur-sm">
+              <CheckCircle weight="fill" className="h-3.5 w-3.5 shrink-0 text-[#4f1ad6]" />
               {s}
             </div>
           ))}
@@ -304,7 +304,7 @@ export function ProductPage() {
         >
           <div className="hn-marquee gap-14">
             {[...MARKS, ...MARKS].map((t, i) => (
-              <span key={`${t.name}-${i}`} className="flex shrink-0 items-center gap-2 text-[#7a8496]">
+              <span key={`${t.name}-${i}`} className="flex shrink-0 items-center gap-2 text-[#7d7d87]">
                 {(t.path || t.logo) && <span style={{ color: `#${t.hex}` }} className="flex"><ToolMark tool={t} size={22} /></span>}
                 <span className="text-[18px] font-semibold tracking-[-0.02em]">{t.name}</span>
               </span>
@@ -317,10 +317,10 @@ export function ProductPage() {
       </section>
 
       {/* ══ Facts strip ════════════════════════════════════════════════════ */}
-      <section className="mt-16 border-y border-[#e6e9ef] bg-[#f7f8fb]">
+      <section className="mt-16 border-y border-[#e8e8ee] bg-[#f5f5f8]">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4">
           {content.facts.map((f, i) => (
-            <div key={f.label} className={`px-8 py-10 lg:px-12 ${i ? "border-t border-[#e6e9ef] sm:border-l sm:border-t-0" : ""}`}>
+            <div key={f.label} className={`px-8 py-10 lg:px-12 ${i ? "border-t border-[#e8e8ee] sm:border-l sm:border-t-0" : ""}`}>
               <Fact value={f.value} label={f.label} />
             </div>
           ))}
@@ -336,8 +336,8 @@ export function ProductPage() {
               <Card key={c.title} tone="bg" hover className="flex min-h-[260px] flex-col p-6">
                 <IconTile icon={c.icon} />
                 <div className="mt-auto pt-10">
-                  <h3 className="text-[20px] font-medium leading-[1.3] text-[#0f1728]">{c.title}</h3>
-                  <p className="mt-2 text-[18px] leading-[1.3] text-[#4b5567]">{c.body}</p>
+                  <h3 className="text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">{c.title}</h3>
+                  <p className="mt-2 text-[18px] leading-[1.3] text-[#5c5c66]">{c.body}</p>
                 </div>
               </Card>
             ))}
@@ -352,7 +352,7 @@ export function ProductPage() {
           <div className="mx-auto mt-12 grid max-w-[1000px] gap-8 md:grid-cols-3">
             {content.stages.map((s) => (
               <div key={s.tag} className="flex flex-col items-center text-center">
-                <span className="rounded-full bg-[#006edd] px-4 py-2 text-[16px] font-medium leading-none">{s.tag}</span>
+                <span className="rounded-full bg-[#4f1ad6] px-4 py-2 text-[16px] font-medium leading-none">{s.tag}</span>
                 <div className="mt-4 rounded-[14px] border border-white/10 bg-white/[0.05] px-4 py-3 text-[18px] font-medium">{s.title}</div>
                 <p className="mt-4 max-w-[260px] text-[18px] leading-[1.3] text-white/75">{s.body}</p>
               </div>
@@ -426,8 +426,8 @@ export function ProductPage() {
       <section className="bg-white pb-20 lg:pb-24">
         <Container narrow>
           <div className="flex items-center gap-2">
-            <Sparkle weight="fill" className="h-5 w-5 text-[#006edd]" />
-            <span className="text-[16px] font-medium text-[#006edd]">{product.name}</span>
+            <Sparkle weight="fill" className="h-5 w-5 text-[#4f1ad6]" />
+            <span className="text-[16px] font-medium text-[#4f1ad6]">{product.name}</span>
           </div>
           <H className="mt-3">Frequently asked questions</H>
           <div className="mt-8">

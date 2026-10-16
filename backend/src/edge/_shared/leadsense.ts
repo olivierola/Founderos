@@ -31,6 +31,7 @@ import {
   judge, choice, score, noul, readChoice, readScore, readNoul, qid, hasTypesafeKey,
   loadTypesafeConfig, type Level,
 } from "./typesafe.ts";
+import { crmEnabled } from "./crm-switch.ts";
 
 type Admin = SupabaseClient;
 
@@ -229,7 +230,8 @@ export async function enrichFromCrm(admin: Admin, projectId: string, email: stri
   out.personal_email = FREE_MAIL.test(clean);
   const domain = out.personal_email ? null : clean.split("@")[1] ?? null;
   out.company_domain = domain;
-  try {
+  // Le CRM masqué n'est pas consulté (crm-switch.ts).
+  if (crmEnabled()) try {
     const ors = [`data->>email.ilike.${clean}`];
     if (domain) ors.push(`data->>website.ilike.*${domain}*`, `data->>domain.ilike.*${domain}*`, `data->>email.ilike.*@${domain}`);
     const { data } = await admin.from("crm_records")

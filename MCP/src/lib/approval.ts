@@ -24,6 +24,8 @@ export interface VerifiedApproval {
   approver: string;
   /** Tous les approbateurs (règle à quorum, G3) ; [approver] pour un jeton d'avant. */
   approvers: string[];
+  /** Fin de validité (ms) : le jeton n'est accepté qu'une fois pendant cette durée. */
+  expiresAt: number;
 }
 
 export interface ApprovalVerifierOptions {
@@ -117,6 +119,7 @@ export function createApprovalVerifier(opts: ApprovalVerifierOptions): ApprovalV
       params_hash: p.params_hash as string,
       approver: p.approver,
       approvers,
+      expiresAt: (p.exp as number) * 1000,
     };
   };
 }

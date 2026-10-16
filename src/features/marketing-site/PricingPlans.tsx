@@ -192,7 +192,7 @@ function reconcile(plan: Plan, row: BillingPlan | undefined): Plan {
    A two-segment control, square-cornered like the rest of the register. */
 function PeriodSwitch({ yearly, onChange }: { yearly: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="inline-flex rounded-full border border-[#e6e9ef] bg-white p-1 text-[15px]">
+    <div className="inline-flex rounded-full border border-[#e8e8ee] bg-white p-1 text-[15px]">
       {[
         { on: false, label: "Monthly" },
         { on: true, label: "Yearly · 2 months free" },
@@ -204,7 +204,7 @@ function PeriodSwitch({ yearly, onChange }: { yearly: boolean; onChange: (v: boo
             type="button"
             aria-pressed={active}
             onClick={() => onChange(opt.on)}
-            className={`rounded-full px-4 py-2 transition-colors ${active ? "bg-[#006edd] text-white" : "text-[#0f1728] hover:text-[#006edd]"}`}
+            className={`rounded-full px-4 py-2 transition-colors ${active ? "bg-[#4f1ad6] text-white" : "text-[#0d0d0d] hover:text-[#4f1ad6]"}`}
           >
             {opt.label}
           </button>
@@ -221,7 +221,7 @@ const PLAN_ICON: Record<string, typeof UserIcon> = {
 };
 
 function Tick() {
-  return <CheckCircleIcon weight="fill" className="mt-[2px] h-[18px] w-[18px] shrink-0 text-[#006edd]" />;
+  return <CheckCircleIcon weight="fill" className="mt-[2px] h-[18px] w-[18px] shrink-0 text-[#4f1ad6]" />;
 }
 
 function PlanCard({ plan, yearly }: { plan: Plan; yearly: boolean }) {
@@ -235,30 +235,30 @@ function PlanCard({ plan, yearly }: { plan: Plan; yearly: boolean }) {
   return (
     <div
       className={`flex h-full flex-col rounded-[24px] border bg-white p-6 ${
-        hot ? "border-[#006edd] shadow-[0_24px_50px_-30px_rgba(0,110,221,0.55)]" : "border-[#e6e9ef]"
+        hot ? "border-[#4f1ad6] shadow-[0_24px_50px_-30px_rgba(79,26,214,0.55)]" : "border-[#e8e8ee]"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className="grid h-12 w-12 place-items-center rounded-[14px] border border-[#e6e9ef] text-[#006edd]">
+        <span className="grid h-12 w-12 place-items-center rounded-[14px] border border-[#e8e8ee] text-[#4f1ad6]">
           <Icon className="h-6 w-6" />
         </span>
         {hot && (
-          <span className="rounded-full bg-[#006edd] px-3 py-1.5 text-[13px] font-medium leading-none text-white">
+          <span className="rounded-full bg-[#4f1ad6] px-3 py-1.5 text-[13px] font-medium leading-none text-white">
             Popular
           </span>
         )}
       </div>
-      <div className="mt-6 text-[22px] font-medium tracking-[-0.03em] text-[#0f1728]">{plan.name}</div>
-      <p className="mt-1 text-[16px] leading-[1.4] text-[#4b5567]">{plan.description}</p>
+      <div className="mt-6 text-[22px] font-medium tracking-[-0.03em] text-[#0d0d0d]">{plan.name}</div>
+      <p className="mt-1 text-[16px] leading-[1.4] text-[#5c5c66]">{plan.description}</p>
       {amount === null ? (
-        <div className="mt-6 text-[36px] font-medium leading-none tracking-[-0.04em] text-[#0f1728]">Custom</div>
+        <div className="mt-6 text-[36px] font-medium leading-none tracking-[-0.04em] text-[#0d0d0d]">Custom</div>
       ) : (
         <div className="mt-6 flex items-baseline gap-2">
-          {struck !== null && <span className="text-[18px] text-[#8a94a6] line-through tabular-nums">€{struck}</span>}
-          <span className="text-[36px] font-medium leading-none tracking-[-0.04em] text-[#0f1728] tabular-nums">
+          {struck !== null && <span className="text-[18px] text-[#8f8f99] line-through tabular-nums">€{struck}</span>}
+          <span className="text-[36px] font-medium leading-none tracking-[-0.04em] text-[#0d0d0d] tabular-nums">
             €<NumberFlow value={amount} />
           </span>
-          <span className="text-[16px] text-[#4b5567]">/{yearly ? "year" : "month"}</span>
+          <span className="text-[16px] text-[#5c5c66]">/{yearly ? "year" : "month"}</span>
         </div>
       )}
       <div className="mt-6 flex flex-wrap items-center gap-2">
@@ -271,10 +271,10 @@ function PlanCard({ plan, yearly }: { plan: Plan; yearly: boolean }) {
           </Btn>
         )}
       </div>
-      <div className="mt-8 border-t border-[#e6e9ef] pt-6 text-[14px] text-[#4b5567]">{plan.featuresLabel}</div>
+      <div className="mt-8 border-t border-[#e8e8ee] pt-6 text-[14px] text-[#5c5c66]">{plan.featuresLabel}</div>
       <ul className="mt-4 space-y-3">
         {plan.features.map((f) => (
-          <li key={f} className="flex items-start gap-2.5 text-[16px] leading-[1.4] text-[#0f1728]">
+          <li key={f} className="flex items-start gap-2.5 text-[16px] leading-[1.4] text-[#0d0d0d]">
             <Tick />
             {f}
           </li>
@@ -301,7 +301,7 @@ export function PricingPlans({ compact = false }: { compact?: boolean }) {
   const { plans, enterprise } = usePlans();
 
   return (
-    <div className="text-[#0f1728]">
+    <div className="text-[#0d0d0d]">
       {!compact && (
         <Reveal>
           <PeriodSwitch yearly={yearly} onChange={setYearly} />
@@ -317,17 +317,17 @@ export function PricingPlans({ compact = false }: { compact?: boolean }) {
       </div>
 
       <Reveal delay={120}>
-        <div className="mt-6 grid gap-6 rounded-[24px] border border-[#e6e9ef] bg-[#f7f8fb] p-6 sm:grid-cols-3">
+        <div className="mt-6 grid gap-6 rounded-[24px] border border-[#e8e8ee] bg-[#f5f5f8] p-6 sm:grid-cols-3">
           {[
             { icon: CalendarCheckIcon, t: "Pay yearly", d: "Two months free on every plan." },
             { icon: CoinsIcon, t: "Usage in credits", d: "From 20 credits per collaborator reply." },
             { icon: ShieldCheckIcon, t: "Cancel any time", d: "Your data leaves with you." },
           ].map((f) => (
             <div key={f.t} className="flex items-start gap-3">
-              <f.icon className="mt-0.5 h-6 w-6 shrink-0 text-[#006edd]" />
+              <f.icon className="mt-0.5 h-6 w-6 shrink-0 text-[#4f1ad6]" />
               <div>
                 <div className="text-[17px] font-medium tracking-[-0.02em]">{f.t}</div>
-                <div className="text-[15px] text-[#4b5567]">{f.d}</div>
+                <div className="text-[15px] text-[#5c5c66]">{f.d}</div>
               </div>
             </div>
           ))}
@@ -335,15 +335,15 @@ export function PricingPlans({ compact = false }: { compact?: boolean }) {
       </Reveal>
 
       <Reveal delay={160}>
-        <div className="mt-6 flex flex-col gap-5 rounded-[24px] border border-[#e6e9ef] bg-white p-6 sm:flex-row sm:items-center sm:p-8">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#e6e9ef] text-[#006edd]">
+        <div className="mt-6 flex flex-col gap-5 rounded-[24px] border border-[#e8e8ee] bg-white p-6 sm:flex-row sm:items-center sm:p-8">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#e8e8ee] text-[#4f1ad6]">
             <CubeIcon className="h-6 w-6" />
           </span>
           <div className="flex-1">
             <div className="text-[20px] font-medium tracking-[-0.02em]">
-              Enterprise <span className="text-[#8a94a6]">·</span> {enterprise.includes}
+              Enterprise <span className="text-[#8f8f99]">·</span> {enterprise.includes}
             </div>
-            <p className="mt-1 text-[16px] leading-[1.4] text-[#4b5567]">
+            <p className="mt-1 text-[16px] leading-[1.4] text-[#5c5c66]">
               {enterprise.description} {enterprise.features.slice(0, 2).join(" · ")}.
             </p>
           </div>
@@ -352,7 +352,7 @@ export function PricingPlans({ compact = false }: { compact?: boolean }) {
       </Reveal>
 
       {!compact && (
-        <p className="mt-6 max-w-[70ch] text-[15px] leading-[1.55] text-[#4b5567]">
+        <p className="mt-6 max-w-[70ch] text-[15px] leading-[1.55] text-[#5c5c66]">
           Every plan includes the encrypted secrets vault, the governance registry and the audit log. There is no
           free trial: you are billed at subscription, you can cancel any time, and your data leaves with you.
         </p>

@@ -27,7 +27,7 @@ export function UseCasesPage() {
         lead="What a Cloud collaborator takes on in each team, step by step, described exactly as the product runs it."
         note="Illustrative workflows with sample data, not customer results."
       >
-        <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-[#7a8496]">
+        <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-[#7d7d87]">
           {MARKS.map((t) => (
             <span key={t.name} className="flex items-center gap-1.5">
               {(t.path || t.logo) && <span style={{ color: `#${t.hex}` }} className="flex"><ToolMark tool={t} size={18} /></span>}
@@ -43,13 +43,13 @@ export function UseCasesPage() {
         <Container narrow className="relative">
           <Card className="grid gap-8 p-6 sm:p-8 lg:grid-cols-2">
             <div className="flex flex-col">
-              <div className="text-[16px] font-medium text-[#4b5567]">Featured workflow · {featured.team}</div>
-              <h2 className="mt-6 text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728] sm:text-[32px]">{featured.title}</h2>
-              <div className="mt-8 divide-y divide-[#e6e9ef]">
+              <div className="text-[16px] font-medium text-[#5c5c66]">Featured workflow · {featured.team}</div>
+              <h2 className="mt-6 text-[28px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d] sm:text-[32px]">{featured.title}</h2>
+              <div className="mt-8 divide-y divide-[#e8e8ee]">
                 {featured.facts.map((f) => (
                   <div key={f.head} className="py-4 first:pt-0">
-                    <div className="text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0f1728]">{f.head}</div>
-                    <div className="mt-1 text-[18px] leading-[1.3] text-[#4b5567]">{f.label}</div>
+                    <div className="text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d]">{f.head}</div>
+                    <div className="mt-1 text-[18px] leading-[1.3] text-[#5c5c66]">{f.label}</div>
                   </div>
                 ))}
               </div>
@@ -65,7 +65,7 @@ export function UseCasesPage() {
       </section>
 
       {/* ══ The grid ═══════════════════════════════════════════════════════ */}
-      <section className="bg-[#f7f8fb] py-16 lg:py-20">
+      <section className="bg-[#f5f5f8] py-16 lg:py-20">
         <Container>
           <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
             {rest.map((u) => (
@@ -74,8 +74,8 @@ export function UseCasesPage() {
                   <AgentBadge name={u.agent} size={56} tone="glass" />
                 </ArtPanel>
                 <div className="flex flex-1 flex-col p-3 pt-5">
-                  <div className="text-[14px] text-[#4b5567]">{u.team}</div>
-                  <h3 className="mt-1 text-[20px] font-medium leading-[1.3] text-[#0f1728]">{u.title}</h3>
+                  <div className="text-[14px] text-[#5c5c66]">{u.team}</div>
+                  <h3 className="mt-1 text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">{u.title}</h3>
                   <Btn to={u.to} variant="link" className="mt-auto self-start pt-6">
                     Read how it works
                   </Btn>

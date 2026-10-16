@@ -10,7 +10,7 @@ import { loadCatalog, type Cluster } from "../src/lib/catalog.ts";
 import { Metrics } from "../src/lib/metrics.ts";
 import { BuiltinPolicyEngine } from "../src/lib/policy.ts";
 import type { CredentialRef, SecretResolver } from "../src/lib/secrets.ts";
-import type { ToolContext, ToolRuntime } from "../src/lib/tool.ts";
+import type { ToolContext, ToolLimits, ToolRuntime } from "../src/lib/tool.ts";
 
 type SigningKey = Parameters<SignJWT["sign"]>[0];
 
@@ -72,7 +72,8 @@ export const fakeSecrets: SecretResolver & { requests: Array<{ ref: CredentialRe
   requests: [],
   async resolve(ref, opts = {}) {
     this.requests.push({ ref, namespace: opts.namespace });
-    return ref.type === "kv" ? `secret-${ref.path}` : ref.type === "vault-k8s" ? `sa-token-${ref.role}-${opts.namespace ?? "*"}` : "local";
+    if (ref.type === "k8s-token") return `k8s-${ref.serviceAccount}`;
+    return ref.type === "kv" ? `secret-${ref.path}` : ref.type === "vault-k8s" ? `sa-token-${ref.role}-${opts.namespace ?? "*"}` : ref.type === "file" ? `file:${ref.path}` : "local";
   },
 };
 
@@ -109,7 +110,7 @@ export async function fakeUpstream(routes: Record<string, (req: Recorded) => { s
   };
 }
 
-export async function runtime(serverName: string, cluster: Cluster, opts: { approvalJwks?: ReturnType<typeof createLocalJWKSet>; audience?: string } = {}) {
+export async function runtime(serverName: string, cluster: Cluster, opts: { approvalJwks?: ReturnType<typeof createLocalJWKSet>; audience?: string; limits?: ToolLimits } = {}) {
   const audit: AuditEvent[] = [];
   const catalog = loadCatalog();
   const rt: ToolRuntime = {
@@ -121,6 +122,7 @@ export async function runtime(serverName: string, cluster: Cluster, opts: { appr
     audit: (e) => audit.push(e),
     metrics: new Metrics(),
     maxResultBytes: 64 * 1024,
+    ...(opts.limits ? { limits: opts.limits } : {}),
   };
   return { rt, audit };
 }

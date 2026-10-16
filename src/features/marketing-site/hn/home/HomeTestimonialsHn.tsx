@@ -1,5 +1,5 @@
 import { QuotesIcon as Quotes } from "@phosphor-icons/react";
-import { ArtPanel, Btn, Card, Container, Head } from "../HnKit";
+import { ArtPanel, Btn, Card, Container, Em, Head } from "../HnKit";
 import { TESTIMONIALS, type Testimonial } from "../testimonials";
 
 /* ══ Testimonials ════════════════════════════════════════════════════════════
@@ -38,12 +38,12 @@ function TestimonialCard({ t, preview }: { t: Testimonial; preview: boolean }) {
         )}
       </ArtPanel>
       <div className="flex flex-1 flex-col px-3 pb-4 pt-5">
-        <Quotes weight="fill" className="h-6 w-6 text-[#006edd]" />
-        <h3 className="mt-3 text-[20px] font-medium leading-[1.3] text-[#0f1728]">{t.headline}</h3>
-        <p className="mt-3 text-[16px] leading-[1.5] text-[#4b5567]">{t.quote}</p>
+        <Quotes weight="fill" className="h-6 w-6 text-[#4f1ad6]" />
+        <h3 className="mt-3 text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">{t.headline}</h3>
+        <p className="mt-3 text-[16px] leading-[1.5] text-[#5c5c66]">{t.quote}</p>
         <div className="mt-auto pt-6">
-          <div className="text-[16px] font-medium text-[#0f1728]">{t.name}</div>
-          <div className="text-[15px] text-[#4b5567]">
+          <div className="text-[16px] font-medium text-[#0d0d0d]">{t.name}</div>
+          <div className="text-[15px] text-[#5c5c66]">
             {t.role}, {t.company}
           </div>
         </div>
@@ -58,7 +58,7 @@ export function HomeTestimonialsHn() {
   const list = preview ? PREVIEW : TESTIMONIALS;
 
   return (
-    <section className="border-t border-[#e6e9ef] bg-white py-20 lg:py-24">
+    <section className="border-t border-[#e8e8ee] bg-white py-20 lg:py-24">
       <Container narrow>
         <Head
           align="left"
@@ -67,7 +67,7 @@ export function HomeTestimonialsHn() {
             <>
               Real teams. Real work.
               <br />
-              In their own words.
+              <Em>In their own words.</Em>
             </>
           }
           lead="How teams use Anduran to put Cloud collaborators to work on their own systems, and keep every action accountable."

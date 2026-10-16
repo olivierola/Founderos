@@ -8,8 +8,8 @@
 import { z } from "zod";
 import { CLUSTERS, type Cluster } from "../lib/catalog.ts";
 import { requestJson } from "../lib/http.ts";
-import { credentialRefSchema } from "../lib/secrets.ts";
-import type { ServerModule } from "../lib/server.ts";
+import { credentialRefSchema, type SecretResolver } from "../lib/secrets.ts";
+import type { ReadinessCheck, ServerModule } from "../lib/server.ts";
 import { defineTool, ToolInputError } from "../lib/tool.ts";
 
 const LABEL_SELECTOR = /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=|!=|=~|!~)\s*"[^"\\]*"(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=|!=|=~|!~)\s*"[^"\\]*")*\s*$/;
@@ -79,14 +79,27 @@ export function buildLogQl(cfg: ObservabilityConfig["loki"], namespace: string, 
 
 type PromResult = { status: string; data: { resultType: string; result: Array<{ metric: Record<string, string>; value?: [number, string]; values?: Array<[number, string]> }> } };
 
+type Matcher = { name: string; value: string; isRegex: boolean; isEqual?: boolean };
+interface Silence { id: string; status: { state: string }; matchers: Matcher[]; endsAt: string; createdBy: string; comment: string }
+
+/** Deux silences visent les mêmes alertes : mêmes matchers, dans n'importe quel ordre. */
+export function sameMatchers(a: Matcher[], b: Matcher[]): boolean {
+  const key = (m: Matcher) => `${m.name}\u0000${m.value}\u0000${m.isRegex}\u0000${m.isEqual ?? true}`;
+  const ka = a.map(key).sort();
+  const kb = b.map(key).sort();
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i]);
+}
+
+const authHeaders = async (secrets: SecretResolver, e: z.infer<typeof endpoint>, extra: Record<string, string> = {}) => ({
+  ...(e.token ? { Authorization: `Bearer ${await secrets.resolve(e.token, {})}` } : {}),
+  ...extra,
+});
+
 export const observabilityServer: ServerModule<ObservabilityConfig> = {
   name: "mcp-observability",
   configSchema: observabilityConfig,
   createTools({ config, secrets }) {
-    const auth = async (e: z.infer<typeof endpoint>, extra: Record<string, string> = {}) => ({
-      ...(e.token ? { Authorization: `Bearer ${await secrets.resolve(e.token, {})}` } : {}),
-      ...extra,
-    });
+    const auth = (e: z.infer<typeof endpoint>, extra: Record<string, string> = {}) => authHeaders(secrets, e, extra);
     const clusterEnum = z.enum(config.clusters as [Cluster, ...Cluster[]]);
 
     const promQuery = async (path: string, params: Record<string, string>) => {
@@ -126,7 +139,7 @@ export const observabilityServer: ServerModule<ObservabilityConfig> = {
         description: "Dernières lignes de log d'une application de la liste blanche, filtrées par niveau. 1 h et 500 lignes au plus.",
         write: false,
         input: {
-          app: z.string().describe(`Application : ${Object.keys(config.apps).join(", ") || "(aucune configurée)"}`),
+          app: z.string().max(100).describe(`Application : ${Object.keys(config.apps).join(", ") || "(aucune configurée)"}`),
           level: z.enum(LEVELS).default("error"),
           minutes: z.number().int().min(1).max(60).default(15),
           limit: z.number().int().min(1).max(500).default(200),
@@ -207,7 +220,7 @@ export const observabilityServer: ServerModule<ObservabilityConfig> = {
         name: "db_health",
         description: "Indicateurs de santé d'une base suivie (exporters Percona) : disponibilité, connexions, réplication. Pas de requête SQL.",
         write: false,
-        input: { database: z.string().describe(`Base : ${Object.keys(config.databases).join(", ") || "(aucune configurée)"}`) },
+        input: { database: z.string().max(100).describe(`Base : ${Object.keys(config.databases).join(", ") || "(aucune configurée)"}`) },
         validate({ database }) {
           if (!Object.hasOwn(config.databases, database)) throw new ToolInputError(`Base non suivie : ${database}`);
         },
@@ -225,7 +238,7 @@ export const observabilityServer: ServerModule<ObservabilityConfig> = {
 
       defineTool({
         name: "alert_silence_create",
-        description: "Crée un silence Alertmanager sur une alerte d'un cluster : 2 h au plus, commentaire obligatoire. En PRD, exige une approbation.",
+        description: "Crée un silence Alertmanager sur une alerte d'un cluster : 2 h au plus, commentaire obligatoire. Un silence identique encore valable est réutilisé. dry_run : ce qui serait créé, et les alertes couvertes. En PRD, exige une approbation.",
         write: true,
         input: {
           alertname: z.string().min(1).max(200),
@@ -233,31 +246,72 @@ export const observabilityServer: ServerModule<ObservabilityConfig> = {
           namespace: z.string().regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/).max(63).optional(),
           duration_minutes: z.number().int().min(5).max(120),
           comment: z.string().min(10, "commentaire obligatoire (10 caractères au moins)").max(500),
+          dry_run: z.boolean().default(false),
         },
         targetCluster: ({ cluster }) => cluster,
-        async run({ alertname, cluster, namespace, duration_minutes, comment }, ctx) {
+        async run({ alertname, cluster, namespace, duration_minutes, comment, dry_run }, ctx) {
           const a = config.alertmanager;
+          const base = a.url.replace(/\/$/, "");
+          const headers = await auth(a);
           const now = new Date();
-          const matchers = [
+          const endsAt = new Date(now.getTime() + duration_minutes * 60_000);
+          const matchers: Matcher[] = [
             { name: "alertname", value: alertname, isRegex: false, isEqual: true },
             { name: a.clusterLabel, value: cluster, isRegex: false, isEqual: true },
             ...(namespace ? [{ name: "namespace", value: namespace, isRegex: false, isEqual: true }] : []),
           ];
-          const res = await requestJson<{ silenceID: string }>(`${a.url.replace(/\/$/, "")}/api/v2/silences`, {
+          // Ce que le silence couvrirait, et un silence identique déjà posé : un agent
+          // qui relance après un délai dépassé ne crée pas de doublon.
+          const filter = new URLSearchParams();
+          for (const m of matchers) filter.append("filter", `${m.name}="${m.value}"`);
+          const [alerts, silences] = await Promise.all([
+            requestJson<unknown[]>(`${base}/api/v2/alerts?${filter}&active=true`, { headers, caFile: a.caFile }),
+            requestJson<Silence[]>(`${base}/api/v2/silences?${filter}`, { headers, caFile: a.caFile }),
+          ]);
+          const matching_alerts = alerts?.length ?? 0;
+          const existing = (silences ?? []).find((s) => s.status.state === "active" && sameMatchers(s.matchers, matchers)
+            && Date.parse(s.endsAt) >= endsAt.getTime() - 60_000);
+          if (existing) {
+            return { silence_id: existing.id, unchanged: true, ends_at: existing.endsAt, created_by: existing.createdBy, matching_alerts, matchers, dry_run };
+          }
+          if (dry_run) {
+            return { dry_run, would_create: { matchers, starts_at: now.toISOString(), ends_at: endsAt.toISOString() }, matching_alerts };
+          }
+          const res = await requestJson<{ silenceID: string }>(`${base}/api/v2/silences`, {
             method: "POST",
-            headers: await auth(a),
+            headers,
             caFile: a.caFile,
             json: {
               matchers,
               startsAt: now.toISOString(),
-              endsAt: new Date(now.getTime() + duration_minutes * 60_000).toISOString(),
+              endsAt: endsAt.toISOString(),
               createdBy: ctx.identity.username ?? ctx.identity.sub,
               comment: `${comment} [FounderOS, agent ${ctx.identity.azp}, trace ${ctx.traceId}]`,
             },
           });
-          return { silence_id: res.silenceID, ends_in_minutes: duration_minutes, matchers };
+          return { silence_id: res.silenceID, ends_in_minutes: duration_minutes, matching_alerts, matchers, dry_run };
         },
       }),
+    ];
+  },
+
+  // Chaque outil répond, avec l'identifiant configuré : un jeton expiré ou un
+  // Secret mal monté se voit au démarrage, pas au premier incident.
+  checks({ config, secrets }) {
+    const probe = (name: string, e: z.infer<typeof endpoint>, path: string, extra: Record<string, string> = {}): ReadinessCheck => ({
+      name: `observabilité:${name}`,
+      critical: false,
+      async run() {
+        await requestJson(`${e.url.replace(/\/$/, "")}${path}`, { headers: await authHeaders(secrets, e, extra), caFile: e.caFile, timeoutMs: 10_000 });
+        return `${name} répond`;
+      },
+    });
+    const l = config.loki;
+    return [
+      probe("observatorium", config.observatorium, "/api/v1/query?query=vector(1)"),
+      probe("loki", l, "/loki/api/v1/labels", l.orgId ? { "X-Scope-OrgID": l.orgId } : {}),
+      probe("alertmanager", config.alertmanager, "/api/v2/status"),
+      probe("grafana", config.grafana, "/api/search?limit=1"),
     ];
   },
 };

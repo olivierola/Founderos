@@ -102,7 +102,8 @@ describe("un serveur par cluster", () => {
       const names = (await client.listTools()).tools.map((t) => t.name).sort();
       assert.deepEqual(names, [
         "app_diff", "app_history", "app_status",
-        "deployment_restart", "deployment_status", "events_list", "pod_logs", "pods_list",
+        "deployment_restart", "deployment_scale", "deployment_status", "events_list", "namespace_overview",
+        "pod_logs", "pod_metrics", "pods_list", "resource_get", "resource_list", "rollout_history",
       ]);
       await client.close();
     });
@@ -113,7 +114,7 @@ describe("un serveur par cluster", () => {
       const client = await connect(token);
       const body = resultJson(await client.callTool({ name: "app_status", arguments: { app: "payment" } }) as never);
       assert.equal(body.health, "Healthy");
-      assert.equal(up.calls.at(-1)!.headers.authorization, "Bearer secret-mcp/prd/argocd/project-role");
+      assert.equal(up.calls.at(-1)!.headers.authorization, "Bearer file:/etc/mcp-secrets/argocd/token");
       assert.equal(audit[0].mcp_server, "mcp");
       assert.equal(audit[0].cluster, "prd");
       await client.close();

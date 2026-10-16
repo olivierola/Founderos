@@ -1,10 +1,11 @@
-// Métriques Prometheus, format texte, sans dépendance : quatre séries suffisent
+// Métriques Prometheus, format texte, sans dépendance : cinq séries suffisent
 // et chaque dépendance de plus est une ligne de la chaîne d'approvisionnement.
 //
 //   ai_tool_calls_total{tool, cluster, status}
 //   ai_tool_denied_total{tool, reason}
 //   ai_tool_duration_seconds{tool}   (histogramme)
 //   mcp_token_push_total{result}     (jeton tournant : delivered, current, unknown, error)
+//   mcp_check_ok{check}              (vérifications : RBAC, OPA, livraison du jeton)
 
 const BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30];
 
@@ -54,13 +55,27 @@ class Histogram {
   }
 }
 
+class Gauge {
+  private values = new Map<string, { labels: Labels; value: number }>();
+  constructor(readonly name: string, readonly help: string) {}
+  set(labels: Labels, value: number): void {
+    this.values.set(key(labels), { labels, value });
+  }
+  render(): string {
+    const lines = [`# HELP ${this.name} ${this.help}`, `# TYPE ${this.name} gauge`];
+    for (const { labels, value } of this.values.values()) lines.push(`${this.name}${fmt(labels)} ${value}`);
+    return lines.join("\n");
+  }
+}
+
 export class Metrics {
   readonly calls = new Counter("ai_tool_calls_total", "Appels de tools, par issue.");
   readonly denied = new Counter("ai_tool_denied_total", "Appels refusés, par motif.");
   readonly duration = new Histogram("ai_tool_duration_seconds", "Durée des appels de tools.");
   readonly tokenPush = new Counter("mcp_token_push_total", "Livraisons du jeton tournant à FounderOS, par issue.");
+  readonly checks = new Gauge("mcp_check_ok", "Vérifications de démarrage et de disponibilité : 1 si elle passe, 0 sinon.");
 
   render(): string {
-    return `${[this.calls.render(), this.denied.render(), this.duration.render(), this.tokenPush.render()].join("\n")}\n`;
+    return `${[this.calls.render(), this.denied.render(), this.duration.render(), this.tokenPush.render(), this.checks.render()].join("\n")}\n`;
   }
 }
