@@ -100,7 +100,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
 import { InstructionsEditor } from "./InstructionsEditor";
 import { AgentChannelsTab } from "./AgentChannelsTab";
-import { AgentHostedModelCard } from "./AgentHostedModel";
+import { agentModelValue, useAgentModelChoices } from "./AgentHostedModel";
 import { AgentAutomationsTab } from "./AgentAutomationsTab";
 import { RunTimeline } from "./RunTimeline";
 import { AgentActivityOrb } from "./AgentActivityOrb";
@@ -3759,7 +3759,8 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
 
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description ?? "");
-  const [model, setModel] = useState(agent.model);
+  const [modelChoice, setModelChoice] = useState(agentModelValue(agent));
+  const { options: modelOptions, patchFor: modelPatchFor } = useAgentModelChoices(agent.project_id);
   const [temperature, setTemperature] = useState(agent.temperature);
   const [chatEnabled, setChatEnabled] = useState(agent.chat_enabled);
   const [missionEnabled, setMissionEnabled] = useState(agent.mission_enabled);
@@ -3851,12 +3852,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
         .update({
           name,
           description,
-          // The avatar is saved by its own tab (AgentAvatarTab); written here
-          // too, a save of this form would put back the avatar it loaded with.
-          // Save what the select SHOWS: a legacy row on "gpt-4" (or on nothing)
-          // displays as DeepSeek, which is what the runtime already gave it, so
-          // it must not be written back as a value no provider answers to.
-          model: model === "groq" ? "groq" : "deepseek",
+          ...modelPatchFor(modelChoice),
           temperature,
           chat_enabled: chatEnabled,
           mission_enabled: missionEnabled,
@@ -3943,19 +3939,14 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
             </div>
           </SoftField>
 
-          {/* Two models, both real. "GPT-4" used to sit in this list and led
-              nowhere: the runtime has no OpenAI client, so the value fell through
-              to the default provider (see pinnedProvider, model-router.ts) — an
-              option that silently does nothing is worse than no option. */}
+          {/* One model choice: built-in providers, registered cloud models, or
+              a self-hosted RunPod server. */}
           <SoftField label="Modèle">
             <SoftSelect
-              value={model === "deepseek" || model === "groq" ? model : "deepseek"}
-              onChange={setModel}
+              value={modelChoice}
+              onChange={setModelChoice}
               disabled={!isOwner}
-              options={[
-                { value: "deepseek", label: "DeepSeek", hint: "Par défaut, raisonnement et outils" },
-                { value: "groq", label: "Llama 3.3 70B (Groq)", hint: "Plus rapide, pour les échanges courts" },
-              ]}
+              options={modelOptions}
             />
           </SoftField>
 
@@ -4084,7 +4075,6 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
             </p>
           </SoftField>
 
-          <AgentHostedModelCard agent={agent} disabled={!isOwner} />
         </SettingsSection>
       )}
 

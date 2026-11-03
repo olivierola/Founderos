@@ -131,7 +131,7 @@ export function SetupPage() {
 
           <Step done={(agents.data ?? 0) > 0} title="Premier agent">
             {(agents.data ?? 0) > 0 ? `${agents.data} agent(s) dans l'organisation.`
-              : base ? <span><Link to={`${base}/agent/agents`} className="text-primary hover:underline">Créer le premier agent</Link>, puis ses serveurs MCP et outils internes.</span>
+              : base ? <span><Link to={`${base}/agent/agents`} className="text-primary hover:underline">Créer le premier agent</Link>, puis ses outils customisés (API et serveurs MCP).</span>
               : "Après la création de votre organisation."}
           </Step>
         </ol>

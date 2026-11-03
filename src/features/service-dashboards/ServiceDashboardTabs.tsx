@@ -54,6 +54,7 @@ import { AgentGoals } from "./AgentGoals";
 import { type ArtifactOpenTarget } from "@/features/internal-agents/UiBlocks";
 import { AssetsHub } from "./AssetsHub";
 import { MemoryGraph } from "./MemoryGraph";
+import { KnowledgeGraph } from "./KnowledgeGraph";
 import { CatalogCard, type CatalogStatus } from "./CatalogCard";
 import { useCollaboratorInbox, type InboxItem } from "./CollaboratorInbox";
 import { GetStartedCard } from "./GetStarted";
@@ -1624,6 +1625,9 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
 }) {
   const { data: agents } = useDashboardAgents(dashboardId);
   const { data: mems, isLoading } = useWorkspaceMemory(workspaceId);
+  // Le graphe de connaissances partagé (0289) est la vue par défaut ; les
+  // souvenirs bruts des agents restent consultables à côté.
+  const [graphMode, setGraphMode] = useState<"knowledge" | "memories">("knowledge");
 
   // The memory graph should hold EVERYTHING about the service — not only what
   // agents remembered, but the assets available (repos, links, files, people,
@@ -1683,10 +1687,38 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
       </div>
     );
   }
+  const modeSwitch = (
+    <div className="flex shrink-0 gap-1 border-b border-border/60 px-6 pt-3">
+      {([["knowledge", "Connaissances"], ["memories", "Mémoires des agents"]] as const).map(([m, label]) => (
+        <button
+          key={m} onClick={() => setGraphMode(m)}
+          className={cn(
+            "-mb-px border-b-2 px-3 pb-2 text-sm transition-colors",
+            graphMode === m ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (graphMode === "knowledge") {
+    return (
+      <div className="flex h-full flex-col">
+        {modeSwitch}
+        <div className="min-h-0 flex-1">
+          <KnowledgeGraph workspaceId={workspaceId} agents={(agents ?? []).map((a) => ({ id: a.id, name: a.name }))} />
+        </div>
+      </div>
+    );
+  }
   if (isLoading) return <Centered />;
 
   return (
-    <div className="relative h-full">
+    <div className="flex h-full flex-col">
+      {modeSwitch}
+    <div className="relative min-h-0 flex-1">
       {graphNodes.length === 0 ? (
         <div className="flex h-full items-center justify-center p-6">
           <Empty icon={BrainIcon} title="This workspace's memory is empty." hint="Mémoires, assets et artifacts arrivent au fil du travail." />
@@ -1694,6 +1726,7 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
       ) : (
         <MemoryGraph mems={graphNodes} agents={(agents ?? []).map((a) => ({ id: a.id, name: a.name, accentColor: (a as { accent_color?: string | null }).accent_color }))} />
       )}
+    </div>
     </div>
   );
 }

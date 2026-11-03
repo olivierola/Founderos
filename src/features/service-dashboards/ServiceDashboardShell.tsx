@@ -216,6 +216,15 @@ export function ServiceDashboardPage() {
           <div className="flex h-full w-[60px] flex-col items-center gap-1.5 pb-3 pt-5">
             <DashboardSelector current={current} dashboards={dashboards ?? []} />
             <PanelToggleButton collapsed onToggle={toggleCollapsed} />
+            {/* La navigation reste là, en icônes : replier la barre gagne de la
+                place, cela ne doit pas couper l'accès aux pages. */}
+            <CollapsedNav
+              base={base} dashboardId={dashboardId!}
+              activeTab={activeTab}
+              activeSub={sub || (activeTab === "connectors" ? "space" : activeTab === "memory" ? "graph" : undefined)}
+              activeView={activeTab === "projects" ? sub : undefined}
+              activeProjectId={activeTab === "projects" ? sub : undefined}
+            />
             <div className="flex-1" />
             <AssistantButton />
             <ThemeMenu align="start" className="h-10 w-10 hover:bg-sidebar-accent/60" />
@@ -606,7 +615,7 @@ const TRACKER_PERSONAL: { slug: string; label: string; icon: PhosphorIcon }[] = 
  *
  *  La force de travail en tête, puis ce qu'on lui confie et ce qui tourne
  *  autour, et enfin ce sur quoi elle s'appuie — ce qu'elle sait (Graph,
- *  Sources) et ce qu'elle atteint (Applications, Outils internes). Ces quatre
+ *  Sources) et ce qu'elle atteint (Applications, Outils customisés). Ces quatre
  *  derniers formaient une section « Ressources » à part ; une section de plus
  *  pour quatre lignes obligeait surtout à se demander où chercher.
  *
@@ -632,9 +641,11 @@ const TRACKER_NAV: {
   { slug: "sources", label: "Sources", icon: DatabaseIcon, at: { tab: "memory", sub: "sources" } },
   // Les applications branchées sur l'espace (Composio), partagées par tous.
   { slug: "applications", label: "Applications", icon: PlugsConnectedIcon, at: { tab: "connectors", sub: "space" } },
-  // Les outils hébergés par l'entreprise (Argo CD, Vault, Grafana…), hors
-  // Composio : connecteurs décrits à la main, relais, journal d'accès (0267).
-  { slug: "internal-tools", label: "Outils internes", icon: WrenchIcon, at: { tab: "connectors", sub: "internal" } },
+  // Les outils que l'entreprise branche elle-même, hors Composio : API
+  // décrites à la main ou par OpenAPI (0267) et serveurs MCP, plus relais et
+  // journal d'accès. Le slug et l'URL gardent « internal » : les liens partagés
+  // continuent de répondre.
+  { slug: "internal-tools", label: "Outils customisés", icon: WrenchIcon, at: { tab: "connectors", sub: "internal" } },
 ];
 
 /**
@@ -854,6 +865,72 @@ function TrackerPanel({ base, dashboardId, activeProjectId, activeView, activeSe
           )}
         </nav>
       )}
+    </div>
+  );
+}
+
+/**
+ * La barre repliée : les mêmes destinations que TrackerPanel, en icônes, avec
+ * les mêmes épingles (même clé de stockage) et la même règle d'allumage. Le
+ * libellé passe en infobulle.
+ */
+function CollapsedNav({ base, dashboardId, activeTab, activeSub, activeView, activeProjectId }: {
+  base: string; dashboardId: string; activeTab: string;
+  activeSub?: string; activeView?: string; activeProjectId?: string;
+}) {
+  const navigate = useNavigate();
+  const { isPinned } = useNavPins(dashboardId);
+  const inboxCount = useCollaboratorInbox(dashboardId).data?.length ?? 0;
+  const known = [...TRACKER_PERSONAL, ...TRACKER_NAV].map((n) => n.slug);
+  const onSpaceView = activeView ? known.includes(activeView) : false;
+  const inTracker = activeTab === "projects";
+
+  const personal = TRACKER_PERSONAL.filter((n) => isPinned(n.slug)).map((n) => ({
+    ...n,
+    active: n.slug === "projects" ? inTracker && !activeProjectId && !onSpaceView : activeView === n.slug,
+    go: () => navigate(`${base}/projects${n.slug === "projects" ? "" : `/${n.slug}`}`),
+  }));
+  const space = TRACKER_NAV.filter((n) => isPinned(n.slug)).map((n) => ({
+    ...n,
+    active: n.at ? activeTab === n.at.tab && (!n.at.sub || activeSub === n.at.sub) : activeView === n.slug,
+    go: () => navigate(n.at ? `${base}/${n.at.tab}${n.at.sub ? `/${n.at.sub}` : ""}` : `${base}/projects/${n.slug}`),
+  }));
+
+  const icon = (n: (typeof personal)[number]) => (
+    <button
+      key={n.slug}
+      type="button"
+      onClick={n.go}
+      title={n.label}
+      aria-label={n.label}
+      className={cn(
+        "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
+        n.active ? "bg-sidebar-accent text-foreground" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+      )}
+    >
+      {n.slug === "agents"
+        ? <span className="sd-rainbow-icon"><n.icon weight="fill" className="h-[18px] w-[18px]" /></span>
+        : <n.icon weight={n.active ? "fill" : "regular"} className="h-[18px] w-[18px]" />}
+      {n.slug === "inbox" && inboxCount > 0 && (
+        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500" />
+      )}
+    </button>
+  );
+
+  return (
+    <div className="scrollbar-hide mt-2 flex min-h-0 flex-col items-center gap-1 overflow-y-auto">
+      <button
+        type="button"
+        onClick={() => navigate(`${base}/agents/new`)}
+        title="Deploy collaborator"
+        aria-label="Deploy collaborator"
+        className="mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+      >
+        <RocketLaunchIcon weight="bold" className="h-[18px] w-[18px]" />
+      </button>
+      {personal.map(icon)}
+      {personal.length > 0 && space.length > 0 && <div className="my-1 h-px w-6 bg-sidebar-border" />}
+      {space.map(icon)}
     </div>
   );
 }

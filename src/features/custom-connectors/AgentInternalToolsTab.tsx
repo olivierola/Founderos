@@ -67,7 +67,7 @@ export function AgentInternalToolsTab({ agent }: { agent: AgentLike }) {
     <div className="mx-auto max-w-3xl">
       <div className="flex items-start justify-between gap-3 pb-4">
         <div>
-          <h2 className="text-lg font-semibold">Outils internes</h2>
+          <h2 className="text-lg font-semibold">Outils customisés</h2>
           <p className="mt-1 max-w-lg text-sm text-muted-foreground">
             Les outils hébergés par l'entreprise que ce collaborateur peut utiliser, avec quel profil d'accès et quelles opérations.
           </p>

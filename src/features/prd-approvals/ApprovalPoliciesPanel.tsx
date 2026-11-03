@@ -117,7 +117,7 @@ export function ApprovalPoliciesPanel({ workspaceId, canEdit }: { workspaceId: s
             )}
           </header>
           <p className="text-xs text-muted-foreground">
-            {p.connection_kind === "mcp" ? "Serveurs MCP" : p.connection_kind === "custom_connector" ? "Outils internes" : "Toutes les connexions"}
+            {p.connection_kind === "mcp" ? "Serveurs MCP" : p.connection_kind === "custom_connector" ? "Outils API customisés" : "Toutes les connexions"}
             {nameOf(p) ? ` · ${nameOf(p)}` : ""}
             {p.environment ? ` · ${ENV_LABEL[p.environment]}` : " · tout environnement"}
             {` · ${p.min_risk === "destructive" ? "actions irréversibles" : "écritures"}`}
@@ -217,7 +217,7 @@ function PolicyForm({ workspaceId, policy, mcp, connectors, onClose, onSaved }: 
           <select value={kind} onChange={(e) => { setKind(e.target.value); setConnectionId(""); }} className={inputCls}>
             <option value="">Toutes</option>
             <option value="mcp">Serveurs MCP</option>
-            <option value="custom_connector">Outils internes</option>
+            <option value="custom_connector">Outils API customisés</option>
           </select>
         </label>
         <label className="text-xs">

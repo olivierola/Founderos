@@ -41,7 +41,7 @@ export function toolSetupIssue(t: ConfigurableTool): string | null {
     case "custom_connector":
       return String(cfg.connector_id ?? "")
         ? null
-        : "Aucun outil interne choisi, confiez-en un depuis l'onglet Outils internes.";
+        : "Aucun outil customisé choisi, confiez-en un depuis l'onglet Outils customisés.";
     case "composio_toolkit":
       return String(cfg.toolkit ?? "")
         ? null

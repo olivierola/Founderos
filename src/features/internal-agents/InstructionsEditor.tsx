@@ -21,6 +21,7 @@ import {
   SparkleIcon as Sparkles,
   HeartIcon as Heart,
   RobotIcon as Bot,
+  GraduationCapIcon as GraduationCap,
 } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -28,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { type InternalAgent, renderInstructionBlocks } from "./shared";
+import { AgentLearnings } from "./AgentLearnings";
 
 /**
  * An agent is written in THREE files, not one (migration 0210).
@@ -109,6 +111,8 @@ Une ligne = une préférence. [sujet] entre crochets pour la ranger, ! devant po
 export function InstructionsEditor({ agent }: { agent: InternalAgent }) {
   const queryClient = useQueryClient();
   const [active, setActive] = useState<FileKey>("instructions");
+  // The learning journal (0288) sits beside the files it edits.
+  const [learnings, setLearnings] = useState(false);
   const [drafts, setDrafts] = useState<Record<FileKey, string>>(() => initialDrafts(agent));
   const [saved, setSaved] = useState<Record<FileKey, string>>(() => initialDrafts(agent));
   const [saving, setSaving] = useState(false);
@@ -192,35 +196,73 @@ export function InstructionsEditor({ agent }: { agent: InternalAgent }) {
     }
   }
 
+  // A lesson applied or reverted rewrote a file server-side: take the new text
+  // for every file without unsaved edits, and leave the drafts alone.
+  async function reloadFiles() {
+    const { data } = await supabase.from("internal_agents")
+      .select("instructions, soul, preferences").eq("id", agent.id).maybeSingle();
+    if (!data) return;
+    const fresh = data as Record<FileKey, string | null>;
+    const clean = FILES.map((f) => f.key).filter((k) => drafts[k] === saved[k]);
+    setDrafts((d) => ({ ...d, ...Object.fromEntries(clean.map((k) => [k, fresh[k] ?? ""])) }));
+    setSaved((s) => ({ ...s, ...Object.fromEntries(clean.map((k) => [k, fresh[k] ?? ""])) }));
+    queryClient.invalidateQueries({ queryKey: ["internal_agent", agent.id] });
+  }
+
   const count = text.trim().length;
   const over = spec.soft != null && count > spec.soft;
 
+  const switcher = (
+    <div className="flex flex-wrap items-center gap-1 pb-3">
+      {FILES.map((f) => {
+        const Icon = f.icon;
+        const isDirty = drafts[f.key] !== saved[f.key];
+        return (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => { setActive(f.key); setPreview(false); setLearnings(false); }}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs transition-colors",
+              f.key === active && !learnings
+                ? "bg-secondary text-foreground"
+                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {f.fileName}
+            {isDirty && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Modifications non enregistrées" />}
+          </button>
+        );
+      })}
+      <span className="mx-1 h-4 w-px bg-border" />
+      <button
+        type="button"
+        onClick={() => setLearnings(true)}
+        className={cn(
+          "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors",
+          learnings ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+        )}
+      >
+        <GraduationCap className="h-3.5 w-3.5" />
+        Apprentissage
+      </button>
+    </div>
+  );
+
+  if (learnings) {
+    return (
+      <div className="flex h-[calc(100vh-9rem)] flex-col">
+        {switcher}
+        <div className="min-h-0 flex-1"><AgentLearnings agent={agent} onFilesChanged={() => void reloadFiles()} /></div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-9rem)] flex-col">
-      {/* File switcher — three files, one chrome. */}
-      <div className="flex flex-wrap items-center gap-1 pb-3">
-        {FILES.map((f) => {
-          const Icon = f.icon;
-          const isDirty = drafts[f.key] !== saved[f.key];
-          return (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => { setActive(f.key); setPreview(false); }}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs transition-colors",
-                f.key === active
-                  ? "bg-secondary text-foreground"
-                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {f.fileName}
-              {isDirty && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Modifications non enregistrées" />}
-            </button>
-          );
-        })}
-      </div>
+      {/* File switcher — three files, one chrome, plus the learning journal. */}
+      {switcher}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 pb-3">

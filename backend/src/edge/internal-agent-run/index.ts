@@ -82,6 +82,8 @@ import {
   loadCompanyContext, renderCompanySection, type CompanyContext,
 } from "../_shared/company-context.ts";
 import { completeMissionTask, advanceRoomMission } from "../_shared/room-orchestrator.ts";
+import { describeOutcome, feedbackCue, learnFromFeedback, learnInBackground } from "../_shared/agent-learning.ts";
+import { captureKnowledgeInBackground, curateKnowledge } from "../_shared/knowledge-graph.ts";
 import { ASSISTANT_OPS_DOCTRINE } from "../_shared/assistant-ops.ts";
 import { CONNECTOR_OPS_DOCTRINE } from "../_shared/assistant-connectors.ts";
 import { completeWorkflowRun } from "../_shared/workflow-engine.ts";
@@ -534,6 +536,7 @@ function buildSystemPrompt(
     "- ASK only when truly blocked (ambiguous ask, missing input you can't obtain, a real fork, or before an irreversible action) via ask_user; otherwise decide and act autonomously.",
     "- FINISH the whole job: not done until EVERY plan step is complete AND every expected deliverable is saved with create_deliverable. No partial hand-back.",
     "- SAVE durable knowledge as you learn it (save_memory), one self-contained line each: stable facts, installed tools, produced files (with paths), key results. Skip transient details and anything already known.",
+    "- GRAPHE DE CONNAISSANCES (partagé par tout l'espace) : avant de demander une information interne à l'utilisateur ou à un pair, cherche-la avec knowledge_search — un nom propre de l'entreprise (client, personne, produit, système) est le signal. Dès que tu apprends quelque chose d'important et de durable que d'autres agents devraient savoir, enregistre-le avec knowledge_save, sous le nom complet de l'entité ; un modèle de décision filtre le reste.",
     "- PRÉFÉRENCES : dès que l'utilisateur exprime une habitude durable ou te reprend sur la forme (langue, ton, format d'un livrable, canal, horaire, ce qu'il ne veut jamais), enregistre-la avec remember_preference — une phrase impérative, réutilisable hors de cette conversation. S'il change d'avis, corrige la préférence existante (`replaces`) au lieu d'en empiler une seconde. Ne redemande jamais ce qui est déjà dans tes préférences.",
     "- Approvals: a gated tool queues for review and your run KEEPS RUNNING — acknowledge and continue; never re-ask an approval already granted. If a tool errors, adapt or state the limitation.",
     AUTONOMY_RULE[normalizeAutonomy(agent.autonomy_level)],
@@ -1370,6 +1373,8 @@ async function runChat(
   const { data: activeState } = await admin
     .from("internal_agent_run_state").select("run_id").eq("conversation_id", conversationId).limit(1);
   if (activeState && activeState.length > 0) {
+    // A correction typed mid-run is the most precise feedback there is.
+    learnInBackground(learnFromChatMessage(admin, agent.id, conversationId, activeState[0].run_id));
     return jsonResponse({ ok: true, run_id: activeState[0].run_id, injected: true });
   }
 
@@ -1386,6 +1391,10 @@ async function runChat(
   const chatRunId = chatRun?.id ?? null;
   if (!chatRunId) return jsonResponse({ ok: false, error: "could not create chat run" }, { status: 500 });
 
+  // Auto-apprentissage (0288) : si ce message reprend l'agent sur son tour
+  // précédent, il corrige ses fichiers en parallèle de sa réponse.
+  learnInBackground(learnFromChatMessage(admin, agent.id, conversationId, chatRunId));
+
   // Build the initial messages + plan, persist resumable state and enqueue the
   // FIRST tick — synchronously, so the enqueue is guaranteed before we respond
   // (init is light: one planning call + an upsert). The long tool loop then runs
@@ -1393,6 +1402,40 @@ async function runChat(
   // the Edge wall-clock that used to kill long chats and orphan the run.
   await initChatRun(admin, agent, tools, conversationId, chatRunId, modelChoice);
   return jsonResponse({ ok: true, run_id: chatRunId, queued: true });
+}
+
+/**
+ * The latest user message, read as feedback on the assistant message just
+ * before it. The outcome lands in the timeline of the run now answering, so
+ * the user sees the lesson next to the reply.
+ */
+async function learnFromChatMessage(
+  admin: ReturnType<typeof createServiceClient>,
+  agentId: string,
+  conversationId: string,
+  currentRunId: string | null,
+): Promise<void> {
+  const { data } = await admin.from("internal_agent_messages")
+    .select("id, role, content, run_id")
+    .eq("conversation_id", conversationId).in("role", ["user", "assistant"])
+    .order("created_at", { ascending: false }).limit(2);
+  const [last, prev] = (data ?? []) as Array<{ id: string; role: string; content: string | null; run_id: string | null }>;
+  if (!last || last.role !== "user" || !prev || prev.role !== "assistant") return;
+  if (!feedbackCue(last.content ?? "")) return;
+
+  const { data: conv } = await admin.from("internal_agent_conversations")
+    .select("user_id").eq("id", conversationId).maybeSingle();
+  const outcome = await learnFromFeedback(admin, {
+    agentId, source: "chat", sourceMessageId: last.id,
+    feedback: last.content ?? "", agentOutput: prev.content ?? "", agentRunId: prev.run_id,
+    conversationId, userId: (conv as { user_id: string | null } | null)?.user_id ?? null,
+  });
+  const line = describeOutcome(outcome);
+  if (line && currentRunId) {
+    await admin.from("internal_agent_run_events")
+      .insert({ run_id: currentRunId, agent_id: agentId, kind: "status", payload: { message: line, learning_id: outcome?.id } })
+      .then(() => {}, () => {});
+  }
 }
 
 async function initChatRun(
@@ -2943,6 +2986,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
     // is unpredictable and never lexically related to the task at hand. A round
     // where its schema was ranked out is a preference lost for good.
     "save_memory", "remember_preference", "link_artifact", "spawn_parallel_agents",
+    // The shared graph: "qui est notre contact chez Acme ?" names Acme, not a
+    // tool — lexical ranking would drop the one schema that answers it.
+    "knowledge_search", "knowledge_save",
     // The service assistant's administration tools: "mets Léa sur ABC-12" shares
     // no word with either schema, so lexical ranking would drop exactly the
     // tool the request is about.
@@ -4145,6 +4191,16 @@ async function runMissionTick(runId: string, msgId: number | null) {
         await finalizeMissionSuccess(admin, agent, runId, (mission ?? { id: state.mission_id }) as any, finalOutput,
           { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel, custom: !!agentEndpoint });
       }
+      // Le curateur relit le résultat et décide si quelque chose mérite le graphe
+      // de connaissances partagé (0289). En tâche de fond, jamais bloquant.
+      {
+        const lastAsk = [...messages].reverse().find((m) => m.role === "user" && typeof m.content === "string");
+        captureKnowledgeInBackground(admin, {
+          workspaceId: agent.workspace_id, projectId: agent.project_id, agentId: agent.id, runId,
+          text: finalOutput,
+          context: isChat ? String(lastAsk?.content ?? "").slice(0, 1500) : `Mission : ${(mission as { title?: string } | null)?.title ?? ""}`,
+        });
+      }
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       // Race net: a message that landed during this FINAL tick (after the sync)
       // wasn't handled. Kick a fresh run so it doesn't sit unanswered.
@@ -4514,6 +4570,44 @@ Rules:
 - max_steps: 6-10 for simple jobs, up to 20 for coding/testing agents.
 - Instructions are the product. Write what a competent operator would write, in the language of the request.`;
 
+/** One batch of pre-graph memories through the curator. Marked as curated
+ *  whatever the gate decided, so a memory is never judged twice. */
+async function backfillKnowledge(admin: ReturnType<typeof createServiceClient>, workspaceId: string) {
+  const BATCH = 24;
+  const [{ data: mems }, { data: team }] = await Promise.all([
+    admin.from("internal_agent_memories").select("id, agent_id, project_id, kind, content")
+      .eq("workspace_id", workspaceId).is("knowledge_curated_at", null)
+      .order("importance", { ascending: false }).order("created_at", { ascending: false }).limit(BATCH),
+    admin.from("internal_agent_team_memories").select("id, content, kind")
+      .eq("workspace_id", workspaceId).is("knowledge_curated_at", null)
+      .order("created_at", { ascending: false }).limit(BATCH),
+  ]);
+  const rows = [
+    ...((mems ?? []) as Array<{ id: string; agent_id: string | null; project_id: string | null; kind: string; content: string }>).map((m) => ({ ...m, table: "internal_agent_memories" })),
+    ...((team ?? []) as Array<{ id: string; kind: string; content: string }>).map((m) => ({ ...m, agent_id: null, project_id: null, table: "internal_agent_team_memories" })),
+  ].slice(0, BATCH);
+  if (!rows.length) return { ok: true, processed: 0, remaining: 0, saved: 0 };
+
+  const res = await curateKnowledge(admin, {
+    workspaceId, source: "backfill",
+    context: "Reprise de la mémoire existante des agents de l'espace vers le graphe de connaissances.",
+    text: rows.map((r) => `- (${r.kind}) ${r.content}`).join("\n"),
+  });
+  const now = new Date().toISOString();
+  for (const table of ["internal_agent_memories", "internal_agent_team_memories"]) {
+    const ids = rows.filter((r) => r.table === table).map((r) => r.id);
+    if (ids.length) await admin.from(table).update({ knowledge_curated_at: now }).in("id", ids);
+  }
+  const [{ count: a }, { count: b }] = await Promise.all([
+    admin.from("internal_agent_memories").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).is("knowledge_curated_at", null),
+    admin.from("internal_agent_team_memories").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).is("knowledge_curated_at", null),
+  ]);
+  return {
+    ok: true, processed: rows.length, remaining: (a ?? 0) + (b ?? 0),
+    saved: res.facts.saved, entities: res.entities.created.length + res.entities.merged.length, relations: res.relations,
+  };
+}
+
 async function designAgent(request: string, projectId: string | null): Promise<Response> {
   // Ground the design in what this project actually has, so the model doesn't
   // invent a repo-driven agent for a project with no repository connected.
@@ -4661,6 +4755,24 @@ export default defineHandler(async (req) => {
         if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
       }
       return await designAgent(request.trim(), project_id ?? null);
+    }
+
+    // Graphe de connaissances (0289) : reprendre la mémoire d'avant — souvenirs
+    // des agents et mémoire d'équipe — par lots, à travers le même modèle de
+    // décision que les écritures d'agents. Un membre de l'espace le déclenche
+    // depuis l'onglet Graph ; chaque appel traite un lot et dit ce qui reste.
+    if (mode === "knowledge_backfill") {
+      const workspaceId = (body as { workspace_id?: string }).workspace_id;
+      if (!workspaceId) return jsonResponse({ error: "workspace_id required" }, { status: 400 });
+      const admin = createServiceClient();
+      if (!isService) {
+        const { data: userData } = await createUserClient(authHeader).auth.getUser();
+        const { data: mem } = userData.user
+          ? await admin.from("workspace_members").select("role").eq("workspace_id", workspaceId).eq("user_id", userData.user.id).maybeSingle()
+          : { data: null };
+        if (!mem || (mem as { role: string }).role === "viewer") return jsonResponse({ error: "Not authorized" }, { status: 403 });
+      }
+      return jsonResponse(await backfillKnowledge(admin, workspaceId));
     }
 
     if (!agent_id || !mode) {

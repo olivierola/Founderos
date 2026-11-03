@@ -23,6 +23,8 @@ export interface InternalAgent {
   preferences: string | null;
   preferences_updated_at: string | null;
   preferences_updated_by: string | null;
+  /** Auto-apprentissage (0288) : ce que l'agent fait d'une remarque sur son travail. */
+  self_learning?: "off" | "suggest" | "auto";
   instruction_blocks: InstructionBlock[];
   model: string;
   temperature: number;

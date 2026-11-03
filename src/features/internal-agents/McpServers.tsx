@@ -64,7 +64,8 @@ interface McpServer {
   created_by?: string | null;
 }
 
-export function McpServersPage() {
+/** `embedded` : rendu comme un onglet d'Outils customisés, qui porte déjà le titre. */
+export function McpServersPage({ embedded = false }: { embedded?: boolean } = {}) {
   const confirm = useConfirm();
   const toast = useToast();
   const { workspaceId, role } = useCurrentContext();
@@ -141,11 +142,11 @@ export function McpServersPage() {
   const list = servers ?? [];
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className={cn(!embedded && "mx-auto max-w-4xl")}>
       <div className="flex flex-col gap-4 pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">MCP Servers</h2>
-          <p className="mt-1 max-w-lg text-sm text-muted-foreground">
+          {!embedded && <h2 className="text-2xl font-semibold tracking-tight">MCP Servers</h2>}
+          <p className={cn("max-w-lg text-sm text-muted-foreground", !embedded && "mt-1")}>
             Branchez des serveurs MCP distants (Streamable HTTP / SSE) : leurs outils deviennent
             disponibles pour vos agents une fois attachés depuis Personnaliser → MCP.
           </p>

@@ -22,6 +22,7 @@ import {
 import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
 import { issueRefPrefixes, looksLikeWorkspaceAdmin } from "../_shared/assistant-ops.ts";
 import { normalizeAutonomy } from "../_shared/policyguard.ts";
+import { describeOutcome, feedbackCue, learnFromFeedback, learnInBackground } from "../_shared/agent-learning.ts";
 import {
   loadCompanyContext, renderCompanySection, type CompanyContext,
 } from "../_shared/company-context.ts";
@@ -193,6 +194,16 @@ export default defineHandler(async (req) => {
     const userMessageId = (postedUserMsg as { id: string } | null)?.id ?? null;
     await admin.from("service_rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomId);
 
+    // Auto-apprentissage (0288) : si ce message reprend un agent sur ce qu'il
+    // vient de faire, l'agent fautif corrige ses fichiers. En tâche de fond —
+    // le tour lui-même ne l'attend jamais.
+    if (userMessageId) {
+      learnInBackground(learnFromRoomMessage(admin, room as RoomRef, {
+        messageId: userMessageId, content, userId, missionId: explicitMissionId,
+        mentions: mentions.filter((id) => participantIds.includes(id)),
+      }));
+    }
+
     // Who replies: explicitly-mentioned participants, else the dashboard's
     // configured default responder, else the orchestrator, else the first
     // participant. Cap concurrent responders.
@@ -282,6 +293,35 @@ export default defineHandler(async (req) => {
     return jsonResponse({ error: e instanceof Error ? e.message : "Erreur serveur" }, { status: 500 });
   }
 });
+
+/**
+ * Qui est repris ? L'agent mentionné s'il y en a un et qu'il a parlé
+ * récemment, sinon le dernier agent à avoir répondu dans le fil. Une remarque
+ * qui arrive deux heures après n'est plus une réaction à ce qu'il vient de
+ * faire : on ne remonte pas plus loin.
+ */
+async function learnFromRoomMessage(admin: Admin, room: RoomRef, msg: {
+  messageId: string; content: string; userId: string; missionId: string | null; mentions: string[];
+}) {
+  if (feedbackCue(msg.content) === 0) return;
+  const since = new Date(Date.now() - 2 * 3600_000).toISOString();
+  const { data: recent } = await admin.from("service_room_messages")
+    .select("id, agent_id, content, run_id, status, created_at").eq("room_id", room.id)
+    .eq("author_kind", "agent").in("status", ["done", "failed"]).neq("id", msg.messageId)
+    .gte("created_at", since).order("created_at", { ascending: false }).limit(8);
+  const rows = ((recent ?? []) as Array<{ id: string; agent_id: string | null; content: string; run_id: string | null }>)
+    .filter((r) => r.agent_id && r.content.trim());
+  const target = rows.find((r) => msg.mentions.includes(r.agent_id!)) ?? (msg.mentions.length ? null : rows[0]);
+  if (!target) return;
+
+  const outcome = await learnFromFeedback(admin, {
+    agentId: target.agent_id!, source: "room", sourceMessageId: msg.messageId,
+    feedback: msg.content, agentOutput: target.content, agentRunId: target.run_id,
+    roomId: room.id, userId: msg.userId,
+  });
+  const line = describeOutcome(outcome);
+  if (line) await postSystemMessage(admin, room, msg.missionId, line);
+}
 
 interface ReactedMessage {
   id: string; room_id: string; workspace_id: string; project_id: string;

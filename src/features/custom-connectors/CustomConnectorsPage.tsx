@@ -1,7 +1,8 @@
-// Outils internes : les outils que l'entreprise héberge elle-même (Argo CD,
-// Vault, Grafana, Loki, Kubernetes, Helm, une API maison), rendus utilisables
-// par les collaborateurs avec les accès, les garde-fous et la traçabilité que
-// l'entreprise décide. Composio couvre le reste du marché ; ceci couvre chez soi.
+// Outils customisés : ce que l'entreprise branche elle-même sur ses
+// collaborateurs, au-delà du catalogue Composio — des API (Argo CD, Vault,
+// Grafana, une API maison, une spec OpenAPI) et des serveurs MCP. Les deux
+// vivent sur la même page parce que c'est la même question pour l'utilisateur :
+// « quel outil à moi mes agents peuvent-ils atteindre, et avec quels accès ? ».
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -29,8 +30,10 @@ import { ConnectorEditor } from "./ConnectorEditor";
 import { RelaysPanel } from "./RelaysPanel";
 import { AccessLog } from "./AccessLog";
 import { Drawer, Pill, RISK_META, Segmented, textareaCls } from "./ui";
+import { McpServersPage } from "@/features/internal-agents/McpServers";
 
-type View = "connectors" | "relays" | "log";
+type View = "connectors" | "mcp" | "relays" | "log";
+const VIEWS: View[] = ["connectors", "mcp", "relays", "log"];
 
 export function CustomConnectorsPage({ serviceDashboardId }: { serviceDashboardId: string | null }) {
   const { workspaceId, projectId, role } = useCurrentContext();
@@ -40,7 +43,18 @@ export function CustomConnectorsPage({ serviceDashboardId }: { serviceDashboardI
   const promptText = usePromptText();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [view, setView] = useState<View>("connectors");
+  // L'onglet vit dans l'URL (?vue=mcp) : un lien vers les serveurs MCP doit
+  // ouvrir les serveurs MCP.
+  const viewParam = params.get("vue") as View | null;
+  const [view, setViewState] = useState<View>(viewParam && VIEWS.includes(viewParam) ? viewParam : "connectors");
+  const setView = (v: View) => {
+    setViewState(v);
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      if (v === "connectors") n.delete("vue"); else n.set("vue", v);
+      return n;
+    }, { replace: true });
+  };
   const [creating, setCreating] = useState(false);
 
   const { data: connectors, isLoading } = useConnectors(projectId);
@@ -59,7 +73,7 @@ export function CustomConnectorsPage({ serviceDashboardId }: { serviceDashboardI
   }, { replace: true });
 
   useEffect(() => {
-    if (openId) setView("connectors");
+    if (openId) setViewState("connectors");
   }, [openId]);
 
   async function create(input: Partial<CustomConnector> & { name: string; created_via: string }) {
@@ -102,7 +116,7 @@ export function CustomConnectorsPage({ serviceDashboardId }: { serviceDashboardI
     if (!what?.trim()) return;
     setCreating(false);
     assistant.ask({
-      prompt: `Rédige un brouillon d'outil interne avec manage_connectors (action draft) : ${what.trim()}\n` +
+      prompt: `Rédige un brouillon d'outil customisé (API) avec manage_connectors (action draft) : ${what.trim()}\n` +
         "Pars d'un modèle s'il en existe un, sinon écris les opérations d'après la documentation officielle de l'API, lecture d'abord. " +
         "Ne me demande aucun secret : termine par ce qu'il me reste à compléter dans la fiche.",
       autoSend: true,
@@ -116,18 +130,19 @@ export function CustomConnectorsPage({ serviceDashboardId }: { serviceDashboardI
   return (
     <div className={cn(serviceDashboardId && "px-14 py-8 xl:px-20")}>
       <PageHeader
-        title="Outils internes"
-        description="Argo CD, Vault, Grafana, une API maison : vos outils, sur vos URL, avec vos accès. Chaque appel d'un collaborateur est borné, approuvé quand il le faut, et journalisé."
+        title="Outils customisés"
+        description="Vos propres outils pour vos collaborateurs : des API (Argo CD, Vault, Grafana, une API maison, une spec OpenAPI) et des serveurs MCP. Sur vos URL, avec vos accès ; chaque appel est borné, approuvé quand il le faut, et journalisé."
         actions={view === "connectors" && canEdit ? (
           <>
             <Button size="sm" variant="outline" onClick={askAssistant}><Sparkle className="mr-1 h-3.5 w-3.5" /> Demander à l'assistant</Button>
-            <Button size="sm" onClick={() => setCreating(true)}><Plus className="mr-1 h-3.5 w-3.5" /> Nouveau connecteur</Button>
+            <Button size="sm" onClick={() => setCreating(true)}><Plus className="mr-1 h-3.5 w-3.5" /> Nouvel outil API</Button>
           </>
         ) : undefined}
       />
 
       <Segmented value={view} onChange={setView} options={[
-        { value: "connectors", label: `Connecteurs${visible.length ? ` (${visible.length})` : ""}` },
+        { value: "connectors", label: `Outils API${visible.length ? ` (${visible.length})` : ""}` },
+        { value: "mcp", label: "Serveurs MCP" },
         { value: "relays", label: `Relais${(relays ?? []).length ? ` (${(relays ?? []).filter((r) => r.status === "active").length})` : ""}` },
         { value: "log", label: "Journal d'accès" },
       ]} />
@@ -137,7 +152,7 @@ export function CustomConnectorsPage({ serviceDashboardId }: { serviceDashboardI
           isLoading ? <EmptyState icon={Loader2} title="Chargement…" />
           : visible.length === 0 ? (
             <div className="space-y-6">
-              <EmptyState icon={Wrench} title="Aucun outil interne"
+              <EmptyState icon={Wrench} title="Aucun outil API"
                 description="Partez d'un modèle, importez une spec OpenAPI ou laissez l'assistant rédiger le brouillon. Vous complétez ensuite l'URL et le secret." />
               {canEdit && <TemplateGallery onPick={fromTemplate} />}
             </div>
@@ -195,12 +210,13 @@ export function CustomConnectorsPage({ serviceDashboardId }: { serviceDashboardI
             </div>
           )
         )}
+        {view === "mcp" && <McpServersPage embedded />}
         {view === "relays" && <RelaysPanel relays={relays ?? []} workspaceId={workspaceId} projectId={projectId} canEdit={canEdit} />}
         {view === "log" && <AccessLog workspaceId={workspaceId} connectors={connectors ?? []} />}
       </div>
 
       {creating && (
-        <Drawer title="Nouveau connecteur" subtitle="Un brouillon est inerte : aucun collaborateur ne le voit avant son activation." onClose={() => setCreating(false)}>
+        <Drawer title="Nouvel outil API" subtitle="Un brouillon est inerte : aucun collaborateur ne le voit avant son activation." onClose={() => setCreating(false)}>
           <div className="space-y-6 px-5 py-5">
             <div className="grid gap-2 sm:grid-cols-2">
               <QuickAction icon={Sparkle} title="Demander à l'assistant" text="Décrivez l'outil, il rédige les opérations." onClick={askAssistant} />

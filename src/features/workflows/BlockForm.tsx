@@ -680,7 +680,7 @@ interface McpServerRow {
  * paramètres écrits ici.
  *
  * Les outils proposés sont ceux que le serveur a annoncés à sa dernière
- * découverte (Ressources › Outils internes › Serveurs MCP) : un outil absent ici
+ * découverte (Outils customisés › Serveurs MCP) : un outil absent ici
  * n'existe pas pour l'agent non plus.
  */
 function McpTarget({ d, workspaceId, onPatch }: {
@@ -715,7 +715,7 @@ function McpTarget({ d, workspaceId, onPatch }: {
   if (!servers?.length) {
     return (
       <p className="rounded-lg bg-muted/40 p-2.5 text-[11px] leading-snug text-muted-foreground">
-        Aucun serveur MCP dans cet espace. Déclarez-en un dans Ressources › Outils internes › Serveurs MCP.
+        Aucun serveur MCP dans cet espace. Déclarez-en un dans Outils customisés › Serveurs MCP.
       </p>
     );
   }

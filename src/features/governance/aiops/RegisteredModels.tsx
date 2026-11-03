@@ -48,7 +48,10 @@ const CLOUD_PRESETS: CloudPreset[] = [
   { id: "cerebras", label: "Cerebras", base_url: "https://api.cerebras.ai/v1", example: "llama-3.3-70b", keysUrl: "https://cloud.cerebras.ai/platform", keyPrefix: "csk-…" },
   { id: "xai", label: "xAI (Grok)", base_url: "https://api.x.ai/v1", example: "grok-4", keysUrl: "https://console.x.ai", keyPrefix: "xai-…" },
   { id: "gemini", label: "Google Gemini", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", example: "gemini-2.5-flash", keysUrl: "https://aistudio.google.com/apikey", keyPrefix: "AIza…" },
-  { id: "azure", label: "Azure OpenAI", base_url: "", example: "gpt-4o", keysUrl: "https://portal.azure.com", keyPrefix: "…" },
+  // Azure's v1 API takes the key as a Bearer and the deployment name as `model`.
+  // Its /models lists base models, not deployments: the deployment goes in the
+  // model ids field.
+  { id: "azure", label: "Azure OpenAI", base_url: "", example: "nom-de-votre-deploiement", keysUrl: "https://portal.azure.com", keyPrefix: "…" },
 ];
 
 export function RegisteredModels() {
@@ -230,7 +233,10 @@ function AddModelDialog({
               {presetNeedsUrl && (
                 <div>
                   <label className="mb-1 block text-xs text-muted-foreground">Endpoint de votre déploiement</label>
-                  <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://mon-ressource.openai.azure.com/openai/deployments/mon-deploiement" />
+                  <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://mon-ressource.openai.azure.com/openai/v1" />
+                  {preset.id === "azure" && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">Indiquez le nom de votre déploiement dans « Identifiants de modèles » ci-dessous.</p>
+                  )}
                 </div>
               )}
               <div>

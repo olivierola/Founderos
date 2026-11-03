@@ -80,6 +80,10 @@ import {
   type OpsActor, type OpsResult,
 } from "./assistant-ops.ts";
 import { connectorOpsToolDef, runConnectorOps } from "./assistant-connectors.ts";
+import {
+  ENTITY_KINDS, FACT_KINDS, curateKnowledge, describeCurate, renderKnowledgeHits, searchKnowledge as searchKnowledgeGraph,
+  type CandidateEntity, type CandidateRelation,
+} from "./knowledge-graph.ts";
 
 export interface AgentToolRow {
   id: string;
@@ -5019,6 +5023,104 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- save_memory / search_memory: your persistent cross-session memory (always available).");
+
+  // Always-on: the workspace knowledge GRAPH (0289). Distinct from save_memory:
+  // memory is this agent's own notebook, the graph is what the WHOLE space
+  // knows, named and linked so any agent finds it. Writes go through a
+  // decision model (knowledge-graph.ts) — the agent proposes, the gate keeps
+  // what is significant and files it under the right name.
+  tools.set("knowledge_search", {
+    def: {
+      name: "knowledge_search",
+      description:
+        "Cherche dans le GRAPHE DE CONNAISSANCES partagé de tout l'espace (personnes, clients, produits, systèmes, projets, décisions, procédures) : "
+        + "renvoie les entités qui correspondent, leurs faits et leurs relations. Rapide — appelle-le AVANT de demander à l'utilisateur ou à un pair, "
+        + "avant une recherche web sur un sujet interne, et dès qu'un nom propre de l'entreprise apparaît. Requête vide = les entités les plus récentes.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Un nom (« Acme », « Marie Dupont », « API de facturation ») ou quelques mots-clés." },
+          kind: { type: "string", enum: [...ENTITY_KINDS], description: "Optionnel : ne chercher qu'un type d'entité." },
+          limit: { type: "number", description: "Nombre d'entités (défaut 6, max 20)." },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const hits = await searchKnowledgeGraph(ctx.admin, ctx.workspaceId, str(args.query).trim(), {
+        kind: str(args.kind) || null, limit: Number(args.limit) || 6, agentId: ctx.agentId, runId: ctx.runId ?? null,
+      });
+      if (!hits.length) return "Rien dans le graphe de connaissances sur ce sujet. Si tu l'apprends en travaillant et que c'est durable, enregistre-le avec knowledge_save.";
+      return renderKnowledgeHits(hits);
+    },
+  });
+  tools.set("knowledge_save", {
+    def: {
+      name: "knowledge_save",
+      description:
+        "Propose d'écrire dans le GRAPHE DE CONNAISSANCES partagé de l'espace — lu par TOUS les agents. Appelle-le chaque fois que tu apprends une information "
+        + "importante et durable qu'un autre agent ou un collègue aurait intérêt à retrouver : un fait stable sur une personne, un client, un produit, un système ; "
+        + "une décision et sa raison ; une procédure qui a marché ; un chiffre clé daté ; un contact ; un risque. "
+        + "Un modèle de décision filtre : il écarte le trivial, le transitoire, le déjà connu et les secrets, et rattache tes entités à celles qui existent. "
+        + "Nomme chaque entité par son nom complet et officiel ; chaque fait est une phrase autoportante qui la nomme. Jamais de mot de passe, jeton ou donnée sensible.",
+      parameters: {
+        type: "object",
+        properties: {
+          entities: {
+            type: "array",
+            description: "Les entités concernées et ce que tu en as appris.",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Nom canonique : « Acme SAS », « Marie Dupont », « Pipeline de facturation »." },
+                kind: { type: "string", enum: [...ENTITY_KINDS] },
+                summary: { type: "string", description: "Optionnel : une phrase qui dit ce que c'est." },
+                aliases: { type: "array", items: { type: "string" }, description: "Optionnel : autres façons de l'écrire (sigle, surnom, ancien nom)." },
+                facts: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      statement: { type: "string", description: "Une affirmation autoportante, datée si elle peut changer." },
+                      kind: { type: "string", enum: [...FACT_KINDS] },
+                      importance: { type: "number", description: "1 à 5 (défaut 3)." },
+                    },
+                    required: ["statement"],
+                  },
+                },
+              },
+              required: ["name"],
+            },
+          },
+          relations: {
+            type: "array",
+            description: "Optionnel : liens entre entités, ex. { from: \"Marie Dupont\", relation: \"responsable_de\", to: \"Pipeline de facturation\" }.",
+            items: {
+              type: "object",
+              properties: { from: { type: "string" }, relation: { type: "string" }, to: { type: "string" } },
+              required: ["from", "relation", "to"],
+            },
+          },
+        },
+        required: ["entities"],
+        additionalProperties: false,
+      },
+    },
+    run: async (args) => {
+      const entities = Array.isArray(args.entities) ? args.entities as CandidateEntity[] : [];
+      if (!entities.length) return "ERROR: `entities` est requis (au moins une entité).";
+      const res = await curateKnowledge(ctx.admin, {
+        workspaceId: ctx.workspaceId, projectId: ctx.projectId, agentId: ctx.agentId, runId: ctx.runId ?? null,
+        source: "agent",
+        candidates: { entities, relations: Array.isArray(args.relations) ? args.relations as CandidateRelation[] : [] },
+      });
+      const line = describeCurate(res);
+      await ctx.logEvent("status", { message: `🧠 ${line}` }).catch(() => {});
+      return line;
+    },
+  });
+  summaryLines.push("- knowledge_search / knowledge_save: le graphe de connaissances PARTAGÉ de tout l'espace — cherche-y avant de demander, écris-y ce qui est important et durable (un modèle de décision filtre).");
 
   // Chat only: kanban housekeeping is meta-work — during a mission run the
   // board is driven by the run lifecycle itself, not by the model.
