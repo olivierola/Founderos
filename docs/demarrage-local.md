@@ -58,6 +58,21 @@ Les options passent après `--` : `npm run dev:local -- --import "postgresql://p
    update public.internal_agents set harness = 'opencode' where id = '<agent>';
    ```
 
+## La machine des équipes d'agents
+
+Les équipes d'agents travaillent sur une machine Linux partagée : le conteneur `team-machine/compose.yaml`, sur le port 8091 (voir [team-machine.md](team-machine.md)). Le backend et le conteneur partagent un jeton.
+
+Le script s'en occupe :
+- il reprend le jeton de `team-machine/secret`, un fichier ignoré par git, ou en crée un ;
+- il pose `TEAM_MACHINE_TOKEN` et `TEAM_MACHINE_URL=http://localhost:8091` dans `backend/.env.self` ;
+- il vérifie que la machine répond.
+
+Si le conteneur ne tourne pas, `npm run dev:local -- --team-machine` le (re)lance avec ce jeton. Il faut Docker Desktop.
+
+Deux points d'attention :
+- **Après un import du cloud.** `app_config.team_machine_url` peut contenir l'adresse ngrok du cloud, et elle l'emporte sur `TEAM_MACHINE_URL`. Si la machine est injoignable, vide cette ligne de la base locale.
+- **Après un changement de `.env.self`.** Le backend ne lit ce fichier qu'au démarrage : redémarre-le.
+
 ## Les mêmes étapes, à la main
 
 ```

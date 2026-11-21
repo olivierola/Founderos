@@ -9,6 +9,7 @@
 //   npm run dev:local -- --backend-only     sans le front
 //   npm run dev:local -- --setup-only       préparer sans démarrer
 //   npm run dev:local -- --skip-install     ne pas vérifier les dépendances
+//   npm run dev:local -- --team-machine     (re)lancer aussi le conteneur de la machine d'équipe (Docker)
 //
 // Étapes : Node ≥ 22 ; dépendances ; backend/.env.self (créé depuis l'exemple,
 // JWT_SECRET généré) ; migrations ; import éventuel ; .env.local du front
@@ -119,6 +120,43 @@ env = parseEnv(readFileSync(ENV_SELF, "utf8"));
 const backendUrl = (env.FUNCTIONS_URL || `http://localhost:${env.PORT || 8787}`).replace(/\/$/, "");
 console.log(`  base : ${env.DATABASE_URL}`);
 console.log(`  harnais OpenCode : ${env.HARNESS_OPENCODE === "1" ? "activé" : "désactivé"}`);
+// ── La machine des équipes d'agents (team-machine/compose.yaml, :8091) ──
+// Le backend et le conteneur partagent un jeton : celui de team-machine/secret
+// (ignoré par git). Sans fichier, un jeton est créé ; le conteneur doit alors
+// être (re)lancé avec lui : --team-machine le fait.
+const MACHINE_SECRET = path.join(ROOT, "team-machine", "secret");
+const machineFixes = {};
+let machineToken = env.TEAM_MACHINE_TOKEN ?? "";
+if (machineToken.length < 32) {
+  if (existsSync(MACHINE_SECRET)) machineToken = readFileSync(MACHINE_SECRET, "utf8").trim();
+  if (machineToken.length < 32) {
+    machineToken = randomBytes(36).toString("base64url");
+    writeFileSync(MACHINE_SECRET, machineToken);
+    console.log("  jeton de la machine d'équipe créé (team-machine/secret)");
+  }
+  machineFixes.TEAM_MACHINE_TOKEN = machineToken;
+}
+if (!env.TEAM_MACHINE_URL) machineFixes.TEAM_MACHINE_URL = "http://localhost:8091";
+if (Object.keys(machineFixes).length) {
+  setEnv(ENV_SELF, machineFixes);
+  env = parseEnv(readFileSync(ENV_SELF, "utf8"));
+}
+const machineUrl = env.TEAM_MACHINE_URL.replace(/\/$/, "");
+const machineUp = async () => {
+  try { return (await fetch(`${machineUrl}/health`, { signal: AbortSignal.timeout(3000) })).ok; } catch { return false; }
+};
+if (has("--team-machine")) {
+  console.log("  machine d'équipe : docker compose up (team-machine/compose.yaml)…");
+  const r = spawnSync("docker", ["compose", "-f", path.join(ROOT, "team-machine", "compose.yaml"), "up", "-d", "--build"],
+    { stdio: "inherit", env: { ...process.env, TEAM_MACHINE_TOKEN: machineToken } });
+  if (r.status !== 0) console.log("  ⚠ docker compose a échoué : Docker Desktop tourne-t-il ?");
+}
+if (await machineUp()) {
+  console.log(`  machine d'équipe : ${machineUrl} répond`);
+} else {
+  console.log(`  ⚠ machine d'équipe injoignable sur ${machineUrl}. Pour la lancer : npm run dev:local -- --team-machine`);
+}
+
 const LLM_KEYS = ["OPENROUTER_API_KEY", "LLM_API_KEY", "AZURE_OPENAI_API_KEY", "RUNWARE_API_KEY", "DEEPSEEK_API_KEY", "GROQ_API_KEY"];
 if (!LLM_KEYS.some((k) => env[k])) {
   console.log(`  ⚠ aucune clé de modèle dans .env.self (${LLM_KEYS.slice(0, 2).join(", ")}…) : les agents ne pourront pas répondre.`);
