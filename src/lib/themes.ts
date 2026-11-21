@@ -11,7 +11,8 @@ export type ThemeKey =
   | "system" | "light" | "dark"
   | "carbon" | "purple" | "plum" | "midnight" | "ocean" | "slate"
   | "forest" | "mocha" | "amber" | "crimson" | "burnt-orange"
-  | "sand" | "mist" | "lavender" | "sage";
+  | "sand" | "mist" | "lavender" | "sage"
+  | "jet" | "jet-dark";
 
 export interface ThemeDef {
   key: ThemeKey;
@@ -41,6 +42,9 @@ export const THEMES: ThemeDef[] = [
   { key: "mist", label: "Mist", base: "light", swatch: "#eef2f6" },
   { key: "lavender", label: "Lavender", base: "light", swatch: "#efeafc" },
   { key: "sage", label: "Sage", base: "light", swatch: "#e7f0e8" },
+  // La charte « Jet Black » à l'essai (18/11/2026) : neutres purs, bleu roi, Inter.
+  { key: "jet", label: "Jet", base: "light", swatch: "linear-gradient(135deg,#edeef2 55%,#4b5ce0 55%)" },
+  { key: "jet-dark", label: "Jet Dark", base: "dark", swatch: "linear-gradient(135deg,#141414 55%,#4b5ce0 55%)" },
 ];
 
 export const themeDef = (key: ThemeKey): ThemeDef => THEMES.find((t) => t.key === key) ?? THEMES[0];

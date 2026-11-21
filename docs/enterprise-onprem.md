@@ -37,8 +37,11 @@ Variables du backend (ou secrets des fonctions edge, sur une instance qui les ut
 | `AZURE_OPENAI_BASE_URL` | `https://<ressource>.openai.azure.com/openai/v1` (API v1, sans `api-version`) |
 | `AZURE_OPENAI_DEPLOYMENT` | Nom du déploiement de chat (ex. `gpt-4.1`) |
 | `AZURE_OPENAI_DEPLOYMENT_HEAVY` | Optionnel : déploiement des tâches lourdes (raisonnement, code) |
+| `AZURE_OPENAI_DEPLOYMENT_LIGHT` | Optionnel : déploiement des appels annexes (juges de contrat, classements, vérification de mission), par exemple `gpt-5-mini`. Ils ne prennent plus sur le quota du modèle de travail |
 | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | Déploiement `text-embedding-3-small` ou `-large`. Les vecteurs sont réduits à 1024 dimensions, comme les colonnes pgvector existantes |
-| `AZURE_OPENAI_REASONING` | `1` si le déploiement de chat est un modèle de raisonnement (o-series, gpt-5) : la température n'est alors pas envoyée |
+| `AZURE_OPENAI_REASONING` | `1` si les déploiements de chat sont des modèles de raisonnement (o-series, gpt-5) : la température n'est alors pas envoyée, et le plafond de sortie reçoit une marge pour la réflexion |
+| `AZURE_OPENAI_REASONING_EFFORT` | Optionnel : effort de raisonnement, une valeur pour tous ou un JSON par déploiement, par exemple `{"gpt-5-mini":"minimal"}`. Ne rien régler pour `gpt-5.6-terra`, qui refuse tout effort explicite dès qu'il y a des outils |
+| `LLM_REASONING_HEADROOM` | Optionnel : marge de réflexion ajoutée au plafond de sortie (défaut 1024 tokens, `0` la supprime). Sans elle, un appel court sur `gpt-5-mini` dépense tout à réfléchir et rend un texte vide |
 | `AZURE_OPENAI_API_KEY` | Clé de la ressource, **ou** le trio ci-dessous |
 | `AZURE_OPENAI_TENANT_ID`, `AZURE_OPENAI_CLIENT_ID`, `AZURE_OPENAI_CLIENT_SECRET` | Principal de service Entra avec le rôle « Cognitive Services OpenAI User », pour une ressource dont les clés sont désactivées |
 | `AZURE_OPENAI_SCOPE` | Défaut `https://cognitiveservices.azure.com/.default` |
@@ -47,6 +50,7 @@ Variables du backend (ou secrets des fonctions edge, sur une instance qui les ut
 À savoir :
 
 - `max_tokens` est envoyé sous la forme `max_completion_tokens`, qui est accepté par tous les modèles Azure récents.
+- Changer de modèle d'embeddings (Jina → Azure, ou d'un déploiement à un autre) rend les vecteurs existants inutilisables : deux modèles ne partagent pas le même espace. Revectorisez chaque espace avec `node scripts/reembed-workspaces.mjs` (action `reembed` de `rag-ingest`), juste après la bascule.
 - La bascule automatique DeepSeek → Groq est coupée : un quota Azure épuisé fait échouer l'appel, avec le message du service.
 - Des vecteurs calculés avec Jina ne sont pas comparables à ceux d'Azure. Sur une installation neuve, rien à faire. Sur une base existante, il faut réingérer les sources RAG.
 - Ces fonctions dépendent encore de services externes : la voix (Deepgram), la génération d'images (`office-ai/media`) et les connecteurs Composio. Elles seront coupées par le profil de déploiement on-prem (lot suivant).

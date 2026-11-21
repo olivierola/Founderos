@@ -31,6 +31,24 @@ interface AssistantCtx {
   /** The agent whose setup cards the panel shows, if any. */
   agent: AssistantAgentContext | null;
   setAgent: (a: AssistantAgentContext | null) => void;
+  /** La largeur du panneau ancré — partagée avec la barre du haut, dont la
+   *  zone de droite devient l'en-tête de l'assistant, à la même largeur. */
+  width: number;
+  setWidth: (w: number) => void;
+}
+
+/** L'élément de la barre du haut qui porte l'en-tête de l'assistant ancré. */
+export const ASSISTANT_NAV_SLOT_ID = "assistant-nav-slot";
+
+export const ASSISTANT_MIN_W = 360;
+export const ASSISTANT_MAX_W = 820;
+const ASSISTANT_DEFAULT_W = 440;
+
+function readWidth(): number {
+  try {
+    const saved = Number(localStorage.getItem("assistant_width"));
+    return saved >= ASSISTANT_MIN_W && saved <= ASSISTANT_MAX_W ? saved : ASSISTANT_DEFAULT_W;
+  } catch { return ASSISTANT_DEFAULT_W; }
 }
 
 const Ctx = createContext<AssistantCtx | null>(null);
@@ -39,6 +57,12 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [request, setRequest] = useState<AssistantRequest | null>(null);
   const [agent, setAgent] = useState<AssistantAgentContext | null>(null);
+  const [width, setWidthState] = useState<number>(readWidth);
+  const setWidth = useCallback((w: number) => {
+    const next = Math.min(ASSISTANT_MAX_W, Math.max(ASSISTANT_MIN_W, Math.round(w)));
+    setWidthState(next);
+    try { localStorage.setItem("assistant_width", String(next)); } catch { /* navigation privée */ }
+  }, []);
 
   const ask = useCallback((req: Partial<Omit<AssistantRequest, "nonce">> & { agent?: AssistantAgentContext | null }) => {
     // `agent` present (even null) means "switch the setup deck"; absent leaves it.
@@ -58,8 +82,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       clearRequest: () => setRequest(null),
       agent,
       setAgent,
+      width,
+      setWidth,
     }),
-    [open, request, ask, agent],
+    [open, request, ask, agent, width, setWidth],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -75,6 +101,8 @@ const NOOP: AssistantCtx = {
   clearRequest: () => {},
   agent: null,
   setAgent: () => {},
+  width: ASSISTANT_DEFAULT_W,
+  setWidth: () => {},
 };
 
 export function useAssistant(): AssistantCtx {

@@ -56,7 +56,13 @@ export async function loadGuardrails(
   /** PolicyGuard (0259) : l'équipe (dashboard de service) de l'agent et sa
    *  surface. Une règle sans équipe vaut pour toutes ; une règle sans surface
    *  vaut pour les deux. Absent = toutes les règles, comme avant. */
-  scope?: { teamId?: string | null; surface?: "internal" | "public" },
+  scope?: {
+    teamId?: string | null; surface?: "internal" | "public";
+    /** Les guardrails des pools de l'agent (0291) : ils s'appliquent à lui
+     *  quelle que soit leur équipe ou leur surface. Ils s'AJOUTENT aux règles
+     *  de l'espace — un pool ne retire jamais un garde-fou. */
+    extraIds?: string[];
+  },
 ): Promise<GuardrailRow[]> {
   try {
     const base = "id, title, category, enforcement, enabled, match_pattern, match_scope, body";
@@ -71,8 +77,10 @@ export async function loadGuardrails(
     let res = await query(`${base}, team_ids, surfaces`);
     if (res.error) res = await query(base);
     const all = (res.data ?? []) as Array<Partial<GuardrailRow> & { team_ids?: string[] | null; surfaces?: string[] | null }>;
+    const extra = new Set(scope?.extraIds ?? []);
     const rows = all.filter((r) => {
       if (!scope) return true;
+      if (extra.has(String(r.id ?? ""))) return true;
       const teams = Array.isArray(r.team_ids) ? r.team_ids : [];
       const surfaces = Array.isArray(r.surfaces) ? r.surfaces : [];
       if (teams.length && (!scope.teamId || !teams.includes(scope.teamId))) return false;

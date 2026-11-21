@@ -137,7 +137,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[min(90vw,360px)] flex-col gap-2">
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[min(90vw,320px)] flex-col gap-1.5">
         {toasts.map((t) => (
           <ToastCard key={t.id} toast={t} onClose={() => dismiss(t.id)} />
         ))}
@@ -158,10 +158,10 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
 
   const tone =
     toast.kind === "success"
-      ? "border-[hsl(var(--accent-2)/0.4)] bg-[hsl(var(--accent-2)/0.1)] text-foreground"
+      ? "border-border bg-popover text-foreground"
       : toast.kind === "error"
-        ? "border-destructive/40 bg-destructive/10 text-foreground"
-        : "border-border bg-card text-foreground";
+        ? "border-destructive/30 bg-popover text-foreground"
+        : "border-border bg-popover text-foreground";
 
   const iconTone =
     toast.kind === "success"
@@ -175,18 +175,18 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   return (
     <div
       className={cn(
-        "pointer-events-auto flex items-start gap-3 rounded-md border p-3 text-sm shadow-lg backdrop-blur",
-        "animate-in slide-in-from-right-4 fade-in-0 duration-200",
+        "pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-[13px] shadow-md",
+        "animate-in slide-in-from-bottom-1 fade-in-0 duration-150",
         tone,
       )}
       role="status"
       aria-live="polite"
     >
-      <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", iconTone, toast.kind === "loading" && "animate-spin")} />
+      <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", iconTone, toast.kind === "loading" && "animate-spin")} />
       <div className="min-w-0 flex-1">
         <div className="font-medium leading-tight">{toast.title}</div>
         {toast.description && (
-          <div className="mt-0.5 text-xs text-muted-foreground">{toast.description}</div>
+          <div className="mt-0.5 line-clamp-2 text-[12px] text-muted-foreground">{toast.description}</div>
         )}
       </div>
       <button

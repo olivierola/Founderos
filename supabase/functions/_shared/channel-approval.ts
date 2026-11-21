@@ -31,6 +31,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4
 import { executeApprovalAction, approvalScopePrefix, type ApprovalExecOptions } from "./approval-exec.ts";
 import { teamsSendActivity } from "./teams.ts";
 import { isMessagingProvider, sendMessagingApproval, type MessagingProvider } from "./messaging.ts";
+import { turnRequester } from "./turn-principal.ts";
 
 type Provider = "slack" | "teams" | MessagingProvider;
 
@@ -209,17 +210,21 @@ export async function applyApprovalDecision(
   /** Action en production (mcp-approval.ts) : le jeton d'approbation signé, et
    *  la trace à conserver (demandeur, approbateur, jeton). */
   exec?: ApprovalExecOptions & { trace?: Record<string, unknown> },
+  /** Refus avec consigne : ce que le validateur demande à l'agent à la place.
+   *  Gardé dans result.note, et remis à l'agent comme résultat de l'outil. */
+  note?: string | null,
 ): Promise<{ ok: boolean; status: string; detail: string }> {
   const now = new Date().toISOString();
 
   if (decision === "reject") {
+    const consigne = String(note ?? "").trim().slice(0, 2000);
     await admin.from("internal_agent_approvals")
       .update({
         status: "rejected", decided_by: decidedBy, decided_at: now,
-        ...(decidedVia ? { result: { decided_via: decidedVia } } : {}),
+        ...(decidedVia || consigne ? { result: { ...(decidedVia ? { decided_via: decidedVia } : {}), ...(consigne ? { note: consigne } : {}) } } : {}),
       })
       .eq("id", approval.id).eq("status", "pending");
-    return { ok: true, status: "rejected", detail: "" };
+    return { ok: true, status: "rejected", detail: consigne };
   }
 
   // Marquée d'abord, exécutée ensuite : le passage à « approved » réclame la
@@ -299,7 +304,9 @@ export async function resumeAfterLateDecision(
   const stillWaiting = (run as { status?: string } | null)?.status === "running";
   if (stillWaiting) return;
   const verdict = decision === "reject"
-    ? "a REFUSÉ l'action demandée. Ne la refais pas ; adapte-toi ou propose une alternative."
+    ? (result.detail.trim()
+      ? `a REFUSÉ l'action demandée, avec cette consigne : « ${result.detail.trim().slice(0, 1500)} ». Applique-la au lieu de refaire l'action telle quelle.`
+      : "a REFUSÉ l'action demandée. Ne la refais pas ; adapte-toi ou propose une alternative.")
     : result.ok
       ? `a autorisé l'action demandée, qui a été exécutée. Résultat : ${result.detail.slice(0, 1500)}`
       : `a autorisé l'action demandée, mais son exécution a échoué : ${result.detail.slice(0, 800)}`;
@@ -356,7 +363,10 @@ export async function decideApprovalFromChannel(
   if (!b || b.provider !== input.provider) {
     return { ok: false, message: "Cette demande n'appartient pas à ce canal." };
   }
-  if (!b.requester || b.requester !== input.clickerRef) {
+  // L'auteur du tour qui a demandé l'action, pas celui du dernier message du
+  // fil : un autre tour a pu commencer depuis (turn-principal.ts).
+  const requester = (a.run_id ? await turnRequester(admin, a.run_id, a.conversation_id).catch(() => null) : null) ?? b.requester;
+  if (!requester || requester !== input.clickerRef) {
     return { ok: false, message: "Seule la personne qui a fait la demande à l'agent peut la valider." };
   }
 

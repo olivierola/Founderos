@@ -100,7 +100,7 @@ export function HomeAgentsHn() {
   );
 }
 
-/* ══ What makes Anduran different ════════════════════════════════════════════
+/* ══ What makes Agent company different ════════════════════════════════════════════
    The reference's numbered rows on the dark band: a number, a title, two
    paragraphs, and a picture on the right. Each picture is now the mechanism
    itself, drawn as the product shows it. */
@@ -157,10 +157,10 @@ export function HomeDifferentHn() {
               <>
                 Why teams trust
                 <br />
-                Anduran with <Em>real work</Em>
+                Agent company with <Em>real work</Em>
               </>
             }
-            lead="Putting a Cloud collaborator on real systems is risky at four precise moments: the write, the audit, the key and the model. Anduran is built around each of them."
+            lead="Putting a Cloud collaborator on real systems is risky at four precise moments: the write, the audit, the key and the model. Agent company is built around each of them."
           />
         </div>
         {ROWS.map((r, i) => (

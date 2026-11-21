@@ -10,6 +10,10 @@
 #   4. ngrok tunnels (sandbox + browser)
 #   5. Supabase secrets SANDBOX_URL / RUNNER_BROWSER_URL re-synced to the new
 #      tunnel URLs (free-tier URLs change on every ngrok restart)
+#   Optional: the team machine (team-machine container on :8091, migration 0296)
+#      is started if it exists, and app_config.team_machine_url follows its
+#      ngrok tunnel. Creating it is a separate, explicit step:
+#      docker compose -f team-machine/compose.yaml up -d --build
 #
 # NOTE: keep this file pure ASCII -- PowerShell 5.1 reads BOM-less .ps1 as ANSI
 # and non-ASCII characters corrupt the parser.
@@ -80,6 +84,23 @@ for ($round = 0; $round -lt 2 -and -not $apiUp; $round++) {
 if (-not $apiUp) { Write-Error "Sandbox API KO apres recreation - voir 'docker logs aio-sandbox'"; exit 1 }
 Ok "API bash/exec repond"
 
+# -- 2b. Team machine (optional, :8091) -----------------------------------------
+Step "Machine d'equipe team-machine (host :8091 -> container :8080, optionnelle)"
+$tmExists = (docker ps -a --filter "name=^team-machine$" --format "{{.Names}}") -eq "team-machine"
+if (-not $tmExists) {
+    Warn "conteneur absent - pour la creer : docker compose -f team-machine/compose.yaml up -d --build (docs/team-machine.md)"
+} else {
+    $tmRunning = (docker ps --filter "name=^team-machine$" --format "{{.Names}}") -eq "team-machine"
+    if (-not $tmRunning) { docker start team-machine | Out-Null }
+    $tmUp = $false
+    for ($i = 0; $i -lt 12; $i++) {
+        $h = & curl.exe -s -m 3 http://localhost:8091/health 2>$null
+        if ($h -match '"ok"\s*:\s*true') { $tmUp = $true; break }
+        Start-Sleep -Seconds 2
+    }
+    if ($tmUp) { Ok "machine d'equipe repond" } else { Warn "machine d'equipe muette (docker logs team-machine)" }
+}
+
 # -- 3. Runner (:3847) ---------------------------------------------------------
 Step "Runner Anduran (:3847)"
 $listening = $null -ne (Get-NetTCPConnection -State Listen -LocalPort 3847 -ErrorAction SilentlyContinue)
@@ -107,8 +128,11 @@ if (-not $tunnels -or $tunnels.Count -lt 2) {
 if (-not $tunnels -or $tunnels.Count -lt 2) { Write-Error "Tunnels ngrok KO (voir $LogDir\ngrok*.log)"; exit 1 }
 $sandboxUrl = ($tunnels | Where-Object { $_.config.addr -match "8090" } | Select-Object -First 1).public_url
 $browserUrl = ($tunnels | Where-Object { $_.config.addr -match "3847" } | Select-Object -First 1).public_url
+$teamMachineUrl = ($tunnels | Where-Object { $_.config.addr -match "8091" } | Select-Object -First 1).public_url
 Ok "sandbox  -> $sandboxUrl"
 Ok "browser  -> $browserUrl"
+if ($teamMachineUrl) { Ok "machine  -> $teamMachineUrl" }
+elseif ($tmExists) { Warn "pas de tunnel ngrok vers :8091 - ajouter un tunnel 'team-machine' (addr: 8091) a ngrok.yml" }
 
 # -- 5. Re-sync config Supabase ---------------------------------------------------
 # app_config (DB) est la SOURCE DE VERITE lue a chaque run par les edge functions
@@ -120,7 +144,7 @@ $sqlFile = Join-Path $env:TEMP "infra-config.sql"
 @"
 insert into public.app_config(key, value, updated_at) values
   ('sandbox_url', '$sandboxUrl', now()),
-  ('runner_browser_url', '$browserUrl', now())
+  ('runner_browser_url', '$browserUrl', now())$(if ($teamMachineUrl) { ",`n  ('team_machine_url', '$teamMachineUrl', now())" })
 on conflict (key) do update set value = excluded.value, updated_at = now();
 "@ | Out-File $sqlFile -Encoding ascii
 supabase db query -f $sqlFile --linked 2>$null | Out-Null

@@ -100,7 +100,7 @@ export function HomeHeroHn() {
               Your enterprise super intelligence. Hired as <Em>Cloud collaborators.</Em>
             </H>
             <P className="mt-6 max-w-[560px]">
-              Anduran gives you always-alive Cloud collaborators inside your own tenant. They work in the tools you
+              Agent company gives you always-alive Cloud collaborators inside your own tenant. They work in the tools you
               already use, ask before they change anything, and keep every decision yours.
             </P>
             <div className="mt-10 flex flex-wrap items-center gap-5">

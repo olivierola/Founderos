@@ -264,7 +264,7 @@ export function ProviderForm({ workspaceId, provider, onClose, onSaved, shared =
                 <input className={inputCls} value={s.clientId} onChange={(e) => set("clientId", e.target.value)} />
               </Field>
               <Field label="Secret client" hint={s.delegation !== "none"
-                ? (creating || provider?.delegation === "none" ? "Requis : conservé aussi par FounderOS, chiffré, pour la délégation." : "Laisser vide pour le conserver.")
+                ? (creating || provider?.delegation === "none" ? "Requis : conservé aussi par Agent company, chiffré, pour la délégation." : "Laisser vide pour le conserver.")
                 : creating ? "Stocké uniquement dans Supabase Auth." : "Laisser vide pour le conserver."}>
                 <input className={inputCls} type="password" autoComplete="off" value={s.clientSecret} onChange={(e) => set("clientSecret", e.target.value)} />
               </Field>

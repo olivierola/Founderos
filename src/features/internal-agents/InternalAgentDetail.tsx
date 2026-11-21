@@ -98,9 +98,11 @@ import { callEdge } from "@/lib/edge";
 import { useAuth } from "@/lib/auth-context";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { cn } from "@/lib/utils";
+import { InfoHint } from "@/components/ui/info-hint";
 import { InstructionsEditor } from "./InstructionsEditor";
 import { AgentChannelsTab } from "./AgentChannelsTab";
 import { agentModelValue, useAgentModelChoices } from "./AgentHostedModel";
+import { AgentModelRoutes } from "./AgentModelRoutes";
 import { AgentAutomationsTab } from "./AgentAutomationsTab";
 import { RunTimeline } from "./RunTimeline";
 import { AgentActivityOrb } from "./AgentActivityOrb";
@@ -321,12 +323,12 @@ export function AgentMcpTab({ agent }: { agent: InternalAgent }) {
     <div className="mx-auto max-w-3xl">
       <div className="flex items-start justify-between gap-3 pb-4">
         <div>
-          <h2 className="text-lg font-semibold">Serveurs MCP</h2>
-          <p className="mt-1 max-w-lg text-sm text-muted-foreground">
-            Activez des serveurs MCP pour ce collaborateur : leurs outils deviennent utilisables pendant ses runs.
-          </p>
+          <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+            Serveurs MCP
+            <InfoHint>Leurs outils deviennent utilisables pendant les runs de ce collaborateur.</InfoHint>
+          </h2>
         </div>
-        <Button variant="outline" size="sm" className="rounded-full shrink-0" onClick={() => navigate(mcpHome)}>
+        <Button variant="outline" size="sm" className="rounded-md shrink-0" onClick={() => navigate(mcpHome)}>
           <Server className="mr-1 h-3.5 w-3.5" /> Gérer les serveurs
         </Button>
       </div>
@@ -335,7 +337,7 @@ export function AgentMcpTab({ agent }: { agent: InternalAgent }) {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border py-12 text-center">
           <Server className="h-7 w-7 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">Aucun serveur MCP dans ce workspace.</p>
-          <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(mcpHome)}>
+          <Button variant="outline" size="sm" className="rounded-md" onClick={() => navigate(mcpHome)}>
             <Plus className="mr-1 h-4 w-4" /> Ajouter un serveur
           </Button>
         </div>
@@ -751,7 +753,7 @@ const AGENT_MODELS = CHAT_MODELS;
 // the same content, offered rather than imposed. Blocking gaps (the worker
 // skips the tool) wear amber and a quiet pulse; soft ones stay neutral.
 function ToolSetupReminder({
-  items, onConfigure, ctaLabel = "Configurer les outils",
+  items, onConfigure, ctaLabel = "Configurer",
 }: {
   items: Array<ConfigurableTool & { issue: string; blocking: boolean }>;
   onConfigure: () => void;
@@ -761,100 +763,47 @@ function ToolSetupReminder({
   const [open, setOpen] = useState(false);
   if (dismissed) return null;
   const hasBlocking = items.some((i) => i.blocking);
-  const tone = hasBlocking
-    ? { dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400", ring: "ring-amber-500/30", glow: "shadow-[0_10px_40px_-10px_rgba(245,158,11,0.45)]" }
-    : { dot: "bg-muted-foreground/60", text: "text-foreground", ring: "ring-border", glow: "shadow-[0_10px_40px_-12px_rgba(0,0,0,0.45)]" };
+  const label = `${items.length} réglage${items.length > 1 ? "s" : ""}`;
 
+  // Discret par principe : une pastille et un mot, qu'on ouvre si on veut.
+  // Pas de halo, pas de pulsation, pas de grande carte qui couvre la page.
   return (
-    <div className="pointer-events-none absolute right-5 top-16 z-30 flex justify-end">
-      <AnimatePresence initial={false} mode="popLayout">
-        {open ? (
-          <motion.div
-            key="card"
-            layout
-            initial={{ opacity: 0, y: -6, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32 }}
-            className={cn(
-              "pointer-events-auto w-[340px] max-w-[calc(100vw-2.5rem)] overflow-hidden rounded-2xl border border-border/70",
-              "bg-popover/95 backdrop-blur-xl ring-1", tone.ring, tone.glow,
-            )}
-          >
-            <div className={cn("h-0.5 w-full", hasBlocking ? "bg-amber-500" : "bg-foreground/15")} />
-            <div className="p-4">
-              <div className="flex items-start gap-2.5">
-                <span className={cn(
-                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
-                  hasBlocking ? "bg-amber-500/15 text-amber-500" : "bg-foreground/[0.07] text-muted-foreground",
-                )}>
-                  <AlertCircle className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold leading-snug">
-                    {hasBlocking
-                      ? "Ce collaborateur a besoin d'être configuré avant de travailler"
-                      : "Quelques réglages rendraient ce collaborateur plus efficace"}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setOpen(false)}
-                  aria-label="Replier"
-                  className="-mr-1 -mt-1 rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              <ul className="mt-3 space-y-1.5">
-                {items.map((t) => (
-                  <li
-                    key={t.id ?? t.name}
-                    className="flex items-start gap-2 rounded-xl bg-foreground/[0.04] px-2.5 py-2 text-xs text-muted-foreground"
-                  >
-                    <span className={cn("mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full", t.blocking ? "bg-amber-500" : "bg-muted-foreground/50")} />
-                    <span className="min-w-0">
-                      <span className="font-medium text-foreground">{t.name}</span> — {t.issue}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="mt-3.5 flex items-center gap-2">
-                <Button size="sm" className="rounded-full" onClick={onConfigure}>{ctaLabel}</Button>
-                <button
-                  onClick={() => setDismissed(true)}
-                  className="rounded-full px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  Plus tard
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.button
-            key="bubble"
-            layout
-            type="button"
-            onClick={() => setOpen(true)}
-            initial={{ opacity: 0, y: -4, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 420, damping: 30 }}
-            className={cn(
-              "pointer-events-auto flex h-9 items-center gap-2 rounded-full border border-border/70 bg-background/85 pl-2.5 pr-3.5",
-              "text-xs font-medium backdrop-blur-xl transition-colors hover:bg-background", tone.glow, tone.text,
-            )}
-            title={hasBlocking ? "Ce collaborateur a besoin d'être configuré" : "Quelques réglages rendraient ce collaborateur plus efficace"}
-          >
-            <span className="relative flex h-2 w-2">
-              {hasBlocking && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500/60" />}
-              <span className={cn("relative inline-flex h-2 w-2 rounded-full", tone.dot)} />
-            </span>
-            {items.length} réglage{items.length > 1 ? "s" : ""}
-          </motion.button>
+    <div className="pointer-events-none absolute right-5 top-16 z-30 flex flex-col items-end gap-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "pointer-events-auto flex h-7 items-center gap-1.5 rounded-full border border-border/70 bg-background px-2.5 text-[12px] transition-colors hover:bg-muted/60",
+          open ? "text-foreground" : "text-muted-foreground hover:text-foreground",
         )}
-      </AnimatePresence>
+        title={hasBlocking ? "À configurer" : "Réglages conseillés"}
+      >
+        <span className={cn("h-1.5 w-1.5 rounded-full", hasBlocking ? "bg-amber-500" : "bg-muted-foreground/60")} />
+        {label}
+      </button>
+      {open && (
+        <div className="pointer-events-auto w-[300px] max-w-[calc(100vw-2.5rem)] rounded-xl border border-border bg-popover p-3 shadow-md duration-150 animate-in fade-in slide-in-from-top-1">
+          <div className="text-[13px] font-medium">{hasBlocking ? "À configurer" : "Réglages conseillés"}</div>
+          <ul className="mt-2 space-y-1.5">
+            {items.map((t) => (
+              <li key={t.id ?? t.name} className="flex items-start gap-2 text-[12px] leading-snug text-muted-foreground">
+                <span className={cn("mt-1.5 h-1 w-1 shrink-0 rounded-full", t.blocking ? "bg-amber-500" : "bg-muted-foreground/50")} />
+                <span className="min-w-0"><span className="text-foreground">{t.name}</span> : {t.issue}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex items-center justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => setDismissed(true)}
+              className="rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Masquer
+            </button>
+            <Button size="sm" variant="secondary" className="h-7 rounded-md px-2.5 text-[12px]" onClick={onConfigure}>{ctaLabel}</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1313,7 +1262,7 @@ export function ChatTab({
         {headerLeading}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="ghost" className="h-9 max-w-[240px] gap-1 rounded-full border border-border/60 bg-background/70 px-3 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground">
+            <Button size="sm" variant="ghost" className="h-8 max-w-[240px] gap-1 rounded-md border border-border/60 bg-background/70 px-3 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground">
               <History className="mr-1 h-3.5 w-3.5 shrink-0" />
               <span className="truncate text-xs">
                 {currentConvo ? (currentConvo.title || "Untitled session") : "New session"}
@@ -1365,7 +1314,7 @@ export function ChatTab({
       {setupPending.length > 0 && (
         <ToolSetupReminder
           items={setupPending}
-          ctaLabel={assistant.available ? "Configurer avec l'assistant" : "Configurer les outils"}
+          ctaLabel={assistant.available ? "Configurer avec l'assistant" : "Configurer"}
           onConfigure={() => {
             // Agent configuration goes through the SaaS assistant: it opens on
             // the agent's setup cards (identity, prompt, tools, knowledge,
@@ -2630,7 +2579,7 @@ const TOOL_CATALOGUE: Array<{ kind: AgentTool["kind"]; label: string; icon: any;
   { kind: "leads", label: "LeadSense", icon: Target, description: "Qualify inbound prospects on the company's own grid, spot the ones to call now, assign the right sales rep, and publish the LeadSense board." },
   { kind: "soc", label: "SentinelFlow (SOC)", icon: ShieldCheck, description: "Triage security alerts from every connected source: investigate with correlation, close proven false positives, propose remediations for human validation, publish the SOC board." },
   { kind: "governance", label: "Policy audit", icon: ShieldCheck, description: "Read-only PolicyGuard figures: risk levels of the collaborateurs' actions, decisions, human validations, for compliance reports." },
-  { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Anduran function (notifications, email, marketing…)." },
+  { kind: "edge_function", label: "Internal action", icon: Zap, description: "Invoke an internal Agent company function (notifications, email, marketing…)." },
   { kind: "vault_connector", label: "Connector inventory", icon: KeyRound, description: "List connected integrations (provider, status, no secrets)." },
   { kind: "connector_action", label: "Integration", icon: Plug, description: "Read data from a connected integration (CRM, HR, data lake) via its official API." },
   { kind: "security_scan", label: "Security scan", icon: ShieldCheck, description: "Run a consented security scan against a registered target." },
@@ -2883,11 +2832,10 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
         {/* Integrations — connector_action data sources (CRM / HR / data lakes). */}
         <div className="order-1">
           <div className="space-y-1">
-            <h3 className="flex items-center gap-2 text-sm font-semibold"><Plug className="h-4 w-4 text-muted-foreground" /> Integrations</h3>
-            <p className="text-xs text-muted-foreground">
-              Add an integration and the agent gets its tools. Already-connected integrations are reused, no keys to
-              re-enter. Click the gear to (re)configure an integration's credentials for this project.
-            </p>
+            <h3 className="flex items-center gap-2 text-sm font-semibold">
+              <Plug className="h-4 w-4 text-muted-foreground" /> Intégrations
+              <InfoHint>Ajoutez une intégration : l'agent reçoit ses outils. Les intégrations déjà connectées sont réutilisées ; l'engrenage reconfigure leurs identifiants.</InfoHint>
+            </h3>
           </div>
           <div className="mt-4 space-y-5">
             {CONNECTOR_ACTION_GROUPS.map((group) => (
@@ -3021,9 +2969,6 @@ export function ToolsTab({ agent, variant = "full" }: { agent: InternalAgent; va
                 >
                   Other function… (add empty, then set the slug in Configure)
                 </button>
-                <p className="px-1 text-[10px] text-muted-foreground">
-                  Added actions are approval-gated by default, the collaborateur's calls wait for a human until you switch them to auto-execute.
-                </p>
               </div>
             )}
 
@@ -3201,7 +3146,7 @@ function DbReadConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<st
         <Button
           size="sm"
           variant="outline"
-          className="h-[42px] rounded-xl"
+          className="h-[42px] rounded-md"
           onClick={() =>
             onSave({
               ...tool.config,
@@ -3230,7 +3175,7 @@ function EdgeFunctionConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Rec
         <Button
           size="sm"
           variant="outline"
-          className="h-[42px] rounded-xl"
+          className="h-[42px] rounded-md"
           disabled={!/^[a-z0-9-]+$/.test(slug)}
           onClick={() => onSave({ ...tool.config, slug })}
         >
@@ -3262,7 +3207,7 @@ function CustomToolConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Recor
         <Button
           size="sm"
           variant="outline"
-          className="h-[42px] rounded-xl"
+          className="h-[42px] rounded-md"
           disabled={!/^https?:\/\//.test(url)}
           onClick={() => onSave({ ...tool.config, webhook_url: url, method })}
         >
@@ -3298,7 +3243,7 @@ function RawJsonConfig({ tool, onSave }: { tool: AgentTool; onSave: (c: Record<s
         <div className="mt-1.5 space-y-2">
           <SoftTextarea value={text} onChange={(e) => setText(e.target.value)} rows={6} className="font-mono text-[11px]" />
           {err && <p className="text-[11px] text-destructive">{err}</p>}
-          <Button size="sm" variant="outline" className="rounded-xl" onClick={save}>Enregistrer</Button>
+          <Button size="sm" variant="outline" className="rounded-md" onClick={save}>Enregistrer</Button>
         </div>
       )}
     </div>
@@ -3413,7 +3358,7 @@ export function MemoryTab({ agent }: { agent: InternalAgent }) {
           onChange={(v) => setNewKind(v as MemoryKind)}
           options={MEMORY_KINDS.map((k) => ({ value: k, label: MEMORY_KIND_META[k].label }))}
         />
-        <Button size="sm" className="h-[42px] rounded-xl" onClick={addMemory} disabled={adding || !newContent.trim()}>
+        <Button size="sm" className="h-[42px] rounded-md" onClick={addMemory} disabled={adding || !newContent.trim()}>
           {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
         </Button>
       </div>
@@ -3901,7 +3846,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
           <span className="text-xs text-muted-foreground"><Check className="mr-1 inline h-3 w-3" /> Enregistré</span>
         )}
         {showSave && (
-          <Button size="sm" onClick={save} disabled={saving || !isOwner} className="rounded-full">
+          <Button size="sm" onClick={save} disabled={saving || !isOwner} className="rounded-md">
             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
             <span className="ml-1">Enregistrer</span>
           </Button>
@@ -3926,9 +3871,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
           <SoftField label="Avatar">
             <div className="flex items-center gap-4 rounded-2xl bg-muted/40 p-3">
               <AgentIdentity url={agent.avatar_url} seed={agent.name} size={56} rounded="rounded-2xl" />
-              <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-                Robot animé ou humain en 3D, forme, couleurs, tenue, accessoires : tout se règle dans l'onglet Avatar.
-              </p>
+              <p className="min-w-0 flex-1 text-xs text-muted-foreground">Forme, couleurs, tenue : dans l'onglet Avatar.</p>
               <button
                 type="button"
                 onClick={() => setSettingsParams((p) => { const n = new URLSearchParams(p); n.set("t", "avatar"); n.delete("s"); return n; })}
@@ -3949,6 +3892,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
               options={modelOptions}
             />
           </SoftField>
+          <AgentModelRoutes key={`${agent.id}:${agent.hosted_provider_id ?? ""}`} agent={agent} disabled={!isOwner} />
 
           {/* One card per runtime — what it gives you, not how it works. The
               prerequisites (runner connected, Docker up) surface as a single
@@ -4070,9 +4014,6 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
                 <option key={m.id} value={m.id}>{m.name}{m.role ? ` · ${m.role}` : ""}</option>
               ))}
             </select>
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              L'organigramme : qui supervise ce collaborateur. Apparaît sur la carte de l'entreprise et oriente la décomposition des objectifs.
-            </p>
           </SoftField>
 
         </SettingsSection>
@@ -4107,7 +4048,7 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
       {embedded && isOwner && <AccordionHeader label="Zone de danger" icon={Trash2} open={openSections.has("danger")} onClick={() => toggleSection("danger")} />}
       {(embedded ? openSections.has("danger") : section === "danger") && isOwner && (
         <SettingsSection>
-          <Button variant="outline" onClick={archive} className="rounded-xl text-destructive">
+          <Button variant="outline" onClick={archive} className="rounded-md text-destructive">
             <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Archiver le collaborateur
           </Button>
         </SettingsSection>
@@ -4210,13 +4151,13 @@ function MobileAccessSection({ agent }: { agent: InternalAgent }) {
       <SoftField label="Collaborateur ID">
         <div className="flex items-center gap-2">
           <code className="min-w-0 flex-1 truncate rounded-xl bg-muted/50 px-3.5 py-2.5 font-mono text-xs">{agent.id}</code>
-          <Button size="sm" variant="outline" className="rounded-xl" onClick={() => copy(agent.id, "id")}>
+          <Button size="sm" variant="outline" className="rounded-md" onClick={() => copy(agent.id, "id")}>
             <Copy className="mr-1 h-3 w-3" /> {copied === "id" ? "Copié" : "Copier"}
           </Button>
         </div>
       </SoftField>
 
-      <Button size="sm" onClick={generate} disabled={busy} className="rounded-full">
+      <Button size="sm" onClick={generate} disabled={busy} className="rounded-md">
         {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <KeyRound className="mr-1 h-3 w-3" />}
         {hasSecret ? "Régénérer le secret" : "Générer un secret"}
       </Button>
@@ -4225,7 +4166,7 @@ function MobileAccessSection({ agent }: { agent: InternalAgent }) {
         <SoftField label="Secret, visible une seule fois">
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-xl bg-primary/10 px-3.5 py-2.5 font-mono text-xs">{generated}</code>
-            <Button size="sm" variant="outline" className="rounded-xl" onClick={() => copy(generated, "secret")}>
+            <Button size="sm" variant="outline" className="rounded-md" onClick={() => copy(generated, "secret")}>
               <Copy className="mr-1 h-3 w-3" /> {copied === "secret" ? "Copié" : "Copier"}
             </Button>
           </div>
@@ -4273,12 +4214,12 @@ function SettingsSection({
     <section className="space-y-5 py-6">
       {(title || description) && (
         <div className="space-y-1">
-          {title && (
+          {title ? (
             <h3 className={cn("flex items-center gap-2 text-sm font-semibold", titleClassName)}>
               {Icon && <Icon className="h-4 w-4 text-muted-foreground" />} {title}
+              {description && <InfoHint>{description}</InfoHint>}
             </h3>
-          )}
-          {description && <p className="text-xs text-muted-foreground">{description}</p>}
+          ) : description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
         </div>
       )}
       {children}
@@ -4452,7 +4393,7 @@ function CollaborationTab({ agent }: { agent: InternalAgent }) {
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background/60 to-transparent" />
             {feed.length === 0 ? (
               <p className="py-10 text-center text-xs text-muted-foreground">
-                Aucun message pour l'instant. Ce collaborateur contactera ou déléguera à ses pairs de façon autonome lorsqu'une tâche correspond à leurs compétences.
+                Aucun message pour l'instant.
               </p>
             ) : (
               <div className="flex flex-col gap-3">
@@ -4926,10 +4867,10 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
         <div className="flex items-center gap-2">
           {/* Écrire un playbook à la main suppose de savoir le formuler ; le
               montrer ne suppose que de savoir le faire. */}
-          <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/record`)}>
+          <Button variant="outline" size="sm" className="rounded-md" onClick={() => navigate(`${skillsBase}/record`)}>
             <Clapperboard className="mr-1 h-4 w-4" /> Enregistrer une démonstration
           </Button>
-          <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
+          <Button variant="outline" size="sm" className="rounded-md" onClick={() => navigate(`${skillsBase}/new`)}>
             <Plus className="mr-1 h-4 w-4" /> Créer un Skill
           </Button>
         </div>
@@ -4972,14 +4913,14 @@ export function SkillsTab({ agentId, customOnly }: { agentId?: string; customOnl
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <p className="text-sm text-muted-foreground">Vous n'avez pas encore créé de skill.</p>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button variant="outline" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/record`)}>
+              <Button variant="outline" size="sm" className="rounded-md" onClick={() => navigate(`${skillsBase}/record`)}>
                 <Clapperboard className="mr-1 h-4 w-4" /> Enregistrer une démonstration
               </Button>
-              <Button variant="ghost" size="sm" className="rounded-full" onClick={() => navigate(`${skillsBase}/new`)}>
+              <Button variant="ghost" size="sm" className="rounded-md" onClick={() => navigate(`${skillsBase}/new`)}>
                 <Plus className="mr-1 h-4 w-4" /> Écrire un skill
               </Button>
               {skillsList.some((s) => s.is_system) && (
-                <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setFilter("examples")}>
+                <Button variant="ghost" size="sm" className="rounded-md" onClick={() => setFilter("examples")}>
                   Parcourir le catalogue
                 </Button>
               )}

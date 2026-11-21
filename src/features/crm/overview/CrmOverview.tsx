@@ -354,7 +354,7 @@ export function CrmOverviewPage() {
           <Button
             variant={organise ? "default" : "outline"}
             size="sm"
-            className="h-9"
+            className="h-8"
             onClick={() => setOrganise((v) => !v)}
           >
             <GripVertical className="h-3.5 w-3.5" /> {organise ? "Terminer" : "Organiser"}
@@ -363,7 +363,7 @@ export function CrmOverviewPage() {
             <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-9">Cartes</Button>
+                  <Button variant="outline" size="sm" className="h-8">Cartes</Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>Afficher</DropdownMenuLabel>
@@ -387,7 +387,7 @@ export function CrmOverviewPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-9"
+                className="h-8"
                 onClick={() => persist({ layout: DEFAULT_LAYOUT, hidden: [] })}
                 title="Réinitialiser la disposition"
               >
@@ -475,7 +475,7 @@ function Picker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9 max-w-[240px]">
+        <Button variant="outline" size="sm" className="h-8 max-w-[240px]">
           {icon}
           <span className="truncate">{label}</span>
         </Button>

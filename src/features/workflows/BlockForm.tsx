@@ -475,7 +475,7 @@ function AttachmentSection({ node, nodes, edges, onAttach, onDetach }: {
   return (
     <Section
       title="Cadrage attaché"
-      hint="Contexte, règles, outils imposés, chargés à CETTE action seulement, et repris dans son bloc du document."
+      hint="Contexte, règles ou outils chargés pour cette action seulement. Astuce : tirez le point violet d'un cadrage jusqu'au bord gauche du bloc."
     >
       <div className="space-y-1.5">
         {attached.map((q) => {
@@ -493,15 +493,13 @@ function AttachmentSection({ node, nodes, edges, onAttach, onDetach }: {
             </div>
           );
         })}
-        {attached.length === 0 && (
-          <p className="rounded-lg border border-dashed border-border/70 px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
-            Rien d'attaché. Tirez le point violet d'un bloc de cadrage jusqu'au bord gauche de celui-ci, ou choisissez-le ci-dessous.
-          </p>
+        {attached.length === 0 && free.length === 0 && (
+          <p className="text-[12px] text-muted-foreground/70">Aucun cadrage dans ce workflow.</p>
         )}
         {free.length > 0 && (
           <Picker
             value="" onChange={(v) => v && onAttach(v, node.id)}
-            placeholder="Attacher un cadrage…"
+            placeholder={attached.length ? "Attacher un autre cadrage…" : "Attacher un cadrage…"}
             options={free.map((q) => ({
               value: q.id,
               label: nameOf(q),
@@ -624,7 +622,7 @@ function ToolTarget({ d, projectId, workspaceId, onPatch }: {
               />
             ) : (
               <p className="rounded-lg bg-muted/40 p-2.5 text-[11px] leading-snug text-muted-foreground">
-                Aucune application connectée n'expose d'actions. Connectez-en une dans l'onglet Connecteurs du service.
+                Aucune application connectée.
               </p>
             )}
           </Field>
@@ -715,7 +713,7 @@ function McpTarget({ d, workspaceId, onPatch }: {
   if (!servers?.length) {
     return (
       <p className="rounded-lg bg-muted/40 p-2.5 text-[11px] leading-snug text-muted-foreground">
-        Aucun serveur MCP dans cet espace. Déclarez-en un dans Outils customisés › Serveurs MCP.
+        Aucun serveur MCP. À déclarer dans Outils customisés.
       </p>
     );
   }
@@ -780,11 +778,6 @@ function McpTarget({ d, workspaceId, onPatch }: {
           onChange={(args) => onPatch({ args })}
         />
       )}
-      <p className="rounded-lg bg-muted/40 p-2.5 text-[11px] leading-snug text-muted-foreground">
-        Dans une procédure, ces outils sont ouverts au run qui l'exécute, limités à cette sélection. Dans une automatisation,
-        le moteur appelle un seul outil d'un seul serveur, avec ses paramètres. Les écritures restent soumises aux
-        approbations du serveur.
-      </p>
     </>
   );
 }
@@ -1070,8 +1063,7 @@ function ContextSource({ source, body, refs, collections, onPatch }: {
         <>
           {collections.length === 0 ? (
             <p className="rounded-lg border border-dashed border-border/70 p-3 text-[11px] leading-snug text-muted-foreground">
-              Aucune collection dans ce projet. Créez-en une dans <strong>Ressources → Mémoire</strong>,
-              ou repassez en <strong>Rédiger</strong> pour écrire la connaissance ici.
+              Aucune collection. Créez-en une dans Ressources → Mémoire.
             </p>
           ) : (
             <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-border/60 p-1">
@@ -1098,9 +1090,6 @@ function ContextSource({ source, body, refs, collections, onPatch }: {
               })}
             </div>
           )}
-          <p className="text-[10px] leading-snug text-muted-foreground/80">
-            L'agent y cherchera ce dont il a besoin avec <code className="rounded bg-muted px-1">rag_search</code>, le contenu n'est pas chargé d'avance.
-          </p>
           {written.trim() && (
             <DormantSide
               text="Un texte rédigé est conservé dans ce bloc, ignoré tant que le bloc pointe vers des collections."

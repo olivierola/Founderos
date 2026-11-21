@@ -4,6 +4,9 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+# Plateforme auto-hébergée : configuration (JWT_SECRET) et données locales
+.env.self
+backend/.data/
 *.log
 .DS_Store
 .vscode/*
@@ -50,3 +53,10 @@ supabase.env
 deploy/compose/.env
 /founderos.yaml
 /install/
+
+# Machine d'equipe : le jeton HMAC local, jamais versionne.
+team-machine/secret
+
+# Dépôts tiers clonés pour référence (code via npm ou non utilisé)
+opencode/
+agent-desktop/

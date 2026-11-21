@@ -10,7 +10,7 @@ import { createServiceClient, createUserClient } from "../_shared/supabase-admin
 import { getConnectorCredential } from "../_shared/credentials.ts";
 import { isServiceCaller } from "../_shared/authz.ts";
 
-const DEFAULT_SENDER = "Anduran <noreply@founderos.app>";
+const DEFAULT_SENDER = "Agent company <noreply@founderos.app>";
 
 /** Adresse contenue dans un « Nom <adresse> » ou une adresse nue. */
 function emailOf(sender: string): string | null {

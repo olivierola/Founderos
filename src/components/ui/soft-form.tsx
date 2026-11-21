@@ -55,9 +55,18 @@ export function SoftSelect<T extends string>({
   align?: "start" | "end";
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const box = useRef<HTMLDivElement>(null);
   const id = useId();
   const current = options.find((o) => o.value === value);
+  // Une longue liste (un catalogue de modèles) se filtre au clavier.
+  const searchable = options.length > 12;
+  const q = query.trim().toLowerCase();
+  const shown = searchable && q
+    ? options.filter((o) => `${o.label} ${o.value} ${o.hint ?? ""}`.toLowerCase().includes(q))
+    : options;
+
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,7 +102,21 @@ export function SoftSelect<T extends string>({
             align === "end" ? "right-0" : "left-0",
           )}
         >
-          {options.map((o) => {
+          {searchable && (
+            <div className="sticky -top-1.5 z-10 -mx-1.5 -mt-1.5 mb-1 bg-popover px-1.5 pt-1.5">
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher…"
+                className="w-full rounded-xl bg-muted/50 px-3 py-2 text-sm outline-none placeholder:text-muted-foreground/60 focus:bg-background focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          )}
+          {searchable && shown.length === 0 && (
+            <div className="px-3 py-2 text-sm text-muted-foreground">Aucun résultat.</div>
+          )}
+          {shown.map((o) => {
             const on = o.value === value;
             return (
               <button

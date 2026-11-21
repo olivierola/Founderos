@@ -5,7 +5,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { timingSafeEqual } from "../_shared/authz.ts";
-import { routeWorkflowEvent } from "../_shared/workflow-engine.ts";
+import { routeWorkflowEvent, startWorkflowRun, normalizeGraph } from "../_shared/workflow-engine.ts";
 import { handleSentinel, isSentinelRequest } from "../_shared/sentinel-gateway.ts";
 
 async function sha256(text: string) {
@@ -13,6 +13,64 @@ async function sha256(text: string) {
   return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * Lance un workflow sur appel entrant.
+ *
+ * Toute réponse d'échec AVANT la vérification du jeton est la même 401 : un
+ * identifiant inconnu et un jeton faux ne doivent pas se distinguer, sinon
+ * l'URL sert à sonder quels workflows existent.
+ */
+async function handleWorkflowWebhook(req: Request, url: URL, workflowId: string): Promise<Response> {
+  if (req.method !== "POST") {
+    return jsonResponse({ error: "Utilisez POST pour déclencher ce workflow." }, { status: 405 });
+  }
+  const given = req.headers.get("x-webhook-token") ?? url.searchParams.get("token") ?? "";
+  const denied = () => jsonResponse({ error: "Workflow ou jeton invalide" }, { status: 401 });
+  if (!given) return denied();
+
+  const admin = createServiceClient();
+  const { data: wf } = await admin.from("agent_workflows")
+    .select("id, status, blocks").eq("id", workflowId).maybeSingle();
+  if (!wf) return denied();
+  const row = wf as { id: string; status: string; blocks: unknown };
+  const trigger = normalizeGraph(row.blocks).nodes.find((n) => n.type === "trigger");
+  const data = (trigger?.data ?? {}) as Record<string, unknown>;
+  const secret = String(data.webhook_token ?? "");
+  if (!secret || !timingSafeEqual(given, secret)) return denied();
+
+  // Le jeton est bon : on peut dire pourquoi le run ne part pas.
+  if (data.mode !== "webhook") {
+    return jsonResponse({ error: "Ce workflow n'est plus réglé sur « Webhook »." }, { status: 409 });
+  }
+  if (row.status !== "active") {
+    return jsonResponse({ error: "Ce workflow n'est pas actif : activez-le pour qu'il accepte les appels." }, { status: 409 });
+  }
+
+  // Le corps est transmis tel quel au run (`{{trigger.champ}}`). Un corps qui
+  // n'est pas du JSON n'est pas perdu : il arrive sous `body`.
+  const raw = await req.text();
+  let payload: Record<string, unknown> = {};
+  if (raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      payload = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : { body: parsed };
+    } catch {
+      payload = { body: raw };
+    }
+  }
+  for (const [k, v] of url.searchParams) {
+    if (k !== "workflow" && k !== "token" && !(k in payload)) payload[k] = v;
+  }
+
+  const started = await startWorkflowRun(admin, {
+    workflowId: row.id, trigger: "webhook", payload, triggeredBy: null,
+  });
+  if ("error" in started) return jsonResponse({ error: started.error }, { status: started.status });
+  return jsonResponse({ ok: true, run_id: started.runId }, { status: 202 });
 }
 
 Deno.serve(async (req) => {
@@ -70,6 +128,14 @@ Deno.serve(async (req) => {
       // recorded, and the dedup ledger would just reject it again forever.
       return jsonResponse({ ok: true, ...res });
     }
+
+    // ── Webhook d'un workflow (déclencheur « Webhook ») ──────────────────────
+    // `?workflow=<id>` + le jeton propre à ce workflow, généré dans son bloc
+    // déclencheur. Pas de clé de workspace : l'appelant est un service tiers
+    // (formulaire, CRM, script) à qui l'on donne une URL, rien de plus. Le jeton
+    // ne vaut que pour CE workflow, et le régénérer suffit à le révoquer.
+    const workflowParam = url0.searchParams.get("workflow");
+    if (workflowParam) return await handleWorkflowWebhook(req, url0, workflowParam);
 
     const auth = req.headers.get("Authorization") ?? "";
     const m = auth.match(/^Bearer\s+(fos_[A-Za-z0-9]+)$/);

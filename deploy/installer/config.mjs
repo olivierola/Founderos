@@ -60,9 +60,10 @@ export function normalizeConfig(raw) {
 
   const llm = r.llm ?? {};
   const gateway = llm.gateway ?? "none";
-  if (!["none", "litellm", "azure"].includes(gateway)) issues.push("llm.gateway : none, litellm ou azure.");
+  if (!["none", "litellm", "azure", "openrouter"].includes(gateway)) issues.push("llm.gateway : none, litellm, azure ou openrouter.");
   if (gateway === "litellm" && !URL_RE.test(String(llm.litellm?.url ?? ""))) issues.push("llm.litellm.url : l'URL de LiteLLM (ex. http://litellm.ai-gateway.svc:4000/v1).");
   if (gateway === "azure" && (!URL_RE.test(String(llm.azure?.url ?? "")) || !llm.azure?.deployment)) issues.push("llm.azure.url et llm.azure.deployment : requis.");
+  if (gateway === "openrouter" && llm.openrouter?.url && !URL_RE.test(String(llm.openrouter.url))) issues.push("llm.openrouter.url : l'URL d'OpenRouter (défaut https://openrouter.ai/api/v1).");
 
   // Serveurs MCP des clusters (architecture Hub) : hôtes joints en direct, certificat client mTLS.
   const HOST_PATTERN_RE = /^(\*|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.(\*|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))+$/;
@@ -86,7 +87,7 @@ export function normalizeConfig(raw) {
       dbHost: sb.dbHost ?? (target === "vm" ? "db" : "supabase-db"),
     },
     admins, ssoMode, sessions,
-    llm: { gateway, litellm: llm.litellm ?? {}, azure: llm.azure ?? {} },
+    llm: { gateway, litellm: llm.litellm ?? {}, azure: llm.azure ?? {}, openrouter: llm.openrouter ?? {} },
     secrets: { source: secretsSource, vault: r.secrets?.vault ?? {}, existing: { backend: r.secrets?.existing?.backend ?? "founderos-backend", supabase: r.secrets?.existing?.supabase ?? "founderos-supabase" } },
     images: { registry: r.images?.registry ?? "ghcr.io/founderos", tag: String(r.images?.tag ?? "0.1.0") },
     kubernetes: { ingressClass: r.kubernetes?.ingressClass ?? "", tlsSecret: r.kubernetes?.tlsSecret ?? "" },
@@ -128,9 +129,16 @@ export function generateSecrets(cfg, previous = {}, { rotate = false } = {}) {
     CREDENTIAL_ENCRYPTION_KEY: keep("CREDENTIAL_ENCRYPTION_KEY", () => randomBytes(32).toString("base64")),
     APPROVAL_SIGNING_KEY: keep("APPROVAL_SIGNING_KEY", () =>
       generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ type: "pkcs8", format: "pem" }).toString()),
+    // La machine d'équipe (0296, team-machine/) : le backend signe ses appels avec, la machine les vérifie.
+    TEAM_MACHINE_TOKEN: keep("TEAM_MACHINE_TOKEN", () => b64url(randomBytes(32))),
   };
-  if (process.env.LLM_API_KEY) s.LLM_API_KEY = process.env.LLM_API_KEY;
-  else if (prev.LLM_API_KEY) s.LLM_API_KEY = prev.LLM_API_KEY;
+  if (cfg.llm.gateway === "openrouter") {
+    if (process.env.OPENROUTER_API_KEY) s.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+    else if (prev.OPENROUTER_API_KEY) s.OPENROUTER_API_KEY = prev.OPENROUTER_API_KEY;
+  } else {
+    if (process.env.LLM_API_KEY) s.LLM_API_KEY = process.env.LLM_API_KEY;
+    else if (prev.LLM_API_KEY) s.LLM_API_KEY = prev.LLM_API_KEY;
+  }
   if (cfg.supabase.mode === "selfhosted") {
     s.SUPABASE_JWT_SECRET = cfg.supabase.jwtSecret ?? keep("SUPABASE_JWT_SECRET", () => b64url(randomBytes(32)));
     s.POSTGRES_PASSWORD = keep("POSTGRES_PASSWORD", () => b64url(randomBytes(24)));
@@ -149,12 +157,13 @@ export function generateSecrets(cfg, previous = {}, { rotate = false } = {}) {
 
 /** Variables non secrètes du backend, réglées par founderos.yaml (verrouillées à l'écran Installation). */
 function llmEnv(cfg) {
-  const { gateway, litellm, azure } = cfg.llm;
+  const { gateway, litellm, azure, openrouter } = cfg.llm;
   if (gateway === "litellm") {
     return {
       LLM_UPSTREAM: "litellm", LLM_BASE_URL: String(litellm.url).replace(/\/+$/, ""),
       ...(litellm.model ? { LLM_MODEL_DEFAULT: String(litellm.model) } : {}),
       ...(litellm.heavyModel ? { LLM_MODEL_HEAVY: String(litellm.heavyModel) } : {}),
+      ...(litellm.lightModel ? { LLM_MODEL_LIGHT: String(litellm.lightModel) } : {}),
       ...(litellm.embeddingModel ? { LLM_EMBEDDING_MODEL: String(litellm.embeddingModel) } : {}),
     };
   }
@@ -162,9 +171,20 @@ function llmEnv(cfg) {
     return {
       LLM_UPSTREAM: "azure", AZURE_OPENAI_BASE_URL: String(azure.url).replace(/\/+$/, ""), AZURE_OPENAI_DEPLOYMENT: String(azure.deployment),
       ...(azure.heavyDeployment ? { AZURE_OPENAI_DEPLOYMENT_HEAVY: String(azure.heavyDeployment) } : {}),
+      // Déploiement des appels annexes (juges, contrats) : hors du quota du modèle de travail.
+      ...(azure.lightDeployment ? { AZURE_OPENAI_DEPLOYMENT_LIGHT: String(azure.lightDeployment) } : {}),
       ...(azure.embeddingDeployment ? { AZURE_OPENAI_EMBEDDING_DEPLOYMENT: String(azure.embeddingDeployment) } : {}),
       ...(azure.tenantId ? { AZURE_OPENAI_TENANT_ID: String(azure.tenantId) } : {}),
       ...(azure.clientId ? { AZURE_OPENAI_CLIENT_ID: String(azure.clientId) } : {}),
+    };
+  }
+  if (gateway === "openrouter") {
+    return {
+      LLM_UPSTREAM: "openrouter",
+      ...(openrouter.url ? { OPENROUTER_BASE_URL: String(openrouter.url).replace(/\/+$/, "") } : {}),
+      ...(openrouter.model ? { OPENROUTER_MODEL: String(openrouter.model) } : {}),
+      ...(openrouter.heavyModel ? { OPENROUTER_MODEL_HEAVY: String(openrouter.heavyModel) } : {}),
+      ...(openrouter.lightModel ? { OPENROUTER_MODEL_LIGHT: String(openrouter.lightModel) } : {}),
     };
   }
   return {};
@@ -198,7 +218,7 @@ export function helmValues(cfg) {
   };
 }
 
-const BACKEND_KEYS = ["CREDENTIAL_ENCRYPTION_KEY", "APPROVAL_SIGNING_KEY", "LLM_API_KEY"];
+const BACKEND_KEYS = ["CREDENTIAL_ENCRYPTION_KEY", "APPROVAL_SIGNING_KEY", "TEAM_MACHINE_TOKEN", "LLM_API_KEY", "OPENROUTER_API_KEY"];
 
 /** Les Secrets attendus par le chart, quand l'installateur les génère. */
 export function k8sSecrets(cfg, s) {

@@ -31,7 +31,7 @@ type Group = { id: string; label: string; items: Item[] };
    asks anyone to click anything. */
 const HEADLINE: Item[] = [
   {
-    q: "What does Anduran actually do?",
+    q: "What does Agent company actually do?",
     a: "We help companies adopt super intelligence safely. In practice that is three things: we assess where your processes and data stand today, we build the secured foundation so super intelligence has something solid to work on, and we guide adoption across your organisation with the governance and change enablement that makes it stick.",
   },
   {

@@ -80,7 +80,9 @@ export type TypesafeFeature =
   /** LeadSense — type, critères, urgence et commercial d'un prospect. */
   | "lead_scoring"
   /** SentinelFlow — catégorie, situation, avis faux positif, escalade et procédure d'une alerte de sécurité. */
-  | "soc_triage";
+  | "soc_triage"
+  /** La cause d'un échec d'outil, quand les règles ne la reconnaissent pas. */
+  | "tool_error_diagnosis";
 
 export type TypesafeMode = "off" | "shadow" | "on";
 
@@ -99,6 +101,10 @@ export interface FeatureMeta {
   /** Ce que le seuil règle. Vide quand l'usage n'en a pas besoin. */
   thresholdLabel: string;
   defaultThreshold: number;
+  /** Le mode d'un espace qui n'a rien réglé. `off` sauf mention contraire :
+   *  seuls les usages qui ne font que PONDÉRER une décision déjà prise par le
+   *  code (jamais bloquer, jamais retirer) partent allumés. */
+  defaultMode?: TypesafeMode;
 }
 
 /**
@@ -128,9 +134,12 @@ export const TYPESAFE_FEATURES: FeatureMeta[] = [
   {
     feature: "tool_ranking",
     label: "Choix des outils",
-    effect: "La famille d'outils utile à la tâche est choisie, et ses schémas passent devant les autres.",
-    thresholdLabel: "Confiance minimale pour appliquer le choix",
-    defaultThreshold: 0.5,
+    effect: "Chaque outil de la boîte reçoit une probabilité d'être utile à l'étape en cours ; les schémas envoyés au modèle sont choisis d'après elle, mêlée au classement lexical selon la confiance du jugement. Aucun outil n'est retiré : need_tools rouvre toute la boîte.",
+    thresholdLabel: "Confiance en dessous de laquelle le classement lexical reprend la main",
+    defaultThreshold: 0.35,
+    // Allumé : il ne fait que réordonner les schémas envoyés, et l'échec du
+    // jugement (clé absente, lenteur) retombe sur le classement lexical.
+    defaultMode: "on",
   },
   {
     feature: "agent_choice",
@@ -239,12 +248,21 @@ export const TYPESAFE_FEATURES: FeatureMeta[] = [
     thresholdLabel: "Probabilité minimale pour escalader à un analyste",
     defaultThreshold: 0.7,
   },
+  {
+    feature: "tool_error_diagnosis",
+    label: "Diagnostic des échecs d'outil",
+    effect: "Quand un appel d'outil échoue sur une erreur que les règles ne reconnaissent pas, sa cause est classée (arguments, accès, cible introuvable, panne passagère…) et l'agent reçoit l'ajustement correspondant avec le résultat.",
+    thresholdLabel: "Confiance minimale pour retenir la cause",
+    defaultThreshold: 0.55,
+    // Allumé : le diagnostic s'ajoute au résultat, il ne change pas l'appel.
+    defaultMode: "on",
+  },
 ];
 
 const META = new Map(TYPESAFE_FEATURES.map((f) => [f.feature, f]));
 
 export const defaultConfig = (feature: TypesafeFeature): FeatureConfig => ({
-  mode: "off",
+  mode: META.get(feature)?.defaultMode ?? "off",
   threshold: META.get(feature)?.defaultThreshold ?? 0.7,
 });
 
@@ -292,7 +310,30 @@ export function forgetTypesafeConfig(workspaceId?: string) {
   else cache.clear();
 }
 
-export const hasTypesafeKey = (): boolean => !!Deno.env.get("TYPESAFE_API_KEY");
+/**
+ * Où partent les jugements. TypeSafe en direct (TYPESAFE_API_KEY), ou
+ * l'endpoint /decisions de Runware, qui prend le MÊME format (state +
+ * questions typées) avec la clé Runware. Par défaut, Runware dès que
+ * LLM_UPSTREAM=runware — un seul fournisseur IA, une seule facture ;
+ * TYPESAFE_PROVIDER=typesafe|runware force l'un ou l'autre. TYPESAFE_MODEL
+ * change le modèle (sur Runware : un identifiant AIR, typesafe:jev@1.14).
+ */
+function decisionTarget(): { url: string; key: string; model: string; via: "typesafe" | "runware" } | null {
+  const forced = (Deno.env.get("TYPESAFE_PROVIDER") ?? "").trim().toLowerCase();
+  const onRunware = (Deno.env.get("LLM_UPSTREAM") ?? "").trim().toLowerCase() === "runware";
+  const via = forced === "runware" || forced === "typesafe" ? forced : onRunware ? "runware" : "typesafe";
+  const model = (Deno.env.get("TYPESAFE_MODEL") ?? "").trim();
+  if (via === "runware") {
+    const key = Deno.env.get("RUNWARE_API_KEY");
+    if (!key) return null;
+    const base = (Deno.env.get("RUNWARE_BASE_URL") || "https://api.runware.ai/v1").trim().replace(/\/+$/, "");
+    return { url: `${base}/decisions`, key, model: model || "typesafe:jev@1.14", via };
+  }
+  const key = Deno.env.get("TYPESAFE_API_KEY");
+  return key ? { url: ENDPOINT, key, model: model || MODEL, via } : null;
+}
+
+export const hasTypesafeKey = (): boolean => decisionTarget() !== null;
 
 // ── Les questions ────────────────────────────────────────────────────────────
 
@@ -412,8 +453,8 @@ export async function judge(
   questions: Record<string, Question>,
   opts: { subject?: string } = {},
 ): Promise<Judgement | null> {
-  const key = Deno.env.get("TYPESAFE_API_KEY");
-  if (!key) return null;
+  const target = decisionTarget();
+  if (!target) return null;
   if (Object.keys(questions).length === 0) return null;
 
   const cfg = (await loadTypesafeConfig(ctx.admin, ctx.workspaceId))[feature] ?? defaultConfig(feature);
@@ -421,29 +462,31 @@ export async function judge(
 
   const started = Date.now();
   let answers: Record<string, Answer> | null = null;
-  let usage: { input_tokens?: number } = {};
-  let model = MODEL;
+  let usage: { input_tokens?: number; prompt_tokens?: number } = {};
+  let model = target.model;
   let error: string | null = null;
 
   try {
-    const res = await fetch(ENDPOINT, {
+    const res = await fetch(target.url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL, state, questions }),
+      headers: { Authorization: `Bearer ${target.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: target.model, state, questions }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.ok) {
       const json = await res.json() as {
-        answers?: Record<string, Answer>; usage?: { input_tokens?: number }; model?: string;
+        answers?: Record<string, Answer>; usage?: { input_tokens?: number; prompt_tokens?: number }; model?: string;
       };
       answers = json.answers ?? null;
       usage = json.usage ?? {};
-      model = json.model ?? MODEL;
+      model = json.model ?? target.model;
     } else {
       // 429 (quota) et 529 (surcharge) sont passagers, mais on ne réessaie PAS
       // ici : ce jugement est optionnel, et faire attendre un run une seconde
-      // de plus pour une opinion coûte plus que de s'en passer.
-      error = `HTTP ${res.status}`;
+      // de plus pour une opinion coûte plus que de s'en passer. Le corps de
+      // l'erreur est gardé (court) : « HTTP 400 » seul ne dit pas quel champ
+      // Runware a refusé.
+      error = `HTTP ${res.status}${target.via === "runware" ? ` ${(await res.text().catch(() => "")).slice(0, 160)}` : ""}`;
     }
   } catch (e) {
     error = e instanceof Error ? e.message.slice(0, 200) : "erreur réseau";
@@ -458,7 +501,7 @@ export async function judge(
   void logJudgement(ctx, {
     feature, mode: cfg.mode, applied: apply, subject: opts.subject ?? null,
     questions, answers, model, latencyMs,
-    inputTokens: Number(usage.input_tokens) || 0, error,
+    inputTokens: Number(usage.input_tokens ?? usage.prompt_tokens) || 0, error,
   });
 
   if (!answers) return null;

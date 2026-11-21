@@ -14,7 +14,7 @@ import { TESTIMONIALS, type Testimonial } from "../testimonials";
 
 const PREVIEW: Testimonial[] = [1, 2, 3].map(() => ({
   headline: "The customer's one-line verdict goes here.",
-  quote: "The longer quote, in the customer's own words: the problem they had, what changed with Anduran, and the result they measured themselves.",
+  quote: "The longer quote, in the customer's own words: the problem they had, what changed with Agent company, and the result they measured themselves.",
   name: "Customer name",
   role: "Role",
   company: "Company",
@@ -70,7 +70,7 @@ export function HomeTestimonialsHn() {
               <Em>In their own words.</Em>
             </>
           }
-          lead="How teams use Anduran to put Cloud collaborators to work on their own systems, and keep every action accountable."
+          lead="How teams use Agent company to put Cloud collaborators to work on their own systems, and keep every action accountable."
         >
           <Btn to="/use-cases" variant="link">See use cases</Btn>
         </Head>

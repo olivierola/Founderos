@@ -91,7 +91,7 @@ export function AiWorkflowsPage() {
     <div>
       <PageHeader
         title="Workflows"
-        description="Trigger → steps automations. Triggered by Anduran events or manually."
+        description="Trigger → steps automations. Triggered by Agent company events or manually."
         actions={
           <Button size="sm" onClick={() => setOpenCreate(true)}>
             <Plus className="h-4 w-4" /> New workflow

@@ -373,7 +373,7 @@ export async function applyChanges(
     head,
     base,
     opts.prTitle || opts.commitMessage,
-    opts.prBody || "Automated changes proposed by the Anduran agent.",
+    opts.prBody || "Automated changes proposed by the Agent company agent.",
   );
   return { mode: "pull_request", branch: head, commit_sha: commitSha, pull_request: pr };
 }

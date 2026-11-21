@@ -72,7 +72,7 @@ export function useCollaboratorInbox(dashboardId: string | undefined) {
   });
 }
 
-const KIND_META: Record<InboxKind, { label: string; icon: PhosphorIcon; tone: string }> = {
+export const KIND_META: Record<InboxKind, { label: string; icon: PhosphorIcon; tone: string }> = {
   approval: { label: "Autorisation", icon: ShieldCheckIcon, tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
   question: { label: "Question", icon: ChatCircleDotsIcon, tone: "bg-sky-500/10 text-sky-700 dark:text-sky-400" },
   proposal: { label: "Proposition", icon: LightbulbIcon, tone: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
@@ -85,7 +85,7 @@ const KIND_META: Record<InboxKind, { label: string; icon: PhosphorIcon; tone: st
 // Urgency first: an approval blocks a live run, a question blocks the work, a
 // failure will repeat; trust, proposals and deliverables can wait for a calm
 // moment.
-const KIND_ORDER: InboxKind[] = ["approval", "question", "failed", "goal", "trust", "proposal", "deliverable"];
+export const KIND_ORDER: InboxKind[] = ["approval", "question", "failed", "goal", "trust", "proposal", "deliverable"];
 
 type Filter = "all" | InboxKind;
 
@@ -109,7 +109,7 @@ export function actionLabel(tool: unknown, action: unknown): string {
 
 /** The approved action, in words. Mirrors the summaries the runtime writes
  *  (internal-agent-tools awaitInlineApproval), which the row does not store. */
-function approvalLabel(item: InboxItem): string {
+export function approvalLabel(item: InboxItem): string {
   const kind = String(item.meta?.action_kind ?? "");
   const p = (item.meta?.payload ?? {}) as Record<string, unknown>;
   switch (kind) {
@@ -166,32 +166,23 @@ function sourceOf(item: InboxItem, sbase: string): { label: string; href?: strin
   return { label: "Hors conversation" };
 }
 
-export function CollaboratorInbox({ dashboardId }: { dashboardId: string }) {
+export const inboxKey = (i: InboxItem) => `${i.kind}:${i.ref_id}`;
+
+/**
+ * Everything one can do on an inbox item, shared by the « À valider » page and
+ * the home cockpit, so an item is handled the same way wherever it is opened.
+ */
+export function useInboxActions(dashboardId: string) {
   const { workspaceSlug, projectSlug } = useParams();
   const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
   const { user } = useAuth();
   const { workspaceId, projectId } = useCurrentContext();
-  const { data, isLoading, error } = useCollaboratorInbox(dashboardId);
 
-  const [filter, setFilter] = useState<Filter>("all");
   const [busy, setBusy] = useState<string | null>(null);
-  const [selected, setSelected] = useState(0);
   const [viewing, setViewing] = useState<ArtifactOpenTarget | null>(null);
   const answerRefs = useRef(new Map<string, HTMLTextAreaElement>());
-  const rowRefs = useRef(new Map<string, HTMLLIElement>());
-
-  const all = useMemo(() => {
-    const rank = (k: InboxKind) => KIND_ORDER.indexOf(k);
-    return [...(data ?? [])].sort((a, b) => rank(a.kind) - rank(b.kind) || b.since.localeCompare(a.since));
-  }, [data]);
-  const shown = filter === "all" ? all : all.filter((i) => i.kind === filter);
-  const count = (k: InboxKind) => all.filter((i) => i.kind === k).length;
-  const keyOf = (i: InboxItem) => `${i.kind}:${i.ref_id}`;
-
-  useEffect(() => { setSelected((s) => Math.min(s, Math.max(0, shown.length - 1))); }, [shown.length]);
 
   const drop = (item: InboxItem) => {
     qc.setQueryData<InboxItem[]>(["sd_inbox", dashboardId], (old) =>
@@ -199,7 +190,7 @@ export function CollaboratorInbox({ dashboardId }: { dashboardId: string }) {
   };
 
   async function act(item: InboxItem, op: () => Promise<void>) {
-    setBusy(keyOf(item));
+    setBusy(inboxKey(item));
     try {
       await op();
     } catch (e) {
@@ -218,12 +209,16 @@ export function CollaboratorInbox({ dashboardId }: { dashboardId: string }) {
     drop(item);
   }
 
-  const decide = (item: InboxItem, decision: "approve" | "approve_all" | "reject") => act(item, async () => {
+  const decide = (item: InboxItem, decision: "approve" | "approve_all" | "reject", note?: string) => act(item, async () => {
     const res = await callEdge<{ ok?: boolean; status?: string; detail?: string }>(
-      "internal-agent-approve", { approval_id: item.ref_id, decision, source: "inbox" },
+      "internal-agent-approve", {
+        approval_id: item.ref_id, decision, source: "inbox",
+        // Refus avec consigne : l'agent la reçoit comme résultat de l'action refusée.
+        ...(decision === "reject" && note?.trim() ? { note: note.trim() } : {}),
+      },
     );
     drop(item);
-    if (decision === "reject") toast.info("Refusé", `${item.agent_name} en sera informé.`);
+    if (decision === "reject") toast.info("Refusé", note?.trim() ? `${item.agent_name} reçoit ta consigne.` : `${item.agent_name} en sera informé.`);
     else if (res?.ok === false) toast.error("Autorisé, mais l'exécution a échoué", res.detail?.slice(0, 200));
     else toast.success("Autorisé et exécuté");
   });
@@ -320,19 +315,102 @@ export function CollaboratorInbox({ dashboardId }: { dashboardId: string }) {
     toast.success("Confiance accordée", `${item.agent_name} : ${actionLabel(m.tool, m.action)}`);
   });
 
+  const ignore = (item: InboxItem) => act(item, () => dismiss(item));
+
+  return {
+    sbase, busy, viewing, setViewing, answerRefs,
+    decide, answer, launch, discard, retry, openDeliverable, trust, ignore,
+  };
+}
+
+export type InboxActions = ReturnType<typeof useInboxActions>;
+
+/** The right-hand drawer, shared with the home page. */
+export const SIDE_PANEL_CLASS = "absolute inset-y-0 right-0 z-20 flex w-full max-w-[480px] flex-col border-l border-border bg-background shadow-xl animate-in slide-in-from-right duration-200 xl:static xl:shadow-none";
+
+/**
+ * The right-hand panel: one item in full, with its actions, or the deliverable
+ * it opened. It slides over the page on narrow screens and sits beside it from
+ * xl up, so triage never loses its place.
+ */
+export function InboxSidePanel({ actions, item, onClose }: {
+  actions: InboxActions;
+  item: InboxItem | null;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const { viewing, setViewing, busy, sbase, answerRefs } = actions;
+  if (!viewing && !item) return null;
+  return (
+    <aside className={cn(SIDE_PANEL_CLASS, viewing && "max-w-[560px]")}>
+      {viewing ? (
+        <ArtifactViewer key={viewing.id} target={viewing} onBack={() => setViewing(null)} dense />
+      ) : item ? (
+        <InboxDetail
+          key={inboxKey(item)}
+          item={item}
+          sbase={sbase}
+          busy={busy === inboxKey(item)}
+          disabled={busy !== null}
+          onClose={onClose}
+          onOpenAgent={() => navigate(`${sbase}/agent/${item.agent_id}`)}
+          onNavigate={(href) => navigate(href)}
+          answerRef={(el) => { if (el) answerRefs.current.set(inboxKey(item), el); else answerRefs.current.delete(inboxKey(item)); }}
+          onDecide={(d, note) => void actions.decide(item, d, note)}
+          onAnswer={(t) => void actions.answer(item, t)}
+          onLaunch={() => void actions.launch(item)}
+          onDiscard={() => void actions.discard(item)}
+          onRetry={() => void actions.retry(item)}
+          onOpenDeliverable={() => actions.openDeliverable(item)}
+          onTrust={() => void actions.trust(item)}
+          onOpenGoal={() => navigate(`${sbase}/agent-config/${item.agent_id}?t=automations`)}
+          onDismiss={() => void actions.ignore(item)}
+        />
+      ) : null}
+    </aside>
+  );
+}
+
+export function CollaboratorInbox({ dashboardId }: { dashboardId: string }) {
+  const navigate = useNavigate();
+  const { data, isLoading, error } = useCollaboratorInbox(dashboardId);
+  const actions = useInboxActions(dashboardId);
+  const { sbase, busy, viewing, setViewing, answerRefs } = actions;
+
+  const [filter, setFilter] = useState<Filter>("all");
+  const [selected, setSelected] = useState(0);
+  // The card shown in the right panel, by key (it closes when the item leaves).
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const rowRefs = useRef(new Map<string, HTMLLIElement>());
+
+  const all = useMemo(() => {
+    const rank = (k: InboxKind) => KIND_ORDER.indexOf(k);
+    return [...(data ?? [])].sort((a, b) => rank(a.kind) - rank(b.kind) || b.since.localeCompare(a.since));
+  }, [data]);
+  const shown = filter === "all" ? all : all.filter((i) => i.kind === filter);
+  const count = (k: InboxKind) => all.filter((i) => i.kind === k).length;
+  const keyOf = inboxKey;
+
+  useEffect(() => { setSelected((s) => Math.min(s, Math.max(0, shown.length - 1))); }, [shown.length]);
+
   function primary(item: InboxItem) {
-    if (item.kind === "approval") void decide(item, "approve");
-    else if (item.kind === "question") answerRefs.current.get(keyOf(item))?.focus();
-    else if (item.kind === "proposal") void launch(item);
-    else if (item.kind === "deliverable") openDeliverable(item);
-    else if (item.kind === "trust") void trust(item);
+    if (item.kind === "approval") void actions.decide(item, "approve");
+    else if (item.kind === "question") {
+      // The answer box lives in the panel: open it, then focus once rendered.
+      setViewing(null);
+      setOpenKey(keyOf(item));
+      requestAnimationFrame(() => answerRefs.current.get(keyOf(item))?.focus());
+    }
+    else if (item.kind === "proposal") void actions.launch(item);
+    else if (item.kind === "deliverable") actions.openDeliverable(item);
+    else if (item.kind === "trust") void actions.trust(item);
     else if (item.kind === "goal") navigate(`${sbase}/agent-config/${item.agent_id}?t=automations`);
-    else void retry(item);
+    else void actions.retry(item);
   }
   function secondary(item: InboxItem) {
-    if (item.kind === "approval") void decide(item, "reject");
-    else if (item.kind === "proposal") void discard(item);
-    else void act(item, () => dismiss(item));
+    if (item.kind === "approval") void actions.decide(item, "reject");
+    else if (item.kind === "proposal") void actions.discard(item);
+    else void actions.ignore(item);
   }
 
   // j / k / a / x — skipped while typing an answer.
@@ -342,6 +420,8 @@ export function CollaboratorInbox({ dashboardId }: { dashboardId: string }) {
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey || busy) return;
       const item = shown[selected];
+      if (e.key === "Escape" && (openKey || viewing)) { e.preventDefault(); setOpenKey(null); setViewing(null); return; }
+      if (e.key === "Enter" && item && t?.tagName !== "BUTTON") { e.preventDefault(); setViewing(null); setOpenKey(keyOf(item)); return; }
       if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); setSelected((s) => Math.min(s + 1, shown.length - 1)); }
       else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); setSelected((s) => Math.max(s - 1, 0)); }
       else if (e.key === "a" && item) { e.preventDefault(); primary(item); }
@@ -354,6 +434,8 @@ export function CollaboratorInbox({ dashboardId }: { dashboardId: string }) {
   useEffect(() => {
     const item = shown[selected];
     if (item) rowRefs.current.get(keyOf(item))?.scrollIntoView({ block: "nearest" });
+    // With the panel open, j / k walk through the details too.
+    if (item && openKey) setOpenKey(keyOf(item));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
@@ -368,86 +450,139 @@ export function CollaboratorInbox({ dashboardId }: { dashboardId: string }) {
     { key: "trust", label: "Confiance", count: count("trust") },
   ];
 
+  const opened = openKey ? all.find((i) => keyOf(i) === openKey) ?? null : null;
+
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-header shrink-0 items-center gap-2 border-b border-border px-4">
+        <header className="flex h-header shrink-0 items-center gap-2 px-3">
           <TrayIcon className="h-4 w-4 text-muted-foreground" />
           <h2 className="text-14 font-medium">À valider</h2>
           <Tabs className="ml-3 hidden md:inline-flex" value={filter} onChange={(v) => { setFilter(v); setSelected(0); }} options={FILTERS} />
           <span className="ml-auto hidden text-11 text-muted-foreground lg:block">
             <kbd className="rounded border border-border px-1">j</kbd> <kbd className="rounded border border-border px-1">k</kbd> naviguer ·{" "}
+            <kbd className="rounded border border-border px-1">↵</kbd> ouvrir ·{" "}
             <kbd className="rounded border border-border px-1">a</kbd> valider · <kbd className="rounded border border-border px-1">x</kbd> refuser
           </span>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <div className="mx-auto max-w-3xl">
-            {isLoading ? (
-              <p className="py-10 text-center text-14 text-muted-foreground">Chargement…</p>
-            ) : error ? (
-              <p className="py-10 text-center text-13 text-destructive">
-                Impossible de charger la boîte : {error instanceof Error ? error.message : "erreur inconnue"}
-              </p>
-            ) : !shown.length ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+          {isLoading ? (
+            <p className="py-10 text-center text-14 text-muted-foreground">Chargement…</p>
+          ) : error ? (
+            <p className="py-10 text-center text-13 text-destructive">
+              Impossible de charger la boîte : {error instanceof Error ? error.message : "erreur inconnue"}
+            </p>
+          ) : !shown.length ? (
+            <div className="mx-auto max-w-3xl">
               <EmptyState
                 illustration={<DoneIllustration className="w-full" />}
                 title={filter === "all" ? "Rien ne vous attend" : "Rien dans cette catégorie"}
                 hint="Quand un collaborateur aura besoin d'une autorisation, d'une réponse ou d'un regard sur ce qu'il a produit, ce sera ici."
               />
-            ) : (
-              <ul className="space-y-2.5">
-                {shown.map((item, idx) => (
-                  <InboxRow
-                    key={keyOf(item)}
-                    rowRef={(el) => { if (el) rowRefs.current.set(keyOf(item), el); else rowRefs.current.delete(keyOf(item)); }}
-                    item={item}
-                    sbase={sbase}
-                    selected={idx === selected}
-                    busy={busy === keyOf(item)}
-                    disabled={busy !== null}
-                    onSelect={() => setSelected(idx)}
-                    onOpenAgent={() => navigate(`${sbase}/agent/${item.agent_id}`)}
-                    onNavigate={(href) => navigate(href)}
-                    answerRef={(el) => { if (el) answerRefs.current.set(keyOf(item), el); else answerRefs.current.delete(keyOf(item)); }}
-                    onDecide={(d) => void decide(item, d)}
-                    onAnswer={(t) => void answer(item, t)}
-                    onLaunch={() => void launch(item)}
-                    onDiscard={() => void discard(item)}
-                    onRetry={() => void retry(item)}
-                    onOpenDeliverable={() => openDeliverable(item)}
-                    onTrust={() => void trust(item)}
-                    onOpenGoal={() => navigate(`${sbase}/agent-config/${item.agent_id}?t=automations`)}
-                    onDismiss={() => void act(item, () => dismiss(item))}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
+            </div>
+          ) : (
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2">
+              {shown.map((item, idx) => (
+                <InboxCard
+                  key={keyOf(item)}
+                  rowRef={(el) => { if (el) rowRefs.current.set(keyOf(item), el); else rowRefs.current.delete(keyOf(item)); }}
+                  item={item}
+                  sbase={sbase}
+                  selected={idx === selected}
+                  open={openKey === keyOf(item)}
+                  onOpen={() => { setSelected(idx); setViewing(null); setOpenKey(keyOf(item)); }}
+                />
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
-      {/* A deliverable reads beside the list, so triage never loses its place. */}
-      {viewing && (
-        <aside className="hidden w-[min(560px,45%)] shrink-0 border-l border-border bg-card/40 lg:block">
-          <ArtifactViewer key={viewing.id} target={viewing} onBack={() => setViewing(null)} dense />
-        </aside>
-      )}
+      <InboxSidePanel actions={actions} item={opened} onClose={() => setOpenKey(null)} />
     </div>
   );
 }
 
-interface RowProps {
+/** Title and body of an item, as both the card and the panel show them. */
+function describe(item: InboxItem) {
+  const brief = item.kind === "proposal" ? splitBrief(item.body) : null;
+  const approved = Number(item.meta?.approved ?? 0);
+  const title = item.kind === "approval" ? approvalLabel(item)
+    : item.kind === "failed" ? `« ${item.title ?? "Mission"} » a échoué`
+    : item.kind === "trust" ? `Laisser passer seul : ${actionLabel(item.meta?.tool, item.meta?.action)}`
+    : item.kind === "goal" ? `Objectif en écart : ${item.title ?? ""}`
+    : item.title ?? "";
+  const body = item.kind === "approval" ? (item.body ? `Motif : ${item.body}` : null)
+    : item.kind === "failed" ? item.body ?? ""
+    : item.kind === "proposal" ? brief!.text
+    : item.kind === "deliverable" ? item.body
+    : item.kind === "goal" ? goalBody(item)
+    : item.kind === "trust"
+      ? `Vous l'avez validé ${approved} fois sans jamais refuser. Jev continuera de noter le risque de chaque action : une action irréversible vous sera toujours demandée.`
+    : null;
+  return { title, body, value: brief?.value ?? null };
+}
+
+function KindBadge({ kind }: { kind: InboxKind }) {
+  const k = KIND_META[kind];
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-11 font-medium", k.tone)}>
+      <k.icon weight="fill" className="h-3 w-3" /> {k.label}
+    </span>
+  );
+}
+
+export function InboxCard({ rowRef, item, sbase, selected = false, open, onOpen }: {
+  rowRef?: (el: HTMLLIElement | null) => void;
   item: InboxItem;
   sbase: string;
-  selected: boolean;
+  selected?: boolean;
+  open: boolean;
+  onOpen: () => void;
+}) {
+  const { title, body } = describe(item);
+  const source = sourceOf(item, sbase);
+  return (
+    <li ref={rowRef}>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cn(
+          "flex h-full w-full flex-col rounded-md border bg-card p-3 text-left transition-colors hover:border-foreground/20",
+          open ? "border-primary/60" : selected ? "border-foreground/25" : "border-border/70",
+        )}
+      >
+        <div className="flex w-full items-center gap-2">
+          <AgentIdentity
+            style={(item.agent_avatar_style as "avatar" | "orb" | null) ?? "orb"}
+            url={item.agent_avatar_url} seed={item.agent_name} size={20}
+            rounded="rounded-full"
+          />
+          <span className="min-w-0 truncate text-12 font-medium">{item.agent_name}</span>
+          <span className="ml-auto shrink-0 text-11 text-muted-foreground">{formatRelative(item.since)}</span>
+        </div>
+        <p className="mt-2 line-clamp-2 text-13 font-medium leading-snug">{title}</p>
+        {body && <p className="mt-1 line-clamp-2 text-12 text-muted-foreground">{body.split("\n")[0]}</p>}
+        <div className="mt-auto flex w-full items-center gap-2 pt-3">
+          <KindBadge kind={item.kind} />
+          <span className="min-w-0 truncate text-11 text-muted-foreground">{source.label}</span>
+        </div>
+      </button>
+    </li>
+  );
+}
+
+interface DetailProps {
+  item: InboxItem;
+  sbase: string;
   busy: boolean;
   disabled: boolean;
-  onSelect: () => void;
+  onClose: () => void;
   onOpenAgent: () => void;
   onNavigate: (href: string) => void;
   answerRef: (el: HTMLTextAreaElement | null) => void;
-  onDecide: (d: "approve" | "approve_all" | "reject") => void;
+  onDecide: (d: "approve" | "approve_all" | "reject", note?: string) => void;
   onAnswer: (text: string) => void;
   onLaunch: () => void;
   onDiscard: () => void;
@@ -458,212 +593,177 @@ interface RowProps {
   onDismiss: () => void;
 }
 
-function InboxRow({ rowRef, ...p }: RowProps & { rowRef: (el: HTMLLIElement | null) => void }) {
+function InboxDetail(p: DetailProps) {
   const { item } = p;
-  const kind = KIND_META[item.kind];
   const source = sourceOf(item, p.sbase);
   const [reply, setReply] = useState("");
-  const [showDetail, setShowDetail] = useState(false);
   const options = Array.isArray(item.meta?.options) ? (item.meta!.options as unknown[]).map(String).slice(0, 6) : [];
-  const brief = item.kind === "proposal" ? splitBrief(item.body) : null;
+  const { title, body, value } = describe(item);
   const detail = item.kind === "approval" ? approvalDetail(item) : null;
   const proposer = item.kind === "proposal" && item.meta?.self === false && item.meta?.proposed_by_name
     ? String(item.meta.proposed_by_name) : null;
 
-  const approved = Number(item.meta?.approved ?? 0);
-  const title = item.kind === "approval" ? approvalLabel(item)
-    : item.kind === "failed" ? `« ${item.title ?? "Mission"} » a échoué`
-    : item.kind === "trust" ? `Laisser passer seul : ${actionLabel(item.meta?.tool, item.meta?.action)}`
-    : item.kind === "goal" ? `Objectif en écart : ${item.title ?? ""}`
-    : item.title ?? "";
-  const body = item.kind === "approval" ? item.body
-    : item.kind === "failed" ? (item.body ?? "").split("\n")[0]
-    : item.kind === "proposal" ? brief!.text
-    : item.kind === "deliverable" ? item.body
-    : item.kind === "goal" ? goalBody(item)
-    : item.kind === "trust"
-      ? `Vous l'avez validé ${approved} fois sans jamais refuser. Jev continuera de noter le risque de chaque action : une action irréversible vous sera toujours demandée.`
-    : null;
-
   return (
-    <li
-      ref={rowRef}
-      onClick={p.onSelect}
-      className={cn(
-        "rounded-xl border bg-card p-3.5 transition-shadow",
-        p.selected ? "border-primary/40 ring-2 ring-primary/15" : "border-border/70",
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <button type="button" onClick={p.onOpenAgent} title={`Ouvrir ${item.agent_name}`} className="shrink-0">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-header shrink-0 items-center gap-2 border-b border-border px-4">
+        <KindBadge kind={item.kind} />
+        <span className="text-11 text-muted-foreground">{formatRelative(item.since)}</span>
+        <button
+          type="button" onClick={p.onClose} title="Fermer (Échap)"
+          className="ml-auto rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <XIcon className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <button type="button" onClick={p.onOpenAgent} className="flex items-center gap-2.5 text-left" title={`Ouvrir ${item.agent_name}`}>
           <AgentIdentity
             style={(item.agent_avatar_style as "avatar" | "orb" | null) ?? "orb"}
-            url={item.agent_avatar_url} seed={item.agent_name} size={30}
+            url={item.agent_avatar_url} seed={item.agent_name} size={32}
             rounded="rounded-full"
           />
+          <span className="min-w-0">
+            <span className="block text-13 font-medium">{item.agent_name}</span>
+            <span className="block text-11 text-muted-foreground">
+              {proposer ? `Déléguée par ${proposer}` : source.label}
+            </span>
+          </span>
         </button>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-11">
-            <span className="font-medium text-foreground">{item.agent_name}</span>
-            <span className={cn("inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-medium", kind.tone)}>
-              <kind.icon weight="fill" className="h-3 w-3" /> {kind.label}
-            </span>
-            {proposer && <span className="text-muted-foreground">déléguée par {proposer}</span>}
-            {source.href ? (
-              <button type="button" onClick={() => p.onNavigate(source.href!)} className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground hover:underline">
-                {source.label} <ArrowSquareOutIcon className="h-3 w-3" />
-              </button>
-            ) : item.kind !== "proposal" && item.kind !== "deliverable" && item.kind !== "trust" && item.kind !== "goal" ? (
-              <span className="text-muted-foreground">{source.label}</span>
-            ) : null}
-            <span className="ml-auto text-muted-foreground">{formatRelative(item.since)}</span>
+        <h3 className={cn("mt-4 text-15 font-medium leading-snug", item.kind === "question" && "whitespace-pre-line")}>{title}</h3>
+
+        {value && <p className="mt-2 text-12 text-violet-700 dark:text-violet-400">Valeur attendue : {value}</p>}
+        {body && <p className="mt-2 whitespace-pre-line break-words text-13 leading-relaxed text-muted-foreground">{body}</p>}
+
+        {source.href && (
+          <button type="button" onClick={() => p.onNavigate(source.href!)} className="mt-3 inline-flex items-center gap-1 text-12 text-muted-foreground hover:text-foreground hover:underline">
+            {source.label} <ArrowSquareOutIcon className="h-3 w-3" />
+          </button>
+        )}
+
+        {detail && (
+          <div className="mt-4">
+            <p className="mb-1.5 text-11 font-medium uppercase tracking-wide text-muted-foreground">Détail de l'action</p>
+            <pre className="max-h-80 overflow-auto rounded-md bg-muted/60 p-2.5 text-[11px] leading-relaxed">{detail}</pre>
           </div>
+        )}
 
-          <p className={cn("mt-1.5 text-13 font-medium leading-snug", item.kind === "question" && "whitespace-pre-line font-normal")}>
-            {title}
-          </p>
-
-          {brief?.value && (
-            <p className="mt-1 text-12 text-violet-700 dark:text-violet-400">Valeur attendue : {brief.value}</p>
-          )}
-          {body && (
-            <p className="mt-1 line-clamp-3 whitespace-pre-line text-12 text-muted-foreground">
-              {item.kind === "approval" ? `Motif : ${body}` : body}
-            </p>
-          )}
-
-          {detail && (
-            <div className="mt-1.5">
-              <button
-                type="button" onClick={(e) => { e.stopPropagation(); setShowDetail((v) => !v); }}
-                className="inline-flex items-center gap-1 text-11 text-muted-foreground hover:text-foreground"
-              >
-                <CaretDownIcon className={cn("h-3 w-3 transition-transform", showDetail && "rotate-180")} />
-                {showDetail ? "Masquer le détail" : "Voir le détail"}
-              </button>
-              {showDetail && (
-                <pre className="mt-1.5 max-h-56 overflow-auto rounded-lg bg-muted/60 p-2.5 text-[11px] leading-relaxed">{detail}</pre>
-              )}
-            </div>
-          )}
-
-          {item.kind === "question" && (
-            <div className="mt-2.5 space-y-2" onClick={(e) => e.stopPropagation()}>
-              {options.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {options.map((o) => (
-                    <button
-                      key={o} type="button" disabled={p.disabled} onClick={() => p.onAnswer(o)}
-                      className="rounded-full border border-border px-2.5 py-1 text-12 transition-colors hover:border-primary/50 hover:bg-primary/5 disabled:opacity-50"
-                    >
-                      {o}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-end gap-2">
-                <textarea
-                  ref={p.answerRef}
-                  value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && reply.trim()) { e.preventDefault(); p.onAnswer(reply); }
-                    if (e.key === "Escape") (e.target as HTMLTextAreaElement).blur();
-                  }}
-                  rows={1}
-                  placeholder={`Répondre à ${item.agent_name}…`}
-                  className="min-h-[34px] flex-1 resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-13 focus:outline-none focus:ring-2 focus:ring-ring/20"
-                />
-                <Button size="sm" className="h-[34px]" disabled={p.disabled || !reply.trim()} onClick={() => p.onAnswer(reply)}>
-                  {p.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PaperPlaneRightIcon className="h-3.5 w-3.5" />}
-                </Button>
-                <Button size="sm" variant="ghost" className="h-[34px] text-12" disabled={p.disabled} onClick={p.onDismiss} title="Retirer de ma boîte">
-                  Ignorer
-                </Button>
+        {item.kind === "question" && (
+          <div className="mt-4 space-y-2">
+            {options.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {options.map((o) => (
+                  <button
+                    key={o} type="button" disabled={p.disabled} onClick={() => p.onAnswer(o)}
+                    className="rounded-md border border-border px-2.5 py-1 text-12 transition-colors hover:border-primary/50 hover:bg-primary/5 disabled:opacity-50"
+                  >
+                    {o}
+                  </button>
+                ))}
               </div>
-            </div>
-          )}
-
-          {item.kind !== "question" && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-              {item.kind === "approval" && (
-                <>
-                  <Button size="sm" className="h-7 text-12" disabled={p.disabled} onClick={() => p.onDecide("approve")}>
-                    {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <CheckIcon className="mr-1 h-3.5 w-3.5" />} Autoriser
-                  </Button>
-                  {/* A grant covers the rest of ONE conversation: without one,
-                      there is nothing for "everything of this kind" to cover. */}
-                  {item.conversation_id && (
-                    <Button size="sm" variant="outline" className="h-7 text-12" disabled={p.disabled} onClick={() => p.onDecide("approve_all")}>
-                      Tout autoriser pour cette conversation
-                    </Button>
-                  )}
-                  <Button size="sm" variant="ghost" className="h-7 text-12" disabled={p.disabled} onClick={() => p.onDecide("reject")}>
-                    <XIcon className="mr-1 h-3.5 w-3.5" /> Refuser
-                  </Button>
-                </>
-              )}
-              {item.kind === "proposal" && (
-                <>
-                  <Button size="sm" className="h-7 text-12" disabled={p.disabled} onClick={p.onLaunch}>
-                    {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RocketLaunchIcon className="mr-1 h-3.5 w-3.5" />} Lancer
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-12" disabled={p.disabled} onClick={p.onDiscard}>
-                    Écarter
-                  </Button>
-                </>
-              )}
-              {item.kind === "deliverable" && (
-                <>
-                  <Button size="sm" variant="outline" className="h-7 text-12" onClick={p.onOpenDeliverable}>
-                    <EyeIcon className="mr-1 h-3.5 w-3.5" /> Ouvrir
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-12" disabled={p.disabled} onClick={p.onDismiss}>
-                    <CheckIcon className="mr-1 h-3.5 w-3.5" /> Marquer comme vu
-                  </Button>
-                </>
-              )}
-              {item.kind === "goal" && (
-                <>
-                  <Button size="sm" className="h-7 text-12" onClick={p.onOpenGoal}>
-                    <TargetIcon className="mr-1 h-3.5 w-3.5" /> Voir l'objectif
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-12" onClick={p.onOpenAgent}>
-                    Parler au collaborateur
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-12" disabled={p.disabled} onClick={p.onDismiss}>
-                    Ignorer
-                  </Button>
-                </>
-              )}
-              {item.kind === "trust" && (
-                <>
-                  <Button size="sm" className="h-7 text-12" disabled={p.disabled} onClick={p.onTrust}>
-                    {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <SealCheckIcon className="mr-1 h-3.5 w-3.5" />} Accorder la confiance
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-12" disabled={p.disabled} onClick={p.onDismiss}>
-                    Plus tard
-                  </Button>
-                </>
-              )}
-              {item.kind === "failed" && (
-                <>
-                  <Button size="sm" className="h-7 text-12" disabled={p.disabled} onClick={p.onRetry}>
-                    {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <ArrowClockwiseIcon className="mr-1 h-3.5 w-3.5" />} Relancer
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-12" onClick={p.onOpenAgent}>
-                    Voir le collaborateur
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-12" disabled={p.disabled} onClick={p.onDismiss}>
-                    Ignorer
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+            )}
+            <textarea
+              ref={p.answerRef}
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && reply.trim()) { e.preventDefault(); p.onAnswer(reply); }
+                if (e.key === "Escape") (e.target as HTMLTextAreaElement).blur();
+              }}
+              rows={3}
+              placeholder={`Répondre à ${item.agent_name}…`}
+              className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-2 text-13 focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+        )}
       </div>
-    </li>
+
+      {item.kind === "approval" && (
+        <div className="shrink-0 px-4 pb-2">
+          <textarea
+            value={reply}
+            onChange={(e) => setReply(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") (e.target as HTMLTextAreaElement).blur(); }}
+            rows={2}
+            maxLength={2000}
+            placeholder={`Consigne pour ${item.agent_name} si tu refuses (facultatif) : quoi faire à la place`}
+            className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-2 text-13 focus:outline-none focus:ring-2 focus:ring-ring/20"
+          />
+        </div>
+      )}
+
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-border px-4 py-3">
+        {item.kind === "question" && (
+          <>
+            <Button size="sm" className="h-8 text-12" disabled={p.disabled || !reply.trim()} onClick={() => p.onAnswer(reply)}>
+              {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PaperPlaneRightIcon className="mr-1 h-3.5 w-3.5" />} Répondre
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 text-12" disabled={p.disabled} onClick={p.onDismiss}>Ignorer</Button>
+          </>
+        )}
+        {item.kind === "approval" && (
+          <>
+            <Button size="sm" className="h-8 text-12" disabled={p.disabled} onClick={() => p.onDecide("approve")}>
+              {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <CheckIcon className="mr-1 h-3.5 w-3.5" />} Autoriser
+            </Button>
+            {/* A grant covers the rest of ONE conversation: without one,
+                there is nothing for "everything of this kind" to cover. */}
+            {item.conversation_id && (
+              <Button size="sm" variant="outline" className="h-8 text-12" disabled={p.disabled} onClick={() => p.onDecide("approve_all")}>
+                Tout autoriser pour cette conversation
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className="h-8 text-12" disabled={p.disabled} onClick={() => p.onDecide("reject", reply)}>
+              <XIcon className="mr-1 h-3.5 w-3.5" /> {reply.trim() ? "Refuser avec la consigne" : "Refuser"}
+            </Button>
+          </>
+        )}
+        {item.kind === "proposal" && (
+          <>
+            <Button size="sm" className="h-8 text-12" disabled={p.disabled} onClick={p.onLaunch}>
+              {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RocketLaunchIcon className="mr-1 h-3.5 w-3.5" />} Lancer
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 text-12" disabled={p.disabled} onClick={p.onDiscard}>Écarter</Button>
+          </>
+        )}
+        {item.kind === "deliverable" && (
+          <>
+            <Button size="sm" className="h-8 text-12" onClick={p.onOpenDeliverable}>
+              <EyeIcon className="mr-1 h-3.5 w-3.5" /> Ouvrir
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 text-12" disabled={p.disabled} onClick={p.onDismiss}>
+              <CheckIcon className="mr-1 h-3.5 w-3.5" /> Marquer comme vu
+            </Button>
+          </>
+        )}
+        {item.kind === "goal" && (
+          <>
+            <Button size="sm" className="h-8 text-12" onClick={p.onOpenGoal}>
+              <TargetIcon className="mr-1 h-3.5 w-3.5" /> Voir l'objectif
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-12" onClick={p.onOpenAgent}>Parler au collaborateur</Button>
+            <Button size="sm" variant="ghost" className="h-8 text-12" disabled={p.disabled} onClick={p.onDismiss}>Ignorer</Button>
+          </>
+        )}
+        {item.kind === "trust" && (
+          <>
+            <Button size="sm" className="h-8 text-12" disabled={p.disabled} onClick={p.onTrust}>
+              {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <SealCheckIcon className="mr-1 h-3.5 w-3.5" />} Accorder la confiance
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 text-12" disabled={p.disabled} onClick={p.onDismiss}>Plus tard</Button>
+          </>
+        )}
+        {item.kind === "failed" && (
+          <>
+            <Button size="sm" className="h-8 text-12" disabled={p.disabled} onClick={p.onRetry}>
+              {p.busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <ArrowClockwiseIcon className="mr-1 h-3.5 w-3.5" />} Relancer
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-12" onClick={p.onOpenAgent}>Voir le collaborateur</Button>
+            <Button size="sm" variant="ghost" className="h-8 text-12" disabled={p.disabled} onClick={p.onDismiss}>Ignorer</Button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

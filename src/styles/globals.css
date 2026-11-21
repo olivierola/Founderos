@@ -839,6 +839,217 @@ body {
   --accent-coral: 152 46% 33%;
 }
 
+/* ── Jet : la charte « Jet Black » à l'essai (18/11/2026) ─────────────────────
+   Trois neutres purs pour le texte : Jet Black #141414 (fg/primary), Charcoal
+   #676767 (fg/secondary), Medium Gray #A1A1A1 (fg/tertiary). Un bleu roi pour
+   l'accent, #4B5CE0 (233° 71 % 59 %). Les surfaces claires reprennent le gris
+   bleuté de la planche, #EDEEF2. La version sombre pose les mêmes neutres à
+   l'envers, sur #141414, et éclaircit le bleu pour qu'il se lise sur le fond. */
+[data-skin="jet"] {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 8%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 8%;
+  --sidebar: 220 14% 98.3%;
+  --sidebar-foreground: 0 0% 40%;
+  --sidebar-accent: 228 12% 93%;
+  --sd-ground: 220 14% 98.3%;
+  --sd-panel: 0 0% 100%;
+  --secondary: 228 14% 94%;
+  --muted: 228 14% 94%;
+  --muted-foreground: 0 0% 40%;
+  --fg-tertiary: 0 0% 63%;
+  --text-secondary: 0 0% 40%;
+  --text-tertiary: 0 0% 52%;
+  --text-placeholder: 0 0% 63%;
+  --catalog-stage: 228 14% 94%;
+  --accent: 228 12% 90%;
+  --border: 228 10% 88%;
+  --input: 228 10% 88%;
+  --primary: 233 71% 59%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 233 65% 52%;
+  --ring: 233 71% 59%;
+  --accent-coral: 233 71% 59%;
+}
+
+[data-skin="jet-dark"] {
+  --background: 0 0% 5.5%;
+  --foreground: 0 0% 96%;
+  --card: 0 0% 8%;
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 9%;
+  --popover-foreground: 0 0% 96%;
+  --sidebar: 0 0% 4%;
+  --sidebar-foreground: 0 0% 63%;
+  --sidebar-accent: 0 0% 12%;
+  --sd-ground: 0 0% 3.5%;
+  --sd-panel: 0 0% 5%;
+  --secondary: 0 0% 11%;
+  --muted: 0 0% 11%;
+  --muted-foreground: 0 0% 63%;
+  --fg-tertiary: 0 0% 40%;
+  --text-secondary: 0 0% 80%;
+  --text-tertiary: 0 0% 63%;
+  --text-placeholder: 0 0% 45%;
+  --catalog-stage: 0 0% 6%;
+  --accent: 0 0% 13%;
+  --border: 0 0% 15%;
+  --input: 0 0% 15%;
+  --primary: 233 72% 64%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 233 76% 70%;
+  --ring: 233 72% 64%;
+  --accent-coral: 233 72% 64%;
+}
+
+/* ── La typographie de l'application (19/11/2026, planche « Asphalt ») ────────
+   Posée sur <html data-typo="app"> de la sélection des organisations aux
+   tableaux de service (voir src/lib/appTypography.ts) ; le site public et la
+   connexion gardent la leur.
+
+   Une seule famille, Inter, en axe variable avec sa taille optique : les
+   grands titres prennent d'eux-mêmes le dessin « Display », plus serré. Deux
+   graisses : 400 pour tout ce qui se lit, 500 pour ce qui se repère (titres,
+   chiffres, boutons). Pas de gras : un 600 ou un 700 écrits dans un écran
+   retombent d'un cran. L'interlettrage reste neutre au corps courant et se
+   resserre avec la taille. Les étiquettes de section sont en petites
+   capitales espacées, les statuts en chasse fixe. */
+:root[data-typo="app"] {
+  --font-weight-regular: 400;
+  /* Des arrondis plus serrés : à 16 px, un onglet ou un bouton de 32 px devenait une pilule. */
+  --radius: 0.625rem;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 600;
+}
+:root[data-typo="app"] body,
+:root[data-typo="app"] .font-sans,
+:root[data-typo="app"] .font-stat-number,
+:root[data-typo="app"] .font-bitcount {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-optical-sizing: auto;
+}
+:root[data-typo="app"] body {
+  font-weight: 400;
+  letter-spacing: -0.006em;
+}
+:root[data-typo="app"] .font-mono {
+  font-family: "Geist Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0;
+}
+
+/* Les corps : un cran au-dessus de l'ancienne échelle, plus dense. La planche
+   lit sa navigation à 15 px, ses libellés à 13-14, ses étiquettes à 12 ; nos
+   écrans descendaient à 10 et 11. Les jetons partagés montent d'un cran, et
+   les tailles écrites en dur dans les composants suivent. En dessous de 10 px
+   (axes, cases de heatmap), rien ne bouge : ce sont des repères, pas du texte. */
+:root[data-typo="app"] {
+  --text-10: 0.6875rem;
+  --text-11: 0.75rem;
+  --text-12: 0.8125rem;
+  --text-13: 0.875rem;
+  --text-14: 0.9375rem;
+  --fs-xs: 0.8125rem;
+  --lh-xs: 1.125rem;
+  --fs-sm: 0.9375rem;
+  --lh-sm: 1.375rem;
+}
+:root[data-typo="app"] .text-\[10px\] { font-size: 11px; }
+:root[data-typo="app"] .text-\[10\.5px\] { font-size: 11.5px; }
+:root[data-typo="app"] .text-\[11px\] { font-size: 12px; }
+:root[data-typo="app"] .text-\[11\.5px\] { font-size: 12.5px; }
+:root[data-typo="app"] .text-\[12px\] { font-size: 13px; }
+:root[data-typo="app"] .text-\[12\.5px\] { font-size: 13.5px; }
+:root[data-typo="app"] .text-\[13px\] { font-size: 14px; }
+:root[data-typo="app"] .text-\[13\.5px\] { font-size: 14.5px; }
+:root[data-typo="app"] .text-\[14px\] { font-size: 15px; }
+:root[data-typo="app"] .text-\[14\.5px\] { font-size: 15px; }
+
+/* Les graisses : 400 et 500, rien au-delà dans le corps de l'interface. */
+:root[data-typo="app"] .font-regular { font-weight: 400; }
+:root[data-typo="app"] .font-semibold { font-weight: 500; }
+:root[data-typo="app"] :is(.font-bold, .font-extrabold) { font-weight: 600; }
+:root[data-typo="app"] :is(h1, h2, h3) { font-weight: 500; }
+:root[data-typo="app"] :is(b, strong) { font-weight: 600; }
+
+/* L'interlettrage suit la taille : neutre en dessous de 16 px, puis de plus en
+   plus serré, comme le titre de page (22/28) et les grands chiffres. */
+:root[data-typo="app"] :is(h1, h2, h3, .tracking-tight) { letter-spacing: -0.014em; }
+:root[data-typo="app"] :is(
+  .text-lg, .text-xl, .text-\[17px\], .text-\[18px\], .text-\[20px\]
+) { letter-spacing: -0.012em; }
+:root[data-typo="app"] :is(
+  .text-2xl, .text-\[22px\], .text-\[24px\], .text-\[26px\]
+) { letter-spacing: -0.02em; }
+:root[data-typo="app"] :is(
+  .text-3xl, .text-4xl, .text-5xl, .text-6xl,
+  .text-\[28px\], .text-\[30px\], .text-\[32px\], .text-\[36px\], .text-\[40px\], .text-\[48px\]
+) { letter-spacing: -0.028em; line-height: 1.1; }
+
+/* Les chiffres : 500, alignés en colonne. */
+:root[data-typo="app"] :is(.font-stat-number, .font-bitcount) {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+:root[data-typo="app"] .tabular-nums { font-feature-settings: "tnum" 1, "calt" 1; }
+
+/* Les étiquettes en capitales (« MENU 3 », « AUTOMATIONS 12 ») : espacées,
+   jamais en gras. Un statut en chasse fixe garde son propre réglage. */
+:root[data-typo="app"] .uppercase:not(.font-mono) {
+  letter-spacing: 0.06em;
+  font-weight: 400;
+}
+
+/* Un statut d'exécution (« RUNNING », « SUCCEEDED ») : chasse fixe, capitales,
+   petit corps, posé sur une pastille teintée par le composant. */
+.status-mono {
+  font-family: "Geist Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* La page d'un agent (AgentHome) se règle sur la largeur qu'on lui laisse,
+   pas sur celle de la fenêtre : rail, panneau et volet de droite ouverts, elle
+   peut n'avoir que la moitié de l'écran. Les blocs passent alors à la ligne
+   au lieu de se serrer. */
+.ah-root { container-type: inline-size; }
+.ah-hero { grid-template-columns: minmax(0, 1fr); }
+.ah-avatar { display: none; }
+.ah-tiles { grid-template-columns: minmax(0, 1fr); }
+.ah-runs { grid-template-columns: minmax(0, 1fr); }
+@container (min-width: 620px) {
+  .ah-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (min-width: 760px) {
+  .ah-hero { grid-template-columns: 180px minmax(0, 1fr); }
+  .ah-avatar { display: flex; }
+  .ah-hero > .ah-tiles { grid-column: 1 / -1; }
+}
+.ah-main { grid-template-columns: minmax(0, 1fr); }
+.ah-pending ul { max-height: 420px; }
+@container (min-width: 1100px) {
+  .ah-runs { grid-template-columns: minmax(0, 1fr) 360px; }
+  /* Les demandes en attente prennent la colonne de droite, à la hauteur des
+     indicateurs et des tâches : leur liste défile dedans, elle n'allonge
+     pas la rangée. */
+  .ah-main { grid-template-columns: minmax(0, 1fr) 360px; }
+  .ah-main > .ah-pending { contain: size; }
+  .ah-pending ul { max-height: none; }
+}
+@container (min-width: 1360px) {
+  .ah-hero { grid-template-columns: 180px minmax(0, 1fr) minmax(0, 620px); }
+  .ah-hero > .ah-tiles { grid-column: auto; }
+}
+
+:is([data-skin="jet"], [data-skin="jet-dark"]) ::placeholder {
+  color: hsl(var(--fg-tertiary));
+}
+
 /* ── Le violet de marque dans le tableau de service ───────────────────────────
    Le site porte un violet, #4f1ad6 (257° 78 % 47 %), que l'app laissait au
    seuil : à l'intérieur, l'accent par défaut restait le bleu Hunar. Dans le
@@ -852,37 +1063,73 @@ body {
    `.sd-brand` est posée sur <html> par la coque du tableau, le temps qu'on y
    est : sur la coque elle-même, les menus et dialogues — rendus en portail,
    hors de son sous-arbre — seraient restés bleus. */
+/* DA « sobre » (12/11/2026) : un violet ADOUCI — 40 % de saturation au lieu
+   de 78 %. Le violet franc criait sur chaque bouton plein et chaque ligne
+   active ; adouci, il reste la couleur de la marque sans tirer l'œil hors du
+   contenu. Texte blanc sur les boutons pleins : 5,8:1. */
 :root.sd-brand:not([data-skin]) {
-  --primary: 257 78% 47%;
+  --primary: 256 40% 52%;
   --primary-foreground: 0 0% 100%;
-  --primary-soft: 257 78% 47%;        /* 8:1 sur blanc */
-  --ring: 257 78% 55%;
-  --accent-coral: 257 78% 47%;
-  --accent-teal: 257 80% 40%;         /* le cran de survol */
+  --primary-soft: 256 40% 48%;
+  --ring: 256 40% 60%;
+  --accent-coral: 256 40% 52%;
+  --accent-teal: 256 38% 45%;         /* le cran de survol */
 }
 :root.sd-brand.dark:not([data-skin]) {
-  /* Dessiné SUR le noir (liens, icônes), le violet de marque tomberait sous
-     3:1 : on l'ouvre, comme le bleu l'était (#5AA8FF). Les boutons pleins
-     gardent le violet franc, texte blanc. */
-  --primary-soft: 257 100% 78%;
-  --ring: 257 90% 68%;
-  /* Le fond (où se pose la barre) descend au noir franc ; la carte du
-     contenu, elle, est un noir plus doux, un cran AU-DESSUS du reste de l'app.
-     C'est l'écart entre les deux, pas la luminosité, qui la fait lire comme
-     posée — et un contenu trop noir collait au fond. */
-  --sd-ground: 0 0% 0%;
-  --background: 220 8% 5.5%;
+  /* Plus de noir pur ni de gris bleuté : des gris CHARBON neutres (teinte 0,
+     saturation 0), qui montent par crans réguliers du fond aux surfaces
+     flottantes. Le noir franc faisait trou ; ces gris se lisent comme une
+     matière, et c'est l'écart d'un plan à l'autre — pas le contraste — qui
+     les sépare.
+        fond 7,5 % → contenu et panneau 10 % → cartes 12,5 % → champs 14 %
+        → survol 16 % → filets 17 %. */
+  --sd-ground: 0 0% 4.5%;
+  --sd-panel: 0 0% 6.5%;
+  --background: 0 0% 6.5%;
+  --foreground: 0 0% 93%;
+  --card: 0 0% 8.5%;
+  --card-foreground: 0 0% 93%;
+  --popover: 0 0% 9.5%;
+  --popover-foreground: 0 0% 93%;
+  --catalog-stage: 0 0% 5.5%;
+  --secondary: 0 0% 10.5%;
+  --secondary-foreground: 0 0% 93%;
+  --muted: 0 0% 10.5%;
+  --muted-foreground: 0 0% 62%;
+  --accent: 0 0% 12.5%;
+  --accent-foreground: 0 0% 93%;
+  --surface-deep: 0 0% 8%;
+  --border: 0 0% 13.5%;
+  --input: 0 0% 15%;
+  --sidebar: 0 0% 4.5%;
+  --sidebar-foreground: 0 0% 72%;
+  --sidebar-accent: 0 0% 11%;
+  --text-secondary: 0 0% 80%;
+  --text-tertiary: 0 0% 62%;
+  --text-placeholder: 0 0% 48%;
+
+  /* Le violet, adouci lui aussi. Plein (boutons) : 54 % de luminosité, texte
+     blanc à 5:1. Dessiné sur le gris (liens, icônes actives) : un lilas
+     clair, pour rester au-dessus de 4,5:1 sans saturer. */
+  --primary: 256 34% 54%;
+  --primary-soft: 256 55% 80%;
+  --ring: 256 40% 66%;
+  --accent-coral: 256 34% 54%;
+  --accent-teal: 256 32% 48%;
 }
 :root.sd-brand.light:not([data-skin]) {
   /* En clair, le fond gris-bleu (93 %) pesait sous une barre qui n'a plus de
      surface propre : il remonte presque au blanc. La carte du contenu, blanche,
      reste lisible par son filet et son ombre plutôt que par un fond sombre. */
-  --sd-ground: 220 24% 96.5%;
+  /* 19/11/2026 : encore éclairci, à la demande — la barre et le rail se lisent
+     presque blancs, le contenu blanc s'en détache par son filet. */
+  --sd-ground: 220 14% 98.3%;
+  --sidebar: 220 14% 98.3%;
 
   /* La scène des cartes de collaborateurs : en sombre elle est noire, comme
      le fond ; en clair, un encre marine y découpait un trou au milieu de
      chaque carte blanche. Elle devient un voile du violet de marque. */
-  --catalog-stage: 257 60% 96.5%;
+  --catalog-stage: 256 24% 96.5%;
 
   /* Les textes et les onglets un cran plus affirmés. Les gris de la palette
      Plane (35 % / 45 %) sont faits pour un contenu qu'on lit toute la
@@ -894,6 +1141,7 @@ body {
   --text-placeholder: 220 10% 52%;
   --muted-foreground: 220 16% 36%;
 }
+
 
 /* Dotted canvas — the agent-in-dashboard page only. */
 .sd-agent-canvas {
@@ -1748,6 +1996,44 @@ html.mkt-no-scrollbar::-webkit-scrollbar {
 .chat-prose td { padding: 0.5em 0.8em; border-top: 1px solid hsl(var(--border) / 0.6); }
 .chat-prose tbody tr:nth-child(even) { background: hsl(var(--muted) / 0.35); }
 .chat-prose td + td, .chat-prose th + th { border-left: 1px solid hsl(var(--border) / 0.6); }
+
+/* Markdown tables of agents and the assistant (AgentMarkdown MdTable): framed,
+   scrollable, numeric columns right-aligned, sortable headers, copy / CSV bar. */
+.md-table {
+  margin: 0.9em 0; border: 1px solid hsl(var(--border)); border-radius: 10px;
+  overflow: hidden; background: hsl(var(--card) / 0.5);
+}
+.md-table-scroll { overflow-x: auto; scrollbar-width: thin; }
+.md-table table, .chat-prose .md-table table {
+  width: 100%; margin: 0; border: 0; border-radius: 0; border-collapse: collapse;
+  font-size: 0.9em; display: table;
+}
+.md-table th, .chat-prose .md-table th {
+  text-align: left; font-weight: 500; font-size: 0.86em; color: hsl(var(--muted-foreground));
+  padding: 0.55em 0.85em; background: hsl(var(--muted) / 0.45);
+  border-bottom: 1px solid hsl(var(--border)); white-space: nowrap;
+}
+.md-table td, .chat-prose .md-table td {
+  padding: 0.55em 0.85em; vertical-align: top; border-top: 1px solid hsl(var(--border) / 0.55);
+}
+.md-table td + td, .md-table th + th, .chat-prose .md-table td + td, .chat-prose .md-table th + th { border-left: 0; }
+.md-table tbody tr:first-child td { border-top: 0; }
+.md-table tbody tr:nth-child(even), .chat-prose .md-table tbody tr:nth-child(even) { background: transparent; }
+.md-table tbody tr:hover { background: hsl(var(--muted) / 0.3); }
+.md-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.md-table-sort {
+  display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit;
+  background: none; border: 0; padding: 0; cursor: pointer;
+}
+.md-table-sort:hover { color: hsl(var(--foreground)); }
+.md-table th.num .md-table-sort { flex-direction: row-reverse; }
+.md-table-bar {
+  display: flex; align-items: center; gap: 12px; padding: 0.4em 0.85em;
+  border-top: 1px solid hsl(var(--border) / 0.55); font-size: 11px; color: hsl(var(--muted-foreground));
+}
+.md-table-bar span { margin-right: auto; }
+.md-table-bar button { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; }
+.md-table-bar button:hover { color: hsl(var(--foreground)); }
 
 /* ── Document previews (Knowledge collections workspace) ─────────────────── */
 /* docx-preview lays out Word-like pages; center them and give the wrapper room. */

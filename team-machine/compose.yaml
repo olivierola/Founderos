@@ -1,0 +1,44 @@
+# La machine des équipes d'agents, seule (poste de dev, Docker Desktop).
+#
+#   $env:TEAM_MACHINE_TOKEN = "<32+ caractères aléatoires>"   # le même que le secret Supabase
+#   docker compose -f team-machine/compose.yaml up -d --build
+#   docker exec team-machine node /opt/team-machine/src/selftest.mjs
+#
+# Puis exposer :8091 à la plateforme (tunnel ngrok en dev) — voir docs/team-machine.md.
+
+name: founderos-team-machine
+
+services:
+  team-machine:
+    build: .
+    image: founderos/team-machine:0.3.0
+    container_name: team-machine
+    restart: unless-stopped
+    environment:
+      MACHINE_TOKEN: ${TEAM_MACHINE_TOKEN:?TEAM_MACHINE_TOKEN est requis (32 caractères au moins)}
+      # 1 : les agents peuvent demander des paquets apt (installés pour toute la machine).
+      MACHINE_ALLOW_APT: ${TEAM_MACHINE_ALLOW_APT:-0}
+      MACHINE_MAX_PROCS: ${TEAM_MACHINE_MAX_PROCS:-512}
+      MACHINE_JOB_MAX_HOURS: ${TEAM_MACHINE_JOB_MAX_HOURS:-12}
+    ports:
+      - "8091:8080"
+    volumes:
+      # Volumes NOMMÉS : un dossier Windows monté (drvfs) ignore chown et les
+      # droits Unix, et l'isolement entre agents tomberait avec.
+      - team-machine-teams:/teams
+      - team-machine-state:/var/lib/team-machine
+    # Le superviseur n'a que ce qu'il lui faut : créer des comptes, attribuer
+    # des dossiers, changer d'identité pour lancer un agent, arrêter ses processus.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, DAC_READ_SEARCH, FOWNER, FSETID, SETUID, SETGID, SETPCAP, KILL]
+    security_opt:
+      - no-new-privileges:true
+    # Chromium écrit dans /dev/shm (64 Mo par défaut dans un conteneur).
+    shm_size: "1gb"
+    pids_limit: 4096
+    mem_limit: 8g
+    cpus: 4
+
+volumes:
+  team-machine-teams:
+  team-machine-state:

@@ -13,6 +13,8 @@ import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
 import { CoachHandoff } from "@/features/auth/CoachHandoff";
 import { cn } from "@/lib/utils";
 import { useLockDocumentScroll } from "@/hooks/useLockDocumentScroll";
+import { useBrandTheme } from "@/hooks/useBrandTheme";
+import { usePressFeedback } from "@/hooks/usePressFeedback";
 
 interface ShellNavCtx {
   mobileOpen: boolean;
@@ -32,6 +34,10 @@ export function useShellNav() {
 
 export function AppShell() {
   useLockDocumentScroll();
+  // Chaque bouton s'enfonce sous le doigt (voir usePressFeedback).
+  usePressFeedback();
+  // La même DA que les tableaux de service : violet adouci, gris charbon.
+  useBrandTheme();
   const { loading, notFound } = useCurrentContext();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [primaryExpanded, setPrimaryExpanded] = useState(false);
@@ -58,17 +64,21 @@ export function AppShell() {
     <ShellNavContext.Provider value={{ mobileOpen, setMobileOpen, primaryExpanded, setPrimaryExpanded }}>
       <PermissionsProvider>
       <AssistantProvider>
-      {/* Navy chrome — the site's dark band (#0B1220). The assistant is NOT part of this row: it floats
-          above the app as a full-height right-hand modal, so opening it never
-          reflows the page it is talking about. */}
-      <div className="flex h-screen w-full overflow-hidden bg-[#0b1220]">
+      {/* La DA des tableaux de service (ServiceDashboardShell) : un FOND
+          (--sd-ground) sur lequel la navigation est posée sans cadre, et le
+          contenu sur une carte arrondie à côté. Plus de bandeau marine : il
+          faisait de l'AI Workforce une autre application que les services
+          qu'on ouvre depuis lui. L'assistant est dans la rangée du contenu : ouvert,
+          il en prend la colonne de droite, comme dans un service. */}
+      <div className="flex h-screen w-full overflow-hidden bg-[hsl(var(--sd-ground))] text-foreground">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopbarTabsProvider>
         <TopbarBreadcrumbProvider>
           <Topbar />
 
-          <div className="flex flex-1 overflow-hidden bg-[#0b1220]">
-            {/* Mobile drawer (fixed, above the rounded block) */}
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            {/* Mobile drawer (fixed, above the content card). Les barres n'ont
+                pas de fond propre : le tiroir porte celui de la coque. */}
             {mobileOpen && (
               <>
                 <button
@@ -76,37 +86,36 @@ export function AppShell() {
                   onClick={() => setMobileOpen(false)}
                   className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
                 />
-                <div className="fixed inset-y-0 left-0 z-50 flex md:hidden">
+                <div className="fixed inset-y-0 left-0 z-50 flex bg-[hsl(var(--sd-ground))] pt-2 shadow-xl md:hidden">
                   <PrimarySidebar />
                   <SecondarySidebar />
                 </div>
               </>
             )}
 
-            {/* Everything under the navbar is ONE rounded panel (sidebars +
-                content) floating on the soft-black chrome — the "arrondi". */}
-            <div className="flex flex-1 overflow-hidden rounded-t-2xl border-t border-white/10 bg-background">
-              {/* Desktop sidebars — the same two everywhere, administration included. */}
-              <div className="hidden md:flex">
-                <PrimarySidebar />
-                <SecondarySidebar />
-              </div>
+            {/* Desktop sidebars — posées sur le fond, comme celle d'un service. */}
+            <div className="hidden md:flex">
+              <PrimarySidebar />
+              <SecondarySidebar />
+            </div>
 
-              <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                {/* Page sub-tabs (e.g. agent Settings/Personnaliser sections) — a
-                    light bar that starts after the sidebar, not a full-width dark
-                    navbar strip. Empty when the page publishes none. */}
+            {/* Le contenu : UNE carte arrondie, sous la barre du haut, sans
+                marge en haut — c'est la barre qui donne l'air. */}
+            <div className="flex min-w-0 flex-1 gap-2 pb-2 pr-2 pl-2 md:pl-0">
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-background">
+                {/* Page sub-tabs (e.g. agent Settings/Personnaliser sections) —
+                    the top strip of the card. Empty when the page publishes none. */}
                 <ContentSubTabs />
                 {/* Pages that render a large interactive canvas need the full content
                     width with no horizontal padding and no max-width cap. The pages
                     themselves still scroll/lay out their inner content, so we just
                     relax the wrapper here. */}
                 {isFullbleedRoute(pathname) ? (
-                  <main className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-background">
+                  <main className="flex flex-1 flex-col overflow-hidden bg-background">
                     <Outlet />
                   </main>
                 ) : (
-                  <main className="flex-1 overflow-y-auto bg-white px-3 py-4 dark:bg-background sm:px-4 sm:py-6 lg:px-6">
+                  <main className="flex-1 overflow-y-auto bg-background px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
                     <div className={cn("mx-auto w-full", isWideRoute(pathname) ? "max-w-[1600px]" : "max-w-6xl")}>
                       {/* SaaS Analytics renders its in-group pages as compact tabs,
                           aligned with the page content; null for other modules. */}
@@ -116,15 +125,15 @@ export function AppShell() {
                   </main>
                 )}
               </div>
+              {/* L'assistant partage la zone de contenu : la page se divise,
+                  rien ne la recouvre. */}
+              <AssistantPanel variant="docked" />
             </div>
           </div>
         </TopbarBreadcrumbProvider>
         </TopbarTabsProvider>
         </div>
 
-        {/* Global assistant — floating full-height panel overlaying the right
-            side of the shell (topbar included) when open. */}
-        <AssistantPanel />
       </div>
       </AssistantProvider>
       </PermissionsProvider>
@@ -139,7 +148,9 @@ function ContentSubTabs() {
   const subTabs = useTopbarTabs();
   if (!subTabs || subTabs.tabs.length === 0) return null;
   return (
-    <div className="scrollbar-hide flex h-14 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-background px-3 lg:px-5">
+    // Les onglets d'une page, en tête de la carte — le même dessin que les
+    // onglets de la barre d'un tableau de service (Live, agents ouverts).
+    <div className="scrollbar-hide flex h-12 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/60 bg-background px-2.5 lg:px-4">
       {subTabs.tabs.map((t) => {
         const Icon = t.icon;
         const active = t.key === subTabs.activeKey;
@@ -148,10 +159,10 @@ function ContentSubTabs() {
             key={t.key}
             onClick={() => subTabs.onSelect(t.key)}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors",
+              "flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] transition-colors",
               active
-                ? "bg-secondary font-medium text-foreground"
-                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                ? "bg-muted/80 font-medium text-foreground"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
             )}
           >
             {Icon && <Icon className="h-3.5 w-3.5" />}

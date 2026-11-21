@@ -9,6 +9,7 @@ import { ToastProvider } from "@/components/ToastProvider";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { applySkinNow } from "@/lib/useSkin";
 import { captureAttribution } from "@/lib/attribution";
+import { bindAppTypography } from "@/lib/appTypography";
 import "@/styles/globals.css";
 
 // Avant le premier rendu, pas dans un effet : entre le rendu initial et
@@ -18,6 +19,9 @@ applySkinNow();
 // Where this visitor came from (widget « Powered by », campaigns) — read once,
 // before the router rewrites the URL.
 captureAttribution();
+// La typographie de l'application, de la sélection des organisations aux
+// tableaux de service (voir appTypography).
+bindAppTypography(router);
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, refetchOnWindowFocus: false } },

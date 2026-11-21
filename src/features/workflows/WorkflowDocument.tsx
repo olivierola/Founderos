@@ -31,6 +31,7 @@ import {
   BLOCK_BY_KIND, blockColorClass, blockSummary, isBlockEmpty,
   KNOWN_TOOLS, DELIVERABLE_FORMATS,
 } from "./blocks";
+import { groupKinds } from "./block-groups";
 // Le nom et la teinte d'un bloc vivent à part depuis qu'il y a deux vues : la
 // pastille dans une phrase et la carte sur le canevas doivent dire la même
 // chose du même bloc.
@@ -47,7 +48,7 @@ import { RunConsole, useRunLog, readPayload } from "./RunConsole";
 import type { Ctx } from "./editor-ctx";
 import { roleOf } from "./graph";
 import { BlockForm } from "./BlockForm";
-import { EventTriggers } from "./EventTriggers";
+import { TriggerSettings } from "./TriggerSettings";
 import { RichLine, chipToken, type ChipInfo, type SlashOption } from "./RichLine";
 import {
   buildOutline, attachedTo, insertBlock, insertAttached, removeBlock, moveBlock,
@@ -60,8 +61,7 @@ import {
   fetchLatestRun, fetchRunSteps, syncSchedule,
   WORKFLOW_STATUS_META, WORKFLOW_KIND_META, chipIdsIn, contextSourceOf,
   codeToolOf, outputVarOf, varNamesOf,
-  nextCronRun, buildCron, parseCron, describeCron, parseNaturalCron,
-  DEFAULT_CRON_SPEC, CRON_FREQUENCIES, CRON_WEEKDAYS, type CronSpec,
+  describeCron,
   type BlockKind, type ContextRef, type RunStep, type WorkflowRun, type WorkflowStatus, type WorkflowKind,
 } from "./model";
 import { useToast } from "@/components/ToastProvider";
@@ -635,9 +635,18 @@ function InsertPoint({ ctx, at, always }: {
         lit ? "bg-primary/25" : "bg-transparent group-hover/insert:bg-border",
       )} />
       <Menu open={open} onClose={() => setOpen(false)}>
-        {kindsFor(ctx.kind).map((k) => (
-          <MenuRow key={k} kind={k} onClick={() => { ctx.apply((g) => insertBlock(g, k, at).graph); setOpen(false); }} />
-        ))}
+        <div className="max-h-[min(26rem,60vh)] overflow-y-auto overscroll-contain">
+          {groupKinds(kindsFor(ctx.kind)).map((g, gi) => (
+            <div key={g.id} className={cn(gi > 0 && "mt-1 border-t border-border/40 pt-1")}>
+              <div className="px-3 pb-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                {g.label}
+              </div>
+              {g.kinds.map((k) => (
+                <MenuRow key={k} kind={k} onClick={() => { ctx.apply((gr) => insertBlock(gr, k, at).graph); setOpen(false); }} />
+              ))}
+            </div>
+          ))}
+        </div>
         {canJump && (
           <div className="mt-1 border-t border-border/60 pt-1">
             {ctx.sections.map((s) => (
@@ -998,230 +1007,14 @@ function StaleSchedule({ trigger, workflow, ctx, onChanged }: {
   );
 }
 
-const MODES: Array<{ id: string; label: string; hint: string }> = [
-  { id: "manual", label: "À la main", hint: "Lancé depuis cet écran" },
-  { id: "schedule", label: "À heure fixe", hint: "Expression cron" },
-  { id: "webhook", label: "Sur appel entrant", hint: "Un POST déclenche le run" },
-];
-
-/**
- * Ce qui met la procédure en route.
- *
- * Deux mécanismes bien distincts, et c'est pour ça qu'ils sont côte à côte : le
- * MODE (à la main, à heure fixe, sur appel entrant) est porté par le bloc
- * déclencheur ; les ÉVÉNEMENTS D'OUTILS (un mail arrive, un message est posté)
- * sont de vrais abonnements souscrits chez le fournisseur, avec leur filtre et
- * leur journal de réception. Les deux s'ajoutent : une procédure peut être
- * lançable à la main ET se réveiller sur un mail.
- */
+/** Ce qui met l'automatisation en route : manuel, programmé ou webhook, plus
+ *  les événements d'outils. Le réglage lui-même est partagé avec le panneau du
+ *  canevas (TriggerSettings), pour que les deux vues proposent la même chose. */
 function Triggers({ trigger, ctx }: { trigger: Node; ctx: Ctx }) {
-  const d = (trigger.data ?? {}) as Record<string, unknown>;
-  const mode = String(d.mode ?? "manual");
-
   return (
     <div className="mt-5">
-      <h3 className="mb-2 text-[13px] font-semibold text-muted-foreground">Déclencheurs</h3>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {MODES.map((m) => (
-          <button
-            key={m.id} type="button" title={m.hint}
-            onClick={() => ctx.apply((g) => patchBlock(g, trigger.id, {
-              mode: m.id,
-              // Sans expression, « à heure fixe » ne déclenche rien du tout.
-              ...(m.id === "schedule" && !String(d.schedule ?? "").trim()
-                ? { schedule: DEFAULT_CRON_SPEC.expression } : {}),
-            }))}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition-colors",
-              mode === m.id ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "border-border text-muted-foreground hover:bg-muted",
-            )}
-          >
-            {mode === m.id && <Play className="h-3 w-3" />}
-            {m.label}
-          </button>
-        ))}
-      </div>
-
-      {mode === "schedule" && (
-        <CronPicker
-          value={String(d.schedule ?? "")}
-          onChange={(expr) => ctx.apply((g) => patchBlock(g, trigger.id, { schedule: expr }))}
-        />
-      )}
-
-      {/* Le mode « événement » du bloc n'a jamais rien souscrit : il n'écrit
-          qu'une ligne de frontmatter. Le dire, plutôt que de laisser une
-          procédure attendre un déclenchement qui ne viendra pas. */}
-      {mode === "event" && (
-        <p className="mt-2 rounded-lg bg-amber-500/5 p-2 text-[11px] leading-snug text-amber-600 dark:text-amber-400">
-          Cette procédure est réglée sur un événement nommé « {String(d.event ?? "")} », qui n'est que documentaire.
-          Choisissez un mode ci-dessus et ajoutez l'événement réel juste en dessous.
-        </p>
-      )}
-
-      {ctx.workspaceId && ctx.projectId && (
-        <div className="mt-3">
-          <EventTriggers workflowId={ctx.workflowId} workspaceId={ctx.workspaceId} projectId={ctx.projectId} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Planifier sans écrire de cron.
- *
- * Le champ était l'expression brute. Elle se stocke très bien et ne se lit pas :
- * `0 9 * * 1` ne dit ni le jour ni l'heure à qui ne connaît pas la syntaxe, et
- * une faute de frappe donnait une automatisation qui ne partait jamais sans que
- * rien ne le signale.
- *
- * Donc : on choisit une fréquence, une heure, un jour. Ce qui est ENREGISTRÉ
- * reste une expression cron — le format que le planificateur lit déjà, et que
- * quelqu'un qui la connaît peut toujours saisir via « Expression cron ».
- *
- * Deux choses sont montrées en permanence, parce que ce sont les deux erreurs
- * qu'on fait : l'heure est en UTC (l'équivalent local est affiché à côté), et
- * la prochaine échéance réelle — la seule preuve que l'expression fait ce qu'on
- * croit.
- */
-/**
- * Dire quand, en français.
- *
- * Les pastilles couvrent le courant ; elles ne savent pas dire « du lundi au
- * vendredi à 18 h » ni « toutes les 15 minutes », et il ne restait alors que
- * l'expression brute — c'est-à-dire rien, pour qui ne connaît pas la syntaxe.
- *
- * L'application se fait à ⏎ ou à la sortie du champ, jamais à la frappe : en
- * cours de saisie, « tous les jours » se lit avant « tous les jours ouvrés » et
- * enregistrerait une planification qu'on n'a pas fini d'écrire. La ligne de
- * dessous montre ce que ça donnera, avant.
- */
-function NaturalCron({ onChange }: { onChange: (expr: string) => void }) {
-  const [text, setText] = useState("");
-  const parsed = useMemo(() => (text.trim() ? parseNaturalCron(text) : null), [text]);
-
-  const commit = () => {
-    if (!parsed) return;
-    onChange(parsed);
-    setText("");
-  };
-
-  return (
-    <div>
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
-        onBlur={commit}
-        placeholder="Dites quand : « tous les lundis à 9h », « en semaine à 18h », « toutes les 15 minutes »…"
-        className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-[13px] outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
-      />
-      {text.trim() && (
-        <p className={cn("mt-1 text-[11px]", parsed ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")}>
-          {parsed
-            ? <>→ {describeCron(parsed)} · ⏎ pour appliquer</>
-            : "Pas compris, reformulez, ou réglez avec les boutons ci-dessous."}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function CronPicker({ value, onChange }: { value: string; onChange: (expr: string) => void }) {
-  const spec = useMemo(() => parseCron(value || DEFAULT_CRON_SPEC.expression), [value]);
-  const set = (patch: Partial<CronSpec>) => {
-    const next = { ...spec, ...patch };
-    onChange(next.frequency === "custom" ? next.expression : buildCron(next));
-  };
-
-  const next = useMemo(() => nextCronRun(value), [value]);
-  const valid = !!next;
-
-  return (
-    <div className="mt-2.5 space-y-2.5 rounded-xl border border-border bg-muted/20 p-3">
-      <NaturalCron onChange={onChange} />
-      <div className="flex flex-wrap items-center gap-1.5">
-        {CRON_FREQUENCIES.map((f) => (
-          <button
-            key={f.id} type="button"
-            onClick={() => set(f.id === "custom" ? { frequency: "custom", expression: value || buildCron(spec) } : { frequency: f.id })}
-            className={cn(
-              "rounded-full border px-2.5 py-1 text-[12px] transition-colors",
-              spec.frequency === f.id
-                ? "border-primary/50 bg-primary/10 text-primary"
-                : "border-border text-muted-foreground hover:bg-muted",
-            )}
-          >{f.label}</button>
-        ))}
-      </div>
-
-      {spec.frequency === "custom" ? (
-        <input
-          value={spec.expression}
-          onChange={(e) => set({ expression: e.target.value })}
-          placeholder="0 9 * * 1"
-          spellCheck={false}
-          className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-[13px] outline-none focus:border-primary/50"
-        />
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          {spec.frequency === "weekly" && (
-            <div className="flex flex-wrap items-center gap-1">
-              {CRON_WEEKDAYS.map((w) => (
-                <button
-                  key={w.id} type="button" title={w.label}
-                  onClick={() => set({ weekday: w.id })}
-                  className={cn(
-                    "h-7 w-9 rounded-lg text-[12px] capitalize transition-colors",
-                    spec.weekday === w.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70",
-                  )}
-                >{w.short}</button>
-              ))}
-            </div>
-          )}
-          {spec.frequency === "monthly" && (
-            <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-              le
-              <input
-                type="number" min={1} max={28}
-                value={spec.day}
-                onChange={(e) => set({ day: Number(e.target.value) })}
-                className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-center text-[13px] tabular-nums outline-none focus:border-primary/50"
-              />
-            </label>
-          )}
-          <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-            {spec.frequency === "hourly" ? "à la minute" : "à"}
-            <input
-              type="time"
-              value={`${String(spec.hour).padStart(2, "0")}:${String(spec.minute).padStart(2, "0")}`}
-              onChange={(e) => {
-                const [h, m] = e.target.value.split(":").map(Number);
-                set({ hour: Number.isFinite(h) ? h : spec.hour, minute: Number.isFinite(m) ? m : spec.minute });
-              }}
-              className="rounded-lg border border-border bg-background px-2 py-1 text-[13px] tabular-nums outline-none focus:border-primary/50"
-            />
-            <span className="text-muted-foreground/70">UTC</span>
-          </label>
-        </div>
-      )}
-
-      <p className={cn("text-[11px] leading-relaxed", valid ? "text-muted-foreground" : "text-amber-500")}>
-        {valid ? (
-          <>
-            {describeCron(value)} · prochain lancement{" "}
-            <span className="font-medium text-foreground">
-              {next!.toLocaleString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}
-            </span>{" "}
-            <span className="text-muted-foreground/70">(votre heure)</span>
-          </>
-        ) : (
-          "Cette expression n'est pas valide, rien ne se déclenchera."
-        )}
-      </p>
+      <h3 className="mb-2 text-[13px] font-semibold text-muted-foreground">Déclencheur</h3>
+      <TriggerSettings trigger={trigger} ctx={ctx} />
     </div>
   );
 }

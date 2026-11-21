@@ -116,6 +116,71 @@ export interface PjProject {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Ce que l'humain demande (0295) : le brief complet, les livrables attendus. */
+  brief: string | null;
+  deliverables: MissionDeliverable[] | null;
+  /** Le cadrage par l'équipe d'agents (0295). */
+  planning_status: PlanningStatus;
+  planning_step: string | null;
+  planning_teams: string[] | null;
+  planning_lead_agent_id: string | null;
+  planning_summary: string | null;
+  planning_autostart: boolean | null;
+  planning_error: string | null;
+  planning_updated_at: string | null;
+}
+
+export type PlanningStatus = "none" | "scoping" | "questions" | "planning" | "planned" | "executing" | "failed";
+export interface MissionDeliverable { title: string; description?: string }
+
+export interface MissionDiscussionEntry {
+  id: string;
+  agent_id: string | null;
+  author_user: string | null;
+  kind: "analysis" | "challenge" | "proposal" | "question" | "answer" | "plan" | "assignment" | "decision" | "note";
+  content: string;
+  created_at: string;
+}
+
+export interface MissionQuestion {
+  id: string;
+  asked_by_agent: string | null;
+  question: string;
+  why: string | null;
+  suggestion: string | null;
+  status: "open" | "answered" | "dismissed";
+  answer: string | null;
+  created_at: string;
+}
+
+export async function fetchMissionDiscussion(missionId: string): Promise<MissionDiscussionEntry[]> {
+  const { data, error } = await supabase.from("pj_mission_discussion")
+    .select("id, agent_id, author_user, kind, content, created_at")
+    .eq("pj_project_id", missionId).order("created_at", { ascending: true }).limit(200);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as MissionDiscussionEntry[];
+}
+
+export async function fetchMissionQuestions(missionId: string): Promise<MissionQuestion[]> {
+  const { data, error } = await supabase.from("pj_mission_questions")
+    .select("id, asked_by_agent, question, why, suggestion, status, answer, created_at")
+    .eq("pj_project_id", missionId).order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as MissionQuestion[];
+}
+
+export async function answerMissionQuestion(id: string, answer: string, userId: string | null): Promise<void> {
+  const { error } = await supabase.from("pj_mission_questions").update({
+    answer, status: "answered", answered_by: userId, answered_at: new Date().toISOString(),
+  }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Les gestes humains du cadrage : confier, répondre, relancer, démarrer. */
+export async function missionAction(
+  missionId: string, action: "mission_kickoff" | "mission_resume" | "mission_launch" | "mission_retry", extra: Record<string, unknown> = {},
+): Promise<{ ok: boolean; armed?: number }> {
+  return await callEdge("internal-agent-a2a", { action, mission_id: missionId, ...extra });
 }
 
 export interface PjState {
@@ -362,6 +427,10 @@ export async function createProject(input: {
   /** 2 = ouvert à l'espace (défaut), 0 = privé. Valeurs de Plane. */
   network?: 0 | 2;
   createdBy: string | null;
+  brief?: string;
+  deliverables?: MissionDeliverable[];
+  planningTeams?: string[];
+  planningAutostart?: boolean;
 }): Promise<PjProject> {
   const { data, error } = await supabase.from("pj_projects").insert({
     workspace_id: input.workspaceId,
@@ -373,6 +442,12 @@ export async function createProject(input: {
     logo_props: input.logo_props ?? {},
     network: input.network ?? 2,
     created_by: input.createdBy,
+    ...(input.brief ? {
+      brief: input.brief,
+      deliverables: input.deliverables ?? [],
+      planning_teams: input.planningTeams ?? [],
+      planning_autostart: input.planningAutostart ?? false,
+    } : {}),
   }).select(PROJECT_COLS).single();
   if (error) throw new Error(error.message);
   // Le créateur est membre de son projet : sans cette ligne il n'apparaît pas

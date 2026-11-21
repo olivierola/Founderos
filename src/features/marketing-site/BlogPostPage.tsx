@@ -232,7 +232,7 @@ export function BlogPostPage() {
             <div className="mt-16 border-t pt-8" style={{ borderColor: RULE }}>
               <p className="text-[15px] leading-[1.6]" style={{ color: GREY }}>
                 Written by <span style={{ color: INK }}>{post.author.name}</span>, {post.author.role} at
-                Anduran. Questions about anything here?{" "}
+                Agent company. Questions about anything here?{" "}
                 <Link
                   to="/contact"
                   className="underline underline-offset-4"

@@ -1,7 +1,9 @@
 // internal-agent-approve — human-in-the-loop decision endpoint for autonomous
 // agent actions.
 //
-// Body: { approval_id, decision: "approve" | "reject" }
+// Body: { approval_id, decision: "approve" | "reject", note? }
+//   note — refus avec consigne : ce que l'agent doit faire à la place. Il la
+//   reçoit comme résultat de l'outil refusé (rejectionResult).
 //
 // When an agent calls a tool flagged requires_approval, the worker records the
 // intended action in internal_agent_approvals instead of executing it. This
@@ -48,6 +50,7 @@ async function decidePolicyApproval(
   userId: string,
   decision: "approve" | "approve_all" | "reject",
   source: string | undefined,
+  note?: string | null,
 ): Promise<Response> {
   const isMcp = approval.action_kind === "mcp_tool";
   const p = approval.payload as Record<string, string>;
@@ -98,7 +101,7 @@ async function decidePolicyApproval(
   const where = source === "prd" || source === "approvals" ? "dans « Approbations »" : "dans l'application";
 
   if (decision === "reject") {
-    const outcome = await applyApprovalDecision(admin, approval as never, "reject", userId);
+    const outcome = await applyApprovalDecision(admin, approval as never, "reject", userId, undefined, undefined, note);
     event("rejected", gate.approver?.sub ?? null);
     await resumeAfterLateDecision(admin, approval as never, "reject", outcome, where);
     return jsonResponse({ ok: true, status: "rejected" });
@@ -162,6 +165,7 @@ async function decideMcpApproval(
   userId: string,
   decision: "approve" | "approve_all" | "reject",
   source: string | undefined,
+  note?: string | null,
 ): Promise<Response> {
   const gate = await gateMcpDecision(approval, {
     userId,
@@ -215,7 +219,7 @@ async function decideMcpApproval(
     };
   }
 
-  const outcome = await applyApprovalDecision(admin, approval as never, decision, userId, undefined, exec);
+  const outcome = await applyApprovalDecision(admin, approval as never, decision, userId, undefined, exec, note);
   if (outcome.status === "already_decided" || outcome.status === "refused") {
     return jsonResponse({ error: outcome.detail }, { status: outcome.status === "refused" ? 403 : 409 });
   }
@@ -240,12 +244,15 @@ Deno.serve(async (req) => {
     if (userErr || !userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
     const userId = userData.user.id;
 
-    const { approval_id, decision, source } = (await req.json()) as {
+    const { approval_id, decision, source, note: rawNote } = (await req.json()) as {
       approval_id?: string;
       decision?: string;
       /** Where the click happened, told to the collaborator when it resumes. */
       source?: string;
+      /** Refus avec consigne (ignorée sur une approbation). */
+      note?: string;
     };
+    const note = decision === "reject" && typeof rawNote === "string" ? rawNote.trim().slice(0, 2000) || null : null;
     if (!approval_id || (decision !== "approve" && decision !== "approve_all" && decision !== "reject")) {
       return jsonResponse({ error: "approval_id and decision (approve|approve_all|reject) required" }, { status: 400 });
     }
@@ -264,13 +271,13 @@ Deno.serve(async (req) => {
     // Demande soumise à une règle d'approbation (G3) : ses approbateurs votent,
     // jamais la personne au nom de qui l'agent agissait.
     if (approval.quorum != null) {
-      return await decidePolicyApproval(admin, approval as PolicyApprovalRow & ApprovalRow, userId, decision, source);
+      return await decidePolicyApproval(admin, approval as PolicyApprovalRow & ApprovalRow, userId, decision, source, note);
     }
 
     // Action en production d'avant G3 (D6) : d'autres règles que celles d'un
     // agent. Ce n'est pas son créateur qui tranche, mais un approbateur.
     if (approval.action_kind === "mcp_tool") {
-      return await decideMcpApproval(admin, approval as McpApprovalRow & ApprovalRow, userId, decision, source);
+      return await decideMcpApproval(admin, approval as McpApprovalRow & ApprovalRow, userId, decision, source, note);
     }
 
     // Decision rights: the agent's creator or an editor member.
@@ -297,7 +304,7 @@ Deno.serve(async (req) => {
     // (channel-approval.ts) : une demande validée depuis la messagerie doit
     // s'exécuter exactement comme une demande validée ici.
     const outcome = await applyApprovalDecision(
-      admin, approval as never, decision as "approve" | "approve_all" | "reject", userId,
+      admin, approval as never, decision as "approve" | "approve_all" | "reject", userId, undefined, undefined, note,
     );
     if (outcome.status === "already_decided") {
       return jsonResponse({ error: outcome.detail }, { status: 409 });

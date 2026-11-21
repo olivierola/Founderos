@@ -1,0 +1,18 @@
+{
+  "name": "founderos-team-machine",
+  "private": true,
+  "version": "0.3.0",
+  "description": "Machine partagée d'une équipe d'agents : un utilisateur Linux par agent, un groupe par dossier protégé, un navigateur par agent.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test \"src/**/*.test.mjs\"",
+    "selftest": "node src/selftest.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.62.1"
+  }
+}

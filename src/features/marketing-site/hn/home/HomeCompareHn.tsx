@@ -32,7 +32,7 @@ export function HomeCompareHn() {
             Any Cloud collaborator can demo well. What makes one safe to run on your real systems is everything around it.
           </P>
           <div className="mt-8 border-t border-[#e5e5e5] pt-6 text-[16px] leading-[1.4] text-[#5c5c66]">
-            <span className="font-medium text-[#4f1ad6]">3 of 3</span> guarantees on every Anduran Cloud collaborator: it reads,
+            <span className="font-medium text-[#4f1ad6]">3 of 3</span> guarantees on every Agent company Cloud collaborator: it reads,
             it acts, and nothing it writes leaves without you.
           </div>
         </div>

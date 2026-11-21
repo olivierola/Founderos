@@ -6,7 +6,7 @@ import {
   PlusIcon as Plus,
   SealCheckIcon as SealCheck,
 } from "@phosphor-icons/react";
-import { Logo } from "@/components/Logo";
+import { Logo, Wordmark } from "@/components/Logo";
 import { cn } from "@/lib/utils";
 import "./hn.css";
 
@@ -148,35 +148,27 @@ export function Band({
 }
 
 /* ── The brand lockup ───────────────────────────────────────────────────────
-   Hunar's treatment: the mark and a wide, geometric uppercase wordmark, both
-   in the same near-black, the full stop included. Their lettering is custom
-   artwork; ours is set in Audiowide, the closest open font (rounded square
-   corners, wide caps). Sized so the lockup is ~28px tall, like theirs. */
+   The mark and the « Agent company » wordmark (Inter, see Logo.tsx), both in
+   the same ink. Sized so the lockup is ~28px tall. */
 export function Brand({ tone = "ink", size = "md" }: { tone?: "ink" | "white"; size?: "md" | "lg" }) {
   const color = tone === "white" ? "#ffffff" : "#0d0d0d";
   return (
     <span className="flex items-center gap-2.5" style={{ color }}>
       <Logo size={size === "lg" ? 26 : 22} color={color} />
-      <span
-        className={cn("leading-none tracking-[0.02em]", size === "lg" ? "text-[24px]" : "text-[21px]")}
-        style={{ fontFamily: "'Audiowide', 'Geist', sans-serif", fontWeight: 400 }}
-      >
-        ANDURAN.
-      </span>
+      <Wordmark size={size === "lg" ? 24 : 21} />
     </span>
   );
 }
 
-/** The product lockup for the bubbles: the mark, ANDURAN and the product
-    word, all in Audiowide — the navbar's lettering. */
+/** The product lockup for the bubbles: the mark, the wordmark and the
+    product word, in the navbar's lettering. */
 export function ProductMark({ word, tone = "white", size = 20 }: { word: string; tone?: "white" | "ink"; size?: number }) {
   const color = tone === "white" ? "#ffffff" : "#0d0d0d";
   return (
     <span className="inline-flex items-center gap-2" style={{ color }}>
       <Logo size={size} color={color} />
-      <span className="leading-none tracking-[0.02em]" style={{ fontFamily: "'Audiowide', 'Geist', sans-serif", fontSize: size }}>
-        ANDURAN<span className="opacity-60"> {word}</span>
-      </span>
+      <Wordmark size={size} />
+      <span className="leading-none opacity-60" style={{ fontSize: size, letterSpacing: "-0.03em" }}>{word}</span>
     </span>
   );
 }

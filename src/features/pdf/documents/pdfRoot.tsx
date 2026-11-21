@@ -67,7 +67,7 @@ export function buildPdf(spec: PdfSpec, options: PdfRenderOptions = {}): { eleme
       footer,
       backgroundColor: c.background,
       lang: locale.split("-")[0],
-      metadata: { title, creator: "FounderOS · pdfcn" },
+      metadata: { title, creator: "Agent company · pdfcn" },
       outline: spec.kind === "document",
       // A glyph the embedded font lacks must not fail a whole export; it prints
       // as the font's placeholder box instead, which a reader can report.

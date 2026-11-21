@@ -23,7 +23,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { callAi, safeParseJson, type ChatMessage } from "./ai.ts";
-import { classifyTier, modelForTier, resolveProvider, cheapProvider } from "./model-router.ts";
+import { classifyTier, modelForTier, resolveProvider, cheapModel, cheapProvider } from "./model-router.ts";
 import {
   buildInternalToolset, touchAgentMemories, type AgentToolRow, type InternalToolContext,
 } from "./internal-agent-tools.ts";
@@ -31,12 +31,13 @@ import { compileSystemPrompt, type SectionInput } from "./prompt-compiler.ts";
 import { evaluateDecision, runAutomation, testsOf } from "./automation-engine.ts";
 import { renderSoul, selectPreferences } from "./agent-context.ts";
 import { selectMemoriesForPrompt, type MemoryRow } from "./agent-memory.ts";
-import { embedTexts, toVectorLiteral } from "./jina.ts";
+import { embedTexts, embeddingsAvailable, toVectorLiteral } from "./jina.ts";
 // Le cron vit dans son propre module, sans dépendance : l'éditeur en a besoin
 // pour montrer la prochaine échéance, et il ne peut pas importer ce fichier-ci.
 import { nextCronRun } from "./cron.ts";
 import { mcpGrantsOf } from "./workflow-doc.ts";
 import { validateMcpGrants } from "./mcp-servers.ts";
+import { applyPoolToToolRows, loadPoolScope, workflowPoolError } from "./resource-pools.ts";
 import { judge as judgeTs, noul as noulTs, readNoul as readNoulTs } from "./typesafe.ts";
 export { nextCronRun };
 
@@ -145,6 +146,21 @@ export async function startWorkflowRun(admin: Admin, opts: {
     return { error: "Aucun assistant trouvé pour ce service — créez-en un avant d'activer le workflow.", status: 400 };
   }
 
+  // Mode pools (0291) : l'assistant n'exécute que ce que ses pools couvrent.
+  // L'échec est TRACÉ comme un run — un lancement planifié refusé en silence
+  // ne se verrait nulle part.
+  const poolError = await workflowPoolError(admin, assistant, wf, "execute");
+  if (poolError) {
+    await admin.from("agent_workflow_runs").insert({
+      workflow_id: wf.id, workspace_id: wf.workspace_id, project_id: wf.project_id,
+      agent_id: assistant.id, status: "failed", error_message: poolError,
+      trigger: opts.trigger, trigger_payload: opts.payload ?? {},
+      document: playbook, triggered_by: opts.triggeredBy ?? null,
+      finished_at: new Date().toISOString(),
+    });
+    return { error: poolError, status: 409 };
+  }
+
   const { data: runRow, error } = await admin.from("agent_workflow_runs").insert({
     workflow_id: wf.id, workspace_id: wf.workspace_id, project_id: wf.project_id,
     agent_id: assistant.id, status: "running",
@@ -244,8 +260,15 @@ async function findAssistant(admin: Admin, wf: WorkflowRow): Promise<AssistantRo
 async function dispatchPlaybook(
   admin: Admin, wf: WorkflowRow, a: AssistantRow, playbook: string, wfRunId: string, trigger: string,
 ): Promise<string | null> {
-  const { data: toolRows } = await admin.from("internal_agent_tools")
-    .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", a.id);
+  const [{ data: rawToolRows }, poolScope] = await Promise.all([
+    admin.from("internal_agent_tools")
+      .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", a.id),
+    loadPoolScope(admin, a.id),
+  ]);
+  // Mode pools (0291) : le prompt annonce ce que le tick donnera vraiment.
+  const toolRows = poolScope
+    ? applyPoolToToolRows((rawToolRows ?? []) as AgentToolRow[], poolScope)
+    : (rawToolRows ?? []);
 
   // Les serveurs MCP que les étapes ont choisis (blocs Outil) : ouverts à CE run,
   // limités aux outils choisis, et recopiés sur les runs à qui il délègue. Un
@@ -276,6 +299,7 @@ async function dispatchPlaybook(
     requestReport: async () => "",
     createDeliverable: async () => {},
     requestApproval: async () => "approval-skipped-in-workflow",
+    poolScope,
     logEvent: async () => {},
     isCancelled: async () => false,
   } as unknown as InternalToolContext;
@@ -359,6 +383,8 @@ async function dispatchPlaybook(
     meta: { workflow_run: { id: wfRunId } },
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: agentRunId });
+  // Le tick part maintenant plutôt qu'au prochain passage du drainer (10 s).
+  await admin.rpc("drain_agent_ticks").then(() => {}, () => {});
   return agentRunId;
 }
 
@@ -371,7 +397,7 @@ async function loadProcedureMemory(admin: Admin, agentId: string, taskText: stri
     const { data: pinned } = await admin.from("internal_agent_memories").select(cols)
       .eq("agent_id", agentId).eq("is_pinned", true).limit(20);
     let rows = (pinned ?? []) as MemoryRow[];
-    if (taskText && Deno.env.get("JINA_API_KEY")) {
+    if (taskText && embeddingsAvailable()) {
       const [qvec] = await embedTexts([taskText.slice(0, 1500)], "retrieval.query");
       if (qvec) {
         const { data: sem } = await admin.rpc("match_agent_memories", {
@@ -763,7 +789,7 @@ async function eventMatchesFilter(
   try {
     const res = await callAi({
       task: "classification",
-      provider: cheapProvider(),
+      provider: cheapProvider(), model: cheapModel(),
       jsonMode: true,
       maxTokens: 200,
       temperature: 0,

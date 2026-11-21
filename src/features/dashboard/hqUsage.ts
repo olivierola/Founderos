@@ -127,7 +127,7 @@ const FAMILY_OF: Record<string, ToolFamilyKey> = {
 
   query_table: "data", crm: "data", support_desk: "data", policy_audit: "data", lead_sense: "data", list_assets: "data",
 
-  create_deliverable: "delivery", create_artifact: "delivery", update_artifact: "delivery",
+  create_deliverable: "delivery", create_artifact: "delivery", update_artifact: "delivery", generate_image: "delivery",
   read_artifact: "delivery", list_artifacts: "delivery", report_section: "delivery",
 
   shell_exec: "exec", python_exec: "exec", nodejs_exec: "exec", jupyter_exec: "exec",

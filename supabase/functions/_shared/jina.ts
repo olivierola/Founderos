@@ -2,13 +2,46 @@
 // Requires JINA_API_KEY in the function secrets — except on a deployment pinned
 // to a gateway (LLM_UPSTREAM=litellm or azure, see llm-upstream.ts), where the
 // vectors come from its text-embedding-3 model, cut to the same 1024 dimensions
-// so the pgvector columns stay as they are.
+// so the pgvector columns stay as they are. LLM_UPSTREAM=runware keeps Jina:
+// Runware serves no embedding model.
 
 import { meterJinaTokens, type MeterScope } from "./metering.ts";
 import { adaptChatBody, llmAuthHeaders, pinnedUpstream, type PinnedUpstream } from "./llm-upstream.ts";
 
 const JINA_URL = "https://api.jina.ai/v1/embeddings";
 const MODEL = "jina-embeddings-v3";
+
+/**
+ * Peut-on vectoriser ici ? Sur une passerelle imposée, c'est son modèle
+ * d'embeddings qui compte ; ailleurs, la clé Jina. Les appelants testaient
+ * `JINA_API_KEY` en dur : une installation passée sur Azure sans clé Jina
+ * perdait sans un mot la mémoire sémantique des agents (rappel, recherche,
+ * vecteur des nouveaux souvenirs) alors que les embeddings y marchaient.
+ */
+export function embeddingsAvailable(): boolean {
+  try {
+    const up = vectorUpstream();
+    if (up) return !!up.embeddingModel;
+  } catch {
+    return false; // passerelle mal configurée : l'appel échouerait
+  }
+  return !!Deno.env.get("JINA_API_KEY");
+}
+
+/**
+ * La passerelle qui vectorise, quand ce n'est pas Jina. Runware n'a pas de
+ * modèle d'embeddings : sur LLM_UPSTREAM=runware, les vecteurs restent chez
+ * Jina — Runware est un fournisseur, pas un périmètre de données imposé comme
+ * Azure ou LiteLLM chez un client. Changer d'embedder change l'espace des
+ * vecteurs : après une bascule, revectoriser (rag-ingest, action reembed).
+ */
+function vectorUpstream(): PinnedUpstream | null {
+  const up = pinnedUpstream();
+  // Runware n'en sert pas ; OpenRouter non plus de façon fiable : Jina garde
+  // les vecteurs, et l'espace vectoriel ne change pas d'un fournisseur de chat
+  // à l'autre.
+  return up && up.kind !== "runware" && up.kind !== "openrouter" ? up : null;
+}
 
 // One network attempt with a hard timeout, so a hung request can never leave an
 // ingestion stuck "processing" — it aborts and surfaces an error.
@@ -32,7 +65,7 @@ export async function embedTexts(
   task: "retrieval.query" | "retrieval.passage" = "retrieval.passage",
   scope?: MeterScope,
 ): Promise<number[][]> {
-  const pinned = pinnedUpstream();
+  const pinned = vectorUpstream();
   if (pinned) return await embedWithUpstream(pinned, texts);
   const apiKey = Deno.env.get("JINA_API_KEY");
   if (!apiKey) throw new Error("JINA_API_KEY is not configured");

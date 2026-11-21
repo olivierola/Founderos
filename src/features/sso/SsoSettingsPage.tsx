@@ -200,7 +200,7 @@ function SsoAdmin({ workspaceId, ssoOnly, saml, shared }: {
           <SectionTitle>Page de connexion</SectionTitle>
           <p className="text-xs text-muted-foreground">
             Sur une instance partagée, la page de connexion ne liste pas les fournisseurs : la personne saisit son adresse, et
-            FounderOS l'envoie au fournisseur de son domaine. « SSO seulement » se règle par domaine, ci-dessus.
+            Agent company l'envoie au fournisseur de son domaine. « SSO seulement » se règle par domaine, ci-dessus.
           </p>
         </section>
       ) : (

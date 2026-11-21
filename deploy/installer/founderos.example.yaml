@@ -42,7 +42,7 @@ sessions:
   inactivity: 8h     # sans activité
 
 llm:
-  # none : les fournisseurs par défaut ; litellm ou azure : la passerelle de l'entreprise.
+  # none : fournisseurs par défaut ; litellm, azure ou openrouter : un fournisseur imposé.
   gateway: litellm
   litellm:
     url: http://litellm.ai-gateway.svc:4000/v1
@@ -51,8 +51,13 @@ llm:
   # azure:
   #   url: https://<ressource>.openai.azure.com/openai/deployments/<déploiement>
   #   deployment: gpt-4o
-  # La clé n'est jamais écrite ici : exportez LLM_API_KEY avant de lancer l'installateur
-  # (ou rangez-la dans Vault, ou ajoutez-la au Secret du backend).
+  # openrouter:
+  #   url: https://openrouter.ai/api/v1   # facultatif (défaut)
+  #   model: openai/gpt-5
+  #   heavyModel: openai/gpt-5
+  #   lightModel: openai/gpt-5-mini
+  # La clé n'est jamais écrite ici : exportez OPENROUTER_API_KEY (OpenRouter) ou
+  # LLM_API_KEY (LiteLLM) avant l'installation, ou rangez-la dans Vault / le Secret backend.
 
 # Kubernetes et OpenShift : les serveurs MCP des clusters, joints en direct en mTLS
 # (architecture Hub, docs/architecture-hub.md).

@@ -114,7 +114,7 @@ export function AuthSection({
       <div className="grid min-h-[calc(100vh-1.5rem)] gap-3 lg:grid-cols-[0.92fr_1.08fr]">
         <div className="flex min-h-[760px] items-start px-6 py-10 sm:px-10 lg:min-h-0 lg:px-14 lg:py-12 xl:px-20">
           <div className="mx-auto w-full max-w-[460px]">
-            <Link to="/" className="inline-flex" aria-label="Anduran, home">
+            <Link to="/" className="inline-flex" aria-label="Agent company, home">
               <span className="dark:hidden">
                 <Brand />
               </span>
@@ -247,7 +247,7 @@ export function AuthSection({
               {isSignup ? (
                 <div className="space-y-3 px-1 pt-3 text-[14px] leading-5 text-[#5c5c66] dark:text-white/60">
                   <CheckboxLine checked={marketingOptOut} onCheckedChange={setMarketingOptOut}>
-                    I don&apos;t want to receive emails about Anduran feature updates
+                    I don&apos;t want to receive emails about Agent company feature updates
                   </CheckboxLine>
                   <CheckboxLine checked={acceptedTerms} onCheckedChange={setAcceptedTerms}>
                     I agree to the{" "}
@@ -367,7 +367,7 @@ export function AuthSection({
               <div className="overflow-hidden rounded-tl-[14px] border-l border-t border-white/30 bg-white shadow-[0_40px_80px_-30px_rgba(24,8,70,0.85)]">
                 <img
                   src="/marketing/product-agents.jpg"
-                  alt="The Agents page of Anduran, in a demo workspace"
+                  alt="The Agents page of Agent company, in a demo workspace"
                   className="block aspect-[1440/860] w-full object-cover object-left-top"
                 />
               </div>

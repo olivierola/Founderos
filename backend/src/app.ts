@@ -9,10 +9,13 @@ import { functionsRouter, NATIVE_FUNCTIONS } from "./functions/index.ts";
 import { ENFORCED_IN_PRODUCTION, gatewayJwt, type GatewayMode } from "./shared/gateway.ts";
 import { errorHandler } from "./shared/http.ts";
 import { deepgramStreamHttp } from "./ws/deepgram-stream.ts";
+import { platformRouter, type Platform } from "./platform/platform.ts";
 
 export interface AppOptions {
   /** Par défaut, GATEWAY_VERIFY_JWT. */
   gateway?: GatewayMode;
+  /** PLATFORM=self : /rest/v1, /auth/v1, /storage/v1 servis par ce backend. */
+  platform?: Platform | null;
 }
 
 /** `registry` est remplaçable pour les tests ; par défaut, les fonctions générées. */
@@ -20,6 +23,10 @@ export function createApp(registry: EdgeRegistry = edgeFunctions, options: AppOp
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", env.trustProxy);
+
+  // Avant le CORS des fonctions : les API de Supabase ont le leur (méthodes et
+  // en-têtes de PostgREST, de GoTrue et du storage).
+  if (options.platform) app.use(platformRouter(options.platform));
 
   // Même politique que les edge functions (_shared/cors.ts) : origine libre,
   // car le widget et le SDK tournent sur les sites des clients. L'auth passe par

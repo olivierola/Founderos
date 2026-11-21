@@ -15,6 +15,7 @@
 import { jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { decideApprovalFromChannel } from "../_shared/channel-approval.ts";
+import { bindingForUpdate, insertChannelMessage } from "../_shared/turn-principal.ts";
 import { teamsSendMessage } from "../_shared/teams.ts";
 import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6";
 
@@ -145,8 +146,11 @@ async function handleActivity(raw: string): Promise<Response> {
     .eq("agent_id", channel.agent_id).eq("title", title).maybeSingle();
   if (existing) {
     conversationRowId = existing.id;
+    // L'auteur du fil reste celui du tour en cours (turn-principal.ts).
     await admin.from("internal_agent_conversations")
-      .update({ channel_id: channel.id, external_channel_ref: conversationId, external_thread_ref: null, external_user_ref: fromRef || null })
+      .update(await bindingForUpdate(admin, existing.id, {
+        channel_id: channel.id, external_channel_ref: conversationId, external_thread_ref: null, external_user_ref: fromRef || null,
+      }))
       .eq("id", conversationRowId);
   } else {
     const { data: created } = await admin.from("internal_agent_conversations").insert({
@@ -158,9 +162,10 @@ async function handleActivity(raw: string): Promise<Response> {
   }
   if (!conversationRowId) return jsonResponse({ ok: true });
 
-  await admin.from("internal_agent_messages").insert({
-    conversation_id: conversationRowId, agent_id: channel.agent_id, role: "user",
+  await insertChannelMessage(admin, {
+    conversation_id: conversationRowId, agent_id: channel.agent_id,
     content: `[${fromName} in Teams] ${text}`,
+    author_ref: fromRef || null,
   });
 
   // Fire the durable chat run; the reply is posted back by the finalizer.

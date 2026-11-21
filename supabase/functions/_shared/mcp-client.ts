@@ -23,6 +23,53 @@ const mcpFetch: FetchLike = (input, init) =>
 
 export interface McpTransportOptions {
   fetch?: FetchLike;
+  /** Délai maximal d'un échange JSON-RPC, corps compris (défaut :
+   *  MCP_TOOL_TIMEOUT_MS, sinon 120 s). */
+  timeoutMs?: number;
+  /** Longueur maximale du texte rendu par tools/call (défaut 12 000). */
+  maxChars?: number;
+}
+
+/** Le délai par défaut d'un échange MCP. Sans lui, un serveur qui ne répond
+ *  pas figeait l'appel jusqu'à la mort du worker (superharness a le même
+ *  défaut : 27 h par défaut, autant dire aucun). */
+function defaultMcpTimeoutMs(): number {
+  const raw = (Deno.env.get("MCP_TOOL_TIMEOUT_MS") ?? "").trim();
+  const v = Number(raw);
+  return raw && Number.isFinite(v) && v > 0 ? v : 120_000;
+}
+
+/** `f(url, init)` qui doit avoir rendu sa réponse ET son corps à temps. Le
+ *  signal coupe la requête quand le transport le respecte ; la course garantit
+ *  la sortie quand il ne le respecte pas (un relais, par exemple). */
+async function fetchTextWithin(
+  f: FetchLike, url: string, init: RequestInit, timeoutMs: number,
+): Promise<{ res: Response; text: string }> {
+  const ctrl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ctrl.abort();
+      reject(new McpTimeoutError(timeoutMs));
+    }, timeoutMs);
+  });
+  const work = (async () => {
+    const res = await f(url, { ...init, signal: ctrl.signal });
+    return { res, text: await res.text() };
+  })();
+  work.catch(() => {}); // perdue après l'échéance : jamais de rejet orphelin
+  try {
+    return await Promise.race([work, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+class McpTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`le serveur MCP n'a pas répondu en ${Math.round(timeoutMs / 1000)} s`);
+    this.name = "McpTimeoutError";
+  }
 }
 
 function baseHeaders(headers: Record<string, string>, sessionId?: string): Record<string, string> {
@@ -59,15 +106,24 @@ async function rpc(
   url: string, headers: Record<string, string>, sessionId: string | undefined,
   method: string, params: Record<string, unknown> | undefined, id: number,
   f: FetchLike = mcpFetch,
+  timeoutMs: number = defaultMcpTimeoutMs(),
 ): Promise<{ result?: any; error?: any; sessionId?: string; httpStatus: number }> {
-  const res = await f(url, {
-    method: "POST",
-    headers: baseHeaders(headers, sessionId),
-    body: JSON.stringify({ jsonrpc: "2.0", id, method, ...(params ? { params } : {}) }),
-  });
+  let res: Response;
+  let text: string;
+  try {
+    ({ res, text } = await fetchTextWithin(f, url, {
+      method: "POST",
+      headers: baseHeaders(headers, sessionId),
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, ...(params ? { params } : {}) }),
+    }, timeoutMs));
+  } catch (e) {
+    // Un délai dépassé devient une erreur JSON-RPC comme les autres : l'appelant
+    // la rend au modèle (« ERROR: … ») au lieu de rester suspendu.
+    if (e instanceof McpTimeoutError) return { error: { code: 0, message: e.message }, sessionId, httpStatus: 0 };
+    throw e;
+  }
   const newSession = res.headers.get("mcp-session-id") || sessionId;
   const ct = res.headers.get("content-type") || "";
-  const text = await res.text();
   if (!res.ok) {
     return { error: { code: res.status, message: text.slice(0, 300) || `HTTP ${res.status}` }, sessionId: newSession ?? undefined, httpStatus: res.status };
   }
@@ -76,26 +132,31 @@ async function rpc(
   return { result: obj.result, error: obj.error, sessionId: newSession ?? undefined, httpStatus: res.status };
 }
 
-async function notify(url: string, headers: Record<string, string>, sessionId: string | undefined, method: string, f: FetchLike = mcpFetch): Promise<void> {
+async function notify(
+  url: string, headers: Record<string, string>, sessionId: string | undefined, method: string,
+  f: FetchLike = mcpFetch, timeoutMs: number = defaultMcpTimeoutMs(),
+): Promise<void> {
   try {
-    await f(url, {
+    await fetchTextWithin(f, url, {
       method: "POST",
       headers: baseHeaders(headers, sessionId),
       body: JSON.stringify({ jsonrpc: "2.0", method }),
-    });
+    }, Math.min(timeoutMs, 15_000));
   } catch { /* notifications are best-effort */ }
 }
 
 // initialize + notifications/initialized → returns the session id (if the server
 // is stateful and issues one).
-async function handshake(url: string, headers: Record<string, string>, f: FetchLike = mcpFetch): Promise<{ sessionId?: string; error?: any }> {
+async function handshake(
+  url: string, headers: Record<string, string>, f: FetchLike = mcpFetch, timeoutMs: number = defaultMcpTimeoutMs(),
+): Promise<{ sessionId?: string; error?: any }> {
   const init = await rpc(url, headers, undefined, "initialize", {
     protocolVersion: PROTOCOL_VERSION,
     capabilities: {},
     clientInfo: { name: "founderos", version: "1.0" },
-  }, 1, f);
+  }, 1, f, timeoutMs);
   if (init.error) return { error: init.error };
-  await notify(url, headers, init.sessionId, "notifications/initialized", f);
+  await notify(url, headers, init.sessionId, "notifications/initialized", f, timeoutMs);
   return { sessionId: init.sessionId };
 }
 
@@ -161,9 +222,11 @@ export async function mcpCallTool(
   opts: McpTransportOptions = {},
 ): Promise<string> {
   const f = opts.fetch ?? mcpFetch;
+  const timeoutMs = opts.timeoutMs ?? defaultMcpTimeoutMs();
+  const maxChars = opts.maxChars ?? 12_000;
   const ensureSession = async (): Promise<{ sessionId?: string; error?: string }> => {
     if (session?.id) return { sessionId: session.id };
-    const hs = await handshake(url, headers, f);
+    const hs = await handshake(url, headers, f, timeoutMs);
     if (hs.error) return { error: typeof hs.error === "string" ? hs.error : (hs.error?.message ?? "initialize failed") };
     if (session) session.id = hs.sessionId;
     return { sessionId: hs.sessionId };
@@ -171,14 +234,14 @@ export async function mcpCallTool(
 
   const s1 = await ensureSession();
   if (s1.error) return `ERROR: MCP initialize failed — ${s1.error}`;
-  let call = await rpc(url, headers, s1.sessionId, "tools/call", { name, arguments: args ?? {} }, (Date.now() % 100000) + 3, f);
+  let call = await rpc(url, headers, s1.sessionId, "tools/call", { name, arguments: args ?? {} }, (Date.now() % 100000) + 3, f, timeoutMs);
 
   // Stale session (404 / "session") → drop it and retry once with a fresh handshake.
   if (call.error && (call.httpStatus === 404 || /session/i.test(String(call.error?.message ?? "")))) {
     if (session) session.id = undefined;
     const s2 = await ensureSession();
     if (!s2.error) {
-      call = await rpc(url, headers, s2.sessionId, "tools/call", { name, arguments: args ?? {} }, (Date.now() % 100000) + 4, f);
+      call = await rpc(url, headers, s2.sessionId, "tools/call", { name, arguments: args ?? {} }, (Date.now() % 100000) + 4, f, timeoutMs);
     }
   }
 
@@ -188,7 +251,7 @@ export async function mcpCallTool(
     const text = content
       .map((c: any) => (c?.type === "text" ? c.text : (c?.text ?? JSON.stringify(c))))
       .join("\n");
-    return (call.result?.isError ? "ERROR: " : "") + String(text).slice(0, 12000);
+    return (call.result?.isError ? "ERROR: " : "") + String(text).slice(0, maxChars);
   }
-  return JSON.stringify(call.result ?? {}).slice(0, 12000);
+  return JSON.stringify(call.result ?? {}).slice(0, maxChars);
 }

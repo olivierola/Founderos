@@ -20,9 +20,11 @@ import { createServiceClient, createUserClient } from "../_shared/supabase-admin
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import { loadGrounding, groundingPromptBlock, searchKnowledge } from "../_shared/office-rag.ts";
 import { adaptChatBody, pinnedChatTarget } from "../_shared/llm-upstream.ts";
+import { GROQ_MODEL_ID } from "../_shared/model-router.ts";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// Celui du routeur : llama-3.3-70b-versatile est arrêté chez Groq depuis le 16/08/2026.
+const GROQ_MODEL = GROQ_MODEL_ID;
 
 const enc = new TextEncoder();
 
@@ -163,7 +165,7 @@ export default defineHandler(async (req) => {
     const grounding = await loadGrounding(admin, project_id, query, useKnowledge);
     const groundingBlock = groundingPromptBlock(grounding);
 
-    const systemPrompt = `Tu es l'assistant d'écriture intégré à l'éditeur bureautique de Anduran.
+    const systemPrompt = `Tu es l'assistant d'écriture intégré à l'éditeur bureautique d'Agent company.
 Tu aides à rédiger, continuer, améliorer et reformuler le document de l'utilisateur.
 Réponds en markdown, dans la langue de l'utilisateur, de façon concise et directement utilisable (pas de méta-commentaire).
 ${groundingBlock ? `\nContexte du projet — utilise-le s'il est pertinent, n'invente rien:\n${groundingBlock}` : ""}`;

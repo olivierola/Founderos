@@ -107,7 +107,7 @@ export function HnNav() {
     <>
       <header className="sticky top-0 z-50 border-b border-[#e8e8ee] bg-white/95 backdrop-blur-md" style={{ height: HN_NAV_H }}>
         <div className="flex h-full w-full items-center gap-14 px-5 sm:px-8 lg:px-12">
-          <Link to="/" aria-label="Anduran, home" className="shrink-0">
+          <Link to="/" aria-label="Agent company, home" className="shrink-0">
             <Brand />
           </Link>
 

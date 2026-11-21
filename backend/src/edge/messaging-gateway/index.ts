@@ -40,6 +40,7 @@ import { Deno, FUNCTIONS_URL, defineHandler } from "../../compat/index.ts";
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { decideApprovalFromChannel } from "../_shared/channel-approval.ts";
+import { bindingForUpdate, insertChannelMessage } from "../_shared/turn-principal.ts";
 import {
   discordApi, loadCredentials, parseApprovalButton, sendMessagingText, telegramApi,
   type MessagingProvider,
@@ -157,13 +158,13 @@ async function ingest(
     .eq("agent_id", channel.agent_id).eq("title", title).maybeSingle();
   const binding = {
     channel_id: channel.id, external_channel_ref: m.chatRef, external_thread_ref: m.threadRef,
-    // L'auteur du DERNIER message — lui seul pourra valider ce que l'agent
-    // demandera pendant ce tour (0251).
+    // L'auteur du tour — lui seul pourra valider ce que l'agent demandera
+    // pendant ce tour (0251). Il ne change pas pendant un tour (turn-principal.ts).
     external_user_ref: m.userRef,
   };
   if (existing) {
     conversationId = (existing as { id: string }).id;
-    await admin.from("internal_agent_conversations").update(binding).eq("id", conversationId);
+    await admin.from("internal_agent_conversations").update(await bindingForUpdate(admin, conversationId, binding)).eq("id", conversationId);
   } else {
     const { data: created } = await admin.from("internal_agent_conversations").insert({
       agent_id: channel.agent_id, workspace_id: channel.workspace_id, project_id: channel.project_id,
@@ -173,9 +174,10 @@ async function ingest(
   }
   if (!conversationId) return;
 
-  await admin.from("internal_agent_messages").insert({
-    conversation_id: conversationId, agent_id: channel.agent_id, role: "user",
+  await insertChannelMessage(admin, {
+    conversation_id: conversationId, agent_id: channel.agent_id,
     content: `[${m.userName} in ${LABEL[provider]}] ${m.text}`,
+    author_ref: m.userRef || null,
   });
 
   if (SUPABASE_URL && SERVICE_KEY) {

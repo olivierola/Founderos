@@ -152,7 +152,7 @@ export function AgentIdentities({ workspaceId, providers }: { workspaceId: strin
             <Field label={selected?.delegation === "entra_obo" ? "ID d'application de l'agent" : "Client de l'agent"} hint={selected?.delegation === "entra_obo" ? "Application Entra propre à l'agent, avec une API exposée et un secret client." : "Client confidentiel, échange de jeton autorisé, ex. agent-ops-investigator."}>
               <input className={inputCls} value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} />
             </Field>
-            <Field label="Secret" hint={form.editing ? "Laisser vide pour le conserver." : "Chiffré par FounderOS, jamais réaffiché."}>
+            <Field label="Secret" hint={form.editing ? "Laisser vide pour le conserver." : "Chiffré par Agent company, jamais réaffiché."}>
               <input className={inputCls} type="password" autoComplete="off" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} />
             </Field>
           </div>

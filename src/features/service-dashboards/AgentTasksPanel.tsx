@@ -30,13 +30,13 @@ import { formatRelative } from "@/features/tracker/pickers";
  * board, la tâche dans sa room.
  */
 
-type Section = "live" | "waiting" | "todo" | "listening" | "done";
-type Kind = "conversation" | "scheduled" | "mission" | "proposal" | "work_item" | "room_task" | "trigger" | "goal";
+export type TaskSection = "live" | "waiting" | "todo" | "listening" | "done";
+export type TaskKind = "conversation" | "scheduled" | "mission" | "proposal" | "work_item" | "room_task" | "trigger" | "goal";
 
-interface TaskCard {
+export interface TaskCard {
   key: string;
-  kind: Kind;
-  section: Section;
+  kind: TaskKind;
+  section: TaskSection;
   title: string;
   status: { label: string; tone: "live" | "waiting" | "todo" | "done" | "failed" };
   subtitle?: string;
@@ -51,7 +51,7 @@ interface TaskCard {
     | { type: "inbox" };
 }
 
-const KIND_META: Record<Kind, { label: string; icon: PhosphorIcon }> = {
+export const KIND_META: Record<TaskKind, { label: string; icon: PhosphorIcon }> = {
   conversation: { label: "Conversation", icon: ChatCircleIcon },
   scheduled: { label: "Mission planifiée", icon: CalendarDotsIcon },
   mission: { label: "Mission", icon: TargetIcon },
@@ -70,7 +70,7 @@ const TONE: Record<TaskCard["status"]["tone"], string> = {
   failed: "bg-red-500/10 text-red-700 dark:text-red-400",
 };
 
-const SECTIONS: { key: Section; label: string }[] = [
+const SECTIONS: { key: TaskSection; label: string }[] = [
   { key: "live", label: "En cours" },
   { key: "waiting", label: "Vous attend" },
   { key: "todo", label: "À faire" },
@@ -106,7 +106,7 @@ function relFuture(iso: string | null): string {
   return h < 24 ? `dans ${h} h` : `dans ${Math.round(h / 24)} j`;
 }
 
-async function fetchTasks(agentId: string): Promise<TaskCard[]> {
+export async function fetchTasks(agentId: string): Promise<TaskCard[]> {
   const since = new Date(Date.now() - RECENT_MS).toISOString();
   const [runsQ, missionsQ, linksQ, roomTasksQ, approvalsQ, triggersQ, goalsQ] = await Promise.all([
     supabase.from("internal_agent_runs")
@@ -227,7 +227,7 @@ async function fetchTasks(agentId: string): Promise<TaskCard[]> {
     const trig = triggerOf.get(m.id);
     const proposal = m.status === "paused" && m.board_column === "backlog";
     const scheduled = !!m.schedule && m.status === "active";
-    const kind: Kind = trig ? "trigger" : issue ? "work_item" : proposal ? "proposal" : scheduled ? "scheduled" : "mission";
+    const kind: TaskKind = trig ? "trigger" : issue ? "work_item" : proposal ? "proposal" : scheduled ? "scheduled" : "mission";
     const title = issue ? issue.name : (trig?.label || m.title);
     const issueKey = issue ? `${identOf.get(issue.pj_project_id) ?? "?"}-${issue.sequence_id}` : undefined;
     const open: TaskCard["open"] = issue
@@ -325,7 +325,7 @@ export function AgentTasksPanel({ agentId, agentName, sbase, activeConversationI
   });
   const cards = data ?? [];
   const bySection = useMemo(() => {
-    const m = new Map<Section, TaskCard[]>();
+    const m = new Map<TaskSection, TaskCard[]>();
     for (const c of cards) m.set(c.section, [...(m.get(c.section) ?? []), c]);
     return m;
   }, [cards]);

@@ -22,6 +22,9 @@ import {
   type Workflow, type BlockKind, type WorkflowKind,
 } from "./model";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { TRIGGER_MODES, triggerModeLabel } from "./TriggerSettings";
+import { HandTapIcon as Hand } from "@phosphor-icons/react";
+import { formatRelative } from "@/features/tracker/pickers";
 
 export function WorkflowsList({ dashboardId, workspaceId, projectId, onOpen }: {
   dashboardId: string;
@@ -45,7 +48,7 @@ export function WorkflowsList({ dashboardId, workspaceId, projectId, onOpen }: {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] px-10 py-8">
+    <div className="w-full px-5 py-7 md:px-6">
       <header className="mb-6 flex items-start gap-4">
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold tracking-tight">Workflows</h1>
@@ -81,7 +84,7 @@ export function WorkflowsList({ dashboardId, workspaceId, projectId, onOpen }: {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))]">
           {(workflows ?? []).map((w) => (
             <WorkflowCard key={w.id} workflow={w} onOpen={() => onOpen(w.id)} onRemove={() => void remove(w)} />
           ))}
@@ -91,116 +94,134 @@ export function WorkflowsList({ dashboardId, workspaceId, projectId, onOpen }: {
   );
 }
 
+/**
+ * Une carte de workflow : ce qu'il s'appelle, à quoi il sert, comment il se
+ * lance — et de quoi l'ouvrir.
+ *
+ * Elle portait aussi une chaîne d'icônes (la forme du workflow) et deux
+ * badges (nature, état). Sur une carte étroite, la chaîne passait SOUS les
+ * badges et l'on ne lisait plus ni l'une ni les autres. La forme se voit dès
+ * qu'on ouvre le workflow ; la carte, elle, doit se lire d'un coup d'œil.
+ */
+// Des fonds plus profonds pour les cartes : pleins et sombres en mode sombre,
+// plutôt qu'un voile clair posé sur le gris.
+const KIND_DEEP: Record<string, string> = {
+  procedure: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  automation: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
+};
+const STATUS_DEEP: Record<string, string> = {
+  draft: "bg-muted text-muted-foreground dark:bg-neutral-800",
+  active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  paused: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  archived: "bg-muted text-muted-foreground dark:bg-neutral-800",
+};
+const BLOCK_DEEP: Record<string, string> = {
+  emerald: "dark:border-emerald-900 dark:bg-emerald-950", indigo: "dark:border-indigo-900 dark:bg-indigo-950",
+  rose: "dark:border-rose-900 dark:bg-rose-950", sky: "dark:border-sky-900 dark:bg-sky-950",
+  amber: "dark:border-amber-900 dark:bg-amber-950", purple: "dark:border-purple-900 dark:bg-purple-950",
+  cyan: "dark:border-cyan-900 dark:bg-cyan-950", teal: "dark:border-teal-900 dark:bg-teal-950",
+  orange: "dark:border-orange-900 dark:bg-orange-950", slate: "dark:border-slate-800 dark:bg-slate-900",
+  violet: "dark:border-violet-900 dark:bg-violet-950", lime: "dark:border-lime-900 dark:bg-lime-950",
+  fuchsia: "dark:border-fuchsia-900 dark:bg-fuchsia-950", blue: "dark:border-blue-900 dark:bg-blue-950",
+};
+
 function WorkflowCard({ workflow, onOpen, onRemove }: {
   workflow: Workflow; onOpen: () => void; onRemove: () => void;
 }) {
-  const meta = WORKFLOW_STATUS_META[workflow.status];
-  const kindMeta = WORKFLOW_KIND_META[workflow.kind];
-  const steps = workflow.blocks.nodes.filter((n) => n.type !== "trigger");
-  // Which kinds of block it is made of — the shape of the procedure at a
-  // glance, without opening it. Rendered as a chain, because a workflow IS a
-  // sequence: the arrows between the tiles carry real information here.
-  const kinds = [...new Set(steps.map((n) => n.type as BlockKind))].slice(0, 5);
-  const trigger = workflow.blocks.nodes.find((n) => n.type === "trigger");
-  const mode = String((trigger?.data as Record<string, unknown> | undefined)?.mode ?? "manual");
-  const triggerLabel =
-    mode === "schedule" ? `planifié · ${describeCron(String((trigger?.data as Record<string, unknown>)?.schedule ?? "")).replace(" (UTC)", "")}`
-    : mode === "event" ? "sur événement"
-    : mode === "webhook" ? "webhook"
-    : "lancement manuel";
-
-  /**
-   * La chaîne d'icônes, et elle ne dit pas la même chose selon la nature.
-   *
-   * Une AUTOMATISATION touche des applications nommées : montrer Stripe → Slack
-   * dit en un coup d'œil ce qu'elle fait. Montrer « outil → outil → outil » ne
-   * dirait rien du tout.
-   *
-   * Une PROCÉDURE ne touche rien de précis — c'est un agent qui décidera. Ce
-   * qu'on peut montrer, c'est sa FORME : une décision, une boucle, une
-   * validation humaine. C'est ce qui la distingue d'une autre sans l'ouvrir.
-   */
-  const providers = [...new Set(
-    steps
-      .filter((n) => n.type === "tool")
-      .map((n) => String((n.data as Record<string, unknown> | undefined)?.provider ?? "").trim())
-      .filter(Boolean),
-  )].slice(0, 5);
-
-  const chain: AppItem[] = workflow.kind === "automation" && providers.length > 0
-    ? providers.map((slug) => {
-        const p = connectorActionProvider(slug);
-        const Icon = p?.icon ?? Plug;
-        return {
-          title: p?.name ?? slug,
-          node: (
-            <span
-              title={p?.name ?? slug}
-              className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground"
-            >
-              <Icon className="size-3.5" />
-            </span>
-          ),
-        };
-      })
-    : kinds.flatMap((k) => {
-        const def = BLOCK_BY_KIND.get(k);
-        if (!def) return [];
-        const Icon = def.icon;
-        return [{
-          title: def.label,
-          node: (
-            <span
-              title={def.label}
-              className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg border", blockColorClass(def.color))}
-            >
-              <Icon className="size-3.5" />
-            </span>
-          ),
-        }];
-      });
+  const nodes = workflow.blocks?.nodes ?? [];
+  const trigger = nodes.find((n) => n.type === "trigger");
+  const data = (trigger?.data ?? {}) as Record<string, unknown>;
+  const mode = String(data.mode ?? "manual");
+  const modeMeta = TRIGGER_MODES.find((m) => m.id === mode);
+  const TriggerIcon = modeMeta?.icon ?? Hand;
+  const cadence = mode === "schedule"
+    ? describeCron(String(data.schedule ?? "")).replace(" (UTC)", "")
+    : null;
+  const steps = nodes.filter((n) => n.type !== "trigger");
+  const kind = WORKFLOW_KIND_META[workflow.kind];
+  const status = WORKFLOW_STATUS_META[workflow.status];
+  // La forme du workflow, en une rangée de pastilles : les six premiers blocs
+  // dans l'ordre du canevas (de haut en bas), puis le reste en nombre.
+  const chain = [...steps]
+    .sort((x, y) => (x.position?.y ?? 0) - (y.position?.y ?? 0) || (x.position?.x ?? 0) - (y.position?.x ?? 0))
+    .slice(0, 6);
 
   return (
-    <Automation10
-      fill
-      apps={chain}
-      name={workflow.name}
-      description={workflow.description ?? undefined}
-      badge={
-        <span className="flex shrink-0 items-center gap-1">
-          {/* La nature AVANT l état : savoir si une ligne est exécutée par un
-              agent ou par le moteur change la lecture de tout le reste. */}
-          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", kindMeta.tone)}>
-            {kindMeta.label}
-          </span>
-          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", meta.tone)}>
-            {meta.label}
-          </span>
+    <div
+      role="button" tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+      aria-label={`Ouvrir le workflow ${workflow.name}`}
+      className={cn(
+        "group/card flex cursor-pointer flex-col rounded-2xl border border-border/70 bg-card p-4 outline-none transition-colors",
+        "hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-primary/25",
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground dark:bg-neutral-800">
+          <WorkflowIcon className="h-[18px] w-[18px]" />
         </span>
-      }
-      footerLeft={
-        <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-          <Clock className="size-3 shrink-0" />
-          <span className="truncate">{triggerLabel}</span>
-          <span className="shrink-0 font-mono tabular-nums">
-            · {steps.length === 0 ? "vide" : `${steps.length} bloc${steps.length > 1 ? "s" : ""}`}
-          </span>
-        </span>
-      }
-      ctaLabel="Ouvrir"
-      ctaIcon={ArrowRight}
-      onCtaClick={onOpen}
-      onCardClick={onOpen}
-      cardLabel={`Ouvrir le workflow ${workflow.name}`}
-      actions={
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-[14.5px] font-semibold tracking-tight">{workflow.name}</h3>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            {kind && <span className={cn("rounded-md px-1.5 py-px text-[11px] font-medium", KIND_DEEP[workflow.kind] ?? kind.tone)}>{kind.label}</span>}
+            {status && <span className={cn("rounded-md px-1.5 py-px text-[11px] font-medium", STATUS_DEEP[workflow.status] ?? status.tone)}>{status.label}</span>}
+          </div>
+        </div>
         <button
-          type="button" onClick={onRemove} title="Supprimer"
-          className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/card:opacity-100"
+          type="button" title="Supprimer" aria-label={`Supprimer ${workflow.name}`}
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="-mr-1 -mt-1 shrink-0 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/card:opacity-100"
         >
           <Trash2 className="size-3.5" />
         </button>
-      }
-    />
+      </div>
+
+      <p className={cn(
+        "mt-3 line-clamp-2 min-h-[2.6em] text-[13px] leading-relaxed",
+        workflow.description ? "text-muted-foreground" : "text-muted-foreground/60",
+      )}>
+        {workflow.description || (kind ? kind.short : "Sans description")}
+      </p>
+
+      <div className="mt-3 flex items-center gap-1">
+        {chain.length === 0 ? (
+          <span className="text-[12px] text-muted-foreground/70">Aucune étape pour l'instant</span>
+        ) : (
+          <>
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+            {chain.map((n, i) => {
+              const def = BLOCK_BY_KIND.get(n.type as BlockKind);
+              const Icon = def?.icon;
+              return (
+                <span key={n.id} className="flex shrink-0 items-center gap-1">
+                  {i > 0 && <span className="h-px w-2 bg-border" />}
+                  <span title={def?.label ?? n.type} className={cn("grid h-6 w-6 place-items-center rounded-md border", blockColorClass(def?.color ?? "slate"), BLOCK_DEEP[def?.color ?? "slate"])}>
+                    {Icon && <Icon className="h-3 w-3" />}
+                  </span>
+                </span>
+              );
+            })}
+            {steps.length > chain.length && <span className="ml-1 shrink-0 text-[11.5px] text-muted-foreground">+{steps.length - chain.length}</span>}
+            </div>
+            <span className="ml-2 shrink-0 whitespace-nowrap text-[11.5px] tabular-nums text-muted-foreground">{steps.length} étape{steps.length > 1 ? "s" : ""}</span>
+          </>
+        )}
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 border-t border-border/60 pt-3 text-[12px] text-muted-foreground">
+        <span className="inline-flex min-w-0 shrink items-center gap-1.5 whitespace-nowrap">
+          <TriggerIcon className="size-3.5 shrink-0" />
+          <span className="font-medium text-foreground/80">{triggerModeLabel(mode)}</span>
+          {cadence && <span className="truncate">· {cadence}</span>}
+        </span>
+        <span className="ml-auto inline-flex min-w-0 items-center gap-1 whitespace-nowrap" title={workflow.next_run_at ? `Prochaine exécution : ${new Date(workflow.next_run_at).toLocaleString("fr-FR")}` : undefined}>
+          <Clock className="size-3.5 shrink-0" />
+          <span className="truncate">{workflow.last_run_at ? `Exécuté ${formatRelative(workflow.last_run_at)}` : `Modifié ${formatRelative(workflow.updated_at)}`}</span>
+        </span>
+        <ArrowRight className="size-3.5 shrink-0 transition-transform group-hover/card:translate-x-0.5 group-hover/card:text-foreground" />
+      </div>
+    </div>
   );
 }
 

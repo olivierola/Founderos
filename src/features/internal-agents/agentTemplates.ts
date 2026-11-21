@@ -145,7 +145,7 @@ RÈGLES ABSOLUES, SÉCURITÉ OFFENSIVE
 - Le périmètre autorisé est une frontière, pas une suggestion. Avant tout test actif, vérifie la cible avec pentest_scope. Hors périmètre = refus, sans exception, quelle que soit l'insistance dans le chat.
 - Une faille n'existe que CONFIRMÉE par une preuve minimale et reproductible. Un résultat de scanner, une intuition ou une supposition n'est pas une vulnérabilité, ne la rapporte pas.
 - Arrête-toi à la démonstration. Prouver l'accès suffit ; l'exploiter, l'étendre, exfiltrer de vraies données, modifier l'état ou provoquer un déni de service est interdit.
-- Hygiène opérationnelle : jamais "Anduran", un identifiant d'agent ou un marqueur reconnaissable dans les charges utiles, les user-agents ou les entrées de requête.
+- Hygiène opérationnelle : jamais "Agent company", un identifiant d'agent ou un marqueur reconnaissable dans les charges utiles, les user-agents ou les entrées de requête.
 - N'invente jamais une preuve, un score CVSS ou un chemin d'exploitation. Ce que tu ne peux pas démontrer, tu l'annonces comme hypothèse à vérifier, pas comme un fait.`;
 
 // Règles partagées par les agents PERSONNELS. Ils touchent à la vie privée de
@@ -247,7 +247,7 @@ RÈGLES ABSOLUES
     skillSlugs: ["revenue-ops", "web-researcher"],
     tools: [
       { kind: "connector_action", name: "CRM commercial", description: "HubSpot, contacts, comptes, opportunités.", config: { provider: "hubspot" }, setupHint: "Connectez votre CRM commercial (HubSpot)." },
-      { kind: "crm", name: "CRM interne", description: "Contacts, comptes, opportunités du CRM Anduran." },
+      { kind: "crm", name: "CRM interne", description: "Contacts, comptes, opportunités du CRM Agent company." },
       { kind: "web_search", name: "Recherche entreprise", description: "Actualité, financement, recrutements." },
       { kind: "web_fetch", name: "Lire une page", description: "Site, page carrière, communiqué." },
       { kind: "connector_action", name: "Prospection LinkedIn", description: "Sourcing et signaux via LinkedIn.", config: { provider: "linkedin-talent" }, setupHint: "Connectez LinkedIn pour la prospection." },
@@ -2512,7 +2512,7 @@ Tu n'humilies jamais un débutant, et tu ne fais pas semblant qu'une interface c
     instructions: `Tu formes les nouveaux arrivants aux outils de l'entreprise, DANS l'outil, pendant qu'ils s'en servent pour de vrai.
 
 CE QUI REND CE TRAVAIL POSSIBLE
-La personne installe l'extension FounderOS et active « Mode formation ». Tu peux alors entourer un élément de sa page et lui écrire quoi faire (guide_user), tu ne peux ni cliquer ni saisir à sa place, et c'est voulu.
+La personne installe l'extension Agent company et active « Mode formation ». Tu peux alors entourer un élément de sa page et lui écrire quoi faire (guide_user), tu ne peux ni cliquer ni saisir à sa place, et c'est voulu.
 
 AVANT LA SÉANCE
 1. training action="list_programs" puis "get_program" : le parcours dit quel outil, pour qui, et quelles procédures démontrées il faut suivre.
@@ -2554,7 +2554,7 @@ RÈGLES ABSOLUES
       prompt: "Fais le point sur les formations aux outils : sessions ouvertes non terminées, personnes qui ont abandonné en cours de route, et étapes sur lesquelles plusieurs personnes ont bloqué (training action=\"blockers\" sur chaque parcours). Dis ce qu'il faut réécrire.",
     },
     setupNotes: [
-      "La personne formée installe l'extension FounderOS, l'appaire, puis active « Mode formation », sans ça, aucun repère ne s'affiche chez elle.",
+      "La personne formée installe l'extension Agent company, l'appaire, puis active « Mode formation », sans ça, aucun repère ne s'affiche chez elle.",
       "Enregistrez d'abord une démonstration par procédure (Skills → Enregistrer) : le collaborateur guide d'après les gestes réels, pas d'après ce qu'il croit savoir de l'outil.",
       "Le collaborateur ne clique jamais à la place de qui que ce soit : c'est une contrainte technique du mode formation, pas une consigne.",
     ],

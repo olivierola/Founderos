@@ -105,7 +105,7 @@ export function DocumentEditorPage({ docId: docIdProp, onBack, embedded, reading
   }
   async function exportDocx() {
     const d = new DocxDocument({
-      creator: "Anduran", title,
+      creator: "Agent company", title,
       sections: [{ properties: {}, children: docxParagraphs(nodesRef.current) }],
     });
     downloadBlob(sanitizeFilename(title) + ".docx", await Packer.toBlob(d));

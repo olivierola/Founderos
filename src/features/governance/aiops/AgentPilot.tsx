@@ -36,7 +36,8 @@ const SINCE_DAYS = 30;
 const PILOT_FEATURES: Array<{ feature: string; label: string; decides: string }> = [
   { feature: "agent_choice", label: "Routage entre agents", decides: "quel agent prend le message d'une room" },
   { feature: "model_choice", label: "Choix du modèle", decides: "rapide ou raisonnement, selon la tâche" },
-  { feature: "tool_ranking", label: "Choix des outils", decides: "quelle famille d'outils passe devant" },
+  { feature: "tool_ranking", label: "Choix des outils", decides: "quels outils passent devant, à chaque étape" },
+  { feature: "tool_error_diagnosis", label: "Diagnostic des erreurs", decides: "pourquoi un outil échoue, et quoi changer" },
   { feature: "skill_ranking", label: "Choix des skills", decides: "quelles skills entrent dans le prompt" },
   { feature: "search_decision", label: "Décision de recherche", decides: "chercher ou produire" },
   { feature: "loop_watch", label: "Boucles déguisées", decides: "la même tentative reformulée" },

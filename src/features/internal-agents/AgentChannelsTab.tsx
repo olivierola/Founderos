@@ -177,7 +177,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Messaging endpoint (à coller dans votre Azure Bot)</label>
             <div className="flex items-center gap-2">
               <Input readOnly value={teamsEndpoint} className="h-9 font-mono text-[11px]" onFocus={(e) => e.currentTarget.select()} />
-              <Button variant="outline" size="sm" className="h-9 shrink-0" onClick={copyEndpoint}>
+              <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={copyEndpoint}>
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
               </Button>
             </div>
@@ -192,7 +192,7 @@ export function AgentChannelsTab({ agent }: { agent: InternalAgent }) {
               <Input value={teamsLabel} onChange={(e) => setTeamsLabel(e.target.value)} placeholder="ex. Espace de travail Acme" className="h-9" />
             </div>
             <div className="flex items-end">
-              <Button className="h-9 w-full" onClick={addTeams} disabled={addingTeams || !teamsTenant.trim()}>
+              <Button className="h-8 w-full" onClick={addTeams} disabled={addingTeams || !teamsTenant.trim()}>
                 <Plus className="mr-1.5 h-4 w-4" /> Connecter
               </Button>
             </div>

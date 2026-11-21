@@ -7,6 +7,7 @@ import {
 import { PuzzlePieceIcon, PlugsConnectedIcon, RobotIcon } from "@phosphor-icons/react";
 import { findModule, itemsInGroup, moduleGroups, type SubNavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import { navIcon, navItem, navSection } from "./navStyles";
 import { ChatConversationsItem } from "./ChatConversationsItem";
 import { AccordionNavItem } from "./AccordionNavItem";
 import { useMemo, useState, type ReactNode } from "react";
@@ -18,13 +19,35 @@ import {
 } from "@/components/ui/dialog";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 
-const linkClass = ({ isActive }: { isActive: boolean }) =>
-  cn(
-    "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-    isActive
-      ? "bg-sidebar-accent text-foreground shadow-[inset_2px_0_0_0_hsl(var(--accent-coral))]"
-      : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+// La grammaire des tableaux de service (navStyles) : posée sur le fond, sans
+// cadre ni filet, la ligne active en voile violet.
+const linkClass = ({ isActive }: { isActive: boolean }) => navItem(isActive);
+
+/** Le contenu d'un lien de la barre : son icône (pleine quand il est actif) et
+ *  son libellé. */
+function linkBody(icon: SubNavItem["icon"] | undefined, label: ReactNode) {
+  const Icon = icon;
+  return ({ isActive }: { isActive: boolean }) => (
+    <>
+      {Icon && <Icon weight={isActive ? "fill" : "regular"} className={navIcon(isActive)} />}
+      <span className="truncate">{label}</span>
+    </>
   );
+}
+
+/** La colonne de la barre secondaire : posée sur le fond, titrée comme
+ *  l'en-tête d'un panneau de service. */
+function SidebarColumn({ title, children, footer }: { title: ReactNode; children: ReactNode; footer?: ReactNode }) {
+  return (
+    <aside className="flex h-full w-56 shrink-0 flex-col">
+      <div className="flex h-10 shrink-0 items-center px-4 pt-1">
+        <div className="min-w-0 truncate text-[14px] font-semibold tracking-tight text-foreground">{title}</div>
+      </div>
+      <nav className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-2 pb-2">{children}</nav>
+      {footer}
+    </aside>
+  );
+}
 
 export function SecondarySidebar() {
   const { workspaceSlug = "default", projectSlug = "default" } = useParams();
@@ -41,7 +64,9 @@ export function SecondarySidebar() {
 
   // AI Workforce module → show hired agents in sidebar. /agent/builder/* is a
   // bare redirect now, so it gets no sidebar of its own.
-  if (moduleSlug === "agent" && segments[appIdx + 4] !== "builder") {
+  // AI Ops (hidden from the module nav) lives inside AI Workforce: the models
+  // and servers agents run on are configured there.
+  if ((moduleSlug === "agent" && segments[appIdx + 4] !== "builder") || moduleSlug === "aiops") {
     return <AgentWorkforceSidebar base={base} />;
   }
   if (moduleSlug === "agent" && segments[appIdx + 4] === "builder") return null;
@@ -88,49 +113,32 @@ export function SecondarySidebar() {
       itemsInGroup(module, g).some((it) => it.slug === activeSlug),
     );
     return (
-      <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
-        <div className="flex h-14 items-center border-b border-border px-4">
-          <div className="text-base font-semibold text-foreground">{module.label}</div>
-        </div>
-        <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
+      <SidebarColumn title={module.label}>
+        <div className="space-y-0.5">
           {groups.map((g) => {
             const items = itemsInGroup(module, g);
             const first = items[0];
             if (!first) return null;
             const isActive = g === activeGroup;
             return (
-              <NavLink
-                key={g}
-                to={`${base}/${module.slug}/${first.slug}`}
-                className={cn(
-                  "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
-                  isActive
-                    ? "bg-sidebar-accent font-medium text-foreground"
-                    : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-                )}
-              >
-                <span>{g}</span>
+              <NavLink key={g} to={`${base}/${module.slug}/${first.slug}`} className={navItem(isActive, "justify-between")}>
+                <span className="min-w-0 truncate">{g}</span>
                 {items.length > 1 && (
-                  <span className="ml-2 rounded-full bg-sidebar-foreground/10 px-1.5 text-[10px] tabular-nums text-muted-foreground">
-                    {items.length}
-                  </span>
+                  <span className="ml-2 shrink-0 text-[12px] tabular-nums text-muted-foreground">{items.length}</span>
                 )}
               </NavLink>
             );
           })}
-        </nav>
-      </aside>
+        </div>
+      </SidebarColumn>
     );
   }
 
   const topLevel = module.subItems.filter((s) => !s.parent);
 
   return (
-    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
-      <div className="flex h-14 items-center border-b border-border px-4">
-        <div className="text-base font-semibold text-foreground">{module.label}</div>
-      </div>
-      <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
+    <SidebarColumn title={module.label}>
+      <div className="space-y-0.5">
         {topLevel.map((sub, i) => {
           const to = `${base}/${module.slug}/${sub.slug}`;
           const prevGroup = i > 0 ? topLevel[i - 1].group : undefined;
@@ -154,8 +162,7 @@ export function SecondarySidebar() {
             }
             return (
               <NavLink key={sub.slug} to={to} className={linkClass}>
-                {sub.icon && <sub.icon weight="duotone" className="h-[18px] w-[18px] shrink-0" />}
-                <span className="truncate">{sub.label}</span>
+                {linkBody(sub.icon, sub.label)}
               </NavLink>
             );
           })();
@@ -163,20 +170,13 @@ export function SecondarySidebar() {
           if (!showDivider) return node;
           return (
             <div key={sub.slug + "-grouped"}>
-              <div
-                className={cn(
-                  "px-3 pb-2 pt-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
-                  i > 0 && "mt-4 border-t border-border/60 pt-5",
-                )}
-              >
-                {sub.group}
-              </div>
+              <div className={navSection(i === 0)}>{sub.group}</div>
               {node}
             </div>
           );
         })}
-      </nav>
-    </aside>
+      </div>
+    </SidebarColumn>
   );
 }
 
@@ -198,62 +198,49 @@ function AgentWorkforceSidebar({ base }: { base: string }) {
   const onRoster = agentSeg === "agents" || agentSeg === "public-agents";
   const onSkills = agentSeg === "skills";
   const onMcp = agentSeg === "mcp";
+  const aiopsSub = (() => {
+    const idx = segs.indexOf("aiops");
+    return idx >= 0 ? segs[idx + 1] : undefined;
+  })();
+  const aiops = findModule("aiops");
 
   // No agent is configured here any more — internal ones (0133) and public ones
   // (0195) both live in their service dashboard. This module keeps the roster
   // (a directory of the whole workforce) and what it shares: skills, MCP
   // servers. Les collections de connaissances vivent dans le RAG des Sources,
   // côté service.
+  const row = (active: boolean, Icon: SubNavItem["icon"] | undefined, label: string, to: string) => (
+    <button key={to} onClick={() => navigate(to)} className={navItem(active)}>
+      {Icon && <Icon weight={active ? "fill" : "regular"} className={navIcon(active)} />}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </button>
+  );
+
   return (
-    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
-      <div className="flex h-14 items-center justify-between border-b border-border px-4">
-        <div className="text-base font-semibold text-foreground">AI Workforce</div>
+    <SidebarColumn title="AI Workforce">
+      {/* ── The roster (internal + public, opened in their dashboard) ── */}
+      <SectionLabel first>Main-d'œuvre</SectionLabel>
+      <div className="space-y-0.5">
+        {row(onRoster, RobotIcon, "Collaborateurs", `${base}/agent/agents`)}
       </div>
 
-      <div className="scrollbar-slim flex-1 overflow-y-auto p-2">
-        {/* ── The roster (internal + public, opened in their dashboard) ── */}
-        <SectionLabel>Main-d'œuvre</SectionLabel>
-        <button
-          onClick={() => navigate(`${base}/agent/agents`)}
-          className={cn(
-            "mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
-            onRoster ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-          )}
-        >
-          <RobotIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" /> Collaborateurs
-        </button>
-
-        {/* ── Skills (custom + catalogue) ── */}
-        <div className="mt-4 border-t border-border/60 pt-3">
-          <SectionLabel>Compétences</SectionLabel>
-        </div>
-        <button
-          onClick={() => navigate(`${base}/agent/skills`)}
-          className={cn(
-            "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
-            onSkills
-              ? "bg-sidebar-accent font-medium text-foreground"
-              : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-          )}
-        >
-          <PuzzlePieceIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
-          <span className="min-w-0 flex-1 truncate">Skills</span>
-        </button>
-        <button
-          onClick={() => navigate(`${base}/agent/mcp`)}
-          className={cn(
-            "mt-1 flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
-            onMcp
-              ? "bg-sidebar-accent font-medium text-foreground"
-              : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-          )}
-        >
-          <PlugsConnectedIcon weight="duotone" className="h-[18px] w-[18px] shrink-0" />
-          <span className="min-w-0 flex-1 truncate">MCP Servers</span>
-        </button>
-
+      {/* ── Skills (custom + catalogue) ── */}
+      <SectionLabel>Compétences</SectionLabel>
+      <div className="space-y-0.5">
+        {row(onSkills, PuzzlePieceIcon, "Skills", `${base}/agent/skills`)}
+        {row(onMcp, PlugsConnectedIcon, "MCP Servers", `${base}/agent/mcp`)}
       </div>
-    </aside>
+
+      {/* ── AI Ops: models, servers, deployment the agents run on ── */}
+      {aiops && (
+        <>
+          <SectionLabel>AI Ops</SectionLabel>
+          <div className="space-y-0.5">
+            {aiops.subItems.map((sub) => row(aiopsSub === sub.slug, sub.icon, sub.label, `${base}/aiops/${sub.slug}`))}
+          </div>
+        </>
+      )}
+    </SidebarColumn>
   );
 }
 
@@ -307,67 +294,50 @@ function VibeCodeSidebar({ base, pathname, search }: { base: string; pathname: s
   };
 
   return (
-    <aside className="flex h-full w-52 flex-col border-r border-border bg-sidebar">
-      <div className="flex h-14 items-center border-b border-border px-4"><div className="text-base font-semibold text-foreground">Vibe Code</div></div>
-      <nav className="scrollbar-slim flex-1 overflow-y-auto p-2">
+    <SidebarColumn title="Vibe Code">
+      <div className="space-y-0.5">
         {(mod?.subItems ?? []).map((s) => (
           <NavLink key={s.slug} to={`${base}/vibe-code/${s.slug}`} className={linkClass}>
-            {s.icon && <s.icon weight="duotone" className="h-[18px] w-[18px] shrink-0" />}
-            <span className="truncate">{s.label}</span>
+            {linkBody(s.icon, s.label)}
           </NavLink>
         ))}
+      </div>
 
-        {/* Projects — each is bound to one repo; its sessions inherit that repo. */}
-        <div className="mt-4 border-t border-border/60 pt-3">
-          <div className="flex items-center justify-between px-3 pb-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Projets</span>
-            <button onClick={() => setCreating(true)} title="Nouveau projet" className="text-muted-foreground hover:text-foreground">
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <button
-            onClick={() => navigate(`${base}/vibe-code/chat`)}
-            className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
-              !activeProject ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}
-          >
-            <span className="min-w-0 flex-1 truncate">Sans projet</span>
+      {/* Projects — each is bound to one repo; its sessions inherit that repo. */}
+      <div className={cn(navSection(), "flex items-center justify-between")}>
+        <span>Projets</span>
+        <button onClick={() => setCreating(true)} title="Nouveau projet" className="rounded p-1 text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground">
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="space-y-0.5">
+        <button onClick={() => navigate(`${base}/vibe-code/chat`)} className={navItem(!activeProject)}>
+          <span className="min-w-0 flex-1 truncate">Sans projet</span>
+        </button>
+        {(vibeProjects ?? []).map((p) => (
+          <button key={p.id} onClick={() => navigate(`${base}/vibe-code/chat?project=${p.id}`)} className={navItem(activeProject === p.id)}>
+            <FolderKanban className={navIcon(activeProject === p.id)} />
+            <span className="min-w-0 flex-1 truncate">{p.name}</span>
           </button>
-          {(vibeProjects ?? []).map((p) => (
-            <button
-              key={p.id}
-              onClick={() => navigate(`${base}/vibe-code/chat?project=${p.id}`)}
-              className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                activeProject === p.id ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}
-            >
-              <FolderKanban className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{p.name}</span>
-            </button>
-          ))}
-        </div>
+        ))}
+      </div>
 
-        <div className="mt-4 border-t border-border/60 pt-3">
-          <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sessions</div>
-          <button
-            onClick={() => navigate(chatHref({}))}
-            className={cn("mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent/60",
-              activeSub === "chat" && !activeSession ? "bg-sidebar-accent font-medium text-foreground" : "font-medium text-primary")}
-          >
-            <Plus className="h-3.5 w-3.5" /> Nouvelle session
+      <div className={navSection()}>Sessions</div>
+      <div className="space-y-0.5">
+        <button
+          onClick={() => navigate(chatHref({}))}
+          className={navItem(activeSub === "chat" && !activeSession, activeSub === "chat" && !activeSession ? "" : "text-primary hover:text-primary")}
+        >
+          <Plus className="h-3.5 w-3.5 shrink-0" /> Nouvelle session
+        </button>
+        {(sessions ?? []).length === 0 ? (
+          <p className="px-2.5 py-1.5 text-[12px] text-muted-foreground">Aucune session.</p>
+        ) : (sessions ?? []).map((s) => (
+          <button key={s.id} onClick={() => navigate(chatHref({ session: s.id }))} className={navItem(activeSession === s.id && activeSub === "chat")}>
+            <span className="min-w-0 flex-1 truncate">{s.title}</span>
           </button>
-          {(sessions ?? []).length === 0 ? (
-            <p className="px-3 py-2 text-xs text-muted-foreground">Aucune session.</p>
-          ) : (sessions ?? []).map((s) => (
-            <button
-              key={s.id}
-              onClick={() => navigate(chatHref({ session: s.id }))}
-              className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                activeSession === s.id && activeSub === "chat" ? "bg-sidebar-accent font-medium text-foreground" : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}
-            >
-              <span className="min-w-0 flex-1 truncate">{s.title}</span>
-            </button>
-          ))}
-        </div>
-      </nav>
+        ))}
+      </div>
 
       {creating && (
         <NewVibeProjectDialog
@@ -381,7 +351,7 @@ function VibeCodeSidebar({ base, pathname, search }: { base: string; pathname: s
           }}
         />
       )}
-    </aside>
+    </SidebarColumn>
   );
 }
 
@@ -461,12 +431,8 @@ function NewVibeProjectDialog({
   );
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className="px-3 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-      {children}
-    </div>
-  );
+function SectionLabel({ children, first }: { children: ReactNode; first?: boolean }) {
+  return <div className={navSection(first)}>{children}</div>;
 }
 
 function SidebarSpinner() {

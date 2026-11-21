@@ -17,12 +17,13 @@ import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ConnectorCards, type ConnectorProposal } from "./ConnectorCards";
+import { TeamBlueprintCard, type TeamBlueprintCardData } from "@/features/teamz/TeamBlueprintCard";
 
 export interface AiArtifact {
   id: string;
   message_id: string;
   /** "connectors" is interactive (real connect buttons), not a downloadable file. */
-  kind: "document" | "json" | "table" | "code" | "csv" | "connectors";
+  kind: "document" | "json" | "table" | "code" | "csv" | "connectors" | "team_blueprint";
   title: string;
   content: string | null;
   data: any | null;
@@ -38,6 +39,8 @@ const KIND_META: Record<AiArtifact["kind"], { icon: any; label: string }> = {
   csv: { icon: FileDown, label: "CSV" },
   // Rendered by ConnectorCards, never by ArtifactCard — listed for completeness.
   connectors: { icon: Plug, label: "Connecteurs" },
+  // Rendered by TeamBlueprintCard (Teamz, 0298).
+  team_blueprint: { icon: Plug, label: "Équipe" },
 };
 
 function download(filename: string, content: string, mime: string) {
@@ -69,6 +72,9 @@ export function MessageArtifacts({
         a.kind === "connectors"
           // Interactive: real connect buttons, not a collapsible file card.
           ? <ConnectorCards key={a.id} proposal={(a.data ?? {}) as ConnectorProposal} />
+          : a.kind === "team_blueprint"
+          // Une équipe entière : plan, score qualité, Déployer, assemblage.
+          ? <TeamBlueprintCard key={a.id} data={(a.data ?? {}) as TeamBlueprintCardData} />
           : <ArtifactCard key={a.id} artifact={a} onOpenDocument={onOpenDocument} />
       ))}
     </div>

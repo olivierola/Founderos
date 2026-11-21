@@ -35,6 +35,8 @@ import {
   type Graph,
 } from "./outline";
 import { BlockForm } from "./BlockForm";
+import { BlockPalette } from "./BlockPalette";
+import { TriggerSettings, triggerModeLabel } from "./TriggerSettings";
 import { Field, TextArea } from "./inspector-ui";
 import {
   CodeEditor, OutputVarPill, ArgPills, ErrorPolicy, TestEditor,
@@ -88,16 +90,16 @@ function rowsOf(node: Node, ctx: Ctx): Row[] {
 
   if (kind === "trigger") {
     const mode = s(d.mode) || "manual";
-    rows.push({
-      label: "Quand",
-      value: mode === "schedule" ? "Planifié"
-        : mode === "event" ? "Sur événement"
-        : mode === "webhook" ? "Webhook entrant" : "Lancement manuel",
-    });
+    rows.push({ label: "Mode", value: triggerModeLabel(mode) });
     if (mode === "schedule") {
       let human = s(d.schedule) || "non défini";
       try { human = describeCron(s(d.schedule)) || human; } catch { /* l'expression brute reste lisible */ }
       rows.push({ label: "Rythme", value: human, tone: "muted" });
+    }
+    if (mode === "webhook") {
+      rows.push(s(d.webhook_token)
+        ? { label: "Appel", value: "POST entrant", tone: "muted" }
+        : { label: "Appel", value: "jeton manquant", tone: "warn" });
     }
     if (mode === "event") rows.push({ label: "Événement", value: s(d.event) || "non défini", tone: s(d.event) ? "muted" : "warn" });
     return rows;
@@ -542,7 +544,7 @@ export function WorkflowCanvas(props: CanvasProps) {
 }
 
 function Canvas({ ctx, status, kinds, qualifierKinds, frameKinds }: CanvasProps) {
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const { screenToFlowPosition, flowToScreenPosition, fitView } = useReactFlow();
   const wrap = useRef<HTMLDivElement>(null);
   /** Le port qu'on vient de tirer, quand le fil est lâché dans le vide. Le
    *  SENS compte : un fil tiré depuis l'entrée d'un bloc crée son prédécesseur,
@@ -633,11 +635,23 @@ function Canvas({ ctx, status, kinds, qualifierKinds, frameKinds }: CanvasProps)
     from: Dragged | null;
   } | null>(null);
 
+  /** L'instant d'ouverture. Un fil lâché dans le vide finit par un `click`
+   *  que le navigateur adresse à l'ancêtre commun du port et du fond — le
+   *  conteneur, qui referme la palette au clic. Sans ce garde, elle s'ouvrait
+   *  et se refermait dans le même geste. */
+  const openedAt = useRef(0);
   const openPalette = useCallback((
     flow: { x: number; y: number },
     from: Dragged | null,
     screen?: { x: number; y: number } | null,
-  ) => setPalette({ flow, from, screen: screen ?? null }), []);
+  ) => {
+    openedAt.current = performance.now();
+    setPalette({ flow, from, screen: screen ?? null });
+  }, []);
+  const closePalette = useCallback(() => {
+    if (performance.now() - openedAt.current < 250) return;
+    setPalette(null);
+  }, []);
 
   const actions: Actions = useMemo(() => ({
     open: (id) => ctx.setOpenBlock(id),
@@ -663,12 +677,18 @@ function Canvas({ ctx, status, kinds, qualifierKinds, frameKinds }: CanvasProps)
     addFrom: (id, handle) => {
       const src = ctx.graph.nodes.find((n) => n.id === id);
       const at = src?.position ?? { x: 0, y: 0 };
+      const flow = { x: at.x, y: at.y + (heights.get(id) ?? 96) + 90 };
+      // La palette s'ouvre SOUS le bloc dont on part, là où le nouveau bloc
+      // atterrira — pas dans le coin du canevas, loin du geste.
+      const box = wrap.current?.getBoundingClientRect();
+      const below = flowToScreenPosition({ x: at.x, y: at.y + (heights.get(id) ?? 96) + 12 });
       openPalette(
-        { x: at.x, y: at.y + (heights.get(id) ?? 96) + 90 },
+        flow,
         { nodeId: id, handleId: handle, handleType: "source" },
+        box ? { x: below.x - box.left, y: below.y - box.top } : null,
       );
     },
-  }), [ctx, heights, openPalette]);
+  }), [ctx, heights, openPalette, flowToScreenPosition]);
 
   const addBlock = (kind: BlockKind) => {
     const p = palette;
@@ -697,8 +717,10 @@ function Canvas({ ctx, status, kinds, qualifierKinds, frameKinds }: CanvasProps)
         }
         return connectBlocks(graph, id, null, from.nodeId);
       }
+      // Depuis le port « s'applique à » d'un cadrage, le bloc posé est l'ÉTAPE
+      // qui le reçoit : le cadrage reste la source de l'attachement.
       return from.handleId === APPLIES_HANDLE
-        ? attachQualifier(graph, id, from.nodeId)
+        ? attachQualifier(graph, from.nodeId, id)
         : connectBlocks(graph, from.nodeId, from.handleId, id);
     });
     // Un bloc neuf est vide par définition : ses réglages s'ouvrent tout de
@@ -762,12 +784,22 @@ function Canvas({ ctx, status, kinds, qualifierKinds, frameKinds }: CanvasProps)
   // Une automatisation ne se cadre pas : ni règle, ni contexte, ni livrable —
   // le moteur n'en lit aucun. Elle a en revanche des variables et des entrées,
   // qui arrivent par `frameKinds`.
-  const paletteKinds = ctx.kind === "automation"
-    ? [...kinds, ...frameKinds]
-    : [...kinds, ...frameKinds, ...qualifierKinds];
+  const attachableKinds = ctx.kind === "automation" ? [] : qualifierKinds;
+  const allKinds = [...kinds, ...frameKinds, ...attachableKinds];
+
+  // Ce qu'on propose dépend du port d'où part le fil. Un fil d'attachement
+  // n'aboutit qu'à un cadrage d'un côté et à une étape de l'autre ; un fil de
+  // flux n'enchaîne que des actions — un objectif ou une règle reliés par une
+  // flèche ne seraient lus par personne.
+  const from = palette?.from ?? null;
+  const paletteKinds = !from
+    ? allKinds
+    : from.handleType === "target" && from.handleId === ATTACH_HANDLE
+      ? attachableKinds
+      : kinds;
 
   return (
-    <div ref={wrap} className="relative h-full w-full" onClick={() => setPalette(null)}>
+    <div ref={wrap} className="relative h-full w-full" onClick={closePalette}>
       <ActionsCtx.Provider value={actions}>
         <ReactFlow
           nodes={rfNodes}
@@ -781,7 +813,7 @@ function Canvas({ ctx, status, kinds, qualifierKinds, frameKinds }: CanvasProps)
             ctx.apply((g) => setPositions(g, moved));
           }}
           onNodeClick={(_, node) => ctx.setOpenBlock(node.id)}
-          onPaneClick={() => { ctx.setOpenBlock(null); setPalette(null); }}
+          onPaneClick={() => { ctx.setOpenBlock(null); closePalette(); }}
           onNodesDelete={(deleted) => {
             ctx.apply((g) => deleted.reduce((acc, n) => removeBlock(acc, n.id), g));
           }}
@@ -821,7 +853,7 @@ function Canvas({ ctx, status, kinds, qualifierKinds, frameKinds }: CanvasProps)
                   const center = box
                     ? screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 3 })
                     : { x: 0, y: 0 };
-                  openPalette(center, null, box ? { x: 16, y: 48 } : null);
+                  openPalette(center, null, box ? { x: 12, y: 56 } : null);
                 }}
               >
                 <Plus className="h-3.5 w-3.5" /> Ajouter un bloc
@@ -839,44 +871,16 @@ function Canvas({ ctx, status, kinds, qualifierKinds, frameKinds }: CanvasProps)
         </ReactFlow>
 
         {palette && (
-          <div
-            className="absolute z-30 w-60 overflow-hidden rounded-xl border border-border bg-popover shadow-xl"
-            style={{
-              left: Math.max(8, Math.min((palette.screen?.x ?? 16), (wrap.current?.clientWidth ?? 800) - 250)),
-              top: Math.max(8, Math.min((palette.screen?.y ?? 48), (wrap.current?.clientHeight ?? 600) - 320)),
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-border/60 px-2.5 py-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground">
-                {palette.from ? "Relier à un nouveau bloc" : "Ajouter un bloc"}
-              </span>
-              <button type="button" onClick={() => setPalette(null)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-            <div className="max-h-72 overflow-y-auto py-1">
-              {paletteKinds.map((k) => {
-                const def = BLOCK_BY_KIND.get(k)!;
-                const Icon = def.icon;
-                return (
-                  <button
-                    key={k} type="button" onClick={() => addBlock(k)}
-                    className="flex w-full items-start gap-2 px-2.5 py-1.5 text-left hover:bg-muted"
-                  >
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded"
-                      style={{ background: `${hueOf(k)}26`, color: hueOf(k) }}>
-                      <Icon className="h-3 w-3" weight="bold" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[12px] font-medium">{def.label}</span>
-                      <span className="block truncate text-[10.5px] text-muted-foreground">{def.hint}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <BlockPalette
+            key={`${palette.screen?.x ?? 0}:${palette.screen?.y ?? 0}:${palette.from?.nodeId ?? ""}`}
+            title={palette.from ? "Relier à un nouveau bloc" : "Ajouter un bloc"}
+            kinds={paletteKinds}
+            attachable={attachableKinds}
+            anchor={palette.screen ?? { x: 16, y: 56 }}
+            bounds={{ width: wrap.current?.clientWidth ?? 800, height: wrap.current?.clientHeight ?? 600 }}
+            onPick={addBlock}
+            onClose={() => setPalette(null)}
+          />
         )}
 
         {selected && (
@@ -1048,6 +1052,22 @@ function Inspector({ ctx, node, onClose }: { ctx: Ctx; node: Node; onClose: () =
             le nom sous lequel son résultat est rangé. Sur le canevas il n'y a
             pas de phrase où les poser : ils viennent en tête du panneau, avant
             les réglages de fond. */}
+        {/* Le déclencheur se règle ICI aussi : sans ce bloc, le panneau du
+            canevas s'ouvrait vide sur lui, et il fallait changer de vue pour
+            le programmer ou le passer en webhook. */}
+        {node.type === "trigger" && (
+          ctx.kind === "automation" ? (
+            <div className="mb-3">
+              <Field label="Mode de déclenchement">
+                <TriggerSettings trigger={node} ctx={ctx} compact />
+              </Field>
+            </div>
+          ) : (
+            <p className="mb-3 rounded-lg bg-muted/40 p-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+              Une procédure n'a pas de déclencheur. Pour un lancement programmé ou par webhook, faites-en une automatisation.
+            </p>
+          )
+        )}
         {node.type === "decision" && (
           <div className="mb-3">
             <TestEditor node={node} ctx={ctx} />

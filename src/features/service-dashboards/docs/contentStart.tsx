@@ -26,7 +26,7 @@ export const START_SECTION: DocSection = {
           </Lede>
 
           <P>
-            La différence avec le reste de FounderOS tient en une phrase : ici,
+            La différence avec le reste de Agent company tient en une phrase : ici,
             <strong> une machine et une personne apparaissent sur la même ligne</strong>.
             Un work item peut être porté par quelqu'un, par un collaborateur, ou par les
             deux ; une mission confiée à un collaborateur produit un livrable rattaché à la

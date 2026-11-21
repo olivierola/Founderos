@@ -6,6 +6,12 @@
 -- The sandbox_mode/sandbox_url columns were added ad-hoc earlier; this migration
 -- makes the choice explicit and constrained.
 
+-- Reconstruction : ces colonnes ont été ajoutées hors migration sur l'instance
+-- SaaS. Une base neuve (on-prem, backend auto-hébergé) les reçoit ici.
+alter table public.internal_agents
+  add column if not exists sandbox_mode text,
+  add column if not exists sandbox_url text;
+
 update public.internal_agents set sandbox_mode = 'cloud' where sandbox_mode is null;
 
 alter table public.internal_agents

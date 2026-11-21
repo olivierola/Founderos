@@ -16,6 +16,7 @@ import { loadMcpCatalog, type McpTokenExchangeAuth } from "./mcp-auth.ts";
 import { loadMcpApiTokens } from "./mcp-api-token.ts";
 import { loadMcpHeaders, mergeMcpHeaders } from "./mcp-headers.ts";
 import type { McpGrant } from "./workflow-doc.ts";
+import { limitMcpServers, loadPoolScope } from "./resource-pools.ts";
 
 export type { McpGrant };
 
@@ -130,6 +131,24 @@ export async function prepareMcpServers(admin: SupabaseClient, rows: ServerRow[]
  * à la fois activé et accordé garde l'accès complet de l'activation.
  */
 export async function loadRunMcpServers(admin: SupabaseClient, agentId: string, runId?: string | null): Promise<LoadedMcpServer[]> {
+  // Mode pools (0291) : les serveurs sont ceux des pools, limités à leurs
+  // outils ; ni les activations de l'agent ni les accès qu'un workflow ouvre au
+  // run ne les dépassent — un workflow qui en demanderait plus échoue au
+  // lancement (workflow-engine.ts).
+  const scope = await loadPoolScope(admin, agentId);
+  if (scope) {
+    if (scope.mcp.size === 0) return [];
+    const { data: agent } = await admin.from("internal_agents").select("workspace_id").eq("id", agentId).maybeSingle();
+    const ws = (agent as { workspace_id?: string } | null)?.workspace_id;
+    if (!ws) return [];
+    const { data: rows } = await admin.from("mcp_servers").select(SERVER_COLUMNS)
+      .eq("workspace_id", ws).in("id", [...scope.mcp.keys()]);
+    // Les accès d'un workflow (mcp_grants) sont des AJOUTS : en mode pools, ce
+    // qu'ils pourraient ajouter est déjà dans les pools, ou bien le workflow a
+    // été refusé au lancement. Ils n'ont donc rien à faire ici.
+    const servers = await prepareMcpServers(admin, (rows ?? []) as ServerRow[]);
+    return limitMcpServers(servers, scope);
+  }
   const { data } = await admin.from("agent_mcp_servers").select(`server:mcp_servers(${SERVER_COLUMNS})`).eq("agent_id", agentId);
   const activated = ((data ?? []) as Array<{ server: ServerRow }>).map((r) => r.server).filter(Boolean);
   const activatedIds = new Set(activated.map((s) => s.id));

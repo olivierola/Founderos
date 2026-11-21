@@ -6,10 +6,20 @@
 // `limit` — some toolkits expose hundreds/thousands of raw tools). Used both
 // by the agent's own use_<toolkit> tool and by the "capabilities" preview in
 // the per-agent Connecteurs tab.
+// { toolkit, describe: slug } → the action's input schema (my_resources).
+// { discover_all: true, project_id? } → caches the actions of every shared,
+// connected app of the project (of the whole install for the service role),
+// so each one becomes a resource of the registry (0291, 0293).
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { getComposio } from "../_shared/composio.ts";
+import { cacheDiscoveredActions, discoverConnectedApps } from "../_shared/composio-discovery.ts";
+
+function isServiceCall(req: Request): boolean {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  return !!serviceKey && (req.headers.get("Authorization") ?? "") === `Bearer ${serviceKey}`;
+}
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -29,13 +39,13 @@ Deno.serve(async (req) => {
       /** Set ONLY to act through that person's own account (opt-in, 0177). */
       as_user_id?: string;
     };
-    if (!workspace_id || !project_id || !toolkit) {
-      return jsonResponse({ error: "workspace_id, project_id, toolkit required" }, { status: 400 });
+    const discoverAll = (body as { discover_all?: unknown }).discover_all === true;
+    if (discoverAll ? (!isServiceCall(req) && (!workspace_id || !project_id)) : (!workspace_id || !project_id || !toolkit)) {
+      return jsonResponse({ error: discoverAll ? "workspace_id, project_id required" : "workspace_id, project_id, toolkit required" }, { status: 400 });
     }
 
     const authHeader = req.headers.get("Authorization") ?? "";
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const isService = !!serviceKey && authHeader === `Bearer ${serviceKey}`;
+    const isService = isServiceCall(req);
     if (!isService) {
       if (!authHeader) return jsonResponse({ error: "Missing Authorization header" }, { status: 401 });
       const userClient = createUserClient(authHeader);
@@ -49,13 +59,40 @@ Deno.serve(async (req) => {
       }
     }
 
+    // « Resynchroniser » (onglet Pools) et la reprise de l'existant.
+    if (discoverAll) {
+      // Le projet est vérifié dans l'espace : un membre d'un espace ne lance
+      // pas la découverte d'un autre en donnant son project_id.
+      if (project_id && workspace_id) {
+        const { data: pr } = await admin.from("projects").select("id").eq("id", project_id).eq("workspace_id", workspace_id).maybeSingle();
+        if (!pr) return jsonResponse({ error: "Project not found" }, { status: 404 });
+      }
+      const report = await discoverConnectedApps(admin, {
+        projectId: project_id || undefined,
+        onlyMissing: (body as { only_missing?: unknown }).only_missing === true,
+      });
+      return jsonResponse({ ok: true, report });
+    }
+
     const composio = getComposio();
+
+    // Le schéma d'une action, pour la fiche que l'agent demande (my_resources).
+    const describe = typeof (body as { describe?: unknown }).describe === "string" ? String((body as { describe: string }).describe) : "";
+    if (describe) {
+      const t = await composio.tools.getRawComposioToolBySlug(describe) as unknown as Record<string, unknown>;
+      return jsonResponse({
+        slug: String(t.slug ?? describe), name: String(t.name ?? ""), description: String(t.description ?? ""),
+        input_parameters: t.inputParameters ?? null,
+      });
+    }
 
     // Discovery: no tool_slug → list the toolkit's available tools.
     if (!tool_slug) {
       const cap = Math.min(Math.max(limit ?? 30, 1), 100);
       const tools = await composio.tools.getRawComposioTools({ toolkits: [toolkit], limit: cap } as Parameters<typeof composio.tools.getRawComposioTools>[0]);
       const list = (Array.isArray(tools) ? tools : []) as Array<Record<string, unknown>>;
+      await cacheDiscoveredActions(admin, workspace_id!, project_id!, toolkit!, list).catch((e) =>
+        console.error(`[composio-action] mise en cache des actions de ${toolkit} : ${e instanceof Error ? e.message : e}`));
       return jsonResponse({
         toolkit,
         actions: list.map((t) => ({

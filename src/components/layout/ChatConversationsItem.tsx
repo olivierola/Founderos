@@ -9,6 +9,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { navItem, navSubItem } from "./navStyles";
 
 interface Conversation {
   id: string;
@@ -45,24 +46,13 @@ export function ChatConversationsItem({ to, label }: Props) {
   return (
     <div>
       <div className="flex items-center">
-        <NavLink
-          to={to}
-          end
-          className={({ isActive }) =>
-            cn(
-              "flex flex-1 items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-sidebar-accent text-foreground"
-                : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-            )
-          }
-        >
+        <NavLink to={to} end className={({ isActive }) => navItem(isActive, "flex-1")}>
           {label}
         </NavLink>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+          className="ml-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
           aria-label={open ? "Collapse conversations" : "Expand conversations"}
         >
           <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !open && "-rotate-90")} />
@@ -70,18 +60,18 @@ export function ChatConversationsItem({ to, label }: Props) {
       </div>
 
       {open && (
-        <div className="ml-2 mt-1 space-y-0.5 border-l border-border/60 pl-2">
+        <div className="mt-0.5 space-y-0.5 pl-4">
           <button
             type="button"
             onClick={() => navigate(to)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+            className={cn(navSubItem(false), "text-primary hover:text-primary")}
           >
             <Plus className="h-3 w-3" />
             New conversation
           </button>
 
           {(conversations ?? []).length === 0 ? (
-            <p className="px-2 py-1.5 text-[11px] text-muted-foreground">No conversations yet.</p>
+            <p className="px-2.5 py-1.5 text-[11.5px] text-muted-foreground">No conversations yet.</p>
           ) : (
             (conversations ?? []).map((c) => {
               const isActive = activeConvoId === c.id;
@@ -90,12 +80,7 @@ export function ChatConversationsItem({ to, label }: Props) {
                   key={c.id}
                   type="button"
                   onClick={() => navigate(`${to}?c=${c.id}`)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
-                    isActive
-                      ? "bg-sidebar-accent text-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-                  )}
+                  className={navSubItem(isActive)}
                 >
                   <MessageSquare className="h-3 w-3 shrink-0 opacity-70" />
                   <span className="truncate">{c.title ?? "Untitled"}</span>

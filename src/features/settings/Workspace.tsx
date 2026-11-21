@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { renameWorkspace, renameProject } from "@/hooks/useWorkspace";
+import { PlatformConnection } from "@/features/governance/aiops/PlatformConnection";
 
 export function SettingsWorkspacePage() {
   const { workspace, workspaceId, role, projectId, project } = useCurrentContext();
@@ -166,7 +167,9 @@ export function SettingsWorkspacePage() {
         </Card>
       </div>
 
-      <Card className="mt-4">
+      <PlatformConnection className="mt-6" />
+
+      <Card className="mt-6">
         <CardContent className="p-5">
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm font-medium">Team members</span>

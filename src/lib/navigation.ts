@@ -370,6 +370,8 @@ export const HIDDEN_MODULES: ModuleNavItem[] = [
       { label: "Temps réel", slug: "ops-live", icon: PulseIcon },
       { label: "Incidents infra", slug: "ops-infra", icon: WarningOctagonIcon },
       { label: "Modèles", slug: "ops-models", icon: CircuitryIcon },
+      // La boucle des agents mesurée : rattrapages, cache, modèles choisis.
+      { label: "Fiabilité", slug: "ops-harness", icon: PulseIcon },
       { label: "Déploiement", slug: "ft-deployment", icon: RocketIcon },
       { label: "Monitoring", slug: "ft-monitoring", icon: ChartLineUpIcon },
       { label: "Coûts", slug: "ft-costs", icon: CoinsIcon },

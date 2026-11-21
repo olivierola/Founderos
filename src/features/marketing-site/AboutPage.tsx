@@ -90,7 +90,7 @@ export function AboutPage() {
           <ArtPanel art="blue" className="relative flex min-h-[560px] items-center rounded-[14px] p-6 sm:p-12">
             <div className="max-w-[480px] bg-white p-6 text-[#0d0d0d] sm:p-8">
               <p className="text-[18px] font-medium leading-[1.3]">
-                At Anduran, we're building one thing: a workforce of Cloud collaborators a company can actually switch on.
+                At Agent company, we're building one thing: a workforce of Cloud collaborators a company can actually switch on.
               </p>
               <p className="mt-5 text-[16px] leading-[1.45] text-[#5c5c66]">
                 That means Cloud collaborators that work on your systems rather than on copies of them; that stop and ask before they

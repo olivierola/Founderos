@@ -5,7 +5,7 @@ import {
   ChatCircleIcon as MessageCircle,
   TwitterLogoIcon as Twitter,
 } from "@phosphor-icons/react";
-import { Logo } from "@/components/Logo";
+import { Logo, Wordmark } from "@/components/Logo";
 import { NeatBackground, FOOTER_NEAT_CONFIG } from "./NeatBackground";
 
 const FOOTER_LINKS = [
@@ -60,7 +60,7 @@ export function MarketingFooter() {
         <div className="flex flex-col gap-12 sm:flex-row sm:items-start sm:justify-between">
           <Link to="/" className="flex items-center gap-3">
             <Logo size={44} />
-            <span className="text-3xl font-semibold tracking-tight md:text-4xl">Anduran</span>
+            <Wordmark size={36} />
           </Link>
 
           <nav className="flex flex-col gap-4 border-l border-white/15 pl-8">
@@ -96,7 +96,7 @@ export function MarketingFooter() {
             })}
           </div>
           <span className="font-mono text-[12px] tracking-wide text-foreground/50">
-            © {new Date().getFullYear()} Anduran. All rights reserved.
+            © {new Date().getFullYear()} Agent company. All rights reserved.
           </span>
         </div>
       </div>

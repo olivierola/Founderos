@@ -11,7 +11,7 @@ import { requireProjectMember } from "../_shared/authz.ts";
 import { callAi, safeParseJson } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 
-const SYSTEM = `Tu es l'agent admin de Anduran.
+const SYSTEM = `Tu es l'agent admin d'Agent company.
 Synthétise l'état du SaaS en un briefing court et factuel pour un fondateur pressé.
 Tu ne dois jamais inventer de chiffres absents.
 

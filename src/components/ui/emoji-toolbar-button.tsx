@@ -404,7 +404,7 @@ function EmojiPickerSearchAndClear({
           size="icon"
           variant="ghost"
           className={cn(
-            '-translate-y-1/2 absolute top-1/2 right-0.5 flex size-8 cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-popover-foreground hover:bg-transparent'
+            '-translate-y-1/2 absolute top-1/2 right-0.5 flex size-8 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-popover-foreground hover:bg-transparent'
           )}
           onClick={clearSearch}
           title={i18n.clear}
@@ -506,7 +506,7 @@ function EmojiPickerNavigation({
                     size="sm"
                     variant="ghost"
                     className={cn(
-                      'h-fit rounded-full fill-current p-1.5 text-muted-foreground hover:bg-muted hover:text-muted-foreground',
+                      'h-fit rounded-md fill-current p-1.5 text-muted-foreground hover:bg-muted hover:text-muted-foreground',
                       id === focusedCategory &&
                         'pointer-events-none bg-accent fill-current text-accent-foreground'
                     )}

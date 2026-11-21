@@ -7,6 +7,7 @@ import { useShellNav } from "./AppShell";
 import { useAssistant } from "@/lib/assistant-context";
 import { useActiveDashboard } from "./useActiveDashboard";
 import { UsageMeter } from "./UsageMeter";
+import { navIcon, navItem, navSection, PRIMARY_WIDTH } from "./navStyles";
 
 export function PrimarySidebar() {
   const { workspaceSlug = "default", projectSlug = "default" } = useParams();
@@ -29,16 +30,18 @@ export function PrimarySidebar() {
     const hasChildren = mod.subItems.length > 1;
 
     if (!expanded) {
+      // Repliée : la même bande d'icônes que la barre repliée d'un service
+      // (CollapsedNav) — carrés de 40 px, arrondis en rounded-xl.
       return (
         <Tooltip key={mod.slug}>
           <TooltipTrigger asChild>
             <NavLink
               to={to}
               className={cn(
-                "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
                 isActive
-                  ? "bg-sidebar-accent text-foreground"
-                  : "text-foreground/55 hover:bg-sidebar-accent/60 hover:text-foreground",
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
               )}
             >
               <Icon className="h-[18px] w-[18px]" weight={isActive ? "fill" : "regular"} />
@@ -50,23 +53,11 @@ export function PrimarySidebar() {
     }
 
     return (
-      <NavLink
-        key={mod.slug}
-        to={to}
-        className={cn(
-          "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-          isActive
-            ? "bg-sidebar-accent font-medium text-foreground"
-            : "text-foreground/80 hover:bg-sidebar-accent/60 hover:text-foreground",
-        )}
-      >
-        <Icon
-          className={cn("h-[18px] w-[18px] shrink-0", isActive ? "text-foreground" : "text-foreground/70")}
-          weight={isActive ? "fill" : "regular"}
-        />
+      <NavLink key={mod.slug} to={to} className={navItem(isActive, "group")}>
+        <Icon className={navIcon(isActive)} weight={isActive ? "fill" : "regular"} />
         <span className="min-w-0 flex-1 truncate">{mod.label}</span>
         {hasChildren && (
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
         )}
       </NavLink>
     );
@@ -76,14 +67,14 @@ export function PrimarySidebar() {
     <TooltipProvider delayDuration={100}>
       <aside
         data-primary-sidebar
-        className={cn(
-          "flex h-full flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200",
-          expanded ? "w-64" : "w-16",
-        )}
+        // Ni fond ni bordure : comme la barre d'un tableau de service, elle est
+        // posée sur le fond de la coque, et seul le contenu a une surface.
+        className="flex h-full shrink-0 flex-col overflow-hidden transition-[width] duration-200"
+        style={{ width: expanded ? PRIMARY_WIDTH.expanded : PRIMARY_WIDTH.collapsed }}
       >
-        {/* Nav — sections (zones) with grey labels + item pills, no dividers.
-            The expand control now lives on the logo (hover) in the navbar. */}
-        <nav className={cn("scrollbar-slim flex-1 overflow-y-auto", expanded ? "px-3 py-3" : "px-2 py-3")}>
+        {/* Nav — les zones, titrées en gris sans filet. Le dépliage vit sur la
+            marque (survol), dans la barre du haut. */}
+        <nav className={cn("scrollbar-hide flex-1 overflow-y-auto pb-2", expanded ? "px-2 pt-1" : "flex flex-col items-center pt-1")}>
           {ZONES.map((zone, zi) => {
             const mods = modulesInZone(zone.id, activeDashboard);
             if (mods.length === 0) return null;
@@ -93,14 +84,12 @@ export function PrimarySidebar() {
                 className={cn(
                   "flex flex-col",
                   expanded ? "gap-0.5" : "items-center gap-1",
-                  zi > 0 && (expanded ? "mt-4" : "mt-2"),
+                  !expanded && zi > 0 && "mt-1 border-t border-sidebar-border/60 pt-2",
                 )}
               >
                 {/* Section label — skipped for the first (primary) zone and when
-                    collapsed, exactly like the reference. */}
-                {expanded && zi > 0 && (
-                  <div className="px-3 pb-1 pt-1 text-xs font-medium text-muted-foreground">{zone.label}</div>
-                )}
+                    collapsed, exactly like a service's sidebar. */}
+                {expanded && zi > 0 && <div className={navSection()}>{zone.label}</div>}
                 {mods.map(renderModule)}
               </div>
             );
@@ -108,16 +97,13 @@ export function PrimarySidebar() {
         </nav>
 
         {/* Bottom — usage meter + help & resources (account lives in the navbar now). */}
-        <div className={cn("mt-auto shrink-0", expanded ? "px-3 pb-3 pt-1" : "px-2 pb-3 pt-1")}>
-          <div className={cn(expanded ? "mb-2" : "mb-2 flex justify-center")}>
+        <div className={cn("mt-auto shrink-0", expanded ? "border-t border-border/60 px-2 pb-2 pt-2" : "flex flex-col items-center pb-3 pt-1")}>
+          <div className={cn(expanded ? "mb-1.5" : "mb-2 flex justify-center")}>
             <UsageMeter expanded={expanded} />
           </div>
           {expanded ? (
-            <button
-              onClick={() => assistant.toggle()}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
-            >
-              <HelpCircle className="h-[18px] w-[18px] shrink-0 text-foreground/70" />
+            <button onClick={() => assistant.toggle()} className={navItem(false)}>
+              <HelpCircle className={navIcon(false)} />
               <span className="min-w-0 flex-1 truncate text-left">Aide et ressources</span>
             </button>
           ) : (
@@ -125,7 +111,7 @@ export function PrimarySidebar() {
               <TooltipTrigger asChild>
                 <button
                   onClick={() => assistant.toggle()}
-                  className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-foreground/55 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
                   aria-label="Aide et ressources"
                 >
                   <HelpCircle className="h-[18px] w-[18px]" />

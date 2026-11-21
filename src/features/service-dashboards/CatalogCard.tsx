@@ -38,21 +38,14 @@ const STATUS_TEXT: Record<CatalogStatus["tone"], string> = {
   idle: "text-muted-foreground",
 };
 
-/** Same states, on the portrait card's black ground: the light cut of each
- *  colour in both themes, since the card itself never turns light. */
-const STATUS_TEXT_ON_BLACK: Record<CatalogStatus["tone"], string> = {
-  working: "text-emerald-400",
-  waiting: "text-amber-400",
-  error: "text-red-400",
-  idle: "text-white/55",
-};
-
 type CatalogCardProps = {
-  /** "portrait" = the collaborator roster: a black card that shows only the
-   *  avatar, large, and reveals the name and the rest on hover. */
-  variant?: "default" | "portrait";
+  /** "wide" = the collaborator roster: a wide card in two blocks side by side,
+   *  the avatar on a charcoal plate, then who it is and what it does. */
+  variant?: "default" | "wide";
   glyph: React.ReactNode;
   name: string;
+  /** One or two lines under the status (wide card only). */
+  description?: string | null;
   status?: CatalogStatus;
   /** Wrench count — tools. `null` renders the em dash of the design. */
   tools: number | null;
@@ -76,7 +69,7 @@ type CatalogCardProps = {
 };
 
 export function CatalogCard(props: CatalogCardProps) {
-  if (props.variant === "portrait") return <PortraitCard {...props} />;
+  if (props.variant === "wide") return <WideCard {...props} />;
   const {
     glyph, name, status, tools, extras, badges, shield, meta, overlay, action, tools_needed, onClick, disabled, className,
   } = props;
@@ -179,20 +172,31 @@ export function CatalogCard(props: CatalogCardProps) {
   );
 }
 
+
 /** Entre deux sauts provoqués par le survol : assez long pour qu'un balayage
  *  de la grille ne fasse pas sauter le même avatar en boucle. */
 const POKE_COOLDOWN_MS = 1600;
 
+/** Les états, sur le fond noir de la carte collaborateur : la coupe claire de
+ *  chaque couleur dans les deux thèmes, puisque la carte ne s'éclaircit jamais. */
+const STATUS_TEXT_ON_BLACK: Record<CatalogStatus["tone"], string> = {
+  working: "text-emerald-400",
+  waiting: "text-amber-400",
+  error: "text-red-400",
+  idle: "text-white/55",
+};
+
 /**
- * La carte collaborateur : une carte noire, l'avatar en grand dans le haut, et
- * sous lui le nom, l'état, les outils et la charge.
+ * La carte collaborateur : une carte noire, large, en deux blocs côte à côte.
+ * À gauche l'avatar en grand ; à droite son nom, son état, ce qu'il fait, ses
+ * outils et sa charge. Même hauteur et même fond que l'ancienne carte
+ * portrait, deux fois plus de place pour lire.
  *
  * L'avatar répond à la main :
  *   · à l'entrée du pointeur, il saute et fait un tour sur lui-même — le geste
  *     que la librairie réserve au clic, qu'on ne verrait jamais ici puisque le
  *     clic ouvre la fiche ;
- *   · tant que le pointeur bouge sur la carte, il s'incline vers lui (ses yeux
- *     le suivent déjà, c'est la librairie qui s'en charge) ;
+ *   · tant que le pointeur bouge sur la carte, il s'incline vers lui ;
  *   · au survol il monte d'un cran sur un ressort, et s'écrase un peu quand on
  *     appuie.
  * Tout cela s'efface sous `prefers-reduced-motion`.
@@ -200,8 +204,8 @@ const POKE_COOLDOWN_MS = 1600;
  * La pastille du coin ne s'allume que si le collaborateur travaille, attend
  * quelqu'un ou est en erreur : « Disponible » ne demande rien à personne.
  */
-function PortraitCard({
-  glyph, name, status, tools, extras, badges, shield, meta, action, tools_needed, onClick, disabled, className,
+function WideCard({
+  glyph, name, description, status, tools, extras, badges, shield, meta, action, tools_needed, onClick, disabled, className,
 }: CatalogCardProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLSpanElement>(null);
@@ -225,11 +229,8 @@ function PortraitCard({
   };
 
   // L'inclinaison passe par deux variables CSS, pas par un état React : elle
-  // change à chaque mouvement du pointeur, et re-rendre la carte — donc
-  // l'avatar — à cette cadence n'apporterait que des saccades. Elles sont
-  // posées sur la scène et non sur la carte, pour que seul l'avatar recalcule
-  // son style ; et le cadre de la carte est mesuré une fois, à l'entrée, plutôt
-  // qu'à chaque mouvement.
+  // change à chaque mouvement du pointeur, et re-rendre l'avatar à cette
+  // cadence n'apporterait que des saccades.
   const rect = useRef<DOMRect | null>(null);
   const tilt = (e: React.PointerEvent) => {
     const stage = stageRef.current;
@@ -275,31 +276,27 @@ function PortraitCard({
         onFocus={poke}
         disabled={disabled}
         className={cn(
-          "relative flex h-full w-full flex-col overflow-hidden rounded-2xl bg-black text-left text-white",
+          "relative flex h-full min-h-[300px] w-full overflow-hidden rounded-2xl bg-black text-left text-white",
           "ring-1 ring-inset ring-white/[0.07] transition-[box-shadow,transform] duration-300 ease-smooth",
           "hover:-translate-y-0.5 hover:ring-white/[0.16] motion-reduce:hover:translate-y-0",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
         )}
       >
-        {/* La scène de l'avatar. La place au-dessus de lui n'est pas perdue :
-            c'est là qu'il monte quand il saute. */}
-        <span className="relative flex h-[164px] shrink-0 items-center justify-center pt-5">
+        {/* ── Bloc gauche : la scène de l'avatar ── */}
+        <span className="relative flex w-[42%] min-w-[190px] max-w-[260px] shrink-0 items-center justify-center">
           {/* Une lueur derrière l'avatar, pour qu'un corps sombre se lise
               encore sur le noir ; elle s'ouvre quand on s'approche. Un dégradé
-              radial et non un flou : un `blur` de 40 px se recalculait à chaque
-              image de la transition. Seules l'échelle et l'opacité bougent. */}
+              radial et non un flou : seules l'échelle et l'opacité bougent. */}
           <span
             aria-hidden
             className={cn(
-              "pointer-events-none absolute left-1/2 top-[56%] h-52 w-52 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.55]",
+              "pointer-events-none absolute left-1/2 top-1/2 h-52 w-52 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.55]",
               "transition-[transform,opacity] duration-500 ease-smooth group-hover:scale-125 group-hover:opacity-100",
             )}
             style={{ background: "radial-gradient(closest-side, rgb(255 255 255 / 0.11), transparent)" }}
           />
-          {/* Deux étages, deux tempos. L'inclinaison suit le pointeur : une
-              transition courte, sinon chaque mouvement relançait un ressort
-              d'une demi-seconde et l'avatar traînait derrière la main. La montée
-              et l'écrasement gardent leur ressort, plus vif qu'avant. */}
+          {/* Deux étages, deux tempos : l'inclinaison suit le pointeur (courte),
+              la montée et l'écrasement gardent leur ressort. */}
           <span
             ref={stageRef}
             className="relative will-change-transform motion-reduce:![transform:none]"
@@ -326,8 +323,9 @@ function PortraitCard({
           </span>
         </span>
 
-        <span className="flex flex-1 flex-col px-5 pb-5 pt-1">
-          <span className="truncate text-[17px] font-semibold tracking-tight">{name}</span>
+        {/* ── Bloc droit : qui il est, ce qu'il fait ── */}
+        <span className="flex min-w-0 flex-1 flex-col border-l border-white/[0.06] px-6 py-6">
+          <span className="truncate pr-8 text-[17px] font-semibold tracking-tight">{name}</span>
 
           {status && (
             <span className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[13px]" title={status.detail ?? status.label}>
@@ -337,7 +335,11 @@ function PortraitCard({
             </span>
           )}
 
-          <span className="mt-3 flex items-center gap-3.5 text-[12.5px] text-white/60">
+          {description && (
+            <span className="mt-3 line-clamp-3 text-[13px] leading-relaxed text-white/50">{description}</span>
+          )}
+
+          <span className="mt-4 flex items-center gap-3.5 text-[12.5px] text-white/60">
             <span className="flex items-center gap-1" title="Outils">
               <WrenchIcon className="h-3.5 w-3.5" /> {tools === null || tools === 0 ? "–" : tools}
             </span>
@@ -348,7 +350,7 @@ function PortraitCard({
                 façons de dire avec quoi il travaille. */}
             {tools_needed && tools_needed.length > 0 && (
               <span className="ml-auto flex items-center gap-1.5">
-                {tools_needed.slice(0, 4).map((t) => (
+                {tools_needed.slice(0, 5).map((t) => (
                   <span
                     key={t.slug}
                     title={t.connected ? `${t.name} · connecté` : `${t.name} · à connecter`}
@@ -362,15 +364,15 @@ function PortraitCard({
                       : <BrandLogo slug={t.slug} className="h-3.5 w-3.5" />}
                   </span>
                 ))}
-                {tools_needed.length > 4 && (
-                  <span className="text-[11px] text-white/50">+{tools_needed.length - 4}</span>
+                {tools_needed.length > 5 && (
+                  <span className="text-[11px] text-white/50">+{tools_needed.length - 5}</span>
                 )}
               </span>
             )}
           </span>
 
           {((badges?.length ?? 0) > 0 || shield || meta) && (
-            <span className="mt-auto flex items-center gap-1.5 pt-3.5">
+            <span className="mt-auto flex items-center gap-1.5 pt-4">
               {(badges ?? []).map((b) => (
                 <span
                   key={b.label} title={b.title ?? b.label}

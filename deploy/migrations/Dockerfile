@@ -10,5 +10,8 @@ COPY deploy/migrations/package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY deploy/migrations/runner.mjs deploy/migrations/migrate.mjs ./
 COPY supabase/migrations ./migrations
+# Le socle de la plateforme auto-hébergée (PLATFORM=self) : ce que Supabase
+# fournit à la base, recréé sur un PostgreSQL ordinaire.
+COPY backend/platform/sql ./platform-sql
 USER node
 CMD ["node", "migrate.mjs"]

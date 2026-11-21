@@ -89,7 +89,7 @@ export function CompanionEntry() {
   if (!session) return <CompanionSignIn />;
   if (isLoading || !projects) return <Centered><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></Centered>;
   if (!projects.length) {
-    return <Centered><p className="max-w-xs text-center text-sm text-muted-foreground">Aucun projet sur ce compte. Créez-en un dans Anduran, puis rouvrez le panneau.</p></Centered>;
+    return <Centered><p className="max-w-xs text-center text-sm text-muted-foreground">Aucun projet sur ce compte. Créez-en un dans Agent company, puis rouvrez le panneau.</p></Centered>;
   }
 
   const stored = (() => { try { return JSON.parse(read(PROJECT_KEY) ?? "null") as { ws: string; proj: string } | null; } catch { return null; } })();
@@ -144,7 +144,7 @@ function CompanionSignIn() {
           <Sparkle weight="fill" className="h-6 w-6" />
         </div>
         <h1 className="text-lg font-semibold">Vos collaborateurs, à côté de chaque page</h1>
-        <p className="text-sm text-muted-foreground">Connectez-vous à Anduran pour leur parler depuis ce panneau.</p>
+        <p className="text-sm text-muted-foreground">Connectez-vous à Agent company pour leur parler depuis ce panneau.</p>
         <button
           onClick={() => navigate("/login?next=/companion")}
           className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-teal-accent"
@@ -578,7 +578,7 @@ export function CompanionPage() {
     </div>
   ) : (
     <p className="mt-4 text-center text-[11px] text-muted-foreground">
-      Ouvert hors du panneau du navigateur : installez l'extension Anduran pour joindre vos pages.
+      Ouvert hors du panneau du navigateur : installez l'extension Agent company pour joindre vos pages.
     </p>
   );
 
@@ -651,7 +651,7 @@ export function CompanionPage() {
       )}
       {bridge.device.state === "other_project" && (
         <p className="shrink-0 border-b border-border/60 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-          L'extension est reliée à un autre espace Anduran : les surlignages et les bulles passent par celui-là.
+          L'extension est reliée à un autre espace Agent company : les surlignages et les bulles passent par celui-là.
         </p>
       )}
       {siteAgent && (
@@ -793,7 +793,7 @@ function SettingsMenu({ bridge, attachPage, onAttachPage, appUrl }: {
           <Swap className="mr-2 h-3.5 w-3.5" /> Changer de projet
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => window.open(appUrl, "_blank", "noopener")} className="rounded-xl text-xs">
-          <ExternalLink className="mr-2 h-3.5 w-3.5" /> Ouvrir Anduran
+          <ExternalLink className="mr-2 h-3.5 w-3.5" /> Ouvrir Agent company
         </DropdownMenuItem>
         {bridge.version && (
           <p className="px-2 pb-1 pt-1.5 text-[10px] text-muted-foreground">Extension {bridge.version}</p>

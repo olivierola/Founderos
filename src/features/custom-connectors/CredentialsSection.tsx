@@ -73,7 +73,7 @@ export function CredentialsSection({ connector, credentials, readOnly, dirty, on
         <SectionTitle>Identifiants</SectionTitle>
         <p className="text-xs text-muted-foreground">
           Rien à enregistrer : chaque appel part au nom de la personne pour qui l'agent agit, avec un jeton émis pour cet appel seul
-          {connector.auth_scheme === "delegated" ? " par l'IdP de l'entreprise" : ", signé par FounderOS"}.
+          {connector.auth_scheme === "delegated" ? " par l'IdP de l'entreprise" : ", signé par Agent company"}.
         </p>
       </div>
     );
@@ -285,7 +285,7 @@ function CredentialForm({ connector, credential, collaborators, onClose, onSaved
           value={location}
           onChange={setLocation}
           options={[
-            { value: "cloud", label: "Chiffré par FounderOS" },
+            { value: "cloud", label: "Chiffré par Agent company" },
             ...(connector.transport === "relay" ? [{ value: "relay" as const, label: "Détenu par le relais" }] : []),
           ]}
         />

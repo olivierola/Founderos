@@ -3,11 +3,11 @@
 // serves every agent; unknown/malformed blocks degrade to nothing (the text
 // answer still carries the information). Charts use the validated dataviz
 // palette (features/crm/overview/vizPalette).
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { callEdge } from "@/lib/edge";
-import { AgentMarkdown, CodeBlock } from "@/components/AgentMarkdown";
+import { AgentMarkdown, CodeBlock, InlineUiContext, type InlineUiRenderer } from "@/components/AgentMarkdown";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -29,13 +29,18 @@ import {
   BracketsCurlyIcon as Braces,
   CodeIcon as Code2,
   FilePdfIcon as FilePdf,
+  DownloadSimpleIcon as DownloadSimple,
+  SparkleIcon as Sparkle,
 } from "@phosphor-icons/react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { useCategorical } from "@/features/crm/overview/vizPalette";
 import { chatCard, chatHero, chatAccentText, chatOptionPill } from "@/lib/chatStyles";
+import { TeamBlueprintCard, type TeamBlueprintCardData } from "@/features/teamz/TeamBlueprintCard";
+import { ConnectorCards, type ConnectorProposal } from "@/features/ai-agent/ConnectorCards";
 
 export interface UiBlock { component: string; props: Record<string, unknown> }
 
@@ -414,12 +419,18 @@ function ApprovalBlock({ props }: { props: Record<string, unknown> }) {
 
   const decided = !!status && status !== "pending";
   const busy = pending !== null;
+  // Refus avec consigne : ce que l'agent doit faire à la place (facultatif).
+  const [rejecting, setRejecting] = useState(false);
+  const [consigne, setConsigne] = useState("");
 
   async function decide(decision: "approve" | "approve_all" | "reject") {
     if (busy || decided || !approvalId) return;
     setPending(decision); setError(null);
     try {
-      const out = await callEdge<{ status?: string; detail?: string }>("internal-agent-approve", { approval_id: approvalId, decision });
+      const out = await callEdge<{ status?: string; detail?: string }>("internal-agent-approve", {
+        approval_id: approvalId, decision,
+        ...(decision === "reject" && consigne.trim() ? { note: consigne.trim() } : {}),
+      });
       // Règle à quorum : la voix est enregistrée, l'action attend les autres approbateurs.
       if (out?.status === "pending") setNote(out.detail ?? "Approbation enregistrée.");
       await queryClient.invalidateQueries({ queryKey: ["agent_approval_status", approvalId] });
@@ -470,10 +481,33 @@ function ApprovalBlock({ props }: { props: Record<string, unknown> }) {
                 {pending === "approve_all" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Tout autoriser ({scopeLabel})
               </button>
             )}
-            <button disabled={busy} onClick={() => decide("reject")} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50">
-              {pending === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Refuser
-            </button>
+            {!rejecting && (
+              <button disabled={busy} onClick={() => setRejecting(true)} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50">
+                <X className="h-4 w-4" /> Refuser
+              </button>
+            )}
           </div>
+          {rejecting && (
+            <div className="mt-2.5 space-y-2">
+              <textarea
+                value={consigne}
+                onChange={(e) => setConsigne(e.target.value)}
+                rows={2}
+                maxLength={2000}
+                autoFocus
+                placeholder="Consigne pour l'agent (facultatif) : quoi faire à la place"
+                className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-foreground/30"
+              />
+              <div className="flex gap-2">
+                <button disabled={busy} onClick={() => decide("reject")} className="flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-sm font-medium text-background transition-colors hover:opacity-90 disabled:opacity-50">
+                  {pending === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} {consigne.trim() ? "Refuser avec cette consigne" : "Refuser"}
+                </button>
+                <button disabled={busy} onClick={() => { setRejecting(false); setConsigne(""); }} className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted">
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
           {error && <p className="mt-2 text-xs text-rose-500">{error}</p>}
         </>
       )}
@@ -531,13 +565,112 @@ function TextBlock({ props }: { props: Record<string, unknown> }) {
 }
 
 // ── image ────────────────────────────────────────────────────────────────────
+// Une image dans le chat : rendue par render_ui, ou GÉNÉRÉE par l'agent
+// (generate_image — `generated`, avec son prompt et son modèle). Cliquée, elle
+// s'ouvre en grand ; au survol, de quoi l'ouvrir dans un onglet ou la
+// télécharger. Plusieurs images (`images: [...]`) forment une galerie.
+function imageUrlsOf(props: Record<string, unknown>): Array<{ url: string; alt: string }> {
+  const list = Array.isArray(props.images) ? props.images : [props];
+  return (list as Array<Record<string, unknown> | string>)
+    .map((it) => (typeof it === "string" ? { url: it, alt: "" } : { url: str(it.url) || str(it.src), alt: str(it.alt) }))
+    .filter((it) => /^(https?:|data:image\/|\/)/.test(it.url))
+    .slice(0, 8);
+}
+
+async function downloadImage(url: string, name: string) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 1500);
+  } catch {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
 function ImageBlock({ props }: { props: Record<string, unknown> }) {
-  const url = str(props.url) || str(props.src);
-  if (!url) return null;
+  const images = imageUrlsOf(props);
+  const [open, setOpen] = useState<number | null>(null);
+  if (!images.length) return null;
+  const caption = str(props.caption);
+  const prompt = str(props.prompt);
+  const model = str(props.model);
+  const generated = props.generated === true || !!prompt;
+  // L'extension suit le fichier stocké (les modèles gratuits rendent du webp).
+  const extOf = (url: string) => /\.(png|jpe?g|webp|gif|svg)(?:[?#]|$)/i.exec(url)?.[1]?.toLowerCase() ?? "png";
+  const fileName = (i: number) => `${(caption || prompt || "image").slice(0, 40).replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "") || "image"}${images.length > 1 ? `-${i + 1}` : ""}.${extOf(images[i]?.url ?? "")}`;
+  const current = open != null ? images[open] : null;
+
   return (
     <figure className={cn(chatCard, "overflow-hidden")}>
-      <img src={url} alt={str(props.alt) || str(props.caption)} className="max-h-[420px] w-full bg-muted/30 object-contain" loading="lazy" />
-      {str(props.caption) && <figcaption className="border-t border-border/50 px-3 py-2 text-xs text-muted-foreground">{str(props.caption)}</figcaption>}
+      <div className={cn(images.length > 1 ? "grid grid-cols-2 gap-1 p-1" : "")}>
+        {images.map((im, i) => (
+          <div key={im.url + i} className="group/img relative">
+            <button type="button" onClick={() => setOpen(i)} className="block w-full cursor-zoom-in" aria-label="Agrandir l'image">
+              <img
+                src={im.url}
+                alt={im.alt || str(props.alt) || caption || prompt}
+                className={cn("w-full bg-muted/30 object-contain", images.length > 1 ? "aspect-square rounded-lg object-cover" : "max-h-[460px]")}
+                loading="lazy"
+              />
+            </button>
+            <div className="pointer-events-none absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover/img:opacity-100">
+              <a
+                href={im.url} target="_blank" rel="noopener noreferrer" title="Ouvrir dans un onglet"
+                className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-lg bg-background/85 text-foreground shadow-sm backdrop-blur hover:bg-background"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              <button
+                type="button" title="Télécharger" onClick={() => downloadImage(im.url, fileName(i))}
+                className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-lg bg-background/85 text-foreground shadow-sm backdrop-blur hover:bg-background"
+              >
+                <DownloadSimple className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {(caption || generated) && (
+        <figcaption className="flex items-start gap-2 border-t border-border/50 px-3 py-2 text-xs text-muted-foreground">
+          {generated && <Sparkle weight="fill" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />}
+          <span className="min-w-0 flex-1">
+            {caption && <span className="text-foreground">{caption}</span>}
+            {caption && prompt && <span className="mx-1">·</span>}
+            {prompt && <span className="line-clamp-2" title={prompt}>{prompt}</span>}
+          </span>
+          {model && <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px]">{model}</span>}
+        </figcaption>
+      )}
+
+      {/* La visionneuse : l'image en grand, sur un voile, fermée au clic ou Échap. */}
+      <Dialog open={current != null} onOpenChange={(o) => !o && setOpen(null)}>
+        <DialogContent className="max-w-[min(1100px,94vw)] border-none bg-transparent p-0 shadow-none">
+          <DialogTitle className="sr-only">{caption || prompt || "Image"}</DialogTitle>
+          {current && (
+            <div className="flex flex-col items-center gap-2">
+              <img src={current.url} alt={current.alt || caption || prompt} className="max-h-[82vh] w-auto rounded-xl object-contain shadow-2xl" />
+              <div className="flex items-center gap-2">
+                {images.length > 1 && open != null && (
+                  <span className="rounded-lg bg-background/85 px-2 py-1 text-xs tabular-nums text-foreground">{open + 1} / {images.length}</span>
+                )}
+                <a href={current.url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-background/90 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background">
+                  <ExternalLink className="h-3.5 w-3.5" /> Ouvrir
+                </a>
+                <button type="button" onClick={() => downloadImage(current.url, fileName(open ?? 0))}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+                  <DownloadSimple className="h-3.5 w-3.5" /> Télécharger
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </figure>
   );
 }
@@ -601,8 +734,29 @@ function renderBlock(
     case "artifact": return <ArtifactBlock key={key} props={b.props} onOpen={onOpenArtifact} agentName={agentName} />;
     case "options": return <OptionsBlock key={key} props={b.props} onPick={onPick} disabled={optionsDisabled} />;
     case "approval": return <ApprovalBlock key={key} props={b.props} />;
+    // L'assistant d'une room conçoit et déploie des équipes (manage_teams).
+    case "team_blueprint": return <TeamBlueprintCard key={key} data={b.props as TeamBlueprintCardData} />;
+    case "connectors": return <ConnectorCards key={key} proposal={b.props as ConnectorProposal} />;
+    // Un dashboard créé par l’assistant (manage_dashboards) : on l’ouvre d’un clic.
+    case "dashboard_card": return <DashboardCardBlock key={key} props={b.props} />;
     default: return null; // unknown component → graceful no-op
   }
+}
+
+/** Lets markdown inside `children` render fenced ```ui blocks as components
+ *  (see AgentMarkdown InlineUi), with the same registry as render_ui. */
+export function InlineUiProvider({ children, onPick, optionsDisabled, onOpenArtifact, agentName }: {
+  children: ReactNode;
+  onPick?: (text: string) => void;
+  optionsDisabled?: boolean;
+  onOpenArtifact?: (a: ArtifactOpenTarget) => void;
+  agentName?: string;
+}) {
+  const render = useCallback<InlineUiRenderer>(
+    (b) => renderBlock(b, "inline", onPick, optionsDisabled, onOpenArtifact, agentName),
+    [onPick, optionsDisabled, onOpenArtifact, agentName],
+  );
+  return <InlineUiContext.Provider value={render}>{children}</InlineUiContext.Provider>;
 }
 
 export function UiBlocks({ blocks, onPick, optionsDisabled, onOpenArtifact, agentName }: {
@@ -660,6 +814,7 @@ export function InterleavedMessage({ content, blocks, onPick, optionsDisabled, o
   }, [content, valid]);
 
   return (
+    <InlineUiProvider onPick={onPick} optionsDisabled={optionsDisabled} onOpenArtifact={onOpenArtifact} agentName={agentName}>
     <div>
       {segments.map((s, i) =>
         s.kind === "text"
@@ -672,6 +827,32 @@ export function InterleavedMessage({ content, blocks, onPick, optionsDisabled, o
         <div className="my-2 space-y-2">
           {leftover.map((i) => renderBlock(valid[i], i, onPick, optionsDisabled, onOpenArtifact, agentName))}
         </div>
+      )}
+    </div>
+    </InlineUiProvider>
+  );
+}
+
+/** Un dashboard que l’assistant vient de créer : son nom, et de quoi l’ouvrir. */
+function DashboardCardBlock({ props }: { props: Record<string, unknown> }) {
+  const navigate = useNavigate();
+  const { workspaceSlug, projectSlug } = useParams();
+  const id = String(props.dashboard_id ?? "");
+  const service = props.service_id ? String(props.service_id) : null;
+  if (!id) return null;
+  return (
+    <div className="my-2 flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-13 font-semibold">{String(props.name ?? "Dashboard")}</div>
+        <div className="text-11 text-muted-foreground">{Number(props.widgets ?? 0)} composants</div>
+      </div>
+      {service && workspaceSlug && projectSlug && (
+        <button
+          onClick={() => navigate(`/app/${workspaceSlug}/${projectSlug}/service/${service}/dashboards/${id}`)}
+          className="rounded-full border border-border px-3 py-1 text-12 font-medium hover:bg-muted"
+        >
+          Ouvrir
+        </button>
       )}
     </div>
   );

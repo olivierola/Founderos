@@ -1,6 +1,6 @@
 // La première minute d'un nouveau compte.
 //
-// Ce qu'il y avait avant : quatre cartes décoratives, « Welcome to Anduran »,
+// Ce qu'il y avait avant : quatre cartes décoratives, « Welcome to Agent company »,
 // « Connect GitHub », « Run first scan », « Generate cockpit » — le vocabulaire
 // d'un produit qui n'existe plus — et un bouton « Continue » qui menait à une
 // liste d'organisations vide. Rien n'était cliquable, rien n'était enregistré,

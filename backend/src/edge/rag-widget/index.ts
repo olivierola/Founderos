@@ -129,7 +129,7 @@ const WIDGET_JS = `(function(){
   if (c.show_branding !== false) {
     var brand = document.createElement("div");
     brand.style.cssText = "text-align:center;padding:6px;font-size:10px;color:"+subtle;
-    brand.textContent = "Powered by Anduran";
+    brand.textContent = "Powered by Agent company";
     panel.appendChild(brand);
   }
   document.body.appendChild(btn); document.body.appendChild(panel);

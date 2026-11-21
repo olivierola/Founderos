@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Responsive, WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -55,8 +55,12 @@ const WIDGET_KINDS: { key: WidgetKind; label: string; hint: string; w: number; h
 ];
 
 export function DashboardsPage({
-  dashboardId, workspaceId,
-}: { dashboardId: string; workspaceId: string | null }) {
+  dashboardId, workspaceId, switcher,
+}: {
+  dashboardId: string; workspaceId: string | null;
+  /** Rangé dans Analytics : ses onglets remplacent le titre propre. */
+  switcher?: ReactNode;
+}) {
   const qc = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -87,16 +91,19 @@ export function DashboardsPage({
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        icon={<SquaresFourIcon className="h-4 w-4" />}
-        title="Tableaux de bord"
-        subtitle="Les indicateurs qui comptent pour ce service"
+        icon={switcher ? <ChartBarIcon className="h-4 w-4" /> : <SquaresFourIcon className="h-4 w-4" />}
+        title={switcher ? "Analytics" : "Tableaux de bord"}
+        subtitle={switcher ? undefined : "Les indicateurs qui comptent pour ce service"}
         actions={
+          <>
+          {switcher}
           <Button
             size="sm" className="h-8 gap-1.5"
             onClick={() => setCreating(true)} disabled={!workspaceId}
           >
             <PlusIcon className="h-4 w-4" /> Nouveau tableau de bord
           </Button>
+          </>
         }
       />
 

@@ -73,7 +73,7 @@ export function AgentInternalToolsTab({ agent }: { agent: AgentLike }) {
           </p>
         </div>
         {base && (
-          <Button variant="outline" size="sm" className="shrink-0 rounded-full" onClick={() => navigate(base)}>
+          <Button variant="outline" size="sm" className="shrink-0 rounded-md" onClick={() => navigate(base)}>
             <ExternalLink className="mr-1 h-3.5 w-3.5" /> Gérer les outils
           </Button>
         )}

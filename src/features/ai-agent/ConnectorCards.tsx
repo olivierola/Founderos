@@ -32,6 +32,8 @@ export interface ProposedConnector {
 
 export interface ConnectorProposal {
   agent_id?: string | null;
+  /** Une équipe entière (Teamz) : la connexion est rattachée à chacun. */
+  agent_ids?: string[] | null;
   items?: ProposedConnector[];
 }
 
@@ -80,24 +82,26 @@ export function ConnectorCards({ proposal }: { proposal: ConnectorProposal }) {
 
   /** Give the agent the connector it just gained access to. */
   async function attachToAgent(slug: string, viaComposio: boolean) {
-    const agentId = proposal.agent_id;
-    if (!agentId) return;
+    const agentIds = [...new Set([proposal.agent_id, ...(proposal.agent_ids ?? [])].filter((x): x is string => !!x))];
+    if (!agentIds.length) return;
     setAttaching(slug);
     try {
-      const { data: existing } = await supabase
-        .from("internal_agent_tools")
-        .select("id, kind, config")
-        .eq("agent_id", agentId);
-      const already = (existing ?? []).some((t: { kind: string; config: Record<string, unknown> | null }) =>
-        String(t.config?.toolkit ?? t.config?.provider ?? "") === slug);
-      if (!already) {
-        await supabase.from("internal_agent_tools").insert({
-          agent_id: agentId,
-          kind: viaComposio ? "composio_toolkit" : "connector_action",
-          name: `Use ${slug}`,
-          config: viaComposio ? { toolkit: slug } : { provider: slug },
-          requires_approval: false,
-        });
+      for (const agentId of agentIds) {
+        const { data: existing } = await supabase
+          .from("internal_agent_tools")
+          .select("id, kind, config")
+          .eq("agent_id", agentId);
+        const already = (existing ?? []).some((t: { kind: string; config: Record<string, unknown> | null }) =>
+          String(t.config?.toolkit ?? t.config?.provider ?? "") === slug);
+        if (!already) {
+          await supabase.from("internal_agent_tools").insert({
+            agent_id: agentId,
+            kind: viaComposio ? "composio_toolkit" : "connector_action",
+            name: `Use ${slug}`,
+            config: viaComposio ? { toolkit: slug } : { provider: slug },
+            requires_approval: false,
+          });
+        }
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["assistant_agent_setup"] }),

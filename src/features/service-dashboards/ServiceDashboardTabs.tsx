@@ -10,10 +10,13 @@ import {
   GearSixIcon, LightningIcon, FileTextIcon, BrainIcon, FlowArrowIcon,
   ChartBarIcon, PlugsConnectedIcon, PlayIcon, PauseIcon, TrashIcon, ClockCountdownIcon,
   WarningIcon, CalendarBlankIcon, CalendarCheckIcon, ArrowsClockwiseIcon, TimerIcon,
-  FolderPlusIcon, DotsThreeIcon, SparkleIcon, GlobeIcon, MonitorPlayIcon, TerminalWindowIcon,
-  RocketLaunchIcon, PackageIcon, TrayIcon, ShieldCheckIcon, ListChecksIcon, SmileyIcon,
+  FolderPlusIcon, DotsThreeIcon, SparkleIcon, GlobeIcon,
+  RocketLaunchIcon, PackageIcon, TrayIcon, ShieldCheckIcon, ListChecksIcon, SmileyIcon, SquaresFourIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
+import { AgentHome } from "./AgentHome";
+import { DashboardsPage } from "@/features/agent-dashboards/DashboardsPage";
+import { rememberAgentView } from "./agentView";
 import { Button } from "@/components/ui/button";
 import { ChromeButton } from "@/components/ui/chrome-button";
 import { Input } from "@/components/ui/input";
@@ -40,8 +43,7 @@ import {
 import { FloatingTabBar } from "./FloatingTabBar";
 import { InstructionsEditor } from "@/features/internal-agents/InstructionsEditor";
 import { AgentAutomationsTab } from "@/features/internal-agents/AgentAutomationsTab";
-import { AgentTerminalPanel } from "@/features/internal-agents/AgentTerminalPanel";
-import { AppTestPanel } from "@/features/ops/AppTestPanel";
+import { AgentEvaluationPanel } from "@/features/internal-agents/AgentEvaluationPanel";
 import { type InternalAgent } from "@/features/internal-agents/shared";
 import { type StudioKind } from "@/features/internal-agents/agentTemplates";
 
@@ -53,6 +55,7 @@ import { AgentEventTriggers } from "./AgentEventTriggers";
 import { AgentGoals } from "./AgentGoals";
 import { type ArtifactOpenTarget } from "@/features/internal-agents/UiBlocks";
 import { AssetsHub } from "./AssetsHub";
+import { useWorkbench } from "./workbench";
 import { MemoryGraph } from "./MemoryGraph";
 import { KnowledgeGraph } from "./KnowledgeGraph";
 import { CatalogCard, type CatalogStatus } from "./CatalogCard";
@@ -70,6 +73,7 @@ import type { RangeKey } from "@/features/crm/overview/crmStats";
 import { firstOccurrenceLocal, toAlignment, type Cadence, type Cadenced } from "./scheduleCadence";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { RagSourcesPanel } from "@/features/rag-center/RagSourcesPanel";
+import { AgentPoolsPanel } from "@/features/resource-pools/AgentPoolsPanel";
 
 // Agents scoped to this dashboard drive every other tab (rooms, schedules,
 // activity, artifacts are all their conversations / missions / runs / outputs).
@@ -187,7 +191,7 @@ export interface RosterActivity {
 // showing it as « au travail » would be a lie.
 const LIVE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
-async function fetchRosterActivity(ids: string[]): Promise<Map<string, RosterActivity>> {
+export async function fetchRosterActivity(ids: string[]): Promise<Map<string, RosterActivity>> {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase.from("internal_agent_runs")
     .select("id, agent_id, status, created_at, finished_at, mission_id, conversation_id, error_message")
@@ -338,8 +342,8 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
   }
 
   return (
-    <div className="min-h-full px-10 py-8">
-      <div className="mx-auto max-w-5xl">
+    <div className="min-h-full px-6 py-8">
+      <div className="mx-auto max-w-[1480px]">
         <div className="mb-10 flex flex-wrap items-center gap-3">
           <h1 className="text-[30px] font-semibold tracking-tight">Collaborators</h1>
           <div className="ml-auto flex items-center gap-2">
@@ -387,7 +391,7 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
                 {" "}({summarizeBlocking(blocking)}). Vos collaborateurs ne peuvent pas avancer sans vous.
               </span>
             </div>
-            <Button size="sm" className="rounded-full" onClick={() => navigate(`${sbase}/projects/inbox`)}>
+            <Button size="sm" className="rounded-md" onClick={() => navigate(`${sbase}/projects/inbox`)}>
               Ouvrir « À valider »
             </Button>
           </div>
@@ -422,10 +426,10 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
               <div className="text-sm font-medium">Aucun collaborateur dans ce service</div>
               <div className="mt-1 text-xs text-muted-foreground">Créez-en un ou partez d'un template.</div>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                <Button size="sm" className="rounded-full" onClick={() => navigate(`${sbase}/agents/new`)}>
+                <Button size="sm" className="rounded-md" onClick={() => navigate(`${sbase}/agents/new`)}>
                   <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> Collaborateur interne
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-full" onClick={() => navigate(`${sbase}/agents/new?type=public`)}>
+                <Button size="sm" variant="outline" className="rounded-md" onClick={() => navigate(`${sbase}/agents/new?type=public`)}>
                   <GlobeIcon className="mr-1.5 h-3.5 w-3.5" /> Collaborateur public
                 </Button>
               </div>
@@ -517,7 +521,7 @@ function AgentGallery({ title, dot, agents, counts, activity, waitingByAgent, fo
       {agents.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">{emptyHint ?? "Vide."}</p>
       ) : (
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
         {agents.map((a) => {
           const c = counts.get(a.id);
           const act = activity?.get(a.id);
@@ -526,7 +530,8 @@ function AgentGallery({ title, dot, agents, counts, activity, waitingByAgent, fo
           return (
             <CatalogCard
               key={a.id}
-              variant="portrait"
+              variant="wide"
+              description={a.description}
               className={cn(a.studio && "studio-border")}
               onClick={() => onOpen(a.id)}
               action={
@@ -816,26 +821,50 @@ function useDashboardAgent(agentId: string) {
   });
 }
 
+/**
+ * La page d'un collaborateur : son tableau de bord par défaut (ce qu'ouvre une
+ * carte), son chat sur `?view=chat` ou sur un lien vers une conversation
+ * (`?c=`). Les anciens liens `?t=…` passent par le chat, qui les redirige
+ * vers la configuration.
+ */
 export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: string; agentId: string }) {
+  const [params] = useSearchParams();
+  const { workspaceSlug, projectSlug } = useParams();
+  const { workspaceId, projectId } = useCurrentContext();
+  const { data: agent } = useDashboardAgent(agentId);
+  if (params.get("view") === "dashboards") {
+    if (!workspaceId || !projectId) return null;
+    return (
+      <DashboardsPage serviceId={dashboardId} workspaceId={workspaceId} projectId={projectId}
+        sbase={`/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`}
+        agent={agent ? { id: agent.id, name: agent.name } : { id: agentId, name: "cet agent" }} />
+    );
+  }
+  const chat = params.get("view") === "chat" || params.has("c") || params.has("t");
+  return chat
+    ? <AgentChatInDashboard dashboardId={dashboardId} agentId={agentId} />
+    : <AgentHome dashboardId={dashboardId} agentId={agentId} />;
+}
+
+function AgentChatInDashboard({ dashboardId, agentId }: { dashboardId: string; agentId: string }) {
   const { workspaceSlug, projectSlug } = useParams();
   const { workspaceId, projectId } = useCurrentContext();
   const navigate = useNavigate();
   const assistant = useAssistant();
-  const qc = useQueryClient();
   const [params] = useSearchParams();
   const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
   const { data: agent, isLoading } = useDashboardAgent(agentId);
-  // Two windows into the agent's machine, beside the conversation: the live
-  // browser session while it tests an app, and its shell.
-  // …and a third for what it produced: a deliverable or a document opened from
-  // the conversation reads beside it instead of leaving the page.
-  // …and, first, what it is working on: the Tasks tab. The panel remembers the
-  // last tab this viewer left open (or closed); a first visit opens Tasks.
-  type Side = "tasks" | "test" | "terminal" | "artifact";
+  // Beside the conversation: what it is working on (Tasks), how well it does
+  // its job (Évaluation), and what it produced — a deliverable or a document
+  // opened from the conversation reads beside it instead of leaving the page.
+  // The panel remembers the last tab this viewer left open (or closed); a
+  // first visit opens Tasks. The old "test" / "terminal" values fall back to
+  // Tasks.
+  type Side = "tasks" | "evaluation" | "artifact";
   const [side, setSideState] = useState<Side | null>(() => {
     try {
       const v = localStorage.getItem("sd_agent_side");
-      return v === null ? "tasks" : v === "tasks" || v === "test" || v === "terminal" ? v : null;
+      return v === "none" ? null : v === "evaluation" ? v : "tasks";
     } catch { return "tasks"; }
   });
   const setSide = (next: Side | null | ((s: Side | null) => Side | null)) => setSideState((prev) => {
@@ -847,20 +876,25 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
   const [artifact, setArtifact] = useState<ArtifactOpenTarget | null>(null);
   const [convoId, setConvoId] = useState<string | null>(null);
   const { width, startResize } = useResizableWidth("sd_agent_panel_width", 400, 300, 900);
+  // Dans le tableau de service, le panneau de droite est celui de l'ÉTABLI
+  // (barre du haut) : tâches, évaluation, livrables et réglages s'y ouvrent.
+  // Hors de lui, la page garde son propre panneau, comme avant.
+  const wb = useWorkbench();
+  useEffect(() => { wb?.setConversationId(convoId); }, [wb?.setConversationId, convoId]);
+  useEffect(() => { rememberAgentView(agentId, "chat"); }, [agentId]);
 
-  /** A command typed in the terminal is a message to the agent: it owns the
-   *  runner, the browser doesn't. Same path as the composer (message + run). */
-  async function askAgentToRun(command: string): Promise<string> {
-    if (!convoId) return "Ouvre d'abord une session dans le chat.";
-    const { error } = await supabase.from("internal_agent_messages").insert({
-      conversation_id: convoId, agent_id: agentId, role: "user",
-      content: `Exécute cette commande et rends-moi sa sortie : \`${command}\``,
-    });
-    if (error) throw error;
-    await callEdge("internal-agent-run", { agent_id: agentId, mode: "chat", conversation_id: convoId });
-    qc.invalidateQueries({ queryKey: ["internal_agent_messages", convoId] });
-    return "→ demandé au collaborateur dans la conversation.";
-  }
+  // `?ask=` : une question posée depuis une autre page (un composant de
+  // dashboard). Envoyée une fois, puis retirée de l'adresse pour qu'un
+  // rechargement ne la renvoie pas.
+  const ask = params.get("ask");
+  const [askRequest] = useState(() => (ask ? { id: `ask-${Date.now()}`, text: ask } : null));
+  useEffect(() => {
+    if (!ask) return;
+    const next = new URLSearchParams(params);
+    next.delete("ask");
+    navigate({ search: next.toString() }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Links written when the config lived here (…/agent/:id?t=skills) land on the
   // configuration page instead of silently showing the chat.
@@ -887,29 +921,56 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
             workspaceId={workspaceId}
             projectId={projectId}
             onConversationChange={setConvoId}
-            onOpenInPanel={(t) => { setArtifact(t); setSide("artifact"); }}
-            headerLeading={
+            sendRequest={askRequest}
+            onOpenInPanel={(t) => {
+              if (wb) { wb.openArtifact(t); return; }
+              setArtifact(t); setSide("artifact");
+            }}
+            headerLeading={wb ? undefined : (
               <div className="flex h-9 items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2.5 shadow-sm backdrop-blur">
-                <button onClick={() => navigate(`${sbase}/agents`)} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground" title="Retour aux collaborateurs"><ArrowLeftIcon className="h-3.5 w-3.5" /></button>
+                <button onClick={() => navigate(`${sbase}/agent/${agentId}`)} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground" title="Tableau de bord du collaborateur"><ArrowLeftIcon className="h-3.5 w-3.5" /></button>
                 <AgentIdentity style={agent.avatar_style ?? "orb"} url={agent.avatar_url} seed={agent.name} size={22} rounded="rounded-full" />
                 <span className="max-w-[160px] truncate text-xs font-semibold leading-tight">{agent.name}</span>
               </div>
-            }
-            headerTrailing={
+            )}
+            headerTrailing={wb ? (
+              // L'agent est déjà nommé dans son onglet, et ses panneaux ont leur
+              // en-tête dans la barre du haut : il ne reste ici que l'assistant
+              // de configuration, qui n'a pas d'autre porte.
+              <div className="flex h-9 items-center gap-0.5 rounded-full border border-border/60 bg-background/70 px-1 shadow-sm backdrop-blur">
+                <button
+                  onClick={() => navigate(`${sbase}/agent/${agent.id}`)}
+                  title="Tableau de bord du collaborateur"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <SquaresFourIcon className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => assistant.ask({ agent: { id: agent.id, name: agent.name } })}
+                  title="Configurer avec l'assistant"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <SparkleIcon weight="duotone" className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => wb.openTab("agent-settings")}
+                  title="Réglages de l'agent"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <GearSixIcon className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
               <div className="flex h-9 items-center gap-0.5 rounded-full border border-border/60 bg-background/70 px-1 shadow-sm backdrop-blur">
                 {/* What it is working on, live. */}
                 <SidePanelToggle
                   icon={ListChecksIcon} title="Tâches du collaborateur"
                   active={side === "tasks"} onClick={() => setSide((s) => (s === "tasks" ? null : "tasks"))}
                 />
-                {/* Watch the machine: the app it's testing, and its shell. */}
+                {/* How well it does its job. */}
                 <SidePanelToggle
-                  icon={MonitorPlayIcon} title="Tester une app"
-                  active={side === "test"} onClick={() => setSide((s) => (s === "test" ? null : "test"))}
-                />
-                <SidePanelToggle
-                  icon={TerminalWindowIcon} title="Terminal du collaborateur"
-                  active={side === "terminal"} onClick={() => setSide((s) => (s === "terminal" ? null : "terminal"))}
+                  icon={ChartBarIcon} title="Évaluation du collaborateur"
+                  active={side === "evaluation"} onClick={() => setSide((s) => (s === "evaluation" ? null : "evaluation"))}
                 />
                 {/* Conversational configuration: opens the assistant on this
                     agent's setup cards. The gear next to it is the manual path
@@ -929,14 +990,15 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
                   <GearSixIcon className="h-4 w-4" />
                 </button>
               </div>
-            }
+            )}
           />
         )}
       </div>
 
       {/* Right zone: the agent's machine. Resizable, and it never covers the
-          conversation — the two are watched together. */}
-      {side && agent && (
+          conversation — the two are watched together. Dans le tableau de
+          service, c'est le panneau de l'établi qui tient ce rôle. */}
+      {!wb && side && agent && (
         <aside className="relative hidden shrink-0 flex-col border-l border-border bg-card/40 lg:flex" style={{ width }}>
           <div
             onMouseDown={startResize}
@@ -945,8 +1007,7 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
           />
           <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1.5">
             <SideTab active={side === "tasks"} onClick={() => setSide("tasks")} icon={ListChecksIcon} label="Tâches" />
-            <SideTab active={side === "test"} onClick={() => setSide("test")} icon={MonitorPlayIcon} label="Test app" />
-            <SideTab active={side === "terminal"} onClick={() => setSide("terminal")} icon={TerminalWindowIcon} label="Terminal" />
+            <SideTab active={side === "evaluation"} onClick={() => setSide("evaluation")} icon={ChartBarIcon} label="Évaluation" />
             {artifact && (
               <SideTab active={side === "artifact"} onClick={() => setSide("artifact")} icon={PackageIcon} label="Livrable" />
             )}
@@ -967,16 +1028,11 @@ export function AgentDetailInDashboard({ dashboardId, agentId }: { dashboardId: 
               />
             ) : side === "tasks" ? (
               <AgentTasksPanel agentId={agent.id} agentName={agent.name} sbase={sbase} activeConversationId={convoId} />
-            ) : side === "test" ? (
-              <AppTestPanel
-                workspaceId={workspaceId}
-                projectId={projectId}
-                onOpenInModule={(runId) => navigate(`/app/${workspaceSlug}/${projectSlug}/test-runs/live?run=${runId}`)}
-              />
             ) : (
-              <div className="h-full p-2">
-                <AgentTerminalPanel agents={[{ id: agent.id, name: agent.name }]} onCommand={askAgentToRun} />
-              </div>
+              <AgentEvaluationPanel
+                agentId={agent.id}
+                onOpenLearnings={() => navigate(`${sbase}/agent-config/${agent.id}?t=instructions`)}
+              />
             )}
           </div>
         </aside>
@@ -1112,6 +1168,10 @@ export function AgentConfigInDashboard({ dashboardId, agentId }: { dashboardId: 
               same question ("que sait-il faire ?"). */}
           {tab === "connectors" && (
             <div className="space-y-10">
+              {/* Ses pools d'abord : en mode pools, ce sont eux qui décident de
+                  ce que les sections ci-dessous ouvrent vraiment. */}
+              <AgentPoolsPanel agent={agent} dashboardId={dashboardId} />
+              <div className="mx-auto max-w-5xl border-t border-border/60" />
               <AgentConnectorsTab agent={agent} />
               <div className="mx-auto max-w-5xl border-t border-border/60" />
               <ToolsTab agent={agent} variant="tools" />
@@ -1625,9 +1685,6 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
 }) {
   const { data: agents } = useDashboardAgents(dashboardId);
   const { data: mems, isLoading } = useWorkspaceMemory(workspaceId);
-  // Le graphe de connaissances partagé (0289) est la vue par défaut ; les
-  // souvenirs bruts des agents restent consultables à côté.
-  const [graphMode, setGraphMode] = useState<"knowledge" | "memories">("knowledge");
 
   // The memory graph should hold EVERYTHING about the service — not only what
   // agents remembered, but the assets available (repos, links, files, people,
@@ -1660,73 +1717,49 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
   });
   const graphNodes = useMemo(() => [...(mems ?? []), ...(extraNodes ?? [])], [mems, extraNodes]);
 
-  // "Sources" : les éléments du service, et le RAG (collections vectorisées) ;
-  // "Graph" : le canevas. La liste « Memories » a été retirée : ses souvenirs
-  // sont des nœuds du graphe.
-  if (view === "sources") {
+  // « Sources » n'est plus dans la navigation : l'adresse reste valide pour
+  // les éléments du service, et son RAG vit désormais dans Graph & RAG.
+  if (view === "sources" && part !== "rag") {
     return (
-      <div className="flex h-full flex-col">
-        <div className="flex shrink-0 gap-1 border-b border-border/60 px-6 pt-3">
-          {([[null, "Éléments"], ["rag", "RAG"]] as const).map(([p, label]) => (
-            <button
-              key={label} onClick={() => onPart?.(p)}
-              className={cn(
-                "-mb-px border-b-2 px-3 pb-2 text-sm transition-colors",
-                (part ?? null) === p ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {part === "rag"
-            ? <RagSourcesPanel workspaceId={workspaceId} projectId={projectId} />
-            : <AssetsHub dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} />}
-        </div>
+      <div className="h-full overflow-y-auto">
+        <AssetsHub dashboardId={dashboardId} workspaceId={workspaceId} projectId={projectId} />
       </div>
     );
   }
-  const modeSwitch = (
-    <div className="flex shrink-0 gap-1 border-b border-border/60 px-6 pt-3">
-      {([["knowledge", "Connaissances"], ["memories", "Mémoires des agents"]] as const).map(([m, label]) => (
-        <button
-          key={m} onClick={() => setGraphMode(m)}
-          className={cn(
-            "-mb-px border-b-2 px-3 pb-2 text-sm transition-colors",
-            graphMode === m ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
 
-  if (graphMode === "knowledge") {
-    return (
-      <div className="flex h-full flex-col">
-        {modeSwitch}
-        <div className="min-h-0 flex-1">
-          <KnowledgeGraph workspaceId={workspaceId} agents={(agents ?? []).map((a) => ({ id: a.id, name: a.name }))} />
-        </div>
-      </div>
-    );
-  }
-  if (isLoading) return <Centered />;
-
+  // Graph & RAG : la mémoire des agents (graphe de connaissances, souvenirs,
+  // livrables et éléments, en un seul canevas) et les collections du RAG.
+  const tab: "memory" | "rag" = part === "rag" ? "rag" : "memory";
   return (
     <div className="flex h-full flex-col">
-      {modeSwitch}
-    <div className="relative min-h-0 flex-1">
-      {graphNodes.length === 0 ? (
-        <div className="flex h-full items-center justify-center p-6">
-          <Empty icon={BrainIcon} title="This workspace's memory is empty." hint="Mémoires, assets et artifacts arrivent au fil du travail." />
+      <div className="flex shrink-0 gap-1 border-b border-border/60 px-6 pt-3">
+        {([["memory", "Mémoire des agents", null], ["rag", "RAG", "rag"]] as const).map(([k, label, p]) => (
+          <button
+            key={k} onClick={() => onPart?.(p)}
+            className={cn(
+              "-mb-px border-b-2 px-3 pb-2 text-sm transition-colors",
+              tab === k ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "rag" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <RagSourcesPanel workspaceId={workspaceId} projectId={projectId} />
         </div>
+      ) : isLoading ? (
+        <Centered />
       ) : (
-        <MemoryGraph mems={graphNodes} agents={(agents ?? []).map((a) => ({ id: a.id, name: a.name, accentColor: (a as { accent_color?: string | null }).accent_color }))} />
+        <div className="min-h-0 flex-1">
+          <KnowledgeGraph
+            workspaceId={workspaceId}
+            agents={(agents ?? []).map((a) => ({ id: a.id, name: a.name }))}
+            memories={graphNodes.map((m) => ({ id: m.id, agent_id: m.agent_id, kind: m.kind, content: m.content, created_at: m.created_at }))}
+          />
+        </div>
       )}
-    </div>
     </div>
   );
 }

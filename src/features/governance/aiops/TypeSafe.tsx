@@ -46,6 +46,8 @@ const FEATURES: Array<{
   where: string;
   thresholdLabel: string;
   defaultThreshold: number;
+  /** Le mode d'un espace qui n'a rien réglé (comme le runtime). */
+  defaultMode?: Mode;
 }> = [
   {
     feature: "guardrails",
@@ -66,10 +68,11 @@ const FEATURES: Array<{
   {
     feature: "tool_ranking",
     label: "Choix des outils",
-    effect: "La famille d'outils utile à la tâche passe devant les autres dans les schémas envoyés au modèle.",
-    where: "Début de chaque tick de run",
-    thresholdLabel: "Confiance minimale pour appliquer le choix",
-    defaultThreshold: 0.5,
+    effect: "Chaque outil reçoit une probabilité d'être utile à l'étape en cours ; les schémas envoyés au modèle sont choisis d'après elle, mêlée au classement par mots selon la confiance du jugement. Aucun outil n'est retiré.",
+    where: "Début de chaque tick de run (réutilisé tant que l'étape ne change pas)",
+    thresholdLabel: "Confiance en dessous de laquelle le classement par mots reprend la main",
+    defaultThreshold: 0.35,
+    defaultMode: "on",
   },
   {
     feature: "search_decision",
@@ -190,6 +193,15 @@ const FEATURES: Array<{
     thresholdLabel: "Probabilité minimale pour escalader à un analyste",
     defaultThreshold: 0.7,
   },
+  {
+    feature: "tool_error_diagnosis",
+    label: "Diagnostic des échecs d'outil",
+    effect: "Quand un appel d'outil échoue sur une erreur que les règles ne reconnaissent pas, sa cause est classée (arguments, accès, cible introuvable, panne passagère…) et l'agent reçoit l'ajustement à faire avec le résultat.",
+    where: "Chaque appel d'outil en échec d'un run",
+    thresholdLabel: "Confiance minimale pour retenir la cause",
+    defaultThreshold: 0.55,
+    defaultMode: "on",
+  },
 ];
 
 const MODE_META: Record<Mode, { label: string; hint: string; tone: string; icon: typeof Power }> = {
@@ -267,7 +279,7 @@ export function GovTypeSafePage() {
     const row = (settings ?? {})[feature];
     const meta = FEATURES.find((f) => f.feature === feature);
     return {
-      mode: row?.mode === "on" || row?.mode === "shadow" ? row.mode : "off",
+      mode: row?.mode === "on" || row?.mode === "shadow" || row?.mode === "off" ? row.mode : meta?.defaultMode ?? "off",
       threshold: Number.isFinite(Number(row?.threshold)) && row?.threshold != null
         ? Number(row.threshold)
         : meta?.defaultThreshold ?? 0.7,

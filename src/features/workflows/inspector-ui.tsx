@@ -10,6 +10,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { InfoHint } from "@/components/ui/info-hint";
 
 // The inspector's own field kit.
 //
@@ -35,14 +36,18 @@ export function Field({ label, hint, action, children }: {
   action?: ReactNode;
   children: ReactNode;
 }) {
+  // L'explication passe derrière un (i) : sous chaque champ, elle faisait du
+  // panneau un mode d'emploi plutôt qu'un formulaire.
   return (
     <div className="space-y-1.5">
       <div className="flex min-h-[18px] items-center justify-between gap-2">
-        <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</label>
+        <span className="flex min-w-0 items-center gap-1">
+          <label className="text-[12px] font-medium text-muted-foreground">{label}</label>
+          {hint && <InfoHint>{hint}</InfoHint>}
+        </span>
         {action}
       </div>
       {children}
-      {hint && <p className="text-[10.5px] leading-snug text-muted-foreground/75">{hint}</p>}
     </div>
   );
 }
@@ -367,9 +372,9 @@ export function ChipPicker({ selected, onChange, options, emptyHint }: {
 export function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
     <section className="space-y-2.5 border-t border-border/60 pt-3">
-      <div>
-        <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/70">{title}</h4>
-        {hint && <p className="mt-0.5 text-[10.5px] leading-snug text-muted-foreground/75">{hint}</p>}
+      <div className="flex items-center gap-1">
+        <h4 className="text-[12.5px] font-semibold text-foreground/85">{title}</h4>
+        {hint && <InfoHint>{hint}</InfoHint>}
       </div>
       {children}
     </section>

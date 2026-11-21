@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { CaretDownIcon as ChevronDown } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import type { SubNavItem } from "@/lib/navigation";
+import { navItem, navSubItem } from "./navStyles";
 
 interface Props {
   /** Path to the parent page (e.g. /app/ws/proj/<module>/<parent-slug>) */
@@ -32,24 +33,13 @@ export function AccordionNavItem({ parentTo, parentLabel, items, childBase }: Pr
   return (
     <div>
       <div className="flex items-center">
-        <NavLink
-          to={parentTo}
-          end
-          className={({ isActive }) =>
-            cn(
-              "flex flex-1 items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-sidebar-accent text-foreground"
-                : "font-normal text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-            )
-          }
-        >
+        <NavLink to={parentTo} end className={({ isActive }) => navItem(isActive, "flex-1")}>
           {parentLabel}
         </NavLink>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+          className="ml-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
           aria-label={open ? "Collapse" : "Expand"}
         >
           <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !open && "-rotate-90")} />
@@ -57,38 +47,21 @@ export function AccordionNavItem({ parentTo, parentLabel, items, childBase }: Pr
       </div>
 
       {open && (
-        <div className="ml-2 mt-1 space-y-0.5 border-l border-border/60 pl-2">
+        // Le retrait aligne les sous-pages sous leur parent, sans filet — la
+        // barre d'un service fait de même sous un projet ouvert.
+        <div className="mt-0.5 space-y-0.5 pl-4">
           {items.map((c, i) => {
             const prevGroup = i > 0 ? items[i - 1].group : undefined;
             const showDivider = c.group && c.group !== prevGroup;
             const node = (
-              <NavLink
-                key={c.slug}
-                to={`${childBase}${c.slug}`}
-                end
-                className={({ isActive }) =>
-                  cn(
-                    "block rounded-md px-2 py-1.5 text-xs transition-colors",
-                    isActive
-                      ? "bg-sidebar-accent text-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-                  )
-                }
-              >
-                {c.label}
+              <NavLink key={c.slug} to={`${childBase}${c.slug}`} end className={({ isActive }) => navSubItem(isActive)}>
+                <span className="truncate">{c.label}</span>
               </NavLink>
             );
             if (!showDivider) return node;
             return (
               <div key={c.slug + "-g"}>
-                <div
-                  className={cn(
-                    "px-2 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground",
-                    i > 0 && "mt-1 border-t border-border/40 pt-2",
-                  )}
-                >
-                  {c.group}
-                </div>
+                <div className="px-2.5 pb-1 pt-2.5 text-[12px] text-muted-foreground">{c.group}</div>
                 {node}
               </div>
             );

@@ -25,7 +25,7 @@
 // bar, and a hard rule that a proposal never runs itself.
 
 import { callAi, safeParseJson } from "./ai.ts";
-import { cheapProvider } from "./model-router.ts";
+import { cheapModel, cheapProvider } from "./model-router.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 type Admin = SupabaseClient;
@@ -139,7 +139,7 @@ export async function reflectAndPropose(admin: Admin, opts: {
 
     const res = await callAi({
       task: "classification",
-      provider: cheapProvider(),
+      provider: cheapProvider(), model: cheapModel(),
       jsonMode: true,
       maxTokens: 700,
       temperature: 0.3,

@@ -69,6 +69,42 @@ export interface RoomDefaults {
  *  "system" means "no per-service override". */
 export type DashboardTheme = ThemeKey;
 
+/**
+ * Une ÉQUIPE d'agents — un groupe qu'on constitue dans le Live Space ou dans
+ * les réglages, et qui s'installe dans son propre bureau.
+ *
+ * Rangée dans le jsonb `settings` du tableau plutôt que dans une table : c'est
+ * une organisation du service, pas un objet du runtime, et cela évite une
+ * migration pour une donnée de quelques lignes. Un agent n'appartient qu'à UNE
+ * équipe à la fois — il a un seul bureau, une seule chaise.
+ */
+export interface AgentTeam {
+  id: string;
+  name: string;
+  /** Teinte de l'équipe, en hexadécimal : son sol, son tableau, ses pastilles. */
+  color: string;
+  agent_ids: string[];
+  /** Qui l'anime — toujours un membre, sinon null. */
+  lead_id: string | null;
+  /** Ce sur quoi elle travaille, en une ligne. Sert de sujet à sa room. */
+  focus: string;
+  // ── Teamz (0298) : posés par l'architecte ou l'installation d'une Teamz ──
+  emoji?: string;
+  /** La Teamz du catalogue dont elle vient, s'il y en a une. */
+  template_key?: string | null;
+  /** Le flux A2A, en agent_id : passation, consultation, relecture. */
+  links?: Array<{ from: string; to: string; kind: string; when: string }>;
+  playbook?: string[];
+  /** Minutes qu'une exécution réussie fait gagner (estimation affichée « ≈ »). */
+  minutes_per_run?: number;
+  hours_saved_per_week?: number;
+  blueprint_id?: string | null;
+  created_at?: string;
+}
+
+/** Des teintes posées, assorties à la DA sobre : aucune ne crie sur le gris. */
+export const TEAM_COLORS = ["#8b7bd8", "#5fa8d3", "#5fbf8f", "#e0a458", "#d97a8c", "#6cc0bd", "#b8a46a", "#9aa3b2"];
+
 export interface DashboardSettings {
   landing: DashboardTabSlug;
   hidden_tabs: DashboardTabSlug[];
@@ -76,7 +112,14 @@ export interface DashboardSettings {
   theme: DashboardTheme;
   agent_defaults: AgentDefaults;
   rooms: RoomDefaults;
+  teams: AgentTeam[];
+  /** La vie d'équipe (0295) : les échanges que les agents lancent d'eux-mêmes.
+   *  « off » la coupe ; « calm » (défaut) : 6 initiatives par jour au plus ;
+   *  « active » : 24. */
+  team_life: TeamLifeMode;
 }
+
+export type TeamLifeMode = "off" | "calm" | "active";
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   model: "deepseek",
@@ -99,9 +142,45 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
   hidden_tabs: [],
   sidebar_collapsed: false,
   theme: "system",
+  team_life: "calm",
   agent_defaults: DEFAULT_AGENT_DEFAULTS,
   rooms: { auto_add_orchestrator: true, default_responder_agent_id: null },
+  teams: [],
 };
+
+function normalizeTeams(raw: unknown): AgentTeam[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: AgentTeam[] = [];
+  for (const t of raw as Array<Partial<AgentTeam>>) {
+    if (!t || typeof t.id !== "string" || !t.id) continue;
+    // Un agent dans deux équipes n'aurait pas de bureau : la première gagne.
+    const ids = (Array.isArray(t.agent_ids) ? t.agent_ids : [])
+      .filter((x): x is string => typeof x === "string" && !seen.has(x));
+    ids.forEach((x) => seen.add(x));
+    out.push({
+      id: t.id,
+      name: String(t.name ?? "").trim() || "Équipe",
+      color: typeof t.color === "string" && /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : TEAM_COLORS[out.length % TEAM_COLORS.length],
+      agent_ids: ids,
+      lead_id: typeof t.lead_id === "string" && ids.includes(t.lead_id) ? t.lead_id : null,
+      focus: String(t.focus ?? ""),
+      // Les champs d'une Teamz survivent à la normalisation : sans eux, le
+      // premier glisser-déposer d'un agent effacerait le flux de l'équipe.
+      ...(typeof t.emoji === "string" ? { emoji: t.emoji } : {}),
+      ...(typeof t.template_key === "string" ? { template_key: t.template_key } : {}),
+      ...(Array.isArray(t.links) ? {
+        links: t.links.filter((l) => l && ids.includes(l.from) && ids.includes(l.to)),
+      } : {}),
+      ...(Array.isArray(t.playbook) ? { playbook: t.playbook.filter((x): x is string => typeof x === "string") } : {}),
+      ...(typeof t.minutes_per_run === "number" ? { minutes_per_run: t.minutes_per_run } : {}),
+      ...(typeof t.hours_saved_per_week === "number" ? { hours_saved_per_week: t.hours_saved_per_week } : {}),
+      ...(typeof t.blueprint_id === "string" ? { blueprint_id: t.blueprint_id } : {}),
+      ...(typeof t.created_at === "string" ? { created_at: t.created_at } : {}),
+    });
+  }
+  return out;
+}
 
 /** Merge a raw jsonb blob onto the defaults so every consumer reads full values. */
 export function normalizeSettings(raw: unknown): DashboardSettings {
@@ -116,7 +195,63 @@ export function normalizeSettings(raw: unknown): DashboardSettings {
     theme: (s.theme as DashboardTheme) ?? "system",
     agent_defaults: { ...DEFAULT_AGENT_DEFAULTS, ...(s.agent_defaults ?? {}) },
     rooms: { ...DEFAULT_DASHBOARD_SETTINGS.rooms, ...(s.rooms ?? {}) },
+    // Gardées par la normalisation : la page de réglages réécrit le blob
+    // entier, et une clé qu'elle ne connaîtrait pas disparaîtrait à son
+    // premier « Enregistrer ».
+    teams: normalizeTeams(s.teams),
+    team_life: s.team_life === "off" || s.team_life === "active" ? s.team_life : "calm",
   };
+}
+
+/** Change le rythme de la vie d'équipe — relu juste avant d'écrire, comme les
+ *  équipes : une autre modification des réglages ne s'en trouve pas écrasée. */
+export async function updateTeamLife(dashboardId: string, mode: TeamLifeMode): Promise<void> {
+  const board = await fetchServiceDashboard(dashboardId);
+  if (!board) throw new Error("Tableau introuvable");
+  const res = await updateServiceDashboard(dashboardId, { settings: { ...board.settings, team_life: mode } });
+  if (!res.ok) throw new Error("Réglage impossible à enregistrer.");
+}
+
+// ── Équipes ──────────────────────────────────────────────────────────────────
+
+/** Place un agent dans une équipe (ou dans aucune, `teamId` null) — en le
+ *  retirant de celle qu'il quitte. */
+export function assignAgentToTeam(teams: AgentTeam[], agentId: string, teamId: string | null): AgentTeam[] {
+  return teams.map((t) => {
+    const without = t.agent_ids.filter((x) => x !== agentId);
+    const ids = t.id === teamId ? [...without, agentId] : without;
+    return { ...t, agent_ids: ids, lead_id: t.lead_id && ids.includes(t.lead_id) ? t.lead_id : null };
+  });
+}
+
+export function newTeam(teams: AgentTeam[], name?: string): AgentTeam {
+  return {
+    id: crypto.randomUUID(),
+    name: name?.trim() || `Équipe ${teams.length + 1}`,
+    color: TEAM_COLORS[teams.length % TEAM_COLORS.length],
+    agent_ids: [],
+    lead_id: null,
+    focus: "",
+  };
+}
+
+/**
+ * Écrit les équipes par LECTURE-MODIFICATION-ÉCRITURE.
+ *
+ * Le blob `settings` est partagé avec le reste des réglages : écrire une copie
+ * gardée en mémoire depuis l'ouverture de l'écran effacerait ce qu'un autre
+ * onglet a changé entre-temps. On relit la ligne, on applique la modification
+ * aux équipes du moment, on réécrit.
+ */
+export async function updateTeams(
+  dashboardId: string, fn: (teams: AgentTeam[]) => AgentTeam[],
+): Promise<AgentTeam[]> {
+  const board = await fetchServiceDashboard(dashboardId);
+  if (!board) throw new Error("Tableau introuvable");
+  const teams = normalizeTeams(fn(board.settings.teams));
+  const res = await updateServiceDashboard(dashboardId, { settings: { ...board.settings, teams } });
+  if (!res.ok) throw new Error("Les équipes nécessitent la migration 0158 (colonne settings).");
+  return teams;
 }
 
 function toDashboard(row: Record<string, unknown>): ServiceDashboard {

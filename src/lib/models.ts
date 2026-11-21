@@ -1,31 +1,44 @@
-// The models our chats actually run on — one list, used by every composer.
+// What a composer can ask the backend for — one list, used by every composer.
 //
-// These are REAL provider model ids: a composer sends the id straight to the
-// backend (internal-agent-run / ai-agent-chat), which pins the turn on it.
-//
-// Groq's small models are deliberately absent, and banned server-side too (see
-// sanitizeModel in supabase/functions/_shared/model-router.ts):
-// `llama-3.1-8b-instant` is capped at 6 000 tokens per minute on the on-demand
-// tier, so any turn carrying a real toolbox dies on a 413 "Request too large".
+// Not provider model ids any more: the platform's gateway (Runware, OpenRouter,
+// Azure…) and each agent's connector translate these into a real model per
+// request (supabase/functions/_shared/llm-upstream.ts, ModelRoutes). « Auto »
+// pins nothing — the request's tier and criterion (code, vision, long context)
+// choose. The others ask for a tier route: `@heavy`, `@light`.
 
 export interface ChatModel {
-  /** Provider model id, sent as-is to the backend. */
+  /** Sent as-is to the backend: "auto", or a route alias (`@heavy`…). */
   id: string;
   /** Shown in the composer's picker. */
   name: string;
+  /** The level, next to the name (« Élevé », « Rapide »…). */
+  level?: string;
   description: string;
 }
 
 export const CHAT_MODELS: ChatModel[] = [
   {
-    id: "deepseek-chat",
-    name: "DeepSeek V4",
-    description: "Par défaut, raisonnement et tool calling solides",
+    id: "auto",
+    name: "Auto",
+    description: "Le bon modèle à chaque requête : léger, moyen, lourd, code…",
   },
   {
-    id: "llama-3.3-70b-versatile",
-    name: "Llama 3.3 70B (Groq)",
-    description: "Plus rapide, pour les échanges courts",
+    id: "@heavy",
+    name: "Réflexion",
+    level: "Élevé",
+    description: "Le modèle lourd : analyses, plans complexes, raisonnement long",
+  },
+  {
+    id: "@standard",
+    name: "Standard",
+    level: "Moyen",
+    description: "Le modèle courant de la plateforme, sans escalade",
+  },
+  {
+    id: "@light",
+    name: "Rapide",
+    level: "Léger",
+    description: "Réponses courtes et rapides",
   },
 ];
 

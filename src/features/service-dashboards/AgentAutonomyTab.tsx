@@ -11,6 +11,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { InfoHint } from "@/components/ui/info-hint";
 import { type InternalAgent } from "@/features/internal-agents/shared";
 import { formatRelative } from "@/features/tracker/pickers";
 import { actionLabel } from "./CollaboratorInbox";
@@ -232,11 +233,10 @@ export function AgentAutonomyTab({ agent }: { agent: InternalAgent & { autonomy_
   return (
     <div className="mx-auto max-w-3xl space-y-10">
       <header>
-        <h2 className="text-xl font-semibold tracking-tight">Ce que {agent.name} peut faire seul</h2>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Chaque action qui touche vos outils reçoit une note de risque, de la simple lecture à l'irréversible.
-          Le niveau choisi ici décide, avec la grille de l'équipe, ce qui passe seul, ce qui vous est demandé et ce qui est refusé.
-        </p>
+        <h2 className="flex items-center gap-1.5 text-xl font-semibold tracking-tight">
+          Ce que {agent.name} peut faire seul
+          <InfoHint>Chaque action reçoit une note de risque. Ce niveau, avec la grille de l'équipe, décide ce qui passe seul, ce qui vous est demandé et ce qui est refusé.</InfoHint>
+        </h2>
       </header>
 
       {/* The judgement everything rests on. */}
@@ -355,11 +355,10 @@ export function AgentAutonomyTab({ agent }: { agent: InternalAgent & { autonomy_
 
       {/* Earned trust, one action type at a time. */}
       <section>
-        <h3 className="text-sm font-semibold">Confiance acquise</h3>
-        <p className="mb-3 mt-1 text-12 text-muted-foreground">
-          Quand vous avez validé au moins trois fois le même type d'action en 60 jours sans jamais refuser, il peut passer seul.
-          Jamais pour une action irréversible, et seulement en mode assisté.
-        </p>
+        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
+          Confiance acquise
+          <InfoHint>Trois validations du même type d'action en 60 jours, sans refus : il peut passer seul. Jamais pour une action irréversible.</InfoHint>
+        </h3>
         {(candidates ?? []).length > 0 && (
           <ul className="mb-3 space-y-2">
             {(candidates ?? []).map((c) => (

@@ -55,6 +55,28 @@ services:
     restart: unless-stopped
     networks: [founderos]
 
+  # La machine partagée des équipes d'agents (team-machine/, migration 0296).
+  # Optionnelle : `--profile team-machine`, et TEAM_MACHINE_URL=http://team-machine:8080
+  # dans .env pour que le backend la trouve. Aucun port publié : seul le backend
+  # lui parle, par le réseau interne. Isolement vérifiable :
+  #   docker compose exec team-machine node /opt/team-machine/src/selftest.mjs
+  team-machine:
+    image: ${FOUNDEROS_REGISTRY:-ghcr.io/founderos}/team-machine:${FOUNDEROS_TAG:-0.1.0}
+    build: { context: ../../team-machine }
+    profiles: ["team-machine"]
+    environment:
+      MACHINE_TOKEN: ${TEAM_MACHINE_TOKEN:?TEAM_MACHINE_TOKEN est requis (généré par l'installateur)}
+      MACHINE_ALLOW_APT: ${TEAM_MACHINE_ALLOW_APT:-0}
+    volumes:
+      - team-machine-teams:/teams
+      - team-machine-state:/var/lib/team-machine
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, DAC_READ_SEARCH, FOWNER, FSETID, SETUID, SETGID, SETPCAP, KILL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 4096
+    restart: unless-stopped
+    networks: [founderos]
+
   # HTTPS automatique (Let's Encrypt) pour l'interface et le backend. Sur un réseau
   # sans accès Internet : CADDY_TLS=internal (autorité de Caddy) ou vos certificats.
   proxy:
@@ -80,3 +102,5 @@ networks:
 
 volumes:
   caddy-data: {}
+  team-machine-teams: {}
+  team-machine-state: {}

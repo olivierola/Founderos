@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Wordmark } from "@/components/Logo";
 import { siClaude, siGithub, siGooglegemini, siPerplexity, siX } from "simple-icons";
 import { OpenAiLogoIcon as OpenAi } from "@phosphor-icons/react";
 import { SOLUTIONS } from "../solutions";
@@ -21,7 +22,7 @@ function Si({ path, className }: { path: string; className?: string }) {
 /* "Ask an AI about us": each mark opens that assistant with the question
    already typed. The question is ours; the answer is theirs. */
 const PROMPT = encodeURIComponent(
-  "Summarise what Anduran does: enterprise super intelligence hired as always-alive Cloud collaborators that run inside a company's own tenant, with approval-gated write actions and an exportable audit log. Who is it for?",
+  "Summarise what Agent company does: enterprise super intelligence hired as always-alive Cloud collaborators that run inside a company's own tenant, with approval-gated write actions and an exportable audit log. Who is it for?",
 );
 const ASSISTANTS = [
   { label: "ChatGPT", href: `https://chatgpt.com/?hints=search&q=${PROMPT}`, icon: <OpenAi className="h-[22px] w-[22px]" /> },
@@ -84,8 +85,8 @@ export function HnCta({
                 href={a.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label={`Ask ${a.label} about Anduran`}
-                title={`Ask ${a.label} about Anduran`}
+                aria-label={`Ask ${a.label} about Agent company`}
+                title={`Ask ${a.label} about Agent company`}
                 className="text-[#0d0d0d] transition-transform hover:-translate-y-0.5"
               >
                 {a.icon}
@@ -134,7 +135,7 @@ export function HnFooter({ cta = true }: { cta?: boolean }) {
                 </a>
               </div>
               <div className="px-6 py-6 text-[14px] leading-[1.6] lg:px-12">
-                <div className="text-[#0d0d0d]">Anduran</div>
+                <div className="text-[#0d0d0d]"><Wordmark size={15} /></div>
                 <a href="mailto:hello@founderos.dev" className="text-[#5c5c66] hover:text-[#4f1ad6]">
                   hello@founderos.dev
                 </a>
@@ -160,7 +161,7 @@ export function HnFooter({ cta = true }: { cta?: boolean }) {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-[#e8e8ee] px-6 py-10 text-[17px] text-[#5c5c66] sm:flex-row sm:items-center sm:justify-between lg:px-12">
-            <span>© {new Date().getFullYear()} Anduran | All rights reserved.</span>
+            <span>© {new Date().getFullYear()} Agent company | All rights reserved.</span>
             <span className="flex gap-6">
               <Link to="/docs" className="hover:text-[#4f1ad6]">Privacy</Link>
               <Link to="/docs" className="hover:text-[#4f1ad6]">Terms</Link>

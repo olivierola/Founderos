@@ -15,15 +15,18 @@ interface AiopsServer {
   served_model: string | null; status: string;
 }
 interface CloudProvider {
-  id: string; name: string; config: { base_url?: string } | null; status: string;
+  id: string; name: string; config: { base_url?: string; model_routes?: Record<string, string> } | null; status: string;
   metadata: { models?: string[] } | null;
 }
 
 export interface AgentModelOption { value: string; label: string; hint?: string }
 
+// La valeur reste « deepseek » (compatibilité des agents existants), mais elle
+// désigne le fournisseur de la plateforme — Runware, OpenRouter, Azure… — qui
+// choisit le modèle à chaque requête d'après ses routes (palier, critère).
 export const BUILTIN_MODEL_OPTIONS: AgentModelOption[] = [
-  { value: "deepseek", label: "DeepSeek", hint: "Par défaut, raisonnement et outils" },
-  { value: "groq", label: "Llama 3.3 70B (Groq)", hint: "Plus rapide, pour les échanges courts" },
+  { value: "deepseek", label: "Connexion par défaut · automatique", hint: "OpenRouter : le bon modèle à chaque requête (léger, moyen, lourd), réglable par tâche" },
+  { value: "groq", label: "Rapide (Groq)", hint: "Échanges courts, si la plateforme a une clé Groq" },
 ];
 
 /** The agent's current choice as one select value: `p:<provider>:<model>` for a
@@ -59,13 +62,20 @@ export function useAgentModelChoices(projectId: string) {
 
   const options: AgentModelOption[] = [
     ...BUILTIN_MODEL_OPTIONS,
-    ...(providers ?? []).flatMap((p) =>
-      (p.metadata?.models ?? []).slice(0, 30).map((m) => ({
+    ...(providers ?? []).flatMap((p) => [
+      // Un connecteur qui a des modèles par tâche : sans modèle imposé, le
+      // runtime prend la route de chaque requête (hosted_model vide).
+      ...(Object.keys(p.config?.model_routes ?? {}).length
+        ? [{ value: `p:${p.id}:`, label: `${p.name} · Automatique (selon la requête)`, hint: "Modèles par tâche du connecteur (AI Ops)" }]
+        : []),
+      // Tout le catalogue du connecteur (OpenRouter en expose des centaines) :
+      // la liste se filtre au clavier (SoftSelect).
+      ...(p.metadata?.models ?? []).map((m) => ({
         value: `p:${p.id}:${m}`,
         label: `${p.name} · ${m}`,
         hint: p.status === "connected" ? "Vos modèles (AI Ops)" : `Vos modèles (AI Ops) · ${p.status}`,
       })),
-    ),
+    ]),
     ...(servers ?? []).map((s) => ({
       value: `s:${s.id}`,
       label: `${s.name}${s.served_model ? ` · ${s.served_model}` : ""}`,

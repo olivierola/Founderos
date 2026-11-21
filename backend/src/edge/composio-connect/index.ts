@@ -23,6 +23,7 @@ import {
   getComposio, mapConnectionStatus, resolveScope, composioEntityId, scopeFilter, applyScope,
   type ScopeRef,
 } from "../_shared/composio.ts";
+import { discoverToolkit } from "../_shared/composio-discovery.ts";
 
 const OAUTH_SCHEMES = new Set(["OAUTH1", "OAUTH2"]);
 
@@ -146,6 +147,11 @@ export default defineHandler(async (req) => {
         composio_auth_config_id: authConfigId,
       });
       if (saveErr) return jsonResponse({ error: "Could not save connector", detail: saveErr }, { status: 500 });
+      // Connectée d'emblée : ses actions rejoignent le registre des ressources.
+      if (status === "connected" && scoped.scope !== "personal") {
+        await discoverToolkit(admin, { workspaceId: workspace_id, projectId: project_id, toolkit }).catch((e) =>
+          console.error(`[composio-connect] découverte de ${toolkit} : ${e instanceof Error ? e.message : e}`));
+      }
       return jsonResponse({ ok: true, status });
     }
 

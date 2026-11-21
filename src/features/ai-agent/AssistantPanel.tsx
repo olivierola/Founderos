@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatCircleDotsIcon } from "@phosphor-icons/react";
 import {
@@ -12,9 +13,10 @@ import {
   ChartBarIcon as BarChart3,
   ArrowRightIcon as ArrowRight,
   SparkleIcon as Sparkles,
+  UsersThreeIcon as Team,
 } from "@phosphor-icons/react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AgentMarkdown } from "@/components/AgentMarkdown";
+import { InlineUiProvider } from "@/features/internal-agents/UiBlocks";
 import { ChatComposer } from "@/components/ui/chat-composer";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,15 +26,14 @@ import { supabase } from "@/lib/supabase";
 import { callEdge } from "@/lib/edge";
 import { cn } from "@/lib/utils";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
-import { useAssistant } from "@/lib/assistant-context";
+import { ASSISTANT_MAX_W, ASSISTANT_MIN_W, ASSISTANT_NAV_SLOT_ID, useAssistant } from "@/lib/assistant-context";
 import { capturePageSnapshot, snapshotToText } from "@/lib/page-snapshot";
 import { DocumentCanvas } from "./DocumentCanvas";
 import { MessageArtifacts, type AiArtifact } from "./Artifacts";
 import { AgentSetupDeck } from "./AgentSetupDeck";
 
-const MIN_W = 340;
-const MAX_W = 720;
-const DEFAULT_W = 400;
+const MIN_W = ASSISTANT_MIN_W;
+const MAX_W = ASSISTANT_MAX_W;
 
 
 // Quick-start actions shown on the empty state as actionable cards.
@@ -40,6 +41,8 @@ const QUICK_ACTIONS = [
   { icon: Sparkles, title: "Explique cette page", subtitle: "Ce que je regarde, en clair", prompt: "Explique cette page" },
   { icon: BarChart3, title: "Résume les chiffres clés", subtitle: "Les métriques à l'écran", prompt: "Résume les chiffres clés à l'écran" },
   { icon: FileText, title: "Que dois-je faire ensuite ?", subtitle: "Prochaines actions recommandées", prompt: "Que dois-je faire ensuite ?" },
+  // Teamz (0298) : une équipe entière d'une phrase — conçue, montrée, déployée.
+  { icon: Team, title: "Crée-moi une équipe d'agents", subtitle: "En une phrase", prompt: "Crée-moi une équipe d'agents qui gère notre support client de bout en bout : tri, réponses sourcées, escalade technique et documentation." },
 ] as const;
 
 interface AiMessage {
@@ -52,36 +55,57 @@ interface AiMessage {
 
 interface Convo { id: string; title: string | null; updated_at: string }
 
-export function AssistantPanel() {
-  const { open, setOpen, request, clearRequest, agent, setAgent } = useAssistant();
+/**
+ * L'assistant de l'app.
+ *
+ *  · « docked » (tableaux de service, AI Workforce) : il PARTAGE la zone de
+ *    contenu, comme le panneau de réglages d'un agent — le contenu se divise,
+ *    rien ne flotte par-dessus. Son en-tête (conversation, historique,
+ *    fermeture) monte dans la barre du haut, au-dessus de lui, quand la page
+ *    en a une (ASSISTANT_NAV_SLOT_ID) ; sinon il reste en tête du panneau.
+ *  · « floating » : l'ancienne fenêtre pleine hauteur, gardée pour les pages
+ *    sans rangée où se loger.
+ */
+export function AssistantPanel({ variant = "floating" }: { variant?: "floating" | "docked" }) {
+  const { open, setOpen, request, clearRequest, agent, setAgent, width, setWidth } = useAssistant();
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const docked = variant === "docked";
 
-  // Resizable width (persisted), dragged from the left edge.
-  const [width, setWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("assistant_width"));
-    return saved >= MIN_W && saved <= MAX_W ? saved : DEFAULT_W;
-  });
+  // Resizable width (persisted in the context), dragged from the left edge.
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
     const startW = width;
     const onMove = (ev: MouseEvent) => {
-      const next = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - ev.clientX)));
-      setWidth(next);
+      setWidth(Math.min(MAX_W, Math.max(MIN_W, startW + (startX - ev.clientX))));
     };
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       document.body.style.userSelect = "";
-      setWidth((w) => { localStorage.setItem("assistant_width", String(w)); return w; });
     };
     document.body.style.userSelect = "none";
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
-  }, [width]);
+  }, [width, setWidth]);
+
+  // La place de l'en-tête dans la barre du haut, quand elle existe.
+  const [navSlot, setNavSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!docked || !open) { setNavSlot(null); return; }
+    // Masquée (écran étroit), la place ne compte pas : l'en-tête reste en tête
+    // du panneau, qui repasse alors au-dessus de la page.
+    const find = () => {
+      const el = document.getElementById(ASSISTANT_NAV_SLOT_ID);
+      setNavSlot(el && el.offsetParent !== null ? el : null);
+    };
+    find();
+    window.addEventListener("resize", find);
+    return () => window.removeEventListener("resize", find);
+  }, [docked, open]);
 
   const [convoId, setConvoId] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -243,51 +267,71 @@ export function AssistantPanel() {
   const isEmpty = !convoId || !messages || messages.length === 0;
   const currentConvo = conversations?.find((c) => c.id === convoId);
 
+  // L'en-tête : qui parle, quelle conversation, une nouvelle, fermer. Ancré, il
+  // monte dans la barre du haut et en prend le rythme (h-8, onglets).
+  const inNav = docked && !!navSlot;
+  const header = (
+    <div className={cn("flex items-center gap-1.5", inNav ? "h-full w-full" : "h-12 border-b border-border px-3")}>
+      <span className={cn("flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium", inNav && "bg-muted/80")}>
+        <ChatCircleDotsIcon weight="fill" className="h-4 w-4 text-[hsl(var(--primary-soft))]" />
+        Assistant
+      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className="flex h-8 min-w-0 max-w-[220px] items-center gap-1 rounded-lg px-2 text-[12.5px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground">
+            <History className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{currentConvo?.title ?? "Nouvelle conversation"}</span>
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64 rounded-xl p-1.5">
+          <DropdownMenuItem className="rounded-lg" onClick={() => { setConvoId(null); setError(null); }}>
+            <Plus className="mr-2 h-3.5 w-3.5" /> Nouvelle conversation
+          </DropdownMenuItem>
+          {(conversations ?? []).map((c) => (
+            <DropdownMenuItem key={c.id} className="rounded-lg" onClick={() => setConvoId(c.id)}>
+              <span className="truncate">{c.title || "Sans titre"}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <div className="flex-1" />
+      <button
+        type="button" title="Nouvelle conversation" aria-label="Nouvelle conversation"
+        onClick={() => { setConvoId(null); setError(null); }}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+      >
+        <Plus className="h-4 w-4" />
+      </button>
+      <button
+        type="button" title="Fermer l'assistant" aria-label="Fermer l'assistant"
+        onClick={() => setOpen(false)}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+
   return (
     <aside
-      // Floating right-hand modal: overlays the app full-height instead of
-      // squeezing it, so a hand-off ("configure this agent") keeps the page the
-      // user came from visible behind it.
-      className="fixed inset-y-2 right-2 z-50 flex max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-2xl shadow-black/40 duration-200 animate-in slide-in-from-right-6 fade-in"
+      className={docked
+        // Ancré : une surface de plus dans la rangée, comme le panneau de
+        // droite — le contenu se divise au lieu d'être recouvert. Sous `lg`,
+        // faute de place, il repasse au-dessus de la page.
+        ? "relative flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background text-foreground duration-200 animate-in fade-in max-lg:fixed max-lg:inset-2 max-lg:z-50 max-lg:!w-auto max-lg:shadow-2xl"
+        : "fixed inset-y-2 right-2 z-50 flex max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-2xl shadow-black/40 duration-200 animate-in slide-in-from-right-6 fade-in"}
       style={{ width }}
-      role="dialog"
+      role={docked ? "complementary" : "dialog"}
       aria-label="Assistant IA"
     >
       {/* Resize handle (left edge). */}
       <div
         onMouseDown={startResize}
-        className="absolute left-0 top-0 z-20 h-full w-1.5 cursor-col-resize hover:bg-primary/40"
-        title="Drag to resize"
+        className="absolute left-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-primary/30"
+        title="Glisser pour redimensionner"
       />
-      {/* Header — h-14, same rhythm as the app topbar it floats over. */}
-      <div className="flex h-14 items-center gap-2 border-b border-border px-3">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-900">
-          <ChatCircleDotsIcon weight="duotone" className="h-4 w-4" />
-        </span>
-        <span className="text-sm font-semibold">Assistant</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="ghost" className="ml-1 h-7 max-w-[150px] px-2 text-xs text-muted-foreground hover:text-foreground">
-              <History className="mr-1 h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="truncate">{currentConvo?.title ?? "New chat"}</span>
-              <ChevronDown className="ml-1 h-3 w-3 shrink-0 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            <DropdownMenuItem onClick={() => { setConvoId(null); setError(null); }}>
-              <Plus className="mr-2 h-3.5 w-3.5" /> New chat
-            </DropdownMenuItem>
-            {(conversations ?? []).map((c) => (
-              <DropdownMenuItem key={c.id} onClick={() => setConvoId(c.id)}>
-                <span className="truncate">{c.title || "Untitled"}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button size="icon" variant="ghost" className="ml-auto h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+      {inNav ? createPortal(header, navSlot!) : header}
 
       {/* Messages */}
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto px-3">
@@ -307,26 +351,23 @@ export function AssistantPanel() {
             Choisissez une carte à configurer, ou demandez-moi directement ce que vous voulez changer.
           </p>
         ) : isEmpty ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-2 text-center">
-            <AssistantAvatar />
-            <p className="text-sm font-medium text-foreground">Ask about this page</p>
-            <p className="text-xs text-muted-foreground">
-              I see what you're looking at. Ask me to explain, analyse, or act on it.
+          <div className="flex h-full flex-col justify-end gap-1 px-1 pb-4">
+            <p className="px-2 text-[15px] font-medium text-foreground">Que puis-je faire pour vous ?</p>
+            <p className="mb-3 px-2 text-[12.5px] text-muted-foreground">
+              Je vois la page ouverte : je l'explique, je l'analyse, ou j'agis dessus.
             </p>
-            <div className="mt-2 grid w-full gap-2 text-left">
+            <div className="grid w-full gap-0.5 text-left">
               {QUICK_ACTIONS.map((a) => (
                 <button
                   key={a.prompt}
                   onClick={() => handleSend(a.prompt)}
                   disabled={sending}
-                  className="group flex items-center gap-3 rounded-lg border border-border bg-card/40 p-3 transition-colors hover:border-primary/40 hover:bg-secondary disabled:opacity-50"
+                  className="group flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/60 disabled:opacity-50"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                    <a.icon className="h-4 w-4" />
-                  </span>
+                  <a.icon className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-foreground">{a.title}</span>
-                    <span className="block truncate text-[11px] text-muted-foreground">{a.subtitle}</span>
+                    <span className="block text-[13px] text-foreground">{a.title}</span>
+                    <span className="block truncate text-[11.5px] text-muted-foreground">{a.subtitle}</span>
                   </span>
                   <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </button>
@@ -335,12 +376,16 @@ export function AssistantPanel() {
           </div>
         ) : (
           <div className="space-y-3 py-3">
-            {messages!.map((m) => (
+            {messages!.map((m, i) => (
               <Bubble
                 key={m.id}
                 m={m}
                 artifacts={artifactsByMessage[m.id] ?? []}
                 onOpenDoc={(md, title) => { setDocTitle(title); setDocMarkdown(md); }}
+                // Les choix cliquables (bloc ```ui options) ne valent que pour
+                // la dernière réponse.
+                onPick={(t) => void handleSend(t)}
+                optionsDisabled={sending || i !== messages!.length - 1}
               />
             ))}
             {sending && (
@@ -361,7 +406,7 @@ export function AssistantPanel() {
           loading={sending}
           running={sending}
           onStop={sending ? stopSending : undefined}
-          placeholder="Ask about this page…"
+          placeholder="Demandez ou décrivez une tâche…"
         />
         {error && <p className="mt-1.5 text-center text-[11px] text-destructive">{error}</p>}
       </div>
@@ -389,11 +434,13 @@ function AssistantAvatar() {
 }
 
 function Bubble({
-  m, artifacts, onOpenDoc,
+  m, artifacts, onOpenDoc, onPick, optionsDisabled,
 }: {
   m: AiMessage;
   artifacts: AiArtifact[];
   onOpenDoc: (md: string, title?: string) => void;
+  onPick?: (text: string) => void;
+  optionsDisabled?: boolean;
 }) {
   if (m.role === "user") {
     return (
@@ -408,35 +455,13 @@ function Bubble({
         <Bot className="h-3.5 w-3.5" />
       </span>
       <div className="min-w-0 flex-1">
-        <div
-          className={cn(
-            "prose prose-sm max-w-none dark:prose-invert leading-relaxed",
-            "prose-p:my-2 prose-p:text-foreground/90 prose-p:leading-relaxed",
-            "prose-headings:text-foreground prose-headings:font-semibold prose-headings:mb-1 prose-headings:mt-3",
-            "prose-strong:text-foreground prose-a:text-primary prose-a:font-medium",
-            "prose-ul:my-2 prose-ul:space-y-1.5 prose-ol:my-2 prose-ol:space-y-1.5",
-            "prose-li:my-0 prose-li:marker:text-muted-foreground",
-            "prose-code:rounded prose-code:bg-secondary prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.8em] prose-code:before:content-none prose-code:after:content-none",
-            "prose-pre:bg-secondary prose-pre:text-foreground prose-hr:border-border",
-          )}
-        >
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              // Render list items as compact rows with a clear bullet so the
-              // model's quick-action lists read as a structured list, not a wall.
-              li: ({ children, ...props }) => (
-                <li {...props} className="flex gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
-                  <span className="min-w-0 flex-1">{children}</span>
-                </li>
-              ),
-              ul: ({ children }) => <ul className="my-2 list-none space-y-1.5 pl-0">{children}</ul>,
-            }}
-          >
-            {(m.content ?? "").replace(/\[\[ui:\d+\]\]/g, "")}
-          </ReactMarkdown>
-        </div>
+        {/* Le rendu partagé des agents : tableaux triables, code, blocs ```ui
+            (indicateurs, graphiques, choix cliquables). */}
+        <InlineUiProvider onPick={onPick} optionsDisabled={optionsDisabled}>
+          <div className="chat-prose break-words">
+            <AgentMarkdown content={m.content ?? ""} />
+          </div>
+        </InlineUiProvider>
         {artifacts.length > 0 && <MessageArtifacts artifacts={artifacts} onOpenDocument={onOpenDoc} />}
       </div>
     </div>

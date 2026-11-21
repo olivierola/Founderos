@@ -160,6 +160,7 @@ import { GovFtVersionsPage } from "@/features/governance/aiops/FtVersions";
 import { GovFtDeploymentPage } from "@/features/governance/aiops/FtDeployment";
 import { GovFtMonitoringPage } from "@/features/governance/aiops/FtMonitoring";
 import { GovFtCostsPage } from "@/features/governance/aiops/FtCosts";
+import { HarnessHealthPage } from "@/features/governance/aiops/HarnessHealth";
 import { GovFtSecurityPage } from "@/features/governance/aiops/FtSecurity";
 import { GovFtSettingsPage } from "@/features/governance/aiops/FtSettings";
 
@@ -263,6 +264,7 @@ const PAGES: Record<string, PageEl> = {
   "aiops/ft-deployment": <GovFtDeploymentPage />,
   "aiops/ft-monitoring": <GovFtMonitoringPage />,
   "aiops/ft-costs": <GovFtCostsPage />,
+  "aiops/ops-harness": <HarnessHealthPage />,
   // ── Fine-tuning Studio module ──
   "finetuning/ft-overview": <GovFtOverviewPage />,
   "finetuning/ft-datasets": <GovFtDatasetsPage />,

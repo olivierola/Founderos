@@ -83,22 +83,24 @@ export function WorkspaceSwitcher() {
       <PopoverAnchor asChild>
         <div className="flex min-w-0 items-center gap-1">
           {/* Workspace (organisation) chip */}
+          {/* Posées sur le fond de la coque (plus sur un bandeau marine) :
+              le gris du fil d'Ariane, et le survol des boutons de la barre. */}
           <button
             onClick={() => setOpen((o) => !o)}
-            className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-white transition-colors hover:bg-white/5"
+            className="flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             <Tile name={workspace?.name ?? "Workspace"} size="sm" />
-            <span className="truncate text-sm font-medium">{workspace?.name ?? "Workspace"}</span>
+            <span className="truncate text-[13px] font-medium">{workspace?.name ?? "Workspace"}</span>
           </button>
 
           {/* Project chip (with switcher affordance) */}
           <button
             onClick={() => setOpen((o) => !o)}
-            className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-white transition-colors hover:bg-white/5"
+            className="flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 text-foreground transition-colors hover:bg-muted/50"
           >
             <Tile name={project?.name ?? "Project"} size="sm" selected />
-            <span className="truncate text-sm font-medium">{project?.name ?? "Project"}</span>
-            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-white/40" />
+            <span className="truncate text-[13px] font-medium">{project?.name ?? "Project"}</span>
+            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
         </div>
       </PopoverAnchor>

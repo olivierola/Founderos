@@ -4,9 +4,13 @@ import {
   ArchiveIcon, ArrowLeftIcon, ArrowsClockwiseIcon, CaretRightIcon, ChartBarIcon,
   DotsThreeIcon, EyeIcon, FileTextIcon, GearSixIcon, ListChecksIcon, NotePencilIcon,
   GlobeIcon, LockSimpleIcon, PackageIcon, PlusIcon, SquaresFourIcon, StackIcon, StarIcon,
-  TrayIcon, UsersThreeIcon,
+  TrayIcon, UsersThreeIcon, FlagBannerIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
+import { DeliverablesField, MissionKickoff, TeamsPicker } from "./MissionKickoff";
+import { BriefInput, SmartTextarea } from "./SmartTextarea";
+import { missionAction, type MissionDeliverable } from "./model";
+import { useTeams } from "@/features/service-dashboards/live/teams";
 import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -44,7 +48,7 @@ import { ProjectCard } from "./ProjectCard";
 import { MyWorkPage } from "./MyWorkPage";
 import { TextAreaField, TextField } from "./ui";
 import { BoardIllustration } from "./illustrations";
-import { EmptyState } from "./ui";
+import { EmptyState, Tabs } from "./ui";
 import {
   createProject, deleteProject, deriveIdentifier, fetchFavorites,
   fetchProjects, fetchIssues, fetchStates, toggleFavorite, updateProject,
@@ -62,7 +66,7 @@ import {
  */
 
 type Section =
-  | "overview" | "issues" | "cycles" | "modules" | "epics" | "views" | "pages" | "intake"
+  | "kickoff" | "overview" | "issues" | "cycles" | "modules" | "epics" | "views" | "pages" | "intake"
   | "crew" | "deliverables" | "assets"
   | "drafts" | "analytics" | "archives" | "settings";
 
@@ -71,6 +75,20 @@ const SPACE_VIEWS = [
   "my-work", "drafts", "stickies", "all-projects", "workgraph",
   "analytics", "boards", "views", "archives", "wiki", "agents", "inbox",
 ];
+
+/** Analytics et les tableaux de bord : une seule destination, deux onglets.
+ *  `/boards` reste une adresse valide et ouvre le second. */
+function AnalyticsHub({ initial, dashboardId, workspaceId }: {
+  initial: "analytics" | "boards"; dashboardId: string; workspaceId: string | null;
+}) {
+  const [tab, setTab] = useState<"analytics" | "boards">(initial);
+  const switcher = (
+    <Tabs value={tab} onChange={setTab} options={[{ key: "analytics", label: "Analyses" }, { key: "boards", label: "Tableaux du suivi" }]} />
+  );
+  return tab === "analytics"
+    ? <SpaceAnalytics dashboardId={dashboardId} switcher={switcher} />
+    : <DashboardsPage dashboardId={dashboardId} workspaceId={workspaceId} switcher={switcher} />;
+}
 
 /**
  * Les écrans qui portent sur TOUT le service plutôt que sur un projet. Ils
@@ -100,7 +118,7 @@ function SpaceView({
         />
       );
     case "boards":
-      return <DashboardsPage dashboardId={dashboardId} workspaceId={workspaceId} />;
+      return <AnalyticsHub key="boards" initial="boards" dashboardId={dashboardId} workspaceId={workspaceId} />;
     case "wiki":
       return <WikiPage dashboardId={dashboardId} workspaceId={workspaceId} />;
     case "drafts":
@@ -110,7 +128,7 @@ function SpaceView({
     case "stickies":
       return <SpaceStickiesPage dashboardId={dashboardId} workspaceId={workspaceId} />;
     case "analytics":
-      return <SpaceAnalytics dashboardId={dashboardId} />;
+      return <AnalyticsHub key="analytics" initial="analytics" dashboardId={dashboardId} workspaceId={workspaceId} />;
     case "agents":
       // Le roster EXISTANT, rendu ici tel quel — pas une copie.
       //
@@ -342,7 +360,11 @@ function ProjectWorkspace({
   // L'URL commande quand elle porte une section ; l'état local ne sert qu'aux
   // sections absentes de la sidebar (Brouillons, Archives, Analytics, Réglages),
   // qu'on atteint depuis la page elle-même.
-  const [localSection, setLocalSection] = useState<Section>("issues");
+  // Une mission confiée à l'équipe s'ouvre sur son cadrage : c'est là que ça
+  // se passe tant que le plan n'est pas en route.
+  const [localSection, setLocalSection] = useState<Section>(
+    project.brief || (project.planning_status && project.planning_status !== "none") ? "kickoff" : "issues",
+  );
   const section = (urlSection as Section) ?? localSection;
   const setSection = (s: Section) => {
     setLocalSection(s);
@@ -355,6 +377,9 @@ function ProjectWorkspace({
     // L'ordre est celui de Plane : on arrive sur Overview, on travaille dans
     // Work items, et le reste vient ensuite.
     const all: { key: Section; label: string; icon: PhosphorIcon; on: boolean }[] = [
+      // Le cadrage d'abord : la mission telle que l'équipe l'a comprise,
+      // découpée et répartie (0295).
+      { key: "kickoff", label: "Cadrage", icon: FlagBannerIcon, on: true },
       { key: "overview", label: "Overview", icon: SquaresFourIcon, on: true },
       { key: "issues", label: "Work items", icon: ListChecksIcon, on: true },
       { key: "views", label: "Vues", icon: EyeIcon, on: project.issue_views_view },
@@ -423,6 +448,7 @@ function ProjectWorkspace({
 
       <div className="relative min-h-0 flex-1">
         <div className="h-full">
+          {active === "kickoff" && <MissionKickoff project={project} dashboardId={dashboardId} onChanged={onChanged} />}
           {active === "overview" && <OverviewPage project={project} />}
           {active === "issues" && (
             <div className="h-full">
@@ -467,6 +493,13 @@ function CreateProjectDialog({
   const [network, setNetwork] = useState<0 | 2>(2);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ce que l'humain confie à l'équipe (0295) : avec un brief, la mission part
+  // en cadrage dès sa création.
+  const { teams } = useTeams(dashboardId);
+  const [brief, setBrief] = useState("");
+  const [deliv, setDeliv] = useState<MissionDeliverable[]>([{ title: "" }]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [autostart, setAutostart] = useState(false);
 
   // Tant que personne n'a touché au code, il suit le nom. Dès qu'on l'édite, il
   // se fige : sinon on corrige un code et il se fait écraser à la frappe
@@ -491,7 +524,18 @@ function CreateProjectDialog({
         logo_props: logo,
         network,
         createdBy: user?.id ?? null,
+        brief: brief.trim() || undefined,
+        deliverables: deliv.filter((d) => d.title.trim()),
+        planningTeams: picked,
+        planningAutostart: autostart,
       });
+      if (brief.trim()) {
+        try {
+          await missionAction(created.id, "mission_kickoff");
+        } catch {
+          // La mission existe : le cadrage se relancera depuis son onglet.
+        }
+      }
       onCreated(created);
       onClose();
     } catch (e) {
@@ -501,95 +545,127 @@ function CreateProjectDialog({
     }
   };
 
+  // Deux temps, pour ne pas tout demander d'un coup : ce que l'on veut, puis
+  // ce qui doit en sortir et qui s'en charge.
+  const [step, setStep] = useState<1 | 2>(1);
+  const hasBrief = !!brief.trim();
+
   return (
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
-      {/* Sans padding : la couverture doit toucher les bords, comme sur la
-          carte du projet. Le corps reprend sa marge lui-même. */}
-      <DialogContent className="max-w-lg overflow-hidden p-0">
-        <DialogHeader className="sr-only"><DialogTitle>Nouveau projet</DialogTitle></DialogHeader>
+      {/* Un clic à côté ne ferme pas : un brief à moitié écrit ne doit pas se
+          perdre sur un geste distrait. On ferme avec Annuler ou la croix. */}
+      <DialogContent
+        className="flex max-h-[90vh] max-w-xl flex-col gap-0 overflow-hidden p-0"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="sr-only"><DialogTitle>Nouvelle mission</DialogTitle></DialogHeader>
 
-        {/* ── Couverture + logo ────────────────────────────────────────── */}
-        <div className="relative h-[100px]" style={{ background: coverFor(effectiveIdentifier) }}>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-          <div className="absolute -bottom-5 left-5">
-            <span className="block rounded-lg bg-card p-1 shadow-raised-200">
-              <LogoPicker
-                value={logo}
-                onChange={setLogo}
-                fallback={effectiveIdentifier}
-                size={40}
-                className="border-0"
-              />
-            </span>
-          </div>
+        {/* ── En-tête : l'icône, le titre, la référence ── */}
+        <div className="flex items-center gap-3 border-b border-border px-5 py-4" style={{ backgroundImage: `linear-gradient(90deg, color-mix(in srgb, ${coverFor(effectiveIdentifier).match(/hsl\([^)]+\)/)?.[0] ?? "transparent"} 18%, transparent), transparent 70%)` }}>
+          <LogoPicker value={logo} onChange={setLogo} fallback={effectiveIdentifier} size={32} className="shrink-0" />
+          <input
+            autoFocus value={name} onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) { if (brief.trim()) setStep(2); else void submit(); } }}
+            placeholder="Titre de la mission" maxLength={255}
+            className="min-w-0 flex-1 bg-transparent text-16 font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground/70"
+          />
+          {/* La référence des work items (PROJ-1) : modifiable, mais discrète. */}
+          <input
+            value={effectiveIdentifier} aria-label="Référence des work items"
+            title={`Les work items porteront la référence ${effectiveIdentifier || "PROJ"}-1. Elle ne change plus ensuite.`}
+            onChange={(e) => {
+              setTouchedIdentifier(true);
+              setIdentifier(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10));
+            }}
+            placeholder="PROJ"
+            className={cn("w-20 shrink-0 rounded-md bg-muted/60 px-2 py-1 text-center font-mono text-11 uppercase text-muted-foreground outline-none focus:ring-1 focus:ring-primary/50",
+              taken && "text-red-600 ring-1 ring-red-500")}
+          />
         </div>
 
-        <div className="space-y-4 px-5 pb-5 pt-8">
-          <div className="flex gap-2">
-            <TextField
-              autoFocus value={name} onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-              placeholder="Nom du projet"
-              className="flex-1"
-              maxLength={255}
-            />
-            {/* Le code tient à côté du nom et non en dessous : c'est UNE
-                décision, prise au même moment, et l'empiler donnerait
-                l'impression d'un second formulaire. */}
-            <TextField
-              value={effectiveIdentifier}
-              onChange={(e) => {
-                setTouchedIdentifier(true);
-                // Même assainissement que Plane : majuscules, alphanumérique,
-                // dix caractères. Corriger à la frappe plutôt que refuser après
-                // coup évite un message d'erreur pour une faute qu'on peut
-                // empêcher.
-                setIdentifier(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10));
-              }}
-              placeholder="PROJ"
-              className={cn('w-28 text-center font-mono uppercase', taken && 'border-red-500')}
-            />
-          </div>
-          <p className="text-11 text-muted-foreground">
-            Les work items porteront la référence{' '}
-            <span className="font-mono">{effectiveIdentifier || 'PROJ'}-1</span>. Elle se colle
-            dans les conversations et les commits, et ne change plus ensuite.
-          </p>
-
-          <TextAreaField
-            value={description} onChange={(e) => setDescription(e.target.value)}
-            placeholder="À quoi sert ce projet ?" className="min-h-[70px]"
-          />
-
-          <fieldset>
-            <legend className="mb-2 text-12 text-secondary">Accès</legend>
-            <div className="space-y-2">
-              <NetworkOption
-                active={network === 2} onSelect={() => setNetwork(2)}
-                icon={<GlobeIcon className="h-4 w-4" />}
-                label="Ouvert à l'espace"
-                hint="Tout le monde peut le voir et le rejoindre."
+        {/* ── Le corps : une étape à la fois ── */}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {step === 1 ? (
+            <>
+              <SmartTextarea
+                label="En bref" value={description} onChange={setDescription}
+                placeholder="En une ou deux phrases : de quoi s'agit-il ?" minRows={2} maxRows={4}
               />
-              <NetworkOption
-                active={network === 0} onSelect={() => setNetwork(0)}
-                icon={<LockSimpleIcon className="h-4 w-4" />}
-                label="Privé"
-                hint="Seuls les membres invités y ont accès."
-              />
-            </div>
-          </fieldset>
-
+              <div>
+                <BriefInput
+                  value={brief} onChange={setBrief}
+                  onTitle={(t) => { if (!name.trim()) setName(t.slice(0, 255)); }}
+                />
+                <p className="mt-1.5 text-11 text-muted-foreground">
+                  Avec un brief, les agents cadrent la mission, vous posent leurs questions, puis la découpent et se la répartissent.
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <DeliverablesField deliv={deliv} setDeliv={setDeliv} />
+              <TeamsPicker teams={teams} picked={picked} setPicked={setPicked} />
+              <div className="divide-y divide-border rounded-lg border border-border">
+                <ToggleRow
+                  label="Démarrer dès que le plan est prêt"
+                  hint="Sinon, le plan attend votre feu vert."
+                  on={autostart} onChange={setAutostart}
+                />
+                <ToggleRow
+                  label="Mission privée"
+                  hint={network === 0 ? "Seuls les membres invités y ont accès." : "Visible par tout l'espace."}
+                  on={network === 0} onChange={(v) => setNetwork(v ? 0 : 2)}
+                />
+              </div>
+            </>
+          )}
           {error && <p className="text-12 text-red-600">{error}</p>}
+        </div>
 
-          <div className="flex justify-end gap-2 border-t border-border pt-3">
+        {/* ── Le pied : où l'on en est, et la suite ── */}
+        <div className="flex items-center gap-2 border-t border-border px-5 py-3">
+          {hasBrief && (
+            <div className="flex items-center gap-1.5 text-11 text-muted-foreground">
+              {[1, 2].map((n) => (
+                <span key={n} className={cn("h-1.5 rounded-full transition-all", step === n ? "w-5 bg-primary" : "w-1.5 bg-border")} />
+              ))}
+              <span className="ml-1">{step === 1 ? "La mission" : "Livrables et équipe"}</span>
+            </div>
+          )}
+          <div className="flex-1" />
+          {step === 2 ? (
+            <Button variant="ghost" onClick={() => setStep(1)}>Retour</Button>
+          ) : (
             <Button variant="ghost" onClick={onClose}>Annuler</Button>
+          )}
+          {step === 1 && hasBrief ? (
+            <Button onClick={() => setStep(2)} disabled={!name.trim()}>Continuer</Button>
+          ) : (
             <Button onClick={submit} disabled={!name.trim() || busy}>
-              {busy && <Loader2 className="mr-1 h-4 w-4 animate-spin" />} Créer le projet
+              {busy && <Loader2 className="mr-1 h-4 w-4 animate-spin" />} {hasBrief ? "Confier à l'équipe" : "Créer la mission"}
             </Button>
-          </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Un réglage oui/non, sur une ligne : son libellé, sa conséquence, un interrupteur. */
+function ToggleRow({ label, hint, on, onChange }: {
+  label: string; hint: string; on: boolean; onChange: (v: boolean) => void;
+}) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)} data-no-press
+      className="flex w-full items-center gap-3 px-3 py-2.5 text-left">
+      <span className="min-w-0 flex-1">
+        <span className="block text-13 font-medium">{label}</span>
+        <span className="block text-11 text-muted-foreground">{hint}</span>
+      </span>
+      <span className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", on ? "bg-primary" : "bg-muted-foreground/30")}>
+        <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", on ? "left-[18px]" : "left-0.5")} />
+      </span>
+    </button>
   );
 }
 

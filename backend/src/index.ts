@@ -5,6 +5,7 @@ import { createMgmtServer } from "./shared/metrics.ts";
 import { createServiceClient } from "./shared/supabase.ts";
 import { sealPendingMcpHeaders } from "./edge/_shared/mcp-headers.ts";
 import { startInstallationSync } from "./shared/installation.ts";
+import { startPlatform } from "./platform/platform.ts";
 
 // Le code porté lance des fetch « fire and forget » sans .catch. Sous Deno, un
 // rejet non géré tuait l'isolat d'UNE requête ; sous Node il arrêterait tout le
@@ -13,11 +14,21 @@ process.on("unhandledRejection", (reason) => {
   console.error("[backend] promesse rejetée sans gestionnaire :", reason);
 });
 
-// Réglages de l'installation (G4) : lus au démarrage, puis chaque minute.
-startInstallationSync(createServiceClient());
+// PLATFORM=self : la base, l'auth, le storage et le realtime sont servis ici.
+const platform = env.platform
+  ? await startPlatform({
+    ...env.platform,
+    publicUrl: env.functionsUrl,
+    anonKey: env.supabaseAnonKey,
+    serviceKey: env.supabaseServiceRoleKey,
+  })
+  : null;
 
-const server = createServer().listen(env.port, () => {
-  console.log(`[backend] prêt sur http://localhost:${env.port}`);
+const server = createServer(undefined, { platform }).listen(env.port, () => {
+  console.log(`[backend] prêt sur http://localhost:${env.port}${platform ? " (plateforme auto-hébergée)" : ""}`);
+  // Réglages de l'installation (G4) : lus au démarrage, puis chaque minute.
+  // Après l'écoute : en mode self, ils passent par ce serveur même.
+  startInstallationSync(createServiceClient());
   // En-têtes MCP déposés en clair par la migration 0280 (la base ne connaît pas
   // la clé) : chiffrés dès le démarrage. Au mieux ; la première lecture le fait aussi.
   sealPendingMcpHeaders(createServiceClient())
@@ -39,6 +50,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     mgmt?.close();
     // Les tâches lancées par EdgeRuntime.waitUntil ont jusqu'à 25 s pour finir.
     await drainBackgroundTasks(25_000);
+    await platform?.close().catch(() => {});
     process.exit(0);
   });
 }

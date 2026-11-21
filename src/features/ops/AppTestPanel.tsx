@@ -454,7 +454,7 @@ export function AppTestPanel({
             }
             className="min-h-[38px] max-h-24 resize-none py-2 text-sm"
           />
-          <Button size="sm" className="h-9 w-9 shrink-0 p-0" disabled={sending || !message.trim()} onClick={() => void send()}>
+          <Button size="sm" className="h-8 w-9 shrink-0 p-0" disabled={sending || !message.trim()} onClick={() => void send()}>
             {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
           </Button>
         </div>

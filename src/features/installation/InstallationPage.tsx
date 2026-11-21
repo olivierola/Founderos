@@ -88,7 +88,7 @@ export function InstallationPage() {
       {isLoading ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       ) : error || !data ? (
-        <Notice title="Servie par le backend FounderOS">
+        <Notice title="Servie par le backend Agent company">
           Cette page parle au backend Express de l'installation (dossier backend/, VITE_API_URL côté interface). Sans lui, les réglages se font
           dans les variables d'environnement des fonctions. {error instanceof Error ? `(${error.message})` : ""}
         </Notice>

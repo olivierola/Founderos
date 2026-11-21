@@ -15,7 +15,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callAiWithTools, type ChatMessage, type EndpointOverride } from "./ai.ts";
-import { buildInternalToolset, type AgentToolRow, type InternalToolContext } from "./internal-agent-tools.ts";
+import { buildInternalToolset, isParallelSafeTool, type AgentToolRow, type InternalToolContext } from "./internal-agent-tools.ts";
 import { runMcpGrants } from "./mcp-servers.ts";
 
 /** How many sub-agents run CONCURRENTLY per wave; the rest run in later waves.
@@ -138,6 +138,10 @@ async function runOne(deps: SubagentDeps, subtask: Subtask): Promise<{ label: st
       messages, tools: defs, executor: loggingExecutor,
       temperature: deps.temperature, maxTokens: 4000, maxRounds: SUBAGENT_ROUNDS,
       deadlineAt: deps.deadlineAt != null ? deps.deadlineAt - SUBAGENT_CLOSE_MS : undefined,
+      // Rien du sous-agent ne doit tourner après l'échéance de la vague : une
+      // requête bloquée y est coupée, un outil y est abandonné (ai.ts).
+      hardDeadlineAt: deps.deadlineAt,
+      parallelSafe: isParallelSafeTool,
       onNotice: async (n) => { await logChild("tool_error", { message: n.message, detail: n.detail }); },
     });
     const output = (result.content ?? "").trim() || "(sub-agent produced no textual result)";

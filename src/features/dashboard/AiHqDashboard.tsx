@@ -175,7 +175,7 @@ function HqHero({ running, pending, agents, onHire }: {
               {pending} à valider
             </span>
           )}
-          <Button size="sm" variant="outline" className="rounded-full" onClick={onHire}>
+          <Button size="sm" variant="outline" className="rounded-md" onClick={onHire}>
             <Bot className="mr-1.5 h-3.5 w-3.5" /> Recruter un collaborateur
           </Button>
         </div>

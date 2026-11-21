@@ -24,6 +24,27 @@ import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { timingSafeEqual } from "../_shared/authz.ts";
 import { startWorkflowRun, syncWorkflowSchedule, routeWorkflowEvent } from "../_shared/workflow-engine.ts";
+import { staleMissions } from "../_shared/mission-planning.ts";
+import { teamLifeTick } from "../_shared/team-life.ts";
+
+/** Rejoue l'étape de cadrage d'une mission, sans attendre qu'elle finisse. */
+async function invokeMissionStep(missionId: string): Promise<boolean> {
+  const base = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!base || !key) return false;
+  try {
+    await fetch(`${base}/functions/v1/internal-agent-a2a`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "mission_step", mission_id: missionId }),
+      signal: AbortSignal.timeout(3000),
+    });
+    return true;
+  } catch {
+    // L'appel continue côté serveur même si l'attente expire.
+    return true;
+  }
+}
 
 const MAX_LAUNCHES_PER_TICK = 3;
 // Internal events routed per tick. Each costs a few queries (and a Jev call
@@ -460,5 +481,40 @@ Deno.serve(async (req) => {
   await admin.from("collab_event_queue").delete()
     .not("processed_at", "is", null).lt("created_at", new Date(now.getTime() - 7 * 86400_000).toISOString());
 
-  return jsonResponse({ ok: true, ...report });
+  // 7. Les cadrages de mission (0295) dont une étape s'est perdue en route : on
+  //    la rejoue — dans internal-agent-a2a, où vit le cadrage.
+  const missions: string[] = [];
+  try {
+    for (const id of await staleMissions(admin)) {
+      if (await invokeMissionStep(id)) missions.push(id);
+    }
+  } catch (e) {
+    report.query_errors.push(`cadrages : ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // 8. La vie d'équipe (0295) : au plus UNE initiative d'agent par passage, si
+  //    le rythme d'un service l'autorise. L'agent décide lui-même s'il a
+  //    quelque chose à dire ; s'il parle, son collègue répond aussitôt.
+  let teamLife = "";
+  try {
+    const life = await teamLifeTick(admin);
+    teamLife = life.note;
+    // Sans attendre la réponse complète (une minute parfois) : le message est
+    // « pending », le balayage de l'étape 4 le reprendrait de toute façon.
+    if (life.messageId) {
+      const base = Deno.env.get("SUPABASE_URL"), key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (base && key) {
+        await fetch(`${base}/functions/v1/internal-agent-a2a`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ message_id: life.messageId }),
+          signal: AbortSignal.timeout(3000),
+        }).catch(() => {});
+      }
+    }
+  } catch (e) {
+    teamLife = `erreur : ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  return jsonResponse({ ok: true, ...report, missions, team_life: teamLife });
 });

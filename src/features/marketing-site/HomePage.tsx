@@ -20,7 +20,7 @@ import { HomeTestimonialsHn } from "./hn/home/HomeTestimonialsHn";
 
      hero & marks → solution cards → products → use cases → why it holds up →
      meet the agents → what makes us different → product band → built for real
-     work → how it works → the principle → Anduran Govern & solution blocks →
+     work → how it works → the principle → Agent company Govern & solution blocks →
      built for scrutiny & integrations → testimonials (only once real ones
      exist; a labelled preview in development) → from the blog → CTA → footer.        */
 export function HomePage() {

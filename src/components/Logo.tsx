@@ -13,6 +13,44 @@ const RATIO = 246 / 240;
 export const BRAND_MARK = "#0f1728";
 export const BRAND_MARK_ON_DARK = "#ffffff";
 
+/** Le nom de la plateforme, tel qu'on l'écrit. */
+export const BRAND_NAME = "Agent company";
+
+/**
+ * Le logotype « Agent company » (18/11/2026). En Inter, comme la charte :
+ * « Agent » en semi-gras, « company » en regular et un ton plus doux, serrés à
+ * −4 % comme les titres. Il remplace le « ANDURAN. » en capitales Audiowide.
+ * `size` est le corps du texte ; la couleur suit `color`, sinon l'encre autour.
+ */
+export function Wordmark({ className, size = 20, color }: { className?: string; size?: number; color?: string }) {
+  return (
+    <span
+      className={cn("inline-flex items-baseline whitespace-nowrap leading-none", className)}
+      style={{
+        fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif",
+        fontSize: size,
+        letterSpacing: "-0.04em",
+        fontOpticalSizing: "auto",
+        color,
+      }}
+      aria-label={BRAND_NAME}
+    >
+      <span style={{ fontWeight: 650 }}>Agent</span>
+      <span style={{ fontWeight: 400, opacity: 0.68 }}>&nbsp;company</span>
+    </span>
+  );
+}
+
+/** Le symbole et le logotype, côte à côte. */
+export function BrandLockup({ size = 20, color, className }: { size?: number; color?: string; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-2", className)} style={{ color }}>
+      <Logo size={Math.round(size * 0.95)} color={color ?? "currentColor"} />
+      <Wordmark size={size} />
+    </span>
+  );
+}
+
 export function Logo({
   className,
   size = 36,
@@ -31,7 +69,7 @@ export function Logo({
       xmlns="http://www.w3.org/2000/svg"
       className={cn("shrink-0", className)}
       role="img"
-      aria-label="Anduran"
+      aria-label="Agent company"
     >
       <path
         d="M119.083 2.03953C121.068 -0.696592 125.151 -0.676387 127.108 2.07992C189.867 90.4781 229.025 187.592 245.345 232.765C247.233 237.99 240.811 241.35 237.407 236.959L127.077 94.6241C125.075 92.0417 121.175 92.0417 119.173 94.6241L8.24815 237.726C4.86677 242.088 -1.50121 238.781 0.321783 233.572C16.0061 188.75 54.5606 90.9785 119.083 2.03953Z"

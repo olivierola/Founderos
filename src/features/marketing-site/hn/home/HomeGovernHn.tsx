@@ -38,7 +38,7 @@ export function HomePrincipleHn() {
           <blockquote className="mt-6 text-[32px] font-medium leading-[1.2] tracking-[-0.04em] text-[#0d0d0d]">
             “Read freely. Write only with your approval. Keep a trace of everything.”
           </blockquote>
-          <div className="mt-6 text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">Every Anduran Cloud collaborator</div>
+          <div className="mt-6 text-[20px] font-medium leading-[1.3] text-[#0d0d0d]">Every Agent company Cloud collaborator</div>
           <div className="text-[20px] font-medium leading-[1.3] text-[#5c5c66]">unless you switch it to autonomous mode yourself</div>
           <Btn to="/docs" variant="link" className="mt-8">
             Read how it works
@@ -49,7 +49,7 @@ export function HomePrincipleHn() {
   );
 }
 
-/* ══ Anduran Govern ══════════════════════════════════════════════════════════
+/* ══ Agent company Govern ══════════════════════════════════════════════════════════
    The reference's second dark band: "best for large teams", the product name
    tag and its pitch, a big screen of the product sitting on a blue strip; then
    one block per solution — an accordion of what it does beside a picture, and

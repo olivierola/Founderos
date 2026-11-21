@@ -146,7 +146,7 @@ export default defineHandler(async (req) => {
     // Safety cap to avoid runaway sends.
     if (list.length > 500) list = list.slice(0, 500);
 
-    const fromAddr = from || "Anduran <noreply@founderos.app>";
+    const fromAddr = from || "Agent company <noreply@founderos.app>";
     let sent = 0;
     const failures: string[] = [];
     // Send sequentially in small batches to respect rate limits.

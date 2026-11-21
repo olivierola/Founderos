@@ -4,11 +4,15 @@
 // Chunks the content, embeds it (Jina, or the pinned gateway's embedding model),
 // stores rows in rag_chunks.
 // Body { action: "search", … } : essai de recherche sur des collections (voir searchCollections).
+// Body { action: "reembed", workspace_id, cursor? } : revectorise l'espace après
+// un changement de modèle d'embeddings (voir reembedWorkspace).
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { embedTexts, chunkText, toVectorLiteral, fetchWithTimeout } from "../_shared/jina.ts";
 import { assertCredits, assertQuota, isQuotaError, quotaErrorResponse } from "../_shared/metering.ts";
+import { timingSafeEqual } from "../_shared/authz.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 // Strip HTML to readable text (lightweight).
 function htmlToText(html: string): string {
@@ -154,20 +158,120 @@ async function searchCollections(userId: string, body: Record<string, unknown>):
   });
 }
 
+/**
+ * Revectorise ce que l'espace a déjà vectorisé : passages RAG, mémoires des
+ * agents, entités du graphe de connaissances. À lancer après un changement de
+ * modèle d'embeddings (Jina → text-embedding-3 d'Azure, par exemple) : deux
+ * modèles ne partagent pas le même espace, et une question vectorisée par le
+ * nouveau ne retrouve plus rien de ce que l'ancien avait rangé. Les lignes sans
+ * vecteur (une vectorisation qui avait échoué) en reçoivent un au passage.
+ *
+ * Body : { action: "reembed", workspace_id, cursor? }. Un lot par appel :
+ * rappeler avec `next` tant que `done` est faux. Réservé aux owner et admin.
+ */
+const REEMBED_BATCH = 32;
+const REEMBED_TABLES: Array<{ table: string; select: string; text: (r: Record<string, unknown>) => string }> = [
+  { table: "rag_chunks", select: "id, content", text: (r) => String(r.content ?? "") },
+  // Mêmes textes que ceux vectorisés à l'écriture (embedMemoryVector, knowledge-graph).
+  { table: "internal_agent_memories", select: "id, content", text: (r) => String(r.content ?? "").slice(0, 2000) },
+  { table: "knowledge_entities", select: "id, name, summary, kind", text: (r) => `${r.name ?? ""} — ${r.summary ?? r.kind ?? ""}` },
+];
+
+/** `userId` null : appel de l'exploitant (service role), sans contrôle d'appartenance. */
+async function reembedWorkspace(userId: string | null, body: Record<string, unknown>): Promise<Response> {
+  const workspace_id = String(body.workspace_id ?? "");
+  if (!workspace_id) return jsonResponse({ error: "workspace_id requis" }, { status: 400 });
+  const admin = createServiceClient();
+  if (userId) {
+    const { data: m } = await admin.from("workspace_members").select("role")
+      .eq("workspace_id", workspace_id).eq("user_id", userId).maybeSingle();
+    if (!m || !["owner", "admin"].includes((m as { role: string }).role)) {
+      return jsonResponse({ error: "Réservé aux owner et admin de l'espace" }, { status: 403 });
+    }
+  }
+  try {
+    await assertCredits(workspace_id, { minimum: 1 });
+  } catch (e) {
+    if (isQuotaError(e)) return quotaErrorResponse(e);
+    throw e;
+  }
+
+  const cursor = (body.cursor ?? {}) as { t?: number; after?: string };
+  let t = Math.max(0, Math.min(Number(cursor.t) || 0, REEMBED_TABLES.length));
+  let after = typeof cursor.after === "string" ? cursor.after : "";
+  while (t < REEMBED_TABLES.length) {
+    const spec = REEMBED_TABLES[t];
+    let q = admin.from(spec.table).select(spec.select).eq("workspace_id", workspace_id).order("id").limit(REEMBED_BATCH);
+    if (after) q = q.gt("id", after);
+    const { data, error } = await q;
+    if (error) return jsonResponse({ error: `${spec.table} : ${error.message}` }, { status: 500 });
+    const rows = ((data ?? []) as unknown as Array<Record<string, unknown>>).filter((r) => spec.text(r).trim());
+    if (!data || data.length === 0) { t++; after = ""; continue; }
+    const vectors = rows.length
+      ? await embedTexts(rows.map((r) => spec.text(r)), "retrieval.passage", { workspace_id, feature: "reembed" })
+      : [];
+    let updated = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (!vectors[i]) continue;
+      const { error: upErr } = await admin.from(spec.table)
+        .update({ embedding: toVectorLiteral(vectors[i]) }).eq("id", String(rows[i].id));
+      if (!upErr) updated++;
+    }
+    const last = String((data[data.length - 1] as unknown as Record<string, unknown>).id);
+    const more = data.length === REEMBED_BATCH;
+    const next = more ? { t, after: last } : { t: t + 1, after: "" };
+    return jsonResponse({ done: !more && t + 1 >= REEMBED_TABLES.length, table: spec.table, processed: updated, next });
+  }
+  return jsonResponse({ done: true, processed: 0, next: null });
+}
+
+/** Le jeton est-il une clé service role valide ? Seul le service role peut
+ *  lister les comptes : si l'API d'administration d'Auth l'accepte, oui. */
+async function isServiceRoleToken(token: string): Promise<boolean> {
+  const url = Deno.env.get("SUPABASE_URL");
+  if (!url || !token || token.split(".").length !== 3) return false;
+  try {
+    const probe = createClient(url, token, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { error } = await probe.auth.admin.listUsers({ page: 1, perPage: 1 });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return jsonResponse({ error: "Missing Authorization" }, { status: 401 });
+    // L'exploitant (service role) revectorise sans session : après une bascule
+    // de modèle d'embeddings, c'est lui qui la lance, espace par espace. Il ne
+    // peut rien faire d'autre ici.
+    if (timingSafeEqual(authHeader.replace(/^Bearer\s+/i, ""), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")) {
+      const body = await req.json().catch(() => ({}));
+      if (body?.action === "reembed") return await reembedWorkspace(null, body);
+      return jsonResponse({ error: "Avec le service role, seule l'action reembed est permise." }, { status: 403 });
+    }
     const userClient = createUserClient(authHeader);
     const { data: userData } = await userClient.auth.getUser();
-    if (!userData.user) return jsonResponse({ error: "Invalid session" }, { status: 401 });
+    if (!userData.user) {
+      // Une autre clé service role que celle injectée ici (le projet en expose
+      // plusieurs : clé historique, clés tournées) : c'est le serveur Auth qui
+      // tranche, par un appel réservé au service role. Pour reembed seulement.
+      const body = await req.json().catch(() => ({}));
+      if (body?.action === "reembed" && await isServiceRoleToken(authHeader.replace(/^Bearer\s+/i, ""))) {
+        return await reembedWorkspace(null, body);
+      }
+      return jsonResponse({ error: "Invalid session" }, { status: 401 });
+    }
 
     const body = await req.json();
     // Essai de recherche sur des collections (Ressources › Sources › RAG) : le même
     // chemin que l'outil rag_search des agents, pour vérifier ce qu'ils trouveront.
     if (body?.action === "search") return await searchCollections(userData.user.id, body);
+    // Après un changement de modèle d'embeddings : tout revectoriser, par lots.
+    if (body?.action === "reembed") return await reembedWorkspace(userData.user.id, body);
 
     const { workspace_id, project_id, agent_id, collection_id, type, title, content, url, structure } = body;
     if (!workspace_id || !project_id || (!agent_id && !collection_id) || !type || !title) {

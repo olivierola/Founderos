@@ -18,6 +18,7 @@ import { Deno, FUNCTIONS_URL, defineHandler } from "../../compat/index.ts";
 import { jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { decideApprovalFromChannel } from "../_shared/channel-approval.ts";
+import { bindingForUpdate, insertChannelMessage } from "../_shared/turn-principal.ts";
 
 const SLACK_CLIENT_ID = Deno.env.get("SLACK_CLIENT_ID") ?? "";
 const SLACK_CLIENT_SECRET = Deno.env.get("SLACK_CLIENT_SECRET") ?? "";
@@ -278,13 +279,13 @@ async function handleEvents(raw: string): Promise<Response> {
   if (existing) {
     conversationId = existing.id;
     // Keep the binding current (e.g. if the channel/thread ref shifted).
+    // L'auteur du fil est celui du tour : il ne change pas pendant qu'un tour
+    // tourne (turn-principal.ts), sinon Bob validerait les actions d'Alice.
     await admin.from("internal_agent_conversations")
-      .update({
+      .update(await bindingForUpdate(admin, existing.id, {
         channel_id: channel.id, external_channel_ref: slackChannel, external_thread_ref: threadTs,
-        // L'auteur du DERNIER message : c'est lui, et lui seul, qui pourra
-        // valider depuis Slack ce que l'agent demandera pendant ce tour.
         external_user_ref: ev.user ? String(ev.user) : null,
-      })
+      }))
       .eq("id", conversationId);
   } else {
     const { data: created } = await admin.from("internal_agent_conversations").insert({
@@ -296,9 +297,10 @@ async function handleEvents(raw: string): Promise<Response> {
   }
   if (!conversationId) return jsonResponse({ ok: true });
 
-  await admin.from("internal_agent_messages").insert({
-    conversation_id: conversationId, agent_id: channel.agent_id, role: "user",
+  await insertChannelMessage(admin, {
+    conversation_id: conversationId, agent_id: channel.agent_id,
     content: `[<@${ev.user}> in Slack] ${text}`,
+    author_ref: ev.user ? String(ev.user) : null,
   });
 
   // Fire the durable chat run (init + enqueue returns fast); the reply is posted

@@ -88,3 +88,6 @@ steps.forEach((step, i) => console.log(`  ${i + 1}. ${step}`));
 if (secrets && !secrets.LLM_API_KEY && cfg.llm.gateway === "litellm") {
   console.log("\n  Attention : LLM_API_KEY absente (exportez-la avant de relancer, ou ajoutez-la au Secret du backend).");
 }
+if (secrets && !secrets.OPENROUTER_API_KEY && cfg.llm.gateway === "openrouter") {
+  console.log("\n  Attention : OPENROUTER_API_KEY absente (exportez-la avant de relancer, ou ajoutez-la au Secret du backend).");
+}

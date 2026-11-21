@@ -48,13 +48,65 @@ export async function trackerScope(actor: TrackerActor): Promise<Map<string, str
  * de quinze champs dont il n'en utilisera que trois, et la différence se paie
  * en jetons à chaque tour.
  */
+/** Les actions qui portent sur un projet entier : sans project_id, rien à faire. */
+const NEEDS_PROJECT = new Set([
+  "list_work_items", "list_states", "list_cycles", "list_modules", "list_assets",
+  "create_work_item", "create_cycle", "create_module", "create_asset",
+]);
+
+/**
+ * Complète ce que l'agent a omis mais qui se DÉDUIT sans ambiguïté. Un work
+ * item n'appartient qu'à un projet : donner son issue_id suffit à dire lequel.
+ * Les modèles écrivent aussi `type` pour `kind` : c'est le même champ.
+ * Appelé au moment de l'appel ET au moment d'exécuter une approbation, pour
+ * que les demandes déjà en attente en profitent aussi.
+ */
+export async function normalizeTrackerParams(
+  db: TrackerActor["admin"], action: string, params: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const out = { ...params };
+  if (!str(out.project_id) && str(out.issue_id) && NEEDS_PROJECT.has(action)) {
+    const { data } = await db.from("pj_issues").select("pj_project_id").eq("id", str(out.issue_id)).maybeSingle();
+    const found = (data as { pj_project_id?: string } | null)?.pj_project_id;
+    if (found) out.project_id = found;
+  }
+  if (action === "create_asset" && !str(out.kind) && str(out.type)) out.kind = out.type;
+  return out;
+}
+
+/**
+ * Ce qui ferait échouer l'action À COUP SÛR, vérifié AVANT de la soumettre à
+ * une personne. Faire approuver une action qui échouera ensuite, c'est faire
+ * perdre son temps à qui approuve — et l'agent n'apprend rien, puisque
+ * l'erreur arrive des heures plus tard. Ici, il la reçoit tout de suite et se
+ * corrige. Null : rien à redire.
+ */
+export function precheckTrackerAction(action: string, params: Record<string, unknown>): string | null {
+  if (NEEDS_PROJECT.has(action) && !str(params.project_id)) {
+    return `ERREUR : ${action} demande project_id (ou un issue_id dont on le déduit). Utilise list_projects.`;
+  }
+  if (action === "create_asset") {
+    if (!str(params.name)) return "ERREUR : create_asset demande name.";
+    if (!str(params.url) && !str(params.content)) {
+      return "ERREUR : create_asset demande url (un lien vers la ressource) ou content (son texte). "
+        + "Pour rattacher un livrable déjà publié à un work item, donne son url ; pour une ressource déjà "
+        + "dans la bibliothèque, utilise attach_asset avec son asset_id (list_assets la retrouve).";
+    }
+  }
+  if (action === "create_work_item" && !str(params.name)) return "ERREUR : create_work_item demande name.";
+  if ((action === "comment") && (!str(params.issue_id) || !str(params.body))) return "ERREUR : comment demande issue_id et body.";
+  if (action === "attach_asset" && (!str(params.issue_id) || !str(params.asset_id))) return "ERREUR : attach_asset demande issue_id et asset_id.";
+  return null;
+}
+
 export async function runTrackerAction(
   ctx: TrackerActor,
   action: string,
-  params: Record<string, unknown>,
+  rawParams: Record<string, unknown>,
   allowed: Map<string, string>,
 ): Promise<string> {
   const db = ctx.admin;
+  const params = await normalizeTrackerParams(db, action, rawParams);
   const pid = str(params.project_id);
   const issueId = str(params.issue_id);
 

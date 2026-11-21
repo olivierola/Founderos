@@ -9,6 +9,7 @@ import {
   CloudIcon as Cloud,
   HardDrivesIcon as Server,
   ArrowSquareOutIcon as ExternalLink,
+  PathIcon as Route,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,14 +24,31 @@ import { useConfirm } from "@/components/ConfirmProvider";
 // Company-registered models: bring-your-own cloud API (key) or a custom
 // OpenAI-compatible endpoint. Backed by aiops_providers (kind cloud_endpoint) —
 // aiops-infra tests the key and discovers the available models. Agents then pick
-// one of these in their settings (or keep the Anduran default).
+// one of these in their settings (or keep the Agent company default).
 
 interface ProviderRow {
   id: string; kind: string; name: string;
-  config: { base_url?: string } | null;
+  config: { base_url?: string; model_routes?: Record<string, string>; manual_models?: string[] } | null;
   status: string; status_detail: string | null;
   metadata: { models?: string[] } | null;
 }
+
+/**
+ * Les routes d'un connecteur : un modèle par palier et par critère. Le runtime
+ * choisit la route d'après la requête (palier, puis code / vision / long
+ * contexte détectés) et retombe sur le palier, puis sur « Moyen », quand un
+ * critère n'a pas de modèle. Même table côté serveur (ROUTE_KEYS, llm-upstream).
+ */
+const ROUTES: Array<{ key: string; label: string; hint: string }> = [
+  { key: "light", label: "Léger", hint: "Salutations, réponses courtes, appels rapides." },
+  { key: "standard", label: "Moyen (défaut)", hint: "Le travail courant : outils, rédaction, recherche." },
+  { key: "heavy", label: "Lourd", hint: "Raisonnement, analyse, plans complexes — et l'escalade quand un run bloque." },
+  { key: "code", label: "Code", hint: "Écrire, corriger ou relire du code, du SQL, une config." },
+  { key: "vision", label: "Vision", hint: "Lire une image ou une capture jointe à la demande." },
+  { key: "long_context", label: "Long contexte", hint: "Gros documents, transcrits très longs." },
+  { key: "image", label: "Génération d'images", hint: "L'outil generate_image des agents." },
+  { key: "judge", label: "Juges & extraction", hint: "Classements, contrats de réussite, extraction JSON — un petit modèle suffit." },
+];
 
 // OpenAI-compatible cloud presets — base_url filled in so the company only has
 // to paste a key. `keysUrl` is where that key is issued; pointing everyone at
@@ -43,6 +61,9 @@ const CLOUD_PRESETS: CloudPreset[] = [
   { id: "groq", label: "Groq", base_url: "https://api.groq.com/openai/v1", example: "llama-3.3-70b-versatile", keysUrl: "https://console.groq.com/keys", keyPrefix: "gsk_…" },
   { id: "mistral", label: "Mistral", base_url: "https://api.mistral.ai/v1", example: "mistral-large-latest", keysUrl: "https://console.mistral.ai/api-keys", keyPrefix: "…" },
   { id: "openrouter", label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", example: "anthropic/claude-sonnet-4.5", keysUrl: "https://openrouter.ai/keys", keyPrefix: "sk-or-…" },
+  // Runware n'expose pas de catalogue /models : les identifiants AIR se
+  // saisissent ici, ou directement dans les modèles par tâche.
+  { id: "runware", label: "Runware", base_url: "https://api.runware.ai/v1", example: "openai:gpt@5.4-mini, google:gemini@3.5-flash", keysUrl: "https://runware.ai", keyPrefix: "…" },
   { id: "together", label: "Together AI", base_url: "https://api.together.xyz/v1", example: "meta-llama/Llama-3.3-70B-Instruct-Turbo", keysUrl: "https://api.together.ai/settings/api-keys", keyPrefix: "…" },
   { id: "fireworks", label: "Fireworks", base_url: "https://api.fireworks.ai/inference/v1", example: "accounts/fireworks/models/llama-v3p3-70b-instruct", keysUrl: "https://fireworks.ai/account/api-keys", keyPrefix: "fw_…" },
   { id: "cerebras", label: "Cerebras", base_url: "https://api.cerebras.ai/v1", example: "llama-3.3-70b", keysUrl: "https://cloud.cerebras.ai/platform", keyPrefix: "csk-…" },
@@ -59,6 +80,7 @@ export function RegisteredModels() {
   const { workspaceId, projectId } = useCurrentContext();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const [routing, setRouting] = useState<ProviderRow | null>(null);
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ["aiops_registered_models", projectId],
@@ -95,7 +117,7 @@ export function RegisteredModels() {
         <Card className="flex flex-col items-center gap-2 p-8 text-center">
           <Cloud className="h-6 w-6 text-muted-foreground/40" />
           <p className="text-sm font-medium">Aucun modèle enregistré</p>
-          <p className="max-w-md text-xs text-muted-foreground">Ajoutez un modèle cloud (avec sa clé API) ou un endpoint personnalisé pour que vos agents l'utilisent à la place du modèle par défaut Anduran.</p>
+          <p className="max-w-md text-xs text-muted-foreground">Ajoutez un modèle cloud (avec sa clé API) ou un endpoint personnalisé pour que vos agents l'utilisent à la place du modèle par défaut Agent company.</p>
         </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -127,9 +149,39 @@ export function RegisteredModels() {
               {p.status !== "connected" && p.status_detail && (
                 <p className="mt-1.5 line-clamp-2 text-[10px] leading-snug text-muted-foreground">{p.status_detail}</p>
               )}
+
+              {/* Les modèles par tâche : ce que le runtime choisit selon la requête. */}
+              <div className="mt-3 border-t border-border/60 pt-2.5">
+                {Object.keys(p.config?.model_routes ?? {}).length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {ROUTES.filter((r) => p.config?.model_routes?.[r.key]).map((r) => (
+                      <span key={r.key} title={p.config!.model_routes![r.key]} className="max-w-full truncate rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        <span className="font-medium text-foreground">{r.label}</span> · {p.config!.model_routes![r.key]!.split(",")[0]}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">Un seul modèle pour tout — choisissez-en un par tâche pour que l'agent prenne le bon à chaque requête.</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setRouting(p)}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
+                >
+                  <Route className="h-3.5 w-3.5" /> Modèles par tâche
+                </button>
+              </div>
             </Card>
           ))}
         </div>
+      )}
+
+      {routing && (
+        <ModelRoutesDialog
+          provider={routing}
+          onClose={() => setRouting(null)}
+          onSaved={() => { setRouting(null); queryClient.invalidateQueries({ queryKey: ["aiops_registered_models", projectId] }); }}
+        />
       )}
 
       <AddModelDialog
@@ -140,6 +192,79 @@ export function RegisteredModels() {
         projectId={projectId}
       />
     </div>
+  );
+}
+
+/**
+ * Les modèles d'un connecteur, par tâche. Chaque champ accepte un identifiant
+ * de modèle, ou plusieurs séparés par des virgules : le premier sert, les
+ * suivants sont des replis (natifs chez OpenRouter). Un champ vide : la tâche
+ * retombe sur son palier, puis sur « Moyen », puis sur le modèle de l'agent.
+ */
+function ModelRoutesDialog({ provider, onClose, onSaved }: {
+  provider: ProviderRow; onClose: () => void; onSaved: () => void;
+}) {
+  const known = provider.metadata?.models ?? [];
+  const [routes, setRoutes] = useState<Record<string, string>>(() => ({ ...(provider.config?.model_routes ?? {}) }));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const listId = `routes-models-${provider.id}`;
+
+  async function save() {
+    setSaving(true); setError(null);
+    try {
+      const clean: Record<string, string> = {};
+      for (const r of ROUTES) {
+        const v = (routes[r.key] ?? "").split(",").map((s) => s.trim()).filter(Boolean).join(",");
+        if (v) clean[r.key] = v;
+      }
+      const { error: err } = await supabase.from("aiops_providers")
+        .update({ config: { ...(provider.config ?? {}), model_routes: clean }, updated_at: new Date().toISOString() })
+        .eq("id", provider.id);
+      if (err) throw err;
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Modèles par tâche · {provider.name}</DialogTitle></DialogHeader>
+        <p className="-mt-1 text-xs text-muted-foreground">
+          À chaque requête, l'agent prend le modèle qui correspond : son palier (léger, moyen, lourd), et le critère
+          détecté (code, vision, long contexte). Plusieurs modèles séparés par des virgules servent de replis.
+        </p>
+        <datalist id={listId}>{known.map((m) => <option key={m} value={m} />)}</datalist>
+        <div className="max-h-[56vh] space-y-2.5 overflow-y-auto pr-1">
+          {ROUTES.map((r) => (
+            <div key={r.key} className="grid grid-cols-[132px_1fr] items-start gap-2">
+              <div className="pt-1.5">
+                <div className="text-[12.5px] font-medium">{r.label}</div>
+                <div className="text-[10.5px] leading-snug text-muted-foreground">{r.hint}</div>
+              </div>
+              <Input
+                list={listId}
+                value={routes[r.key] ?? ""}
+                onChange={(e) => setRoutes((prev) => ({ ...prev, [r.key]: e.target.value }))}
+                placeholder={r.key === "standard" ? "modèle par défaut de l'agent" : "— hérite du palier —"}
+                className="h-8 text-[12.5px]"
+              />
+            </div>
+          ))}
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={onClose}>Annuler</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Enregistrer
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

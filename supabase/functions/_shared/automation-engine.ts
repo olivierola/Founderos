@@ -35,6 +35,7 @@ import { mergeMcpHeaders } from "./mcp-headers.ts";
 import { relayFetchFor } from "./mcp-relay.ts";
 import { callIdentity, classifyMcpResult, reportToolCall, traceIdFor } from "./mcp-observe.ts";
 import { judge as judgeTs, noul as noulTs, readNoul as readNoulTs } from "./typesafe.ts";
+import { workflowPoolError } from "./resource-pools.ts";
 
 type Admin = SupabaseClient;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -720,6 +721,17 @@ export async function runAutomation(admin: Admin, opts: {
         // de suspendre puis reprendre le run, ce que ce moteur ne fait pas.
         const agentIds = Array.isArray(d.agent_ids) ? (d.agent_ids as unknown[]).map(String).filter(Boolean) : [];
         if (agentIds.length === 0) throw new Error("Aucun agent choisi pour la passation.");
+        // Mode pools (0291) : un agent ne reçoit le travail d'une automatisation
+        // que si elle est dans ses pools. Vérifié pour TOUS avant d'en confier à
+        // un seul : une passation à moitié faite serait pire qu'un refus.
+        {
+          const { data: wfRow } = await rc.admin.from("agent_workflows").select("id, name, blocks").eq("id", rc.workflowId).maybeSingle();
+          const { data: targets } = await rc.admin.from("internal_agents").select("id, name").in("id", agentIds);
+          for (const t of (targets ?? []) as Array<{ id: string; name: string }>) {
+            const err = wfRow ? await workflowPoolError(rc.admin, t, wfRow as { id: string; name: string; blocks: unknown }, "receive") : null;
+            if (err) throw new Error(err);
+          }
+        }
         const brief = str(resolveTemplates(str(d.body) || str(d.expects), rc.data));
         const missionIds: string[] = [];
         for (const agentId of agentIds) {

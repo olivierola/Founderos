@@ -214,6 +214,10 @@ export interface ToolSelectOptions {
   /** Un classement venu d'ailleurs (jugement rapide) : facteur multiplicatif
    *  appliqué au score lexical, 1 = neutre. Absent = comportement d'avant. */
   boost?: (name: string) => number;
+  /** Le classement de Jev (tool-ranking.ts) : une probabilité d'utilité par
+   *  outil et le poids à lui donner (sa confiance). Mêlé au score lexical,
+   *  normalisé des deux côtés : poids 0 = lexical seul, poids 1 = Jev seul. */
+  ranking?: { probs: Record<string, number>; weight: number };
 }
 
 export interface ToolSelection {
@@ -263,7 +267,23 @@ export function selectTools(defs: ToolDef[], opts: ToolSelectOptions): ToolSelec
     // reste de sa famille avec elle.
     scored.push({ def: d, score: boost ? lexical * boost(name) : lexical });
   }
-  if (terms.size || boost) scored.sort((a, b) => b.score - a.score);
+  // Le jugement de Jev, mêlé au lexical. Les deux échelles n'ont rien en
+  // commun (un score de recouvrement, une probabilité) : chacune est ramenée
+  // à son maximum avant le mélange, et le poids est la confiance du jugement.
+  const ranking = opts.ranking;
+  const w = ranking ? Math.max(0, Math.min(1, ranking.weight)) : 0;
+  if (ranking && w > 0) {
+    const maxLex = Math.max(0, ...scored.map((s) => s.score));
+    const maxP = Math.max(0, ...scored.map((s) => ranking.probs[s.def.function?.name ?? ""] ?? 0));
+    if (maxP > 0) {
+      for (const s of scored) {
+        const lex = maxLex > 0 ? s.score / maxLex : 0;
+        const p = (ranking.probs[s.def.function?.name ?? ""] ?? 0) / maxP;
+        s.score = (1 - w) * lex + w * p;
+      }
+    }
+  }
+  if (terms.size || boost || (ranking && w > 0)) scored.sort((a, b) => b.score - a.score);
 
   const out: ToolDef[] = [];
   let chars = 0;
@@ -285,7 +305,21 @@ export function selectTools(defs: ToolDef[], opts: ToolSelectOptions): ToolSelec
     chars += c;
   }
   const sent = new Set(out.map((d) => d.function?.name));
+  // Le CHOIX dépend du score ; l'ORDRE, jamais. Les schémas partent dans
+  // l'ordre de la boîte à outils : la liste d'outils fait partie du préfixe que
+  // le fournisseur met en cache, et un même ensemble rangé autrement (la tâche
+  // du tick a changé, les scores aussi) changeait ses octets — tout le
+  // transcrit derrière était refacturé plein tarif (superharness : ne jamais
+  // modifier un octet déjà envoyé).
+  const rank = new Map(all.map((d, i) => [d, i]));
+  out.sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0));
   return { defs: out, omitted: all.map((d) => d.function?.name).filter((n) => n && !sent.has(n)) as string[], chars };
+}
+
+/** Empreinte de la liste d'outils envoyée — l'autre moitié du préfixe mis en
+ *  cache, avec le transcrit (voir transcriptPrefixHash). */
+export function toolsetHash(defs: ToolDef[]): string {
+  return stableHash(defs.map((d) => d.function?.name ?? "").join(","));
 }
 
 // ---------------------------------------------------------------------------

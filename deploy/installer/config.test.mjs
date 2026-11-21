@@ -78,6 +78,29 @@ describe("secrets", () => {
     try { assert.equal(generateSecrets(cfg).LLM_API_KEY, "sk-env"); } finally { delete process.env.LLM_API_KEY; }
     assert.equal("LLM_API_KEY" in generateSecrets(cfg), false);
   });
+
+  it("la clé OpenRouter vient de l'environnement et reste dans le Secret du backend", () => {
+    const openrouterCfg = normalizeConfig({
+      ...profile("kubernetes"),
+      llm: { gateway: "openrouter", openrouter: { model: "openai/gpt-5", lightModel: "openai/gpt-5-mini" } },
+    });
+    process.env.OPENROUTER_API_KEY = "sk-openrouter-env";
+    try {
+      const generated = generateSecrets(openrouterCfg);
+      const values = helmValues(openrouterCfg);
+      const [backend] = k8sSecrets(openrouterCfg, generated);
+      assert.deepEqual(values.backend.env, {
+        LLM_UPSTREAM: "openrouter",
+        OPENROUTER_MODEL: "openai/gpt-5",
+        OPENROUTER_MODEL_LIGHT: "openai/gpt-5-mini",
+      });
+      assert.equal(backend.stringData.OPENROUTER_API_KEY, "sk-openrouter-env");
+      assert.equal(JSON.stringify(values).includes("sk-openrouter-env"), false);
+      assert.equal("LLM_API_KEY" in generated, false);
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+    }
+  });
 });
 
 describe("sorties", () => {
@@ -125,7 +148,7 @@ describe("sorties", () => {
     assert.equal(values.supabase.internalUrl, "http://founderos-sb-kong.founderos.svc:8000");
     assert.equal(cfg.secrets.source, "generate");
     const [backend] = k8sSecrets(cfg, generateSecrets(cfg));
-    assert.deepEqual(Object.keys(backend.stringData).sort(), ["APPROVAL_SIGNING_KEY", "CREDENTIAL_ENCRYPTION_KEY"], "la clé Azure vient de LLM_API_KEY, jamais du fichier");
+    assert.deepEqual(Object.keys(backend.stringData).sort(), ["APPROVAL_SIGNING_KEY", "CREDENTIAL_ENCRYPTION_KEY", "TEAM_MACHINE_TOKEN"], "la clé Azure vient de LLM_API_KEY, jamais du fichier");
     assert.deepEqual(values.mcp, {
       internalHosts: ["mcp.apps-int.*.interne.exemple"],
       clientCert: {

@@ -336,7 +336,7 @@ const KnowledgeCard = forwardRef<HTMLElement, { source: Source; onRemove: () => 
         variant="ghost"
         aria-label={`Supprimer ${source.title}`}
         onClick={onRemove}
-        className="absolute right-3 top-3 z-20 h-8 w-8 rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+        className="absolute right-3 top-3 z-20 h-8 w-8 rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </Button>
@@ -432,7 +432,7 @@ function AddDocumentDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={onClose}>Annuler</Button>
-            <Button className="rounded-full" onClick={ingest} disabled={busy || (type === "text" && !content) || (type === "url" && !url)}>
+            <Button className="rounded-md" onClick={ingest} disabled={busy || (type === "text" && !content) || (type === "url" && !url)}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Vectoriser
             </Button>
           </div>
@@ -543,7 +543,7 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
           />
         </SoftField>
 
-        <Button onClick={saveCfg} disabled={savingCfg} className="w-full rounded-full">
+        <Button onClick={saveCfg} disabled={savingCfg} className="w-full rounded-md">
           {savingCfg ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Enregistrer
         </Button>
       </div>
@@ -586,7 +586,7 @@ function PlaygroundTab({ agent, workspaceId, projectId }: { agent: Agent; worksp
             <div ref={endRef} />
           </div>
           {/* Branding + input */}
-          <div className="px-4 pb-1 text-center text-[10px] text-muted-foreground">Powered by Anduran</div>
+          <div className="px-4 pb-1 text-center text-[10px] text-muted-foreground">Powered by Agent company</div>
           <div className="flex items-center gap-2 border-t border-border p-3">
             <SoftComposerInput
               value={input}
@@ -771,7 +771,7 @@ function OnboardingSettings({ agent }: { agent: Agent }) {
             options={AURA_VOICES.map((v) => ({ value: v.value, label: v.label }))}
           />
         </SoftField>
-        <Button onClick={saveAgent} disabled={savingAgent} className="rounded-full">
+        <Button onClick={saveAgent} disabled={savingAgent} className="rounded-md">
           {savingAgent ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savedAgent ? "Enregistré" : "Enregistrer"}
         </Button>
       </section>
@@ -806,7 +806,7 @@ function OnboardingSettings({ agent }: { agent: Agent }) {
                 <SoftInput type="number" min={0} value={maxNudges} onChange={(e) => setMaxNudges(e.target.value === "" ? "" : Number(e.target.value))} placeholder="3" />
               </SoftField>
             </div>
-            <Button onClick={saveGuardrails} disabled={savingGuard} className="rounded-full">
+            <Button onClick={saveGuardrails} disabled={savingGuard} className="rounded-md">
               {savingGuard ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savedGuard ? "Enregistré" : "Enregistrer"}
             </Button>
           </>
@@ -1106,7 +1106,7 @@ function McpStoreServers({ agent, workspaceId, servers, attached, onChanged }: {
           </SoftField>
         )}
         <p className="rounded-xl bg-muted/50 p-3.5 text-xs leading-relaxed text-muted-foreground">{preset.help}</p>
-        <Button onClick={connect} disabled={busy || !input.trim()} className="rounded-full">
+        <Button onClick={connect} disabled={busy || !input.trim()} className="rounded-md">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
           Tester et connecter
         </Button>
@@ -1396,7 +1396,7 @@ function PublicSettingsTab({ agent }: { agent: Agent }) {
           onChange={(v) => upd("onboarding_copilot_enabled", v)} disabled={!form.onboarding_enabled}
         />
       </div>
-      <Button onClick={save} disabled={saving} className="rounded-full">
+      <Button onClick={save} disabled={saving} className="rounded-md">
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {saved ? "Enregistré" : "Enregistrer"}
       </Button>
     </div>

@@ -19,6 +19,7 @@ import {
 } from "./data";
 import { useServersDb, useModelStateDb, useRealPrompts } from "./db";
 import { RegisteredModels } from "./RegisteredModels";
+import { PlatformConnection } from "./PlatformConnection";
 
 export function GovOpsModelsPage() {
   const { servers } = useServersDb();
@@ -48,6 +49,9 @@ export function GovOpsModelsPage() {
         title="Modèles"
         description="Choisissez les modèles de votre workforce : ajoutez vos propres APIs cloud ou endpoints, utilisez les APIs prêtes à l'emploi, ou des modèles open-source sur vos serveurs privés."
       />
+
+      {/* ── The platform's default connection (OpenRouter, free models) ── */}
+      <PlatformConnection />
 
       {/* ── Your own registered models (cloud key / custom endpoint) ── */}
       <RegisteredModels />

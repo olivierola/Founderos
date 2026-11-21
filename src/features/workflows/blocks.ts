@@ -102,10 +102,10 @@ export const blockColorClass = (color: string) => COLOR_CLASSES[color] ?? COLOR_
 export function blockSummary(kind: BlockKind, data: Record<string, unknown>): string {
   const s = (v: unknown) => String(v ?? "").trim();
   if (kind === "trigger") {
-    return data.mode === "schedule" ? `Planifié · ${s(data.schedule) || "cron non défini"}`
+    return data.mode === "schedule" ? `Programmé · ${s(data.schedule) || "cron non défini"}`
       : data.mode === "event" ? `Événement · ${s(data.event) || "non défini"}`
-      : data.mode === "webhook" ? "Webhook entrant"
-      : "Lancement manuel";
+      : data.mode === "webhook" ? "Webhook · appel HTTP entrant"
+      : "Manuel";
   }
   if (kind === "loop") {
     return data.mode === "until"

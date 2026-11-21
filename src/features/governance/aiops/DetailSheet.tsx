@@ -14,7 +14,7 @@ const W_DEFAULT = 440;
 const W_MIN = 360;
 const wMax = () => Math.min(980, Math.round(window.innerWidth * 0.9));
 
-export function DetailSheet({ onClose, title, subtitle, icon, actions, children }: {
+export function DetailSheet({ onClose, title, subtitle, icon, actions, children, storageKey = W_KEY, defaultWidth = W_DEFAULT }: {
   onClose: () => void;
   title: string;
   subtitle?: string;
@@ -22,10 +22,13 @@ export function DetailSheet({ onClose, title, subtitle, icon, actions, children 
   /** Optional header actions (e.g. an "Éditer" button). */
   actions?: ReactNode;
   children: ReactNode;
+  /** Largeur mémorisée à part, pour un autre usage du panneau. */
+  storageKey?: string;
+  defaultWidth?: number;
 }) {
   const [width, setWidth] = useState<number>(() => {
-    try { const v = Number(localStorage.getItem(W_KEY)); if (v >= W_MIN) return v; } catch { /* ignore */ }
-    return W_DEFAULT;
+    try { const v = Number(localStorage.getItem(storageKey)); if (v >= W_MIN) return v; } catch { /* ignore */ }
+    return defaultWidth;
   });
   const dragging = useRef(false);
 
@@ -36,7 +39,7 @@ export function DetailSheet({ onClose, title, subtitle, icon, actions, children 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const persist = (w: number) => { try { localStorage.setItem(W_KEY, String(w)); } catch { /* ignore */ } };
+  const persist = (w: number) => { try { localStorage.setItem(storageKey, String(w)); } catch { /* ignore */ } };
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     dragging.current = true;
@@ -64,7 +67,7 @@ export function DetailSheet({ onClose, title, subtitle, icon, actions, children 
       <button
         aria-label="Fermer le panneau"
         onClick={onClose}
-        className="fixed inset-0 z-[59] bg-black/35 backdrop-blur-[1px] animate-in fade-in duration-150"
+        className="fixed inset-0 z-[59] bg-black/35animate-in fade-in duration-150"
       />
       {/* Panel */}
       <aside
@@ -77,7 +80,7 @@ export function DetailSheet({ onClose, title, subtitle, icon, actions, children 
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onDoubleClick={() => { setWidth(W_DEFAULT); persist(W_DEFAULT); }}
+          onDoubleClick={() => { setWidth(defaultWidth); persist(defaultWidth); }}
           title="Glisser pour élargir · double-clic pour réinitialiser"
           className="group absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize touch-none"
         >

@@ -290,7 +290,7 @@ const SINGLETON_KINDS = new Set([
 
 // ── Agents : résolution ─────────────────────────────────────────────────────
 
-interface AgentLite {
+export interface AgentLite {
   id: string; name: string; role: string | null; description: string | null;
   service_dashboard_id: string | null; is_orchestrator: boolean | null; is_archived: boolean | null;
 }
@@ -494,6 +494,105 @@ export function agentOpsToolDef(name = "manage_agents", actions: string[] = AGEN
   };
 }
 
+/** Ce que rend une création complète : l'agent, le compte rendu, les cartes,
+ *  et les apps qui restent à connecter pour qu'il s'en serve. */
+export interface CreatedAgent { agent?: AgentLite; notes: string[]; ui: UiBlock[]; missing: string[] }
+
+/**
+ * Crée un agent COMPLET — la ligne, ses outils, ses connecteurs, ses skills,
+ * ses serveurs MCP — avec les défauts du service. Une seule implémentation,
+ * partagée par manage_agents (create) et le déploiement d'une équipe
+ * (team-architect.ts) : un agent né d'une Teamz est configuré exactement comme
+ * un agent créé à l'unité.
+ */
+export async function createAgentFull(a: OpsActor, p: Record<string, unknown>): Promise<CreatedAgent> {
+  if (!canWrite(a)) {
+    return { notes: [`ACCÈS REFUSÉ : la personne a le rôle « ${a.role} » dans cet espace, qui ne permet pas de créer d'agents.`], ui: [], missing: [] };
+  }
+  const db = a.admin;
+  const name = str(p.name).trim().slice(0, 120);
+  if (!name) return { notes: ["ERREUR : name est requis."], ui: [], missing: [] };
+  const service = await resolveService(a, str(p.service));
+  if (typeof service === "string") return { notes: [service], ui: [], missing: [] };
+
+  // Une création rejouée (relance, réponse coupée) ne doit pas laisser deux
+  // agents du même nom dans le même service.
+  const { data: twin } = await db.from("internal_agents").select("id")
+    .eq("service_dashboard_id", service.id).eq("is_archived", false).ilike("name", likeSafe(name)).limit(1).maybeSingle();
+  if (twin) {
+    return { notes: [`ERREUR : un agent « ${name} » existe déjà dans ce service (agent_id: ${(twin as { id: string }).id}). Configure-le avec update / connect / set_skills au lieu d'en créer un second.`], ui: [], missing: [] };
+  }
+
+  const defaults = agentDefaultsOf(service);
+  const role = str(p.role).trim().slice(0, 200) || null;
+  const { data: created, error } = await db.from("internal_agents").insert({
+    workspace_id: a.workspaceId, project_id: a.projectId, service_dashboard_id: service.id,
+    name, role,
+    description: (str(p.description).trim() || role || "").slice(0, 280) || null,
+    persona: str(p.persona).trim() || null,
+    instructions: str(p.instructions).trim() || null,
+    soul: str(p.soul).trim() || null,
+    chat_enabled: true, mission_enabled: true,
+    created_by: a.userId,
+    // Les défauts du service (Réglages → Agents), comme la création à la main.
+    model: defaults.model, sandbox_mode: defaults.sandbox_mode, max_steps: defaults.max_steps,
+    max_run_cost_usd: defaults.max_run_cost_usd, swarm_enabled: defaults.swarm_enabled,
+  }).select(AGENT_LITE).single();
+  if (error || !created) return { notes: [`ERREUR : création impossible (${error?.message ?? "inconnue"}).`], ui: [], missing: [] };
+  const ag = created as AgentLite;
+  const notes: string[] = [`Agent « ${name} » créé dans le service ${service.name} (agent_id: ${ag.id}).`];
+  const ui: UiBlock[] = [];
+
+  // Outils internes demandés.
+  const toolSpecs = Array.isArray(p.tools) ? (p.tools as Array<Record<string, unknown>>) : [];
+  for (const spec of toolSpecs.slice(0, 12)) {
+    const kind = str(spec?.kind);
+    if (!CONFIGURABLE_TOOL_KINDS.includes(kind)) { notes.push(`Outil ignoré : type « ${kind} » inconnu.`); continue; }
+    const config = (spec.config && typeof spec.config === "object" ? spec.config : {}) as Record<string, unknown>;
+    const { error: tErr } = await db.from("internal_agent_tools").insert({
+      agent_id: ag.id, kind, name: str(spec.name) || kind, config,
+      requires_approval: kind === "edge_function" || kind === "custom" || defaults.requires_approval,
+    });
+    if (tErr) { notes.push(`Outil ${kind} non ajouté (${tErr.message}).`); continue; }
+    const issue = agentToolIssue(kind, config);
+    notes.push(`Outil ${kind} ajouté${issue ? `, mais incomplet : ${issue}` : "."}`);
+  }
+
+  const conn = await attachConnectors(a, ag, strList(p.connectors), defaults.requires_approval);
+  if (conn.attached.length) notes.push(`Connecteurs rattachés : ${conn.attached.join(", ")}.`);
+  if (conn.missing.length) {
+    notes.push(`Pas encore connectés : ${conn.missing.join(", ")}. Une carte « Connecter » est affichée ; l'agent les reçoit dès la connexion faite.`);
+    ui.push(connectorCards(ag.id, conn.missing, `Pour que ${name} puisse s'en servir.`));
+  }
+
+  const sk = await resolveSkills(a, strList(p.skills));
+  if (sk.rows.length) {
+    await db.from("agent_skill_activations")
+      .upsert(sk.rows.map((s) => ({ agent_id: ag.id, skill_id: s.id })), { onConflict: "agent_id,skill_id" });
+    notes.push(`Skills activées : ${sk.rows.map((s) => s.name).join(", ")}.`);
+  }
+  if (sk.unresolved.length) notes.push(`Skills introuvables : ${sk.unresolved.join(", ")} (cherche-les avec search_skills).`);
+
+  const mcp = await resolveMcpServers(a, strList(p.mcp_servers));
+  if (mcp.rows.length) {
+    await db.from("agent_mcp_servers").upsert(mcp.rows.map((s) => ({ agent_id: ag.id, server_id: s.id })), { onConflict: "agent_id,server_id" });
+    notes.push(`Serveurs MCP rattachés : ${mcp.rows.map((s) => s.name).join(", ")}.`);
+  }
+  if (mcp.unresolved.length) notes.push(`Serveurs MCP introuvables : ${mcp.unresolved.join(", ")}.`);
+
+  if (a.roomId && bool(p.add_to_room) !== false) {
+    await addAgentToRoom(a, ag.id, a.roomId);
+    notes.push("Ajouté à cette room : on peut le mentionner avec @ dès maintenant.");
+  }
+
+  const base = await appBase(a, service.id);
+  if (base) {
+    ui.unshift({ component: "link_card", props: { title: `Ouvrir ${name}`, description: role ?? "Nouvel agent", url: `${base}/agent/${ag.id}` } });
+  }
+  notes.push("L'agent est au repos : il ne travaille que si on lui parle, qu'on lui confie une mission ou un work item.");
+  return { agent: ag, notes, ui, missing: conn.missing };
+}
+
 export async function runAgentOps(
   a: OpsActor, rawAction: string, params: Record<string, unknown>,
 ): Promise<OpsResult> {
@@ -663,87 +762,8 @@ export async function runAgentOps(
         `- ${k} : ${TOOL_KIND_PURPOSE[k] ?? ""}${AGENT_TOOL_CONFIG_HINTS[k] ? ` · config ${AGENT_TOOL_CONFIG_HINTS[k]}` : " · sans config"}`).join("\n"));
 
     case "create": {
-      const name = str(p.name).trim().slice(0, 120);
-      if (!name) return text("ERREUR : name est requis.");
-      const service = await resolveService(a, str(p.service));
-      if (typeof service === "string") return text(service);
-
-      // Une création rejouée (relance, réponse coupée) ne doit pas laisser deux
-      // agents du même nom dans le même service.
-      const { data: twin } = await db.from("internal_agents").select("id")
-        .eq("service_dashboard_id", service.id).eq("is_archived", false).ilike("name", likeSafe(name)).limit(1).maybeSingle();
-      if (twin) {
-        return text(`ERREUR : un agent « ${name} » existe déjà dans ce service (agent_id: ${(twin as { id: string }).id}). Configure-le avec update / connect / set_skills au lieu d'en créer un second.`);
-      }
-
-      const defaults = agentDefaultsOf(service);
-      const role = str(p.role).trim().slice(0, 200) || null;
-      const { data: created, error } = await db.from("internal_agents").insert({
-        workspace_id: a.workspaceId, project_id: a.projectId, service_dashboard_id: service.id,
-        name, role,
-        description: (str(p.description).trim() || role || "").slice(0, 280) || null,
-        persona: str(p.persona).trim() || null,
-        instructions: str(p.instructions).trim() || null,
-        soul: str(p.soul).trim() || null,
-        chat_enabled: true, mission_enabled: true,
-        created_by: a.userId,
-        // Les défauts du service (Réglages → Agents), comme la création à la main.
-        model: defaults.model, sandbox_mode: defaults.sandbox_mode, max_steps: defaults.max_steps,
-        max_run_cost_usd: defaults.max_run_cost_usd, swarm_enabled: defaults.swarm_enabled,
-      }).select(AGENT_LITE).single();
-      if (error || !created) return text(`ERREUR : création impossible (${error?.message ?? "inconnue"}).`);
-      const ag = created as AgentLite;
-      const notes: string[] = [`Agent « ${name} » créé dans le service ${service.name} (agent_id: ${ag.id}).`];
-      const ui: UiBlock[] = [];
-
-      // Outils internes demandés.
-      const toolSpecs = Array.isArray(p.tools) ? (p.tools as Array<Record<string, unknown>>) : [];
-      for (const spec of toolSpecs.slice(0, 12)) {
-        const kind = str(spec?.kind);
-        if (!CONFIGURABLE_TOOL_KINDS.includes(kind)) { notes.push(`Outil ignoré : type « ${kind} » inconnu.`); continue; }
-        const config = (spec.config && typeof spec.config === "object" ? spec.config : {}) as Record<string, unknown>;
-        const { error: tErr } = await db.from("internal_agent_tools").insert({
-          agent_id: ag.id, kind, name: str(spec.name) || kind, config,
-          requires_approval: kind === "edge_function" || kind === "custom" || defaults.requires_approval,
-        });
-        if (tErr) { notes.push(`Outil ${kind} non ajouté (${tErr.message}).`); continue; }
-        const issue = agentToolIssue(kind, config);
-        notes.push(`Outil ${kind} ajouté${issue ? `, mais incomplet : ${issue}` : "."}`);
-      }
-
-      const conn = await attachConnectors(a, ag, strList(p.connectors), defaults.requires_approval);
-      if (conn.attached.length) notes.push(`Connecteurs rattachés : ${conn.attached.join(", ")}.`);
-      if (conn.missing.length) {
-        notes.push(`Pas encore connectés : ${conn.missing.join(", ")}. Une carte « Connecter » est affichée ; l'agent les reçoit dès la connexion faite.`);
-        ui.push(connectorCards(ag.id, conn.missing, `Pour que ${name} puisse s'en servir.`));
-      }
-
-      const sk = await resolveSkills(a, strList(p.skills));
-      if (sk.rows.length) {
-        await db.from("agent_skill_activations")
-          .upsert(sk.rows.map((s) => ({ agent_id: ag.id, skill_id: s.id })), { onConflict: "agent_id,skill_id" });
-        notes.push(`Skills activées : ${sk.rows.map((s) => s.name).join(", ")}.`);
-      }
-      if (sk.unresolved.length) notes.push(`Skills introuvables : ${sk.unresolved.join(", ")} (cherche-les avec search_skills).`);
-
-      const mcp = await resolveMcpServers(a, strList(p.mcp_servers));
-      if (mcp.rows.length) {
-        await db.from("agent_mcp_servers").upsert(mcp.rows.map((s) => ({ agent_id: ag.id, server_id: s.id })), { onConflict: "agent_id,server_id" });
-        notes.push(`Serveurs MCP rattachés : ${mcp.rows.map((s) => s.name).join(", ")}.`);
-      }
-      if (mcp.unresolved.length) notes.push(`Serveurs MCP introuvables : ${mcp.unresolved.join(", ")}.`);
-
-      if (a.roomId && bool(p.add_to_room) !== false) {
-        await addAgentToRoom(a, ag.id, a.roomId);
-        notes.push("Ajouté à cette room : on peut le mentionner avec @ dès maintenant.");
-      }
-
-      const base = await appBase(a, service.id);
-      if (base) {
-        ui.unshift({ component: "link_card", props: { title: `Ouvrir ${name}`, description: role ?? "Nouvel agent", url: `${base}/agent/${ag.id}` } });
-      }
-      notes.push("L'agent est au repos : il ne travaille que si on lui parle, qu'on lui confie une mission ou un work item.");
-      return text(notes.join("\n"), ui);
+      const res = await createAgentFull(a, p);
+      return text(res.notes.join("\n"), res.agent ? res.ui : undefined);
     }
 
     case "update": {

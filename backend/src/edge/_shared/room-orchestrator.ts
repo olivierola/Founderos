@@ -35,6 +35,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callAi, safeParseJson, type ChatMessage } from "./ai.ts";
 import { buildInternalToolset, type AgentToolRow, type InternalToolContext } from "./internal-agent-tools.ts";
+import { applyPoolToToolRows, loadPoolScope, type PoolScope } from "./resource-pools.ts";
 import { classifyTier, modelForTier, resolveProvider, cheapProvider } from "./model-router.ts";
 import { compileSystemPrompt, type SectionInput } from "./prompt-compiler.ts";
 import { renderSoul, selectPreferences } from "./agent-context.ts";
@@ -42,6 +43,7 @@ import { judge, choice, readChoice, qid } from "./typesafe.ts";
 import { loadCompanyContext, renderCompanySection, type CompanyContext } from "./company-context.ts";
 import { ORCHESTRATOR_PROACTIVITY } from "./proactivity.ts";
 import { ASSISTANT_OPS_DOCTRINE } from "./assistant-ops.ts";
+import { TEAM_OPS_DOCTRINE } from "./team-architect.ts";
 import { CONNECTOR_OPS_DOCTRINE } from "./assistant-connectors.ts";
 import { deriveContract } from "./agent-loop.ts";
 import { defaultTimezone, renderClock } from "./clock.ts";
@@ -585,8 +587,15 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
   const a = agentRow as RosterAgent;
   const taskProvider = resolveProvider(a.model);
 
-  const { data: toolRows } = await admin.from("internal_agent_tools")
-    .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", a.id);
+  const [{ data: rawToolRows }, poolScope] = await Promise.all([
+    admin.from("internal_agent_tools")
+      .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", a.id),
+    loadPoolScope(admin, a.id),
+  ]);
+  // Mode pools (0291) : le prompt annonce ce que le tick donnera vraiment.
+  const toolRows = poolScope
+    ? applyPoolToToolRows((rawToolRows ?? []) as AgentToolRow[], poolScope) as AgentToolRow[]
+    : (rawToolRows ?? []) as AgentToolRow[];
 
   const { data: tr } = await admin.from("internal_agent_runs").insert({
     agent_id: a.id, workspace_id: opts.room.workspace_id, project_id: opts.room.project_id,
@@ -610,7 +619,7 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
   });
   const system = buildRoomSystemPrompt({
     agent: a, room: opts.room, dashboardName: opts.dashboardName,
-    toolRows: (toolRows ?? []) as AgentToolRow[], admin,
+    toolRows, admin, poolScope,
     mission: opts.missionId ? { taskTitle: opts.brief.slice(0, 120) } : null,
     company,
   });
@@ -663,6 +672,8 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
     },
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
+  // Le tick part maintenant plutôt qu'au prochain passage du drainer (10 s).
+  await admin.rpc("drain_agent_ticks").then(() => {}, () => {});
   return { runId, messageId };
 }
 
@@ -674,6 +685,8 @@ export function buildRoomSystemPrompt(opts: {
   room: RoomRef;
   dashboardName: string;
   toolRows: AgentToolRow[];
+  /** Les pools de l'agent (0291) : la boîte à outils annoncée en dépend. */
+  poolScope?: PoolScope | null;
   mission?: { taskTitle: string } | null;
   extraContext?: string;
   /** L'entreprise (0212), chargée par l'appelant. Un agent qui a un employeur
@@ -695,6 +708,7 @@ export function buildRoomSystemPrompt(opts: {
     // administration tools for the assistant, so the advertised toolbox must too.
     isOrchestrator: opts.agent.is_orchestrator === true,
     swarmEnabled: opts.agent.swarm_enabled !== false,
+    poolScope: opts.poolScope ?? null,
     // Inert like the rest of this stub, but it must be PRESENT: its presence is
     // what tells buildInternalToolset that reports go to Le Rédacteur, so the
     // advertised toolbox matches the one the tick engine really executes.
@@ -741,6 +755,8 @@ export function buildRoomSystemPrompt(opts: {
         "Confirme chaque action faite, en une phrase (« Agent X créé », « Brief quotidien planifié à 6h »).",
         "",
         ASSISTANT_OPS_DOCTRINE,
+        "",
+        TEAM_OPS_DOCTRINE,
         "",
         CONNECTOR_OPS_DOCTRINE,
         "",

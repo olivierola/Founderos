@@ -238,7 +238,7 @@ export function TemplateConfigPanel({
                         </span>
                       ) : (
                         <Button
-                          size="sm" variant="outline" className="rounded-full"
+                          size="sm" variant="outline" className="rounded-md"
                           onClick={() => setConnecting(tk ?? synthToolkit(n.slug, n.name, null))}
                         >
                           Connecter
@@ -356,7 +356,7 @@ export function TemplateConfigPanel({
               Aucune application connectée : le collaborateur se crée, mais restera limité à ses outils internes.
             </span>
           )}
-          <Button onClick={create} disabled={busy || !name.trim()} className="ml-auto rounded-xl">
+          <Button onClick={create} disabled={busy || !name.trim()} className="ml-auto rounded-md">
             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}Add agent
           </Button>
         </footer>

@@ -287,11 +287,11 @@ export async function validateProvider(
       // --- Messaging (webhook ping) ---
       case "slack":
         return payload.webhook_url
-          ? pingWebhook(payload.webhook_url, { text: "✅ Anduran connected" })
+          ? pingWebhook(payload.webhook_url, { text: "✅ Agent company connected" })
           : fail("webhook_url required");
       case "discord":
         return payload.webhook_url
-          ? pingWebhook(payload.webhook_url, { content: "✅ Anduran connected" })
+          ? pingWebhook(payload.webhook_url, { content: "✅ Agent company connected" })
           : fail("webhook_url required");
       case "telegram": {
         if (!payload.api_key || !payload.chat_id) return fail("bot token + chat_id required");

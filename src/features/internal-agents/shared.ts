@@ -54,6 +54,8 @@ export interface InternalAgent {
   hosted_server_id: string | null;
   /** Registered cloud/custom model (aiops_providers) the agent runs on; null = default. */
   hosted_provider_id: string | null;
+  /** Its models per task on the platform's default connection (0303). */
+  model_routes?: Record<string, string> | null;
   created_by: string;
   is_archived: boolean;
   created_at: string;

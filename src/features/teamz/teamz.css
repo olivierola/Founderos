@@ -1,0 +1,80 @@
+/* Teamz — un mouvement sobre, qui dit quelque chose de vrai.
+ *
+ * DA sobre (gris charbon, violet adouci) : pas de halo, pas de flou, pas de
+ * dégradé dans les coins. La couleur d'une équipe (--tz-accent) ne sert qu'à
+ * de petits repères : sa pastille, ses liens. Le seul mouvement continu est
+ * celui du travail : un lien qui coule = une passation, un anneau = un agent
+ * au travail. Tout s'arrête avec prefers-reduced-motion.
+ */
+
+.tz-accent { --tz-accent: hsl(var(--primary-soft)); }
+
+/* ── Cartes ──────────────────────────────────────────────────────────────── */
+.tz-card {
+  position: relative;
+  border-radius: 14px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 0.8);
+  transition: border-color 0.2s, transform 0.2s, background-color 0.2s;
+}
+.tz-card:hover { border-color: hsl(var(--foreground) / 0.22); }
+button.tz-card:hover { transform: translateY(-1px); }
+.tz-card[data-live="true"] { border-color: color-mix(in oklab, var(--tz-accent) 45%, hsl(var(--border))); }
+
+/* ── Flux A2A ────────────────────────────────────────────────────────────── */
+.tz-link { fill: none; stroke-linecap: round; }
+.tz-link-handoff { stroke-dasharray: 5 7; animation: tz-flow 1.6s linear infinite; }
+.tz-link-consult { stroke-dasharray: 1.5 6; }
+.tz-link-review { stroke-dasharray: 8 5 2 5; }
+.tz-link-draw { stroke-dasharray: 600; stroke-dashoffset: 600; animation: tz-draw 0.8s cubic-bezier(.4, 0, .2, 1) forwards; }
+@keyframes tz-flow { to { stroke-dashoffset: -24; } }
+@keyframes tz-draw { to { stroke-dashoffset: 0; } }
+
+/* ── Agents ──────────────────────────────────────────────────────────────── */
+.tz-live-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--tz-accent);
+  animation: tz-ring 2s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes tz-ring {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+/* Une apparition nette : un léger glissé, pas de flou. */
+.tz-materialize { animation: tz-appear 0.45s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes tz-appear {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.tz-caret::after {
+  content: "▍";
+  margin-left: 1px;
+  color: var(--tz-accent);
+  animation: tz-blink 0.9s steps(1) infinite;
+}
+@keyframes tz-blink { 50% { opacity: 0; } }
+
+/* L'étape en cours de l'architecte. */
+.tz-shimmer {
+  background: linear-gradient(90deg, hsl(var(--muted-foreground)) 0%, hsl(var(--foreground)) 45%, hsl(var(--muted-foreground)) 90%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: tz-shimmer 2s linear infinite;
+}
+@keyframes tz-shimmer { to { background-position: -220% 0; } }
+
+.tz-score-ring { transition: stroke-dashoffset 1s cubic-bezier(.2, .8, .2, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tz-link-handoff, .tz-live-ring, .tz-caret::after, .tz-shimmer { animation: none !important; }
+  .tz-link-draw { animation: none; stroke-dashoffset: 0; }
+  .tz-materialize { animation: none; }
+  .tz-card { transition: none; }
+}

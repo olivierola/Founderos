@@ -97,7 +97,7 @@ export function ApprovalPoliciesPanel({ workspaceId, canEdit }: { workspaceId: s
           (1 approbateur, 15 minutes), et un outil interne ne change pas. La personne au nom de qui l'agent agit n'approuve jamais.
         </p>
         {canEdit && (
-          <Button size="sm" className="rounded-full" onClick={() => setEditing("new")}><Plus className="mr-1 h-4 w-4" /> Nouvelle règle</Button>
+          <Button size="sm" className="rounded-md" onClick={() => setEditing("new")}><Plus className="mr-1 h-4 w-4" /> Nouvelle règle</Button>
         )}
       </div>
 
@@ -174,7 +174,7 @@ function PolicyForm({ workspaceId, policy, mcp, connectors, onClose, onSaved }: 
   const ops = list(operations);
   const idp = list(idpRoles);
   const issue = !name.trim() ? "Donnez un nom à la règle."
-    : roles.length + idp.length === 0 ? "Choisissez au moins un rôle FounderOS ou un rôle / groupe de l'IdP."
+    : roles.length + idp.length === 0 ? "Choisissez au moins un rôle Agent company ou un rôle / groupe de l'IdP."
     : ops.some((o) => /[^A-Za-z0-9_.:/ -]/.test(o)) ? "Opérations : lettres, chiffres et _ . : / - seulement."
     : !(Number(quorum) >= 1 && Number(quorum) <= 5) ? "Quorum : de 1 à 5."
     : !(Number(ttl) >= 1 && Number(ttl) <= 1440) ? "Échéance : de 1 à 1440 minutes."
@@ -248,7 +248,7 @@ function PolicyForm({ workspaceId, policy, mcp, connectors, onClose, onSaved }: 
           <Input value={operations} onChange={(e) => setOperations(e.target.value)} placeholder="deployment_restart, alert_silence_create" className="h-8 font-mono" />
         </label>
         <div className="text-xs sm:col-span-2">
-          <span className="mb-1 block text-muted-foreground">Approbateurs : un rôle FounderOS…</span>
+          <span className="mb-1 block text-muted-foreground">Approbateurs : un rôle Agent company…</span>
           <div className="flex flex-wrap gap-3">
             {(["owner", "admin", "member"] as const).map((r) => (
               <label key={r} className="inline-flex items-center gap-1.5">

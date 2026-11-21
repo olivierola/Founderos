@@ -40,7 +40,7 @@ export function ChatComposer({
   onStop,
   value,
   onValueChange,
-  placeholder = "How can I help you today?",
+  placeholder = "Répondre",
   // The real list: a picker offering models we don't run is worse than none.
   models = CHAT_MODELS,
   footerHint,
@@ -48,7 +48,7 @@ export function ChatComposer({
   className,
 }: ChatComposerProps) {
   return (
-    <div className={cn("mx-auto flex w-full max-w-2xl flex-col items-center", className)}>
+    <div className={cn("mx-auto flex w-full max-w-3xl flex-col items-center", className)}>
       <AgentChatInput
         value={value}
         onChange={onValueChange}

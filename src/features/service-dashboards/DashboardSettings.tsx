@@ -5,7 +5,7 @@ import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import {
   SlidersIcon, SquaresFourIcon, RobotIcon, ChatsCircleIcon, WarningIcon, CheckIcon,
   CalendarDotsIcon, BrainIcon, FilesIcon, TrashIcon, FloppyDiskIcon, SparkleIcon,
-  GaugeIcon, ShareNetworkIcon, EyeIcon, PlugIcon, KanbanIcon,
+  GaugeIcon, ShareNetworkIcon, EyeIcon, PlugIcon, KanbanIcon, UsersThreeIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { AvatarPicker } from "@/features/internal-agents/AvatarPicker";
 import { cn } from "@/lib/utils";
 import {
   updateServiceDashboard, deleteServiceDashboard, ensureOrchestrator, fetchRooms, deleteEmptyRooms,
+  fetchServiceDashboard,
   COLLABORATION_POLICIES,
   type ServiceDashboard, type DashboardSettings as Settings, type DashboardTabSlug,
   type CollaborationPolicy,
@@ -26,18 +27,21 @@ import { DASHBOARD_ICONS, DASHBOARD_COLORS, DashboardTile } from "./dashboardIco
 import { THEMES } from "@/lib/themes";
 import { useTheme } from "@/lib/theme-context";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { TeamsManager } from "./live/TeamsManager";
+import { InfoHint } from "@/components/ui/info-hint";
 
 // The dashboard's own settings — deliberately scoped to THIS service. Org-wide
 // concerns (billing, members) stay in the Admin area; everything here changes
 // only how this one dashboard looks and behaves. Connectors are dashboard-owned
 // since 0177, so their nav entry is hideable like any other section.
-type SectionKey = "general" | "navigation" | "assistant" | "agents" | "rooms" | "danger";
+type SectionKey = "general" | "navigation" | "assistant" | "agents" | "teams" | "rooms" | "danger";
 
 const SECTIONS: { key: SectionKey; label: string; icon: PhosphorIcon }[] = [
   { key: "general", label: "Général", icon: SlidersIcon },
   { key: "navigation", label: "Navigation", icon: SquaresFourIcon },
   { key: "assistant", label: "Assistant", icon: SparkleIcon },
   { key: "agents", label: "Collaborateurs", icon: RobotIcon },
+  { key: "teams", label: "Équipes", icon: UsersThreeIcon },
   { key: "rooms", label: "Rooms", icon: ChatsCircleIcon },
   { key: "danger", label: "Zone de danger", icon: WarningIcon },
 ];
@@ -138,10 +142,15 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
   async function save() {
     setSaving(true); setError(null); setWarning(null);
     try {
+      // Les équipes s'écrivent ailleurs (Live Space, section Équipes), tout de
+      // suite. Le formulaire en tient une copie d'ouverture : la réécrire
+      // effacerait une équipe constituée depuis. On reprend celles du moment.
+      const latest = await fetchServiceDashboard(dashboard.id);
       const res = await updateServiceDashboard(dashboard.id, {
         name: name.trim() || dashboard.name,
         description: description.trim() || null,
-        icon, color, settings,
+        icon, color,
+        settings: { ...settings, teams: latest?.settings.teams ?? settings.teams },
         mission: mission.trim() || null,
         collaboration,
       });
@@ -185,7 +194,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
     || (description || "") !== (dashboard.description ?? "")
     || icon !== dashboard.icon
     || color !== dashboard.color
-    || JSON.stringify(settings) !== JSON.stringify(dashboard.settings)
+    || JSON.stringify({ ...settings, teams: null }) !== JSON.stringify({ ...dashboard.settings, teams: null })
     || (assistant && orchestrator ? JSON.stringify(assistant) !== JSON.stringify(orchestrator) : false)
   ), [name, description, icon, color, settings, assistant, dashboard, orchestrator]);
 
@@ -205,7 +214,7 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
           <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex"><CheckIcon className="h-3.5 w-3.5" /> Enregistré</span>
         )}
         {section !== "danger" && (
-          <Button size="sm" onClick={save} disabled={saving || !dirty} className="shrink-0 rounded-full">
+          <Button size="sm" onClick={save} disabled={saving || !dirty} className="shrink-0 rounded-md">
             {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FloppyDiskIcon className="mr-1.5 h-3.5 w-3.5" />}
             Enregistrer
           </Button>
@@ -528,6 +537,19 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
             </>
           )}
 
+          {section === "teams" && (
+            <Card
+              title="Équipes d'agents" icon={UsersThreeIcon}
+              desc="Chaque équipe s'installe dans son propre bureau du Live Space. Un agent n'appartient qu'à une équipe à la fois. Les changements s'enregistrent tout de suite."
+            >
+              <TeamsManager
+                dashboard={{ id: dashboard.id, name: dashboard.name }}
+                workspaceId={workspaceId} projectId={projectId}
+                onOpenLive={() => navigate(`/app/${workspaceSlug}/${projectSlug}/service/${dashboard.id}/live`)}
+              />
+            </Card>
+          )}
+
           {section === "rooms" && (
             <>
               <Card title="Nouvelles rooms">
@@ -603,8 +625,8 @@ function Card({ title, desc, icon: Icon, tone, children }: {
       <div className="mb-4">
         <h2 className={cn("flex items-center gap-2 text-sm font-semibold", tone === "danger" && "text-destructive")}>
           {Icon && <Icon className="h-4 w-4" />} {title}
+          {desc && <InfoHint>{desc}</InfoHint>}
         </h2>
-        {desc && <p className="mt-1 text-xs text-muted-foreground">{desc}</p>}
       </div>
       <div className="space-y-4">{children}</div>
     </section>
@@ -614,9 +636,11 @@ function Card({ title, desc, icon: Icon, tone, children }: {
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>
+      <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        {label}
+        {hint && <InfoHint>{hint}</InfoHint>}
+      </label>
       {children}
-      {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -644,8 +668,8 @@ function Row({ icon: Icon, label, desc, checked, onChange }: {
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-sm font-medium">
           {Icon && <Icon className="h-4 w-4 text-muted-foreground" />} {label}
+          {desc && <InfoHint>{desc}</InfoHint>}
         </div>
-        {desc && <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>}
       </div>
       <button
         type="button" role="switch" aria-checked={checked} aria-label={label}

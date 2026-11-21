@@ -755,4 +755,6 @@ async function runResponder(
     meta: { room: { room_id: room.id, placeholder_id: placeholderId, requested_by: requestedBy } },
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: turnRunId });
+  // Le tick part maintenant plutôt qu'au prochain passage du drainer (10 s).
+  await admin.rpc("drain_agent_ticks").then(() => {}, () => {});
 }

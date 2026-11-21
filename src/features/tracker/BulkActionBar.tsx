@@ -181,7 +181,7 @@ function BulkMenu({ label, children }: { label: string; children: React.ReactNod
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-7 rounded-full px-2.5 text-12">
+        <Button size="sm" variant="ghost" className="h-7 rounded-md px-2.5 text-12">
           {label}
         </Button>
       </DropdownMenuTrigger>

@@ -960,3 +960,15 @@ export function mountHuman(canvas: HTMLCanvasElement, opts: HumanOptions): Human
     },
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * The figure, for another scene.
+ *
+ * The Live Space draws its people in its OWN scene, standing at their desks.
+ * It reuses the very same figure — skull, face, hair, outfit — so an agent
+ * looks in the office exactly as it does on its card; it only adds the legs a
+ * bust never needed. The rig is handed over as is: the caller animates it and
+ * calls `disposeFigure` when done.
+ * ------------------------------------------------------------------ */
+export type HumanRig = Rig;
+export { buildFigure, disposeRig as disposeFigure };

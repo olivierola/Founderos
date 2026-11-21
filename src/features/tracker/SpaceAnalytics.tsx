@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CaretDownIcon, ChartBarIcon, SuitcaseSimpleIcon } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -42,7 +42,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "issues", label: "Work items" },
 ];
 
-export function SpaceAnalytics({ dashboardId }: { dashboardId: string }) {
+/** `switcher` : les onglets Analyses / Tableaux du suivi, posés dans l'en-tête. Analytics est calculé par la plateforme ; les Dashboards, eux, sont remplis par les collaborateurs. */
+export function SpaceAnalytics({ dashboardId, switcher }: { dashboardId: string; switcher?: ReactNode }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [scope, setScope] = useState<string | null>(null);
 
@@ -78,7 +79,7 @@ export function SpaceAnalytics({ dashboardId }: { dashboardId: string }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <PageHeader icon={<ChartBarIcon className="h-4 w-4" />} title="Analytics" />
+      <PageHeader icon={<ChartBarIcon className="h-4 w-4" />} title="Analytics" actions={switcher} />
 
       <div className="flex h-header shrink-0 items-center gap-2 border-b border-border px-4">
         {/* Onglets segmentés : ce sont sept DÉCOUPES du même jeu de données,

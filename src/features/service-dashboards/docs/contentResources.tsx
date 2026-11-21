@@ -54,7 +54,7 @@ export const RESOURCES_SECTION: DocSection = {
           <Lede>
             Une connexion donne à un collaborateur l'accès à un service extérieur, une boîte
             mail, un CRM, un dépôt de code. Sans connexion, un collaborateur ne peut agir que
-            dans FounderOS.
+            dans Agent company.
           </Lede>
 
           <Defs

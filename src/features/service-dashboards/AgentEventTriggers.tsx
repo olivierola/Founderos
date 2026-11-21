@@ -140,7 +140,7 @@ export function AgentEventTriggers({ agent }: { agent: InternalAgent }) {
           </p>
         </div>
         {!adding && (
-          <Button size="sm" className="shrink-0 rounded-full" onClick={() => setAdding(true)}>
+          <Button size="sm" className="shrink-0 rounded-md" onClick={() => setAdding(true)}>
             <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> Nouveau déclencheur
           </Button>
         )}

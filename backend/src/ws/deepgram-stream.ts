@@ -24,13 +24,18 @@ export const deepgramStreamHttp: RequestHandler = (_req, res) => {
   res.status(426).type("text/plain").send("Expected a WebSocket upgrade");
 };
 
-/** Branche le proxy sur le serveur HTTP. C'est le seul point d'entrée WebSocket du backend. */
+/**
+ * Branche le proxy sur le serveur HTTP. Le realtime de la plateforme
+ * auto-hébergée (/realtime/v1/, src/platform/realtime.ts) a son propre
+ * gestionnaire ; toute autre demande de WebSocket est fermée.
+ */
 export function attachDeepgramStream(server: Server): void {
   const wss = new WebSocketServer({ noServer: true });
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname !== DEEPGRAM_STREAM_PATH) {
-      socket.destroy();
+      const realtimeAttached = server.listenerCount("upgrade") > 1;
+      if (!(realtimeAttached && url.pathname.startsWith("/realtime/v1/"))) socket.destroy();
       return;
     }
     accept(wss, req, socket, head, url).catch((err) => {

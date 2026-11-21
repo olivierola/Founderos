@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowsClockwiseIcon, ArrowsOutSimpleIcon, CaretDownIcon, CheckIcon,
   FileTextIcon, GlobeSimpleIcon, HouseIcon, LinkSimpleIcon,
   PlusIcon, SlidersIcon, DotsThreeVerticalIcon,
   SquaresFourIcon, StackIcon, SuitcaseSimpleIcon,
-  TrashIcon, WarningIcon,
+  TrashIcon, WarningIcon, XIcon, ArrowSquareOutIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -17,6 +17,10 @@ import { useAuth } from "@/lib/auth-context";
 import { useAssistant } from "@/lib/assistant-context";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
+import { HomeCockpit } from "@/features/service-dashboards/HomeCockpit";
+import {
+  InboxSidePanel, SIDE_PANEL_CLASS, inboxKey, useCollaboratorInbox, useInboxActions,
+} from "@/features/service-dashboards/CollaboratorInbox";
 import { RoomLauncher } from "@/features/service-dashboards/RoomLauncher";
 import { useDashboardAgents } from "@/features/service-dashboards/ServiceDashboardTabs";
 import { ProjectLogo } from "./LogoPicker";
@@ -66,11 +70,32 @@ export function TrackerHomePage({
   const shown = widgets ?? [];
   const has = (w: HomeWidget) => shown.includes(w);
 
+  // Le panneau de droite : un item de « Vous attend » ou d'« En attente de
+  // vous », ouvert en entier sans quitter l'accueil.
+  const inbox = useCollaboratorInbox(dashboardId).data ?? [];
+  const inboxActions = useInboxActions(dashboardId);
+  const [openInbox, setOpenInbox] = useState<string | null>(null);
+  const [openAttention, setOpenAttention] = useState<AttentionItem | null>(null);
+  const openedInbox = openInbox ? inbox.find((i) => inboxKey(i) === openInbox) ?? null : null;
+  const closePanel = () => { setOpenInbox(null); setOpenAttention(null); inboxActions.setViewing(null); };
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key === "Escape") closePanel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full min-h-0">
+    <div className="flex min-w-0 flex-1 flex-col">
       <PageHeader
+        className="border-b-0 px-3"
         icon={<HouseIcon className="h-4 w-4" />}
-        title="Home"
+        title="Accueil"
         actions={
           <Button
             size="sm" variant="outline" className="h-8 gap-1.5 text-12"
@@ -81,8 +106,8 @@ export function TrackerHomePage({
         }
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-16">
-        <div className="mx-auto w-full max-w-[800px]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-10">
+        <div className="w-full">
           <Greeting name={user?.email?.split("@")[0] ?? null} />
 
           {/* HORS des widgets, et au-dessus d'eux : ce n'est pas une préférence
@@ -90,9 +115,21 @@ export function TrackerHomePage({
               masqué, et ce qu'il signale — un agent arrêté faute de réponse —
               ne se voit alors plus nulle part. Il n'apparaît que s'il y a
               quelque chose à faire. */}
-          <AttentionQueue dashboardId={dashboardId} onOpenIssue={onOpenIssue} />
+          <AttentionQueue
+            dashboardId={dashboardId}
+            openRef={openAttention?.ref_id ?? null}
+            onOpen={(item) => { inboxActions.setViewing(null); setOpenInbox(null); setOpenAttention(item); }}
+          />
 
-          <div className="flex flex-col">
+          {/* Le cockpit du service : ce qui attend, qui travaille, ce qui est en alerte, ce qui a changé. */}
+          <HomeCockpit
+            dashboardId={dashboardId}
+            openKey={openInbox}
+            onOpenIssue={onOpenIssue}
+            onOpenInbox={(item) => { inboxActions.setViewing(null); setOpenAttention(null); setOpenInbox(inboxKey(item)); }}
+          />
+
+          <div className="mt-2 flex flex-col">
             {has("ai") && <div className="py-4"><AskTeam dashboardId={dashboardId} workspaceId={workspaceId} /></div>}
             {has("quicklinks") && (
               <div className="py-4">
@@ -124,6 +161,18 @@ export function TrackerHomePage({
           </div>
         </div>
       </div>
+    </div>
+
+      {openAttention && !openedInbox ? (
+        <AttentionPanel
+          dashboardId={dashboardId}
+          item={openAttention}
+          onClose={closePanel}
+          onOpenIssue={onOpenIssue}
+        />
+      ) : (
+        <InboxSidePanel actions={inboxActions} item={openedInbox} onClose={closePanel} />
+      )}
 
       {managing && workspaceId && user && (
         <ManageWidgetsDialog
@@ -177,104 +226,147 @@ function HomeSectionTitle({
  * brief, ce qui ne se fait pas depuis une liste.
  */
 function AttentionQueue({
-  dashboardId, onOpenIssue,
+  dashboardId, openRef, onOpen,
 }: {
   dashboardId: string;
-  onOpenIssue: (projectId: string, issueId: string) => void;
+  openRef: string | null;
+  onOpen: (item: AttentionItem) => void;
 }) {
-  const qc = useQueryClient();
-  const [busy, setBusy] = useState<string | null>(null);
-
   const { data } = useQuery({
     queryKey: ["pj_attention_queue", dashboardId],
     queryFn: () => fetchAttentionQueue(dashboardId),
     // Une demande naît pendant un run : relue chaque minute tant que la page
-    // est ouverte, ce qui suffit — la cloche prévient plus vite pour qui n'y est
-    // pas.
+    // est ouverte, ce qui suffit, la cloche prévient plus vite pour qui n'y
+    // est pas.
     refetchInterval: 60_000,
   });
 
   const items = data ?? [];
   if (!items.length) return null;
 
-  const decide = async (item: AttentionItem, decision: "approve" | "reject") => {
-    setBusy(item.ref_id);
-    try {
-      await decideApproval(item.ref_id, decision);
-      qc.invalidateQueries({ queryKey: ["pj_attention_queue", dashboardId] });
-      qc.invalidateQueries({ queryKey: ["pj_issue_approvals", item.issue_id] });
-    } finally {
-      setBusy(null);
-    }
-  };
-
   return (
-    <section className="py-4">
-      <HomeSectionTitle hint={`${items.length} en attente`}>En attente de vous</HomeSectionTitle>
-      <ul className="overflow-hidden rounded-xl border border-amber-500/30 bg-amber-500/5">
+    <section className="pb-6">
+      <HomeSectionTitle className="mb-2.5" hint={`${items.length} en attente`}>En attente de vous</HomeSectionTitle>
+      <ul className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2">
         {items.map((item) => (
-          <li
-            key={`${item.kind}-${item.ref_id}`}
-            className="flex items-center gap-3 border-b border-amber-500/15 px-3 py-2.5 last:border-b-0"
-          >
-            <span className={cn(
-              "grid h-7 w-7 shrink-0 place-items-center rounded-md",
-              item.kind === "approval" ? "bg-amber-500/15 text-amber-600" : "bg-red-500/10 text-red-600",
-            )}>
-              <WarningIcon className="h-4 w-4" />
-            </span>
-
+          <li key={`${item.kind}-${item.ref_id}`}>
             <button
               type="button"
-              onClick={() => onOpenIssue(item.pj_project_id, item.issue_id)}
-              className="min-w-0 flex-1 text-left"
+              onClick={() => onOpen(item)}
+              className={cn(
+                "flex h-full w-full flex-col rounded-md border bg-card p-3 text-left transition-colors hover:border-foreground/20",
+                openRef === item.ref_id ? "border-primary/60" : "border-border/70",
+              )}
             >
-              <span className="block truncate text-13">
-                <span className="font-medium">{item.agent_name ?? "Un collaborateur"}</span>
-                {item.kind === "approval"
-                  ? <> veut {TRACKER_ACTION_LABEL[item.detail ?? ""] ?? item.detail ?? "agir"}</>
-                  : <> est en pause après trois échecs</>}
-              </span>
-              <span className="block truncate text-11 text-tertiary">
-                <span className="font-mono">{item.issue_ref}</span> · {item.issue_name}
-                {item.kind === "approval" && item.reason && <> — {item.reason}</>}
-                {item.kind === "stalled" && item.detail && <> — {item.detail}</>}
-              </span>
-            </button>
-
-            <span className="hidden shrink-0 text-11 text-placeholder sm:block">
-              {formatRelative(item.since)}
-            </span>
-
-            {item.kind === "approval" ? (
-              <div className="flex shrink-0 gap-1">
-                <Button
-                  size="sm" variant="ghost" className="h-7 text-11"
-                  disabled={busy !== null}
-                  onClick={() => void decide(item, "reject")}
-                >
-                  Refuser
-                </Button>
-                <Button
-                  size="sm" className="h-7 text-11"
-                  disabled={busy !== null}
-                  onClick={() => void decide(item, "approve")}
-                >
-                  {busy === item.ref_id ? "…" : "Autoriser"}
-                </Button>
+              <div className="flex w-full items-center gap-2">
+                <AttentionBadge kind={item.kind} />
+                <span className="ml-auto shrink-0 text-11 text-muted-foreground">{formatRelative(item.since)}</span>
               </div>
-            ) : (
-              <Button
-                size="sm" variant="outline" className="h-7 shrink-0 text-11"
-                onClick={() => onOpenIssue(item.pj_project_id, item.issue_id)}
-              >
-                Revoir le brief
-              </Button>
-            )}
+              <p className="mt-2 line-clamp-2 text-13 font-medium leading-snug">{attentionTitle(item)}</p>
+              <p className="mt-1 line-clamp-2 text-12 text-muted-foreground">{attentionSub(item)}</p>
+              <span className="mt-auto pt-3 font-mono text-11 text-muted-foreground">{item.issue_ref}</span>
+            </button>
           </li>
         ))}
       </ul>
     </section>
+  );
+}
+
+function attentionTitle(item: AttentionItem) {
+  const who = item.agent_name ?? "Un collaborateur";
+  return item.kind === "approval"
+    ? `${who} veut ${TRACKER_ACTION_LABEL[item.detail ?? ""] ?? item.detail ?? "agir"}`
+    : `${who} est en pause après trois échecs`;
+}
+
+function attentionSub(item: AttentionItem) {
+  const extra = item.kind === "approval" ? item.reason : item.detail;
+  return extra ? `${item.issue_name} · ${extra}` : item.issue_name;
+}
+
+function AttentionBadge({ kind }: { kind: AttentionItem["kind"] }) {
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-11 font-medium",
+      kind === "approval" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-red-500/10 text-red-700 dark:text-red-400",
+    )}>
+      <WarningIcon weight="fill" className="h-3 w-3" /> {kind === "approval" ? "Autorisation" : "En pause"}
+    </span>
+  );
+}
+
+/**
+ * Un item d'« En attente de vous » en entier : la dernière erreur ou le motif
+ * se lisent sans troncature. Une autorisation se traite ici ; un item en pause
+ * demande qu'on relise son brief, ce qui se fait sur sa fiche.
+ */
+function AttentionPanel({
+  dashboardId, item, onClose, onOpenIssue,
+}: {
+  dashboardId: string;
+  item: AttentionItem;
+  onClose: () => void;
+  onOpenIssue: (projectId: string, issueId: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const extra = item.kind === "approval" ? item.reason : item.detail;
+
+  const decide = async (decision: "approve" | "reject") => {
+    setBusy(true);
+    try {
+      await decideApproval(item.ref_id, decision);
+      qc.invalidateQueries({ queryKey: ["pj_attention_queue", dashboardId] });
+      qc.invalidateQueries({ queryKey: ["pj_issue_approvals", item.issue_id] });
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const openIssue = () => onOpenIssue(item.pj_project_id, item.issue_id);
+
+  return (
+    <aside className={SIDE_PANEL_CLASS}>
+      <div className="flex h-header shrink-0 items-center gap-2 border-b border-border px-4">
+        <AttentionBadge kind={item.kind} />
+        <span className="text-11 text-muted-foreground">{formatRelative(item.since)}</span>
+        <button
+          type="button" onClick={onClose} title="Fermer (Échap)"
+          className="ml-auto rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <XIcon className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <h3 className="text-15 font-medium leading-snug">{attentionTitle(item)}</h3>
+        <button type="button" onClick={openIssue} className="mt-2 inline-flex items-center gap-1.5 text-left text-12 text-muted-foreground hover:text-foreground hover:underline">
+          <span className="font-mono">{item.issue_ref}</span> {item.issue_name} <ArrowSquareOutIcon className="h-3 w-3 shrink-0" />
+        </button>
+        {extra && (
+          <div className="mt-4">
+            <p className="mb-1.5 text-11 font-medium uppercase tracking-wide text-muted-foreground">
+              {item.kind === "approval" ? "Motif" : "Dernière erreur"}
+            </p>
+            <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/60 p-2.5 text-[11.5px] leading-relaxed">{extra}</pre>
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-border px-4 py-3">
+        {item.kind === "approval" ? (
+          <>
+            <Button size="sm" className="h-8 text-12" disabled={busy} onClick={() => void decide("approve")}>
+              <CheckIcon className="mr-1 h-3.5 w-3.5" /> {busy ? "…" : "Autoriser"}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 text-12" disabled={busy} onClick={() => void decide("reject")}>
+              <XIcon className="mr-1 h-3.5 w-3.5" /> Refuser
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" className="h-8 text-12" onClick={openIssue}>Revoir le brief</Button>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -294,7 +386,7 @@ function Greeting({ name }: { name: string | null }) {
   const time = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", hour12: false });
 
   return (
-    <div className="my-6 flex flex-col items-center">
+    <div className="mb-6 mt-4 flex flex-col items-center">
       <h2 className="text-center text-[30px] font-medium leading-[1.05] tracking-[-0.045em]">
         {label}
         {name ? "," : ""}

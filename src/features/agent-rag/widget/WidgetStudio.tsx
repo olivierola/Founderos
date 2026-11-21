@@ -760,7 +760,7 @@ add_action("wp_footer", function () {
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-full"
+                className="rounded-md"
                 onClick={() => {
                   navigator.clipboard.writeText(oneLiner);
                   setCopied(true);
@@ -791,7 +791,7 @@ add_action("wp_footer", function () {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-full"
+                    className="rounded-md"
                     onClick={() => {
                       navigator.clipboard.writeText(statsUrl);
                       setStatsCopied(true);
@@ -801,7 +801,7 @@ add_action("wp_footer", function () {
                     {statsCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
                     {statsCopied ? "Copié" : "Copier le lien"}
                   </Button>
-                  <Button variant="ghost" size="sm" className="rounded-full" asChild>
+                  <Button variant="ghost" size="sm" className="rounded-md" asChild>
                     <a href={statsUrl} target="_blank" rel="noopener">Ouvrir</a>
                   </Button>
                 </div>
@@ -835,10 +835,10 @@ add_action("wp_footer", function () {
                   <span className="hidden sm:inline">Modifications non enregistrées</span>
                   <span className="sm:hidden">Non enregistré</span>
                 </span>
-                <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setCfg(JSON.parse(baseline))}>
+                <Button variant="ghost" size="sm" className="rounded-md" onClick={() => setCfg(JSON.parse(baseline))}>
                   Annuler
                 </Button>
-                <Button size="sm" onClick={save} disabled={saving} className="rounded-full">
+                <Button size="sm" onClick={save} disabled={saving} className="rounded-md">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                   Enregistrer
                 </Button>
@@ -889,7 +889,7 @@ function FrameworkSnippets({ snippets }: { snippets: Record<string, string> }) {
       <Button
         variant="outline"
         size="sm"
-        className="mt-2 rounded-full"
+        className="mt-2 rounded-md"
         onClick={() => {
           navigator.clipboard.writeText(code);
           setCopied(true);

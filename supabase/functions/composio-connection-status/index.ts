@@ -5,6 +5,7 @@
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { getComposio, mapConnectionStatus, resolveScope, applyScope } from "../_shared/composio.ts";
+import { discoverToolkit } from "../_shared/composio-discovery.ts";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -56,6 +57,14 @@ Deno.serve(async (req) => {
     const status = mapConnectionStatus((account as { status?: string }).status);
 
     await admin.from("connectors").update({ status }).eq("id", connector.id);
+
+    // La connexion vient d'aboutir : ses actions rejoignent le registre des
+    // ressources (0291), une par une, au lieu de l'app entière seulement. Une
+    // connexion personnelle n'est pas une ressource à distribuer.
+    if (status === "connected" && connector.status !== "connected" && scoped.scope !== "personal") {
+      await discoverToolkit(admin, { workspaceId: workspace_id, projectId: project_id, toolkit }).catch((e) =>
+        console.error(`[composio-connection-status] découverte de ${toolkit} : ${e instanceof Error ? e.message : e}`));
+    }
 
     return jsonResponse({ status });
   } catch (err) {

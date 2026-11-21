@@ -30,7 +30,11 @@
 //     materialises outputs itself instead of relying on fragile text parsing.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { TOOL_RESULT_CAP } from "./ai.ts";
+import { TOOL_RESULT_CAP, truncateMiddle } from "./ai.ts";
+import {
+  generateImage, IMAGE_RATIOS, platformImageTarget, storeGeneratedImage,
+  type GeneratedImage, type ImageRatio, type ImageTarget,
+} from "./image-gen.ts";
 import { blockKey, sameSubstance, REPEATABLE_BLOCKS } from "./report-artisan.ts";
 import { invoiceTotal, normalizePdfSpec, PDF_BLOCK_CATALOGUE, PDF_THEMES } from "./pdf-spec.ts";
 import { removePreference, upsertPreference } from "./agent-context.ts";
@@ -40,11 +44,11 @@ import { workflowToolDefs } from "./workflow-authoring.ts";
 import {
   DOC_KINDS, isDocKind, contentForKind, renderContent, CONTENT_FORMAT_HELP,
 } from "./artifact-content.ts";
-import type { ToolDef, ToolExecutor } from "./ai.ts";
+import type { ToolCallContext, ToolDef, ToolExecutor } from "./ai.ts";
 import type { ToolTier } from "./model-router.ts";
 import { CONNECTOR_ACTIONS } from "./connector-actions.ts";
 import { defaultTimezone, parseRunAt, parseSchedule } from "./clock.ts";
-import { embedTexts, toVectorLiteral } from "./jina.ts";
+import { embedTexts, embeddingsAvailable, toVectorLiteral } from "./jina.ts";
 import type { Passage } from "./contextiq.ts";
 import { policyGate, type GateInput, type AutonomyLevel } from "./policyguard.ts";
 import {
@@ -62,6 +66,15 @@ import { apiTokenHeaders, apiTokenSubject } from "./mcp-api-token.ts";
 import { mergeMcpHeaders } from "./mcp-headers.ts";
 import { runMcpGrants } from "./mcp-servers.ts";
 import { crmEnabled, isCrmTable } from "./crm-switch.ts";
+import {
+  allowedAppActions, allowedComposioActions, allowedCustomOperations, allowsAppAction, allowsComposioAction, allowsPeer,
+  loadPoolInventory, loadPoolScope, namedWorkflowViolations, peerAccepts, poolRefusal,
+  type PoolScope,
+} from "./resource-pools.ts";
+import {
+  findResource, inventoryText, RESOURCE_GROUPS, resourceSheet, usageOf,
+  type ResourceDetails, type ResourceGroup, type ToolIndex,
+} from "./pool-discovery.ts";
 import { IdpError } from "./idp-tokens.ts";
 import {
   type ConnectorOperation,
@@ -69,13 +82,18 @@ import {
   normalizePolicy as normalizeConnectorPolicy,
 } from "./custom-connector-model.ts";
 import { executeApprovalAction, approvalScope, approvalScopePrefix, approvalScopeLabel } from "./approval-exec.ts";
-import { runTrackerAction, trackerScope } from "./tracker-actions.ts";
+import { normalizeTrackerParams, precheckTrackerAction, runTrackerAction, trackerScope } from "./tracker-actions.ts";
 import { postApprovalToBoundChannel } from "./channel-approval.ts";
 import {
   agentOpsToolDef, projectOpsToolDef, runAgentOps, runProjectOps, resolveOpsRole,
   type OpsActor, type OpsResult,
 } from "./assistant-ops.ts";
 import { connectorOpsToolDef, runConnectorOps } from "./assistant-connectors.ts";
+import { runTeamOps, teamOpsToolDef } from "./team-architect.ts";
+import { dashboardOpsToolDef, dashboardToolDef, runDashboardOps, runDashboardTool } from "./agent-dashboards.ts";
+import { formatHandoffBrief, normalizeHandoff, teammateOf, type TeamCfgLite } from "./team-handoff.ts";
+import type { AgentMachine } from "./team-machine.ts";
+import { teamMachineGuidance, teamMachineTools } from "./team-machine-tools.ts";
 import {
   ENTITY_KINDS, FACT_KINDS, curateKnowledge, describeCurate, renderKnowledgeHits, searchKnowledge as searchKnowledgeGraph,
   type CandidateEntity, type CandidateRelation,
@@ -237,6 +255,9 @@ export interface InternalToolContext {
   /** Depth of this run in a delegation chain (0 = user-initiated). create_mission
    *  refuses to delegate beyond MAX_DELEGATION_DEPTH to stop infinite loops. */
   delegationDepth?: number;
+  /** Les dashboards que ce collaborateur remplit (0301) : l'outil `dashboard`
+   *  ne lui est donné que s'il en a. Préchargés une fois par run. */
+  dashboards?: Array<{ id: string; name: string }>;
   /** The service dashboard this agent belongs to — new agents created via
    *  create_agent inherit it so the orchestrator builds its own team. */
   serviceDashboardId?: string | null;
@@ -264,6 +285,12 @@ export interface InternalToolContext {
   spawnParallel?: (
     subtasks: Array<{ label: string; brief: string; acceptance?: string }>,
   ) => Promise<string>;
+  /** Les sous-agents partent EN ARRIÈRE-PLAN (runs durables, background-agents.ts) :
+   *  spawn_parallel_agents rend aussitôt la main, les résultats arrivent plus
+   *  tard en <background-result>. Faux : les vagues en mémoire d'avant. */
+  backgroundSubagents?: boolean;
+  /** Une relance vers un sous-agent en arrière-plan encore en cours. */
+  messageSubagent?: (childRunId: string, message: string) => Promise<string>;
   /** Tool families already loaded for this run (restored from run_state.meta),
    *  so progressive disclosure survives across ticks instead of resetting. */
   loadedFamilies?: string[];
@@ -281,6 +308,49 @@ export interface InternalToolContext {
    *  (0271) : la personne a une page sous les yeux, et `page_assist` est
    *  enregistré pour la lire, la surligner ou y poser une bulle. */
   companion?: boolean;
+  /** Les pools de l'agent (0291), lus par le moteur avant de construire le
+   *  toolset. Présent : l'agent est en mode pools, et my_resources (avec
+   *  run_automation si ses pools en ont) lui est donné. */
+  poolScope?: PoolScope | null;
+  /** Outils rendus appelables un à un par my_resources (restaurés du
+   *  run_state.meta), en plus des familles chargées. */
+  unlockedTools?: string[];
+  /** Appelé quand my_resources rend des outils appelables, pour que le moteur
+   *  les garde d'un tick à l'autre et dans la sélection de schémas. */
+  onToolsUnlocked?: (names: string[]) => Promise<void>;
+  /** La machine de son équipe (0296), chargée par le moteur : présente, elle
+   *  donne les outils team_* — un poste Linux partagé où l'agent est son propre
+   *  utilisateur, avec ses dossiers protégés. */
+  teamMachine?: AgentMachine | null;
+  /** Conserve en entier un résultat d'outil trop long pour le transcrit et rend
+   *  sa référence (relue par read_tool_output) — null si la conservation a
+   *  échoué. Injecté par le moteur de tick ; absent, un résultat trop long est
+   *  coupé comme avant. Voir persistedOutputNote. */
+  persistToolOutput?: (tool: string, args: Record<string, unknown>, full: string) => Promise<string | null>;
+  /** Où générer les images de cet agent : la route « image » de son connecteur
+   *  (AI Ops → Modèles). Absent : le compte d'images de la plateforme. */
+  imageTarget?: ImageTarget | null;
+  /** Les toolkits connectés via Composio et utilisables par cet agent
+   *  (connecteurs `source=composio` du projet ou de son tableau), chargés par
+   *  le moteur. Ils sont exposés à l'agent même sans ligne d'outil. */
+  composioApps?: string[];
+}
+
+/**
+ * Le résultat d'un appel d'intégration (connector-action, composio-action).
+ * Une réponse en erreur devient un `ERROR:` — elle était rendue « HTTP 400 … »
+ * et comptée comme un succès : le disjoncteur ne la voyait pas, et l'agent
+ * relançait quatre fois « slack is not connected ». Une application non
+ * connectée le dit au modèle : ne pas réessayer, le signaler.
+ */
+async function integrationResult(res: Response, label: string, max = 8000): Promise<string> {
+  const text = await res.text();
+  if (res.ok) return cap(`HTTP ${res.status}\n${text}`, max);
+  const notConnected = /not connected|n'est connecté|not found|Credential for/i.test(text);
+  const advice = notConnected
+    ? `${label} n'est pas connecté pour ce service. NE RÉESSAIE PAS : dis-le à l'utilisateur (il le connecte dans Applications) et poursuis le reste du travail sans cette application.`
+    : "Corrige l'appel (nom d'action, paramètres — vérifie le schéma avec describe) avant de réessayer ; ne répète pas un appel identique.";
+  return cap(`ERROR: ${label} → HTTP ${res.status}\n${text}\n${advice}`, max);
 }
 
 export const MAX_DELEGATION_DEPTH = 3;
@@ -483,7 +553,7 @@ async function awaitInlineApproval(
     const st = (data as { status?: string } | null)?.status;
     if (!st || st === "pending") continue;
     if (st === "rejected") {
-      return `❌ L'utilisateur a REFUSÉ l'action « ${summary} ». Ne la refais pas — adapte-toi ou propose une alternative, puis poursuis.`;
+      return rejectionResult(summary, (data as { result?: { note?: string } } | null)?.result?.note);
     }
     if (st === "expired") {
       return `⌛ La demande d'approbation pour « ${summary} » a expiré sans décision. Rien n'a été exécuté : signale-le, ne relance pas l'action de toi-même.`;
@@ -498,6 +568,21 @@ async function awaitInlineApproval(
     return `⏳ Action « ${summary} » toujours en attente d'approbation (${fourEyes.who}, jusqu'à ${until}). Elle s'exécutera dès sa validation et le résultat te sera transmis. Ne la redemande pas.`;
   }
   return `⏳ Toujours en attente de ton approbation pour « ${summary} » — approuve/refuse au-dessus quand tu veux, puis dis-moi de continuer.`;
+}
+
+/**
+ * Le résultat d'outil d'une action REFUSÉE, d'après le « refus avec consigne »
+ * d'OpenCode (CorrectedError) : quand le validateur a dit pourquoi ou quoi
+ * faire à la place, sa consigne devient le résultat, et l'agent l'applique au
+ * lieu de deviner une alternative.
+ */
+export function rejectionResult(summary: string, note?: string | null): string {
+  const n = String(note ?? "").trim();
+  if (!n) {
+    return `❌ L'utilisateur a REFUSÉ l'action « ${summary} ». Ne la refais pas — adapte-toi ou propose une alternative, puis poursuis.`;
+  }
+  return `❌ L'utilisateur a REFUSÉ l'action « ${summary} », avec cette consigne :\n« ${n.slice(0, 1500)} »\n` +
+    "Applique-la : ne refais pas l'action telle quelle. Si la consigne demande une version modifiée, fais-la (elle repassera en validation si elle en exige une) ; si elle demande d'arrêter, arrête et dis-le.";
 }
 
 /** PolicyGuard, appelé à chaque point d'approbation. `legacyApproval` est la
@@ -601,6 +686,162 @@ async function writeRunMeta(ctx: InternalToolContext, meta: Record<string, unkno
 const WRITE_ACTION_RE = /\b(SEND|CREATE|DELETE|REMOVE|UPDATE|MODIFY|ADD|PUT|PATCH|POST|TRASH|ARCHIVE|MOVE|REPLY|FORWARD|DRAFT|SET|EDIT|INSERT|UPLOAD|MARK|WRITE|RENAME|CANCEL|MERGE|ASSIGN|INVITE|CLEAR|REVOKE|GRANT|ENABLE|DISABLE|SCHEDULE|PUBLISH|CLOSE|IMPORT|SNOOZE|LABEL|REACT|PIN|UNPIN|STAR|SUBSCRIBE|UNSUBSCRIBE|BLOCK|MUTE|APPROVE|REJECT|COMPLETE|SUBMIT|EXECUTE|TRIGGER|DUPLICATE|RESTORE|EMPTY|BATCH)\b/;
 export function isWriteAction(name: string): boolean {
   return WRITE_ACTION_RE.test(String(name ?? "").toUpperCase().replace(/[_.\-]+/g, " "));
+}
+
+/**
+ * Les outils intégrés qu'un même tour peut lancer EN MÊME TEMPS
+ * (executeToolCalls, ai.ts) : ils ne font que lire, et ne partagent aucun état
+ * entre deux appels. Liste fermée, volontairement : un outil absent passe seul,
+ * comme avant, et une erreur de classement ne coûte que de la latence.
+ * Exclus exprès : les navigateurs (une seule session), load_toolset /
+ * need_tools / use_skill (ils modifient la boîte à outils du tour), et tout ce
+ * qui écrit, envoie ou demande une approbation.
+ */
+const PARALLEL_SAFE_TOOLS = new Set([
+  "web_search", "deep_research", "read_url", "http_get",
+  "search_knowledge", "search_memory", "search_past_work", "search_context", "search_history",
+  "recall_findings", "knowledge_search", "explore_company_graph",
+  "list_artifacts", "list_assets", "list_connectors", "list_files", "list_missions",
+  "list_processes", "list_skills", "list_team_agents",
+  "read_artifact", "read_skill_file", "file_read", "file_search", "query_table",
+  "pentest_scope", "machine_info", "process_logs",
+  // Lit les pools ; ce qu'il rend appelable ne change que la liste des schémas.
+  "my_resources",
+  "read_tool_output",
+]);
+
+export function isParallelSafeTool(name: string): boolean {
+  return PARALLEL_SAFE_TOOLS.has(name);
+}
+
+/**
+ * Les outils qui relisent puis réécrivent l'état du run lui-même (brouillon de
+ * rapport, checklist, boîte à outils, mémoire, livrables) : deux appels
+ * simultanés perdraient l'écriture de l'un (lecture-modification-écriture de
+ * run_state.meta). Ils passent l'un après l'autre.
+ */
+const RUN_STATE_TOOLS = new Set([
+  "update_todos", "report_section", "add_block", "create_deliverable", "publish_artifact", "update_artifact",
+  "create_artifact", "link_artifact", "request_report", "spawn_parallel_agents", "message_subagent",
+  "load_toolset", "need_tools", "use_skill", "use_procedure", "save_memory", "remember_preference",
+  "team_memory", "knowledge_save", "render_ui", "say", "dashboard",
+]);
+
+/**
+ * Le COULOIR d'un outil pour l'ordonnanceur (ToolScheduler, ai.ts) : les
+ * appels d'un même couloir passent dans l'ordre où le modèle les a émis, les
+ * couloirs différents et les appels sans couloir tournent ensemble.
+ *
+ *   browser      — une seule session de navigateur par monde : deux clics
+ *                  simultanés se marcheraient dessus ;
+ *   exec:<monde> — commandes et écritures de fichiers d'un même monde
+ *                  d'exécution (runner, sandbox, machine d'équipe, local) :
+ *                  « écris le fichier » puis « lance les tests » doit garder
+ *                  son ordre ;
+ *   run_state    — voir RUN_STATE_TOOLS ;
+ *   null         — tout le reste : lectures, recherches, connecteurs, envois.
+ */
+export function toolLane(name: string): string | null {
+  if (PARALLEL_SAFE_TOOLS.has(name)) return null;
+  if (/browser|browse_web|page_assist/.test(name)) return "browser";
+  const world = /^(runner|sandbox|team)_/.exec(name)?.[1] ?? "local";
+  if (/(shell|_exec$|^exec|file_write|file_edit|install|jobs|run_background|process_stop|download_file|manage_files|sandbox_env|team_files|team_folders)/.test(name)) {
+    return `exec:${world}`;
+  }
+  if (RUN_STATE_TOOLS.has(name)) return "run_state";
+  return null;
+}
+
+/** Les outils qui suspendent le run pour un humain : ils partent en dernier,
+ *  une fois les autres appels du tour finis (leurs résultats sont gardés). */
+export function isHumanPauseTool(name: string): boolean {
+  return name === "ask_user";
+}
+
+/**
+ * Les outils de tenue de compte : ils ne touchent que l'état du run lui-même
+ * (checklist, mémoire, boîte à outils, message d'étape) ou suspendent le run.
+ * Les rejouer après un worker tué ne coûte rien, et les sauvegarder avant
+ * chacun doublerait les écritures du transcrit à presque chaque tour.
+ */
+const BOOKKEEPING_TOOLS = new Set([
+  "update_todos", "say", "ask_user",
+  "save_memory", "remember_preference", "team_memory", "knowledge_save",
+  "load_toolset", "need_tools", "use_skill", "use_procedure",
+  "render_ui", "guide_user", "page_assist",
+  // Remplir un dashboard réécrit la même valeur : le rejouer ne coûte rien.
+  "dashboard",
+]);
+
+/**
+ * Un appel dont l'effet sort du run : envoi, écriture, publication, commande,
+ * livrable, connecteur (les outils d'app connectés ont des noms dynamiques et
+ * tombent ici). Ce sont ceux que la reprise exacte suit : le transcrit est
+ * sauvegardé avant eux, et le registre des appels note leur départ
+ * (call-ledger.ts).
+ */
+export function hasExternalEffect(name: string): boolean {
+  return !PARALLEL_SAFE_TOOLS.has(name) && !BOOKKEEPING_TOOLS.has(name);
+}
+
+// ── Gros résultats d'outils conservés (persisted output, superharness) ──────
+//
+// Un résultat plus long que TOOL_RESULT_CAP était coupé au milieu, et le milieu
+// était perdu pour de bon : une page de 60 000 caractères, un export, une liste
+// de 400 lignes n'existaient plus qu'en tête et en queue. Il est désormais
+// conservé en entier, hors du transcrit, et le modèle reçoit le même extrait
+// qu'avant, plus la référence pour relire ce qui manque.
+
+/** Ce qui est conservé au plus d'un résultat (au-delà, la fin est coupée). */
+export const PERSISTED_OUTPUT_MAX_CHARS = 400_000;
+
+/** La ligne ajoutée au résultat dont la version complète a été conservée. */
+export function persistedOutputNote(ref: string, size: number): string {
+  return `[Sortie complète conservée : ${size} caractères, réf. « ${ref} ». Ce qui manque ci-dessus se relit avec read_tool_output(ref="${ref}", offset=…, limit=…), ou se cherche avec read_tool_output(ref="${ref}", query="…").]`;
+}
+
+/** L'extrait d'un résultat conservé : celui que l'outil aurait rendu, plus la
+ *  référence, sous le plafond du transcrit. */
+export function persistedPreview(
+  full: string, ref: string, compress?: (result: string, maxChars: number) => string,
+): string {
+  const note = persistedOutputNote(ref, full.length);
+  // truncateMiddle ajoute son repère de coupe (~40 caractères) à la longueur
+  // demandée : la marge le couvre, pour que l'extrait ne soit pas recoupé.
+  const room = Math.max(1000, TOOL_RESULT_CAP - note.length - 100);
+  let body = compress ? compress(full, room) : truncateMiddle(full, room);
+  if (body.length > room + 60) body = truncateMiddle(body, room);
+  return `${body}\n\n${note}`;
+}
+
+/** Les noms d'outils les plus proches d'un nom inconnu (distance d'édition). */
+export function closestToolNames(name: string, known: string[], max = 3): string[] {
+  const a = name.toLowerCase();
+  const dist = (b: string): number => {
+    const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      let diag = prev[0];
+      prev[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const keep = prev[j];
+        prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+        diag = keep;
+      }
+    }
+    return prev[b.length];
+  };
+  return known
+    .map((k) => {
+      const kl = k.toLowerCase();
+      // Un nom contenu dans l'autre (préfixe de serveur MCP oublié, suffixe
+      // ajouté) est un meilleur candidat que ce que dit la distance brute.
+      const d = kl.includes(a) || a.includes(kl) ? Math.min(2, dist(kl)) : dist(kl);
+      return { k, d };
+    })
+    .filter((x) => x.d <= Math.max(3, Math.floor(a.length / 3)))
+    .sort((x, y) => x.d - y.d || x.k.localeCompare(y.k))
+    .slice(0, max)
+    .map((x) => x.k);
 }
 
 /**
@@ -939,7 +1180,7 @@ export async function isRiskyAction(
 // unavailable — a memory without an embedding still works via keyword fallback.
 export async function embedMemoryVector(content: string): Promise<string | null> {
   try {
-    if (!Deno.env.get("JINA_API_KEY")) return null;
+    if (!embeddingsAvailable()) return null;
     const [vec] = await embedTexts([content.slice(0, 2000)], "retrieval.passage");
     return vec ? toVectorLiteral(vec) : null;
   } catch { return null; }
@@ -1172,7 +1413,10 @@ function slugToToolName(prefix: string, slug: string): string {
 
 interface InternalTool {
   def: ToolDef["function"];
-  run: (args: Record<string, unknown>) => Promise<string>;
+  /** `call.signal` s'interrompt quand le tour s'arrête (échéance, annulation) :
+   *  un outil qui l'écoute s'arrête proprement au lieu d'être abandonné après
+   *  le délai d'arrêt coopératif (COOPERATIVE_STOP_MS, ai.ts). */
+  run: (args: Record<string, unknown>, call?: ToolCallContext) => Promise<string>;
   /** The description carries a REQUIRED output contract (JSON schema, enum,
    *  exact format). Never truncated by compactToolDefs — a half-sent schema is
    *  worse than none, since the model is still told to follow one. */
@@ -1820,13 +2064,20 @@ Quote real persona reactions in "signals" — invented quotes make the whole art
  * project, and either project-wide or reserved to its service. Loaded once per
  * run so each `ext_*` tool can expose a real operation enum. Pass `only` to load
  * specific connectors (lazy path), otherwise the agent's granted rows are read.
+ *
+ * Mode pools (0291) : les connecteurs sont ceux des pools, et leurs opérations
+ * celles que les pools ouvrent. Quand un pool n'en ouvre qu'une partie, l'appel
+ * brut (chemin libre) est coupé : il contournerait la sélection.
  */
 export async function loadCustomConnectorSnapshots(
   admin: SupabaseClient,
   opts: { projectId: string; serviceDashboardId: string | null; agentId?: string; only?: string[] },
 ): Promise<CustomConnectorSnapshot[]> {
+  const scope = opts.agentId ? await loadPoolScope(admin, opts.agentId) : null;
   let ids = opts.only ?? [];
-  if (!opts.only && opts.agentId) {
+  if (scope) {
+    ids = (opts.only ?? [...scope.custom.keys()]).filter((id) => scope.custom.has(id));
+  } else if (!opts.only && opts.agentId) {
     const { data } = await admin.from("internal_agent_tools").select("config")
       .eq("agent_id", opts.agentId).eq("kind", "custom_connector").eq("enabled", true);
     ids = ((data ?? []) as Array<{ config: Record<string, unknown> | null }>)
@@ -1840,16 +2091,94 @@ export async function loadCustomConnectorSnapshots(
     .filter((c) => !c.service_dashboard_id || c.service_dashboard_id === opts.serviceDashboardId)
     .map((c) => {
       const policy = normalizeConnectorPolicy(c.policy);
+      const onlyOps = scope ? allowedCustomOperations(scope, String(c.id)) : null;
+      const operations = normalizeConnectorOperations(c.operations);
       return {
         id: String(c.id), name: String(c.name), slug: String(c.slug),
         description: (c.description as string | null) ?? null,
         base_url: String(c.base_url ?? ""), transport: c.transport === "relay" ? "relay" : "direct",
-        operations: normalizeConnectorOperations(c.operations),
-        allow_raw: policy.allow_raw, raw_methods: policy.raw_methods, path_allowlist: policy.path_allowlist,
+        operations: onlyOps ? operations.filter((o) => onlyOps.has(o.name)) : operations,
+        allow_raw: policy.allow_raw && !onlyOps, raw_methods: policy.raw_methods, path_allowlist: policy.path_allowlist,
         read_only: policy.read_only, approval: policy.approval,
         environment: (c.environment as string | null) ?? null,
       } satisfies CustomConnectorSnapshot;
     });
+}
+
+/**
+ * Mode pools (0291) : on ne sollicite (message, délégation, mission confiée)
+ * que les collègues de ses pools, et seulement si c'est réciproque — un
+ * collègue en mode pools qui ne nous a pas ne pourrait ni répondre ni rendre
+ * compte. Renvoie le refus, ou null si la voie est libre.
+ */
+async function a2aPoolGate(ctx: InternalToolContext, to: string, name: string): Promise<string | null> {
+  const pool = await loadPoolScope(ctx.admin, ctx.agentId);
+  if (pool && !allowsPeer(pool, to)) return poolRefusal(pool, `solliciter « ${name} »`);
+  if (!(await peerAccepts(ctx.admin, to, ctx.agentId))) {
+    return `ERROR: « ${name} » est en mode pools et ne t'a pas dans ses pools : il ne pourrait ni te répondre ni te rendre compte. ` +
+      "L'A2A doit être réciproque — demande à un humain de t'ajouter à l'un de ses pools.";
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// run_automation (mode pools) : garde-fou et compte rendu
+// ---------------------------------------------------------------------------
+
+/** Lancements par des agents d'une même automatisation, sur la fenêtre :
+ *  au-delà, c'est une boucle (une passation qui relance ce qui l'a créée). */
+const AUTOMATION_AGENT_RUNS_MAX = 5;
+const AUTOMATION_AGENT_WINDOW_MS = 10 * 60_000;
+
+function workflowStatusLabel(status: string): string {
+  return status === "paused" ? "en pause" : status === "draft" ? "en brouillon" : status === "archived" ? "archivée" : status;
+}
+
+/** Le schéma des paramètres d'une action Composio, demandé à composio-action
+ *  (mode `describe`). Au mieux : sans réponse en 8 s, la fiche s'en passe. */
+async function composioActionSchema(ctx: InternalToolContext, toolkit: string, slug: string): Promise<unknown | null> {
+  const base = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!base || !key || !toolkit || !slug) return null;
+  try {
+    const res = await fetch(`${base}/functions/v1/composio-action`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, toolkit, describe: slug }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => null) as { input_parameters?: unknown } | null;
+    return json?.input_parameters ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Le résultat d'un run d'automatisation, étape par étape. Le moteur l'exécute
+ *  en ligne : quand run-workflow répond, le run est déjà terminé. */
+async function automationOutcome(ctx: InternalToolContext, name: string, runId: string): Promise<string> {
+  const [{ data: run }, { data: steps }] = await Promise.all([
+    ctx.admin.from("agent_workflow_runs").select("status, error_message").eq("id", runId).maybeSingle(),
+    ctx.admin.from("agent_workflow_run_steps")
+      .select("position, label, block_kind, status, output, error_message")
+      .eq("run_id", runId).order("position", { ascending: true }).limit(30),
+  ]);
+  const r = run as { status?: string; error_message?: string | null } | null;
+  const status = r?.status ?? "running";
+  const head = status === "succeeded" ? `Automatisation « ${name} » exécutée (run ${runId}) : réussie.`
+    : status === "failed" ? `Automatisation « ${name} » (run ${runId}) : ÉCHEC — ${r?.error_message ?? "cause non précisée"}.`
+    : `Automatisation « ${name} » lancée (run ${runId}) : ${status === "running" ? "toujours en cours" : status}.`;
+  const lines = ((steps ?? []) as Array<{ position: number; label: string | null; block_kind: string; status: string; output: unknown; error_message: string | null }>)
+    .map((s) => {
+      let out = "";
+      if (s.error_message) out = ` — ${s.error_message}`;
+      else if (s.output != null) {
+        try { out = ` → ${JSON.stringify(s.output).slice(0, 600)}`; } catch { /* sortie illisible */ }
+      }
+      return `${s.position}. ${s.label || s.block_kind} [${s.status}]${out}`;
+    });
+  return cap([head, ...(lines.length ? ["", "Étapes :", ...lines] : [])].join("\n"), 6000);
 }
 
 export function buildInternalToolset(
@@ -1857,6 +2186,7 @@ export function buildInternalToolset(
   ctx: InternalToolContext,
 ): {
   defs: ToolDef[];
+  immediateTools: string[];
   /** Schemas for the CURRENT round. Pass as a thunk to runToolRounds so a
    *  mid-loop load_toolset / need_tools is visible on the very next round. */
   defsFor: (tier?: ToolTier) => ToolDef[];
@@ -1879,6 +2209,13 @@ export function buildInternalToolset(
   // agent doesn't have (e.g. the coding_session contract on a non-coding agent).
   const enabled = rows.filter((r) => r.enabled);
   const hasKind = (k: AgentToolRow["kind"]) => enabled.some((r) => r.kind === k);
+  // Les vrais noms d'outils de chaque source, notés au fil de la construction :
+  // my_resources traduit une ressource de pool en l'appel qui la sert.
+  const mcpFnIndex = new Map<string, Map<string, string>>();
+  const composioFnIndex = new Map<string, string>();
+  const composioToolsAvailableImmediately = new Set<string>();
+  const appFnIndex = new Map<string, string>();
+  const customFnIndex = new Map<string, string>();
 
   // HYBRID namespacing: the runner and the sandbox register OVERLAPPING tool
   // names (shell_exec, python_exec, file_write, …). In single-world modes only
@@ -2534,6 +2871,70 @@ export function buildInternalToolset(
   });
   summaryLines.push("- recall_findings: relire tes propres recherches/lectures de ce run en texte intégral (le fil est compacté, pas ce magasin).");
 
+  // The read-back half of the persisted-output contract (see persistToolOutput):
+  // a result too long for the transcript is kept whole, and this pages it.
+  // Only where results are actually kept (the tick engine injects the hook).
+  if (ctx.runId && ctx.persistToolOutput) {
+    tools.set("read_tool_output", {
+      family: "MEMORY",
+      def: {
+        name: "read_tool_output",
+        description:
+          "Relis un résultat d'outil trop long qui a été conservé en entier (ligne « Sortie complète conservée … réf. « out_… » »). Par plage (offset/limit), ou par recherche (query) : rend les passages autour de chaque occurrence, avec leur position.",
+        parameters: {
+          type: "object",
+          properties: {
+            ref: { type: "string", description: "La référence donnée dans le résultat tronqué (out_…)." },
+            offset: { type: "number", description: "Position de départ, en caractères (défaut 0)." },
+            limit: { type: "number", description: "Nombre de caractères à lire (défaut 8000, max 11000)." },
+            query: { type: "string", description: "Texte à chercher dans la sortie complète (insensible à la casse). Prioritaire sur offset." },
+          },
+          required: ["ref"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const ref = str(args.ref).trim();
+        if (!ref) return "ERROR: ref est obligatoire (la référence « out_… » donnée dans le résultat tronqué).";
+        const { data, error } = await ctx.admin
+          .from("internal_agent_tool_outputs")
+          .select("tool, label, content")
+          .eq("run_id", ctx.runId).eq("ref", ref).maybeSingle();
+        if (error) return `ERROR: lecture impossible (${error.message}).`;
+        const row = data as { tool: string; label: string | null; content: string } | null;
+        if (!row) return `ERROR: aucune sortie conservée sous « ${ref} » dans ce run. Recopie la référence exacte donnée dans le résultat tronqué.`;
+        const full = row.content ?? "";
+        const head = `[${row.tool}${row.label ? ` · ${row.label}` : ""} — ${full.length} caractères]`;
+        const query = str(args.query).trim();
+        if (query) {
+          const hay = full.toLowerCase();
+          const needle = query.toLowerCase();
+          const windows: string[] = [];
+          let from = 0;
+          let lastEnd = -1;
+          while (windows.length < 8) {
+            const at = hay.indexOf(needle, from);
+            if (at < 0) break;
+            const start = Math.max(0, at - 600, lastEnd);
+            const end = Math.min(full.length, at + needle.length + 600);
+            if (end > lastEnd) windows.push(`— position ${start}–${end} —\n${full.slice(start, end)}`);
+            lastEnd = end;
+            from = at + needle.length;
+          }
+          if (!windows.length) return `${head}\n« ${query} » n'apparaît pas dans cette sortie. Lis-la par plages (offset/limit) ou cherche un autre terme.`;
+          return `${head}\n${windows.length} passage(s) autour de « ${query} » :\n\n${windows.join("\n\n")}`;
+        }
+        const offset = Math.max(0, Math.min(full.length, Math.floor(Number(args.offset) || 0)));
+        // Sous le plafond du transcrit, en-tête compris : sinon la page lue
+        // serait elle-même coupée au milieu.
+        const limit = Math.max(200, Math.min(11_000, Math.floor(Number(args.limit) || 8_000)));
+        const end = Math.min(full.length, offset + limit);
+        const more = end < full.length ? `\n\n[… suite : read_tool_output(ref="${ref}", offset=${end})]` : "\n\n[fin de la sortie]";
+        return `${head}\ncaractères ${offset}–${end} :\n\n${full.slice(offset, end)}${more}`;
+      },
+    });
+  }
+
   tools.set("report_section", {
     def: {
       name: "report_section",
@@ -2791,6 +3192,16 @@ export function buildInternalToolset(
   });
   summaryLines.push("- list_artifacts: list existing documents/spreadsheets/presentations before creating a new one (always available).");
 
+  // Les dashboards confiés à ce collaborateur (0301) : il les remplit selon
+  // les instructions de chaque composant.
+  if (ctx.dashboards?.length) {
+    tools.set("dashboard", {
+      def: dashboardToolDef(ctx.dashboards),
+      run: (args) => runDashboardTool(ctx, args),
+    });
+    summaryLines.push("- dashboard: remplir les dashboards qui te sont confiés (brief, puis fill par composant, puis publish).");
+  }
+
   tools.set("read_artifact", {
     def: {
       name: "read_artifact",
@@ -2906,6 +3317,61 @@ export function buildInternalToolset(
     },
   });
   summaryLines.push("- render_ui: attach rich UI blocks (email_list, products, image, code, text, KPIs, charts, tables, links) and place them in your reply with the returned [[ui:N]] tag; use the block that fits the data (always available).");
+
+  // Générer une image et l'afficher dans la réponse. Le fournisseur suit celui
+  // des modèles de texte : la route « image » du connecteur de l'agent (AI Ops
+  // → Modèles), sinon le compte de la plateforme (Runware, OpenRouter). Sans
+  // l'un ni l'autre, l'outil n'est pas proposé — un outil qui ne peut que
+  // répondre « non configuré » coûte un tour pour rien.
+  const imageTarget = ctx.imageTarget ?? platformImageTarget();
+  if (imageTarget && ctx.projectId) {
+    tools.set("generate_image", {
+      family: "DELIVER",
+      def: {
+        name: "generate_image",
+        description:
+          "Génère une image à partir d'une description (illustration, visuel marketing, photo réaliste, icône, couverture, mockup…) et l'AFFICHE dans ta réponse. " +
+          "Décris précisément le sujet, le style, la composition, les couleurs et la lumière, en une ou deux phrases (en anglais si possible : les modèles d'images le comprennent mieux). " +
+          "Retourne un tag [[ui:N]] à placer seul sur sa ligne dans ta réponse finale, et l'URL publique de l'image. Une image par appel ; pour des variantes, appelle-le plusieurs fois.",
+        parameters: {
+          type: "object",
+          properties: {
+            prompt: { type: "string", description: "La description de l'image à générer (sujet, style, composition, couleurs)." },
+            ratio: { type: "string", enum: IMAGE_RATIOS, description: "Format : 1:1 (carré, défaut), 16:9 (paysage), 9:16 (portrait, story), 4:3." },
+            caption: { type: "string", description: "Légende courte affichée sous l'image (optionnelle)." },
+          },
+          required: ["prompt"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const prompt = str(args.prompt).trim();
+        if (prompt.length < 3) return "ERROR: prompt est obligatoire (la description de l'image).";
+        const ratio = (IMAGE_RATIOS as string[]).includes(str(args.ratio)) ? (str(args.ratio) as ImageRatio) : "1:1";
+        let img: GeneratedImage;
+        try {
+          img = await generateImage(imageTarget, prompt, ratio);
+        } catch (e) {
+          return `ERROR: génération d'image impossible (${imageTarget.kind} · ${imageTarget.model}) — ${e instanceof Error ? e.message : String(e)}. Reformule la description (sans contenu interdit), ou continue sans image.`;
+        }
+        const url = await storeGeneratedImage(ctx.admin, ctx.projectId, ctx.runId, img);
+        const caption = str(args.caption).trim().slice(0, 200);
+        await ctx.logEvent("ui", {
+          block: {
+            component: "image",
+            props: {
+              url, alt: prompt.slice(0, 200), caption: caption || undefined, prompt: prompt.slice(0, 600),
+              model: img.model, provider: img.provider, ratio, generated: true,
+              ...(img.width && img.height ? { width: img.width, height: img.height } : {}),
+            },
+          },
+        });
+        uiBlockCount++;
+        return `Image générée (${img.model}${img.costUsd != null ? `, ${img.costUsd.toFixed(4)} $` : ""}) : ${url}\nÉcris [[ui:${uiBlockCount}]] seul sur sa ligne dans ta réponse finale, là où l'image doit apparaître.`;
+      },
+    });
+    summaryLines.push("- generate_image: crée une image (illustration, visuel, photo, mockup) à partir d'une description et l'affiche dans ta réponse via le tag [[ui:N]] rendu.");
+  }
 
   // Always-on: read the workspace's AUTHORIZED pentest scope. Security agents
   // MUST call this before any active testing to confirm a target is in scope.
@@ -3254,6 +3720,10 @@ export function buildInternalToolset(
       }
       if (!agentId) return "ERROR: no agent to assign the mission to.";
       const isDelegation = agentId !== ctx.agentId;
+      if (isDelegation) {
+        const refused = await a2aPoolGate(ctx, agentId, who);
+        if (refused) return refused;
+      }
       // FORK-BOMB GUARD 1: inside a MISSION run, an agent may never create a
       // mission for ITSELF (this is how one bad run self-replicated 269 times).
       if (ctx.missionMode && !isDelegation) {
@@ -3331,8 +3801,9 @@ export function buildInternalToolset(
     tools.set("spawn_parallel_agents", {
       def: {
         name: "spawn_parallel_agents",
-        description:
-          "Run several INDEPENDENT subtasks in PARALLEL as ephemeral sub-agents (clones of you). Use ONLY when the subtasks do NOT depend on each other's output — they all run at the same time and you receive every result together. For sequential or dependent work, do it yourself instead. STRONG PATTERN — 'for each of N items': when the task is 'do X for each of N items' (source EACH of N products, analyse EACH of N competitors/markets/URLs), split it into ONE subtask PER item and fan them ALL out together — do NOT process them one by one. There is NO small cap: pass one subtask per item (dozens is fine); they run in concurrent waves. Each sub-agent is focused on its one subtask and cannot spawn further sub-agents.",
+        description: ctx.backgroundSubagents
+          ? "Run several INDEPENDENT subtasks in PARALLEL as sub-agents (clones of you) that work IN THE BACKGROUND. The call returns immediately with one run_id per sub-agent; each one sends you its result later as a <background-result kind=\"subagent\"> message. Meanwhile, keep working on what does not depend on them — do NOT redo their work or poll them; if nothing else is left, end your turn saying what you are waiting for and you will be woken when results arrive. Use ONLY for subtasks that do not depend on each other's output; brief each one fully (it does not see this conversation). STRONG PATTERN — 'for each of N items': ONE subtask PER item, all in one call (dozens is fine). Sub-agents cannot spawn further sub-agents. To refine a running sub-agent's instructions: message_subagent."
+          : "Run several INDEPENDENT subtasks in PARALLEL as ephemeral sub-agents (clones of you). Use ONLY when the subtasks do NOT depend on each other's output — they all run at the same time and you receive every result together. For sequential or dependent work, do it yourself instead. STRONG PATTERN — 'for each of N items': when the task is 'do X for each of N items' (source EACH of N products, analyse EACH of N competitors/markets/URLs), split it into ONE subtask PER item and fan them ALL out together — do NOT process them one by one. There is NO small cap: pass one subtask per item (dozens is fine); they run in concurrent waves. Each sub-agent is focused on its one subtask and cannot spawn further sub-agents.",
         parameters: {
           type: "object",
           properties: {
@@ -3433,7 +3904,38 @@ export function buildInternalToolset(
           : result;
       },
     });
-    summaryLines.push("- spawn_parallel_agents: fan out INDEPENDENT subtasks to ephemeral parallel sub-agents and collect their results (one per item — no small cap; runs in concurrent waves).");
+    summaryLines.push(ctx.backgroundSubagents
+      ? "- spawn_parallel_agents: launch INDEPENDENT subtasks as background sub-agents; each sends its result back later as a <background-result> message (one per item — no small cap). message_subagent refines a running one."
+      : "- spawn_parallel_agents: fan out INDEPENDENT subtasks to ephemeral parallel sub-agents and collect their results (one per item — no small cap; runs in concurrent waves).");
+  }
+
+  // Une relance vers un sous-agent en arrière-plan encore en cours (OpenCode :
+  // rappeler `subagent` avec son sessionID). Le message entre dans son
+  // transcrit à son prochain tick.
+  if (!ctx.isSubagent && ctx.backgroundSubagents && ctx.messageSubagent) {
+    tools.set("message_subagent", {
+      def: {
+        name: "message_subagent",
+        description:
+          "Send a follow-up instruction to one of YOUR background sub-agents that is still running (precise its brief, add a constraint, ask it to stop early and report). It reads it at its next step. A finished sub-agent cannot receive messages: launch a new one with its result in the brief instead.",
+        parameters: {
+          type: "object",
+          properties: {
+            run_id: { type: "string", description: "The sub-agent's run_id, as returned by spawn_parallel_agents." },
+            message: { type: "string", description: "The instruction to send, self-contained." },
+          },
+          required: ["run_id", "message"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const runId = str(args.run_id).trim();
+        const message = str(args.message).trim();
+        if (!runId || !message) return "ERROR: run_id and message are required.";
+        return await ctx.messageSubagent!(runId, message);
+      },
+    });
+    summaryLines.push("- message_subagent: send a follow-up instruction to a background sub-agent that is still running.");
   }
 
   // Always-on: create a NEW teammate agent. Safe — an agent row is passive (it
@@ -3534,6 +4036,21 @@ export function buildInternalToolset(
       def: connectorOpsToolDef(),
       run: async (args) => deliver(await runConnectorOps(await opsActor(), str(args.action), opsParams(args))),
     });
+    // Des équipes entières, d'une phrase : conception (plan + score qualité)
+    // puis déploiement — même implémentation que le panneau et l'écran Teamz.
+    tools.set("manage_teams", {
+      family: "ADMIN",
+      def: teamOpsToolDef(),
+      run: async (args) => deliver(await runTeamOps(await opsActor(), str(args.action), opsParams(args))),
+    });
+    // Les dashboards d'agents (0301) : conçus sur demande, remplis par un collaborateur.
+    tools.set("manage_dashboards", {
+      family: "ADMIN",
+      def: dashboardOpsToolDef(),
+      run: async (args) => deliver(await runDashboardOps(await opsActor(), str(args.action), opsParams(args))),
+    });
+    summaryLines.push("- manage_teams: concevoir et déployer des équipes entières d'agents spécialisés (Teamz) qui travaillent en groupe.");
+    summaryLines.push("- manage_dashboards: créer des dashboards (KPI, courbes, tableaux, alertes) remplis par un collaborateur selon des instructions par composant.");
     summaryLines.push("- manage_agents: créer, lire et configurer les agents (prompt, connecteurs, skills, outils, MCP).");
     summaryLines.push("- manage_connectors: outils internes de l'entreprise (Argo CD, Vault, Grafana…) : rédiger un brouillon de connecteur, le confier à un collaborateur.");
     summaryLines.push("- manage_projects: le suivi de travail (projets, work items, équipes, pages) et la mise au travail des agents.");
@@ -3717,8 +4234,11 @@ export function buildInternalToolset(
   // quand l'agent le demande. Charger douze procédures entières dans chaque
   // prompt serait exactement le fichier d'instructions monolithique que les
   // workflows existent pour remplacer.
+  //
+  // Mode pools (0291) : les procédures sont celles des pools — d'un autre
+  // service aussi, un pool peut en donner — et aucune autre, même du service.
   // ---------------------------------------------------------------------------
-  if (ctx.serviceDashboardId) {
+  if (ctx.poolScope ? ctx.poolScope.procedures.size > 0 : !!ctx.serviceDashboardId) {
     tools.set("use_procedure", {
       family: "PLAN",
       def: {
@@ -3744,15 +4264,20 @@ export function buildInternalToolset(
       run: async (args) => {
         const id = str(args.id).trim();
         const mode = str(args.mode) === "run" ? "run" : "read";
+        const pool = await loadPoolScope(ctx.admin, ctx.agentId);
         if (!id) {
-          const { data } = await ctx.admin.from("agent_workflows")
-            .select("id, name, description")
-            .eq("service_dashboard_id", ctx.serviceDashboardId!)
+          const base = ctx.admin.from("agent_workflows").select("id, name, description");
+          const scoped = pool
+            ? base.in("id", pool.procedures.size ? [...pool.procedures] : ["00000000-0000-0000-0000-000000000000"])
+            : base.eq("service_dashboard_id", ctx.serviceDashboardId ?? "00000000-0000-0000-0000-000000000000");
+          const { data } = await scoped
             .eq("kind", "procedure").eq("status", "active")
             .order("updated_at", { ascending: false }).limit(30);
           const rows = (data ?? []) as Array<{ id: string; name: string; description: string | null }>;
           if (rows.length === 0) {
-            return "Aucune procédure écrite pour ce service. Traite la demande à ta façon, et si le cas se répète, propose d'en écrire une (propose_mission).";
+            return pool
+              ? "Aucune procédure active dans tes pools. Traite la demande à ta façon, et si le cas se répète, propose d'en écrire une (propose_mission)."
+              : "Aucune procédure écrite pour ce service. Traite la demande à ta façon, et si le cas se répète, propose d'en écrire une (propose_mission).";
           }
           return JSON.stringify(rows.map((r) => ({
             id: r.id, nom: r.name, quand_s_en_servir: r.description ?? "(non précisé)",
@@ -3768,7 +4293,11 @@ export function buildInternalToolset(
         // On vérifie le service ET la nature : une automatisation n'est pas un
         // texte à suivre, et rendre son playbook ferait exécuter à la main ce
         // que le moteur exécute déjà tout seul.
-        if (!wf || wf.service_dashboard_id !== ctx.serviceDashboardId) return "ERROR: procédure introuvable dans ce service.";
+        if (pool) {
+          if (!wf) return "ERROR: procédure introuvable.";
+          if (pool.automations.has(id)) return `« ${wf.name} » est une automatisation : lance-la avec run_automation(id="${id}"), il n'y a rien à suivre.`;
+          if (!pool.procedures.has(id)) return poolRefusal(pool, `la procédure « ${wf.name} »`);
+        } else if (!wf || wf.service_dashboard_id !== ctx.serviceDashboardId) return "ERROR: procédure introuvable dans ce service.";
         if (wf.kind !== "procedure") return "ERROR: ceci est une automatisation — elle s'exécute toute seule, il n'y a rien à suivre.";
         if (wf.status !== "active") return `La procédure « ${wf.name} » n'est pas active : ne t'en sers pas.`;
         if (!wf.document.trim()) return `La procédure « ${wf.name} » est vide.`;
@@ -4046,7 +4575,7 @@ export function buildInternalToolset(
         additionalProperties: false,
       },
     },
-    run: async (args) => {
+    run: async (args, call) => {
       const url = normalizeUrl(str(args.url));
       if (!url) {
         return `ERROR: « ${str(args.url).slice(0, 80)} » n'est pas une URL. Passe une adresse complète, par exemple https://api.exemple.com/v1/data. Pour lire des données internes, utilise query_table ou un outil connecteur plutôt que http_get.`;
@@ -4057,7 +4586,7 @@ export function buildInternalToolset(
       }
       try {
         const headers = (args.headers && typeof args.headers === "object") ? args.headers as Record<string, string> : {};
-        const res = await fetch(url, { headers: { Accept: "application/json, text/*", ...headers } });
+        const res = await fetch(url, { headers: { Accept: "application/json, text/*", ...headers }, signal: call?.signal });
         const body = await res.text();
         return cap(`HTTP ${res.status}\n${body}`, 8000);
       } catch (e) {
@@ -4122,6 +4651,7 @@ export function buildInternalToolset(
       name: "user_browser",
       description:
         "Agir dans le navigateur de l'utilisateur — ses onglets ouverts, ses sessions déjà connectées — via l'extension FounderOS. " +
+        "Ce n'est PAS le navigateur de la machine d'équipe : celui-là, c'est team_browser. " +
         "ONGLETS : tabs (lister tous les onglets ouverts avec leur tab_id), switch (mettre un onglet au premier plan), " +
         "open (ouvrir une url dans un NOUVEL onglet), close, navigate (aller sur une url). " +
         "navigate RÉUTILISE automatiquement un onglet déjà ouvert sur le même site s'il en existe un, sinon il en ouvre un nouveau : " +
@@ -4979,7 +5509,7 @@ export function buildInternalToolset(
       // Semantic search first (meaning-based, finds memories that don't share
       // the exact words), keyword ilike as fallback.
       try {
-        if (Deno.env.get("JINA_API_KEY")) {
+        if (embeddingsAvailable()) {
           const [qvec] = await embedTexts([query.slice(0, 500)], "retrieval.query", {
             workspace_id: ctx.workspaceId, project_id: ctx.projectId,
             agent_id: ctx.agentId, run_id: ctx.runId, feature: "agent-search-memory",
@@ -5957,6 +6487,21 @@ export function buildInternalToolset(
     );
   }
 
+  // ── Machine d'équipe (0296) ──────────────────────────────────────────────
+  // Indépendante du mode d'exécution de l'agent : c'est son ÉQUIPE qui a une
+  // machine. Des noms à part (team_*) pour coexister avec le runner et le
+  // sandbox sans ambiguïté sur l'endroit où une commande s'exécute.
+  if (ctx.teamMachine) {
+    for (const [name, t] of teamMachineTools(ctx.admin, ctx.teamMachine, compressExecResult)) tools.set(name, t);
+    sandboxGuidance.push(...teamMachineGuidance(ctx.teamMachine));
+  } else {
+    // Sans cette ligne, un agent à qui l'on parle de « la team machine » prenait
+    // le premier outil approchant (user_browser, le navigateur de la personne).
+    sandboxGuidance.push(
+      "  TEAM MACHINE: none is assigned to you, so you have no team_* tools. If asked to work on \"the team machine\", say so plainly: a human can give you one in Machines > Attributions (for you alone, or for a team you belong to). Never substitute user_browser (the user's own browser) or another execution world for it.",
+    );
+  }
+
   // -------------------------------------------------------------------------
   // MCP servers: expose each attached server's discovered (cached) tools as
   // namespaced mcp_<server>_<tool> tools. Execution is a JSON-RPC tools/call to
@@ -5971,6 +6516,8 @@ export function buildInternalToolset(
         if (!t?.name) continue;
         const toolName = `mcp_${serverSlug}_${t.name}`.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 60);
         if (tools.has(toolName)) continue;
+        if (!mcpFnIndex.has(server.id)) mcpFnIndex.set(server.id, new Map());
+        mcpFnIndex.get(server.id)!.set(t.name, toolName);
         const schema = t.inputSchema && typeof t.inputSchema === "object" && (t.inputSchema as { type?: unknown }).type === "object"
           ? t.inputSchema as ToolDef["function"]["parameters"]
           : { type: "object", properties: {}, additionalProperties: true } as ToolDef["function"]["parameters"];
@@ -6035,7 +6582,12 @@ export function buildInternalToolset(
                 return `ERROR: refusé par la politique d'accès (${pre.reason}). Ce tool n'est pas autorisé pour cette personne ou cet agent : ne réessaie pas, signale-le.`;
               }
             }
-            const out = await mcpCallTool(server.url, headers, t.name, args, sess, transport);
+            // Plus que le plafond du transcrit quand le moteur sait conserver un
+            // gros résultat : l'extrait vient de l'exécuteur, le reste se relit.
+            const out = await mcpCallTool(server.url, headers, t.name, args, sess, {
+              ...transport,
+              ...(ctx.persistToolOutput ? { maxChars: PERSISTED_OUTPUT_MAX_CHARS } : {}),
+            });
             const outcome = classifyMcpResult(out);
             report(outcome.status, outcome.reason);
             // Action soumise à approbation par le serveur (D6) : on enregistre
@@ -6099,6 +6651,7 @@ export function buildInternalToolset(
   // Collaboration: discover, message and delegate to peer agents + team memory.
   // -------------------------------------------------------------------------
   if (ctx.collaborationEnabled !== false) {
+    const a2aGate = (to: string, name: string) => a2aPoolGate(ctx, to, name);
     tools.set("list_team_agents", {
       def: {
         name: "list_team_agents",
@@ -6133,10 +6686,14 @@ export function buildInternalToolset(
           : ctx.serviceDashboardId ? all.eq("service_dashboard_id", ctx.serviceDashboardId)
           : all.is("service_dashboard_id", null);
         const { data } = await scoped.limit(40);
-        const rows = (data ?? []) as Array<{
+        const pool = await loadPoolScope(ctx.admin, ctx.agentId);
+        const rows = ((data ?? []) as Array<{
           id: string; name: string; role: string | null; skills: string[] | null;
           description: string | null; service_dashboard_id: string | null; parent_agent_id: string | null;
-        }>;
+        }>).filter((r) => !pool || allowsPeer(pool, r.id));
+        if (rows.length === 0 && pool) {
+          return "Tes pools ne contiennent aucun collègue joignable : tu travailles seul. Si tu as besoin d'un autre agent, demande à un humain de l'ajouter à l'un de tes pools.";
+        }
         if (rows.length === 0) {
           return scope === "service"
             ? "Aucun autre agent dans ton service. Rappelle list_team_agents avec scope=\"company\" pour voir le reste de l'entreprise."
@@ -6233,6 +6790,8 @@ export function buildInternalToolset(
         if (!peer || (peer as any).is_archived || (peer as any).collaboration_enabled === false) {
           return "ERROR: recipient is not a collaborating agent on this project.";
         }
+        const refusedMsg = await a2aGate(to, (peer as { name: string }).name);
+        if (refusedMsg) return refusedMsg;
         // Poser une QUESTION à un autre service reste libre — c'est déléguer du
         // travail qui se gouverne (voir delegate_mission). On se contente donc
         // de tracer la frontière franchie, pour que l'échange inter-services
@@ -6298,6 +6857,8 @@ export function buildInternalToolset(
         if (!peer || (peer as any).is_archived || (peer as any).collaboration_enabled === false) {
           return "ERROR: recipient is not a collaborating agent on this project.";
         }
+        const refusedDelegation = await a2aGate(to, (peer as { name: string }).name);
+        if (refusedDelegation) return refusedDelegation;
 
         // ── La frontière de service (0213) ────────────────────────────────
         // Déléguer DANS son service est une affaire d'équipe. Déléguer À un
@@ -6345,6 +6906,9 @@ export function buildInternalToolset(
             delegation_depth: childDepth,
             delegated_by_agent: ctx.agentId,
             report_back_to_agent: reportBack ? ctx.agentId : null,
+            // Une passation (handoff_to_teammate) porte ses critères de fin :
+            // le contrat de succès du destinataire en est dérivé.
+            ...(str(args.acceptance_criteria) ? { acceptance_criteria: str(args.acceptance_criteria).slice(0, 3000) } : {}),
           })
           .select("id")
           .single();
@@ -6385,6 +6949,71 @@ export function buildInternalToolset(
           }
         }
         return `Mission « ${title} » déléguée à ${(peer as { name: string }).name}${crossService ? " (autre service)" : ""} et démarrée.${reportBack ? " Il te fera son retour." : ""}`;
+      },
+    });
+
+    // ── La passation structurée entre coéquipiers (Teamz) ───────────────────
+    // Un paquet (objectif, déjà fait, livrables, critères de fin, échéance)
+    // plutôt qu'un brief libre : le destinataire ne refait rien, et ses
+    // critères de fin deviennent le contrat que sa boucle vérifie.
+    tools.set("handoff_to_teammate", {
+      def: {
+        name: "handoff_to_teammate",
+        description:
+          "Passe la main à un COÉQUIPIER de ton équipe avec un paquet de passation structuré : il reçoit une mission qu'il démarre aussitôt, et ses critères de fin sont vérifiés avant qu'il ne la clôture. " +
+          "À utiliser quand une étape relève du rôle d'un coéquipier (voir « Ta place dans le flux » dans ton prompt). Pour une simple question, send_message_to_agent.",
+        parameters: {
+          type: "object",
+          properties: {
+            to: { type: "string", description: "Prénom ou agent_id du coéquipier." },
+            objective: { type: "string", description: "Ce qu'il doit obtenir, en une phrase." },
+            done: { type: "string", description: "Ce qui est DÉJÀ fait (avec liens, identifiants, chiffres) : il ne le refera pas." },
+            deliverables: { type: "array", items: { type: "string" }, description: "Livrables joints : titres, URLs, identifiants." },
+            done_when: { type: "array", items: { type: "string" }, description: "1 à 5 critères de fin VÉRIFIABLES (un livrable nommé, un chiffre, un état)." },
+            deadline: { type: "string", description: "Échéance, si elle compte." },
+            report_back: { type: "boolean", description: "Te renvoyer son rapport final (défaut vrai)." },
+          },
+          required: ["to", "objective", "done_when"],
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const packet = normalizeHandoff(args);
+        if (typeof packet === "string") return packet;
+        if (!ctx.serviceDashboardId) return "ERROR: tu n'es rattaché à aucun service, donc à aucune équipe. Utilise delegate_mission.";
+        const { data: dash } = await ctx.admin.from("service_dashboards").select("settings").eq("id", ctx.serviceDashboardId).maybeSingle();
+        const teams = ((((dash as { settings?: Record<string, unknown> } | null)?.settings?.teams) ?? []) as TeamCfgLite[])
+          .filter((t) => t && Array.isArray(t.agent_ids));
+        const mine = teams.find((t) => t.agent_ids.includes(ctx.agentId));
+        const { data: mates } = mine
+          ? await ctx.admin.from("internal_agents").select("id, name").in("id", mine.agent_ids).eq("is_archived", false)
+          : { data: [] as Array<{ id: string; name: string }> };
+        const names = new Map(((mates ?? []) as Array<{ id: string; name: string }>).map((m) => [m.id, m.name]));
+        const target = teammateOf(teams, ctx.agentId, packet.to, names);
+        if ("error" in target) return target.error;
+        const fromName = ctx.agentName ?? names.get(ctx.agentId) ?? "un coéquipier";
+        const delegate = tools.get("delegate_mission");
+        if (!delegate) return "ERROR: la délégation est indisponible pour cet agent.";
+        const out = await delegate.run({
+          to_agent_id: target.agentId,
+          title: packet.objective.slice(0, 160),
+          brief: formatHandoffBrief(packet, fromName, target.team.name),
+          report_back: packet.reportBack,
+          acceptance_criteria: packet.doneWhen.map((d) => `- ${d}`).join("\n"),
+        });
+        if (String(out).startsWith("ERROR")) return String(out);
+        // Visible dans le Live Space et la constellation de l'équipe (0298).
+        const threadId = await getOrCreateThread(ctx, target.agentId).catch(() => null);
+        if (threadId) {
+          await ctx.admin.from("internal_agent_a2a_messages").insert({
+            thread_id: threadId, workspace_id: ctx.workspaceId, project_id: ctx.projectId,
+            from_agent: ctx.agentId, to_agent: target.agentId, kind: "handoff", status: "answered",
+            content: `Passation : ${packet.objective}\nCritères de fin : ${packet.doneWhen.join(" · ")}`.slice(0, 4000),
+            from_dashboard_id: ctx.serviceDashboardId ?? null, to_dashboard_id: ctx.serviceDashboardId ?? null, cross_service: false,
+          }).then(() => {}, () => {});
+        }
+        await ctx.logEvent("status", { message: `🤝 Passation à ${names.get(target.agentId) ?? "un coéquipier"} : ${packet.objective.slice(0, 140)}` }).catch(() => {});
+        return `${out}\nPassation enregistrée : ${packet.doneWhen.length} critère(s) de fin seront vérifiés avant clôture. Ne refais pas sa partie ; continue la tienne.`;
       },
     });
 
@@ -6578,6 +7207,12 @@ export function buildInternalToolset(
           properties: {
             query: { type: "string", description: "Natural-language query." },
             limit: { type: "number", description: "Max results (default 5, max 10)." },
+            // Seulement parmi les collections ouvertes : sans liste, la
+            // recherche couvre le projet, et un id venu d'ailleurs ne doit
+            // rien ouvrir de plus (la fonction SQL ne vérifie pas le projet).
+            ...(collectionIds.length > 0
+              ? { collection_id: { type: "string", description: "Optional: search ONE of your collections only (its id, as listed by my_resources)." } }
+              : {}),
           },
           required: ["query"],
           additionalProperties: false,
@@ -6587,6 +7222,13 @@ export function buildInternalToolset(
         const query = str(args.query);
         if (!query) return Promise.resolve("ERROR: query is required.");
         const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 10);
+        const only = str(args.collection_id).trim();
+        if (only && collectionIds.length > 0) {
+          if (!collectionIds.includes(only)) {
+            return Promise.resolve(`ERROR: collection "${only}" is not one of yours. Yours: ${collectionIds.join(", ")} (see my_resources).`);
+          }
+          return searchKnowledge(ctx, query, limit, [only]);
+        }
         return searchKnowledge(ctx, query, limit, collectionIds);
       },
     });
@@ -6645,11 +7287,37 @@ export function buildInternalToolset(
   // connector_action rows: one tool per provider that exposes safe actions
   // (CRM / HR). The agent picks an action + params; the connector-action edge
   // function decrypts the credential and calls the official API.
+  // ── Applications connectées via Composio (onglet « Applications ») ────────
+  // Ce que l'espace a branché via Composio sert à tous ses agents — c'est ce
+  // que dit la page. Avant, un agent n'y accédait que par une ligne d'outil
+  // posée à la main, et un agent dont la ligne visait le connecteur MAISON de
+  // la même application (« slack » du coffre) échouait sur « not connected »
+  // alors que Slack était connecté via Composio, un onglet plus loin. Le coffre
+  // de l'installation étant vide, c'était le cas de tous ces outils.
+  const composioApps = ctx.composioApps ?? [];
+  const normApp = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const APP_ALIASES: Record<string, string> = { teams: "microsoftteams", msteams: "microsoftteams", gcal: "googlecalendar", gdrive: "googledrive" };
+  const composioFor = (provider: string): string | null => {
+    const n = APP_ALIASES[normApp(provider)] ?? normApp(provider);
+    return composioApps.find((t) => normApp(t) === n) ?? null;
+  };
+  /** Les toolkits Composio à exposer : lignes explicites, connecteurs maison
+   *  remplacés, applications partagées. */
+  const composioToolkits = new Set<string>();
+
   for (const row of enabled.filter((r) => r.kind === "connector_action")) {
+    // Même application connectée via Composio : c'est elle qui sert (le
+    // connecteur maison n'a pas d'identifiant dans le coffre).
+    const viaComposio = composioFor(str(row.config?.provider));
+    if (viaComposio) { composioToolkits.add(viaComposio); continue; }
     const provider = str(row.config?.provider);
-    const actions = CONNECTOR_ACTIONS[provider];
+    // Mode pools (0293) : seules les actions que les pools ouvrent figurent
+    // dans l'enum — l'agent ne voit pas ce qu'on ne lui a pas donné.
+    const onlyApp = ctx.poolScope ? allowedAppActions(ctx.poolScope, provider) : null;
+    const actions = onlyApp ? CONNECTOR_ACTIONS[provider]?.filter((a) => onlyApp.includes(a.name.toLowerCase())) : CONNECTOR_ACTIONS[provider];
     if (!provider || !actions || actions.length === 0) continue;
     const toolName = slugToToolName("use", provider);
+    appFnIndex.set(provider.toLowerCase(), toolName);
     const writeNames = new Set(actions.filter((a) => a.write).map((a) => a.name));
     const actionList = actions.map((a) => `${a.name}${a.write ? " [write]" : ""} (${a.description})`).join("; ");
     const hasWrite = writeNames.size > 0;
@@ -6685,6 +7353,9 @@ export function buildInternalToolset(
       run: async (args) => {
         const action = str(args.action);
         const params = (args.params && typeof args.params === "object") ? args.params : {};
+        // Les pools relus à l'appel : un pool modifié pendant le run compte.
+        const pool = await loadPoolScope(ctx.admin, ctx.agentId);
+        if (pool && !allowsAppAction(pool, provider, action)) return poolRefusal(pool, `l'action ${action} de ${provider}`);
         // Write actions need human approval unless the agent is on autopilot —
         // and PolicyGuard may tighten that per team and environment.
         const g = await gate(ctx, {
@@ -6711,7 +7382,7 @@ export function buildInternalToolset(
             provider, action, params,
           }),
         });
-        return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
+        return await integrationResult(res, `${provider} · ${action}`);
       },
     });
     summaryLines.push(`- ${toolName}: act on ${provider} (${actions.map((a) => a.name).join(", ")}).`);
@@ -6725,9 +7396,18 @@ export function buildInternalToolset(
   // fixed action list is known at build time — discovery happens lazily at
   // call time (action omitted → composio-action lists the toolkit's tools).
   for (const row of enabled.filter((r) => r.kind === "composio_toolkit")) {
-    const toolkit = str(row.config?.toolkit);
-    if (!toolkit) continue;
+    const t = str(row.config?.toolkit);
+    if (t) composioToolkits.add(t);
+  }
+  // Partagées par tous les agents du service — sauf en mode pools, où les
+  // pools décident seuls de ce que l'agent atteint. AGENT_SHARED_APPS=0 coupe.
+  if (!ctx.poolScope && Deno.env.get("AGENT_SHARED_APPS") !== "0") {
+    for (const t of composioApps) composioToolkits.add(t);
+  }
+  for (const toolkit of composioToolkits) {
     const toolName = slugToToolName("use", toolkit);
+    composioFnIndex.set(toolkit.toLowerCase(), toolName);
+    composioToolsAvailableImmediately.add(toolName);
     tools.set(toolName, {
       // Short, but every clause is operative: the discover-then-call protocol and
       // the reads-run-directly rule. Truncated at 140 chars both were lost, which
@@ -6737,13 +7417,14 @@ export function buildInternalToolset(
       def: {
         name: toolName,
         description:
-          `Work with ${toolkit} (via Composio). Call with no "action" first to list its available ` +
-          `tool slugs, then call again with the chosen action and its arguments.` +
+            `Work with ${toolkit} (via Composio). Call with no "action" to list available tool slugs. ` +
+            `Set "describe" to a slug to inspect its argument schema, then call with "action" and "params".` +
           (!ctx.autopilot ? " Read actions (fetch/list/get/search) run DIRECTLY — no approval. Only write/send/delete actions ask for a quick inline approval (the user can also approve the whole toolkit at once), so don't warn about approval for reads." : ""),
         parameters: {
           type: "object",
           properties: {
             action: { type: "string", description: "A Composio tool slug (e.g. GITHUB_CREATE_AN_ISSUE). Omit to discover available slugs." },
+            describe: { type: "string", description: "A Composio tool slug; returns its argument schema without executing it." },
             params: { type: "object", description: "Arguments for the tool (see its description from discovery)." },
             reason: { type: "string", description: "One-sentence justification (used for approval)." },
             use_personal_account: {
@@ -6757,6 +7438,7 @@ export function buildInternalToolset(
       },
       run: async (args) => {
         const action = str(args.action);
+        const describe = str(args.describe);
         const params = (args.params && typeof args.params === "object") ? args.params : {};
         // Connection scope (migration 0177): the dashboard's shared account by
         // default, the user's own only when the model explicitly asks for it.
@@ -6768,14 +7450,34 @@ export function buildInternalToolset(
         const base = Deno.env.get("SUPABASE_URL");
         const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
         if (!base || !key) return "ERROR: composio actions are not configured.";
-        // Discovery (no action) is read-only — runs directly, never gated.
+        // Mode pools (0291) : seules les actions que les pools ouvrent.
+        const pool = await loadPoolScope(ctx.admin, ctx.agentId);
+        const onlyActions = pool ? allowedComposioActions(pool, toolkit) : null;
+        if (describe) {
+          if (pool && !allowsComposioAction(pool, toolkit, describe)) {
+            return poolRefusal(pool, `le schéma de l'action ${describe} de ${toolkit}`);
+          }
+          const res = await fetch(`${base}/functions/v1/composio-action`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, toolkit, describe }),
+          });
+          return await integrationResult(res, `schéma ${toolkit} · ${describe}`);
+        }
+        // Discovery (no action or schema request) is read-only — runs directly.
         if (!action) {
           const res = await fetch(`${base}/functions/v1/composio-action`, {
             method: "POST",
             headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
             body: JSON.stringify({ workspace_id: ctx.workspaceId, project_id: ctx.projectId, toolkit, ...scopeBody }),
           });
-          return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
+          const listing = await integrationResult(res, `actions ${toolkit}`);
+          return onlyActions
+            ? `${listing}\n\nTes pools n'ouvrent sur ${toolkit} que : ${onlyActions.join(", ") || "aucune action"}. Les autres seront refusées.`
+            : listing;
+        }
+        if (pool && !allowsComposioAction(pool, toolkit, action)) {
+          return poolRefusal(pool, `l'action ${action} de ${toolkit}`);
         }
         // Only WRITE / delete / send actions need approval — reads (fetch, list,
         // get, search…) run directly so simple lookups never nag the user.
@@ -6802,7 +7504,7 @@ export function buildInternalToolset(
             toolkit, tool_slug: action, arguments: params, ...scopeBody,
           }),
         });
-        return cap(`HTTP ${res.status}\n${await res.text()}`, 8000);
+        return await integrationResult(res, `${toolkit} · ${action}`);
       },
     });
     summaryLines.push(`- ${toolName}: act on ${toolkit} via Composio.`);
@@ -6851,6 +7553,7 @@ export function buildInternalToolset(
         " Credentials are handled server-side: never ask for, invent or pass a token. [masqué] in a response = a secret that was redacted."
       : `Internal tool "${label}". Call with no "operation" to list its operations, then call again with one.`;
 
+    customFnIndex.set(connectorId, toolName);
     tools.set(toolName, {
       // The operation list IS the contract (names go into a JSON-schema enum).
       incompressible: true,
@@ -7694,9 +8397,11 @@ export function buildInternalToolset(
       run: async (args) => {
         const rawAction = str(args.action);
         const action = ALIASES[rawAction] ?? rawAction;
-        const params = (args.params && typeof args.params === "object")
+        // Ce qui se déduit (le projet d'un work item…) est complété ici : c'est
+        // la version complète qui part en approbation, et qui s'exécutera.
+        const params = await normalizeTrackerParams(ctx.admin, action, (args.params && typeof args.params === "object")
           ? args.params as Record<string, unknown>
-          : {};
+          : {});
 
         // Une action qui n'existe pas n'est ni une lecture ni une écriture :
         // on le dit tout de suite, sans jamais la soumettre à approbation.
@@ -7717,6 +8422,13 @@ export function buildInternalToolset(
         const pid = str(params.project_id);
         if (pid && !allowed.has(pid)) {
           return `ERREUR : le projet ${pid} n'est pas dans ton périmètre. Utilise list_projects.`;
+        }
+
+        // Une écriture incomplète est renvoyée à l'agent tout de suite, au lieu
+        // d'être soumise à une personne pour échouer après son accord.
+        if (!READS.has(action)) {
+          const incomplete = precheckTrackerAction(action, params);
+          if (incomplete) return incomplete;
         }
 
         if (!READS.has(action)) {
@@ -8272,6 +8984,10 @@ export function buildInternalToolset(
   const availableScopes = Object.entries(SEARCH_SCOPES)
     .filter(([, s]) => tools.has(s.target))
     .map(([scope]) => scope);
+  // Une collection précise (mode pools, my_resources) : search_knowledge la
+  // prend quand l'agent en a plusieurs — search_context la lui relaie.
+  const kbProps = (tools.get("search_knowledge")?.def.parameters as { properties?: Record<string, unknown> } | undefined)?.properties;
+  const kbTakesCollection = !!kbProps && "collection_id" in kbProps;
   if (availableScopes.length) {
     // Hide the pure-READ aliases only. team_memory also WRITES (action="add"),
     // so it stays advertised — folding it away would cost the agent its ability
@@ -8297,6 +9013,9 @@ export function buildInternalToolset(
             query: { type: "string", description: "Keyword, phrase, identifier, path or error string to find." },
             scope: { type: "string", enum: availableScopes, description: "Where to look." },
             limit: { type: "number", description: "Max results (default 8)." },
+            ...(kbTakesCollection
+              ? { collection_id: { type: "string", description: "scope='kb' only: search ONE of your knowledge collections (its id, from my_resources)." } }
+              : {}),
           },
           required: ["query", "scope"],
           additionalProperties: false,
@@ -8331,6 +9050,11 @@ export function buildInternalToolset(
   const CORE_TOOLS = new Set([
     "ask_user", "update_todos", "create_deliverable", "report_section", "request_report",
     "search_context", "load_toolset", "need_tools", "say", "use_skill", "read_skill_file",
+    ...composioToolsAvailableImmediately,
+    // Mode pools : savoir ce qu'on a ne doit jamais coûter un tour.
+    "my_resources",
+    // Un résultat tronqué renvoie à cet outil : il doit être là quand il le dit.
+    "read_tool_output",
     // Initiative must never cost a load_toolset round. propose_mission is the
     // ONLY safe channel for an agent to act on something it noticed (it files a
     // paused backlog item, it executes nothing) — behind a lazily-loaded family
@@ -8407,6 +9131,272 @@ export function buildInternalToolset(
     },
   });
 
+  // ---------------------------------------------------------------------------
+  // Mode pools (0291) : découvrir ses pools, et lancer leurs automatisations.
+  //
+  // Le mode pools ferme tout ce qui est hors des pools ; ces outils montrent ce
+  // qui est DEDANS et le geste qui sert chaque ressource. my_resources(id=…)
+  // rend en plus l'outil appelable sur-le-champ : un serveur MCP de quarante
+  // outils ne charge pas quarante schémas pour en utiliser un.
+  // ---------------------------------------------------------------------------
+  const unlockedTools = new Set<string>(ctx.unlockedTools ?? []);
+  if (ctx.poolScope) {
+    const BUILTIN_TOOLS: Record<string, string[]> = {
+      web_search: ["web_search"], web_fetch: ["read_url"], db_read: ["query_table"], tracker: ["tracker"],
+      crm: ["crm"], support: ["support_desk"], leads: ["lead_sense"], soc: ["sentinel"], governance: ["policy_audit"],
+      security_scan: ["security_scan"], vibe_code: ["vibe_code"], testing: ["testing"], simulation: ["simulation"],
+      vault_connector: ["list_connectors"],
+    };
+    const rowTools = (kind: string, name: (r: AgentToolRow) => string) =>
+      [...new Set(enabled.filter((r) => r.kind === kind).map(name))].filter((n) => tools.has(n));
+    const live = (fn: string | undefined) => (fn && tools.has(fn) ? fn : null);
+    const index: ToolIndex = {
+      mcp: (serverId, tool) => live(mcpFnIndex.get(serverId)?.get(tool)),
+      mcpServerTools: (serverId) => [...(mcpFnIndex.get(serverId)?.values() ?? [])].filter((n) => tools.has(n)),
+      composio: (toolkit) => live(composioFnIndex.get(toolkit.toLowerCase())),
+      app: (provider) => live(appFnIndex.get(provider.toLowerCase())),
+      custom: (connectorId) => live(customFnIndex.get(connectorId)),
+      builtin: (family) => {
+        if (family === "edge_function") return rowTools("edge_function", (r) => slugToToolName("call", str(r.config?.slug)));
+        if (family === "connector_action") return rowTools("connector_action", (r) => slugToToolName("use", str(r.config?.provider)));
+        if (family === "custom") return rowTools("custom", (r) => slugToToolName("tool", str(r.config?.tool_name) || r.name));
+        return (BUILTIN_TOOLS[family] ?? []).filter((n) => tools.has(n));
+      },
+      has: (n) => tools.has(n),
+    };
+    const unlock = async (names: string[]): Promise<string[]> => {
+      const fresh = [...new Set(names)].filter((n) => tools.has(n) && !unlockedTools.has(n));
+      for (const n of fresh) unlockedTools.add(n);
+      if (fresh.length) await ctx.onToolsUnlocked?.(fresh);
+      return fresh;
+    };
+    const describeOp = (o: ConnectorOperation) => {
+      const params = (o.params ?? []).map((p) =>
+        `${p.name}${p.required ? "*" : ""}${p.type !== "string" ? `:${p.type}` : ""}${p.enum?.length ? `=${p.enum.join("|")}` : ""}`);
+      return `${o.name} [${o.risk}] : ${o.description}${params.length ? ` (params : ${params.join(", ")} — * = obligatoire)` : ""}`;
+    };
+
+    const s0 = ctx.poolScope;
+    const count = (n: number, one: string, many: string) => (n ? `${n} ${n > 1 ? many : one}` : "");
+    const toolSources = s0.mcp.size + s0.composio.size + s0.custom.size + s0.builtin.size;
+    const inventoryHint = [
+      count(toolSources, "source d'outils", "sources d'outils"), count(s0.knowledge.size, "collection", "collections"),
+      count(s0.skills.size, "compétence", "compétences"), count(s0.procedures.size, "procédure", "procédures"),
+      count(s0.automations.size, "automatisation", "automatisations"), count(s0.agents.size, "collègue", "collègues"),
+      count(s0.guardrails.size, "garde-fou", "garde-fous"),
+    ].filter(Boolean).join(", ");
+
+    tools.set("my_resources", {
+      family: "PLAN",
+      incompressible: true,
+      def: {
+        name: "my_resources",
+        description:
+          "Tes pools de ressources : tout ce que tu peux atteindre — outils MCP, apps, outils maison et intégrés, collections de connaissances, " +
+          "compétences, procédures, automatisations, collègues, garde-fous — et COMMENT t'en servir. Tu n'atteins rien d'autre. " +
+          "Sans argument : l'inventaire, groupé par nature. `query` filtre par mot-clé, `kind` par nature, `pool` par pool. " +
+          "Avec `id` (un nom d'outil, l'id ou le nom d'une ressource) : sa fiche — paramètres, risque, mode d'emploi — et l'outil qui la sert devient appelable aussitôt. " +
+          "RÉFLEXE : avant de conclure qu'un moyen te manque, ou d'improviser ce qu'une procédure ou une automatisation fait déjà, regarde ici.",
+        parameters: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "Une ressource précise : nom d'outil (mcp_…, use_…, ext_…), id ou nom." },
+            query: { type: "string", description: "Mot-clé cherché dans les noms et descriptions (ex. « facture », « pods »)." },
+            kind: { type: "string", enum: [...RESOURCE_GROUPS], description: "Une seule nature de ressources." },
+            pool: { type: "string", description: "Le nom d'un de tes pools." },
+          },
+          additionalProperties: false,
+        },
+      },
+      run: async (args) => {
+        const scope = await loadPoolScope(ctx.admin, ctx.agentId);
+        if (!scope) return "Tu n'es plus en mode pools : tes moyens sont ceux de ta boîte à outils, sans restriction de pool.";
+        let inv;
+        try {
+          inv = await loadPoolInventory(ctx.admin, scope);
+        } catch (e) {
+          return `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        const key = str(args.id).trim();
+        if (!key) {
+          const kind = (RESOURCE_GROUPS as string[]).includes(str(args.kind)) ? str(args.kind) as ResourceGroup : undefined;
+          // L'A2A non réciproque se dit d'emblée : solliciter un collègue qui ne
+          // pourrait pas répondre, c'est un tour perdu sur un refus.
+          const peerBlocked = new Set<string>();
+          await Promise.all(inv.items.filter((r) => r.kind === "agent" && r.status === "active").slice(0, 30).map(async (p) => {
+            if (!(await peerAccepts(ctx.admin, p.source_id, ctx.agentId))) peerBlocked.add(p.source_id);
+          }));
+          const text = inventoryText(inv, index, { kind, query: str(args.query), pool: str(args.pool), peerBlocked });
+          // Les gestes génériques (chercher, lire une procédure, lancer,
+          // solliciter, les outils intégrés) : peu de schémas, rendus appelables
+          // d'office. Les outils des sources (MCP, apps, outils maison) le
+          // deviennent à la fiche, un par un.
+          await unlock(inv.items
+            .filter((r) => !["mcp", "composio", "custom_connector"].includes(r.source))
+            .flatMap((r) => usageOf(r, index).tools));
+          return cap(text, 9000);
+        }
+
+        const found = findResource(inv, index, key);
+        if (!("match" in found)) {
+          return found.candidates.length
+            ? `Plusieurs ressources répondent à « ${key} » — précise avec l'id :\n${found.candidates.map((c) => `- ${c.name} (${c.kind}${c.item_key ? ` ${c.item_key}` : ""}, id="${c.id}")`).join("\n")}`
+            : `Aucune ressource « ${key} » dans tes pools. my_resources sans argument liste tout ce qu'ils contiennent.`;
+        }
+        const r = found.match;
+        const details: ResourceDetails = {};
+        if (r.status === "active") {
+          if (r.source === "mcp" && r.kind === "tool") {
+            const t = (ctx.mcpServers ?? []).find((m) => m.id === r.source_id)?.tools.find((x) => x.name === r.item_key);
+            if (t?.inputSchema) details.schema = t.inputSchema;
+          }
+          if (r.source === "composio" && r.kind === "toolset") {
+            details.actions = allowedComposioActions(scope, String(r.metadata?.toolkit ?? ""));
+          }
+          // Une action Composio : son schéma, demandé à Composio (au mieux).
+          if (r.source === "composio" && r.kind === "tool") {
+            const schema = await composioActionSchema(ctx, String(r.metadata?.toolkit ?? ""), r.item_key);
+            if (schema) details.schema = schema;
+          }
+          // Un connecteur maison : ses actions ouvertes, avec leurs paramètres.
+          if (r.source === "app_connector") {
+            const provider = String(r.metadata?.provider ?? "");
+            const only = allowedAppActions(scope, provider);
+            details.operations = (CONNECTOR_ACTIONS[provider] ?? [])
+              .filter((a) => (r.kind !== "tool" || a.name === r.item_key) && (only === null || only.includes(a.name.toLowerCase())))
+              .map((a) => {
+                const params = Object.entries(a.params ?? {}).map(([k, v]) => `${k}:${v.type} (${v.description})`);
+                return `${a.name} [${a.write ? "écriture" : "lecture"}] : ${a.description}${params.length ? ` — params : ${params.join(", ")}` : ""}`;
+              });
+          }
+          if (r.source === "custom_connector") {
+            const snap = ctx.customConnectors?.find((c) => c.id === r.source_id);
+            if (snap) details.operations = snap.operations.filter((o) => r.kind !== "tool" || o.name === r.item_key).map(describeOp);
+          }
+          if (r.source === "builtin") {
+            details.builtinDocs = usageOf(r, index).tools.map((n) => `${n} : ${cap(tools.get(n)?.def.description ?? "", 300)}`);
+          }
+          if (r.kind === "agent") details.peerBlocked = !(await peerAccepts(ctx.admin, r.source_id, ctx.agentId));
+          if (r.kind === "automation") {
+            const { data: wf } = await ctx.admin.from("agent_workflows").select("id, name, blocks").eq("id", r.source_id).maybeSingle();
+            if (wf) details.violations = await namedWorkflowViolations(ctx.admin, scope, wf as { id: string; name: string; blocks: unknown });
+          }
+        }
+        if (r.kind === "guardrail") {
+          const { data: g } = await ctx.admin.from("aiops_guardrails").select("body").eq("id", r.source_id).maybeSingle();
+          details.guardrailBody = (g as { body?: string } | null)?.body ?? null;
+        }
+        const sheet = resourceSheet(r, inv, index, details);
+        // Une fiche qui dit « ne l'utilise pas » ne déverrouille rien.
+        if (r.status === "active" && !details.peerBlocked && !details.violations?.length) {
+          await unlock(usageOf(r, index).tools);
+        }
+        return cap(sheet, 9000);
+      },
+    });
+    // Une consigne, pas une ligne d'outil : l'index des outils ne garde que la
+    // première phrase de chaque description, et les lignes « - … » en sont
+    // écartées. Celle-ci est celle qui dit à l'agent qu'il est en mode pools.
+    summaryLines.push(`MODE POOLS — tes pools : ${s0.poolNames.map((n) => `« ${n} »`).join(", ")} (${inventoryHint || "vides"}). ` +
+      "Tu n'atteins QUE leur contenu. my_resources en donne l'inventaire et le mode d'emploi de chaque ressource ; my_resources(id) rend son outil appelable aussitôt.");
+
+    if (s0.automations.size > 0) {
+      tools.set("run_automation", {
+        family: "PLAN",
+        def: {
+          name: "run_automation",
+          description:
+            "Lance une automatisation de tes pools : une suite d'appels que le moteur exécute seul, en quelques secondes, et dont tu reçois le résultat étape par étape. " +
+            "Sans `id`, liste celles que tu peux lancer. `payload` = ses données d'entrée (ce que son déclencheur lui passerait). " +
+            "Une automatisation ne se suit pas comme une procédure : elle se lance. Ne la relance pas pour « vérifier » — lis son résultat.",
+          parameters: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "L'id de l'automatisation (voir my_resources). Omets-le pour lister." },
+              payload: { type: "object", description: "Ses données d'entrée (facultatif)." },
+              reason: { type: "string", description: "Pourquoi tu la lances, en une phrase (montrée si une approbation est demandée)." },
+            },
+            additionalProperties: false,
+          },
+        },
+        run: async (args) => {
+          const pool = await loadPoolScope(ctx.admin, ctx.agentId);
+          if (!pool) return "ERROR: tu n'es plus en mode pools — aucune automatisation ne t'est ouverte.";
+          const id = str(args.id).trim();
+          if (!id) {
+            if (!pool.automations.size) return "Aucune automatisation dans tes pools.";
+            const { data } = await ctx.admin.from("agent_workflows")
+              .select("id, name, description, status, last_run_at")
+              .in("id", [...pool.automations]).eq("kind", "automation").limit(30);
+            const rows = (data ?? []) as Array<{ id: string; name: string; description: string | null; status: string; last_run_at: string | null }>;
+            if (!rows.length) return "Aucune automatisation dans tes pools.";
+            return JSON.stringify(rows.map((w) => ({
+              id: w.id, nom: w.name, quand_s_en_servir: w.description ?? "(non précisé)",
+              lançable: w.status === "active" ? "oui" : `non (${workflowStatusLabel(w.status)})`,
+              dernier_lancement: w.last_run_at,
+            })));
+          }
+          const { data } = await ctx.admin.from("agent_workflows")
+            .select("id, name, status, kind, blocks, workspace_id").eq("id", id).maybeSingle();
+          const wf = data as { id: string; name: string; status: string; kind: string; blocks: unknown; workspace_id: string } | null;
+          if (!wf || wf.workspace_id !== ctx.workspaceId) return "ERROR: automatisation introuvable.";
+          if (wf.kind !== "automation") {
+            return pool.procedures.has(id)
+              ? `« ${wf.name} » est une procédure : lis-la avec use_procedure(id="${id}") et suis-la toi-même.`
+              : poolRefusal(pool, `le workflow « ${wf.name} »`);
+          }
+          if (!pool.automations.has(id)) return poolRefusal(pool, `l'automatisation « ${wf.name} »`);
+          if (wf.status !== "active") {
+            return `L'automatisation « ${wf.name} » est ${workflowStatusLabel(wf.status)} : ne la lance pas, signale-le.`;
+          }
+          // Ce qu'elle fait intervenir doit rester dans tes pools : la lancer
+          // ne doit pas servir à atteindre ce qu'on ne t'a pas donné.
+          const violations = await namedWorkflowViolations(ctx.admin, pool, wf);
+          if (violations.length) {
+            return `ERROR: l'automatisation « ${wf.name} » sortirait de tes pools : ${violations.join(" ; ")}. Elle n'est pas lancée — demande à un humain de corriger le pool ou l'automatisation.`;
+          }
+          // Garde-fou : une automatisation qui passe du travail à un agent qui
+          // la relance tournerait en rond, chaque tour par un run neuf.
+          const since = new Date(Date.now() - AUTOMATION_AGENT_WINDOW_MS).toISOString();
+          const { count: recent } = await ctx.admin.from("agent_workflow_runs")
+            .select("id", { count: "exact", head: true })
+            .eq("workflow_id", id).eq("trigger", "agent").gte("started_at", since);
+          if ((recent ?? 0) >= AUTOMATION_AGENT_RUNS_MAX) {
+            return `ERROR: « ${wf.name} » a déjà été lancée ${recent} fois par des agents ces dix dernières minutes. Je ne la relance pas : lis ses derniers résultats, ou attends.`;
+          }
+          const payload = (args.payload && typeof args.payload === "object" && !Array.isArray(args.payload))
+            ? args.payload as Record<string, unknown> : {};
+          const triggerPayload = { ...payload, trigger: "agent", agent_id: ctx.agentId, ...(ctx.runId ? { agent_run_id: ctx.runId } : {}) };
+          // Elle agit sans relecture : au même titre qu'une écriture, elle passe
+          // par PolicyGuard, et par une approbation hors pilote automatique.
+          const g = await gate(ctx, { tool: "automation", action: wf.name, params: payload, legacyApproval: !ctx.autopilot, knownWrite: true });
+          if (g.decision === "block") return g.message!;
+          if (g.decision === "approve") {
+            return await awaitInlineApproval(ctx, {
+              tool_name: "run_automation",
+              action_kind: "edge_function",
+              payload: { slug: "run-workflow", args: { workflow_id: id, trigger_payload: triggerPayload } },
+              reason: str(args.reason) || null,
+            }, `Automatisation « ${wf.name} »`, g.linkApproval);
+          }
+          const base = Deno.env.get("SUPABASE_URL");
+          const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+          if (!base || !key) return "ERROR: runtime non configuré.";
+          const res = await fetch(`${base}/functions/v1/run-workflow`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ workflow_id: id, trigger_payload: triggerPayload }),
+          });
+          const json = await res.json().catch(() => null) as Record<string, unknown> | null;
+          const runId = str(json?.run_id);
+          if (!res.ok || !runId) return `ERROR: lancement impossible — ${str(json?.error) || `HTTP ${res.status}`}.`;
+          return await automationOutcome(ctx, wf.name, runId);
+        },
+      });
+      summaryLines.push("- run_automation: lance une automatisation de tes pools et rend son résultat étape par étape (sans id : la liste).");
+    }
+  }
+
   const toDef = (t: InternalTool): ToolDef =>
     t.incompressible ? { type: "function", function: t.def, incompressible: true } : { type: "function", function: t.def };
 
@@ -8422,7 +9412,8 @@ export function buildInternalToolset(
     return visible
       .filter(([n]) => CORE_TOOLS.has(n)
         || DEFAULT_FAMILIES.includes(familyOf(n))
-        || loadedFamilies.has(familyOf(n)))
+        || loadedFamilies.has(familyOf(n))
+        || unlockedTools.has(n))
       .map(([, t]) => toDef(t));
   };
 
@@ -8431,12 +9422,29 @@ export function buildInternalToolset(
   // NOTE: the executor does NOT log run events itself — the run loop's logging
   // wrapper (internal-agent-run) is the single source of tool_call/tool_result
   // events. Logging in both places was double-rendering every action in the UI.
-  const executor: ToolExecutor = async (name, args) => {
+  const executor: ToolExecutor = async (name, args, call) => {
     if (await ctx.isCancelled()) throw new RunCancelledError();
     const tool = tools.get(name);
-    if (!tool) return `ERROR: unknown tool "${name}".`;
+    if (!tool) {
+      // « No such tool » (superharness) — mais avec ce qui s'en approche : un
+      // nom mal recopié (préfixe de serveur MCP oublié, pluriel) se corrige en
+      // un tour au lieu de faire conclure à l'agent que l'outil n'existe pas.
+      const near = closestToolNames(name, [...tools.entries()].filter(([, t]) => !t.hidden).map(([n]) => n));
+      return `ERROR: unknown tool "${name}".${near.length ? ` Outils proches : ${near.join(", ")}.` : ""} Si l'outil voulu n'est pas dans ta liste, need_tools("<ce que tu veux faire>") recharge la boîte complète.`;
+    }
     try {
-      const raw = await tool.run(args);
+      const raw = await tool.run(args, call);
+      // Trop long pour le transcrit : conservé en entier hors du fil, et le
+      // modèle reçoit l'extrait habituel avec de quoi relire le reste. Une
+      // erreur ne se conserve pas (elle se lit en entier ou pas du tout), et la
+      // relecture elle-même non plus — elle se pagine déjà.
+      if (
+        ctx.persistToolOutput && typeof raw === "string" && raw.length > TOOL_RESULT_CAP &&
+        !raw.startsWith("ERROR") && name !== "read_tool_output"
+      ) {
+        const ref = await ctx.persistToolOutput(name, args, raw.slice(0, PERSISTED_OUTPUT_MAX_CHARS)).catch(() => null);
+        if (ref) return persistedPreview(raw, ref, tool.compress);
+      }
       // Per-tool compression contract: if the tool can overrun the transcript
       // cap, it shrinks its own output deterministically instead of letting the
       // generic middle-cut in ai.ts do it. No compress → the raw result flows
@@ -8451,6 +9459,7 @@ export function buildInternalToolset(
 
   return {
     defs,
+    immediateTools: [...composioToolsAvailableImmediately],
     defsFor,
     executor,
     // La famille d'un outil, exposée : le classement par jugement rapide dit
@@ -8505,7 +9514,8 @@ const TOOL_FAMILY: Record<string, ToolFamily> = {
   save_memory: "MEMORY", search_memory: "MEMORY", team_memory: "MEMORY", search_past_work: "MEMORY",
   create_mission: "TEAM", delegate_mission: "TEAM", send_message_to_agent: "TEAM", list_team_agents: "TEAM",
   create_task: "TEAM", list_missions: "TEAM", move_mission: "TEAM", propose_mission: "TEAM", create_agent: "TEAM", create_workflow: "TEAM",
-  manage_agents: "ADMIN", manage_projects: "ADMIN", manage_connectors: "ADMIN",
+  manage_agents: "ADMIN", manage_projects: "ADMIN", manage_connectors: "ADMIN", manage_teams: "ADMIN", manage_dashboards: "ADMIN",
+  handoff_to_teammate: "TEAM",
   send_email: "INTEGRATIONS", security_scan: "INTEGRATIONS",
 };
 
@@ -8516,7 +9526,7 @@ function buildCapabilityTree(
   defaultFamilies: ToolFamily[] = [...FAMILY_ORDER],
   coreTools: Set<string> = new Set(),
 ): string {
-  const byFamily = new Map<ToolFamily, string[]>();
+  const byFamily = new Map<ToolFamily, Array<{ name: string; line: string; core: boolean }>>();
   for (const [name, t] of tools) {
     // Hidden aliases are executable but never advertised.
     if (t.hidden) continue;
@@ -8524,12 +9534,14 @@ function buildCapabilityTree(
     // exact name first, then fall back to the un-prefixed base (sandbox_browser /
     // sandbox_env keep their own entries via the exact-name hit).
     const base = name.replace(/^(?:runner|sandbox)_/, "");
-    const fam = TOOL_FAMILY[name] ?? TOOL_FAMILY[base] ?? "INTEGRATIONS";
+    // La famille déclarée par l'outil d'abord, comme familyOf : sans quoi
+    // l'index annonçait « à charger » un outil déjà appelable (use_procedure).
+    const fam = t.family ?? TOOL_FAMILY[name] ?? TOOL_FAMILY[base] ?? "INTEGRATIONS";
     // Short label only — the full schema is sent separately, so this stays a
     // scannable INDEX, not a duplicate of every tool's description.
     const firstSentence = (t.def.description ?? "").split(/(?<=\.)\s+/)[0] ?? "";
     const arr = byFamily.get(fam) ?? [];
-    arr.push(`  - ${name}: ${firstSentence.slice(0, 90)}`);
+    arr.push({ name, line: `  - ${name}: ${firstSentence.slice(0, 90)}`, core: coreTools.has(name) });
     byFamily.set(fam, arr);
   }
   const out: string[] = [
@@ -8538,16 +9550,21 @@ function buildCapabilityTree(
     "",
   ];
   for (const fam of FAMILY_ORDER) {
-    const lines = byFamily.get(fam);
-    if (!lines?.length) continue;
+    const entries = byFamily.get(fam);
+    if (!entries?.length) continue;
     // Progressive disclosure: the INDEX is always complete (so the agent knows
     // what exists), but a family outside the default set ships without its JSON
     // schemas until load_toolset pulls them in. Say so explicitly — an agent that
     // doesn't know a tool is loadable will claim it can't do the job.
-    const lazy = !defaultFamilies.includes(fam) && !lines.every((l) => coreTools.has(l.trim().split(":")[0].replace(/^-\s*/, "")));
-    out.push(`## ${FAMILY_META[fam].label}${lazy ? ` — (à charger : load_toolset("${fam}") avant le premier appel)` : ""}`);
+    const lazy = !defaultFamilies.includes(fam) && entries.some((entry) => !entry.core);
+    const availability = lazy
+      ? entries.some((entry) => entry.core)
+        ? ` — outils disponibles directement ; autres outils à charger avec load_toolset("${fam}")`
+        : ` — (à charger : load_toolset("${fam}") avant le premier appel)`
+      : "";
+    out.push(`## ${FAMILY_META[fam].label}${availability}`);
     out.push(`Rule: ${FAMILY_META[fam].rule}`);
-    out.push(...lines);
+    out.push(...entries.map((entry) => entry.core ? `${entry.line} (disponible immédiatement)` : entry.line));
     if (fam === "EXECUTION" && sandboxGuidance.length) out.push(...sandboxGuidance);
     out.push("");
   }

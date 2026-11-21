@@ -12,6 +12,9 @@ import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { encryptSecret, decryptSecret } from "../_shared/crypto.ts";
 import { callAi, safeParseJson } from "../_shared/ai.ts";
+import { pinnedUpstream, upstreamRoutes } from "../_shared/llm-upstream.ts";
+import { openrouterFreeOnly, platformModels, type CatalogModel } from "../_shared/openrouter-catalog.ts";
+import { platformImageTarget } from "../_shared/image-gen.ts";
 
 const RUNPOD_GQL = "https://api.runpod.io/graphql";
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
@@ -304,6 +307,13 @@ async function cloudReady(baseUrl: string, apiKey = ""): Promise<boolean> {
  * a rejected credential is an error.
  */
 async function cloudProbe(baseUrl: string, apiKey: string): Promise<{ models: string[]; note?: string }> {
+  // Runware n'expose pas de catalogue /models : ses modèles s'écrivent en
+  // identifiants AIR, à la main ou dans les modèles par tâche du connecteur.
+  try {
+    if (new URL(baseUrl).host === "api.runware.ai") {
+      return { models: [], note: "Runware ne liste pas ses modèles — saisissez les identifiants AIR (ex. openai:gpt@5.4-mini) ou renseignez les modèles par tâche." };
+    }
+  } catch { /* URL illisible : le chemin habituel dira pourquoi */ }
   try {
     return { models: await cloudListModels(baseUrl, apiKey) };
   } catch (e) {
@@ -505,6 +515,16 @@ const AWS_GPU_CATALOG = [
 ].sort((a, b) => a.hourlyUsd - b.hourlyUsd);
 
 // ── Handler ──────────────────────────────────────────────────────────────────
+/** The model ids an endpoint offers. A real catalogue beats what someone typed,
+ *  except on Azure OpenAI: its /models lists the resource's BASE models, while
+ *  `model` in a chat call must be a DEPLOYMENT name — the typed ids win there. */
+function pickModels(baseUrl: string, listed: string[], manual: string[]): string[] {
+  let azure = false;
+  try { azure = /\.(openai\.azure\.com|cognitiveservices\.azure\.com|services\.ai\.azure\.com)$/.test(new URL(baseUrl).host); } catch { /* not a URL */ }
+  if (azure && manual.length) return manual;
+  return listed.length ? listed : manual;
+}
+
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -592,6 +612,35 @@ Deno.serve(async (req) => {
         return jsonResponse({ suggestions });
       }
 
+      // ── La connexion par défaut de la plateforme (OpenRouter) ───────────────
+      // Ce que les agents utilisent avant qu'une entreprise branche ses propres
+      // modèles : l'état de la connexion, ses modèles par tâche, et le
+      // catalogue qu'elle peut servir (gratuits seulement en mode gratuit). La
+      // clé reste côté serveur.
+      case "platform.models": {
+        let up: ReturnType<typeof pinnedUpstream> = null;
+        let configError: string | null = null;
+        try { up = pinnedUpstream(); } catch (e) { configError = e instanceof Error ? e.message : String(e); }
+        const kind = up?.kind ?? null;
+        const routes = up ? upstreamRoutes(up) : {};
+        let models: CatalogModel[] = [];
+        let catalogError: string | null = null;
+        if (kind === "openrouter") {
+          try { models = await platformModels(); } catch (e) { catalogError = e instanceof Error ? e.message : String(e); }
+          // Le modèle d'image par défaut fait partie des routes affichées.
+          const img = platformImageTarget();
+          if (img?.kind === "openrouter" && !routes.image) routes.image = img.model;
+        }
+        return jsonResponse({
+          provider: kind,
+          connected: !!up && !configError,
+          free_only: kind === "openrouter" ? openrouterFreeOnly() : false,
+          routes,
+          models,
+          error: configError ?? catalogError,
+        });
+      }
+
       // ── Connect / test a provider ──────────────────────────────────────────
       case "provider.connect": {
         const { kind, name, config, api_key, hf_token } = body as { kind: string; name: string; config: Record<string, unknown>; api_key?: string; hf_token?: string };
@@ -626,7 +675,7 @@ Deno.serve(async (req) => {
             const manual = Array.isArray(config.manual_models)
               ? (config.manual_models as unknown[]).map(String).map((s) => s.trim()).filter(Boolean)
               : [];
-            metadata = { models: probe.models.length ? probe.models : manual };
+            metadata = { models: pickModels(base, probe.models, manual) };
             // A connected-but-unlistable endpoint is a WARNING, not a failure:
             // the row stays usable and the note explains what to do.
             if (probe.note) detail = manual.length ? null : probe.note;
@@ -663,7 +712,7 @@ Deno.serve(async (req) => {
             const manual = Array.isArray(p.config.manual_models)
               ? (p.config.manual_models as unknown[]).map(String).map((s) => s.trim()).filter(Boolean)
               : [];
-            metadata = { ...metadata, models: probe.models.length ? probe.models : manual };
+            metadata = { ...metadata, models: pickModels(String(p.config.base_url ?? ""), probe.models, manual) };
             if (probe.note) detail = manual.length ? null : probe.note;
           } else if (p.kind === "ovh") {
             metadata = { ...metadata, ...await ovhCatalog(ovhCreds(p, apiKey, hfToken)) };

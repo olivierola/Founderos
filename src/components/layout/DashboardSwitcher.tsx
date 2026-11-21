@@ -2,10 +2,9 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CaretDownIcon as ChevronDown,
+  CaretUpDownIcon,
   CheckIcon as Check,
   PlusIcon as Plus,
-  CubeIcon as Boxes,
   CircleNotchIcon as Loader2,
 } from "@phosphor-icons/react";
 import {
@@ -14,8 +13,8 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { BRAND_MARK_ON_DARK, Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
+import { DashboardTile } from "@/features/service-dashboards/dashboardIcons";
 import { DASHBOARDS, dashboardLandingSlug } from "@/lib/navigation";
 import { useActiveDashboard } from "./useActiveDashboard";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -52,19 +51,26 @@ export function DashboardSwitcher() {
     } finally { setSaving(false); }
   }
 
+  const ActiveIcon = activeDef.icon;
   return (
     <DropdownMenu>
+      {/* Le même sélecteur que dans un tableau de service (DashboardSelector) :
+          la tuile du tableau, son nom, et le menu qui mène partout ailleurs. */}
       <DropdownMenuTrigger asChild>
         <button
-          className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-white transition-colors hover:bg-white/10"
+          className="-ml-1 flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-foreground transition-colors hover:bg-muted/60"
           aria-label="Changer de dashboard"
+          title={activeDef.label}
         >
-          <Logo size={24} color={BRAND_MARK_ON_DARK} />
-          <span className="truncate text-sm font-semibold">{activeDef.label}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/60" />
+          <span className={cn("flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-primary-foreground", activeDef.color)}>
+            <ActiveIcon weight="fill" className="h-3.5 w-3.5" />
+          </span>
+          <span className="min-w-0 truncate text-[14px] font-semibold tracking-tight">{activeDef.label}</span>
+          <CaretUpDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 p-1.5">
+      <DropdownMenuContent align="start" side="bottom" className="w-64 rounded-2xl p-1.5">
+        <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">Dashboards produit</DropdownMenuLabel>
         {DASHBOARDS.map((d) => {
           const Icon = d.icon;
           const isActive = d.id === active;
@@ -72,36 +78,31 @@ export function DashboardSwitcher() {
             <DropdownMenuItem
               key={d.id}
               onSelect={() => navigate(`${base}/${dashboardLandingSlug(d.id)}`)}
-              className={cn("flex items-center gap-2.5 rounded-lg px-2 py-2", isActive && "bg-accent")}
+              className={cn("rounded-xl", isActive && "bg-accent")}
             >
-              <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white", d.color)}>
-                <Icon weight="fill" className="h-[18px] w-[18px]" />
+              <span className={cn("mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-primary-foreground", d.color)}>
+                <Icon weight="fill" className="h-3.5 w-3.5" />
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold">{d.label}</span>
-                <span className="block truncate text-[11px] text-muted-foreground">{d.description}</span>
-              </span>
-              {isActive && <Check className="h-4 w-4 shrink-0 text-primary" />}
+              <span className="min-w-0 flex-1 truncate">{d.label}</span>
+              {isActive && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
             </DropdownMenuItem>
           );
         })}
 
         {(services ?? []).length > 0 && (
           <>
-            <DropdownMenuSeparator className="my-1.5" />
-            <DropdownMenuLabel className="px-2 text-[10px] uppercase text-muted-foreground">Services</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground">Services</DropdownMenuLabel>
             {(services ?? []).map((s) => (
-              <DropdownMenuItem key={s.id} onSelect={() => navigate(`${base}/service/${s.id}`)}
-                className="flex items-center gap-2.5 rounded-lg px-2 py-2">
-                <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white", s.color)}><Boxes className="h-[18px] w-[18px]" /></span>
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{s.name}</span>
+              <DropdownMenuItem key={s.id} onSelect={() => navigate(`${base}/service/${s.id}`)} className="rounded-xl">
+                <DashboardTile icon={s.icon} color={s.color} size={24} className="mr-2" />
+                <span className="min-w-0 flex-1 truncate">{s.name}</span>
               </DropdownMenuItem>
             ))}
           </>
         )}
-        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setCreating(true); }} className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-indigo-500">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-dashed border-indigo-400/50"><Plus className="h-[18px] w-[18px]" /></span>
-          <span className="text-sm font-semibold">Nouveau dashboard de service</span>
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setCreating(true); }} className="rounded-xl text-primary">
+          <Plus className="mr-2 h-4 w-4" /> Nouveau dashboard de service
         </DropdownMenuItem>
 
       </DropdownMenuContent>

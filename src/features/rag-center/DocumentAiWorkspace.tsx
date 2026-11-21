@@ -49,7 +49,7 @@ const DEFAULT: ExtractConfig = {
 
 const MODELS = [
   { id: "mistral-ocr-latest", label: "Mistral OCR Latest" },
-  { id: "founderos-extract", label: "Anduran Extract" },
+  { id: "founderos-extract", label: "Agent company Extract" },
   { id: "fast-extract", label: "Extraction rapide" },
 ];
 

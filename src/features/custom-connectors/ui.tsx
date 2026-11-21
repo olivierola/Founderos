@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import { XIcon as X } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { InfoHint } from "@/components/ui/info-hint";
 
 export function Drawer({ title, subtitle, onClose, children, footer, width = "max-w-2xl", actions }: {
   title: ReactNode;
@@ -38,9 +39,11 @@ export function Drawer({ title, subtitle, onClose, children, footer, width = "ma
 export function Field({ label, hint, children, className }: { label: ReactNode; hint?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <label className={cn("block space-y-1.5", className)}>
-      <span className="block text-xs font-medium text-foreground">{label}</span>
+      <span className="flex items-center gap-1 text-xs font-medium text-foreground">
+        {label}
+        {hint && <InfoHint>{hint}</InfoHint>}
+      </span>
       {children}
-      {hint && <span className="block text-[11px] leading-snug text-muted-foreground">{hint}</span>}
     </label>
   );
 }

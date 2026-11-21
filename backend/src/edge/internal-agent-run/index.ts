@@ -29,16 +29,37 @@ import { describeIssueAssets } from "../_shared/tracker-actions.ts";
 import { timingSafeEqual } from "../_shared/authz.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { decryptSecret } from "../_shared/crypto.ts";
-import { callAi, runToolRounds, safeParseJson, truncateMiddle, PayloadTooLargeError, ProviderExhaustedError, type ChatMessage } from "../_shared/ai.ts";
+import { callAi, repairToolPairing, runToolRounds, safeParseJson, toolDescVariant, truncateMiddle, PayloadTooLargeError, ProviderExhaustedError, type ChatMessage, type LoopUsage } from "../_shared/ai.ts";
 import { runParallelSubagents, SUBAGENT_BUDGET_MS } from "../_shared/subagents.ts";
+import {
+  asyncSubagentsAvailable, deliverBackgroundResult, inboxMessage, outstandingChildren, sendFollowUp,
+  spawnBackgroundChild, spawnedNotice, takeInbox, wakeRun,
+} from "../_shared/background-agents.ts";
+import { HarnessHooks } from "../_shared/harness-hooks.ts";
+import { createResearchMemory, registerRunToolHooks, SEARCH_TOOLS as RESEARCH_SEARCH_TOOLS, type RunHookDeps } from "../_shared/run-tool-hooks.ts";
+import { explainRepeatedFailure, makeDiagnosis, CAUSES, type ErrorCause } from "../_shared/tool-error-diagnosis.ts";
+import { compactRanking, rankToolsWithJev, reusableRanking, type ToolRanking } from "../_shared/tool-ranking.ts";
+import {
+  buildCheckpoint, checkpointBlock, estimatePromptTokens, shouldPrepareCheckpoint,
+  type ContextCheckpoint, type PromptMeasure,
+} from "../_shared/context-checkpoint.ts";
+import { createCallLedger, recoverInterruptedCalls } from "../_shared/call-ledger.ts";
+import { claimTurn, splitForTurn, startDeferredTurn } from "../_shared/turn-principal.ts";
+import { evalStubFor } from "../_shared/eval-stubs.ts";
+import { loadAgentDashboards } from "../_shared/agent-dashboards.ts";
 import { writeReport } from "../_shared/reporter.ts";
 import { normalizeAutonomy, type AutonomyLevel } from "../_shared/policyguard.ts";
 import {
   classifyTier, classifyRequest, modelForTier, resolveProvider, defaultProvider,
-  availableProviders, modelMatchesProvider, cheapProvider, providerMismatchNote,
-  contextBudgetFor, sanitizeModel, type ToolTier, type Provider, type ContextBudget,
+  availableProviders, modelMatchesProvider, cheapModel, cheapProvider, providerMismatchNote,
+  contextBudgetFor, sanitizeModel, detectNeed, modelForRequest, preferredIntegrationTool, type ToolTier, type Provider, type ContextBudget,
+  type ModelNeed,
 } from "../_shared/model-router.ts";
-import { embedTexts, toVectorLiteral } from "../_shared/jina.ts";
+import { LlmUpstreamPolicyError, parseModelRoutes, pinnedUpstream, routeAlias, upstreamKind, upstreamRoutes, type ModelRoutes } from "../_shared/llm-upstream.ts";
+import { imageTargetFromEndpoint } from "../_shared/image-gen.ts";
+import { freeRoutes } from "../_shared/openrouter-catalog.ts";
+import { NO_LONG_DASH_RULE, RICH_REPLY_DOCTRINE } from "../_shared/reply-format.ts";
+import { embedTexts, embeddingsAvailable, toVectorLiteral } from "../_shared/jina.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import {
   assertCredits, assertQuota, checkQuota, checkRunBudget, isQuotaError, quotaErrorResponse,
@@ -49,29 +70,31 @@ import {
   type GuardrailViolation,
 } from "../_shared/guardrails.ts";
 import {
-  judge, choice, noul, readChoice, readNoul, ranked, qid, loadTypesafeConfig,
+  judge, choice, noul, readChoice, readNoul, ranked, qid, loadTypesafeConfig, defaultConfig,
   type JudgeContext,
 } from "../_shared/typesafe.ts";
 import { recordRunIncident, recordGuardrailIncident } from "../_shared/governance-incidents.ts";
 import { judgeModelTier, judgeSemanticLoop, judgeNeedsHuman, recordDecision } from "../_shared/agentpilot.ts";
 import {
-  buildInternalToolset, RunCancelledError, AwaitingInputError, embedMemoryVector,
-  loadCustomConnectorSnapshots,
+  buildInternalToolset, RunCancelledError, AwaitingInputError, embedMemoryVector, isParallelSafeTool,
+  hasExternalEffect, loadCustomConnectorSnapshots, toolLane, isHumanPauseTool,
   writeAgentMemory, touchAgentMemories,
   type AgentSkill, type AgentToolRow, type InternalToolContext,
 } from "../_shared/internal-agent-tools.ts";
 import { resolveRequester } from "../_shared/mcp-auth.ts";
+import { applyPoolToToolRows, loadPoolScope } from "../_shared/resource-pools.ts";
+import { loadAgentMachine } from "../_shared/team-machine.ts";
 import { currentLlmCaller, setLlmCaller } from "../_shared/llm-context.ts";
-import { loadRunMcpServers } from "../_shared/mcp-servers.ts";
+import { loadRunMcpServers, runMcpGrants } from "../_shared/mcp-servers.ts";
 import { teamsSendMessage } from "../_shared/teams.ts";
 import { isMessagingProvider, sendMessagingText } from "../_shared/messaging.ts";
 import {
   deriveContract, evaluateContract, fingerprintProgress, hasAdvanced, decideNext,
-  resolveBudgets, loopEventPayload, evidenceSinceLastTodos,
-  type SuccessContract, type ProgressFingerprint, type LoopSignals, type LoopProbe,
+  resolveBudgets, loopEventPayload, evidenceSinceLastTodos, findUnbackedClaims, toolTrail, unbackedClaimGap,
+  type SuccessContract, type ProgressFingerprint, type LoopSignals, type LoopProbe, type ToolDiagnosisSignal,
 } from "../_shared/agent-loop.ts";
 import {
-  compileSystemPrompt, selectRelevant, selectTools, currentTaskText, budgetEventPayload, stableHash, transcriptPrefixHash,
+  compileSystemPrompt, selectRelevant, selectTools, toolsetHash, currentTaskText, budgetEventPayload, stableHash, transcriptPrefixHash,
   type SectionInput, type PromptBudget,
 } from "../_shared/prompt-compiler.ts";
 import {
@@ -85,6 +108,7 @@ import { completeMissionTask, advanceRoomMission } from "../_shared/room-orchest
 import { describeOutcome, feedbackCue, learnFromFeedback, learnInBackground } from "../_shared/agent-learning.ts";
 import { captureKnowledgeInBackground, curateKnowledge } from "../_shared/knowledge-graph.ts";
 import { ASSISTANT_OPS_DOCTRINE } from "../_shared/assistant-ops.ts";
+import { TEAM_OPS_DOCTRINE } from "../_shared/team-architect.ts";
 import { CONNECTOR_OPS_DOCTRINE } from "../_shared/assistant-connectors.ts";
 import { completeWorkflowRun } from "../_shared/workflow-engine.ts";
 import { defaultTimezone, renderClock } from "../_shared/clock.ts";
@@ -92,6 +116,7 @@ import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/art
 import {
   PROACTIVITY_DOCTRINE, ORCHESTRATOR_PROACTIVITY, reflectAndPropose, proposalsFooter,
 } from "../_shared/proactivity.ts";
+import { loadSelfModel } from "../_shared/self-model.ts";
 
 interface AgentRow {
   id: string;
@@ -128,6 +153,8 @@ interface AgentRow {
   /** Company-registered model (aiops_providers cloud_endpoint) the agent runs on;
    *  its base_url + encrypted key are resolved at run time. Null = Anduran default. */
   hosted_provider_id?: string | null;
+  /** Ses modèles sur la connexion par défaut, par palier et critère (0303). */
+  model_routes?: Record<string, unknown> | null;
 }
 
 /** Resolve the OpenAI-compatible endpoint an agent runs on, or undefined for the
@@ -137,27 +164,54 @@ interface AgentRow {
 async function resolveAgentEndpoint(
   admin: ReturnType<typeof createServiceClient>,
   agent: AgentRow,
-): Promise<{ baseUrl: string; apiKey?: string; model?: string } | undefined> {
+): Promise<{ baseUrl: string; apiKey?: string; model?: string; routes?: ModelRoutes } | undefined> {
   // 1) A registered cloud/custom model (Modèles tab).
   if (agent.hosted_provider_id) {
     const { data: p } = await admin
       .from("aiops_providers")
       .select("config, secret_ciphertext, secret_iv")
       .eq("id", agent.hosted_provider_id).maybeSingle();
-    const baseUrl = String((p?.config as { base_url?: string } | undefined)?.base_url ?? "");
+    const config = (p?.config ?? {}) as { base_url?: string; model_routes?: unknown };
+    const baseUrl = String(config.base_url ?? "");
     if (baseUrl) {
       let apiKey = "";
       if (p?.secret_ciphertext && p?.secret_iv) {
         try { apiKey = await decryptSecret(p.secret_ciphertext as string, p.secret_iv as string); } catch { /* key unresolved → call will fail loudly */ }
       }
-      return { baseUrl, apiKey, model: agent.hosted_model || undefined };
+      // Les modèles du connecteur par palier et par critère (AI Ops →
+      // Modèles) : une requête qui demande `@code|heavy` y trouve le sien. Le
+      // modèle choisi pour l'agent reste le repli — et la route « standard »
+      // s'il n'en a pas d'autre.
+      // Les modèles par tâche propres à CET agent (internal_agents.model_routes)
+      // passent par-dessus ceux du connecteur : « Lourd : Claude Opus » pour un
+      // seul agent, sans changer les autres agents du même connecteur.
+      const routes = { ...parseModelRoutes(config.model_routes), ...parseModelRoutes(agent.model_routes ?? {}) };
+      const model = agent.hosted_model || routes.standard || undefined;
+      return { baseUrl, apiKey, model, routes: Object.keys(routes).length ? routes : undefined };
     }
   }
   // 2) A self-hosted RunPod GPU server (legacy path, platform vLLM key).
   if (agent.hosted_endpoint_url) {
     return { baseUrl: agent.hosted_endpoint_url, apiKey: Deno.env.get("RUNPOD_VLLM_API_KEY") ?? "", model: agent.hosted_model || undefined };
   }
-  return undefined;
+  // 3) La connexion par défaut (OpenRouter…) avec les modèles propres à cet
+  // agent (0303) : ses routes par-dessus celles de la plateforme. La clé reste
+  // celle du backend (llmAuthHeaders la pose pour l'URL de la passerelle).
+  return platformEndpointForAgent(agent);
+}
+
+/** L'agent sur la connexion par défaut, quand il a choisi ses modèles. */
+function platformEndpointForAgent(agent: AgentRow): { baseUrl: string; model?: string; routes?: ModelRoutes } | undefined {
+  let agentRoutes = parseModelRoutes(agent.model_routes ?? {});
+  if (!Object.keys(agentRoutes).length) return undefined;
+  let up: ReturnType<typeof pinnedUpstream> = null;
+  try { up = pinnedUpstream(); } catch { return undefined; }
+  if (!up) return undefined;
+  // Compte gratuit : un modèle payant choisi avant le passage en gratuit
+  // retombe sur le modèle gratuit du palier.
+  if (up.kind === "openrouter") agentRoutes = freeRoutes(agentRoutes);
+  const routes = { ...upstreamRoutes(up), ...agentRoutes };
+  return { baseUrl: up.baseUrl, model: routes.standard ?? up.model, routes };
 }
 
 // Rough per-1k-token rates (USD). Adjust as providers change pricing. These are
@@ -168,13 +222,17 @@ const RATES: Record<string, { in: number; out: number }> = {
   deepseek: { in: 0.00014, out: 0.00028 },
 };
 function estimateCost(
-  usage: { prompt_tokens: number; completion_tokens: number } | undefined,
+  usage: { prompt_tokens: number; completion_tokens: number; cached_tokens?: number; reported_cost_usd?: number; unpriced_calls?: number } | undefined,
   provider: "groq" | "deepseek",
   model?: string,
   custom?: boolean,
 ): number {
   if (!usage) return 0;
-  if (model) return estimateCostUsd(model, usage.prompt_tokens, usage.completion_tokens, { custom });
+  // Le prix facturé par le fournisseur (Runware le donne), quand il l'a donné
+  // pour chaque appel : plus juste qu'une table de tarifs pour des modèles
+  // dont le prix change d'un éditeur à l'autre.
+  if (usage.unpriced_calls === 0 && (usage.reported_cost_usd ?? 0) > 0) return usage.reported_cost_usd!;
+  if (model) return estimateCostUsd(model, usage.prompt_tokens, usage.completion_tokens, { custom, cachedTokens: usage.cached_tokens });
   const r = RATES[provider] ?? { in: 0.00005, out: 0.0001 };
   return (usage.prompt_tokens * r.in + usage.completion_tokens * r.out) / 1000;
 }
@@ -197,6 +255,19 @@ function providerFor(agent: AgentRow): Provider {
  *  and a model id from different vendors meet. */
 function agentModelForTier(agent: AgentRow, tier: Parameters<typeof modelForTier>[0]): string {
   return modelForTier(tier, providerFor(agent));
+}
+
+/**
+ * Le modèle d'une requête pour CET agent : son palier et son critère (code,
+ * vision, long contexte). Quand quelque chose sait traduire une route — la
+ * passerelle imposée (Runware, OpenRouter…) ou le connecteur de l'agent avec
+ * ses modèles par tâche (AI Ops → Modèles) — c'est un alias `@code|heavy` ;
+ * sinon le modèle de palier du fournisseur, comme avant.
+ */
+function agentModelForRequest(agent: AgentRow, tier: Parameters<typeof modelForTier>[0], need: ModelNeed | null): string {
+  let routed = !!agent.hosted_provider_id || !!agent.hosted_endpoint_url;
+  if (!routed) { try { routed = !!pinnedUpstream(); } catch { routed = false; } }
+  return modelForRequest(tier, need, { provider: providerFor(agent), routed });
 }
 
 /**
@@ -460,6 +531,8 @@ function buildSystemPrompt(
   /** Le classement des skills par jugement rapide (TypeSafe), quand l'usage est
    *  allumé. Absent = classement lexical, comportement d'avant au mot près. */
   skillBoost?: (s: SkillLike) => number,
+  /** Ce que l'agent sait de lui-même : équipe, bilan, charge (self-model.ts). */
+  selfModel: string = "",
 ): { prompt: string; budget: PromptBudget } {
   const sections: SectionInput[] = [];
   const push = (id: SectionInput["id"], body: string, meta?: { dropped: number; offered: number }) => {
@@ -469,6 +542,7 @@ function buildSystemPrompt(
   push("identity", [
     `You are ${agent.persona || agent.name}, an autonomous internal agent for a SaaS team.`,
     `You work as part of a TEAM of agents — you can discover, message and delegate to peers, and share knowledge through the team memory.`,
+    ...(selfModel && !isSubAgent ? ["", selfModel] : []),
   ].join("\n"));
   // L'employeur, avant le caractère : un agent doit savoir OÙ il travaille
   // avant qu'on lui dise comment se comporter. Le profil part en entier (il
@@ -494,7 +568,7 @@ function buildSystemPrompt(
   }
   push("presence", lines.join("\n"));
   if (securityDoctrine) push("doctrine", SECURITY_DOCTRINE);
-  if (agent.is_orchestrator) push("doctrine", `${ORCHESTRATOR_DOCTRINE}\n\n${ASSISTANT_OPS_DOCTRINE}\n\n${CONNECTOR_OPS_DOCTRINE}`);
+  if (agent.is_orchestrator) push("doctrine", `${ORCHESTRATOR_DOCTRINE}\n\n${ASSISTANT_OPS_DOCTRINE}\n\n${TEAM_OPS_DOCTRINE}\n\n${CONNECTOR_OPS_DOCTRINE}`);
   // Initiative is a doctrine, not a footnote: as one line inside the operating
   // rules it was reliably ignored. Sub-agents are excluded — a spawned worker
   // has ONE narrow subtask and must not start filing ideas of its own.
@@ -547,6 +621,7 @@ function buildSystemPrompt(
     "- TRAVAIL FAIT AILLEURS : dès que tu crées ou modifies quelque chose dans un outil externe (page Notion, issue Linear, doc Drive, fichier Figma, PR…), épingle-le avec link_artifact en donnant l'URL rendue par l'outil. Sinon ce travail n'existe nulle part dans le produit et personne ne le retrouvera.",
   );
   if (mode === "chat") {
+    rules.push(RICH_REPLY_DOCTRINE);
     rules.push("- RICH REPLIES: when a component communicates better than prose (metrics, trends, comparisons, tabular data), attach real UI blocks with render_ui (kpi_grid/chart/table/link_card) and place each [[ui:N]] tag on its own line; real data only. When a sentence is clearer, just write it.");
     rules.push("- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : ne demande PAS quoi faire et ne réponds pas juste en prose — fais l'analyse avec tes outils MAINTENANT, puis confie-la au Rédacteur avec request_report(subject, material, angle). Tu ne rédiges pas le rapport toi-même : tu lui passes les chiffres avec leurs sources, les constats et ce qui reste incertain, il publie le document. Une question de clarification UNIQUEMENT si c'est vraiment impossible d'avancer.");
   }
@@ -567,17 +642,19 @@ function buildSystemPrompt(
       "- PAR DÉFAUT, PARALLÉLISE : dès que le travail se décompose en 2+ sous-tâches NOUVELLES réellement indépendantes (aucune n'a besoin du résultat d'une autre) et non déjà faites, tu DOIS les lancer ENSEMBLE avec spawn_parallel_agents plutôt qu'une par une. Ne reste séquentiel QUE si les sous-tâches sont dépendantes (l'une a besoin du résultat de l'autre), s'il n'y en a qu'une, ou si le résultat existe déjà. En cas de doute sur l'indépendance : si elles ne se lisent/écrivent pas mutuellement, elles sont indépendantes → parallélise.",
       "- AUTO-CHECK PARALLÉLISME (à toi de le décider, pas besoin qu'on te le dise) : avant CHAQUE bloc de travail, demande-toi « est-ce que je m'apprête à répéter le MÊME type de travail sur plusieurs éléments indépendants ? » (produits, concurrents, marchés, URLs, comptes, fichiers, sections…). Si oui → découpe en UNE sous-tâche par élément et lance tout en un seul spawn_parallel_agents, jamais en séquentiel. Pas de petit plafond : autant de sous-tâches que d'éléments (des dizaines, ok — elles tournent par vagues).",
       "- RÉÉVALUE À LA DÉCOUVERTE : ton plan initial ne connaissait pas le nombre réel d'éléments. DÈS que tu le découvres (après avoir listé un catalogue, des comptes, des fichiers, des résultats…), refais l'auto-check ci-dessus et ADAPTE : si une étape prévue « en un bloc » se révèle être « la même chose pour N éléments indépendants », transforme-la en fan-out — même si le plan de départ ne le prévoyait pas. C'est TA responsabilité de repérer la parallélisation, personne ne te la dictera étape par étape.",
-      "- UN SEUL fan-out par lot : NE relance JAMAIS spawn_parallel_agents pour des sous-tâches déjà lancées (même après compaction). Après un fan-out, ta tâche suivante est de RÉCUPÉRER puis SYNTHÉTISER les résultats — s'ils ne sont plus dans ton contexte, utilise search_context(scope=\"run\", query=\"<libellé>\"). Re-spawner les mêmes sous-tâches est interdit (l'outil les refuse).",
+      "- UN SEUL fan-out par lot : NE relance JAMAIS spawn_parallel_agents pour des sous-tâches déjà lancées (même après compaction). Après un fan-out, ta tâche suivante est de RÉCUPÉRER puis SYNTHÉTISER les résultats (quand les sous-agents tournent en arrière-plan, chacun arrive dans un message <background-result> : avance sur le reste en attendant, puis synthétise) — s'ils ne sont plus dans ton contexte, utilise search_context(scope=\"run\", query=\"<libellé>\"). Re-spawner les mêmes sous-tâches est interdit (l'outil les refuse).",
     );
   }
   if (mode === "mission") {
     rules.push(
       "- Materialise every expected deliverable with create_deliverable before finishing.",
+      `- ${NO_LONG_DASH_RULE}`,
       "- Your final message is a concise mission report (markdown): what you did, key findings, deliverables produced, pending approvals if any — plus an 'Initiatives' section when you noticed opportunities (each one filed via propose_mission).",
     );
   } else {
     rules.push(
       "- Respond in concise markdown, in the user's language. Avoid filler.",
+      `- ${NO_LONG_DASH_RULE}`,
       "- BE CONVERSATIONAL & THINK FIRST. If the request is ambiguous, under-specified, or could go several ways, ASK a brief clarifying question before acting (e.g. which target, which period, which audience). Don't guess on important details. A short back-and-forth is better than a wrong deliverable.",
       "- Confirm scope on big/irreversible actions before doing them.",
       "- You can turn work into a tracked task with create_task, or kick off a full background mission with create_mission (use it when the user asks you to 'do X' as ongoing/standalone work, or to schedule recurring work).",
@@ -766,12 +843,33 @@ function planMessages(markdown: string, mode: "chat" | "mission"): ChatMessage[]
   ];
 }
 
+/** Les toolkits connectés via Composio pour cet agent : partagés (sans
+ *  propriétaire), sur son tableau ou sur le projet. Une panne vaut « aucun ». */
+async function loadComposioApps(
+  admin: ReturnType<typeof createServiceClient>,
+  agent: AgentRow,
+): Promise<string[]> {
+  try {
+    const { data } = await admin.from("connectors")
+      .select("provider, service_dashboard_id")
+      .eq("workspace_id", agent.workspace_id).eq("project_id", agent.project_id)
+      .eq("source", "composio").eq("status", "connected")
+      .is("owner_user_id", null);
+    const dash = (agent as { service_dashboard_id?: string | null }).service_dashboard_id ?? null;
+    return [...new Set(((data ?? []) as Array<{ provider: string; service_dashboard_id: string | null }>)
+      .filter((c) => !c.service_dashboard_id || c.service_dashboard_id === dash)
+      .map((c) => c.provider).filter(Boolean))];
+  } catch {
+    return [];
+  }
+}
+
 async function loadAgentAndTools(agentId: string) {
   const admin = createServiceClient();
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, created_by, service_dashboard_id, is_orchestrator, autonomy_level")
+      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, model_routes, created_by, service_dashboard_id, is_orchestrator, autonomy_level")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -782,7 +880,11 @@ async function loadAgentAndTools(agentId: string) {
   if (agentErr) throw new Error(`Could not load agent: ${agentErr.message}`);
   if (!agent) throw new Error(`Agent not found (id=${agentId})`);
   if ((agent as AgentRow).is_archived) throw new Error("Agent is archived");
-  return { agent: agent as AgentRow, tools: (tools ?? []) as AgentToolRow[] };
+  // Mode pools (0291) : l'agent n'atteint que l'union de ses pools — ses lignes
+  // hors pools tombent, ce que les pools donnent sans ligne est synthétisé.
+  const scope = await loadPoolScope(admin, agentId);
+  const rows = (tools ?? []) as AgentToolRow[];
+  return { agent: agent as AgentRow, tools: scope ? applyPoolToToolRows(rows, scope) as AgentToolRow[] : rows };
 }
 
 // Memory injected into the prompt, selected for THIS task (see agent-memory.ts).
@@ -816,7 +918,7 @@ async function loadMemorySection(
   // Semantic recall against the task. Skipped for a greeting: an embedding
   // call to decide which memories a « merci » needs is money for nothing.
   const task = (taskText ?? "").trim();
-  if (task && classifyTier(task, { mode: "chat" }) !== "light" && Deno.env.get("JINA_API_KEY")) {
+  if (task && classifyTier(task, { mode: "chat" }) !== "light" && embeddingsAvailable()) {
     try {
       const [qvec] = await embedTexts([task.slice(0, 1500)], "retrieval.query");
       if (qvec) {
@@ -965,12 +1067,16 @@ async function loadActivatedSkills(
 ): Promise<Array<{ id: string; slug: string; name: string; description: string | null; category: string | null; instructions: string | null; tools: string[] | null; files: Array<{ path: string }> }>> {
   // Embed the bundled files' PATHS only (an index) — their content is pulled on
   // demand via read_skill_file (progressive disclosure), never up-front.
-  const { data } = await admin
-    .from("agent_skill_activations")
-    .select("skill:agent_skills(id, slug, name, description, category, system_prompt_extension, required_tools, files:agent_skill_files(path, sort))")
-    .eq("agent_id", agentId);
-  return ((data ?? []) as any[])
-    .map((a) => a.skill)
+  const cols = "id, slug, name, description, category, system_prompt_extension, required_tools, files:agent_skill_files(path, sort)";
+  // Mode pools (0291) : les compétences sont celles des pools, pas les activations.
+  const scope = await loadPoolScope(admin, agentId);
+  const skills = scope
+    ? (scope.skills.size
+        ? ((await admin.from("agent_skills").select(cols).in("id", [...scope.skills])).data ?? []) as any[]
+        : [])
+    : ((await admin.from("agent_skill_activations").select(`skill:agent_skills(${cols})`).eq("agent_id", agentId)).data ?? [] as any[])
+        .map((a: any) => a.skill);
+  return skills
     .filter(Boolean)
     .map((s: any) => ({
       id: s.id,
@@ -1391,6 +1497,10 @@ async function runChat(
   const chatRunId = chatRun?.id ?? null;
   if (!chatRunId) return jsonResponse({ ok: false, error: "could not create chat run" }, { status: 500 });
 
+  // Ce tour appartient à l'auteur du message qui l'ouvre : lui seul le pilote
+  // et valide depuis le canal ce qu'il demandera (turn-principal.ts).
+  await claimTurn(admin, conversationId).catch(() => null);
+
   // Auto-apprentissage (0288) : si ce message reprend l'agent sur son tour
   // précédent, il corrige ses fichiers en parallèle de sa réponse.
   learnInBackground(learnFromChatMessage(admin, agent.id, conversationId, chatRunId));
@@ -1493,18 +1603,27 @@ async function initChatRun(
     /<(page|selection|element)_context\b([^>]*)>[\s\S]*?<\/\1_context>/g,
     (_w: string, kind: string, attrs: string) => ` [${kind} : ${attrs.match(/title="([^"]*)"/)?.[1] ?? "jointe"}]`,
   );
-  const [memorySection, teamMemorySection, chatSkills, recentWorkSection, company] = await Promise.all([
+  const [memorySection, teamMemorySection, chatSkills, recentWorkSection, company, selfModel] = await Promise.all([
     loadMemorySection(admin, agent.id, lastUserFocus || undefined),
     loadTeamMemorySection(admin, agent.project_id, agent.service_dashboard_id ?? null),
     loadActivatedSkills(admin, agent.id),
     loadRecentWorkSection(admin, agent.id),
     loadCompanySection(admin, agent),
+    loadSelfModel(admin, agent),
   ]);
   ctx.skills = chatSkills;
+  ctx.poolScope = await loadPoolScope(admin, agent.id);
+  // La machine de son équipe (0296) : ses outils team_* et leurs consignes.
+  ctx.teamMachine = await loadAgentMachine(admin, agent);
   ctx.mcpServers = await loadRunMcpServers(admin, agent.id, ctx.runId);
   ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
     agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
   });
+  // Les dashboards qu’il remplit (0301) : l’outil dashboard en dépend.
+  ctx.dashboards = await loadAgentDashboards(admin, agent.id);
+  // Les applications connectées via Composio, pour que l'index des outils et le
+  // plan les connaissent dès le départ (le tick les recharge à chaque tour).
+  ctx.composioApps = await loadComposioApps(admin, agent);
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
 
   // Le run de CE chat s'appelle `chatRunId` dans cette fonction — `runId` n'y
@@ -1518,6 +1637,7 @@ async function initChatRun(
     chatSkills, recentWorkSection, isSecurityAgent(chatSkills), lastUserFocus,
     undefined, false, company,
     await rankSkills(chatJudge, chatSkills, lastUserFocus),
+    selfModel,
   );
   await ctx.logEvent("prompt", budgetEventPayload(chatPrompt.budget, null)).catch(() => {});
   const messages: ChatMessage[] = [
@@ -1540,6 +1660,9 @@ async function initChatRun(
 
   // The composer can pin THIS turn's model. It only wins when its provider has
   // a key — otherwise we'd send a Groq id to DeepSeek and 400 every round.
+  // « auto » (le défaut du composer) ne pin rien : le palier et le critère de
+  // la requête choisissent (plus bas).
+  if (modelChoice === "auto") modelChoice = null;
   const wantedProvider = modelChoice ? resolveProvider(modelChoice) : null;
   const provider = wantedProvider ?? providerFor(agent);
   const pickedModel = modelChoice && modelMatchesProvider(modelChoice, provider)
@@ -1630,7 +1753,14 @@ async function initChatRun(
         lastUserMsg, requestClass.model, "chat",
       ).catch(() => null)
     : null) ?? requestClass.model;
-  await ctx.logEvent("status", { message: `Contexte : ${requestClass.tools} · modèle ${chatTier}${chatTier !== requestClass.model ? " (AgentPilot)" : ""}.` }).catch(() => {});
+  // Le critère de la requête (code, vision, long contexte) : avec le palier,
+  // il désigne le modèle du connecteur qui y répond le mieux.
+  const chatNeed = detectNeed(lastUserMsg, { contextChars: JSON.stringify(messages).length });
+  const chatModel = pickedModel
+    ?? sanitizeModel(Deno.env.get("AGENT_MODEL_CHAT"), provider, agentModelForRequest(agent, chatTier, chatNeed));
+  await ctx.logEvent("status", {
+    message: `Contexte : ${requestClass.tools} · modèle ${chatTier}${chatTier !== requestClass.model ? " (AgentPilot)" : ""}${chatNeed ? ` · critère ${chatNeed}` : ""}.`,
+  }).catch(() => {});
 
   await admin.from("internal_agent_run_state").upsert({
     run_id: chatRunId,
@@ -1647,16 +1777,17 @@ async function initChatRun(
     provider,
     meta: { tool_tier: requestClass.tools, context_manifest: { prefix_hash: chatPrompt.budget.prefix_hash } },
     // Model, most explicit wins: the composer's pick for this turn, then the
-    // AGENT_MODEL_CHAT override, then the cost tier (see classifyRequest).
-    // Sanitised either way — a banned id here is a 413 three rounds later.
-    model: pickedModel
-      ?? sanitizeModel(Deno.env.get("AGENT_MODEL_CHAT"), provider, agentModelForTier(agent, chatTier)),
+    // AGENT_MODEL_CHAT override, then the tier + criterion of the request (see
+    // classifyRequest, detectNeed). Sanitised either way — a banned id here is
+    // a 413 three rounds later.
+    model: chatModel,
     processing_until: null,
     // The triggering message is already in `messages`; only fold in turns that
     // arrive AFTER this point (mid-run steering).
     last_input_at: new Date().toISOString(),
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: chatRunId });
+  await kickTickDrainer(admin);
   return;
  } catch (e) {
    // Any unexpected failure in the background worker: mark the run failed and
@@ -1814,18 +1945,27 @@ async function runMission(agent: AgentRow, tools: AgentToolRow[], runId: string)
 
   // Semantic memory recall keyed on the mission itself (title + brief).
   const missionTaskText = `${mission.title ?? ""}\n${(mission as { brief?: string | null }).brief ?? ""}`.trim();
-  const [memorySection, teamMemorySection, missionSkills, recentWorkSection, company] = await Promise.all([
+  const [memorySection, teamMemorySection, missionSkills, recentWorkSection, company, selfModel] = await Promise.all([
     loadMemorySection(admin, agent.id, missionTaskText || undefined),
     loadTeamMemorySection(admin, agent.project_id, agent.service_dashboard_id ?? null),
     loadActivatedSkills(admin, agent.id),
     loadRecentWorkSection(admin, agent.id),
     loadCompanySection(admin, agent),
+    loadSelfModel(admin, agent),
   ]);
   ctx.skills = missionSkills;
+  ctx.poolScope = await loadPoolScope(admin, agent.id);
+  // La machine de son équipe (0296) : ses outils team_* et leurs consignes.
+  ctx.teamMachine = await loadAgentMachine(admin, agent);
   ctx.mcpServers = await loadRunMcpServers(admin, agent.id, ctx.runId);
   ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
     agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
   });
+  // Les dashboards qu’il remplit (0301) : l’outil dashboard en dépend.
+  ctx.dashboards = await loadAgentDashboards(admin, agent.id);
+  // Les applications connectées via Composio, pour que l'index des outils et le
+  // plan les connaissent dès le départ (le tick les recharge à chaque tour).
+  ctx.composioApps = await loadComposioApps(admin, agent);
   const { defs, capabilitySummary } = buildInternalToolset(tools, ctx);
   await ctx.logEvent("log", { message: `Run started (ticked) — budget: ${agent.max_steps} steps, $${agent.max_run_cost_usd}` });
 
@@ -2018,6 +2158,7 @@ Execute this mission now. Use your tools to gather what you need, save each expe
       { admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId },
       missionSkills, missionTaskText,
     ),
+    selfModel,
   );
   await ctx.logEvent("prompt", budgetEventPayload(missionPrompt.budget, null)).catch(() => {});
   const initialMessages: ChatMessage[] = [
@@ -2052,10 +2193,12 @@ Execute this mission now. Use your tools to gather what you need, save each expe
     // Cost-tiered from the mission's nature (title + brief). AGENT_MODEL_MISSION
     // still overrides if set. A run that keeps failing is escalated to the heavy
     // model in runMissionTick (see the replan branch).
-    model: Deno.env.get("AGENT_MODEL_MISSION") || agentModelForTier(agent, missionTier),
+    model: Deno.env.get("AGENT_MODEL_MISSION")
+      || agentModelForRequest(agent, missionTier, detectNeed(`${mission.title ?? ""}\n${mission.brief ?? ""}`)),
     processing_until: null,
   });
   await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
+  await kickTickDrainer(admin);
   return jsonResponse({ ok: true, run_id: runId, queued: true });
 }
 
@@ -2637,9 +2780,21 @@ function sealDigest(span: ChatMessage[]): string {
 function compactMessagesIfNeeded(
   messages: ChatMessage[],
   budget: ContextBudget = contextBudgetFor("full"),
+  /** Le dernier tour mesuré (context-checkpoint.ts) : sans lui, les caractères. */
+  measure?: PromptMeasure | null,
+  /** Le point de situation préparé en avance : il part dans le segment scellé. */
+  checkpoint?: ContextCheckpoint | null,
 ): boolean {
   if (messages.length < 16) return false;
-  if (JSON.stringify(messages).length < budget.triggerChars) return false;
+  // Mesuré : la taille RÉELLE du prompt en tokens (ce que le fournisseur a
+  // facturé au dernier tour, plus ce qui s'est ajouté depuis). Pas encore
+  // mesuré : les caractères, comme avant. Dans les deux cas un plafond de
+  // caractères borne le transcrit stocké (la ligne en base).
+  const chars = JSON.stringify(messages).length;
+  const over = measure
+    ? estimatePromptTokens(messages, measure) >= budget.triggerTokens || chars >= budget.triggerChars * 3
+    : chars >= budget.triggerChars;
+  if (!over) return false;
   const keepHead = Math.min(2, messages.length); // system + original task (grounding)
 
   // Locate the end of the SEALED zone: consecutive markers right after the head.
@@ -2676,7 +2831,7 @@ function compactMessagesIfNeeded(
     content:
       `[Segment scellé : ${dropped} messages retirés pour rester dans la fenêtre de contexte. ` +
       `Résumé factuel de ce segment ci-dessous — ce travail EST FAIT, ne le refais pas. ` +
-      `Pour un détail précis, utilise search_context(scope="run").]\n${digest}`,
+      `Pour un détail précis, utilise search_context(scope="run").]\n${digest}${checkpointBlock(checkpoint)}`,
   });
   // Belt-and-suspenders: the drop can leave the last head message as an
   // assistant(tool_calls) whose responses were in the removed middle.
@@ -2688,31 +2843,11 @@ function compactMessagesIfNeeded(
 // assistant message with tool_calls must be immediately followed by one tool
 // message per tool_call_id, and no orphan tool messages may exist. Mutates in
 // place. Runs after compaction (which can break pairs) and defensively before
-// each model call.
+// each model call. A call left without its result gets a SYNTHETIC error result
+// (repairToolPairing) instead of being erased with its siblings' results.
 function sanitizeToolPairs(messages: ChatMessage[]): void {
-  const out: ChatMessage[] = [];
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    const tc = (m as { tool_calls?: Array<{ id: string }> }).tool_calls;
-    if (m.role === "assistant" && tc?.length) {
-      const toolMsgs: ChatMessage[] = [];
-      let j = i + 1;
-      while (j < messages.length && messages[j].role === "tool") { toolMsgs.push(messages[j]); j++; }
-      const answered = new Set(toolMsgs.map((t) => (t as { tool_call_id?: string }).tool_call_id));
-      if (tc.every((c) => answered.has(c.id))) {
-        out.push(m, ...toolMsgs);
-      } else {
-        // Strip the (now unanswerable) tool_calls; keep any text so context stays.
-        out.push({ role: "assistant", content: m.content ?? "[appel d'outil tronqué]" } as ChatMessage);
-      }
-      i = j - 1; // skip the tool messages we just consumed (or dropped)
-    } else if (m.role === "tool") {
-      // Orphan tool message (its calling assistant is gone) → drop it.
-      continue;
-    } else {
-      out.push(m);
-    }
-  }
+  const out = repairToolPairing(messages);
+  if (out === messages) return;
   messages.length = 0;
   messages.push(...out);
 }
@@ -2739,7 +2874,7 @@ async function verifyMissionOutcome(
     // Cheap side-call: Groq when it is keyed, otherwise whatever is — this used
     // to be hard-coded and silently disabled mission verification on a
     // DeepSeek-only deployment.
-    provider: cheapProvider(),
+    provider: cheapProvider(), model: cheapModel(),
     jsonMode: true,
     maxTokens: 500,
     systemPrompt:
@@ -2751,7 +2886,12 @@ async function verifyMissionOutcome(
   return { pass: j.verdict.toLowerCase() === "pass", feedback: String(j.missing ?? "").slice(0, 800) };
 }
 
-const TICK_ROUNDS = 4;
+/** Tours de modèle par tick, au plus. C'était 4, fixe, pour ne pas dépasser le
+ *  temps du worker. Depuis que les tours s'arrêtent sur l'échéance du tick
+ *  (deadlineAt), le temps est tenu autrement : sur un modèle rapide (2 à 5 s
+ *  par tour sur Azure), quatre tours laissaient la moitié du tick inutilisée et
+ *  payaient une préparation de tick de plus tous les quatre tours. */
+const TICK_ROUNDS = Number(Deno.env.get("AGENT_TICK_ROUNDS")) || 6;
 
 /** Lease held while a tick processes a run. MUST stay LONGER than the pgmq
  *  visibility timeout used by drain_agent_ticks (180s): a redelivery that lands
@@ -2766,6 +2906,49 @@ const TICK_LEASE_MS = 4 * 60 * 1000;
  *  budgeted against this, from the tick's start. Env-overridable for plans
  *  with a longer limit. */
 const TICK_WALL_MS = Number(Deno.env.get("AGENT_TICK_WALL_MS")) || 125_000;
+
+/** Ce que le tick garde pour après ses tours : jugement de boucle, contrôleur,
+ *  vérification du contrat, enregistrement. Les tours s'arrêtent avant. */
+const TICK_POST_ROUNDS_MS = 30_000;
+
+/** L'échéance DURE d'un tick : plus rien n'y est en vol. Une requête de modèle
+ *  bloquée y est coupée, un outil qui ne rend pas la main y est abandonné avec
+ *  une erreur lisible (ai.ts, hardDeadlineAt) — au lieu de tenir jusqu'à ce que
+ *  le runtime tue le worker vers 150 s et emporte le tick. Laisse ~15 s pour
+ *  enregistrer ce qui s'est passé. */
+const TICK_HARD_MS = Number(Deno.env.get("AGENT_TICK_HARD_MS")) || TICK_WALL_MS + 10_000;
+
+/** Ce qu'il faut au moins pour la synthèse de fin d'un run arrêté sur son
+ *  budget (create_deliverable + résumé). Moins que ça : elle part au tick
+ *  suivant au lieu de se faire tuer avec le worker. */
+const WRAPUP_MIN_MS = 45_000;
+
+/** Ce que la finalisation garde pour elle après la synthèse (vérification,
+ *  réflexion, livraison du message). */
+const FINALIZE_RESERVE_MS = 20_000;
+
+/** Ticks d'affilée en erreur passagère avant d'arrêter le run avec sa cause. */
+const MAX_TRANSIENT_TICKS = 3;
+
+/**
+ * Réveille le drainer de la file des ticks maintenant, au lieu d'attendre son
+ * passage (pg_cron, toutes les 10 s). Mesuré le 10/11/2026 : un chat simple
+ * attendait 10 s avant son premier tick pour 2,5 s de travail, et chaque
+ * passage d'un tick au suivant coûtait en moyenne 5 s de plus. Le drainer lit
+ * la file avec sa visibilité habituelle (pgmq) : un tick n'est jamais livré
+ * deux fois, le réveil ne fait qu'avancer la livraison. Sans effet si ça
+ * échoue : pg_cron passe de toute façon.
+ */
+async function kickTickDrainer(admin: ReturnType<typeof createServiceClient>): Promise<void> {
+  await admin.rpc("drain_agent_ticks").then(() => {}, () => {});
+}
+
+/** Enchaîne le tick suivant d'un run (dans la file), et le fait partir aussitôt. */
+async function chainNextTick(admin: ReturnType<typeof createServiceClient>, msgId: number | null, runId: string): Promise<void> {
+  if (msgId != null) await admin.rpc("agent_tick_next", { p_msg_id: msgId, p_run_id: runId });
+  else await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
+  await kickTickDrainer(admin);
+}
 
 // Process ONE tick of a mission: lease, run a few rounds against persisted
 // state, then finalize / re-enqueue. Invoked by the pg_cron drainer via pg_net.
@@ -2816,7 +2999,15 @@ async function runMissionTick(runId: string, msgId: number | null) {
   // Folded into the mission reporter so a new terminal path can never remember
   // one and forget the other.
   const workflowRun = ((state.meta as { workflow_run?: { id: string } } | undefined)?.workflow_run) ?? null;
+  // Un sous-agent en arrière-plan (background-agents.ts) : son résultat, quel
+  // que soit le chemin de fin, est remis à son parent, qui est réveillé.
+  const bgParent = ((state.meta as { background_parent?: { run_id: string; label?: string } } | undefined)?.background_parent) ?? null;
   const reportMissionTask = async (ok: boolean, output: string) => {
+    if (bgParent?.run_id) {
+      await deliverBackgroundResult(admin, {
+        parentRunId: bgParent.run_id, childRunId: runId, label: bgParent.label ?? null, ok, output,
+      }).catch(() => {});
+    }
     if (missionTask?.task_id && missionTask.mission_id) {
       await completeMissionTask(admin, {
         missionId: missionTask.mission_id, taskId: missionTask.task_id, ok, output,
@@ -2848,9 +3039,57 @@ async function runMissionTick(runId: string, msgId: number | null) {
     return jsonResponse({ ok: true, done: true });
   }
 
+  // Un run EN ATTENTE de ses sous-agents n'est réveillé que par agent_run_wake,
+  // qui retire le drapeau avant de mettre le tick en file. Un tick qui le
+  // trouve encore là est une livraison périmée : on la consomme sans rien
+  // faire, le run reste en attente.
+  if ((state.meta as { awaiting_children?: boolean } | null)?.awaiting_children) {
+    await admin.from("internal_agent_run_state").update({ processing_until: null }).eq("run_id", runId);
+    if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+    return jsonResponse({ ok: true, parked: true });
+  }
+
   const { agent, tools } = await loadAgentAndTools(state.agent_id);
-  // Resolve the model endpoint once per tick (provider-aware; decrypts the key).
-  const agentEndpoint = await resolveAgentEndpoint(admin, agent);
+  // ── Ce que le tick lit avant de travailler, en une vague ──────────────────
+  // Neuf lectures indépendantes s'enchaînaient ici à chaque tick — endpoint,
+  // mission, réglages, compagnon, skills, serveurs MCP, outils customisés,
+  // pools puis guardrails — soit neuf allers-retours vers la base avant le
+  // premier token. Elles ne dépendent que de l'agent et du run : elles partent
+  // ensemble (les guardrails attendent seulement les pools, dont ils héritent).
+  const poolScopeP = loadPoolScope(admin, agent.id);
+  // La machine d'équipe (0296) part avec la vague, sans l'allonger.
+  const teamMachineP = loadAgentMachine(admin, agent);
+  const [agentEndpoint, missionRow, runtimeConfig, companionFlag, activatedSkills, runMcpServers, customConnectorSnapshots, poolScope, guardrails] = await Promise.all([
+    // Resolve the model endpoint once per tick (provider-aware; decrypts the key).
+    resolveAgentEndpoint(admin, agent),
+    state.mission_id
+      ? admin.from("internal_agent_missions")
+          .select("id, title, brief, acceptance_criteria, schedule, report_back_to_agent, delegation_depth")
+          .eq("id", state.mission_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    loadRuntimeConfig(admin),
+    state.mission_id ? Promise.resolve(false) : isCompanionConversation(admin, state.conversation_id),
+    loadActivatedSkills(admin, agent.id),
+    loadRunMcpServers(admin, agent.id, runId),
+    loadCustomConnectorSnapshots(admin, {
+      agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
+    }),
+    poolScopeP,
+    // ── Guardrails (runtime enforcement) ────────────────────────────────────
+    // Loaded once per tick. Two passes, and elles ne couvrent pas les mêmes
+    // règles : l'expression régulière attrape ce qui s'écrit (un numéro de carte),
+    // le jugement sémantique attrape ce qui se comprend (« ne promets jamais un
+    // délai »). La seconde ne tourne que si l'usage « guardrails » est allumé
+    // dans les réglages de l'espace. Best-effort des deux côtés : une panne de
+    // chargement vaut « aucun garde-fou », pas un run cassé.
+    poolScopeP.then((ps) => loadGuardrails(admin, agent.workspace_id, agent.project_id, {
+      teamId: (agent as { service_dashboard_id?: string | null }).service_dashboard_id ?? null, surface: "internal",
+      extraIds: ps ? [...ps.guardrails] : undefined,
+    })),
+  ]);
+  const mission = (missionRow as { data: unknown }).data as
+    | { id: string; title?: string | null; brief?: string | null; acceptance_criteria?: string | null; schedule?: string | null; report_back_to_agent?: string | null; delegation_depth?: number | null }
+    | null;
 
   // ── Provider for this tick ────────────────────────────────────────────────
   // The persisted provider wins — a run must not change vendor mid-flight just
@@ -2864,21 +3103,27 @@ async function runMissionTick(runId: string, msgId: number | null) {
   const usable = availableProviders();
   const providerUnavailable = usable.length > 0 && !usable.includes(tickProvider);
   if (providerUnavailable) tickProvider = defaultProvider();
-  const { data: mission } = state.mission_id
-    ? await admin.from("internal_agent_missions")
-        .select("id, title, brief, acceptance_criteria, schedule, report_back_to_agent, delegation_depth")
-        .eq("id", state.mission_id).maybeSingle()
-    : { data: null };
-  const runtimeConfig = await loadRuntimeConfig(admin);
   const ctx = makeToolContext({ admin, agent, runId, missionId: state.mission_id, conversationId: state.conversation_id, delegationDepth: (mission as { delegation_depth?: number } | null)?.delegation_depth ?? 0, runtimeConfig });
   // Le toolset est reconstruit à chaque tick : sans ce drapeau, page_assist
   // annoncé au premier tour aurait disparu au suivant.
-  ctx.companion = !state.mission_id && await isCompanionConversation(admin, state.conversation_id);
-  ctx.skills = await loadActivatedSkills(admin, agent.id);
-  ctx.mcpServers = await loadRunMcpServers(admin, agent.id, ctx.runId);
-  ctx.customConnectors = await loadCustomConnectorSnapshots(admin, {
-    agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
-  });
+  ctx.companion = companionFlag;
+  ctx.skills = activatedSkills;
+  ctx.mcpServers = runMcpServers;
+  ctx.customConnectors = customConnectorSnapshots;
+  // Les dashboards qu’il remplit (0301) : l’outil dashboard en dépend.
+  ctx.dashboards = await loadAgentDashboards(admin, agent.id);
+  // Mode pools (0291) : my_resources et run_automation en dépendent.
+  ctx.poolScope = poolScope;
+  ctx.teamMachine = await teamMachineP;
+  // Les images de cet agent : la route « image » de son connecteur (AI Ops →
+  // Modèles), sinon generate_image prend le compte de la plateforme.
+  ctx.imageTarget = agentEndpoint?.routes?.image
+    ? imageTargetFromEndpoint(agentEndpoint.baseUrl, agentEndpoint.apiKey, agentEndpoint.routes.image)
+    : null;
+  // Les applications connectées via Composio que cet agent peut atteindre :
+  // celles de son tableau et celles du projet — la même résolution que
+  // composio-action (le compte du tableau, sinon celui du projet).
+  ctx.composioApps = await loadComposioApps(admin, agent);
   // The person this turn acts for: who posted in the room, else who started
   // the run. The service assistant's administration tools act with THEIR
   // role, not the role of whoever first created the assistant.
@@ -2897,50 +3142,97 @@ async function runMissionTick(runId: string, msgId: number | null) {
   if (currentLlmCaller()) {
     setLlmCaller({ agentId: agent.id, agentName: agent.name, runId, userId: await resolveRequester(ctx) });
   }
-  // ── Guardrails (runtime enforcement) ──────────────────────────────────────
-  // Loaded once per tick. Two passes, and elles ne couvrent pas les mêmes
-  // règles : l'expression régulière attrape ce qui s'écrit (un numéro de carte),
-  // le jugement sémantique attrape ce qui se comprend (« ne promets jamais un
-  // délai »). La seconde ne tourne que si l'usage « guardrails » est allumé
-  // dans les réglages de l'espace. Best-effort des deux côtés : une panne de
-  // chargement vaut « aucun garde-fou », pas un run cassé.
-  const guardrails = await loadGuardrails(admin, agent.workspace_id, agent.project_id, {
-    teamId: (agent as { service_dashboard_id?: string | null }).service_dashboard_id ?? null, surface: "internal",
-  });
   const judgeCtx: JudgeContext = {
     admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId,
   };
   // Le contexte d'entreprise des enfants, mémoïsé : il n'est lu que si un
   // fan-out a effectivement lieu, et une seule fois pour toute la vague.
   let childCompany: Promise<CompanyContext | null> | null = null;
-  // This is a PRIMARY run — let it fan independent subtasks out to ephemeral
-  // parallel sub-agents (children run in-process and stream to their own runId).
-  ctx.spawnParallel = (subtasks) => runParallelSubagents({
-    admin, parentRunId: runId,
-    agentId: agent.id, workspaceId: agent.workspace_id, projectId: agent.project_id, createdBy: agent.created_by ?? null,
-    tools, provider: tickProvider, endpoint: agentEndpoint, temperature: agent.temperature ?? 0.3,
-    parentLogEvent: (p) => ctx.logEvent("status", p),
-    makeChildContext: (childRunId) => {
-      const c = makeToolContext({ admin, agent, runId: childRunId, missionId: null, conversationId: null, delegationDepth: (ctx.delegationDepth ?? 0) + 1, runtimeConfig });
-      c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.customConnectors = ctx.customConnectors; c.isSubagent = true;
-      // Un sous-agent agit pour la même personne que son parent : ses appels MCP
-      // portent la même identité.
-      c.actingUserId = ctx.actingUserId; c.mcpRequester = ctx.mcpRequester;
-      return c;
-    },
-    // Un sous-agent n'hérite ni de la mémoire ni de l'initiative — mais il
-    // hérite de l'EMPLOYEUR : ce qu'il produit sort au nom de l'entreprise, au
-    // ton de l'entreprise, sous ses non-négociables. Chargé au premier enfant
-    // seulement, puis partagé : un fan-out de huit ne paie qu'une lecture.
-    buildChildSystem: async (cap, c) => buildSystemPrompt(
-      agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills), "", undefined, true,
-      await (childCompany ??= loadCompanySection(admin, agent)),
-    ).prompt,
-    maxConcurrency: agent.swarm_max_concurrency ?? undefined,
-    // Whatever is left of THIS tick, capped by the engine's own budget: the
-    // fan-out must return before the worker is killed, or all of it is lost.
-    deadlineAt: Math.min(Date.now() + SUBAGENT_BUDGET_MS, tickStartedAt + TICK_WALL_MS),
-  }, subtasks);
+  // Un sous-agent en arrière-plan ne relance pas de sous-agents, et compte pour
+  // un cran de délégation (ni réflexe de fin, ni mémoire promue).
+  if (bgParent) {
+    ctx.isSubagent = true;
+    ctx.delegationDepth = Math.max(1, (ctx.delegationDepth ?? 0) + 1);
+  }
+  const makeChildContext = (childRunId: string) => {
+    const c = makeToolContext({ admin, agent, runId: childRunId, missionId: null, conversationId: null, delegationDepth: (ctx.delegationDepth ?? 0) + 1, runtimeConfig });
+    c.skills = ctx.skills; c.mcpServers = ctx.mcpServers; c.customConnectors = ctx.customConnectors; c.isSubagent = true;
+    c.poolScope = ctx.poolScope;
+    c.imageTarget = ctx.imageTarget;
+    c.composioApps = ctx.composioApps;
+    // Un clone travaille sur la même machine, sous la même identité.
+    c.teamMachine = ctx.teamMachine;
+    // Un sous-agent agit pour la même personne que son parent : ses appels MCP
+    // portent la même identité.
+    c.actingUserId = ctx.actingUserId; c.mcpRequester = ctx.mcpRequester;
+    return c;
+  };
+  // Un sous-agent n'hérite ni de la mémoire ni de l'initiative — mais il
+  // hérite de l'EMPLOYEUR : ce qu'il produit sort au nom de l'entreprise, au
+  // ton de l'entreprise, sous ses non-négociables. Chargé au premier enfant
+  // seulement, puis partagé : un fan-out de huit ne paie qu'une lecture.
+  const buildChildSystem = async (cap: string, c: InternalToolContext) => buildSystemPrompt(
+    agent, cap, "mission", "", "", "", "", isSecurityAgent(c.skills), "", undefined, true,
+    await (childCompany ??= loadCompanySection(admin, agent)),
+  ).prompt;
+  // Les sous-agents EN ARRIÈRE-PLAN (background-agents.ts, 0305) : chaque
+  // sous-tâche devient un run durable, le parent reprend la main aussitôt et
+  // reçoit les résultats en <background-result>. Sans la migration : les
+  // vagues en mémoire d'avant.
+  const backgroundMode = !bgParent && await asyncSubagentsAvailable(admin).catch(() => false);
+  ctx.backgroundSubagents = backgroundMode;
+  ctx.spawnParallel = backgroundMode
+    ? async (subtasks) => {
+      const probe = makeChildContext(runId);
+      const { capabilitySummary } = buildInternalToolset(tools, probe);
+      const system = await buildChildSystem(capabilitySummary, probe);
+      const grants = await runMcpGrants(admin, runId).catch(() => undefined);
+      const childBudget = Math.min(resolveBudgets(agent, "mission").maxRounds, 150);
+      const started: Array<{ runId: string; label: string }> = [];
+      const failed: string[] = [];
+      for (const s of subtasks.slice(0, 100)) {
+        const out = await spawnBackgroundChild(admin, {
+          parentRunId: runId,
+          agent: { id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id },
+          createdBy: agent.created_by ?? null,
+          spec: s, system, provider: tickProvider, model: tickModel ?? null,
+          maxRounds: childBudget, mcpGrants: grants,
+        });
+        if ("runId" in out) started.push({ runId: out.runId, label: s.label });
+        else failed.push(`${s.label} (${out.error.slice(0, 80)})`);
+      }
+      if (started.length) {
+        // Gardés dans l'état du parent (relu et fusionné en fin de tick, voir
+        // buildNextMeta) : c'est la liste que le parent attend.
+        const { data: st } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
+        const m = ((st as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+        const prev = Array.isArray(m.bg_children) ? (m.bg_children as string[]) : [];
+        await admin.from("internal_agent_run_state")
+          .update({ meta: { ...m, bg_children: [...prev, ...started.map((c) => c.runId)].slice(-200) } })
+          .eq("run_id", runId);
+        await kickTickDrainer(admin);
+        await ctx.logEvent("status", { message: `${started.length} sous-agent(s) lancé(s) en arrière-plan.` }).catch(() => {});
+      }
+      return spawnedNotice(started, failed);
+    }
+    : (subtasks) => runParallelSubagents({
+      admin, parentRunId: runId,
+      agentId: agent.id, workspaceId: agent.workspace_id, projectId: agent.project_id, createdBy: agent.created_by ?? null,
+      tools, provider: tickProvider, endpoint: agentEndpoint, temperature: agent.temperature ?? 0.3,
+      parentLogEvent: (p) => ctx.logEvent("status", p),
+      makeChildContext,
+      buildChildSystem,
+      maxConcurrency: agent.swarm_max_concurrency ?? undefined,
+      // Whatever is left of THIS tick, capped by the engine's own budget: the
+      // fan-out must return before the worker is killed, or all of it is lost.
+      deadlineAt: Math.min(Date.now() + SUBAGENT_BUDGET_MS, tickStartedAt + TICK_WALL_MS),
+    }, subtasks);
+  if (backgroundMode) {
+    ctx.messageSubagent = async (childRunId, message) => {
+      const out = await sendFollowUp(admin, { parentRunId: runId, childRunId, message });
+      return "error" in out ? `ERROR: ${out.error}` : "Message transmis : le sous-agent le lira à sa prochaine étape.";
+    };
+  }
   // HYBRID: re-probe both worlds each tick and strip whichever is unreachable, so
   // the toolset rebuilt below exposes only healthy worlds (and recovers a world
   // that comes back). Cheap (two parallel health pings) and keeps the agent from
@@ -2963,8 +3255,33 @@ async function runMissionTick(runId: string, msgId: number | null) {
     if (family === "*") toolTier = "full";
     else loadedFamilies.add(family);
   };
+  // Les outils que my_resources a rendus appelables un par un (mode pools) :
+  // gardés d'un tick à l'autre, et jamais écartés par la sélection de schémas.
+  const unlockedTools = new Set<string>(
+    Array.isArray(metaNow.unlocked_tools) ? (metaNow.unlocked_tools as string[]).slice(-60) : [],
+  );
+  ctx.unlockedTools = [...unlockedTools];
+  ctx.onToolsUnlocked = async (names) => {
+    for (const n of names) unlockedTools.add(n);
+  };
+  // ── Gros résultats conservés (persisted output) ──────────────────────────
+  // Un résultat trop long pour le transcrit est gardé en entier dans
+  // internal_agent_tool_outputs (0297), lié au run, et relu avec
+  // read_tool_output. Hors de run_events exprès : la timeline relit ses
+  // événements toutes les 2,5 s. Une table absente (migration non jouée) ou une
+  // écriture refusée rend null : le résultat est alors coupé comme avant.
+  let persistedOutputs = 0;
+  ctx.persistToolOutput = async (tool, args, full) => {
+    const ref = `out_${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`;
+    const label = String(args?.query ?? args?.url ?? args?.path ?? args?.file ?? args?.command ?? "").slice(0, 200) || null;
+    const { error } = await admin.from("internal_agent_tool_outputs").insert({
+      run_id: runId, ref, tool, label, content: full, size: full.length,
+    });
+    if (!error) persistedOutputs++;
+    return error ? null : ref;
+  };
 
-  const { defs, defsFor, executor, familyOf, families, familyRules } = buildInternalToolset(tools, ctx);
+  const { defs, defsFor, executor, familyOf, families, familyRules, immediateTools } = buildInternalToolset(tools, ctx);
 
   // ── Per-round tool selection (prompt compiler) ─────────────────────────────
   // Tool schemas are re-sent on EVERY round, so on a wide agent (connectors +
@@ -2989,11 +3306,21 @@ async function runMissionTick(runId: string, msgId: number | null) {
     // The shared graph: "qui est notre contact chez Acme ?" names Acme, not a
     // tool — lexical ranking would drop the one schema that answers it.
     "knowledge_search", "knowledge_save",
+    // Mode pools : l'inventaire de ses pools ne partage aucun mot avec la
+    // tâche (« relance le client X ») — c'est pourtant lui qui dit avec quoi.
+    "my_resources",
+    // Un résultat tronqué renvoie à cet outil par son nom : son schéma doit
+    // être là au tour où le modèle veut relire.
+    "read_tool_output",
     // The service assistant's administration tools: "mets Léa sur ABC-12" shares
     // no word with either schema, so lexical ranking would drop exactly the
     // tool the request is about.
     ...(agent.is_orchestrator ? ["manage_agents", "manage_projects"] : []),
+    // Les relances vers un sous-agent en cours : son run_id n'a aucun mot en
+    // commun avec la tâche.
+    ...(backgroundMode ? ["message_subagent"] : []),
   ]);
+  for (const name of immediateTools) PINNED_TOOLS.add(name);
   /** Tools called in the recent transcript — the agent is mid-pipeline with
    *  them, so their schemas stay whatever the ranking says. */
   const recentlyUsedTools = (msgs: ChatMessage[]): string[] => {
@@ -3019,7 +3346,22 @@ async function runMissionTick(runId: string, msgId: number | null) {
    * quand la tâche du tick est connue. Vide tant qu'il n'a rien dit (usage
    * éteint, shadow, panne) : la sélection reste alors strictement lexicale.
    */
-  const tickHints: { toolBoost?: (name: string) => number } = {};
+  const tickHints: { toolBoost?: (name: string) => number; ranking?: ToolRanking } = {};
+  // ── Schémas collants (cache de préfixe) ────────────────────────────────────
+  // La liste d'outils est le DÉBUT du préfixe mis en cache par le fournisseur :
+  // la changer refacture tout le transcrit qui suit. Or elle était reclassée à
+  // chaque tick sur la tâche du moment — l'étape active change, la liste
+  // change, et chaque premier tour de tick repartait sans cache. Un outil déjà
+  // envoyé dans ce run RESTE donc envoyé (gardé d'un tick à l'autre dans
+  // meta.sent_tools) ; la liste ne fait que grandir quand une étape en demande
+  // un nouveau. Si elle grossit trop (STICKY_CEILING × le budget), on repart de
+  // la sélection du moment — un défaut de cache, puis de nouveau stable.
+  const STICKY_SLACK = 1.25;
+  const STICKY_CEILING = 1.6;
+  const stickyTools = new Set<string>(
+    Array.isArray(metaNow.sent_tools) ? (metaNow.sent_tools as string[]).slice(-160) : [],
+  );
+  let toolsetResets = 0;
   /** Schemas for the current round — re-evaluated every round so a mid-loop
    *  need_tools / load_toolset is honoured immediately, not next tick. */
   const liveTools = () => {
@@ -3028,262 +3370,106 @@ async function runMissionTick(runId: string, msgId: number | null) {
       toolStats = { sent: base.length, omitted: 0, chars: 0 };
       return base;
     }
-    const sel = selectTools(base, {
+    const keepNow = [...PINNED_TOOLS, ...recentlyUsedTools(state.messages), ...unlockedTools];
+    const pick = (sticky: boolean) => selectTools(base, {
       task: tickTaskText,
-      keep: [...PINNED_TOOLS, ...recentlyUsedTools(state.messages)],
-      budget: TOOL_SCHEMA_BUDGET,
+      keep: sticky ? [...keepNow, ...stickyTools] : keepNow,
+      // Un peu d'air au-dessus des outils déjà envoyés : sans lui, ils
+      // rempliraient le budget et aucune étape nouvelle n'obtiendrait le sien.
+      budget: sticky && stickyTools.size ? TOOL_SCHEMA_BUDGET * STICKY_SLACK : TOOL_SCHEMA_BUDGET,
       floorCount: 14,
       boost: tickHints.toolBoost,
+      // Le classement de Jev pour l'étape en cours, mêlé au lexical selon sa
+      // confiance (tool-ranking.ts). Absent : lexical seul, comme avant.
+      ranking: tickHints.ranking ? { probs: tickHints.ranking.probs, weight: tickHints.ranking.confidence } : undefined,
     });
+    let sel = pick(true);
+    if (stickyTools.size && sel.chars > TOOL_SCHEMA_BUDGET * STICKY_CEILING) {
+      stickyTools.clear();
+      toolsetResets++;
+      sel = pick(false);
+    }
+    for (const d of sel.defs) stickyTools.add(d.function.name);
     toolStats = { sent: sel.defs.length, omitted: sel.omitted.length, chars: sel.chars };
     return sel.defs;
   };
-  // Compact long string args (file content, code, html…) so the live timeline
-  // shows WHAT a call does without storing megabytes per event.
-  const compactArgs = (a: any): any => {
-    if (!a || typeof a !== "object") return a;
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(a)) {
-      out[k] = typeof v === "string" && v.length > 700 ? `${v.slice(0, 700)}… (+${v.length - 700} chars)` : v;
+  // ── L'outil, entouré de ses étapes (harness-hooks.ts, run-tool-hooks.ts) ──
+  // Ce qui vivait ici dans une seule fonction (déduplication des recherches,
+  // réponse depuis la mémoire, garde-fous avant et après, faux outils des
+  // évals, disjoncteur, journal, trouvailles) est inscrit en étapes nommées,
+  // plus le diagnostic des erreurs. L'état qu'elles tiennent est gardé d'un
+  // tick à l'autre dans run_state.meta (voir buildNextMeta).
+  const metaPrev = (state.meta ?? {}) as Record<string, unknown>;
+  // Disjoncteur par outil : un outil qui échoue encore et encore — même avec
+  // des arguments différents — est tenu pour cassé par le contrôleur.
+  const toolFails: Record<string, number> = { ...((metaPrev.tool_fails as Record<string, number> | undefined) ?? {}) };
+  // Refus des garde-fous (denialTracking, superharness) : d'affilée et sur le
+  // run. Un refus n'est pas une panne d'outil, mais une série de refus est un
+  // agent qui cherche à contourner une règle : le contrôleur le lit.
+  const savedDenials = metaPrev.guardrail_denials as { consecutive?: number; total?: number } | undefined;
+  const guardrailDenials = {
+    consecutive: Number(savedDenials?.consecutive) || 0,
+    total: Number(savedDenials?.total) || 0,
+  };
+  // Les recherches déjà faites dans ce run, normalisées (voir querySig).
+  const searchSigs: Record<string, number> = { ...((metaPrev.search_sigs as Record<string, number> | undefined) ?? {}) };
+  // Les dernières tentatives en échec, par outil : ce que le contrôleur donne
+  // à lire au modèle léger quand un outil reste cassé (explainRepeatedFailure).
+  const toolErrors: RunHookDeps["toolErrors"] = { ...((metaPrev.tool_errors as RunHookDeps["toolErrors"] | undefined) ?? {}) };
+  const research = createResearchMemory({ admin, runId, agentId: agent.id, projectId: agent.project_id ?? null, logEvent: ctx.logEvent });
+  const hookStats: RunHookDeps["stats"] = { diagnosed: 0, auto_retried: 0, auto_recovered: 0, by_cause: {} };
+  const allSchemas = new Map(defs.map((d) => [d.function.name, d.function.parameters as Record<string, unknown>]));
+  const hooks = registerRunToolHooks(new HarnessHooks(), {
+    logEvent: ctx.logEvent, searchSigs, toolFails, denials: guardrailDenials, toolErrors, research,
+    guardrails, judgeCtx,
+    recordGuardrailIncident: (title, scope, matched) => recordGuardrailIncident(admin, agent, runId, title, scope, matched),
+    evalStub: (name, args) => evalStubFor(agent.id, name, args),
+    evidence: () => ctx.loopEvidence,
+    rawExecutor: executor,
+    isIdempotent: isParallelSafeTool,
+    schemaOf: (name) => allSchemas.get(name),
+    deadlineAt: tickStartedAt + TICK_HARD_MS,
+    stats: hookStats,
+  });
+  const loggingExecutor = hooks.wrapExecutor(executor);
+  // run.idle — le parent a fini son tour : un résultat d'enfant arrivé entre-
+  // temps le fait continuer ; des enfants encore en cours le mettent en attente.
+  const childIds = async (): Promise<string[]> => {
+    const { data } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
+    const m = ((data as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+    return Array.isArray(m.bg_children) ? (m.bg_children as string[]) : [];
+  };
+  hooks.onIdle("background-children", async () => {
+    if (!backgroundMode) return;
+    const ids = await childIds();
+    if (!ids.length) return;
+    const arrived = await takeInbox(admin, runId);
+    if (arrived.length) return { keepWorking: arrived.map((i) => ({ role: "user" as const, content: inboxMessage(i) })) };
+    const running = await outstandingChildren(admin, runId, ids);
+    if (running.length) {
+      return { wait: `${running.length} sous-agent(s) encore en cours : ${running.slice(0, 5).map((c) => c.label ?? c.id).join(", ")}` };
     }
-    return out;
-  };
-  // Per-tool consecutive-failure tally (circuit breaker). Survives ticks via
-  // run_state.meta.tool_fails. A tool that keeps erroring — even with DIFFERENT
-  // args each time (so the identical-signature loop guard misses it, e.g. trying
-  // slug after slug of a broken integration) — trips a breaker below.
-  const toolFails: Record<string, number> = {
-    ...((state.meta as { tool_fails?: Record<string, number> } | undefined)?.tool_fails ?? {}),
-  };
-  // ── Repeated-research guard ───────────────────────────────────────────────
-  // The identical-signature loop guard below compares the LAST call only, and a
-  // model researching a topic never repeats itself exactly: it rotates through
-  // "McKinsey France effectif 2024", "McKinsey France 700 consultants Paris",
-  // "McKinsey France effectif consultants CA 2023"… Each signature differs from
-  // the previous one, so sig_count resets every call and the run can search the
-  // same six things until the wall clock kills it — which is exactly what a
-  // stuck research mission looks like from the outside.
-  //
-  // So searches are deduplicated SEMANTICALLY and across the whole run: the
-  // query is normalised (accents, stop-words, order) and a repeat is answered
-  // without spending the call, with an instruction to move on to reading.
-  const searchSigs: Record<string, number> = {
-    ...((state.meta as { search_sigs?: Record<string, number> } | undefined)?.search_sigs ?? {}),
-  };
-  const SEARCH_TOOLS = new Set(["web_search", "deep_research", "search_knowledge", "search_memory", "search_past_work"]);
-  const querySig = (name: string, args: Record<string, unknown>): string | null => {
-    if (!SEARCH_TOOLS.has(name)) return null;
-    const q = String((args?.query ?? args?.q ?? "") || "").toLowerCase();
-    if (!q) return null;
-    const words = q
-      .normalize("NFD").replace(/[̀-ͯ]/g, "")   // strip accents
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter((w) => w.length > 2 && !/^(les|des|une|dans|pour|avec|sur|par|the|and|for|with|from)$/.test(w))
-      .sort();
-    return words.length ? `${name}:${[...new Set(words)].join(" ")}` : null;
-  };
-
-  // ── The two memories ──────────────────────────────────────────────────────
-  // TEMPORARY (this run): every research result is written in full to the run's
-  // event log, which compaction never touches, and read back with
-  // recall_findings. The transcript can shrink without the facts being lost.
-  // PERMANENT (across runs): the same material is condensed into
-  // internal_agent_memories at the end of the run, so the NEXT mission on the
-  // same subject searches memory instead of paying for the web again.
-  const RESEARCH_TOOLS = new Set(["web_search", "deep_research", "read_url", "http_get", "browse_web", "search_knowledge"]);
-  const findings: Array<{ tool: string; label: string; text: string }> = [];
-  const recordFinding = async (tool: string, args: Record<string, unknown>, text: string) => {
-    const label = String(args?.query ?? args?.url ?? args?.q ?? "").slice(0, 200) || tool;
-    const body = text.slice(0, 12_000);
-    findings.push({ tool, label, text: body });
-    await admin.from("internal_agent_run_events").insert({
-      run_id: runId, agent_id: agent.id, kind: "log",
-      payload: { finding: { tool, label, text: body } },
-    }).then(() => {}, () => {});
-  };
-
-  // Permanent memory is consulted around web searches — the whole point of
-  // remembering is that the second mission on a subject costs less.
-  let memoryProbes = 0;
-  const probedIds = new Set<string>();
-  // What the project already knows about a query. Semantic first, across the
-  // whole PROJECT (a teammate may already have paid for this research), keyword
-  // fallback. Memoised per query: the pre-check and the post-prefix of one
-  // search share a single embedding call.
-  type KnownHit = { id: string; content: string; created_at?: string | null; similarity: number | null };
-  const knownCache = new Map<string, Promise<KnownHit[]>>();
-  const recallKnown = (query: string): Promise<KnownHit[]> => {
-    const key = query.trim().toLowerCase();
-    if (!knownCache.has(key)) knownCache.set(key, (async () => {
-      try {
-        if (Deno.env.get("JINA_API_KEY") && agent.project_id) {
-          const [qvec] = await embedTexts([query.slice(0, 500)], "retrieval.query").catch(() => [null]);
-          if (qvec) {
-            const { data } = await admin.rpc("match_project_memories", {
-              p_project_id: agent.project_id, p_query_embedding: toVectorLiteral(qvec), p_match_count: 5,
-            });
-            const sem = ((data ?? []) as KnownHit[])
-              .map((m) => ({ ...m, similarity: Number(m.similarity ?? 0) }))
-              .filter((m) => m.similarity >= Math.max(RELEVANCE_FLOOR, 0.45));
-            if (sem.length) return sem;
-          }
-        }
-        const { data } = await admin.from("internal_agent_memories")
-          .select("id, content, created_at")
-          .eq("project_id", agent.project_id)
-          .in("kind", ["context", "learning", "fact"])
-          .order("created_at", { ascending: false }).limit(60);
-        const terms = query.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-        return ((data ?? []) as KnownHit[])
-          .filter((m) => terms.filter((t) => String(m.content ?? "").toLowerCase().includes(t)).length >= 2)
-          .map((m) => ({ ...m, similarity: null }));
-      } catch { return []; }
-    })());
-    return knownCache.get(key)!;
-  };
-  const knownLine = (h: KnownHit) =>
-    `- ${h.created_at ? `(${String(h.created_at).slice(0, 10)}) ` : ""}${String(h.content).slice(0, 700)}`;
-
-  // AFTER a search: prefix its results with what was already known. Done here
-  // rather than trusted to the prompt: "check your memory first" is advice a
-  // model skips, a prepended hit is a fact it cannot miss. The first few
-  // distinct searches are probed; a memory already shown is never shown twice.
-  const probeMemory = async (query: string): Promise<string> => {
-    if (memoryProbes >= 3 || !query.trim()) return "";
-    memoryProbes++;
-    const hits = (await recallKnown(query)).filter((h) => !probedIds.has(h.id)).slice(0, 3);
-    if (hits.length === 0) return "";
-    for (const h of hits) probedIds.add(h.id);
-    touchAgentMemories(admin, hits.map((h) => h.id));
-    await ctx.logEvent("status", { message: `${hits.length} élément(s) déjà en mémoire sur ce sujet — joints aux résultats.` }).catch(() => {});
-    return `⚡ DÉJÀ EN MÉMOIRE (travail antérieur sur ce sujet — vérifie la date, réutilise plutôt que de rechercher) :\n${hits.map(knownLine).join("\n")}\n\n— Résultats web ci-dessous —\n`;
-  };
-
-  // BEFORE a search: when the project holds a strong, FRESH answer, serve it
-  // instead of paying the web (and the rounds spent reading it). Deliberately
-  // strict — high similarity, at most MEMORY_ANSWER_MAX_AGE_DAYS old — and
-  // reversible: re-issuing the exact same query goes to the web.
-  const MEMORY_ANSWER_MIN_SIM = 0.62;
-  const MEMORY_ANSWER_MAX_AGE_DAYS = 14;
-  // Served signatures ride in searchSigs (persisted across ticks) under a
-  // `mem:` key — a per-tick set would forget, and serve the retry from memory again.
-  const servedCount = () => Object.keys(searchSigs).filter((k) => k.startsWith("mem:")).length;
-  const answerFromMemory = async (sig: string, query: string): Promise<string> => {
-    if (!query.trim() || searchSigs[`mem:${sig}`] || servedCount() >= 3) return "";
-    const fresh = (await recallKnown(query)).filter((h) =>
-      h.similarity != null && h.similarity >= MEMORY_ANSWER_MIN_SIM &&
-      !probedIds.has(h.id) &&
-      (!h.created_at || Date.now() - Date.parse(h.created_at) <= MEMORY_ANSWER_MAX_AGE_DAYS * 86_400_000),
-    ).slice(0, 3);
-    if (fresh.length === 0) return "";
-    searchSigs[`mem:${sig}`] = 1;
-    for (const h of fresh) probedIds.add(h.id);
-    touchAgentMemories(admin, fresh.map((h) => h.id));
-    return `⚡ RÉPONDU DEPUIS LA MÉMOIRE (aucune recherche web lancée — ce sujet a déjà été recherché récemment dans ce projet) :\n${fresh.map(knownLine).join("\n")}\n\nSi c'est suffisant, utilise-le directement. Si c'est insuffisant ou périmé, relance EXACTEMENT la même requête : elle partira alors sur le web.`;
-  };
-
-  const loggingExecutor: typeof executor = async (name, args) => {
-    // Short-circuit a search this run has already run. Cheaper than the call,
-    // and far more useful to the model than the same snippets a third time.
-    const sig = querySig(name, args ?? {});
-    if (sig) {
-      const seen = (searchSigs[sig] ?? 0) + 1;
-      searchSigs[sig] = seen;
-      if (seen > 1) {
-        const distinct = Object.keys(searchSigs).filter((k) => !k.startsWith("mem:")).length;
-        const msg = `ERROR: recherche déjà effectuée dans ce run (${seen}× « ${String(args?.query ?? "")} »). Ses résultats sont DÉJÀ dans ton contexte plus haut — les relancer ne donnera rien de neuf.\n`
-          + `Tu as lancé ${distinct} recherches distinctes. Passe à l'exploitation : ouvre les URL les plus prometteuses avec read_url(url) pour en extraire les chiffres, puis écris tes sections avec report_section. `
-          + `Si une donnée reste introuvable après lecture, écris « non publié » et avance — ne reformule pas la même requête.`;
-        await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args), deduped: true });
-        await ctx.logEvent("tool_result", { tool: name, preview: msg.slice(0, 400), ok: false, deduped: true });
-        return msg;
-      }
-      if (name === "web_search" || name === "deep_research") {
-        const fromMemory = await answerFromMemory(sig, String(args?.query ?? ""));
-        if (fromMemory) {
-          // Un-count the signature: the promised « relance la même requête »
-          // must reach the web, not the duplicate guard above.
-          searchSigs[sig] = seen - 1;
-          await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args), from_memory: true });
-          await ctx.logEvent("tool_result", { tool: name, preview: fromMemory.slice(0, 1000), ok: true, from_memory: true });
-          await ctx.logEvent("status", { message: "Recherche servie depuis la mémoire du projet — appel web économisé." }).catch(() => {});
-          return fromMemory;
-        }
-      }
-    }
-    await ctx.logEvent("tool_call", { tool: name, args: compactArgs(args) });
-    // ── Guardrails — tool_call scope ─────────────────────────────────────────
-    // Tested BEFORE execution: a block stops the tool from ever running (the
-    // model receives an explanatory ERROR as its result), warn/log just trace.
-    if (guardrails.length > 0) {
-      const probe = `${name}\n${JSON.stringify(args ?? {})}`;
-      const hits = mergeViolations(
-        checkGuardrails(guardrails, "tool_call", probe),
-        await judgeGuardrails(judgeCtx, guardrails, "tool_call", probe),
-      );
-      if (hits.length > 0) {
-        const block = strongestEnforcement(hits) === "block";
-        for (const v of hits) {
-          await ctx.logEvent("guardrail", {
-            scope: "tool_call", guardrail: v.title, category: v.category,
-            enforcement: v.enforcement, tool: name, matched: v.matched,
-            blocked: block,
-          }).catch(() => {});
-        }
-        if (block) {
-          await recordGuardrailIncident(admin, agent, runId, hits[0].title, "tool_call", hits[0].matched).catch(() => {});
-          const msg = `ERROR: Action bloquée par le guardrail « ${hits[0].title} » (${hits[0].matched ? `correspondance : ${hits[0].matched}` : "règle de sécurité"}). Réessayez autrement ou expliquez l'action requise à l'utilisateur.`;
-          await ctx.logEvent("tool_result", { tool: name, preview: msg.slice(0, 1000), ok: false, guardrail: true }).catch(() => {});
-          return msg;
-        }
-      }
-    }
-    const r = await executor(name, args);
-    const text = String(r);
-    const ok = !text.startsWith("ERROR");
-    toolFails[name] = ok ? 0 : (toolFails[name] ?? 0) + 1;
-    // Step-level evidence: a successful tool result is what lets the agent close
-    // a checklist item. update_todos resets the counter itself.
-    if (ok && name !== "update_todos" && ctx.loopEvidence) ctx.loopEvidence.results++;
-    // ── Guardrails — tool_result scope ───────────────────────────────────────
-    if (guardrails.length > 0 && text) {
-      const hits = mergeViolations(
-        checkGuardrails(guardrails, "tool_result", text.slice(0, 4000)),
-        await judgeGuardrails(judgeCtx, guardrails, "tool_result", text.slice(0, 4000)),
-      );
-      if (hits.length > 0) {
-        const block = strongestEnforcement(hits) === "block";
-        for (const v of hits) {
-          await ctx.logEvent("guardrail", {
-            scope: "tool_result", guardrail: v.title, category: v.category,
-            enforcement: v.enforcement, tool: name, matched: v.matched,
-            blocked: block,
-          }).catch(() => {});
-        }
-        if (block) {
-          await recordGuardrailIncident(admin, agent, runId, hits[0].title, "tool_result", hits[0].matched).catch(() => {});
-          const redacted = `ERROR: Résultat bloqué par le guardrail « ${hits[0].title} » — le contenu renvoyé enfreint une règle de sécurité et n'est pas transmis.`;
-          await ctx.logEvent("tool_result", { tool: name, preview: redacted.slice(0, 1000), ok: false, guardrail: true }).catch(() => {});
-          return redacted;
-        }
-      }
-    }
-    await ctx.logEvent("tool_result", { tool: name, preview: text.slice(0, 1000), ok });
-    // Keep the full result out-of-band, and enrich the FIRST search with what
-    // we already knew. Both are best-effort: research must never fail on its
-    // bookkeeping.
-    if (ok && RESEARCH_TOOLS.has(name) && text.length > 80) {
-      await recordFinding(name, args ?? {}, text).catch(() => {});
-      if (name === "web_search" || name === "deep_research") {
-        const known = await probeMemory(String((args as { query?: string })?.query ?? ""));
-        if (known) return `${known}${text}`;
-      }
-    }
-    return r;
+  });
+  const cancelBackgroundChildren = async () => {
+    if (!backgroundMode) return;
+    await admin.from("internal_agent_runs")
+      .update({ status: "cancelled", finished_at: new Date().toISOString(), error_message: "Arrêté : l'agent qui l'avait lancé a terminé." })
+      .eq("parent_run_id", runId).eq("run_kind", "subagent").in("status", ["running", "queued"])
+      .then(() => {}, () => {});
   };
 
   const messages = state.messages;
+
+  // Reprise exacte : un tour interrompu (worker tué) a laissé des appels sans
+  // résultat. Le registre dit s'ils ont abouti (on rend leur résultat) ou s'ils
+  // ont seulement démarré (effet inconnu, à vérifier) — avant que la réparation
+  // générique ne pose « interrompu » partout.
+  const resumed = await recoverInterruptedCalls(admin, runId, messages).catch(() => ({ recovered: 0, unknown: 0 }));
+  if (resumed.recovered + resumed.unknown > 0) {
+    await ctx.logEvent("status", {
+      message: `Reprise après arrêt du worker : ${resumed.recovered} appel(s) abouti(s) récupéré(s), ${resumed.unknown} à l'effet inconnu signalé(s) à l'agent.`,
+    }).catch(() => {});
+  }
 
   // Evidence carried over from the previous tick: tool results the transcript
   // holds since the last update_todos. Without this seed, a step whose work
@@ -3295,15 +3481,18 @@ async function runMissionTick(runId: string, msgId: number | null) {
   // execution world. Without one the check is SKIPPED (never failed) — a
   // verifier that can't observe must not accuse.
   const hasTool = (n: string) => defs.some((d) => d.function.name === n);
-  const readTool = ["file_read", "runner_file_read", "sandbox_file_read"].find(hasTool);
-  const shellTool = ["shell_exec", "runner_shell_exec", "sandbox_shell_exec"].find(hasTool);
+  // La machine d'équipe (0296) en dernier recours : team_files lit avec
+  // { action, path }, team_shell rend le même « [exit: N » que les autres.
+  const readTool = ["file_read", "runner_file_read", "sandbox_file_read", "team_files"].find(hasTool);
+  const shellTool = ["shell_exec", "runner_shell_exec", "sandbox_shell_exec", "team_shell"].find(hasTool);
   const loopProbe: LoopProbe | undefined = (readTool || shellTool)
     ? async (kind, args) => {
         if (kind === "file_exists") {
           if (!readTool) return null;
           const path = String(args.path ?? "");
           if (!path) return null;
-          const out = String(await executor(readTool, { file: path }).catch(() => "ERROR"));
+          const readArgs = readTool === "team_files" ? { action: "read", path, limit: 50 } : { file: path };
+          const out = String(await executor(readTool, readArgs).catch(() => "ERROR"));
           return out.startsWith("ERROR")
             ? { pass: false, detail: `${path} introuvable` }
             : { pass: true, detail: `${path} présent (${out.length} caractères)` };
@@ -3324,11 +3513,24 @@ async function runMissionTick(runId: string, msgId: number | null) {
   let newLastInputAt = state.last_input_at;
   if (isChat && state.conversation_id) {
     const since = state.last_input_at ?? new Date(0).toISOString();
-    const { data: fresh } = await admin
-      .from("internal_agent_messages")
-      .select("content, created_at").eq("conversation_id", state.conversation_id).eq("role", "user")
-      .gt("created_at", since).order("created_at", { ascending: true }).limit(10);
-    if (fresh && fresh.length) {
+    // Seul l'auteur du tour le pilote (turn-principal.ts) : dans un fil
+    // partagé, le message d'une autre personne attend la fin de ce tour et
+    // ouvre le sien. `author_ref` (0300) absent : tous pilotent, comme avant.
+    const [{ data: authored, error: authoredErr }, { data: conv }] = await Promise.all([
+      admin.from("internal_agent_messages")
+        .select("content, created_at, author_ref").eq("conversation_id", state.conversation_id).eq("role", "user")
+        .gt("created_at", since).order("created_at", { ascending: true }).limit(20),
+      admin.from("internal_agent_conversations").select("external_user_ref").eq("id", state.conversation_id).maybeSingle(),
+    ]);
+    const { data: legacy } = authoredErr
+      ? await admin.from("internal_agent_messages")
+        .select("content, created_at").eq("conversation_id", state.conversation_id).eq("role", "user")
+        .gt("created_at", since).order("created_at", { ascending: true }).limit(10)
+      : { data: null };
+    const incoming = ((authoredErr ? legacy : authored) ?? []) as Array<{ content: string; created_at: string; author_ref?: string | null }>;
+    const principal = (conv as { external_user_ref?: string | null } | null)?.external_user_ref ?? null;
+    const { steer: fresh } = splitForTurn(incoming, principal);
+    if (fresh.length) {
       for (const m of fresh) {
         messages.push({ role: "user", content: `[The user sent this while you were working — take it into account, adjust course if needed]\n${m.content}` });
       }
@@ -3337,15 +3539,53 @@ async function runMissionTick(runId: string, msgId: number | null) {
     }
   }
 
+  // ── La boîte de réception (background-agents.ts) ──────────────────────────
+  // Parent : les résultats de ses sous-agents en arrière-plan, en
+  // <background-result>. Sous-agent : les relances de son parent. Lus ici,
+  // avant la compaction, comme un message reçu en cours de route.
+  if (backgroundMode || bgParent) {
+    const inbox = await takeInbox(admin, runId).catch(() => []);
+    for (const item of inbox) messages.push({ role: "user", content: inboxMessage(item) });
+    if (inbox.length) {
+      await ctx.logEvent("status", {
+        message: bgParent
+          ? `Message de l'agent parent reçu en cours de route — pris en compte.`
+          : `${inbox.length} résultat(s) de sous-agent(s) reçu(s) : ${inbox.map((i) => i.label ?? "sous-agent").slice(0, 5).join(", ")}.`,
+      }).catch(() => {});
+    }
+  }
+
   // Compact the transcript when it gets heavy (protects the model's context
   // window on long runs). The budget scales with the request class: a `social`
   // turn barely reads history, a `full` turn pipelines across many rounds.
   // Best-effort — a compaction failure never blocks work.
+  // La taille du contexte n'est plus devinée en caractères : le dernier tour
+  // mesuré (tokens facturés / taille envoyée) sert d'étalon (context-checkpoint).
+  const promptMeasure = (metaNow.prompt_measure as PromptMeasure | undefined) ?? null;
+  let contextCheckpoint = (metaNow.context_checkpoint as ContextCheckpoint | undefined) ?? null;
+  const ctxBudget = contextBudgetFor(toolTier);
   try {
-    if (compactMessagesIfNeeded(messages, contextBudgetFor(toolTier))) {
-      await ctx.logEvent("status", { message: "Fenêtre de contexte : l'historique ancien a été tronqué (objectif conservé, détails via search_context)." }).catch(() => {});
+    if (compactMessagesIfNeeded(messages, ctxBudget, promptMeasure, contextCheckpoint)) {
+      await ctx.logEvent("status", {
+        message: contextCheckpoint
+          ? "Fenêtre de contexte : l'historique ancien a été scellé avec son résumé et le point de situation (exigences, décisions, état du travail)."
+          : "Fenêtre de contexte : l'historique ancien a été tronqué (objectif conservé, détails via search_context).",
+      }).catch(() => {});
     }
   } catch { /* keep going untrimmed */ }
+  // Le point de situation suivant se prépare EN AVANCE, pendant les tours de
+  // ce tick, dès que le contexte approche du seuil : la prochaine compaction
+  // le trouvera prêt. Sur une copie du transcrit (les tours le modifient).
+  let checkpointP: Promise<ContextCheckpoint | null> | null = null;
+  try {
+    const estimated = estimatePromptTokens(messages, promptMeasure);
+    if (shouldPrepareCheckpoint(estimated, ctxBudget.triggerTokens, contextCheckpoint, messages.length)) {
+      const goal = (mission as { title?: string; brief?: string | null } | null)?.title
+        ? `${(mission as { title: string }).title} — ${String((mission as { brief?: string | null }).brief ?? "").slice(0, 800)}`
+        : lastUserText(messages);
+      checkpointP = buildCheckpoint({ goal, messages: messages.slice(), previous: contextCheckpoint }).catch(() => null);
+    }
+  } catch { /* le point de situation est un bonus */ }
   // Defensive: guarantee valid tool-call pairing before the model call, whatever
   // upstream mutation (compaction, mid-run message folding) touched the tail.
   sanitizeToolPairs(messages);
@@ -3377,7 +3617,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
   // provider should have served the prefix from cache; a false=false while the
   // sealed zone didn't grow is a cache-thrash worth investigating.
   const prevManifest = (metaNow.context_manifest ?? null) as
-    | { transcript_prefix_hash?: string; sealed_markers?: number }
+    | { transcript_prefix_hash?: string; sealed_markers?: number; tools_hash?: string }
     | null;
   let sealedMarkers = 0;
   for (let i = Math.min(2, messages.length); i < messages.length; i++) {
@@ -3386,15 +3626,25 @@ async function runMissionTick(runId: string, msgId: number | null) {
     sealedMarkers++;
   }
   const tickPrefixHash = transcriptPrefixHash(messages, SEALED_PREFIX);
-  const cacheExpected = prevManifest?.transcript_prefix_hash != null && prevManifest.transcript_prefix_hash === tickPrefixHash;
-  await ctx.logEvent("prompt", {
-    kind: "tick_manifest",
-    prefix_hash: tickPrefixHash,
-    cache_expected: cacheExpected,
-    sealed_markers: sealedMarkers,
-    sealed_grew: (prevManifest?.sealed_markers ?? 0) !== sealedMarkers,
-    transcript_chars: JSON.stringify(messages).length,
-  }).catch(() => {});
+  /** L'empreinte des outils du premier tour, connue une fois la sélection
+   *  amorcée (plus bas) : elle fait partie du préfixe, au même titre que le
+   *  transcrit. */
+  let tickToolsHash = "";
+  const logTickManifest = async (toolsHash: string) => {
+    tickToolsHash = toolsHash;
+    const prefixSame = prevManifest?.transcript_prefix_hash != null && prevManifest.transcript_prefix_hash === tickPrefixHash;
+    const toolsSame = prevManifest?.tools_hash == null || prevManifest.tools_hash === toolsHash;
+    await ctx.logEvent("prompt", {
+      kind: "tick_manifest",
+      prefix_hash: tickPrefixHash,
+      tools_hash: toolsHash,
+      tools_changed: !toolsSame,
+      cache_expected: prefixSame && toolsSame,
+      sealed_markers: sealedMarkers,
+      sealed_grew: (prevManifest?.sealed_markers ?? 0) !== sealedMarkers,
+      transcript_chars: JSON.stringify(messages).length,
+    }).catch(() => {});
+  };
   try {
     const { data: runTodoRow } = await admin.from("internal_agent_runs").select("todos").eq("id", runId).maybeSingle();
     type Todo = { id: string; title: string; status: string; parent_id?: string; note?: string };
@@ -3439,97 +3689,101 @@ async function runMissionTick(runId: string, msgId: number | null) {
       });
     }
   } catch { /* focus header is best-effort */ }
-  // ── Jugement rapide du tick ───────────────────────────────────────────────
+  // ── Jugement rapide du tick (Jev) ─────────────────────────────────────────
   //
-  // Deux questions, un seul appel, avant que quoi que ce soit ne soit envoyé au
-  // modèle génératif :
+  // Deux décisions, prises en parallèle avant que quoi que ce soit ne parte au
+  // modèle génératif, chacune avec SON réglage :
   //
-  //   famille — de quelles MAINS ce tour a besoin (exécuter ? chercher ? lire
-  //             des données ? déléguer ?). La réponse remonte les schémas de
-  //             cette famille devant les autres.
+  //   outils   — chaque outil de la boîte reçoit une probabilité d'être utile à
+  //              l'étape en cours (tool-ranking.ts) ; la sélection des schémas
+  //              la mêle au score lexical selon la confiance du jugement. Mis
+  //              en cache tant que l'étape ne change pas.
   //   chercher — faut-il aller chercher une information, ou tout est-il déjà
-  //             dans le contexte. Une réponse franche dans un sens ou dans
-  //             l'autre déplace les outils de recherche du même coup.
+  //              dans le contexte. Une réponse franche déplace les outils de
+  //              recherche dans un sens ou dans l'autre.
   //
   // Les deux ne font que PONDÉRER une sélection qui existait déjà, et aucun
-  // outil n'est jamais retiré : l'index du prompt les liste tous, load_toolset
-  // les rouvre. Le pire cas est un round de plus, jamais une capacité perdue.
+  // outil n'est jamais retiré : l'index du prompt les liste tous, need_tools
+  // les rouvre. Le pire cas est un tour de plus, jamais une capacité perdue.
+  let toolRankingMeta: ToolRanking | null = (metaNow.tool_rank as ToolRanking | undefined) ?? null;
   try {
-    // DEUX usages réglés séparément, UNE requête. Chacun est lu avec SON mode
-    // et SON seuil : coupler les deux ferait qu'éteindre le classement d'outils
-    // éteindrait en silence la décision de recherche, alors que ce sont deux
-    // décisions différentes prises sur le même état.
     const cfgAll = await loadTypesafeConfig(admin, agent.workspace_id);
-    const toolMode = cfgAll.tool_ranking?.mode ?? "off";
-    const searchCfg = cfgAll.search_decision;
-    const searchMode = searchCfg?.mode ?? "off";
-    if (toolMode === "off" && searchMode === "off") throw new Error("skip");
+    const toolMode = (cfgAll.tool_ranking ?? defaultConfig("tool_ranking")).mode;
+    const searchCfg = cfgAll.search_decision ?? defaultConfig("search_decision");
+    const searchMode = searchCfg.mode;
+    const jctx = { admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId };
 
-    const famCriteria: Record<string, { what: string; not_for: string; examples: string[] } | string | null> = {};
-    for (const f of families) {
-      famCriteria[f] = FAMILY_CRITERIA[f] ?? familyRules[f]?.rule?.slice(0, 180) ?? null;
-    }
-    void familyRules;
-    const questions: Record<string, ReturnType<typeof choice> | ReturnType<typeof noul>> = {};
-    if (toolMode !== "off") {
-      questions.famille = choice("De quelle famille d'outils ce travail a-t-il besoin MAINTENANT ?", famCriteria);
-    }
-    if (searchMode !== "off") {
-      questions.chercher = noul(
-        "Traiter cette tâche exige-t-il d'aller chercher une information qu'on n'a pas encore sous la main ?",
-        {
-          true: {
-            what: "Il manque un fait, un chiffre ou un document qu'il faut aller chercher (web, base de connaissances, données du projet) avant de pouvoir avancer.",
-            examples: [
-              "comparer les tarifs des trois fournisseurs",
-              "vérifier ce que dit notre procédure de remboursement",
-              "combien de tickets ont été ouverts la semaine dernière",
-            ],
+    const rankingP = (async (): Promise<ToolRanking | null> => {
+      if (toolMode === "off" || fullSchemas || toolTier === "social") return null;
+      const cached = reusableRanking(toolRankingMeta, tickTaskText);
+      if (cached) return cached;
+      // Les épinglés partent de toute façon : on ne classe que le reste, les
+      // outils récents et déjà envoyés en tête (au-delà de 255, la tête compte).
+      const pinned = new Set([...PINNED_TOOLS, ...unlockedTools]);
+      const recent = recentlyUsedTools(state.messages);
+      const candidates = defsFor(toolTier).filter((d) => !pinned.has(d.function.name));
+      const first = new Set([...recent, ...stickyTools]);
+      candidates.sort((a, b) => Number(first.has(b.function.name)) - Number(first.has(a.function.name)));
+      return await rankToolsWithJev(jctx, tickTaskText, candidates, { recentTools: recent });
+    })();
+
+    const searchP = (async (): Promise<number | null> => {
+      if (searchMode === "off") return null;
+      const verdict = await judge(jctx, "search_decision", { tache: tickTaskText.slice(0, 2000) }, {
+        chercher: noul(
+          "Traiter cette tâche exige-t-il d'aller chercher une information qu'on n'a pas encore sous la main ?",
+          {
+            true: {
+              what: "Il manque un fait, un chiffre ou un document qu'il faut aller chercher (web, base de connaissances, données du projet) avant de pouvoir avancer.",
+              examples: [
+                "comparer les tarifs des trois fournisseurs",
+                "vérifier ce que dit notre procédure de remboursement",
+                "combien de tickets ont été ouverts la semaine dernière",
+              ],
+            },
+            false: {
+              what: "Tout ce qu'il faut est déjà écrit dans la tâche ou déjà acquis : il reste à fabriquer, rédiger, organiser ou décider.",
+              examples: [
+                "mets ce tableau en forme et enregistre-le",
+                "écris le message à partir de ce qu'on vient de dire",
+                "découpe ce travail en étapes",
+              ],
+            },
           },
-          false: {
-            what: "Tout ce qu'il faut est déjà écrit dans la tâche ou déjà acquis : il reste à fabriquer, rédiger, organiser ou décider.",
-            examples: [
-              "mets ce tableau en forme et enregistre-le",
-              "écris le message à partir de ce qu'on vient de dire",
-              "découpe ce travail en étapes",
-            ],
-          },
-        },
-      );
+        ),
+      }, { subject: `tick · ${tickTaskText.slice(0, 80)}` });
+      return verdict?.apply ? readNoul(verdict, "chercher") : null;
+    })();
+
+    const [ranking, searchProb] = await Promise.all([rankingP.catch(() => null), searchP.catch(() => null)]);
+    if (ranking) {
+      tickHints.ranking = ranking;
+      toolRankingMeta = compactRanking(ranking);
+      const top = Object.entries(ranking.probs).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      await ctx.logEvent("prompt", {
+        kind: "typesafe_tools",
+        poids: Number(ranking.confidence.toFixed(2)),
+        outils: top.map(([n, p]) => `${n} ${Math.round(p * 100)}%`),
+      }).catch(() => {});
     }
-    const verdict = await judge(
-      { admin, workspaceId: agent.workspace_id, projectId: agent.project_id, runId },
-      // L'appel est attribué à l'usage qui l'a déclenché — c'est lui qu'on
-      // relira dans le journal pour décider de l'activer pour de bon.
-      toolMode !== "off" ? "tool_ranking" : "search_decision",
-      { tache: tickTaskText.slice(0, 2000) },
-      questions,
-      { subject: `tick · ${tickTaskText.slice(0, 80)}` },
-    );
-    const fam = toolMode === "on" ? readChoice(verdict, "famille") : null;
-    const searchP = searchMode === "on" ? readNoul(verdict, "chercher") : null;
-    if (verdict && (fam || searchP !== null)) {
-      const famThreshold = cfgAll.tool_ranking?.threshold ?? 0.5;
-      const wanted = fam && fam.confidence >= famThreshold ? fam.choice : null;
-      const searchNeeded = searchP !== null ? searchP >= (searchCfg?.threshold ?? 0.6) : null;
-      if (wanted || searchNeeded !== null) {
-        tickHints.toolBoost = (name: string) => {
-          let f = 1;
-          if (wanted && familyOf(name) === wanted) f *= 2.5;
-          if (searchNeeded !== null && SEARCH_TOOLS.has(name)) f *= searchNeeded ? 2.5 : 0.4;
-          return f;
-        };
-        await ctx.logEvent("prompt", {
-          kind: "typesafe_tick",
-          famille: wanted, famille_confiance: fam?.confidence ?? null,
-          chercher: searchP, chercher_applique: searchNeeded,
-        }).catch(() => {});
-      }
+    const searchNeeded = searchProb !== null ? searchProb >= searchCfg.threshold : null;
+    if (searchNeeded !== null) {
+      tickHints.toolBoost = (name: string) => (RESEARCH_SEARCH_TOOLS.has(name) ? (searchNeeded ? 2.5 : 0.4) : 1);
+      await ctx.logEvent("prompt", { kind: "typesafe_tick", chercher: searchProb, chercher_applique: searchNeeded }).catch(() => {});
     }
   } catch { /* le jugement rapide est optionnel : la sélection lexicale suffit */ }
 
-  // Prime the selection so the notice below is accurate from the first round.
-  liveTools();
+  // Prime the selection so the notice below is accurate from the first round —
+  // and fingerprint it: the tool list opens the cached prefix.
+  const initialTools = liveTools();
+  await logTickManifest(toolsetHash(initialTools));
+  const requestedIntegration = preferredIntegrationTool(
+    tickTaskText,
+    initialTools.map((tool) => tool.function.name),
+  );
+  if (requestedIntegration) {
+    await ctx.logEvent("prompt", { kind: "integration_tool_choice", tool: requestedIntegration }).catch(() => {});
+  }
 
   /** Appended at SEND time, after the transcript, never persisted. */
   const ephemeral = (): ChatMessage[] => {
@@ -3603,15 +3857,97 @@ async function runMissionTick(runId: string, msgId: number | null) {
     }
   }
   try {
+    // ── Sauvegarde après chaque tour ─────────────────────────────────────────
+    // Le transcrit n'était écrit qu'en fin de tick : un worker tué à 150 s
+    // perdait tous les tours du tick, et la relivraison REJOUAIT leurs actions
+    // (un e-mail, un livrable, un ticket) faute d'en garder la trace. Chaque tour
+    // qui a joué des outils est maintenant enregistré, avec ses compteurs, pour
+    // qu'une reprise reparte d'où le tick s'est arrêté et que le budget avance.
+    // Le bail n'est pas prolongé : un worker tué doit le laisser expirer.
+    const checkpoint = async (p: { roundsRun: number; usage: LoopUsage; provider: Provider; model: string }) => {
+      await admin.from("internal_agent_run_state").update({
+        messages,
+        round: state.round + p.roundsRun,
+        tokens_in: (state.tokens_in ?? 0) + p.usage.prompt_tokens,
+        tokens_out: (state.tokens_out ?? 0) + p.usage.completion_tokens,
+        cost_usd: Number(state.cost_usd ?? 0) + estimateCost(p.usage, p.provider, p.model, !!agentEndpoint),
+        last_input_at: newLastInputAt,
+        updated_at: new Date().toISOString(),
+      }).eq("run_id", runId);
+    };
+    const callLedger = createCallLedger(admin, runId);
+    // ── Le texte en direct (réponse en flux) ───────────────────────────────
+    // Ce que le modèle est en train d'écrire part dans internal_agent_runs.
+    // live_output (0305), au plus toutes les 700 ms : la timeline le lit par
+    // le même abonnement temps réel que le reste du run, sous les mêmes droits.
+    // Colonne absente (migration non jouée) : on cesse d'essayer, sans bruit.
+    let liveDisabled = false;
+    let liveLastAt = 0;
+    let liveTimer: ReturnType<typeof setTimeout> | null = null;
+    let livePending: string | null = null;
+    const flushLive = async () => {
+      liveTimer = null;
+      if (liveDisabled || livePending === null) return;
+      const text = livePending;
+      livePending = null;
+      liveLastAt = Date.now();
+      const { error } = await admin.from("internal_agent_runs")
+        .update({ live_output: text.slice(-8000), live_output_at: new Date().toISOString() }).eq("id", runId);
+      if (error) liveDisabled = true;
+    };
+    const onDelta = (text: string) => {
+      if (liveDisabled) return;
+      livePending = text;
+      if (liveTimer) return;
+      liveTimer = setTimeout(() => { void flushLive(); }, Math.max(0, 700 - (Date.now() - liveLastAt)));
+    };
+    const clearLive = async () => {
+      if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
+      livePending = null;
+      if (liveDisabled || liveLastAt === 0) return;
+      await admin.from("internal_agent_runs").update({ live_output: null }).eq("id", runId).then(() => {}, () => {});
+    };
+    // La variante de descriptions d'outils de CE run (mesure A/B, ai.ts).
+    const toolDesc = toolDescVariant(runId);
+    const roundEnd = async (p: { roundsRun: number; usage: LoopUsage; provider: Provider; model: string }) => {
+      await clearLive();
+      await checkpoint(p);
+    };
     const runRounds = (p: Provider, m: string | undefined) => runToolRounds({
       provider: p,
       model: m,
       endpoint: agentEndpoint,
       messages, tools: liveTools, executor: loggingExecutor, ephemeral,
+      toolChoice: requestedIntegration
+        ? { type: "function", function: { name: requestedIntegration } }
+        : undefined,
       // 6000 (was 4000): a full report deliverable emitted in one tool call needs
       // headroom, otherwise its `content` argument is truncated → invalid/empty.
       temperature: agent.temperature, maxTokens: 6000, maxRounds: TICK_ROUNDS,
       onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
+      // Aucun tour ne démarre s'il ne peut pas finir avant que le tick ait
+      // besoin de son temps de fin (contrôleur, vérification, enregistrement).
+      deadlineAt: tickStartedAt + TICK_WALL_MS - TICK_POST_ROUNDS_MS,
+      hardDeadlineAt: tickStartedAt + TICK_HARD_MS,
+      onRoundEnd: roundEnd,
+      // Reprise exacte (call-ledger.ts) : le transcrit est aussi sauvegardé
+      // dès qu'un appel à effet est demandé, et chacun est noté avant de partir.
+      onBeforeTools: checkpoint,
+      ledger: callLedger,
+      effectful: hasExternalEffect,
+      parallelSafe: isParallelSafeTool,
+      // Les appels d'un tour partent ensemble, dès leur arrivée dans le flux,
+      // sauf ceux d'un même couloir (navigateur, monde d'exécution, état du
+      // run) ; ask_user attend les autres (ToolScheduler, ai.ts).
+      lane: toolLane,
+      runLast: isHumanPauseTool,
+      // Un arrêt demandé pendant les outils : signal, 5 s, puis abandon.
+      isCancelled: () => ctx.isCancelled(),
+      // Réparer, valider et reconnaître un nom sur TOUTE la boîte.
+      allTools: defs,
+      toolDescriptions: toolDesc,
+      onDelta,
+      onRetry: (e) => hooks.decideRetry(e),
     });
 
     let result;
@@ -3663,7 +3999,32 @@ async function runMissionTick(runId: string, msgId: number | null) {
       task: "content_generation", feature: isChat ? "internal-agent-chat" : "internal-agent-mission",
       custom: !!agentEndpoint,
       usage: { prompt_tokens: result.usage.prompt_tokens ?? 0, completion_tokens: result.usage.completion_tokens ?? 0 },
-      metadata: { run_id: runId, agent_id: agent.id, mode: isChat ? "chat" : "mission", tick: tickNo, custom: !!agentEndpoint },
+      metadata: {
+        run_id: runId, agent_id: agent.id, mode: isChat ? "chat" : "mission", tick: tickNo, custom: !!agentEndpoint,
+        cached_tokens: result.usage.cached_tokens ?? 0, stopped_for_time: !!result.stoppedForTime,
+        // Ce que le harnais a rattrapé ce tick — lu par la page « Fiabilité »
+        // de l'AI Workforce. Les zéros sont gardés : « rien à rattraper » est
+        // une mesure, pas une absence de mesure.
+        harness: {
+          ...result.harness,
+          persisted_outputs: persistedOutputs,
+          toolset_resets: toolsetResets,
+          tools_changed: !!(prevManifest?.tools_hash && tickToolsHash && prevManifest.tools_hash !== tickToolsHash),
+          guardrail_denials: guardrailDenials.total,
+          // Mesure A/B des descriptions d'outils (compactes ou complètes) :
+          // la variante du run, et de quoi rapporter les erreurs aux appels.
+          tool_desc: toolDesc,
+          tool_calls: result.toolCalls.length,
+          tool_errors: result.errorCount,
+          // Le diagnostic des échecs d'outil (run-tool-hooks.ts).
+          errors_diagnosed: hookStats.diagnosed,
+          auto_retried: hookStats.auto_retried,
+          auto_recovered: hookStats.auto_recovered,
+          jev_tools: tickHints.ranking ? 1 : 0,
+          ...(hooks.failures.length ? { hook_failures: hooks.failures.length } : {}),
+        },
+        ...(result.usage.unpriced_calls === 0 && result.usage.reported_cost_usd > 0 ? { billed_usd: Number(result.usage.reported_cost_usd.toFixed(6)) } : {}),
+      },
     }).catch(() => {});
 
     // ── FAIL-FAST: sandbox died MID-run ──────────────────────────────────────
@@ -3695,6 +4056,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
         await admin.from("internal_agent_missions").update({ board_column: "todo" })
           .eq("id", state.mission_id).eq("board_column", "in_progress");
       }
+      if (bgParent) await reportMissionTask(false, msg);
       await autoSaveMemory(admin, agent, runId, {
         kind: "learning", importance: 3, dedupePrefix: "Sandbox down:",
         content: `Sandbox down: run interrompu le ${new Date().toISOString().slice(0, 10)} — la sandbox est devenue injoignable en cours d'exécution. Relancer l'infra locale (start-agents-infra.ps1) avant de reprendre.`,
@@ -3754,6 +4116,36 @@ async function runMissionTick(runId: string, msgId: number | null) {
     let errorCount = (state.error_count ?? 0) + result.errorCount;
     let replans = state.replans ?? 0;
 
+    // ── Pourquoi les outils cassés échouent (tool-error-diagnosis.ts) ────────
+    // La cause de la dernière tentative (règles, ou Jev quand elles ne
+    // reconnaissaient rien), et, une fois par outil et par run, l'analyse des
+    // tentatives par un modèle léger quand la cause n'est ni passagère ni du
+    // ressort de l'humain : c'est le cas où l'agent n'a pas su lire ses propres
+    // erreurs, et où il lui faut l'appel corrigé plutôt qu'un « essaie autre chose ».
+    const explainedTools = new Set<string>(Array.isArray(metaNow.explained_tools) ? (metaNow.explained_tools as string[]) : []);
+    const toolDiagnoses: ToolDiagnosisSignal[] = [];
+    for (const t of brokenTools) {
+      const attempts = toolErrors[t] ?? [];
+      const last = attempts[attempts.length - 1];
+      if (!last) continue;
+      const cause: ErrorCause = (last.cause && last.cause in CAUSES ? last.cause : "unknown") as ErrorCause;
+      const d = makeDiagnosis(cause, t, last.args ?? {}, "rules", allSchemas.get(t));
+      const sig: ToolDiagnosisSignal = { tool: t, label: d.label, needsHuman: d.needsHuman, transient: d.transient, advice: d.advice };
+      if (!d.needsHuman && !d.transient && !explainedTools.has(t) && Date.now() < tickStartedAt + TICK_WALL_MS - 15_000) {
+        explainedTools.add(t);
+        const ex = await explainRepeatedFailure({ tool: t, schema: allSchemas.get(t), attempts, goal: tickTaskText }).catch(() => null);
+        if (ex) sig.explanation = ex;
+      }
+      toolDiagnoses.push(sig);
+    }
+    // Les causes des erreurs depuis la dernière replanification.
+    const causeTally: Record<string, number> = { ...((metaNow.error_causes as Record<string, number> | undefined) ?? {}) };
+    for (const [c, n] of Object.entries(hookStats.by_cause)) {
+      const label = CAUSES[c as ErrorCause]?.label ?? c;
+      causeTally[label] = (causeTally[label] ?? 0) + (Number(n) || 0);
+    }
+    const errorCauses = Object.entries(causeTally).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([label, count]) => ({ label, count }));
+
     // ── Progress fingerprint → stagnation ────────────────────────────────────
     // Steps closed, deliverables produced, genuinely new approaches tried. An
     // agent burning rounds with varied arguments and producing nothing scores
@@ -3763,7 +4155,10 @@ async function runMissionTick(runId: string, msgId: number | null) {
     let stagnation = state.stagnation ?? 0;
     try {
       progress = await fingerprintProgress(admin, runId, messages);
-      stagnation = hasAdvanced(prevProgress, progress) ? 0 : stagnation + 1;
+      // Un tick d'un seul tour (arrêté par l'échéance, ou court par nature) ne
+      // prouve pas qu'on piétine : le compter ferait replanifier un agent qui
+      // lit simplement une page de plus.
+      stagnation = hasAdvanced(prevProgress, progress) ? 0 : result.roundsRun >= 2 ? stagnation + 1 : stagnation;
     } catch { /* fingerprinting is best-effort — never block the loop on it */ }
 
     // ── THE CONTROLLER ───────────────────────────────────────────────────────
@@ -3781,6 +4176,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
       errorCount, loopDetected, brokenTools,
       stagnantTicks: stagnation,
       replans, maxReplans: 3,
+      guardrailDenials: { ...guardrailDenials },
+      toolDiagnoses,
+      errorCauses,
     };
     let decision = decideNext(signals);
     // AgentPilot : avant de replanifier, se demander si ce qui manque est hors
@@ -3835,9 +4233,17 @@ async function runMissionTick(runId: string, msgId: number | null) {
     if (decision.interventions.some((i) => i.tag === "circuit_breaker")) {
       for (const t of brokenTools) toolFails[t] = 0; // reset after nudging so we don't re-fire every tick
     }
+    // Same for a series of guardrail refusals: told once, then counted afresh.
+    // The run total stays — it is what ends a run that keeps hitting the rules.
+    if (decision.interventions.some((i) => i.tag === "guardrail_denials")) guardrailDenials.consecutive = 0;
     if (decision.escalateModel) {
       // Start cheap, pay for more capability only where it's actually needed.
-      const heavy = Deno.env.get("AGENT_MODEL_MISSION") || modelForTier("heavy", tickProvider);
+      // Le lourd du connecteur (route `@heavy`) quand il y en a un qui traduit
+      // les routes, le raisonneur du fournisseur sinon.
+      const heavy = Deno.env.get("AGENT_MODEL_MISSION")
+        || (agentEndpoint || (() => { try { return !!pinnedUpstream(); } catch { return false; } })()
+          ? routeAlias("heavy")
+          : modelForTier("heavy", tickProvider));
       if (tickModel !== heavy) {
         tickModel = heavy;
         await ctx.logEvent("status", { message: `Escalade vers un modèle plus puissant (${heavy}) pour débloquer.` }).catch(() => {});
@@ -3852,6 +4258,8 @@ async function runMissionTick(runId: string, msgId: number | null) {
       // NOT cleared: re-running the identical query is never the new idea.
       recentSigs.length = 0;
       stagnation = 0;
+      // La nouvelle approche repart d'un décompte de causes vierge.
+      for (const k of Object.keys(causeTally)) delete causeTally[k];
     }
     if (decision.action !== "continue") {
       await ctx.logEvent("status", { message: decision.reason }).catch(() => {});
@@ -3890,6 +4298,8 @@ async function runMissionTick(runId: string, msgId: number | null) {
       } else if (state.mission_id) {
         await admin.from("internal_agent_missions").update({ board_column: "todo" }).eq("id", state.mission_id).eq("board_column", "in_progress");
       }
+      if (bgParent && !roomBinding) await reportMissionTask(false, partial || decision.reason);
+      await cancelBackgroundChildren();
       await recordRunIncident(admin, agent, runId, {
         title: "Run interrompu — budget épuisé",
         description: `Run arrêté par le contrôleur de boucle : ${decision.reason}.`,
@@ -3907,23 +4317,85 @@ async function runMissionTick(runId: string, msgId: number | null) {
     // was loaded BEFORE the tick ran, so writing `{ ...meta }` would clobber those
     // mid-tick writes — that's what let a fan-out re-spawn duplicates and a report
     // draft vanish across ticks. We overlay only the keys we own locally.
+    // Le point de situation préparé pendant les tours : on lui laisse ce qu'il
+    // reste du tick (15 s au plus) pour finir, sinon le suivant le refera.
+    if (checkpointP) {
+      const left = Math.max(0, Math.min(15_000, tickStartedAt + TICK_WALL_MS - Date.now()));
+      const cp = await Promise.race([checkpointP, new Promise<null>((res) => setTimeout(() => res(null), left))]);
+      if (cp) {
+        contextCheckpoint = cp;
+        await ctx.logEvent("status", { message: "Point de situation préparé (exigences, décisions, état du travail) pour la prochaine compaction." }).catch(() => {});
+      }
+    }
+    await clearLive();
     const buildNextMeta = async (): Promise<Record<string, unknown>> => {
       const { data: fs } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
       const freshMeta = ((fs as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
       return {
         ...freshMeta, // DB truth: spawned_subtasks, report_draft (incl. deletions)
         deliverable_forced: (meta.deliverable_forced as boolean | undefined) ?? freshMeta.deliverable_forced,
+        // Un tick qui aboutit remet le compteur d'erreurs passagères à zéro.
+        transient_fails: 0,
         last_sig: lastSig, sig_count: sigCount, tool_fails: toolFails,
+        guardrail_denials: guardrailDenials,
         // Carried across ticks: a research loop spans them, so a per-tick set
         // would forget the queries between two ticks and let it start over.
         search_sigs: searchSigs, recent_sigs: recentSigs,
         // Progressive disclosure carried to the next tick.
-        tool_tier: toolTier, loaded_families: [...loadedFamilies],
+        tool_tier: toolTier, loaded_families: [...loadedFamilies], unlocked_tools: [...unlockedTools].slice(-60),
         // Context manifest: the byte-identical transcript prefix sent this tick,
         // so the next tick can say whether the provider cache was expected to hit.
-        context_manifest: { transcript_prefix_hash: tickPrefixHash, sealed_markers: sealedMarkers },
+        context_manifest: { transcript_prefix_hash: tickPrefixHash, sealed_markers: sealedMarkers, tools_hash: tickToolsHash },
+        // Les schémas déjà envoyés dans ce run : ils restent envoyés (cache).
+        sent_tools: [...stickyTools].slice(-160),
+        // Le diagnostic des erreurs, d'un tick à l'autre.
+        tool_errors: toolErrors, explained_tools: [...explainedTools].slice(-50), error_causes: causeTally,
+        // La mesure du dernier tour et le point de situation (compaction hybride).
+        prompt_measure: result.measure ? { ...result.measure, at: Date.now() } : promptMeasure,
+        context_checkpoint: contextCheckpoint,
+        // Le classement des outils par Jev, réutilisé tant que l'étape ne change pas.
+        tool_rank: toolRankingMeta,
       };
     };
+
+    if (decision.action === "finalize" && result.finished) {
+      const idle = await hooks.runIdle({ runId, finished: true, content: result.content ?? "" }).catch(() => null);
+      if (idle?.keepWorking?.length) {
+        for (const m of idle.keepWorking) messages.push(m);
+        await traceLoop();
+        await ctx.logEvent("status", { message: "Des résultats de sous-agents sont arrivés pendant le tour — l'agent les intègre avant de conclure." }).catch(() => {});
+        await admin.from("internal_agent_run_state").update({
+          messages, round: newRound, tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost,
+          error_count: errorCount, replans, provider: tickProvider, model: tickModel ?? state.model,
+          progress, stagnation, iteration, meta: await buildNextMeta(),
+          processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
+        }).eq("run_id", runId);
+        await chainNextTick(admin, msgId, runId);
+        return jsonResponse({ ok: true, continued: true, background_results: idle.keepWorking.length });
+      }
+      if (idle?.wait) {
+        // EN ATTENTE : aucun tick ne tourne ; le premier résultat d'enfant le
+        // réveille (agent_run_wake, atomique). Le parent garde son état.
+        await traceLoop();
+        await ctx.logEvent("status", { message: `En attente : ${idle.wait}. L'agent reprendra à l'arrivée de leurs résultats.` }).catch(() => {});
+        await admin.from("internal_agent_run_state").update({
+          messages, round: newRound, tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost,
+          error_count: errorCount, replans, provider: tickProvider, model: tickModel ?? state.model,
+          progress, stagnation, iteration, meta: { ...(await buildNextMeta()), awaiting_children: true, awaiting_since: new Date().toISOString() },
+          processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
+        }).eq("run_id", runId);
+        if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+        // Un résultat déposé ENTRE la vérification et la mise en attente
+        // trouverait un run qui n'attendait pas encore : on se réveille soi-même.
+        const { data: late } = await admin.from("internal_agent_run_inbox").select("id")
+          .eq("run_id", runId).is("consumed_at", null).limit(1);
+        if ((late ?? []).length) {
+          await wakeRun(admin, runId).catch(() => false);
+          await kickTickDrainer(admin);
+        }
+        return jsonResponse({ ok: true, waiting_for_children: true });
+      }
+    }
 
     if (decision.action === "finalize") {
       let finalOutput = result.content?.trim() || "";
@@ -3933,9 +4405,31 @@ async function runMissionTick(runId: string, msgId: number | null) {
       // has (deliverables + summary for a mission, a clear reply for chat)
       // instead of ending empty-handed.
       if (!result.finished) {
-        messages.push({ role: "user", content: isChat
+        const stop: ChatMessage = { role: "user", content: isChat
           ? "STOP — you've reached your step budget. Wrap up now, nothing else: save any final artifact you produced with create_deliverable (e.g. a report, or a running app's public URL), then write a concise reply to the user that INCLUDES any public URL and key file paths produced. Do not start new exploration, downloads or training."
-          : "STOP — you've reached your step budget. Do ONLY this now, nothing else: (1) create your final deliverable(s) with create_deliverable — at minimum a structured report (kind=\"report\") with the key results / KPIs / tables you've already gathered, plus any artifact already produced (e.g. a running app's public URL); (2) then write a concise final summary that INCLUDES that URL if any. Do not start new exploration, downloads or training." });
+          : "STOP — you've reached your step budget. Do ONLY this now, nothing else: (1) create your final deliverable(s) with create_deliverable — at minimum a structured report (kind=\"report\") with the key results / KPIs / tables you've already gathered, plus any artifact already produced (e.g. a running app's public URL); (2) then write a concise final summary that INCLUDES that URL if any. Do not start new exploration, downloads or training." };
+        // La synthèse coûte jusqu'à cinq tours de modèle. Lancée à la suite des
+        // quatre tours du tick, elle dépassait les 150 s du worker : il était
+        // tué en pleine synthèse, et le run finissait « timed out » sans rien
+        // livrer. Sans le temps qu'il faut, elle part au tick suivant — une fois :
+        // un run déjà reporté la fait ici, sous échéance.
+        const left = tickStartedAt + TICK_WALL_MS - Date.now();
+        if (left < WRAPUP_MIN_MS && !meta.wrapup_deferred) {
+          messages.push(stop);
+          await traceLoop();
+          await ctx.logEvent("status", { message: "Budget atteint — la synthèse finale démarre au tick suivant, avec le temps qu'il lui faut." }).catch(() => {});
+          await admin.from("internal_agent_run_state").update({
+            messages, round: newRound, tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost,
+            error_count: errorCount, replans,
+            provider: tickProvider, model: tickModel ?? state.model,
+            progress, stagnation, iteration,
+            meta: { ...(await buildNextMeta()), wrapup_deferred: true },
+            processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
+          }).eq("run_id", runId);
+          await chainNextTick(admin, msgId, runId);
+          return jsonResponse({ ok: true, wrapup_deferred: true, continued: true });
+        }
+        messages.push(stop);
         try {
           const fin = await runToolRounds({
             provider: tickProvider,
@@ -3944,6 +4438,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
             messages, tools: liveTools, executor: loggingExecutor, ephemeral,
             temperature: agent.temperature, maxTokens: 4000, maxRounds: 5,
             onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
+            deadlineAt: tickStartedAt + TICK_WALL_MS - FINALIZE_RESERVE_MS,
+            hardDeadlineAt: tickStartedAt + TICK_HARD_MS,
+            parallelSafe: isParallelSafeTool,
           });
           finalOutput = fin.content?.trim() || finalOutput;
           newRound += fin.roundsRun;
@@ -3965,7 +4462,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
       // by the hundred stops being searchable, and the point is that the second
       // mission on a subject is cheaper, not that everything is hoarded.
       // A failed fetch taught nothing: it is not a finding worth remembering.
-      const useful = findings.filter((f) => f.text.trim() && !/^\s*ERROR\b/i.test(f.text));
+      const useful = research.findings.filter((f) => f.text.trim() && !/^\s*ERROR\b/i.test(f.text));
       if (useful.length >= 2 && (ctx.delegationDepth ?? 0) === 0) {
         try {
           // The header names every distinct subject searched: it is what the
@@ -4021,6 +4518,17 @@ async function runMissionTick(runId: string, msgId: number | null) {
           const legacy = await verifyMissionOutcome(admin, runId, mission as any, finalOutput).catch(() => null);
           if (legacy && !legacy.pass) gaps = [legacy.feedback || "Les critères d'acceptation ne sont pas tous satisfaits."];
         }
+        // Les actions que la réponse ANNONCE (envoyé, publié, planifié…) doivent
+        // être prouvées par un appel d'outil réussi — contrat ou pas. Sans
+        // modèle, et borné comme le reste : deux vérifications au plus.
+        const unbacked = findUnbackedClaims(finalOutput, toolTrail(messages));
+        if (unbacked.length) {
+          gaps = [...gaps, ...unbacked.map(unbackedClaimGap)];
+          await ctx.logEvent("status", {
+            message: `Preuve manquante : la réponse annonce ${unbacked.map((u) => u.label).join(", ")} sans appel d'outil réussi qui le prouve — reprise.`,
+            unbacked_claims: unbacked.map((u) => ({ family: u.family, quote: u.quote })),
+          }).catch(() => {});
+        }
         if (gaps.length > 0) {
           await ctx.logEvent("status", { message: `Vérification du contrat : ÉCHEC — ${gaps[0].slice(0, 180)}. Reprise du travail.` }).catch(() => {});
           await traceLoop(verdict);
@@ -4041,8 +4549,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
             meta: await buildNextMeta(),
             processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
           }).eq("run_id", runId);
-          if (msgId != null) await admin.rpc("agent_tick_next", { p_msg_id: msgId, p_run_id: runId });
-          else await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
+          await chainNextTick(admin, msgId, runId);
           return jsonResponse({ ok: true, verify_failed: true, gaps: gaps.length, continued: true });
         }
         if (verdict?.pass) {
@@ -4095,6 +4602,9 @@ async function runMissionTick(runId: string, msgId: number | null) {
               messages, tools: liveTools, executor: loggingExecutor, ephemeral,
               temperature: agent.temperature, maxTokens: 4000, maxRounds: 4,
               onNotice: async (n) => { await ctx.logEvent("tool_error", { message: n.message, detail: n.detail }); },
+              deadlineAt: tickStartedAt + TICK_WALL_MS - FINALIZE_RESERVE_MS,
+            hardDeadlineAt: tickStartedAt + TICK_HARD_MS,
+              parallelSafe: isParallelSafeTool,
             });
             finalOutput = fin.content?.trim() || finalOutput;
             newRound += fin.roundsRun;
@@ -4182,6 +4692,15 @@ async function runMissionTick(runId: string, msgId: number | null) {
           // result is folded into whatever was waiting on it, and the next
           // agent starts.
           await reportMissionTask(true, finalOutput);
+        } else if (bgParent) {
+          // Un sous-agent en arrière-plan n'a pas de conversation : son
+          // résultat part dans la boîte de son parent, qui est réveillé.
+          await completeRunTodos(admin, runId);
+          await admin.from("internal_agent_runs").update({
+            status: "succeeded", finished_at: new Date().toISOString(), final_output: finalOutput.slice(0, 12000),
+            tokens_in: tokIn, tokens_out: tokOut, cost_usd: cost, action_count: newRound, steps: newRound,
+          }).eq("id", runId);
+          await reportMissionTask(true, finalOutput);
         } else {
           await finalizeChatSuccess(admin, agent, state.conversation_id!, runId, finalOutput,
             { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel, custom: !!agentEndpoint });
@@ -4191,6 +4710,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
         await finalizeMissionSuccess(admin, agent, runId, (mission ?? { id: state.mission_id }) as any, finalOutput,
           { tokIn, tokOut, cost, actions: newRound, provider: finalProvider, model: finalModel, custom: !!agentEndpoint });
       }
+      await cancelBackgroundChildren();
       // Le curateur relit le résultat et décide si quelque chose mérite le graphe
       // de connaissances partagé (0289). En tâche de fond, jamais bloquant.
       {
@@ -4235,8 +4755,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
       meta: await buildNextMeta(),
       processing_until: null, updated_at: new Date().toISOString(), last_input_at: newLastInputAt,
     }).eq("run_id", runId);
-    if (msgId != null) await admin.rpc("agent_tick_next", { p_msg_id: msgId, p_run_id: runId });
-    else await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
+    await chainNextTick(admin, msgId, runId);
     return jsonResponse({ ok: true, rounds: newRound, continued: true });
   } catch (e) {
     if (e instanceof AwaitingInputError) {
@@ -4269,6 +4788,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
       } else {
         await admin.from("internal_agent_missions").update({ board_column: "todo" }).eq("id", state.mission_id).eq("board_column", "in_progress");
       }
+      if (bgParent) await reportMissionTask(false, `Le sous-agent s'est arrêté sur une question, sans réponse : ${q}`);
       // A procedure run has no conversation: its question reached nobody, and
       // the workflow run stayed « en cours » forever (two did, from 2026-08-29).
       // Close it with the question as the reason — the editor's run history is
@@ -4301,6 +4821,7 @@ async function runMissionTick(runId: string, msgId: number | null) {
     }
     if (e instanceof RunCancelledError) {
       await admin.from("internal_agent_runs").update({ status: "cancelled", finished_at: new Date().toISOString() }).eq("id", runId);
+      await cancelBackgroundChildren();
       await reportMissionTask(false, "Run annulé.");
       await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
       if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
@@ -4339,11 +4860,18 @@ async function runMissionTick(runId: string, msgId: number | null) {
     // transient on the scale of a run: redelivering re-hit the same 402 every
     // three minutes until the zombie reaper failed the run as « timed out »
     // (2026-09-02) — hiding the one fact the owner needed: recharge the account.
-    if (e instanceof ProviderExhaustedError) {
+    // Same for a model call the endpoint refuses outright (bad key, unknown
+    // deployment, unsupported parameter): redelivering cannot fix it, and the
+    // chat stayed silent until the run was cancelled (Azure DeploymentNotFound,
+    // 2026-11-07).
+    const refused = !(e instanceof ProviderExhaustedError) ? permanentModelRefusal(e, msg) : null;
+    if (e instanceof ProviderExhaustedError || refused) {
       await salvageReportDraft(admin, agent, runId, state);
-      const detail = e.kind === "unfunded"
+      const detail = refused
+        ? refused
+        : (e as ProviderExhaustedError).kind === "unfunded"
         ? msg
-        : `Quota du fournisseur ${e.provider} épuisé pour la période — réessayez plus tard ou changez de modèle. (${msg.slice(0, 200)})`;
+        : `Quota du fournisseur ${(e as ProviderExhaustedError).provider} épuisé pour la période — réessayez plus tard ou changez de modèle. (${msg.slice(0, 200)})`;
       await ctx.logEvent("error", { error: detail }).catch(() => {});
       await admin.from("internal_agent_runs").update({
         status: "failed", finished_at: new Date().toISOString(), error_message: detail.slice(0, 500),
@@ -4361,12 +4889,86 @@ async function runMissionTick(runId: string, msgId: number | null) {
       return jsonResponse({ ok: false, error: detail }, { status: 200 });
     }
 
-    // Transient error: release the lease and DON'T ack → pgmq redelivers (the
-    // #8 reconciler caps it if it never recovers).
-    await admin.from("internal_agent_run_state").update({ processing_until: null }).eq("run_id", runId);
-    await ctx.logEvent("error", { error: msg }).catch(() => {});
+    // Transient error: release the lease and DON'T ack → pgmq redelivers.
+    //
+    // Plafonné : une erreur « passagère » qui revient à chaque tick (429 en
+    // rafale, 5xx d'un fournisseur en panne) était relivrée toutes les trois
+    // minutes jusqu'au faucheur des runs zombies, qui la classait douze minutes
+    // plus tard en « worker timed out » — la vraie cause disparaissait. Au
+    // troisième tick d'affilée en échec, le run s'arrête avec elle.
+    const { data: st } = await admin.from("internal_agent_run_state").select("meta").eq("run_id", runId).maybeSingle();
+    const stMeta = ((st as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+    const transientFails = (Number(stMeta.transient_fails) || 0) + 1;
+    await ctx.logEvent("error", { error: msg, attempt: transientFails }).catch(() => {});
+    if (transientFails >= MAX_TRANSIENT_TICKS) {
+      await salvageReportDraft(admin, agent, runId, state);
+      const detail = `Le modèle ou un service n'a pas répondu ${transientFails} ticks de suite : ${msg.slice(0, 300)}`;
+      await admin.from("internal_agent_runs").update({
+        status: "failed", finished_at: new Date().toISOString(), error_message: detail.slice(0, 500),
+      }).eq("id", runId);
+      if (roomBinding) {
+        await closeRoomMessage(admin, agent, roomBinding, runId, `⚠️ ${detail}`, "failed");
+      } else if (isChat && state.conversation_id) {
+        await admin.from("internal_agent_messages").insert({
+          conversation_id: state.conversation_id, agent_id: agent.id, role: "assistant", content: `⚠️ ${detail}`, run_id: runId,
+        }).then(() => {}, () => {});
+      }
+      await reportMissionTask(false, detail);
+      await admin.from("internal_agent_run_state").delete().eq("run_id", runId);
+      if (msgId != null) await admin.rpc("agent_tick_ack", { p_msg_id: msgId });
+      return jsonResponse({ ok: false, error: detail }, { status: 200 });
+    }
+    await admin.from("internal_agent_run_state")
+      .update({ processing_until: null, meta: { ...stMeta, transient_fails: transientFails } }).eq("run_id", runId);
     return jsonResponse({ ok: false, error: msg }, { status: 500 });
   }
+}
+
+/** A model call the endpoint refused for good (400/401/403/404 out of
+ *  postChat), as a message the owner can act on; null for anything that may
+ *  pass on retry (429, 5xx, network). */
+function modelRefusal(msg: string): string | null {
+  const m = /tool chat failed: (400|401|403|404)/.exec(msg);
+  if (!m) return null;
+  const upstream = upstreamKind();
+  const why = /DeploymentNotFound/.test(msg)
+    ? "le déploiement demandé n'existe pas sur la ressource Azure. Choisissez le nom exact d'un de vos déploiements dans les paramètres de l'agent (Modèle)."
+    : (m[1] === "401" || m[1] === "403") && upstream === "runware"
+    ? "Runware refuse la clé. Vérifiez le secret RUNWARE_API_KEY du backend (et que le compte Runware est actif)."
+    : (m[1] === "401" || m[1] === "403") && upstream === "azure"
+    ? "Azure refuse la clé ou l'endpoint. Vérifiez AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL (et le crédit de l'abonnement Azure)."
+    : m[1] === "401" || m[1] === "403"
+    ? "la clé ou les droits de l'endpoint sont refusés. Vérifiez la clé du modèle dans AI Workforce → AI Ops → Modèles."
+    : m[1] === "404"
+    ? "le modèle ou l'endpoint est introuvable. Vérifiez l'URL et le nom du modèle."
+    : "la requête est rejetée par le modèle.";
+  return `Le modèle a refusé l'appel (${m[1]}) : ${why} Détail : ${msg.replace(/^tool chat failed: /, "").slice(0, 200)}`;
+}
+
+function permanentModelRefusal(e: unknown, msg: string): string | null {
+  if (e instanceof LlmUpstreamPolicyError) {
+    const upstream = upstreamKind();
+    const guidance = upstream === "azure"
+      ? "Pour utiliser OpenRouter, configurez le backend avec LLM_UPSTREAM=openrouter et OPENROUTER_API_KEY ; sinon, choisissez un modèle disponible sur Azure."
+      : "Choisissez un modèle sur le fournisseur configuré, ou configurez explicitement le backend pour le fournisseur souhaité.";
+    return `Appel LLM bloqué par le garde-fou de sortie. ${guidance} Détail : ${msg.slice(0, 200)}`;
+  }
+
+  const m = /tool chat failed: (400|401|403|404)\b/.exec(msg);
+  if (!m) return modelRefusal(msg);
+  const upstream = upstreamKind();
+  const why = /DeploymentNotFound/.test(msg)
+    ? "le déploiement demandé n'existe pas sur la ressource Azure. Choisissez le nom exact d'un de vos déploiements dans les paramètres de l'agent (Modèle)."
+    : (m[1] === "401" || m[1] === "403") && upstream === "runware"
+    ? "Runware refuse la clé. Vérifiez le secret RUNWARE_API_KEY du backend (et que le compte Runware est actif)."
+    : (m[1] === "401" || m[1] === "403") && upstream === "azure"
+    ? "Azure refuse la clé ou l'endpoint. Vérifiez AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL (et le crédit de l'abonnement Azure)."
+    : m[1] === "401" || m[1] === "403"
+    ? "la clé ou les droits de l'endpoint sont refusés. Vérifiez la clé du modèle dans AI Workforce → AI Ops → Modèles."
+    : m[1] === "404"
+    ? "le modèle ou l'endpoint est introuvable. Vérifiez l'URL et le nom du modèle."
+    : "la requête est rejetée par le modèle.";
+  return `Le modèle a refusé l'appel (${m[1]}) : ${why} Détail : ${msg.replace(/^tool chat failed: /, "").slice(0, 200)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -4387,14 +4989,29 @@ async function reconcileZombieRuns(admin: ReturnType<typeof createServiceClient>
     // Runs that are still actively ticking (state touched within the window).
     const { data: ticking } = await admin
       .from("internal_agent_run_state").select("run_id").gt("updated_at", before);
-    const activeIds = (ticking ?? []).map((r: { run_id: string }) => r.run_id);
+    // Un run EN ATTENTE de ses sous-agents (0305) ne tique pas, et c'est
+    // normal : il est épargné six heures, le temps que ses enfants rendent.
+    const { data: parked } = await admin
+      .from("internal_agent_run_state").select("run_id")
+      .eq("meta->>awaiting_children", "true")
+      .gt("updated_at", new Date(Date.now() - 6 * 3600_000).toISOString());
+    const activeIds = [...(ticking ?? []), ...(parked ?? [])].map((r: { run_id: string }) => r.run_id);
     let q = admin
       .from("internal_agent_runs")
       .update({ status: "failed", finished_at: new Date().toISOString(), error_message: "Run did not finish in time (worker timed out)." })
       .eq("status", "running")
       .lt("started_at", before);
-    if (activeIds.length) q = q.not("id", "in", `(${activeIds.join(",")})`);
-    await q;
+    if (activeIds.length) q = q.not("id", "in", `(${[...new Set(activeIds)].join(",")})`);
+    const { data: reaped } = await q.select("id, parent_run_id, label, run_kind");
+    // Un sous-agent fauché : son parent l'attend peut-être. Il reçoit l'échec,
+    // et se réveille s'il attendait.
+    for (const c of (reaped ?? []) as Array<{ id: string; parent_run_id: string | null; label: string | null; run_kind: string | null }>) {
+      if (c.run_kind !== "subagent" || !c.parent_run_id) continue;
+      await deliverBackgroundResult(admin, {
+        parentRunId: c.parent_run_id, childRunId: c.id, label: c.label, ok: false,
+        output: "ERROR: le sous-agent n'a pas fini à temps (worker arrêté). Son travail est perdu : refais cette sous-tâche toi-même ou relance-la.",
+      }).catch(() => {});
+    }
   } catch { /* best-effort */ }
 }
 
@@ -4715,7 +5332,11 @@ export default defineHandler(async (req) => {
         return jsonResponse({ error: "tick is internal-only" }, { status: 403 });
       }
       if (!run_id) return jsonResponse({ error: "run_id required for tick" }, { status: 400 });
-      return await runMissionTick(run_id, typeof msg_id === "number" ? msg_id : null);
+      const ticked = await runMissionTick(run_id, typeof msg_id === "number" ? msg_id : null);
+      // Un tour de chat qui vient de finir laisse la place aux personnes qui
+      // ont écrit pendant ce tour dans le même fil (turn-principal.ts).
+      await startDeferredTurn(createServiceClient(), run_id).catch(() => false);
+      return ticked;
     }
 
     // Room-mission watchdog, same trust model as the tick above: the SQL cron

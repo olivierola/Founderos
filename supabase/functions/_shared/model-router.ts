@@ -8,6 +8,8 @@
 //   AGENT_MODEL_STANDARD  (default deepseek-chat)   normal tool-using work
 //   AGENT_MODEL_HEAVY     (default deepseek-reasoner) deep reasoning / code / analysis
 
+import { isModelAlias, LIGHT_MODEL, pinnedUpstream, routeAlias } from "./llm-upstream.ts";
+
 export type ModelTier = "light" | "standard" | "heavy";
 
 /** The inference providers we supply ourselves. A self-hosted endpoint
@@ -45,6 +47,23 @@ export function defaultProvider(): Provider {
  */
 export function cheapProvider(): Provider {
   return GROQ_ENABLED && hasKey("groq") ? "groq" : defaultProvider();
+}
+
+/**
+ * Le modèle des mêmes appels annexes. Sur une passerelle imposée (Azure AI
+ * Foundry, LiteLLM), c'est son déploiement léger (AZURE_OPENAI_DEPLOYMENT_LIGHT,
+ * LLM_MODEL_LIGHT) : un juge qui répond « pass » n'a pas besoin du modèle qui
+ * écrit les rapports, et il ne doit pas puiser dans son quota de tokens par
+ * minute. Ailleurs, rien : le fournisseur garde son modèle par défaut.
+ */
+export function cheapModel(): string | undefined {
+  try {
+    // La route des appels annexes (« judge »), sinon le palier léger : un
+    // connecteur peut dédier un modèle à ces jugements, sans y être obligé.
+    return pinnedUpstream() ? routeAlias("light", "judge") : undefined;
+  } catch {
+    return undefined; // configuration incomplète : l'appel lui-même le dira
+  }
 }
 
 /**
@@ -103,6 +122,9 @@ export function providerMismatchNote(modelSetting?: string | null): string | nul
 export function modelMatchesProvider(model: string | null | undefined, provider: Provider): boolean {
   const m = String(model ?? "").trim().toLowerCase();
   if (!m) return true; // no id → the caller's default for that provider applies
+  // A route alias (`@code|heavy`) names no vendor: the gateway or the agent's
+  // connector translates it, and without one it falls back to the default.
+  if (isModelAlias(m)) return true;
   if (m === "groq" || m === "deepseek") return false; // raw provider alias is not a concrete model id
   return provider === "deepseek" ? m.startsWith("deepseek") : !m.startsWith("deepseek");
 }
@@ -140,11 +162,18 @@ export function classifyTier(text: string, opts?: { mode?: "chat" | "mission"; c
 // "cannot run our agents at all". The ban is enforced here rather than by fixing
 // an env var, because the value can also come from a stale secret or a persisted
 // run row, and one bad id anywhere brings the same 413 back.
-export const GROQ_MODEL_ID = "llama-3.3-70b-versatile";
+//
+// Groq a arrêté `llama-3.3-70b-versatile` le 16/08/2026 : depuis, la bascule
+// « DeepSeek à sec → Groq » rendait un 404 model_not_found, et tous les runs
+// planifiés mouraient (constaté le 10/11/2026). Son remplaçant officiel est
+// gpt-oss-120b, qui appelle les outils (un à la fois).
+export const GROQ_MODEL_ID = "openai/gpt-oss-120b";
 export const DEEPSEEK_MODEL_ID = "deepseek-chat";       // DeepSeek V4
 export const DEEPSEEK_REASONER = "deepseek-reasoner";   // DeepSeek V4 reasoning
 
-const BANNED_MODELS = /(llama-?3(\.1)?-?8b|8b-instant|gemma|mixtral|llama-?3(\.[12])?-?(1|3)b)/i;
+// llama-3.3-70b-versatile rejoint la liste : arrêté chez Groq, il ne peut venir
+// que d'une ligne de run ou d'un secret anciens, et ramènerait le 404.
+const BANNED_MODELS = /(llama-?3(\.1)?-?8b|8b-instant|gemma|mixtral|llama-?3(\.[12])?-?(1|3)b|llama-3\.3-70b-versatile)/i;
 
 /**
  * Force a model id onto a supported one. Any banned/empty/foreign id becomes the
@@ -179,6 +208,51 @@ export function modelForTier(tier: ModelTier, provider: Provider = defaultProvid
   if (tier === "heavy") return sanitizeModel(env("AGENT_MODEL_HEAVY"), "deepseek", DEEPSEEK_REASONER);
   if (tier === "light") return sanitizeModel(env("AGENT_MODEL_LIGHT"), "deepseek");
   return sanitizeModel(env("AGENT_MODEL_STANDARD"), "deepseek");
+}
+
+// ---------------------------------------------------------------------------
+// Request profile — WHICH model, not only how strong
+//
+// The tier says how much reasoning a request needs. Some requests also need a
+// particular KIND of model: one that writes code well, one that reads images,
+// one with a long context window. A connector with routes per criterion
+// (llm-upstream: ModelRoutes) answers each with its own model; the alias
+// `@code|heavy` asks for "the code model, else the heavy one", so a connector
+// without a code route still gets a sensible model. Deterministic and free —
+// no LLM call to decide which LLM to call.
+// ---------------------------------------------------------------------------
+
+export type ModelNeed = "code" | "vision" | "long_context";
+
+// Volontairement étroit : « en fonction de », « une classe », « un script
+// vidéo » sont du français courant, pas du code.
+const CODE_RE = /```|\b(code source|du code|le code|ce code|coder|bug|stack ?trace|traceback|exception|refactor|r[ée]usinage|compil\w*|typescript|javascript|python|golang|kotlin|php|sql|regex|dockerfile|kubernetes|terraform|api rest|endpoint|unit tests?|tests? unitaires?|pull request|repo(sitory)?|d[ée]p[oô]t git)\b/i;
+const FILE_RE = /\b[\w./-]+\.(tsx?|jsx?|py|go|rs|java|kt|swift|php|rb|sql|sh|ps1|ya?ml|toml|json|css|html|vue|svelte|c|cpp|h|cs)\b/i;
+const IMAGE_INPUT_RE = /data:image\/|https?:\/\/\S+\.(png|jpe?g|gif|webp)(\?\S*)?(\s|$)/i;
+/** Au-delà, on demande un modèle à longue fenêtre quand le connecteur en a un. */
+const LONG_CONTEXT_CHARS = 60_000;
+
+/** The kind of model a request needs, if any — null for ordinary work. */
+export function detectNeed(text: string, opts?: { contextChars?: number }): ModelNeed | null {
+  const t = text || "";
+  if ((opts?.contextChars ?? t.length) > LONG_CONTEXT_CHARS) return "long_context";
+  if (IMAGE_INPUT_RE.test(t)) return "vision";
+  if (CODE_RE.test(t) || FILE_RE.test(t)) return "code";
+  return null;
+}
+
+/**
+ * The model to ask for: a route ALIAS when something can translate it (a
+ * pinned gateway, or the agent's own connector), the provider's tier model
+ * otherwise. `@code|heavy` → the connector's code model, else its heavy model.
+ */
+export function modelForRequest(
+  tier: ModelTier,
+  need: ModelNeed | null,
+  opts: { provider?: Provider; routed?: boolean },
+): string {
+  const routed = opts.routed ?? (() => { try { return !!pinnedUpstream(); } catch { return false; } })();
+  return routed ? routeAlias(tier, need) : modelForTier(tier, opts.provider);
 }
 
 /** Convenience: classify + resolve in one call, honouring an explicit override. */
@@ -241,7 +315,7 @@ export function classifyRequest(
   const isSocial =
     !opts?.continuation &&
     !opts?.hasToolHistory &&
-    model === "light" &&
+    LIGHT_RE.test(t) &&
     !ACTION_RE.test(t) &&
     t.length < 60;
   if (isSocial) return { model, tools: "social" };
@@ -254,6 +328,21 @@ export function classifyRequest(
   // cheapest tier even when it is short ("lance les tests" is 15 characters and
   // classifyTier would call it light).
   return { model: model === "light" ? "standard" : model, tools: model === "heavy" ? "full" : "core" };
+}
+
+/** Force the named connected-app wrapper for an explicit read/lookup request. */
+export function preferredIntegrationTool(task: string, toolNames: string[]): string | null {
+  if (!/\b(regarde|regarder|voir|vois|consulte|consulter|affiche|afficher|montre|montrer|liste|lister|récupère|récupérer|analyse|analyser|cherche|chercher|donne|donner|stats?|statistiques|chiffres|analytics|performances?|metrics?|show|list|get|fetch|check|read|view|statistics)\b/i.test(task)) {
+    return null;
+  }
+  const normalizedTask = task.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+  for (const name of toolNames) {
+    const match = /^use_([a-z0-9_]+)$/i.exec(name);
+    if (!match) continue;
+    const toolkit = match[1].replace(/[^a-z0-9]/gi, "").toLowerCase();
+    if (toolkit.length >= 4 && normalizedTask.includes(toolkit)) return name;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,20 +360,26 @@ export interface ContextBudget {
   triggerChars: number;
   /** Keep roughly this much recent transcript after a compaction. */
   windowChars: number;
+  /** Le même seuil en TOKENS du prompt réellement envoyé (système, outils,
+   *  transcrit compacté), comparé à la mesure du fournisseur
+   *  (context-checkpoint.ts). La fenêtre gardée reste en caractères. */
+  triggerTokens: number;
 }
 
-/** Per-class context budgets. Chars, not tokens — the runtime counts chars
- *  everywhere, so this stays comparable with the compaction thresholds. */
+/** Per-class context budgets. The char thresholds are the fallback until a
+ *  round has been measured; the token ones are compared with what the
+ *  provider actually billed (prompt_tokens), tools and system included —
+ *  hence a little above the char threshold converted at ~3.5 chars/token. */
 export function contextBudgetFor(tools: ToolTier): ContextBudget {
   switch (tools) {
     case "social":
-      return { triggerChars: 40_000, windowChars: 24_000 };
+      return { triggerChars: 40_000, windowChars: 24_000, triggerTokens: 16_000 };
     case "core":
-      return { triggerChars: 110_000, windowChars: 64_000 };
+      return { triggerChars: 110_000, windowChars: 64_000, triggerTokens: 42_000 };
     case "full":
     default:
       // The pre-classification default kept ~80k chars; "full" (missions, heavy
       // analysis) gets the most headroom since it pipelines across many rounds.
-      return { triggerChars: 160_000, windowChars: 96_000 };
+      return { triggerChars: 160_000, windowChars: 96_000, triggerTokens: 62_000 };
   }
 }

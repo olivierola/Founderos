@@ -115,6 +115,19 @@ export function RunTimeline({
   });
 
   const isActive = ACTIVE_STATUSES.includes(run?.status ?? (live ? "running" : ""));
+
+  // Ce que le modèle est en train d'écrire (réponse en flux, 0305). Lu à part :
+  // tant que la colonne n'existe pas, la requête échoue sans rien casser.
+  const { data: liveText } = useQuery({
+    queryKey: ["run_live", runId],
+    enabled: isActive,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("internal_agent_runs").select("live_output").eq("id", runId).maybeSingle();
+      if (error) return null;
+      return ((data as { live_output?: string | null } | null)?.live_output ?? null) as string | null;
+    },
+    refetchInterval: isActive ? 1500 : false,
+  });
   const isOpen = open ?? isActive; // default: open while running, collapsed after
 
   const { data: events } = useQuery({
@@ -142,6 +155,7 @@ export function RunTimeline({
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "internal_agent_runs", filter: `id=eq.${runId}` }, () => {
         qc.invalidateQueries({ queryKey: ["run_row", runId] });
+        qc.invalidateQueries({ queryKey: ["run_live", runId] });
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -342,6 +356,14 @@ export function RunTimeline({
             <div className="mb-2 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[12px] text-amber-700 dark:text-amber-300">
               <span className="font-medium">Question : </span>{run.pending_question.question}
               <span className="ml-1 text-muted-foreground">↳ réponds dans le chat pour continuer.</span>
+            </div>
+          )}
+
+          {/* La réponse en cours d'écriture */}
+          {isActive && liveText && liveText.trim() && (
+            <div className="mb-2 rounded-lg bg-muted/40 px-2.5 py-2">
+              <div className="mb-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">En cours d'écriture</div>
+              <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-foreground/85">{liveText.length > 1200 ? `…${liveText.slice(-1200)}` : liveText}</div>
             </div>
           )}
 

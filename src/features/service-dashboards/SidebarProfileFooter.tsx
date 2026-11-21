@@ -58,7 +58,7 @@ function Tile({ name }: { name: string }) {
 const SKINS = [
   {
     key: "founderos" as const,
-    label: "Anduran",
+    label: "Agent company",
     hint: "Le style du site : noir, blanc, violet, angles arrondis.",
   },
   {

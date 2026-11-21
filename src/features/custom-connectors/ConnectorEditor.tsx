@@ -248,7 +248,7 @@ export function ConnectorEditor({ connector, credentials, relays, serviceDashboa
               <span className="text-xs font-medium">Comment l'atteindre</span>
               <div className="grid gap-2 sm:grid-cols-2">
                 {([
-                  { v: "direct", t: "En direct", d: "L'outil est exposé sur Internet (ou derrière un proxy d'identité). L'appel part du cloud FounderOS ; les adresses privées sont refusées." },
+                  { v: "direct", t: "En direct", d: "L'outil est exposé sur Internet (ou derrière un proxy d'identité). L'appel part du cloud Agent company ; les adresses privées sont refusées." },
                   { v: "relay", t: "Par un relais", d: "L'outil est sur votre réseau interne. Un relais déployé chez vous, sortant uniquement, l'appelle et applique sa propre liste blanche." },
                 ] as const).map((o) => (
                   <button key={o.v} type="button" disabled={readOnly} onClick={() => set({ transport: o.v })}
@@ -484,7 +484,7 @@ function AuthConfigEditor({ draft, readOnly, setScheme, setCfg, connectorId }: {
           <p className="text-xs text-muted-foreground">
             {scheme === "delegated"
               ? "Aucun secret à saisir : à chaque appel, l'IdP de l'entreprise émet un jeton court au nom de la personne et de l'agent (Administration → Authentification → Délégation aux agents). Par le relais, ce jeton voyage chiffré."
-              : "Aucun secret à saisir : FounderOS signe, à chaque appel, qui agit (personne, agent, rôles). L'outil le vérifie avec le JWKS de FounderOS : /functions/v1/approval-jwks."}
+              : "Aucun secret à saisir : Agent company signe, à chaque appel, qui agit (personne, agent, rôles). L'outil le vérifie avec le JWKS de Agent company : /functions/v1/approval-jwks."}
           </p>
         </>
       )}
@@ -523,7 +523,7 @@ function PolicyEditor({ policy, setPolicy, readOnly }: { policy: ConnectorPolicy
           s'applique à cet outil impose l'approbation.
         </p>
         <div className="mt-3">
-          <Field label="Jeton d'approbation envoyé à l'outil (audience)" hint="Facultatif. Avec chaque appel approuvé, l'outil reçoit X-Approval-Token : un jeton signé par FounderOS, lié à la requête (méthode, chemin, empreinte du corps) et aux approbateurs. Il se vérifie avec /functions/v1/approval-jwks. Vide : pas de jeton.">
+          <Field label="Jeton d'approbation envoyé à l'outil (audience)" hint="Facultatif. Avec chaque appel approuvé, l'outil reçoit X-Approval-Token : un jeton signé par Agent company, lié à la requête (méthode, chemin, empreinte du corps) et aux approbateurs. Il se vérifie avec /functions/v1/approval-jwks. Vide : pas de jeton.">
             <input className={inputCls} disabled={readOnly} defaultValue={policy.approval_audience ?? ""} placeholder="argocd-approvals"
               onBlur={(e) => setPolicy({ approval_audience: e.target.value.trim() || undefined })} />
           </Field>

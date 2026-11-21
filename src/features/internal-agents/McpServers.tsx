@@ -160,10 +160,10 @@ export function McpServersPage({ embedded = false }: { embedded?: boolean } = {}
         </div>
         {canCreate && (
         <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" className="rounded-full" onClick={() => setCatalogOpen(true)}>
+          <Button variant="outline" size="sm" className="rounded-md" onClick={() => setCatalogOpen(true)}>
             <LayoutGrid className="mr-1 h-4 w-4" /> Catalogue
           </Button>
-          <Button size="sm" className="rounded-full" onClick={() => { setPreset(null); setEditing("new"); }}>
+          <Button size="sm" className="rounded-md" onClick={() => { setPreset(null); setEditing("new"); }}>
             <Plus className="mr-1 h-4 w-4" /> Ajouter un serveur
           </Button>
         </div>
@@ -177,7 +177,7 @@ export function McpServersPage({ embedded = false }: { embedded?: boolean } = {}
           <Plug className="h-8 w-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">Aucun serveur MCP pour le moment.</p>
           {canCreate && (
-            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setEditing("new")}>
+            <Button variant="outline" size="sm" className="rounded-md" onClick={() => setEditing("new")}>
               <Plus className="mr-1 h-4 w-4" /> Ajouter votre premier serveur
             </Button>
           )}
@@ -200,7 +200,7 @@ export function McpServersPage({ embedded = false }: { embedded?: boolean } = {}
                           : <span className="text-[10px] text-amber-600 dark:text-amber-400">OAuth · non connecté</span>
                       )}
                       {identityMode(s.auth_mode) && (
-                        <span className="text-[10px] text-sky-600 dark:text-sky-400" title={s.auth_mode === "signed_context" ? "Contexte signé par FounderOS à chaque appel : la personne et l'agent" : "Jeton d'appel émis par l'IdP de l'entreprise à chaque appel, au nom de la personne et de l'agent"}>
+                        <span className="text-[10px] text-sky-600 dark:text-sky-400" title={s.auth_mode === "signed_context" ? "Contexte signé par Agent company à chaque appel : la personne et l'agent" : "Jeton d'appel émis par l'IdP de l'entreprise à chaque appel, au nom de la personne et de l'agent"}>
                           {s.auth_mode === "signed_context" ? "Contexte signé" : "Identité déléguée"} · {s.auth_config?.audience}
                         </span>
                       )}
@@ -219,12 +219,12 @@ export function McpServersPage({ embedded = false }: { embedded?: boolean } = {}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {s.auth_mode === "oauth" && editable && (
-                      <Button variant="outline" size="sm" className="h-7 rounded-full px-2.5 text-xs" onClick={() => connect(s)}>
+                      <Button variant="outline" size="sm" className="h-7 rounded-md px-2.5 text-xs" onClick={() => connect(s)}>
                         <LogIn className="h-3 w-3" />
                         <span className="ml-1">{s.oauth?.status === "connected" ? "Reconnecter" : "Se connecter"}</span>
                       </Button>
                     )}
-                    <Button variant="outline" size="sm" className="h-7 rounded-full px-2.5 text-xs" onClick={() => test(s)} disabled={testing === s.id}>
+                    <Button variant="outline" size="sm" className="h-7 rounded-md px-2.5 text-xs" onClick={() => test(s)} disabled={testing === s.id}>
                       {testing === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                       <span className="ml-1">Tester</span>
                     </Button>
@@ -624,7 +624,7 @@ function McpServerDialog({
               <option value="header">Header statique (token / clé d'API)</option>
               <option value="oauth">OAuth 2.1 (connexion interactive)</option>
               <option value="token_exchange">Identité déléguée par l'IdP de l'entreprise (serveur interne)</option>
-              <option value="signed_context">Contexte signé par FounderOS (serveur interne)</option>
+              <option value="signed_context">Contexte signé par Agent company (serveur interne)</option>
             </select>
           </div>
 
@@ -634,8 +634,8 @@ function McpServerDialog({
               <p className="text-[11px] text-muted-foreground">
                 À l'installation du serveur MCP :{" "}
                 <code className="rounded bg-muted px-1">npm run token -- seed</code> affiche le jeton de la période. Collez-le ici une
-                fois : ensuite, le serveur change de jeton chaque jour et livre lui-même le nouveau à FounderOS. Un jeton fixe
-                (<code className="rounded bg-muted px-1">npm run token -- generate</code>) se colle de la même façon. FounderOS le garde
+                fois : ensuite, le serveur change de jeton chaque jour et livre lui-même le nouveau à Agent company. Un jeton fixe
+                (<code className="rounded bg-muted px-1">npm run token -- generate</code>) se colle de la même façon. Agent company le garde
                 chiffré et le présente à chaque appel d'un agent, avec la personne et l'agent pour l'audit. Le modèle ne le voit jamais.
               </p>
               <div>
@@ -649,7 +649,7 @@ function McpServerDialog({
                   </p>
                 )}
                 <p className="mt-1 text-[10px] text-muted-foreground">
-                  Serveur qui ne reconnaît plus le jeton (FounderOS arrêté plus de 7 jours) :{" "}
+                  Serveur qui ne reconnaît plus le jeton (Agent company arrêté plus de 7 jours) :{" "}
                   <code className="rounded bg-muted px-1">npm run token -- current</code> sur le serveur, puis collez le jeton affiché.
                 </p>
               </div>
@@ -675,8 +675,8 @@ function McpServerDialog({
             <div className="space-y-2.5 rounded-lg border border-border bg-secondary/30 p-3">
               <p className="text-[11px] text-muted-foreground">
                 {authMode === "signed_context"
-                  ? "À chaque appel, FounderOS signe un contexte court (personne, agent, rôles) pour ce seul serveur. Le serveur le vérifie avec le JWKS de FounderOS (IDP_ISSUER = l'émetteur des approbations, IDP_JWKS_URL = /functions/v1/approval-jwks)."
-                  : "À chaque appel, FounderOS demande à l'IdP de l'entreprise un jeton court pour ce seul serveur, au nom de la personne pour qui l'agent agit et de l'agent lui-même (échange de jeton, ou On-Behalf-Of chez Entra ID)."}
+                  ? "À chaque appel, Agent company signe un contexte court (personne, agent, rôles) pour ce seul serveur. Le serveur le vérifie avec le JWKS de Agent company (IDP_ISSUER = l'émetteur des approbations, IDP_JWKS_URL = /functions/v1/approval-jwks)."
+                  : "À chaque appel, Agent company demande à l'IdP de l'entreprise un jeton court pour ce seul serveur, au nom de la personne pour qui l'agent agit et de l'agent lui-même (échange de jeton, ou On-Behalf-Of chez Entra ID)."}
                 {" "}En direct, le serveur doit être interne (https, hôte de MCP_INTERNAL_HOSTS) ; par un relais, c'est sa liste blanche qui décide.
               </p>
               <div className="grid gap-2 sm:grid-cols-3">

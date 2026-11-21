@@ -4,11 +4,16 @@
 //   DATABASE_URL=postgres://postgres:…@db:5432/postgres node migrate.mjs
 //   node migrate.mjs --dry-run          ce qui serait appliqué
 //   node migrate.mjs --baseline 0272    base migrée à la main : noter jusqu'à 0272 sans rejouer
+//   PLATFORM=self node migrate.mjs      PostgreSQL ordinaire, sans Supabase : le socle
+//                                       d'abord (backend/platform/sql), puis les migrations
 //
 // MIGRATIONS_DIR : le dossier des fichiers (défaut : ./migrations, celui de l'image).
+// PLATFORM_SQL_DIR : le socle (défaut : ./platform-sql dans l'image, sinon
+// backend/platform/sql du dépôt).
 // Le rôle doit être propriétaire du schéma public et pouvoir créer dans auth
 // (le rôle postgres de Supabase) : plusieurs migrations y posent des déclencheurs.
 
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
@@ -35,8 +40,27 @@ const db = {
   query: (text, params = []) => sql.unsafe(text, params),
 };
 
+// Mode self : pg_cron, pg_net et pgmq ne sont pas sur un PostgreSQL standard,
+// le socle les remplace. Même règle que backend/src/platform/migrate.ts.
+const SHIMMED = /create\s+extension\s+if\s+not\s+exists\s+"?(pg_cron|pg_net|pgmq)"?(\s+(with\s+)?schema\s+\w+)?(\s+cascade)?\s*;/gi;
+const selfHosted = (process.env.PLATFORM || "").toLowerCase() === "self";
+
 try {
-  const migrations = listMigrations(dir);
+  let migrations = listMigrations(dir);
+  if (selfHosted) {
+    const socle = process.env.PLATFORM_SQL_DIR
+      || [path.join(here, "platform-sql"), path.join(here, "../../backend/platform/sql")].find((d) => existsSync(d));
+    if (!socle) throw new Error("PLATFORM=self : socle introuvable (PLATFORM_SQL_DIR).");
+    for (const f of readdirSync(socle).filter((x) => x.endsWith(".sql")).sort()) {
+      await db.exec(readFileSync(path.join(socle, f), "utf8"));
+      console.log(`socle : ${f}`);
+    }
+    migrations = migrations.map((m) => ({
+      ...m,
+      sql: readFileSync(m.path, "utf8").replace(SHIMMED, (_m, ext) => `select 1; -- ${ext} : fourni par le socle de la plateforme
+`),
+    }));
+  }
   const out = await migrate(db, migrations, {
     dryRun: flag("--dry-run"),
     baseline: value("--baseline"),

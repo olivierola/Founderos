@@ -689,7 +689,7 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
       {error && <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
 
       <div className="mt-5 flex justify-end">
-        <Button onClick={create} disabled={creating || !name.trim()} className="rounded-xl px-5">
+        <Button onClick={create} disabled={creating || !name.trim()} className="rounded-md px-5">
           {creating && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}Create agent
         </Button>
       </div>

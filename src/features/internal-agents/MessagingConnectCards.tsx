@@ -174,7 +174,7 @@ function ProviderCard({
       </div>
 
       <div className="mt-3 flex items-center gap-3">
-        <Button className="h-9" onClick={() => void connect()} disabled={!ready || busy}>
+        <Button className="h-8" onClick={() => void connect()} disabled={!ready || busy}>
           <PlusIcon className="mr-1.5 h-4 w-4" /> {busy ? "Connexion…" : "Connecter"}
         </Button>
         {error && <span className="text-xs text-destructive">{error}</span>}

@@ -28,7 +28,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { callAi, safeParseJson, type ChatMessage } from "./ai.ts";
-import { cheapProvider } from "./model-router.ts";
+import { cheapModel, cheapProvider } from "./model-router.ts";
 import { judge, noul, readNoul, qid } from "./typesafe.ts";
 
 // ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ export async function deriveContract(opts: {
     try {
       const res = await callAi({
         task: "json_extraction",
-        provider: cheapProvider(),
+        provider: cheapProvider(), model: cheapModel(),
         jsonMode: true,
         maxTokens: 800,
         temperature: 0.1,
@@ -493,7 +493,7 @@ async function judgeChecks(
     .join("\n") || "(aucun livrable)";
   const res = await callAi({
     task: "classification",
-    provider: cheapProvider(),
+    provider: cheapProvider(), model: cheapModel(),
     jsonMode: true,
     maxTokens: 700,
     systemPrompt:
@@ -597,7 +597,43 @@ export interface LoopSignals {
    *  quand il s'apprête à replanifier — il reste donc une entrée comme les
    *  autres, et le contrôleur reste pur. */
   needsHuman?: boolean;
+  /** Actions refusées par les garde-fous (bloc avant exécution) : d'affilée,
+   *  et sur tout le run. Voir DENIAL_LIMITS. */
+  guardrailDenials?: { consecutive: number; total: number };
+  /** Le diagnostic des outils en échec répété (tool-error-diagnosis.ts) : la
+   *  cause probable, l'ajustement, et, quand le modèle léger a été consulté,
+   *  son explication. C'est ce qui permet d'ajuster au lieu de répéter. */
+  toolDiagnoses?: ToolDiagnosisSignal[];
+  /** Les causes des erreurs d'outil depuis la dernière replanification. */
+  errorCauses?: Array<{ label: string; count: number }>;
 }
+
+export interface ToolDiagnosisSignal {
+  tool: string;
+  label: string;
+  needsHuman: boolean;
+  transient: boolean;
+  advice: string;
+  /** L'analyse des tentatives par le modèle léger (explainRepeatedFailure). */
+  explanation?: { cause: string; fix: string; giveUp: boolean };
+}
+
+/** Une ligne de consigne par outil diagnostiqué. */
+function diagnosisLines(ds: ToolDiagnosisSignal[]): string[] {
+  return ds.map((d) => d.explanation
+    ? `- ${d.tool} : ${d.explanation.cause} → À FAIRE : ${d.explanation.fix}`
+    : `- ${d.tool} : cause probable « ${d.label} » → À FAIRE : ${d.advice}`);
+}
+
+/**
+ * Le suivi des refus (denialTracking, superharness). Un agent à qui un
+ * garde-fou refuse une action essaie souvent une variante de la même action,
+ * puis une autre : chaque refus coûte un tour, et rien ne l'arrêtait — le
+ * disjoncteur par outil ne voit pas ces refus, qui ne sont pas des pannes.
+ * Trois d'affilée : on lui dit d'arrêter de contourner et de demander à
+ * l'humain. Vingt sur le run : on finalise avec l'acquis.
+ */
+export const DENIAL_LIMITS = { maxConsecutive: 3, maxTotal: 20 } as const;
 
 export type LoopAction = "continue" | "replan" | "finalize" | "abort";
 
@@ -622,11 +658,34 @@ export function decideNext(s: LoopSignals): LoopDecision {
   const interventions: Array<{ tag: string; content: string }> = [];
 
   // A tool that keeps failing gets a course-correction nudge whatever else is
-  // decided — it composes with continue AND with replan.
+  // decided — it composes with continue AND with replan. With a diagnosis, the
+  // nudge says WHY it fails and WHAT to change, tool by tool, instead of a
+  // generic "try something else".
+  const diagnosed = (s.toolDiagnoses ?? []).filter((d) => s.brokenTools.includes(d.tool));
   if (!s.finished && s.brokenTools.length > 0) {
     interventions.push({
       tag: "circuit_breaker",
-      content: `OUTIL(S) EN ÉCHEC RÉPÉTÉ : ${s.brokenTools.join(", ")} — a/ont échoué ≥3 fois d'affilée. N'insiste PAS de la même manière. Choisis : (a) une approche VRAIMENT différente (autre outil, autre source/paramètres), OU (b) marque l'étape concernée comme bloquée (update_todos status="blocked" + note) et CONTINUE le reste du plan. Ne bloque jamais tout le run sur un seul outil cassé — livre un résultat partiel utile plutôt que rien.`,
+      content: diagnosed.length
+        ? [
+          `OUTIL(S) EN ÉCHEC RÉPÉTÉ : ${s.brokenTools.join(", ")} — ≥3 échecs d'affilée. Voici ce qui les fait échouer et l'ajustement à faire :`,
+          ...diagnosisLines(diagnosed),
+          `Applique l'ajustement au lieu de refaire le même appel. Si l'outil reste inutilisable, marque l'étape bloquée (update_todos status="blocked" + note) et CONTINUE le reste du plan : un résultat partiel utile vaut mieux que rien.`,
+        ].join("\n")
+        : `OUTIL(S) EN ÉCHEC RÉPÉTÉ : ${s.brokenTools.join(", ")} — a/ont échoué ≥3 fois d'affilée. N'insiste PAS de la même manière. Choisis : (a) une approche VRAIMENT différente (autre outil, autre source/paramètres), OU (b) marque l'étape concernée comme bloquée (update_todos status="blocked" + note) et CONTINUE le reste du plan. Ne bloque jamais tout le run sur un seul outil cassé — livre un résultat partiel utile plutôt que rien.`,
+    });
+  }
+  // Every broken tool is blocked by something only the human can give (an
+  // access, a connection, a credit): no re-plan will produce it. Ask now —
+  // deterministic, from the diagnosis, without waiting for a stagnation.
+  const humanBlocked = !s.finished && s.brokenTools.length > 0 &&
+    s.brokenTools.every((t) => diagnosed.some((d) => d.tool === t && (d.needsHuman || d.explanation?.giveUp)));
+  // Same composition rule for guardrail refusals: a nudge, whatever else is
+  // decided — but one that points at the human, not at another approach.
+  const denials = s.guardrailDenials;
+  if (!s.finished && denials && denials.consecutive >= DENIAL_LIMITS.maxConsecutive) {
+    interventions.push({
+      tag: "guardrail_denials",
+      content: `REFUS EN SÉRIE : les garde-fous de cet espace ont bloqué tes ${denials.consecutive} dernières actions. Ne cherche PAS à contourner un garde-fou avec une variante de la même action (autre outil, autres paramètres, découpage) : c'est précisément ce qu'il interdit. Deux options seulement : (a) termine le travail SANS cette action, en livrant ce qui est possible ; (b) si elle est indispensable, appelle ask_user en expliquant ce qui est bloqué, par quel garde-fou, et pourquoi tu en as besoin — l'humain décide.`,
     });
   }
 
@@ -654,15 +713,25 @@ export function decideNext(s: LoopSignals): LoopDecision {
     };
   }
 
-  // 4. Stuck: looping, drowning in errors, or producing nothing for N ticks.
+  // 3b. The guardrails have refused too much of what this run tries to do: it
+  // cannot make progress within the rules. Ship what exists, say why.
+  if (denials && denials.total >= DENIAL_LIMITS.maxTotal) {
+    return {
+      action: "finalize", escalateModel: false, consumesReplan: false, interventions,
+      reason: `${denials.total} actions refusées par les garde-fous sur ce run — finalisation avec l'acquis plutôt que de nouvelles tentatives.`,
+    };
+  }
+
+  // 4. Stuck: looping, drowning in errors, or producing nothing for N ticks —
+  // or blocked on a tool only the human can unblock (diagnosis above).
   const stagnating = s.stagnantTicks >= STAGNATION_LIMIT;
-  if ((s.loopDetected || s.errorCount >= ERROR_FLOOD || stagnating) && s.replans < s.maxReplans) {
+  if ((s.loopDetected || s.errorCount >= ERROR_FLOOD || stagnating || humanBlocked) && s.replans < s.maxReplans) {
     // Ce qui manque est hors de portée de l'agent : une replanification de plus
     // ne ferait que brûler des tours. On lui fait poser la question — il la
     // formule, ask_user met le run en pause. Pas d'escalade de modèle : le
     // raisonneur ne fabrique pas un accès manquant. Consomme un crédit de
     // replanification, pour qu'une escalade ne puisse pas se répéter à l'infini.
-    if (s.needsHuman) {
+    if (s.needsHuman || humanBlocked) {
       interventions.push({
         tag: "escalate_human",
         content: "STOP — what blocks you is something only the USER can provide (an access, a missing document or data, or a decision that is theirs to make). Do not retry and do not re-plan around it. Call ask_user NOW with ONE precise question: say what you already did, what exactly is missing, and what you will do once you have it. If part of the work can be delivered without it, say so in the question.",
@@ -683,7 +752,10 @@ export function decideNext(s: LoopSignals): LoopDecision {
         ? "STOP — you are LOOPING: you've repeated the same tool call with the same arguments several times and it is not working. Do NOT run it again. Step back and write a short REVISED plan: state why the approach fails, pick a genuinely different approach (different tool, different inputs, or split the step), then execute the new plan."
         : stagnating
         ? "STOP — you are BURNING STEPS WITHOUT PROGRESS: several rounds have produced no closed step and no deliverable. Step back and answer, in one short paragraph: what is actually blocking you, what you have already established, and what is the SHORTEST path to a usable result. Then update_todos (mark what is really done / blocked), narrow the scope if needed, and produce a concrete deliverable with what you already have — a partial but real result beats more exploration."
-        : "STOP — you have accumulated many tool errors. Step back and RE-PLAN: list which steps of your plan are actually done, which failed and WHY (read the error messages), and write a short revised plan that works around the failures (different tool, different approach, or narrower scope). Then execute the revised plan. Do not repeat calls that already failed the same way.",
+        : "STOP — you have accumulated many tool errors. Step back and RE-PLAN: list which steps of your plan are actually done, which failed and WHY (read the error messages), and write a short revised plan that works around the failures (different tool, different approach, or narrower scope). Then execute the revised plan. Do not repeat calls that already failed the same way." +
+          (s.errorCauses?.length
+            ? `\nCauses relevées par le harnais sur ces erreurs : ${s.errorCauses.map((c) => `${c.label} ×${c.count}`).join(", ")}. Traite chaque cause par son ajustement (le [DIAGNOSTIC] sous chaque erreur le donne).`
+            : ""),
     });
     return {
       action: "replan", escalateModel: true, consumesReplan: true, interventions,
@@ -742,6 +814,11 @@ export function loopEventPayload(opts: {
       replans: `${opts.signals.replans}/${opts.signals.maxReplans}`,
       broken_tools: opts.signals.brokenTools,
       ...(opts.signals.needsHuman ? { needs_human: true } : {}),
+      ...(opts.signals.guardrailDenials?.total ? { guardrail_denials: opts.signals.guardrailDenials } : {}),
+      ...(opts.signals.toolDiagnoses?.length
+        ? { tool_diagnoses: opts.signals.toolDiagnoses.map((d) => ({ tool: d.tool, cause: d.label, needs_human: d.needsHuman, fix: d.explanation?.fix ?? d.advice })) }
+        : {}),
+      ...(opts.signals.errorCauses?.length ? { error_causes: opts.signals.errorCauses } : {}),
     },
     progress: opts.progress
       ? { steps: `${opts.progress.todos_done}/${opts.progress.todos_total}`, deliverables: opts.progress.deliverables, approaches: opts.progress.tool_sigs }
@@ -752,6 +829,108 @@ export function loopEventPayload(opts: {
     })),
     verdict: opts.verdict ? (opts.verdict.pass ? "pass" : "fail") : undefined,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Claims backed by evidence
+// ---------------------------------------------------------------------------
+//
+// The most damaging failure of an agent is not an error, it is a FALSE
+// SUCCESS: « j'ai envoyé l'email au client » when no send ever happened — the
+// call failed, was never made, or is still waiting for approval. The contract
+// checks deliverables and criteria; nothing checked that the side effects the
+// final answer CLAIMS are backed by a successful tool call. This does, without
+// a model: claims are recognised by family (send, publish, deploy, schedule,
+// record update, merge, payment), negated or hedged sentences are ignored
+// (« brouillon prêt à envoyer », « en attente de validation »), and evidence is
+// a successful call whose name or arguments belong to the same family.
+
+export interface ToolTrailEntry { name: string; args: string; ok: boolean; result: string }
+
+/** Every tool call of the transcript with its outcome (paired by id). */
+export function toolTrail(messages: ChatMessage[]): ToolTrailEntry[] {
+  const results = new Map<string, string>();
+  for (const m of messages) {
+    const id = (m as { tool_call_id?: string }).tool_call_id;
+    if (m.role === "tool" && id) results.set(id, String(m.content ?? ""));
+  }
+  const out: ToolTrailEntry[] = [];
+  for (const m of messages) {
+    for (const c of (m as { tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> }).tool_calls ?? []) {
+      const result = c.id ? results.get(c.id) ?? "" : "";
+      out.push({
+        name: c.function?.name ?? "",
+        args: String(c.function?.arguments ?? "").slice(0, 600),
+        result: result.slice(0, 300),
+        ok: !!result && !/^\s*(ERROR|ERREUR|ACCESS DENIED|ACCÈS REFUSÉ)/i.test(result)
+          && !/en attente (d'|de )?(approbation|validation)|awaiting approval|pending approval/i.test(result.slice(0, 300)),
+      });
+    }
+  }
+  return out;
+}
+
+const CLAIM_FAMILIES: Array<{ family: string; label: string; claim: RegExp; evidence: RegExp }> = [
+  {
+    family: "send", label: "un envoi",
+    claim: /\b(j'ai|je viens d'|nous avons|on a)\s+(bien\s+)?(envoy|transmis|expédi|relanc)|\b(e-?mails?|mails?|messages?|relances?|invitations?)\s+(a|ont)\s+(bien\s+)?été\s+(envoy|transmis|expédi)|\b(i|we)\s+(have\s+|just\s+)?(sent|emailed|messaged)\b/i,
+    evidence: /send|email|mail|message|slack|teams|notify|notification|smtp|gmail|outlook|post_message|chat\.post/i,
+  },
+  {
+    family: "publish", label: "une publication",
+    claim: /\b(j'ai|nous avons|on a)\s+(bien\s+)?publi|\b(a|ont)\s+(bien\s+)?été\s+publi|\b(i|we)\s+(have\s+)?(published|posted)\b/i,
+    evidence: /publish|post|linkedin|twitter|social|cms|wordpress|webflow|marketing-publish/i,
+  },
+  {
+    family: "deploy", label: "un déploiement",
+    claim: /\b(j'ai|nous avons|on a)\s+(bien\s+)?(déploy|mis en production|mis en ligne)|\b(a|ont)\s+(bien\s+)?été\s+(déploy|mis en ligne|mis en production)|\b(i|we)\s+(have\s+)?deployed\b/i,
+    evidence: /deploy|release|vercel|netlify|runner|sandbox|ops_|managed/i,
+  },
+  {
+    family: "schedule", label: "une planification",
+    claim: /\b(j'ai|nous avons|on a)\s+(bien\s+)?(planifi|programm|réserv)|\b(a|ont)\s+(bien\s+)?été\s+(planifi|programm|réserv)|\b(i|we)\s+(have\s+)?(scheduled|booked)\b/i,
+    evidence: /schedul|calendar|event|meeting|book|mission|cron|workflow|reminder|agenda/i,
+  },
+  {
+    family: "record", label: "une mise à jour d'enregistrement",
+    claim: /\b(j'ai|nous avons|on a)\s+(bien\s+)?(mis à jour|modifié)\s+(le|la|les|l')\s*(fiche|contact|deal|ticket|crm|enregistrement|work item|tâche|issue)|\b(i|we)\s+(have\s+)?updated\s+the\s+(record|contact|deal|ticket|crm|issue)/i,
+    evidence: /crm|hubspot|salesforce|pipedrive|tracker|ticket|issue|linear|jira|record|contact|deal|update|manage_projects|notion|airtable|composio|connector/i,
+  },
+  {
+    family: "merge", label: "une fusion de code",
+    claim: /\b(j'ai|nous avons|on a)\s+(bien\s+)?(fusionné|mergé)|\b(a|ont)\s+(bien\s+)?été\s+(fusionn|merg)|\b(i|we)\s+(have\s+)?merged\b/i,
+    evidence: /vibe|github|pull|merge|repo|git/i,
+  },
+  {
+    family: "pay", label: "un paiement",
+    claim: /\b(j'ai|nous avons|on a)\s+(bien\s+)?(payé|réglé|remboursé|effectué le virement)|\b(i|we)\s+(have\s+)?(paid|refunded)\b/i,
+    evidence: /pay|refund|stripe|invoice|transfer|billing/i,
+  },
+];
+
+/** A sentence that negates or defers the action is not a claim of success. */
+const HEDGED = /\b(pas|jamais|non|aucun|brouillon|draft|prêt[es]? à|ready to|à valider|à envoyer|à publier|en attente|attend|pending|ne peux|n'ai|n'a|not|never|won't|can't|could not|would|pourrai|pourriez|souhaitez|voulez|peux-tu|veux-tu|si tu|if you)\b/i;
+
+export interface UnbackedClaim { family: string; label: string; quote: string }
+
+/** Side-effect claims of the final answer that no successful call backs. */
+export function findUnbackedClaims(finalText: string, trail: ToolTrailEntry[]): UnbackedClaim[] {
+  const text = String(finalText ?? "");
+  if (text.length < 12) return [];
+  const sentences = text.split(/(?<=[.!?\n])\s+/).map((x) => x.trim()).filter(Boolean);
+  const out: UnbackedClaim[] = [];
+  for (const f of CLAIM_FAMILIES) {
+    const sentence = sentences.find((x) => f.claim.test(x) && !HEDGED.test(x));
+    if (!sentence) continue;
+    const backed = trail.some((t) => t.ok && f.evidence.test(`${t.name} ${t.args}`));
+    if (!backed) out.push({ family: f.family, label: f.label, quote: sentence.replace(/\s+/g, " ").slice(0, 160) });
+  }
+  return out;
+}
+
+/** The gap fed back into the loop for each unbacked claim. */
+export function unbackedClaimGap(c: UnbackedClaim): string {
+  return `Ta réponse affirme ${c.label} (« ${c.quote} ») mais aucun appel d'outil RÉUSSI de ce travail ne le prouve. Soit tu exécutes réellement l'action avec l'outil adapté, soit tu corriges ta réponse pour dire exactement où elle en est (brouillon prêt, en attente de validation, impossible et pourquoi). N'annonce jamais une action non faite.`;
 }
 
 // ---------------------------------------------------------------------------

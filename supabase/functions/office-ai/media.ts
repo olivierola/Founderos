@@ -1,6 +1,11 @@
 // office-ai/media.ts — Image & Video studios: real generation.
 //
-// Providers (workspace connectors from the credentials vault, payload.api_key):
+// Providers:
+//   runware → the PLATFORM's Runware account (RUNWARE_API_KEY): FLUX dev by
+//             default (RUNWARE_IMAGE_MODEL), and video only when
+//             RUNWARE_VIDEO_MODEL names one (async task + getResponse polling).
+//             First choice whenever the key is set — no connector needed.
+// Workspace connectors from the credentials vault (payload.api_key):
 //   fal    → FLUX schnell (image) + Kling v2.1 (video), via the fal queue API
 //   openai → gpt-image-1 (image, sync; dall-e-3 fallback) + Sora (video, async)
 //
@@ -16,6 +21,7 @@
 
 import { jsonResponse } from "../_shared/cors.ts";
 import { getConnectorCredential } from "../_shared/credentials.ts";
+import { generateImage, platformImageTarget } from "../_shared/image-gen.ts";
 
 const FAL_QUEUE = "https://queue.fal.run";
 const FAL_IMAGE_MODEL = "fal-ai/flux/schnell";
@@ -127,6 +133,33 @@ async function openaiGenerateImage(apiKey: string, prompt: string, ratio: Ratio)
   return { bytes: new Uint8Array(await dl.arrayBuffer()), model };
 }
 
+// ── Runware (native task API) ─────────────────────────────────────────────────
+// POST <base> with an ARRAY of tasks; every task carries its own UUID v4. FLUX
+// takes width/height in multiples of 64, 128–2048.
+// Images : le compte de la plateforme, Runware ou OpenRouter (image-gen.ts).
+// Vidéo : Runware seulement, avec un modèle explicite.
+const runwareKey = () => Deno.env.get("RUNWARE_API_KEY") || null;
+const runwareBase = () => (Deno.env.get("RUNWARE_BASE_URL") || "https://api.runware.ai/v1").trim().replace(/\/+$/, "");
+const RUNWARE_VIDEO_MODEL = () => Deno.env.get("RUNWARE_VIDEO_MODEL") || null;
+
+const runwareVideoSize: Record<Ratio, [number, number]> = {
+  "1:1": [960, 960], "16:9": [1280, 720], "9:16": [720, 1280], "4:3": [1280, 720],
+};
+
+async function runwareTask(apiKey: string, task: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(runwareBase(), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify([task]),
+  });
+  const json = await res.json().catch(() => ({})) as { data?: Array<Record<string, unknown>>; errors?: Array<{ message?: string; code?: string }>; error?: { message?: string } };
+  const err = json.errors?.[0];
+  if (!res.ok || err) {
+    throw new Error(`Runware ${res.status}: ${err?.message ?? err?.code ?? json.error?.message ?? "erreur"}`.slice(0, 300));
+  }
+  return json.data?.[0] ?? {};
+}
+
 // ── Row helpers ───────────────────────────────────────────────────────────────
 async function updateRow(admin: Admin, id: string, patch: Record<string, unknown>): Promise<MediaRow> {
   const { data, error } = await admin.from("office_media")
@@ -151,13 +184,23 @@ export async function handleMedia(admin: Admin, userId: string, body: Record<str
     const ratio = normRatio(body.ratio);
     if (!prompt) return jsonResponse({ error: "prompt required" }, { status: 400 });
 
-    // Provider: explicit override, else fal if connected, else openai.
+    // Provider: explicit override, else the platform's image account (Runware
+    // or OpenRouter, see image-gen; video only with a Runware video model),
+    // else the workspace's fal / openai connectors.
+    const rwKey = runwareKey();
+    const platformImg = platformImageTarget();
+    const platformCan = kind === "image" ? !!platformImg : !!rwKey && !!RUNWARE_VIDEO_MODEL();
+    const platformName = kind === "image" ? (platformImg?.kind ?? "runware") : "runware";
     const falKey = await connectorKey(workspaceId, projectId, "fal");
     const openaiKey = await connectorKey(workspaceId, projectId, "openai");
     const provider = body.provider === "openai" || body.provider === "fal"
       ? String(body.provider)
-      : falKey ? "fal" : openaiKey ? "openai" : null;
-    const apiKey = provider === "fal" ? falKey : provider === "openai" ? openaiKey : null;
+      : body.provider === "runware" || body.provider === "openrouter" || body.provider === "platform"
+      ? (platformCan ? platformName : null)
+      : platformCan ? platformName : falKey ? "fal" : openaiKey ? "openai" : null;
+    const usesPlatform = provider === "runware" || provider === "openrouter";
+    const apiKey = usesPlatform ? (platformCan ? (kind === "image" ? platformImg!.apiKey : rwKey) : null)
+      : provider === "fal" ? falKey : provider === "openai" ? openaiKey : null;
     if (!provider || !apiKey) {
       return jsonResponse({ error: "Aucun fournisseur de génération connecté. Connectez fal.ai ou OpenAI dans Integrations → Credentials Vault." }, { status: 400 });
     }
@@ -170,6 +213,25 @@ export async function handleMedia(admin: Admin, userId: string, body: Record<str
     const media = row as MediaRow;
 
     try {
+      if (usesPlatform) {
+        if (kind === "image") {
+          // Le même chemin que l'outil generate_image des agents (image-gen).
+          const img = await generateImage(platformImg!, prompt, ratio);
+          const ext = img.mime.includes("jpeg") ? "jpg" : img.mime.includes("webp") ? "webp" : "png";
+          const path = `${projectId}/${media.id}.${ext}`;
+          const url = await storeBytes(admin, path, img.bytes, img.mime);
+          return jsonResponse({ media: await updateRow(admin, media.id, { model: img.model, status: "ready", url, storage_path: path }) });
+        }
+        // Video: an async task, picked up by media.sync through getResponse.
+        const model = RUNWARE_VIDEO_MODEL()!;
+        const taskUUID = crypto.randomUUID();
+        const [width, height] = runwareVideoSize[ratio];
+        await runwareTask(apiKey, {
+          taskType: "videoInference", taskUUID, model, positivePrompt: prompt.slice(0, 3000),
+          width, height, duration: 5, deliveryMethod: "async", includeCost: true,
+        });
+        return jsonResponse({ media: await updateRow(admin, media.id, { model, request_id: taskUUID }) });
+      }
       if (provider === "fal") {
         const model = kind === "image" ? FAL_IMAGE_MODEL : FAL_VIDEO_MODEL;
         const input = kind === "image"
@@ -217,6 +279,22 @@ export async function handleMedia(admin: Admin, userId: string, body: Record<str
     // media.sync — poll the provider while the row is still generating.
     if (media.status !== "generating" || !media.request_id) return jsonResponse({ media });
     try {
+      if (media.provider === "runware") {
+        const apiKey = runwareKey();
+        if (!apiKey) throw new Error("RUNWARE_API_KEY absente du backend");
+        const out = await runwareTask(apiKey, { taskType: "getResponse", taskUUID: media.request_id });
+        const status = String(out.status ?? "");
+        const fileUrl = (out.videoURL ?? out.imageURL) as string | undefined;
+        if (status === "success" || fileUrl) {
+          if (!fileUrl) throw new Error("Runware : résultat sans URL");
+          const ext = media.kind === "image" ? "png" : "mp4";
+          const path = `${projectId}/${media.id}.${ext}`;
+          const url = await storeFromUrl(admin, path, fileUrl, media.kind === "image" ? "image/png" : "video/mp4");
+          return jsonResponse({ media: await updateRow(admin, media.id, { status: "ready", url, storage_path: path }) });
+        }
+        if (status === "error") return jsonResponse({ media: await fail(admin, media.id, "Runware : génération échouée") });
+        return jsonResponse({ media }); // still processing
+      }
       if (media.provider === "fal") {
         const apiKey = await connectorKey(workspaceId, projectId, "fal");
         if (!apiKey) throw new Error("Connecteur fal.ai introuvable");

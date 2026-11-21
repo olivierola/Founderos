@@ -138,7 +138,7 @@ export function SetupPage() {
 
         {base && (
           <div className="mt-10">
-            <Link to={base}><Button>Ouvrir FounderOS</Button></Link>
+            <Link to={base}><Button>Ouvrir Agent company</Button></Link>
           </div>
         )}
       </div>

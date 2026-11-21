@@ -610,7 +610,7 @@ export function ChatInput({
             </button>
             <Button
               size="icon"
-              className={cn("h-9 w-9 rounded-full transition-colors", canSend ? "bg-primary text-primary-foreground hover:bg-teal-accent" : "bg-muted text-muted-foreground")}
+              className={cn("h-9 w-9 rounded-md transition-colors", canSend ? "bg-primary text-primary-foreground hover:bg-teal-accent" : "bg-muted text-muted-foreground")}
               onClick={send}
               disabled={!canSend}
               title="Envoyer"
