@@ -113,10 +113,10 @@ function PoolsHome({ dashboardId, base, view }: { dashboardId: string; base: str
       onClick: view === "pools" ? undefined : () => go("pools"),
     },
     {
-      key: "agents", title: "Agents en mode pools", subtitle: "Agents de ce service", icon: RobotIcon,
+      key: "agents", title: "Agents équipés", subtitle: "Agents de ce service", icon: RobotIcon,
       value: String(inPoolMode),
       badge: serviceAgents.length ? { text: `${Math.round((100 * inPoolMode) / serviceAgents.length)} %`, tone: inPoolMode ? "positive" : "neutral" } : undefined,
-      subtext: <span className="text-muted-foreground">sur {serviceAgents.length} — les autres restent en mode granulaire</span>,
+      subtext: <span className="text-muted-foreground">sur {serviceAgents.length} : les autres n'ont que les outils de base</span>,
     },
     {
       key: "registry", title: "Registre", subtitle: "Ressources atteignables", icon: PlugsConnectedIcon,
@@ -493,7 +493,7 @@ function PoolEditor({ poolId, dashboardId, onBack, base }: { poolId: string; das
     if (!(await confirm({
       title: `Supprimer « ${pool!.name} » ?`,
       description: n
-        ? `${n} agent${n > 1 ? "s le perdront" : " le perdra"} — et un agent qui n'a plus aucun pool revient au mode granulaire.`
+        ? `${n} agent${n > 1 ? "s le perdront" : " le perdra"}, et un agent qui n'a plus aucun pool n'a que les outils de base.`
         : undefined,
       confirmText: "Supprimer",
     }))) return;

@@ -63,7 +63,7 @@ export const FAMILIES: Array<{ key: Family; label: string; hint: string }> = [
   { key: "skills", label: "Compétences", hint: "Les savoir-faire chargés à la demande." },
   { key: "guardrails", label: "Guardrails", hint: "Des règles qui s'appliquent EN PLUS de celles de l'espace — un pool n'en retire jamais." },
   { key: "workflows", label: "Workflows", hint: "Les procédures et automatisations que l'agent exécute ou dont il reçoit du travail." },
-  { key: "agents", label: "Agents (A2A)", hint: "Les collègues que l'agent peut solliciter. Entre agents en mode pools, l'accès doit être réciproque." },
+  { key: "agents", label: "Agents (A2A)", hint: "Les collègues que l'agent peut solliciter. Entre agents, l'accès doit être réciproque." },
 ];
 
 export function familyOf(r: Pick<RegistryItem, "kind">): Family {

@@ -167,10 +167,15 @@ describe("passerelle de ressources : la lecture", () => {
     },
   }) as never;
 
-  it("sans pool, ou sans la migration : le comportement d'avant (null)", async () => {
+  it("sans pool : un scope VIDE, plus de mode granulaire (0310) ; sans la migration 0291 : null", async () => {
     forgetPoolScope();
-    assert.equal(await loadPoolScope(fakeAdmin({ agent_resource_pools: { data: [] } }), "a1"), null);
+    const none = await loadPoolScope(fakeAdmin({ agent_resource_pools: { data: [] } }), "a1");
+    assert.ok(none);
+    assert.deepEqual([none!.builtin.size, none!.mcp.size, none!.skills.size, none!.knowledge.size, none!.agents.size], [0, 0, 0, 0, 0]);
     assert.equal(await loadPoolScope(fakeAdmin({ agent_resource_pools: { error: { message: "relation does not exist" } } }), "a2"), null);
+    // Une autre panne de lecture : accès fermé.
+    const broken = await loadPoolScope(fakeAdmin({ agent_resource_pools: { error: { message: "timeout" } } }), "a5");
+    assert.ok(broken && broken.builtin.size === 0);
   });
 
   it("des pools dont le contenu ne se lit pas : accès FERMÉ, pas grand ouvert", async () => {

@@ -126,18 +126,19 @@ describe("connecteurs d'applications : leurs outils sont des ressources de pool"
     assert.ok(!(await issues(whole)).some((i) => i.code === "workflow_app_outside_pool"));
   });
 
-  it("un connecteur maison configuré sur l'agent : signalé s'il manque aux pools, repris par « Créer un pool depuis ses accès »", async () => {
-    await db.command(
-      "insert into public.internal_agent_tools (agent_id, kind, name, config) values ($1, 'connector_action', 'Slack', '{\"provider\":\"slack\"}')", [id.agent]);
+  it("un connecteur maison donné directement à l'agent entre dans son pool personnel (0310), et « Créer un pool depuis ses accès » le reprend", async () => {
     const pool = await newPool("Vide");
     await add(pool, (await reg("builtin", id.project, "web_search"))!.id);
     await db.command("insert into public.agent_resource_pools (agent_id, pool_id) values ($1, $2)", [id.agent, pool]);
+    await db.command(
+      "insert into public.internal_agent_tools (agent_id, kind, name, config) values ($1, 'connector_action', 'Slack', '{\"provider\":\"slack\"}')", [id.agent]);
+    // Plus d'accès « ignoré » : l'app est versée dans le pool personnel de l'agent.
+    const personal = await db.query<{ source: string }>(
+      `select reg.source from public.resource_pools p join public.resource_pool_items i on i.pool_id = p.id
+         join public.resource_registry reg on reg.id = i.registry_id where p.owner_agent_id = $1`, [id.agent]);
+    assert.deepEqual(personal.map((r) => r.source), ["app_connector"]);
     const mine = await db.query<Issue>("select severity, code, message from public.agent_resource_issues($1)", [id.agent]);
-    assert.ok(mine.some((i) => i.code === "granular_ignored" && /Slack/.test(i.message)), JSON.stringify(mine));
-
-    await add(pool, (await reg("app_connector", id.slack))!.id);
-    const after = await db.query<Issue>("select severity, code, message from public.agent_resource_issues($1)", [id.agent]);
-    assert.ok(!after.some((i) => i.code === "granular_ignored" && /Slack/.test(i.message)), JSON.stringify(after));
+    assert.ok(!mine.some((i) => i.code === "granular_ignored" && /Slack/.test(i.message)), JSON.stringify(mine));
 
     const made = await one<{ r: { pool_id: string } }>("select public.resource_pool_from_agent($1, 'Depuis ses accès', false) as r", [id.agent]);
     const items = await db.query<{ source: string; item_key: string }>(

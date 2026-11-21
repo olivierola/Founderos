@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeftIcon, CaretRightIcon, CircleNotchIcon as Loader2, PencilSimpleIcon, CpuIcon,
-  FileTextIcon, LightningIcon, PlugsConnectedIcon, FlowArrowIcon, ShieldCheckIcon,
+  FileTextIcon, PlugsConnectedIcon, FlowArrowIcon, ShieldCheckIcon,
   SlidersHorizontalIcon, ArrowSquareOutIcon, CheckIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
@@ -17,12 +17,11 @@ import type { InternalAgent } from "@/features/internal-agents/shared";
 import { agentModelValue, useAgentModelChoices } from "@/features/internal-agents/AgentHostedModel";
 import { AgentModelRoutes } from "@/features/internal-agents/AgentModelRoutes";
 import {
-  AgentMcpTab, SettingsTab, SkillsTab, AgentConnectorsTab, ToolsTab,
+  SettingsTab,
 } from "@/features/internal-agents/InternalAgentDetail";
 import { InstructionsEditor } from "@/features/internal-agents/InstructionsEditor";
 import { AgentAutomationsTab } from "@/features/internal-agents/AgentAutomationsTab";
 import { AgentAvatarTab } from "@/features/internal-agents/AgentAvatarTab";
-import { AgentInternalToolsTab } from "@/features/custom-connectors/AgentInternalToolsTab";
 import { AgentPoolsPanel } from "@/features/resource-pools/AgentPoolsPanel";
 import { AgentAutonomyTab } from "./AgentAutonomyTab";
 import { AgentEventTriggers } from "./AgentEventTriggers";
@@ -35,13 +34,12 @@ import { AgentGoals } from "./AgentGoals";
 // identité et son modèle se règlent sur place, le reste s'ouvre en sous-vue
 // dans le même panneau, avec un retour. On ne quitte jamais la conversation.
 
-type View = "home" | "avatar" | "files" | "skills" | "tools" | "automations" | "autonomy" | "advanced";
+type View = "home" | "avatar" | "files" | "tools" | "automations" | "autonomy" | "advanced";
 
 const VIEWS: Record<Exclude<View, "home">, { label: string; icon: PhosphorIcon }> = {
   avatar: { label: "Avatar", icon: PencilSimpleIcon },
   files: { label: "Instructions et fichiers", icon: FileTextIcon },
-  skills: { label: "Compétences", icon: LightningIcon },
-  tools: { label: "Outils et applications", icon: PlugsConnectedIcon },
+  tools: { label: "Ressources (pools)", icon: PlugsConnectedIcon },
   automations: { label: "Routines et déclencheurs", icon: FlowArrowIcon },
   autonomy: { label: "Autonomie", icon: ShieldCheckIcon },
   advanced: { label: "Réglages avancés", icon: SlidersHorizontalIcon },
@@ -82,16 +80,8 @@ export function AgentSettingsPanel({ agentId, dashboardId }: { agentId: string; 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
           {view === "avatar" && <AgentAvatarTab agent={agent} />}
           {view === "files" && <InstructionsEditor agent={agent} />}
-          {view === "skills" && <SkillsTab agentId={agent.id} />}
-          {view === "tools" && (
-            <div className="space-y-8">
-              <AgentPoolsPanel agent={agent} dashboardId={dashboardId} />
-              <AgentConnectorsTab agent={agent} />
-              <ToolsTab agent={agent} variant="tools" />
-              <AgentMcpTab agent={agent} />
-              <AgentInternalToolsTab agent={agent} />
-            </div>
-          )}
+          {/* Tout ce que l'agent atteint vient de ses pools (0310). */}
+          {view === "tools" && <AgentPoolsPanel agent={agent} dashboardId={dashboardId} />}
           {view === "automations" && (
             <div className="space-y-8">
               <AgentEventTriggers agent={agent} />
@@ -194,7 +184,6 @@ function AgentSettingsHome({ agent, dashboardId, onOpen }: {
 
         <Group label="Connaissances">
           <Row view="files" onOpen={onOpen} />
-          <Row view="skills" onOpen={onOpen} />
         </Group>
 
         <Group label="Actions">

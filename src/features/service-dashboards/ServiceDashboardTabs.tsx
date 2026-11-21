@@ -1,4 +1,3 @@
-import { AgentInternalToolsTab } from "@/features/custom-connectors/AgentInternalToolsTab";
 import { AgentAvatarTab } from "@/features/internal-agents/AgentAvatarTab";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,7 +6,7 @@ import { CircleNotchIcon as Loader2, XIcon as X } from "@phosphor-icons/react";
 import {
   RobotIcon, PlusIcon, CalendarDotsIcon, CaretRightIcon,
   CheckCircleIcon, XCircleIcon, TargetIcon, PencilSimpleIcon, ArrowLeftIcon,
-  GearSixIcon, LightningIcon, FileTextIcon, BrainIcon, FlowArrowIcon,
+  GearSixIcon, FileTextIcon, BrainIcon, FlowArrowIcon,
   ChartBarIcon, PlugsConnectedIcon, PlayIcon, PauseIcon, TrashIcon, ClockCountdownIcon,
   WarningIcon, CalendarBlankIcon, CalendarCheckIcon, ArrowsClockwiseIcon, TimerIcon,
   FolderPlusIcon, DotsThreeIcon, SparkleIcon, GlobeIcon,
@@ -38,7 +37,7 @@ import { AgentIdentity } from "@/components/AgentIdentity";
 import { cn } from "@/lib/utils";
 import { useAssistant } from "@/lib/assistant-context";
 import {
-  ChatTab, AgentMcpTab, SettingsTab, SkillsTab, AgentConnectorsTab, ToolsTab,
+  ChatTab, SettingsTab,
 } from "@/features/internal-agents/InternalAgentDetail";
 import { FloatingTabBar } from "./FloatingTabBar";
 import { InstructionsEditor } from "@/features/internal-agents/InstructionsEditor";
@@ -777,7 +776,7 @@ function FolderDialog({ open, folder, onClose, onSave, onDelete }: {
 // (the Missions board — it belongs to the dashboard, not to a settings page —
 // and Analytics) or a second door onto the same subject (MCP is a tool provider,
 // so it lives with the tools; Memory is now a section of Général).
-type AgentDetailTab = "settings" | "avatar" | "instructions" | "skills" | "connectors" | "automations" | "autonomy";
+type AgentDetailTab = "settings" | "avatar" | "instructions" | "connectors" | "automations" | "autonomy";
 
 // The leaf components behind these (SettingsTab, SkillsTab, …) are the exact
 // same ones the standalone page uses — reused directly instead of through the
@@ -788,8 +787,7 @@ const AGENT_DETAIL_TABS: { key: AgentDetailTab; label: string; icon: any }[] = [
   // The avatar studio, out of the general form: the agent's face deserves a page.
   { key: "avatar", label: "Avatar", icon: SmileyIcon },
   { key: "instructions", label: "Fichiers", icon: FileTextIcon },
-  { key: "skills", label: "Compétences", icon: LightningIcon },
-  { key: "connectors", label: "Outils", icon: PlugsConnectedIcon },
+  { key: "connectors", label: "Ressources", icon: PlugsConnectedIcon },
   { key: "automations", label: "Automatisations", icon: FlowArrowIcon },
   { key: "autonomy", label: "Autonomie", icon: ShieldCheckIcon },
 ];
@@ -801,6 +799,8 @@ const LEGACY_AGENT_TABS: Record<string, { tab: AgentDetailTab; section?: string 
   missions: { tab: "settings" },
   mcp: { tab: "connectors" },
   tools: { tab: "connectors" },
+  // Les compétences se donnent par les pools, comme le reste (0310).
+  skills: { tab: "connectors" },
   memory: { tab: "settings", section: "memory" },
   analytics: { tab: "settings", section: "usage" },
 };
@@ -1161,26 +1161,10 @@ export function AgentConfigInDashboard({ dashboardId, agentId }: { dashboardId: 
           {tab === "settings" && <SettingsTab agent={agent} embedded />}
           {tab === "avatar" && <AgentAvatarTab agent={agent} />}
           {tab === "instructions" && <InstructionsEditor agent={agent} />}
-          {tab === "skills" && <SkillsTab agentId={agent.id} />}
-          {/* One tab for everything the agent can reach: the apps connected to
-              the project, its generic capabilities, and the MCP servers that
-              bring their own tools. They were three separate doors onto the
-              same question ("que sait-il faire ?"). */}
-          {tab === "connectors" && (
-            <div className="space-y-10">
-              {/* Ses pools d'abord : en mode pools, ce sont eux qui décident de
-                  ce que les sections ci-dessous ouvrent vraiment. */}
-              <AgentPoolsPanel agent={agent} dashboardId={dashboardId} />
-              <div className="mx-auto max-w-5xl border-t border-border/60" />
-              <AgentConnectorsTab agent={agent} />
-              <div className="mx-auto max-w-5xl border-t border-border/60" />
-              <ToolsTab agent={agent} variant="tools" />
-              <div className="mx-auto max-w-5xl border-t border-border/60" />
-              <AgentMcpTab agent={agent} />
-              <div className="mx-auto max-w-5xl border-t border-border/60" />
-              <AgentInternalToolsTab agent={agent} />
-            </div>
-          )}
+          {/* Tout ce que l'agent peut atteindre lui vient de ses pools (0310) :
+              outils, applications, MCP, compétences, connaissances, collègues.
+              Plus de bascules une par une ici. */}
+          {tab === "connectors" && <AgentPoolsPanel agent={agent} dashboardId={dashboardId} />}
           {tab === "automations" && (
             // Events first: « when X happens » is what makes a collaborator act
             // on its own; the pre-coded automations below run on a clock.

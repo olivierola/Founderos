@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { AgentPoolsPanel } from "@/features/resource-pools/AgentPoolsPanel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleNotchIcon as Loader2,
@@ -235,14 +236,14 @@ export function InlineSubTabs<T extends string>({
 // secondary sidebar short instead of one entry per surface.
 // ============================================================================
 
-type CustomizeSection = "instructions" | "skills" | "memory" | "connectors" | "mcp" | "automation";
+// Skills, connecteurs et MCP ne se donnent plus un par un : ils viennent des
+// pools de l'agent (0310), réunis dans une seule section « Ressources ».
+type CustomizeSection = "instructions" | "resources" | "memory" | "automation";
 
 const CUSTOMIZE_SECTIONS: { key: CustomizeSection; label: string; icon: any }[] = [
   { key: "instructions", label: "Fichiers", icon: FileText },
-  { key: "skills", label: "Skills", icon: Zap },
+  { key: "resources", label: "Ressources", icon: Plug },
   { key: "memory", label: "Memory", icon: Brain },
-  { key: "connectors", label: "Connectors", icon: Plug },
-  { key: "mcp", label: "MCP", icon: Server },
   { key: "automation", label: "Automation", icon: Workflow },
 ];
 
@@ -254,10 +255,9 @@ const CUSTOMIZE_TAB_SLUGS: InternalAgentTab[] = [
 ];
 
 function customizeSectionFor(tab: InternalAgentTab): CustomizeSection | undefined {
-  if (tab === "skills") return "skills";
+  if (tab === "skills" || tab === "connectors") return "resources";
   if (tab === "memory") return "memory";
   if (tab === "instructions") return "instructions";
-  if (tab === "connectors") return "connectors";
   return undefined; // "customize" → default (instructions)
 }
 
@@ -271,10 +271,8 @@ function CustomizeTab({ agent, initialSection, embedded }: { agent: InternalAgen
     <div>
       {embedded && <InlineSubTabs sections={CUSTOMIZE_SECTIONS} active={section} onSelect={setSection} />}
       {section === "instructions" && <InstructionsEditor agent={agent} />}
-      {section === "skills" && <SkillsTab agentId={agent.id} />}
+      {section === "resources" && <AgentPoolsPanel agent={agent} dashboardId={(agent as { service_dashboard_id?: string | null }).service_dashboard_id ?? null} />}
       {section === "memory" && <MemoryTab agent={agent} />}
-      {section === "connectors" && <AgentConnectorsTab agent={agent} />}
-      {section === "mcp" && <AgentMcpTab agent={agent} />}
       {section === "automation" && <AgentAutomationsTab agent={agent} />}
     </div>
   );

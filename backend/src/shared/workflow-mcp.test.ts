@@ -14,6 +14,7 @@ import { memoryDb } from "../test-memory-db.ts";
 const doc = await import("../edge/_shared/workflow-doc.ts");
 const { parseMcpGrants, validateMcpGrants, loadRunMcpServers } = await import("../edge/_shared/mcp-servers.ts");
 const { runAutomation } = await import("../edge/_shared/automation-engine.ts");
+const { forgetPoolScope } = await import("../edge/_shared/resource-pools.ts");
 
 const PRD = "11111111-1111-4111-8111-111111111111";
 const HUB = "22222222-2222-4222-8222-222222222222";
@@ -100,7 +101,10 @@ describe("accès MCP accordés au run", () => {
     assert.deepEqual(out, [{ server_id: PRD, tools: [] }]);
   });
 
-  it("le run voit ses serveurs activés en entier, les serveurs accordés limités aux outils choisis, rien d'un autre espace", async () => {
+  it("base sans 0291 : le run voit ses serveurs activés en entier, les serveurs accordés limités aux outils choisis, rien d'un autre espace", async () => {
+    // Depuis 0310, un agent n'a que ses pools ; ce chemin (activations et accès
+    // accordés au run) ne vaut plus que pour une base sans la table des pools.
+    forgetPoolScope();
     const server = (id: string, ws: string, name: string, tools: string[]) => ({
       id, workspace_id: ws, name, url: `https://${name}.interne.exemple/mcp`, enabled: true, auth_mode: "none",
       auth_config: {}, oauth: null, relay_id: null, environment: null, cached_tools: tools.map((t) => ({ name: t })),
@@ -108,13 +112,19 @@ describe("accès MCP accordés au run", () => {
     const hub = server(HUB, "ws-1", "mcp-hub", ["alerts_list", "metrics_query"]);
     const prd = server(PRD, "ws-1", "mcp-prd", ["pods_list", "pod_logs", "deployment_restart"]);
     const other = server(OTHER, "ws-2", "mcp-ailleurs", ["pods_list"]);
-    const { admin } = memoryDb({
+    const { admin: mem } = memoryDb({
       internal_agents: [{ id: "agent-1", workspace_id: "ws-1" }],
       // Les lignes de liaison arrivent déjà jointes (la base en mémoire ne résout pas les relations).
       agent_mcp_servers: [{ agent_id: "agent-1", server: hub }],
       mcp_servers: [hub, prd, other],
       internal_agent_runs: [{ id: "run-1", mcp_grants: [{ server_id: PRD, tools: ["pods_list", "pod_logs"] }, { server_id: HUB, tools: ["alerts_list"] }, { server_id: OTHER, tools: [] }] }],
       mcp_server_headers: [], mcp_server_secrets: [],
+    });
+    const missingPools = { select: () => ({ eq: async () => ({ data: null, error: { code: "42P01", message: 'relation "agent_resource_pools" does not exist' } }) }) };
+    const admin = new Proxy(mem as object, {
+      get: (target, key) => (key === "from"
+        ? (table: string) => (table === "agent_resource_pools" ? missingPools : (target as { from: (t: string) => unknown }).from(table))
+        : (target as Record<string | symbol, unknown>)[key]),
     });
     const loaded = await loadRunMcpServers(admin as never, "agent-1", "run-1");
     const byName = Object.fromEntries(loaded.map((s) => [s.name, s.tools.map((t) => t.name)]));

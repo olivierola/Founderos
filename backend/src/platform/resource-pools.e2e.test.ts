@@ -174,11 +174,24 @@ describe("passerelle de ressources : registre, pools, cohérence", { skip, timeo
     assert.ok((await issuesOfAgent(id.b)).some((i) => i.code === "workflow_targets_agent"));
   });
 
-  it("les accès granulaires hors pools sont signalés comme ignorés", async () => {
+  it("plus d'accès granulaire (0310) : ce qu'on donne directement entre dans le pool personnel, et en sort", async () => {
+    const shared = await db.query<{ pool_id: string }>("select pool_id from public.agent_resource_pools where agent_id = $1", [id.a]);
+    const sharedItems = async () => (await db.query<{ n: number }>(
+      "select count(*)::int as n from public.resource_pool_items where pool_id = any($1::uuid[])", [shared.map((s) => s.pool_id)]))[0].n;
+    const before = await sharedItems();
     await db.command("insert into public.agent_mcp_servers (agent_id, server_id) values ($1, $2)", [id.a, id.mcp2]);
-    const ignored = (await issuesOfAgent(id.a)).filter((i) => i.code === "granular_ignored");
-    assert.equal(ignored.length, 1);
-    assert.match(ignored[0].message, /argocd/);
+    const personal = await one<{ id: string; name: string }>("select id, name from public.resource_pools where owner_agent_id = $1", [id.a]);
+    assert.ok(personal, "un pool personnel est créé");
+    assert.ok(await one("select 1 as x from public.agent_resource_pools where agent_id = $1 and pool_id = $2", [id.a, personal!.id]), "et donné à l'agent");
+    const inPersonal = await db.query<{ source_id: string }>(
+      "select r.source_id from public.resource_pool_items i join public.resource_registry r on r.id = i.registry_id where i.pool_id = $1 and r.source = 'mcp'",
+      [personal!.id]);
+    assert.deepEqual(inPersonal.map((r) => r.source_id), [id.mcp2]);
+    // Les pools partagés ne bougent pas.
+    assert.equal(await sharedItems(), before);
+    // Retirer l'accès direct le retire du pool personnel.
+    await db.command("delete from public.agent_mcp_servers where agent_id = $1 and server_id = $2", [id.a, id.mcp2]);
+    assert.equal((await db.query("select 1 from public.resource_pool_items where pool_id = $1", [personal!.id])).length, 0);
   });
 
   it("une source supprimée laisse une erreur dans le pool qui la contenait", async () => {
@@ -216,9 +229,33 @@ describe("passerelle de ressources : registre, pools, cohérence", { skip, timeo
     assert.ok(outC.errors.some((e) => /Incident client/.test(e)), outC.errors.join(" · "));
   });
 
+  it("au passage aux pools (0310), un agent en mode granulaire reçoit un pool personnel fait de ses accès", async () => {
+    id.e = (await one<{ id: string }>(
+      `insert into public.internal_agents (workspace_id, project_id, service_dashboard_id, name, collaboration_enabled)
+       values ($1, $2, $3, 'Elio', true) returning id`, [id.ws, id.project, id.s1]))!.id;
+    // Des accès d'avant 0310 : posés sans passer par le trigger qui les verse au pool.
+    await db.command("alter table public.internal_agent_tools disable trigger trg_agent_tool_grant_pool");
+    await db.command("insert into public.internal_agent_tools (agent_id, kind, name, config) values ($1, 'web_search', 'Recherche', '{}')", [id.e]);
+    await db.command("alter table public.internal_agent_tools enable trigger trg_agent_tool_grant_pool");
+    assert.equal((await db.query("select 1 from public.agent_resource_pools where agent_id = $1", [id.e])).length, 0);
+
+    const converted = (await one<{ n: number }>("select public.agents_pools_from_grants() as n"))!.n;
+    assert.ok(converted >= 1);
+    const personal = await one<{ id: string }>("select id from public.resource_pools where owner_agent_id = $1", [id.e]);
+    assert.ok(personal);
+    assert.ok(await one("select 1 as x from public.agent_resource_pools where agent_id = $1 and pool_id = $2", [id.e, personal!.id]));
+    const keys = (await db.query<{ k: string }>(
+      `select r.source || ':' || r.item_key as k from public.resource_pool_items i join public.resource_registry r on r.id = i.registry_id
+        where i.pool_id = $1 and r.source = 'builtin'`, [personal!.id])).map((r) => r.k);
+    assert.deepEqual(keys, ["builtin:web_search"]);
+    // Rejouable : rien ne bouge la seconde fois pour lui.
+    await one("select public.agents_pools_from_grants() as n");
+    assert.equal((await db.query("select 1 from public.resource_pools where owner_agent_id = $1", [id.e])).length, 1);
+  });
+
   it("le rapport du projet rassemble pools et agents", async () => {
     const report = await db.query<Issue>("select * from public.resource_coherence_report($1)", [id.project]);
     const codes = new Set(report.map((r) => r.code));
-    for (const c of ["item_removed", "granular_ignored", "workflow_targets_agent"]) assert.ok(codes.has(c), c);
+    for (const c of ["item_removed", "workflow_targets_agent"]) assert.ok(codes.has(c), c);
   });
 });

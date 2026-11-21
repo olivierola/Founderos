@@ -14,11 +14,12 @@
 //   · les agents qu'il peut solliciter (A2A)        → allowsPeer, peerAccepts
 //   · les workflows qu'il exécute ou dont il reçoit du travail → workflowViolations
 //
-// Un agent sans pool garde le comportement d'avant : loadPoolScope renvoie
-// null et chaque appelant laisse passer. Une base sans 0291 aussi. Mais une
-// fois les pools connus, une panne de lecture de leur contenu FERME l'accès
-// (scope vide) : un mode strict qui retomberait en grand ouvert sur une
-// erreur ne serait pas strict.
+// Depuis 0310, il n'y a plus de mode granulaire : un agent sans pool a un
+// scope VIDE (les outils de base seulement), et ce qu'on lui donne directement
+// est versé dans son pool personnel par la base. Seule une base sans 0291
+// (table absente) renvoie null, et l'appelant laisse passer. Une panne de
+// lecture FERME l'accès : un mode strict qui retomberait en grand ouvert sur
+// une erreur ne serait pas strict.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -175,8 +176,16 @@ function embedded<T>(v: unknown): T | null {
 async function readPoolScope(admin: SupabaseClient, agentId: string): Promise<PoolScope | null> {
   const { data: links, error } = await admin.from("agent_resource_pools")
     .select("pool_id, pool:resource_pools(id, name)").eq("agent_id", agentId);
-  // Pas de pool, ou base sans 0291 : le comportement d'avant.
-  if (error || !links || links.length === 0) return null;
+  // Les ressources ne se donnent plus que par les pools (0310) : un agent sans
+  // pool n'atteint rien au-delà des outils de base, et une lecture en échec
+  // ferme l'accès. Seule une base sans 0291 (la table n'existe pas) garde
+  // l'ancien comportement.
+  if (error) {
+    if (/does not exist|relation .* not found|42P01/i.test(`${error.code ?? ""} ${error.message}`)) return null;
+    console.error(`[resource-pools] pools de ${agentId} illisibles : ${error.message} — accès fermé`);
+    return emptyScope(agentId);
+  }
+  if (!links || links.length === 0) return emptyScope(agentId);
   const pools = (links as unknown as Array<{ pool_id: string; pool: unknown }>)
     .map((l) => ({ id: l.pool_id, name: embedded<{ name: string }>(l.pool)?.name ?? l.pool_id.slice(0, 8) }));
   const { data: rows, error: itemsErr } = await admin.from("resource_pool_items")

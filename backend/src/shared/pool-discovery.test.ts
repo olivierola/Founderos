@@ -83,13 +83,20 @@ const WORKFLOWS: Record<string, Row> = {
 const admin = fakeAdmin({
   agent_resource_pools: (q) => {
     if (q.eq.agent_id === AGENT) return { data: [{ pool_id: "p1", pool: { id: "p1", name: "Support" } }, { pool_id: "p2", pool: { id: "p2", name: "Infra" } }] };
-    // Max est en mode pools, et ses pools ne contiennent pas a-1.
+    // Léa a a-1 dans ses pools : elle peut lui répondre (0310 : sans pool,
+    // un agent ne répondrait à personne).
+    if (q.eq.agent_id === "agent-b") return { data: [{ pool_id: "p8", pool: { id: "p8", name: "Équipe" } }] };
+    // Max a des pools, mais ils ne contiennent pas a-1.
     if (q.eq.agent_id === "agent-c") return { data: [{ pool_id: "p9", pool: { id: "p9", name: "Autre" } }] };
     return { data: [] };
   },
   resource_pool_items: (q) => {
     const ids = (q.in.pool_id ?? []) as string[];
-    return { data: [...(ids.includes("p1") ? P1.map((r) => ({ pool_id: "p1", registry: r })) : []), ...(ids.includes("p2") ? P2.map((r) => ({ pool_id: "p2", registry: r })) : [])] };
+    return { data: [
+      ...(ids.includes("p1") ? P1.map((r) => ({ pool_id: "p1", registry: r })) : []),
+      ...(ids.includes("p2") ? P2.map((r) => ({ pool_id: "p2", registry: r })) : []),
+      ...(ids.includes("p8") ? [{ pool_id: "p8", registry: reg("r-a1", "agent", "agent", AGENT, "Agent") }] : []),
+    ] };
   },
   resource_pools: () => ({ data: [{ id: "p1", name: "Support", description: "Le kit du support" }, { id: "p2", name: "Infra", description: null }] }),
   resource_registry: (q) => {

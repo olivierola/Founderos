@@ -1,14 +1,9 @@
-// Les pools d'un agent, en tête de son onglet Outils.
+// Les ressources d'un agent : ses pools, et rien d'autre (0310).
 //
-// Sans pool, l'agent est en mode granulaire : il utilise les accès configurés
-// plus bas, un par un, comme avant. Avec un pool, il passe en mode pools : il
-// n'atteint plus que l'union de ses pools, et les accès granulaires hors pools
-// sont ignorés (la cohérence les signale). Le passage se fait sans rien perdre :
-// « Créer un pool depuis ses accès actuels » en fait un pool, et le lui donne
-// s'il est cohérent.
-//
-// Même gabarit que les sections qui suivent (Connecteurs, Outils, MCP) : une
-// colonne de max-w-5xl, un titre de section, puis des cartes.
+// Outils, applications, serveurs MCP, compétences, connaissances, collègues :
+// un agent n'atteint que l'union de ses pools. Sans pool, il n'a que les outils
+// de base. Ce qu'on lui donnait directement va désormais dans son pool
+// personnel (« Accès de … »), un pool comme les autres.
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -31,7 +26,8 @@ import { CompositionBar, FamilyCounts, countFamilies } from "./visuals";
 
 export function AgentPoolsPanel({ agent, dashboardId }: {
   agent: { id: string; name: string; service_dashboard_id?: string | null };
-  dashboardId: string;
+  /** Le service, pour les liens vers l'onglet Pools ; null : pas de lien. */
+  dashboardId: string | null;
 }) {
   const navigate = useNavigate();
   const { workspaceSlug, projectSlug } = useParams();
@@ -46,8 +42,9 @@ export function AgentPoolsPanel({ agent, dashboardId }: {
   const [converting, setConverting] = useState(false);
 
   const byId = useMemo(() => new Map((registry ?? []).map((r) => [r.id, r])), [registry]);
-  const poolsBase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}/pools`;
-  const service = agent.service_dashboard_id ?? dashboardId;
+  const poolsBase = dashboardId ? `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}/pools` : null;
+  const openPools = (poolId?: string) => { if (poolsBase) navigate(poolId ? `${poolsBase}/${poolId}` : poolsBase); };
+  const service = agent.service_dashboard_id ?? dashboardId ?? null;
   const mine = (pools ?? []).filter((p) => p.agents.some((a) => a.agent_id === agent.id));
   const available = (pools ?? []).filter((p) => !mine.includes(p) && (!p.service_dashboard_id || p.service_dashboard_id === service));
   const poolMode = mine.length > 0;
@@ -73,10 +70,10 @@ export function AgentPoolsPanel({ agent, dashboardId }: {
       refresh();
       queryClient.invalidateQueries({ queryKey: qk.registry(projectId) });
       if (out.assigned) {
-        toast.success(`« ${out.name} » créé et donné à ${agent.name}`, "Il est maintenant en mode pools.");
+        toast.success(`« ${out.name} » créé et donné à ${agent.name}`, "Il n'atteint plus que ses pools.");
       } else {
         toast.error(`« ${out.name} » créé, mais pas encore donné`, out.errors[0] ?? "Il n'est pas cohérent : corrigez-le avant de le donner.");
-        navigate(`${poolsBase}/${out.pool_id}`);
+        openPools(out.pool_id);
       }
     } catch (e) {
       toast.error("Création impossible", e instanceof Error ? e.message : String(e));
@@ -90,20 +87,22 @@ export function AgentPoolsPanel({ agent, dashboardId }: {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="text-2xl font-semibold tracking-tight">Pools de ressources</h2>
+            <h2 className="text-2xl font-semibold tracking-tight">Ressources</h2>
             {poolMode
-              ? <Pill tone="violet"><StackIcon weight="fill" className="h-3 w-3" /> Mode pools</Pill>
-              : <Pill>Mode granulaire</Pill>}
+              ? <Pill tone="violet"><StackIcon weight="fill" className="h-3 w-3" /> {mine.length} pool{mine.length > 1 ? "s" : ""}</Pill>
+              : <Pill>Aucun pool</Pill>}
           </div>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
             {poolMode
-              ? <>{agent.name} n'atteint que ses pools. Les accès configurés plus bas qui n'y figurent pas sont <strong className="font-medium text-foreground">ignorés</strong>.</>
-              : <>{agent.name} utilise les accès configurés plus bas, un par un. Donnez-lui un pool pour qu'il n'atteigne plus que ce pool.</>}
+              ? <>{agent.name} n'atteint que ce que ses pools lui donnent : outils, applications, compétences, connaissances et collègues.</>
+              : <>{agent.name} n'a que les outils de base. Donnez-lui un pool pour lui ouvrir des outils, des applications, des compétences ou des connaissances.</>}
           </p>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => navigate(poolsBase)}>
-          Tous les pools <ArrowRightIcon className="h-3.5 w-3.5" />
-        </Button>
+        {poolsBase && (
+          <Button size="sm" variant="ghost" onClick={() => openPools()}>
+            Tous les pools <ArrowRightIcon className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -111,7 +110,7 @@ export function AgentPoolsPanel({ agent, dashboardId }: {
           <AgentPoolCard
             key={p.id} pool={p}
             counts={countFamilies(p.items.map((i) => byId.get(i.registry_id)))}
-            onOpen={() => navigate(`${poolsBase}/${p.id}`)}
+            onOpen={() => openPools(p.id)}
             onRemove={canEdit ? () => void take(p.id) : undefined}
           />
         ))}
@@ -147,14 +146,14 @@ export function AgentPoolsPanel({ agent, dashboardId }: {
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
               {converting ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <ShieldCheckIcon weight="duotone" className="h-4 w-4" />}
             </span>
-            <span className="font-medium text-foreground">Créer un pool depuis ses accès actuels</span>
-            <span className="max-w-[30ch] text-xs">Ses accès, ses collègues et le travail qu'on lui confie, en un pool — donné s'il est cohérent.</span>
+            <span className="font-medium text-foreground">Créer son pool personnel</span>
+            <span className="max-w-[30ch] text-xs">Ses collègues du service et le travail qu'on lui confie, en un pool, donné s'il est cohérent.</span>
           </button>
         )}
 
         {!poolMode && !canEdit && (
           <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground md:col-span-2 lg:col-span-3">
-            Aucun pool : {agent.name} est en mode granulaire.
+            Aucun pool : {agent.name} n'a que les outils de base.
           </p>
         )}
       </div>
