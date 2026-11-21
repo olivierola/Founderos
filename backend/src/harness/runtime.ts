@@ -6,7 +6,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logLlmUsage } from "../edge/_shared/llm-tracking.ts";
 import { assertCredits, assertQuota } from "../edge/_shared/metering.ts";
 import { chooseTurnModel, loadAgentProfile } from "./agent-profile.ts";
-import { agentPlugin, newAgentState } from "./agent-plugin.ts";
+import { agentPlugin, newAgentState, type KitLoader } from "./agent-plugin.ts";
+import type { Kit } from "./toolkit/plugin.ts";
 import { startBridge, type Bridge } from "./bridge.ts";
 import type { AgentSupport } from "./chat.ts";
 import type { Harness, HarnessInstances } from "./host.ts";
@@ -30,8 +31,17 @@ export interface HarnessRuntime {
  * l'agent_id porté par les métadonnées de la session), configurée par son
  * plugin (agent-plugin.ts), et ce qu'il faut à un tour pour choisir son modèle.
  */
-export function agentSupport(admin: SupabaseClient): { support: AgentSupport; instances: HarnessInstances } {
+export function agentSupport(admin: SupabaseClient, opts: {
+  /** L'outillage FounderOS par lots (toolkit/) ; faux : les outils natifs seulement. */
+  kit?: boolean | ((agentId: string) => Promise<Kit | null>);
+  skillsDir?: string;
+  log?: (msg: string) => void;
+} = {}): { support: AgentSupport; instances: HarnessInstances } {
   const state = newAgentState();
+  const kitFor = (agentId: string): KitLoader | undefined =>
+    typeof opts.kit === "function" ? () => (opts.kit as (id: string) => Promise<Kit | null>)(agentId)
+    : opts.kit ? () => loadKit(agentId)
+    : undefined;
   const load = (agentId: string) => loadAgentProfile(admin, agentId);
   return {
     support: {
@@ -44,7 +54,28 @@ export function agentSupport(admin: SupabaseClient): { support: AgentSupport; in
         return typeof id === "string" && id ? id : "default";
       },
       // Une session sans agent FounderOS garde l'agent par défaut d'OpenCode.
-      configure: (key: string) => ({ plugins: key === "default" ? [] : [agentPlugin(key, () => load(key), state)] }),
+      configure: (key: string) => ({
+        plugins: key === "default" ? [] : [agentPlugin(key, () => load(key), state, { kit: kitFor(key), skillsDir: opts.skillsDir, log: opts.log })],
+      }),
+    },
+  };
+}
+
+/**
+ * L'outillage d'un agent depuis l'ancien moteur : ses handlers, ses schémas
+ * (cachés compris) et ses skills. Un run nul : les événements de la timeline
+ * viennent du pont (bridge.ts), pas des handlers.
+ */
+export async function loadKit(agentId: string): Promise<Kit> {
+  const { prepareAgentToolset } = await import("../edge/internal-agent-run/index.ts");
+  const t = await prepareAgentToolset(agentId, { runId: null });
+  return {
+    agentName: t.agent.name,
+    isOrchestrator: !!t.agent.is_orchestrator,
+    skills: t.skills,
+    legacy: {
+      defs: t.allDefs.map((d) => ({ name: d.name, description: d.description, parameters: d.parameters })),
+      run: (name, args, signal) => t.executor(name, args, { signal }),
     },
   };
 }

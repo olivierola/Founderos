@@ -52,7 +52,7 @@ export interface AgentProfile {
 }
 
 /** Ce que l'agent a sous la main, en attendant les outils FounderOS (phase 3). */
-const BUILTIN_CAPABILITIES = [
+export const BUILTIN_CAPABILITIES = [
   "- read, glob, grep : lire et chercher dans ton dossier de travail.",
   "- write, edit : créer et modifier des fichiers dans ton dossier de travail.",
   "- webfetch, websearch : lire une page web, chercher sur le web.",

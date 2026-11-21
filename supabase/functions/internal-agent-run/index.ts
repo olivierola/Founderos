@@ -883,6 +883,52 @@ export async function loadAgentAndTools(agentId: string) {
   return { agent: agent as AgentRow, tools: scope ? applyPoolToToolRows(rows, scope) as AgentToolRow[] : rows };
 }
 
+/**
+ * Le jeu d'outils complet d'un agent, monté comme le fait un tick : le contexte
+ * d'outils (skills, MCP, outils internes, pools, dashboards, machine, Composio,
+ * image) puis buildInternalToolset. Exporté pour le harnais OpenCode du backend
+ * local, qui expose ces handlers derrière ses outils regroupés par lot.
+ */
+export async function prepareAgentToolset(agentId: string, opts: {
+  runId: string | null;
+  conversationId?: string | null;
+  actingUserId?: string | null;
+}) {
+  const admin = createServiceClient();
+  const { agent, tools } = await loadAgentAndTools(agentId);
+  const [agentEndpoint, runtimeConfig, skills, mcpServers, customConnectors, poolScope, dashboards, machine, composioApps] = await Promise.all([
+    resolveAgentEndpoint(admin, agent).catch(() => undefined),
+    loadRuntimeConfig(admin),
+    loadActivatedSkills(admin, agent.id),
+    loadRunMcpServers(admin, agent.id, opts.runId).catch(() => []),
+    loadCustomConnectorSnapshots(admin, {
+      agentId: agent.id, projectId: agent.project_id, serviceDashboardId: agent.service_dashboard_id ?? null,
+    }).catch(() => []),
+    loadPoolScope(admin, agent.id),
+    loadAgentDashboards(admin, agent.id).catch(() => []),
+    loadAgentMachine(admin, agent).catch(() => null),
+    loadComposioApps(admin, agent).catch(() => []),
+  ]);
+  const ctx = makeToolContext({
+    admin, agent, runId: opts.runId, missionId: null, conversationId: opts.conversationId ?? null, delegationDepth: 0, runtimeConfig,
+  });
+  ctx.skills = skills;
+  ctx.mcpServers = mcpServers;
+  ctx.customConnectors = customConnectors;
+  ctx.poolScope = poolScope;
+  ctx.dashboards = dashboards;
+  ctx.teamMachine = machine;
+  ctx.composioApps = composioApps;
+  ctx.actingUserId = opts.actingUserId ?? null;
+  ctx.imageTarget = agentEndpoint?.routes?.image
+    ? imageTargetFromEndpoint(agentEndpoint.baseUrl, agentEndpoint.apiKey, agentEndpoint.routes.image)
+    : null;
+  // Le harnais OpenCode a ses propres sous-agents : pas d'essaim de clones ici.
+  ctx.swarmEnabled = false;
+  const toolset = buildInternalToolset(tools, ctx);
+  return { agent, rows: tools, ctx, skills, ...toolset };
+}
+
 // Memory injected into the prompt, selected for THIS task (see agent-memory.ts).
 // Pool = pinned + the vector matches of the task + the critical facts; each
 // memory becomes ONE bounded line, ranked by relevance × importance × freshness

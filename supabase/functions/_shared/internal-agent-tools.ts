@@ -2186,6 +2186,7 @@ export function buildInternalToolset(
   ctx: InternalToolContext,
 ): {
   defs: ToolDef[];
+  allDefs: ToolDef["function"][];
   immediateTools: string[];
   /** Schemas for the CURRENT round. Pass as a thunk to runToolRounds so a
    *  mid-loop load_toolset / need_tools is visible on the very next round. */
@@ -9459,6 +9460,9 @@ export function buildInternalToolset(
 
   return {
     defs,
+    // Tous les schémas, cachés compris (search_memory, search_knowledge…) : le
+    // harnais OpenCode les regroupe lui-même derrière ses outils par lot.
+    allDefs: [...tools.values()].map((t) => t.def),
     immediateTools: [...composioToolsAvailableImmediately],
     defsFor,
     executor,

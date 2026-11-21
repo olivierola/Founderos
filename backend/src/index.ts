@@ -34,7 +34,12 @@ if (env.harness) {
   // Le pont et les agents lisent et écrivent dans la base de ce backend (client
   // de service) : en mode local, ce sont les tables que le front lit.
   const harnessAdmin = createServiceClient();
-  const agents = agentSupport(harnessAdmin);
+  // L'outillage FounderOS par lots (HARNESS_TOOLKIT=0 : les outils natifs seuls).
+  const agents = agentSupport(harnessAdmin, {
+    kit: process.env.HARNESS_TOOLKIT !== "0",
+    skillsDir: `${env.harness.dataDir}/skills`,
+    log: (m) => console.warn(`[harness] ${m}`),
+  });
   const harnessReady = await startHarness({
     instances: agents.instances,
     dataDir: env.harness.dataDir,

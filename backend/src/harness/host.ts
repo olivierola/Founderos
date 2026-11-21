@@ -75,7 +75,12 @@ export async function createHarness(options: HarnessOptions): Promise<Harness> {
       // agent FounderOS ne reçoit que ce que ses plugins lui donnent.
       project: false,
       claude: false,
-      ...(options.config ? { content: JSON.stringify(options.config) } : {}),
+      // todowrite est expérimental (désactivé par défaut) : l'agent tient sa
+      // liste de tâches avec lui.
+      content: JSON.stringify({
+        ...(options.config ?? {}),
+        experimental: { todo: true, ...((options.config?.experimental as Record<string, unknown> | undefined) ?? {}) },
+      }),
     },
     instructions: { claude: false },
     models: { fetch: options.fetchModels ?? false },

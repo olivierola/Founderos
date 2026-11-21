@@ -14,7 +14,8 @@
 // modèles changés dans l'application s'appliquent sans redémarrer.
 
 import { Plugin } from "@opencode/plugin";
-import { AGENT_ID, PROVIDER_ID, modelForRoute, profileModels, type AgentProfile } from "./agent-profile.ts";
+import { AGENT_ID, BUILTIN_CAPABILITIES, PROVIDER_ID, modelForRoute, profileModels, type AgentProfile } from "./agent-profile.ts";
+import { installToolkit, type InstalledKit, type Kit, type KitSessions } from "./toolkit/plugin.ts";
 
 /**
  * Les permissions d'un agent FounderOS, tant que les approbations (phase 4) et
@@ -50,19 +51,43 @@ export interface AgentState {
   extraModels: Map<string, Set<string>>;
   /** Les instances construites, par agent. */
   controls: Map<string, AgentControl>;
+  /** Le lot ouvert et le contexte de chaque session (toolkit/). */
+  kitSessions: KitSessions;
+  /** L'outillage installé, par agent. */
+  kits: Map<string, InstalledKit>;
 }
 
-export const newAgentState = (): AgentState => ({ turnModels: new Map(), extraModels: new Map(), controls: new Map() });
+export const newAgentState = (): AgentState => ({
+  turnModels: new Map(), extraModels: new Map(), controls: new Map(), kitSessions: new Map(), kits: new Map(),
+});
+
+/** L'outillage FounderOS d'un agent (ses outils regroupés par lot), ou null. */
+export type KitLoader = () => Promise<Kit | null>;
 
 export function agentPlugin(
   agentId: string,
   load: () => Promise<AgentProfile>,
   state: AgentState,
+  opts: { kit?: KitLoader; skillsDir?: string; log?: (msg: string) => void } = {},
 ) {
   return Plugin.define({
     id: "founderos-agent",
     setup: async (ctx) => {
       let profile = await load();
+      // L'outillage : les outils regroupés par lot, les spécialistes, les skills.
+      // Sans lui (tests, panne de chargement), l'agent garde les outils natifs.
+      const kit = opts.kit ? await opts.kit().catch((e) => {
+        opts.log?.(`outillage de l'agent ${agentId} indisponible : ${e instanceof Error ? e.message : String(e)}`);
+        return null;
+      }) : null;
+      const installed = kit
+        ? await installToolkit(ctx, kit, state.kitSessions, { mainAgent: AGENT_ID, skillsDir: opts.skillsDir ?? "/skills" })
+        : null;
+      if (installed) {
+        state.kits.set(agentId, installed);
+        if (installed.uncovered.length) opts.log?.(`outils de l'ancien moteur non servis (${agentId}) : ${installed.uncovered.join(", ")}`);
+      }
+      const systemOf = (p: AgentProfile) => (installed ? p.system.replace(BUILTIN_CAPABILITIES, installed.guidance) : p.system);
       const extra = (): string[] => [...(state.extraModels.get(agentId) ?? [])];
 
       await ctx.provider.transform((editor) => {
@@ -94,7 +119,7 @@ export function agentPlugin(
           a.description = `Agent FounderOS ${profile.agent.name}`;
           a.mode = "primary";
           a.hidden = false;
-          a.system = profile.system;
+          a.system = systemOf(profile);
           if (profile.steps) a.steps = profile.steps as typeof a.steps;
           a.model = { providerID: PROVIDER_ID, id: modelForRoute(profile, "standard") } as typeof a.model;
           a.permissions = AGENT_PERMISSIONS.map((r) => ({ ...r })) as typeof a.permissions;
@@ -121,7 +146,7 @@ export function agentPlugin(
           return profile;
         },
       });
-      return () => { state.controls.delete(agentId); };
+      return () => { state.controls.delete(agentId); state.kits.delete(agentId); };
     },
   });
 }

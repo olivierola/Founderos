@@ -83,6 +83,8 @@ export interface FakeLlm {
   /** Les requêtes annexes (titre, compaction : sans outils). */
   annex: Array<Record<string, any>>;
   script: FakeTurn[];
+  /** Choisit la réponse d'une requête d'agent avant le script (sous-agents en parallèle). */
+  responder?: (body: Record<string, any>) => FakeTurn | undefined;
   close(): Promise<void>;
 }
 
@@ -104,7 +106,7 @@ export async function startFakeLlm(): Promise<FakeLlm> {
       // titre, sans consommer le script du tour d'agent.
       const annex = !Array.isArray(body.tools) || body.tools.length === 0;
       (annex ? fake.annex : fake.requests).push(body);
-      const turn: FakeTurn = annex ? { text: "Titre" } : fake.script.shift() ?? { text: "fin" };
+      const turn: FakeTurn = annex ? { text: "Titre" } : fake.responder?.(body) ?? fake.script.shift() ?? { text: "fin" };
       if (turn.status) {
         res.statusCode = turn.status;
         res.setHeader("Content-Type", "application/json");
