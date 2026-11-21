@@ -20,6 +20,7 @@ import {
   availableContextTypes, buildContext, contextPage, newContextState, pinnedBlock,
   type SessionContextState,
 } from "./context.ts";
+import { GREP_TYPES, GREP_TYPE_DOC, grep, type SearchIndex } from "./grep.ts";
 import { activeSpecialists, specialistSystem, type ActiveSpecialist, type KitSkill } from "./specialists.ts";
 
 type SetupContext = Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0];
@@ -30,6 +31,8 @@ export interface Kit {
   isOrchestrator: boolean;
   legacy: LegacyToolset;
   skills: KitSkill[];
+  /** L'index de recherche de l'agent (0308) : absent, pas de grep. */
+  search?: SearchIndex;
 }
 
 /** L'état d'une session : son lot ouvert et son contexte. */
@@ -42,18 +45,36 @@ export type KitSessions = Map<string, KitSession>;
 
 /** Les outils natifs d'OpenCode qu'un lot ou le noyau garde ; tous les autres sont retirés. */
 const NATIVE_CORE = ["todowrite", "question", "subagent", "skill"];
-const NATIVE_FILES = ["read", "write", "edit", "glob", "grep"];
-const KIT_CORE = ["open_lot", "build_context", "context_page", "remember"];
-const SPECIALIST_CORE = ["build_context", "context_page", "todowrite", "skill"];
+// Le grep natif d'OpenCode (fichiers du dossier) laisse son nom au grep de la base.
+const NATIVE_FILES = ["read", "write", "edit", "glob"];
+const KIT_CORE = ["grep", "open_lot", "build_context", "context_page", "remember"];
+const SPECIALIST_CORE = ["grep", "build_context", "context_page", "todowrite", "skill"];
 
 /** Le schéma d'entrée déclaré à OpenCode : souple ; le vrai schéma JSON est posé par le hook. */
 const LooseInput = Schema.Record(Schema.String, Schema.Unknown);
 
 const text = (content: string) => ({ content });
 
+/**
+ * Les règles qui ferment ce qu'OpenCode apporte et qu'un agent FounderOS n'a pas
+ * à voir, à ajouter APRÈS ses autres permissions (la dernière règle qui
+ * correspond l'emporte) :
+ *   - `execute` refusé : pas de Code Mode, donc pas de catalogue de ses outils
+ *     internes (worktrees, modèles, sessions…) dans le prompt ;
+ *   - `skill` refusé, sauf pour les skills donnés : les skills livrés avec
+ *     OpenCode (opencode, report) disparaissent de la liste.
+ */
+export const kitPermissions = (skills: string[]) => [
+  { action: "execute", resource: "*", effect: "deny" },
+  { action: "skill", resource: "*", effect: "deny" },
+  ...skills.map((slug) => ({ action: "skill", resource: slug, effect: "allow" })),
+];
+
 export interface InstalledKit {
   /** Le texte « Tes outils » du prompt de l'agent. */
   guidance: string;
+  /** Les permissions à ajouter à l'agent principal (kitPermissions). */
+  permissions: Array<{ action: string; resource: string; effect: string }>;
   tools: KitTool[];
   specialists: ActiveSpecialist[];
   /** Les anciens outils qu'aucun outil ne sert (à signaler). */
@@ -67,11 +88,15 @@ function lotsOf(tools: KitTool[]) {
     .filter((l) => l.tools.length > 0);
 }
 
-export function kitGuidance(tools: KitTool[], specialists: ActiveSpecialist[], contextTypes: string[]): string {
+export function kitGuidance(tools: KitTool[], specialists: ActiveSpecialist[], contextTypes: string[], grepTypes: string[] = []): string {
   const lots = lotsOf(tools);
   return [
+    ...(grepTypes.length
+      ? ["Pour savoir quelque chose, cherche D'ABORD avec grep, comme un développeur dans un dépôt : un ou plusieurs grep avec les mots-clés de la demande et des mots voisins (synonymes, sigles, noms propres, forme courte d'un mot). Chaque source trouvée a un identifiant (g1, g2…), son type et son chemin. Lis ensuite ce qui compte avec build_context(from=[…]). La recherche sémantique (build_context avec query et types) vient en complément, quand grep ne trouve rien."]
+      : []),
     "Toujours disponibles :",
-    `- build_context : aller chercher du contexte (types : ${contextTypes.join(", ")}). Rend un index par type ; lis les morceaux avec context_page.`,
+    ...(grepTypes.length ? [`- grep : chercher par mots-clés, phrase ou regex dans la base (${grepTypes.join(", ")}).`] : []),
+    `- build_context : lire les sources trouvées par grep (from), ou une recherche sémantique (types : ${contextTypes.join(", ")}). Rend un index par type ; lis les morceaux avec context_page.`,
     "- context_page : lire les morceaux trouvés (ids, ou type et page) ; keep les garde pour la suite du travail, drop les retire.",
     "- remember : enregistrer un fait, une préférence, une connaissance d'équipe ou du graphe.",
     "- todowrite : ta liste de tâches, à tenir à jour. question : demander à la personne quand tu ne peux vraiment pas avancer sans elle.",
@@ -117,18 +142,22 @@ export async function installToolkit(
     {
       name: "build_context", lot: null,
       description:
-        "Aller chercher du contexte, de un ou plusieurs types à la fois. Rend un index rangé par type dans des balises " +
-        "(<memory>, <documents>…), ou directement le texte s'il est court.\n" +
+        "Construire le contexte, de deux façons :\n" +
+        "- from : relire les sources trouvées par grep (g1, g2…), dont tu connais le type et le chemin ; whole=true relit le document, la conversation ou l'entité entière. C'est le chemin principal.\n" +
+        "- query et types : une recherche sémantique, en complément quand grep ne trouve rien.\n" +
+        "Le résultat est rangé par type dans des balises (<documents>, <memory>…) : le texte s'il est court, un index sinon. Types sémantiques :\n" +
         availableContextTypes(kit.legacy).map((t) => `- ${t.id} : ${t.description}`).join("\n"),
       input: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Des mots-clés, un nom, une question." },
-          types: { type: "array", items: { type: "string", enum: contextTypes }, minItems: 1, description: "Les types de contexte à lire." },
+          from: { type: "array", items: { type: "string" }, description: "Les sources rendues par grep (g1, g2…)." },
+          whole: { type: "boolean", description: "Avec from : relire tout le document, la conversation ou l'entité." },
+          query: { type: "string", description: "Recherche sémantique : des mots-clés, un nom, une question." },
+          types: { type: "array", items: { type: "string", enum: contextTypes }, description: "Recherche sémantique : les types à lire." },
           limit: { type: "number", description: "Résultats par type (défaut 6, max 20)." },
           filter: { type: "object", description: "Précisions propres à un type : table → { table, columns, filters, order_by } ; documents → { collection_id } ; facts → { kind }." },
         },
-        required: ["types"], additionalProperties: false,
+        additionalProperties: false,
       },
       run: async () => "",
     },
@@ -151,6 +180,32 @@ export async function installToolkit(
       run: async () => "",
     },
   ];
+  const grepTypes: string[] = kit.search ? [...GREP_TYPES] : [];
+  if (kit.search) {
+    core.unshift({
+      name: "grep", lot: null,
+      description:
+        "Chercher dans la base de connaissances par mots-clés, comme un grep dans un dépôt. Commence toujours par là. " +
+        "Lance-en plusieurs si besoin : les mots de la demande, puis des mots voisins (synonymes, sigles, noms propres, forme courte : « factur » trouve facture et facturation). " +
+        "Rend les lignes qui correspondent, avec leur source (g1, g2…), son type et son chemin ; lis-les ensuite avec build_context(from=[…]).\n" +
+        GREP_TYPES.map((t) => `- ${t} : ${GREP_TYPE_DOC[t]}`).join("\n"),
+      input: {
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: "Les mots-clés séparés par des espaces, une phrase, ou une expression régulière." },
+          mode: { type: "string", enum: ["any", "all", "phrase", "regex"], description: "any (défaut) : un des mots au moins, les sources qui en ont le plus d'abord. all : tous les mots. phrase : la suite exacte. regex : expression régulière, en minuscules et sans accents." },
+          types: { type: "array", items: { type: "string", enum: [...GREP_TYPES] }, description: "Où chercher (défaut : partout)." },
+          path: { type: "string", description: "Limiter à un chemin, à la manière d'un glob : documents/contrats/*, facts/customer/**." },
+          output: { type: "string", enum: ["content", "sources", "count"], description: "content (défaut) : les lignes trouvées. sources : une ligne par source. count : combien, par type et par chemin." },
+          context: { type: "number", description: "Lignes autour de chaque ligne trouvée (défaut 1, max 5)." },
+          limit: { type: "number", description: "Sources rendues (défaut 15, max 50)." },
+          offset: { type: "number", description: "Pour la suite des résultats." },
+        },
+        required: ["pattern"], additionalProperties: false,
+      },
+      run: async () => "",
+    });
+  }
   const kinds = Object.entries(MEMORY_KINDS).filter(([, k]) => kit.legacy.defs.some((d) => d.name === k.legacy));
   if (kinds.length) {
     core.push({
@@ -182,6 +237,10 @@ export async function installToolkit(
   const byName = new Map(all.map((t) => [t.name, t]));
 
   await ctx.tool.transform((editor) => {
+    // Le grep des fichiers d'OpenCode cède sa place au grep de la base. Les
+    // autres outils livrés avec OpenCode sont coupés par les permissions
+    // (kitPermissions) et retirés de chaque requête par le hook context.
+    if (kit.search) editor.remove("grep");
     for (const t of all) {
       editor.add({
         name: t.name,
@@ -207,13 +266,21 @@ export async function installToolkit(
             });
             return text(`Lot ${lot.id} ouvert. Appelables maintenant :\n${lines.join("\n")}`);
           }
+          if (t.name === "grep") {
+            const allowed = spec ? grepTypes.filter((x) => spec.contextTypes.includes(x)) : grepTypes;
+            if (!allowed.length) return text(`ERROR: le spécialiste ${spec?.id} ne cherche pas dans la base.`);
+            return text(await grep(kit.search!, s.context, args as never, allowed));
+          }
           if (t.name === "build_context") {
             const types = Array.isArray(args.types) ? args.types.map(String) : [];
+            const from = Array.isArray(args.from) ? args.from.map(String) : [];
             if (spec) {
               const refused = types.filter((x) => !spec.contextTypes.includes(x));
               if (refused.length) return text(`ERROR: types hors du métier de ${spec.id} : ${refused.join(", ")}. Permis : ${spec.contextTypes.join(", ")}.`);
+              const foreign = from.filter((h) => { const hit = s.context.hits.get(h); return hit && !spec.contextTypes.includes(hit.type); });
+              if (foreign.length) return text(`ERROR: sources hors du métier de ${spec.id} : ${foreign.join(", ")}.`);
             }
-            return text(await buildContext(kit.legacy, s.context, { ...args, types } as never, c.signal));
+            return text(await buildContext(kit.legacy, s.context, { ...args, types, from } as never, c.signal, kit.search));
           }
           if (t.name === "context_page") return text(contextPage(s.context, args as never));
           return text(await t.run(args, c.signal));
@@ -254,8 +321,7 @@ export async function installToolkit(
           { action: "external_directory", resource: "*", effect: "deny" },
           { action: "subagent", resource: "*", effect: "deny" },
           { action: "question", resource: "*", effect: "deny" },
-          { action: "skill", resource: "*", effect: "deny" },
-          ...s.skills.map((slug) => ({ action: "skill", resource: slug, effect: "allow" })),
+          ...kitPermissions(s.skills),
         ] as typeof a.permissions;
       });
     }
@@ -279,7 +345,8 @@ export async function installToolkit(
   });
 
   return {
-    guidance: kitGuidance(tools, specialists, contextTypes),
+    guidance: kitGuidance(tools, specialists, contextTypes, grepTypes),
+    permissions: kitPermissions(kit.skills.filter((k) => k.instructions).map((k) => k.slug)),
     tools: all,
     specialists,
     uncovered: uncovered(kit.legacy),

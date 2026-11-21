@@ -18,6 +18,18 @@ import { memoryStore, startFakeLlm, type FakeLlm } from "./testing.ts";
 import { buildKitTools, uncovered, type LegacyDef, type LegacyToolset } from "./toolkit/catalogue.ts";
 import { buildContext, contextPage, newContextState, pinnedBlock, splitPieces } from "./toolkit/context.ts";
 import type { Kit } from "./toolkit/plugin.ts";
+import { fold, type IndexRow, type SearchIndex } from "./toolkit/grep.ts";
+
+/** Un petit index en mémoire : un passage du contrat Acme, trouvé par n'importe lequel de ses mots. */
+const CONTRACT: IndexRow = {
+  id: "row-1", type: "documents", path: "documents/contrats/contrat-cadre-acme-2026", title: "Contrat cadre Acme 2026",
+  content: "Article 4 : le délai de paiement des factures Acme est de 45 jours.", tags: [], meta: {}, grp: "doc:1",
+  source_table: "rag_chunks", source_id: "chunk-1", score: 1, updated_at: "2026-11-21",
+};
+const fakeIndex: SearchIndex = {
+  grep: async (p) => (p.regexes.some((r) => fold(CONTRACT.content).includes(r.replace(/^\\m/, ""))) ? [CONTRACT] : []),
+  read: async (ids) => (ids.includes(CONTRACT.id) ? [CONTRACT] : []),
+};
 
 // ── Un ancien jeu d'outils factice ──
 
@@ -164,7 +176,7 @@ describe("l'outillage dans OpenCode", () => {
       routes: { light: "m-light", standard: "m-std" },
     });
     const kit: Kit = {
-      agentName: AGENT.name, isOrchestrator: false, legacy: fake.legacy,
+      agentName: AGENT.name, isOrchestrator: false, legacy: fake.legacy, search: fakeIndex,
       skills: [
         { slug: "veille-marche", name: "Veille marché", description: "Méthode de veille", category: "research", instructions: "Lis trois sources." },
         { slug: "charte-redaction", name: "Charte de rédaction", description: "Le ton maison", category: "writing", instructions: "Phrases courtes." },
@@ -209,7 +221,11 @@ describe("l'outillage dans OpenCode", () => {
     ];
     await turn("Que sait-on de la levée d'Acme ?");
     const [first, second] = llm.requests;
-    assert.deepEqual(toolNames(first), ["build_context", "context_page", "open_lot", "question", "remember", "skill", "subagent", "todowrite"]);
+    assert.deepEqual(toolNames(first), ["build_context", "context_page", "grep", "open_lot", "question", "remember", "skill", "subagent", "todowrite"]);
+    // Le grep proposé est celui de la base (pattern, types…), pas celui des fichiers d'OpenCode.
+    const grepDef = (first.tools as Array<{ function: { name: string; parameters: any } }>).find((t) => t.function.name === "grep")!;
+    assert.deepEqual(grepDef.function.parameters.required, ["pattern"]);
+    assert.ok(grepDef.function.parameters.properties.types);
     assert.ok(toolNames(second).includes("web"), toolNames(second).join(", "));
     assert.ok(!toolNames(second).includes("read"), "le lot fichiers reste fermé");
     const web = (second.tools as Array<{ function: { name: string; parameters: any } }>).find((t) => t.function.name === "web")!;
@@ -218,6 +234,10 @@ describe("l'outillage dans OpenCode", () => {
     // Le prompt décrit les lots à la place de l'ancien texte de capacités.
     const system = systemOf(first);
     assert.match(system, /open_lot : ouvrir un lot d'outils/);
+    assert.match(system, /cherche D'ABORD avec grep/);
+    // Ni le catalogue « Code Mode » d'OpenCode, ni ses skills à lui.
+    assert.doesNotMatch(system, /Code Mode|worktree_create|<id>opencode<\/id>|<id>report<\/id>/);
+    assert.match(system, /<id>veille-marche<\/id>/);
     assert.doesNotMatch(system, /webfetch, websearch : lire une page web/);
   });
 
@@ -232,10 +252,28 @@ describe("l'outillage dans OpenCode", () => {
     assert.ok(!names.includes("web"));
   });
 
+  it("grep d'abord, puis build_context(from) relit la source trouvée, avec son type et son chemin", async () => {
+    llm.script = [
+      { tools: [{ id: "gr1", name: "grep", args: { pattern: "délai paiement Acme" } }] },
+      { tools: [{ id: "bc1", name: "build_context", args: { from: ["g1"] } }] },
+      { text: "45 jours." },
+    ];
+    await turn("Quel est le délai de paiement d'Acme ?");
+    const afterGrep = JSON.stringify(llm.requests[1].messages);
+    assert.match(afterGrep, /<documents hit=\\"g1\\" path=\\"documents\/contrats\/contrat-cadre-acme-2026\\"/);
+    assert.match(afterGrep, /1: Article 4 : le délai de paiement/);
+    const afterRead = JSON.stringify(llm.requests[2].messages);
+    assert.match(afterRead, /<documents id=\\"c\d+\\" source=\\"documents\/contrats\/contrat-cadre-acme-2026\\">/);
+  });
+
   it("build_context rend le contexte balisé ; ce qu'on garde revient à chaque requête", async () => {
+    // Garde le morceau de mémoire que build_context vient de rendre, quel que soit son numéro.
+    llm.responder = (body) => {
+      const m = JSON.stringify(body.messages).match(/<memory id=\\"(c\d+)\\"/);
+      return m && !JSON.stringify(body.messages).includes("gardés") ? { tools: [{ id: "p1", name: "context_page", args: { keep: [m[1]] } }] } : undefined;
+    };
     llm.script = [
       { tools: [{ id: "b1", name: "build_context", args: { query: "Acme", types: ["memory"] } }] },
-      { tools: [{ id: "p1", name: "context_page", args: { keep: ["c1"] } }] },
       { text: "Noté." },
     ];
     await turn("Qui est le contact chez Acme ?");
@@ -263,7 +301,7 @@ describe("l'outillage dans OpenCode", () => {
     while (Date.now() < end && !fake.calls.some((c) => c.name === "web_search")) await new Promise((r) => setTimeout(r, 100));
     const child = llm.requests.find((b) => /Tu es un chercheur/.test(systemOf(b)));
     assert.ok(child, "le spécialiste a fait une requête");
-    assert.deepEqual(toolNames(child!), ["build_context", "context_page", "skill", "todowrite", "web"]);
+    assert.deepEqual(toolNames(child!), ["build_context", "context_page", "grep", "skill", "todowrite", "web"]);
     const system = systemOf(child!);
     assert.doesNotMatch(system, /Tu es Kit, agent FounderOS/);
     assert.match(system, /veille-marche/);

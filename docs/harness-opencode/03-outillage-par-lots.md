@@ -15,11 +15,12 @@ L'ancien moteur donnait à un agent jusqu'à 105 outils fixes, plus un outil par
 2. **Des lots.** Le modèle voit un noyau de 8 outils et la liste des lots. Il ouvre un lot (`open_lot`) et voit alors ses outils. S'il s'est trompé, il en ouvre un autre : un seul lot est ouvert à la fois. Le filtrage passe par le hook `context` d'OpenCode, appelé à chaque requête. Un outil retiré n'est ni montré ni exécutable.
 3. **Des spécialistes.** L'agent confie une tâche délimitée à un sous-agent (outil `subagent` d'OpenCode). Ce sous-agent ne voit que ses instructions, les données passées dans la consigne, les outils de son métier et les skills de son métier.
 
-## Le noyau (toujours visible)
+## Le noyau (toujours visible, 9 outils)
 
 | Outil | Rôle |
 |---|---|
-| `build_context` | Aller chercher du contexte, d'un ou plusieurs `types` à la fois |
+| `grep` | Chercher d'abord par mots-clés dans l'index de la base (voir plus bas) |
+| `build_context` | Relire les sources trouvées par grep (`from`), ou recherche sémantique (`types`) |
 | `context_page` | Lire progressivement ce que `build_context` a trouvé ; `keep` / `drop` |
 | `remember` | Enregistrer : `kind` = fact, preference, team ou knowledge |
 | `open_lot` | Ouvrir un lot (et fermer le précédent) |
@@ -27,6 +28,55 @@ L'ancien moteur donnait à un agent jusqu'à 105 outils fixes, plus un outil par
 | `question` | Demander à la personne (natif) |
 | `skill` | Charger un skill de l'agent (natif ; skills FounderOS enregistrés) |
 | `subagent` | Lancer un spécialiste (natif ; seuls les spécialistes FounderOS existent) |
+
+### grep d'abord (migration 0308)
+
+L'agent cherche comme un développeur dans un dépôt : un ou plusieurs `grep` avec les mots de la demande et des mots voisins (synonymes, sigles, noms propres, forme courte), puis il lit ce qui compte avec `build_context(from=[g1, g2])`. Rien n'est copié sur disque : `grep` interroge une table de la base.
+
+**L'index, `public.search_index`.** Une ligne par passage de document, mémoire, mémoire d'équipe, entité et fait du graphe, livrable, document de l'espace ou message de conversation. Chaque ligne porte :
+- son type, son titre et ses tags ;
+- un chemin lisible, comme `documents/contrats-clients/contrat-cadre-acme-2026`, `facts/customer/acme-sas` ou `conversation/relances-1a2b3c4d/user` ;
+- la table et l'identifiant source, et des métadonnées (URL, collection, importance, rôle…) ;
+- son groupe (le document, la conversation, l'entité) ;
+- `doc`, une copie en minuscules sans accents, indexée en trigrammes.
+
+Des triggers tiennent l'index à jour : contenu modifié, ligne supprimée, fait remplacé, entité renommée (son chemin suit), document archivé. La migration remplit l'index une fois.
+
+**Portée.** Un agent voit son espace, son projet (le graphe vaut pour tout l'espace) et ses propres lignes privées (mémoire, conversations, livrables). Jamais celles d'un autre agent. L'index n'est lu que par le rôle de service.
+
+**`grep(pattern, mode, types, path, output, context, limit, offset)`**
+- `mode` :
+  - `any` (défaut) : un des mots au moins ; les sources qui ont le plus de mots passent d'abord, et un mot dans le titre compte en plus ;
+  - `all` : tous les mots ;
+  - `phrase` : la suite exacte ;
+  - `regex` : une expression régulière.
+
+  Les mots et la phrase sont cherchés en début de mot : « factur » trouve facture et facturation, pas préfacturé. Accents et majuscules sont ignorés.
+- `path` : un motif à la manière d'un glob, comme `documents/contrats/*` ou `facts/customer/**`.
+- `output` : `content` (les lignes trouvées et leurs voisines, au format ripgrep `n:` / `n-`), `sources` (une ligne par source) ou `count` (par type et par chemin).
+
+Chaque source trouvée reçoit un identifiant `g1`, `g2`… Ensuite :
+- `build_context(from=[…])` la relit, rangée dans la balise de son type avec son chemin ;
+- `whole=true` relit le document, la conversation ou l'entité entière.
+
+```
+<grep pattern="factur acme" mode="any" types="…" sources="2">
+<documents hit="g1" path="documents/contrats-clients/contrat-cadre-acme-2026" title="Contrat cadre Acme 2026">
+1- Article 3 : livraison.
+2: Article 4 : le délai de paiement des factures Acme est de 45 jours
+3- fin de mois, par virement.
+</documents>
+<facts hit="g2" path="facts/customer/acme-sas" title="Acme SAS">
+1: Acme SAS règle ses factures par virement.
+</facts>
+</grep>
+```
+
+Le `grep` natif d'OpenCode, qui cherche dans les fichiers, cède son nom à celui de la base. Le lot `fichiers` garde `read`, `write`, `edit` et `glob`.
+
+L'outillage ajoute aussi deux permissions à l'agent principal et aux spécialistes :
+- `execute` refusé : pas de catalogue « Code Mode » d'OpenCode dans le prompt ;
+- `skill` refusé sauf pour les skills de l'agent : les skills livrés avec OpenCode disparaissent.
 
 ### build_context et context_page
 
@@ -80,7 +130,7 @@ Un outil regroupé ne montre que les actions que l'agent possède. Un lot vide n
 | `metier` | Un outil par produit de l'agent, tel quel | tracker, vibe_code, lead_sense, support_desk, sentinel, security_scan, pentest_scope, testing, simulation, training, policy_audit |
 | `equipe` | `team` (list, message, delegate, handoff), `mission` (create, list, move, propose, task, workflow, new_agent), `workflow` (list, create, configure, add_block, link, activate) | 17 outils |
 | `execution` | `run_code` (shell, python, node, jupyter), `remote_files`, `process`, `machine`, avec `world` = runner, sandbox ou team quand l'agent a plusieurs machines | 24 outils, dont les variantes `runner_*` / `sandbox_*` / `team_*` |
-| `fichiers` | `read`, `write`, `edit`, `glob`, `grep` (natifs, dossier de l'agent) | file_read, file_write, file_edit, list_files, file_search |
+| `fichiers` | `read`, `write`, `edit`, `glob` (natifs, dossier de l'agent) | file_read, file_write, file_edit, list_files, file_search |
 | `admin` | `admin` (agents, projects, connectors, teams, dashboards). Assistant de service seulement | manage_* |
 
 Les **applications** suivent le même principe en trois temps : `list` (une ligne par application), `describe` (le schéma complet d'une seule), puis `call`. Le modèle ne reçoit jamais d'un coup les schémas de cinquante outils MCP.
@@ -94,7 +144,7 @@ Ces outils de l'ancien moteur disparaissent :
 
 Au démarrage, `uncovered()` signale tout ancien outil qu'aucun outil ne sert. Un outil ajouté à l'ancien moteur ne peut donc pas disparaître en silence.
 
-**Ordre de grandeur.** Un agent très équipé voit 8 outils au départ, puis 8 + 1 à 4 avec un lot ouvert. Avant, c'était 60 à 120.
+**Ordre de grandeur.** Un agent très équipé voit 9 outils au départ, puis 9 + 1 à 11 avec un lot ouvert. Avant, c'était 60 à 120.
 
 ## Les spécialistes
 

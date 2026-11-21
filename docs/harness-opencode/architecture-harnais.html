@@ -1,0 +1,763 @@
+<title>Harnais FounderOS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Mise en page : une colonne de lecture, des figures pleine largeur qui défilent dans leur cadre sur mobile. */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --fg: #1a2030;
+  --muted: #5a6375;
+  --line: #c8ceda;
+  --accent: #2b57c0;
+  --accent-soft: #e7edfa;
+  --legacy: #9a5d14;
+  --legacy-soft: #faf0e2;
+  --code: #edf0f5;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #13161c; --surface: #1b1f27; --fg: #e3e7ef; --muted: #98a1b2; --line: #3a4151;
+    --accent: #84a6f4; --accent-soft: #1e2943; --legacy: #e2a65a; --legacy-soft: #2c2519; --code: #20252f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #13161c; --surface: #1b1f27; --fg: #e3e7ef; --muted: #98a1b2; --line: #3a4151;
+  --accent: #84a6f4; --accent-soft: #1e2943; --legacy: #e2a65a; --legacy-soft: #2c2519; --code: #20252f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; }
+.prose { max-width: 70ch; }
+header { display: grid; gap: 12px; margin-bottom: 28px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+h1 { font-size: 2.1rem; line-height: 1.15; margin: 0; font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font-size: 1.35rem; margin: 0 0 4px; font-weight: 600; text-wrap: balance; }
+h3 { font-size: 1rem; margin: 0 0 6px; font-weight: 600; }
+p { margin: 0 0 12px; }
+.lead { font-size: 1.05rem; color: var(--muted); max-width: 72ch; margin: 0; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 6px 0 0; padding: 0; }
+.facts div { display: flex; gap: 8px; align-items: baseline; }
+.facts dt { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.facts dd { margin: 0; color: var(--muted); font-size: 14px; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 36px; font-size: 14px; }
+nav.toc a { color: var(--muted); text-decoration: none; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+section { display: grid; gap: 14px; margin-bottom: 52px; scroll-margin-top: 16px; }
+.kicker { font-family: var(--mono); font-size: 12px; color: var(--accent); letter-spacing: .04em; }
+figure { margin: 0; display: grid; gap: 10px; }
+.fig { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
+.fig svg { min-width: 860px; }
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 80ch; }
+code, .mono { font-family: var(--mono); font-size: .88em; }
+:not(pre) > code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 0; font-size: 12.5px; line-height: 1.55; }
+.table { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.card p { font-size: 14px; color: var(--muted); margin: 0; }
+.card .tag { font-family: var(--mono); font-size: 11.5px; color: var(--accent); display: block; margin-bottom: 4px; }
+ol.steps, ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; max-width: 80ch; }
+ol.steps li::marker { font-family: var(--mono); color: var(--muted); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.cols > * { min-width: 0; }
+.pill { display: inline-block; font-family: var(--mono); font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.pill.new { color: var(--accent); }
+.pill.old { color: var(--legacy); }
+.note { border-left: 3px solid var(--legacy); padding: 4px 0 4px 14px; color: var(--muted); font-size: 14px; max-width: 80ch; }
+
+/* Les schémas : couleurs prises dans les mêmes jetons que la page. */
+svg.d { width: 100%; height: auto; display: block; color: var(--muted); font-family: var(--sans); }
+.d text { fill: var(--fg); font-size: 12px; }
+.d .h { font-weight: 600; font-size: 13px; }
+.d .s { fill: var(--muted); font-size: 11px; }
+.d .m { font-family: var(--mono); font-size: 11px; }
+.d .cap { fill: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .06em; }
+.d .al { fill: var(--muted); font-size: 11px; }
+.d .ala { fill: var(--accent); font-size: 11px; font-weight: 500; }
+.d .b { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+.d .ba { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+.d .bl { fill: var(--legacy-soft); stroke: var(--legacy); stroke-width: 1.4; }
+.d .fr { fill: none; stroke: var(--line); stroke-width: 1.2; }
+.d .fra { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.d .dash { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 6 5; }
+.d .ar { fill: none; stroke: var(--muted); stroke-width: 1.3; }
+.d .ara { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.d .arl { fill: none; stroke: var(--legacy); stroke-width: 1.4; }
+.d .ret { stroke-dasharray: 5 4; }
+.d .ll { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
+.d .mk { fill: var(--muted); }
+.d .mka { fill: var(--accent); }
+.d .mkl { fill: var(--legacy); }
+.d .loop { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 4; }
+.d .no { fill: var(--muted); font-size: 11.5px; text-decoration: line-through; }
+@media (max-width: 560px) { h1 { font-size: 1.7rem; } body { font-size: 14.5px; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Branche harness-opencode · état au 21 novembre 2026 · commit 6d8b120</div>
+  <h1>Harnais FounderOS</h1>
+  <p class="lead">Comment un message adressé à un agent devient du travail : l'aiguillage entre les deux moteurs, la boucle OpenCode, l'outillage par lots, le contexte progressif, les spécialistes et le pont qui écrit ce que le front affiche.</p>
+  <dl class="facts">
+    <div><dt>2</dt><dd>moteurs : OpenCode en local, l'ancien en filet</dd></div>
+    <div><dt>8</dt><dd>outils visibles au départ, contre 60 à 120 avant</dd></div>
+    <div><dt>5</dt><dd>spécialistes</dd></div>
+    <div><dt>642</dt><dd>tests du backend verts</dd></div>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="Sommaire">
+  <a href="#ensemble">Vue d'ensemble</a>
+  <a href="#aiguillage">Aiguillage</a>
+  <a href="#tour">Un tour de chat</a>
+  <a href="#instance">Instance d'un agent</a>
+  <a href="#lots">Outillage par lots</a>
+  <a href="#contexte">Contexte</a>
+  <a href="#specialistes">Spécialistes</a>
+  <a href="#pont">Pont d'événements</a>
+  <a href="#ancien">Ancien moteur</a>
+  <a href="#fichiers">Fichiers</a>
+  <a href="#limites">Limites</a>
+</nav>
+
+<!-- ───────────────────────── Vue d'ensemble ───────────────────────── -->
+<section id="ensemble">
+  <div class="kicker">01 · Architecture</div>
+  <h2>Vue d'ensemble</h2>
+  <p class="prose">Tout tourne dans <strong>un seul processus Node</strong> : la plateforme (base, authentification, stockage, temps réel), les fonctions edge portées depuis Supabase et, quand <code>HARNESS_OPENCODE=1</code>, le harnais OpenCode embarqué. Le front ne voit pas la différence : les deux moteurs écrivent dans les mêmes tables.</p>
+  <figure>
+    <div class="fig">
+      <svg class="d" viewBox="0 0 1100 640" role="img" aria-label="Le front appelle internal-agent-run ; l'aiguillage envoie les tours de chat des agents OpenCode vers le harnais, le reste vers l'ancien moteur ; le harnais appelle les modèles, réutilise les handlers de l'ancien moteur et écrit en base via le pont ; la base pousse les changements au front en temps réel.">
+        <defs>
+          <marker id="o-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="o-aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mka" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="o-al" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mkl" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <!-- Front -->
+        <rect class="b" x="20" y="190" width="170" height="150" rx="8"/>
+        <text class="h" x="105" y="216" text-anchor="middle">Front React</text>
+        <text class="s" x="105" y="242" text-anchor="middle">Chat de l'agent</text>
+        <text class="s" x="105" y="261" text-anchor="middle">Timeline du run</text>
+        <text class="s" x="105" y="280" text-anchor="middle">Composer (modèle)</text>
+        <text class="s" x="105" y="299" text-anchor="middle">Réglages de l'agent</text>
+
+        <!-- Backend frame -->
+        <rect class="fr" x="230" y="30" width="640" height="540" rx="12"/>
+        <text class="cap" x="246" y="52">BACKEND LOCAL · UN PROCESSUS NODE · PLATFORM=self</text>
+
+        <rect class="b" x="250" y="70" width="150" height="56" rx="7"/>
+        <text class="h" x="325" y="94" text-anchor="middle">Passerelle</text>
+        <text class="s" x="325" y="112" text-anchor="middle">JWT, clés d'API</text>
+
+        <rect class="ba" x="440" y="70" width="170" height="56" rx="7"/>
+        <text class="h" x="525" y="94" text-anchor="middle">Aiguillage</text>
+        <text class="s m" x="525" y="112" text-anchor="middle">harness/route.ts</text>
+
+        <rect class="bl" x="650" y="70" width="200" height="56" rx="7"/>
+        <text class="h" x="750" y="94" text-anchor="middle">Fonctions portées</text>
+        <text class="s" x="750" y="112" text-anchor="middle">87 edge, functionsRouter</text>
+
+        <!-- Harness frame -->
+        <rect class="fra" x="250" y="170" width="360" height="220" rx="10"/>
+        <text class="cap" x="264" y="190">HARNAIS OPENCODE · @opencode/sdk 2.3.2</text>
+
+        <rect class="b" x="266" y="205" width="158" height="66" rx="7"/>
+        <text class="h" x="345" y="231" text-anchor="middle">Hôte OpenCode</text>
+        <text class="s" x="345" y="250" text-anchor="middle">sessions en SQLite</text>
+
+        <rect class="ba" x="436" y="205" width="158" height="66" rx="7"/>
+        <text class="h" x="515" y="231" text-anchor="middle">Instance d'agent</text>
+        <text class="s" x="515" y="250" text-anchor="middle">une par agent_id</text>
+
+        <rect class="b" x="266" y="300" width="158" height="66" rx="7"/>
+        <text class="h" x="345" y="326" text-anchor="middle">Pont d'événements</text>
+        <text class="s m" x="345" y="345" text-anchor="middle">bridge.ts</text>
+
+        <rect class="ba" x="436" y="300" width="158" height="66" rx="7"/>
+        <text class="h" x="515" y="326" text-anchor="middle">Outillage par lots</text>
+        <text class="s m" x="515" y="345" text-anchor="middle">toolkit/</text>
+
+        <!-- Legacy engine -->
+        <rect class="bl" x="650" y="170" width="200" height="220" rx="10"/>
+        <text class="h" x="750" y="196" text-anchor="middle">Ancien moteur</text>
+        <text class="s m" x="750" y="214" text-anchor="middle">internal-agent-run</text>
+        <text class="s" x="750" y="246" text-anchor="middle">runChat, ticks de mission</text>
+        <text class="s" x="750" y="266" text-anchor="middle">runToolRounds (ai.ts)</text>
+        <text class="s" x="750" y="286" text-anchor="middle">buildInternalToolset</text>
+        <text class="s" x="750" y="306" text-anchor="middle">handlers des outils</text>
+        <text class="s" x="750" y="326" text-anchor="middle">approbations</text>
+        <text class="s m" x="750" y="356" text-anchor="middle">prepareAgentToolset</text>
+
+        <!-- Platform -->
+        <rect class="fr" x="250" y="430" width="600" height="100" rx="10"/>
+        <text class="cap" x="264" y="450">PLATEFORME AUTO-HÉBERGÉE</text>
+        <rect class="b" x="266" y="462" width="260" height="56" rx="7"/>
+        <text class="h" x="396" y="486" text-anchor="middle">PostgreSQL ou PGlite</text>
+        <text class="s" x="396" y="504" text-anchor="middle">runs, run_events, messages, llm_usage</text>
+        <rect class="b" x="560" y="462" width="274" height="56" rx="7"/>
+        <text class="h" x="697" y="486" text-anchor="middle">PostgREST, GoTrue, Storage</text>
+        <text class="s" x="697" y="504" text-anchor="middle">Realtime vers le front</text>
+
+        <!-- LLM -->
+        <rect class="b" x="910" y="190" width="170" height="150" rx="8"/>
+        <text class="h" x="995" y="216" text-anchor="middle">Fournisseurs LLM</text>
+        <text class="s" x="995" y="244" text-anchor="middle">OpenRouter (défaut)</text>
+        <text class="s" x="995" y="263" text-anchor="middle">Connecteur AI Ops</text>
+        <text class="s" x="995" y="282" text-anchor="middle">Serveur GPU</text>
+        <text class="s" x="995" y="312" text-anchor="middle">API compatible OpenAI</text>
+
+        <!-- Cloud -->
+        <rect class="dash" x="230" y="592" width="640" height="38" rx="8"/>
+        <text class="s" x="550" y="616" text-anchor="middle">Supabase cloud : l'ancien moteur seul, gardé comme filet de sécurité</text>
+
+        <!-- Arrows -->
+        <path class="ar" d="M105 190 V98 H248" marker-end="url(#o-a)"/>
+        <text class="al" x="150" y="118" text-anchor="middle">POST internal-agent-run</text>
+        <path class="ar" d="M400 98 H438" marker-end="url(#o-a)"/>
+        <text class="al" x="420" y="90" text-anchor="middle">vérifié</text>
+        <path class="arl" d="M610 98 H648" marker-end="url(#o-al)"/>
+        <text class="al" x="630" y="90" text-anchor="middle">sinon</text>
+        <path class="ara" d="M515 126 V203" marker-end="url(#o-aa)"/>
+        <text class="ala" x="507" y="160" text-anchor="end">chat, harness = opencode</text>
+        <path class="arl" d="M820 126 V168" marker-end="url(#o-al)"/>
+        <path class="ar" d="M345 271 V298" marker-end="url(#o-a)"/>
+        <text class="al" x="352" y="290">événements</text>
+        <path class="ara" d="M515 271 V298" marker-end="url(#o-aa)"/>
+        <text class="ala" x="522" y="290">installe</text>
+        <path class="ara" d="M594 333 H648" marker-end="url(#o-aa)"/>
+        <text class="ala" x="621" y="325" text-anchor="middle">handlers</text>
+        <path class="ara" d="M594 222 H630 V150 H880 V250 H908" marker-end="url(#o-aa)"/>
+        <text class="ala" x="705" y="144" text-anchor="middle">requêtes du modèle, en streaming</text>
+        <path class="arl" d="M850 300 H908" marker-end="url(#o-al)"/>
+        <path class="ar" d="M345 366 V460" marker-end="url(#o-a)"/>
+        <text class="al" x="352" y="414">écrit runs, timeline, réponse, coûts</text>
+        <path class="arl" d="M750 390 V460" marker-end="url(#o-al)"/>
+        <text class="al" x="757" y="414">lit et écrit</text>
+        <path class="ar" d="M697 518 V552 H105 V342" marker-end="url(#o-a)"/>
+        <text class="al" x="400" y="546" text-anchor="middle">Realtime : timeline et réponse</text>
+      </svg>
+    </div>
+    <figcaption>En bleu, le chemin du harnais OpenCode ; en ocre, l'ancien moteur. Le harnais ne réécrit aucun handler d'outil : il passe par ceux de l'ancien moteur. Tous deux écrivent les mêmes lignes, que le front lit en temps réel.</figcaption>
+  </figure>
+</section>
+
+<!-- ───────────────────────── Aiguillage ───────────────────────── -->
+<section id="aiguillage">
+  <div class="kicker">02 · Routage</div>
+  <h2>L'aiguillage</h2>
+  <p class="prose">L'aiguillage est monté juste devant les fonctions portées. Il lit le corps de la requête sans le consommer : s'il ne la prend pas, elle arrive intacte à l'ancien <code>internal-agent-run</code>. La bascule se fait <strong>agent par agent</strong>, par la colonne <code>internal_agents.harness</code> (migration 0307, en local seulement).</p>
+  <figure>
+    <div class="fig">
+      <svg class="d" viewBox="0 0 1000 215" role="img" aria-label="Une requête va au harnais OpenCode seulement si c'est un tour de chat, si l'agent est marqué opencode et si le harnais est démarré ; sinon elle va à l'ancien moteur.">
+        <defs>
+          <marker id="r-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="r-aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mka" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="r-al" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mkl" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="b" x="10" y="70" width="150" height="50" rx="7"/>
+        <text class="h" x="85" y="92" text-anchor="middle">Requête</text>
+        <text class="s m" x="85" y="109" text-anchor="middle">internal-agent-run</text>
+
+        <rect class="b" x="200" y="70" width="150" height="50" rx="25"/>
+        <text x="275" y="99" text-anchor="middle">mode = chat ?</text>
+        <rect class="b" x="390" y="70" width="190" height="50" rx="25"/>
+        <text x="485" y="99" text-anchor="middle">harness = opencode ?</text>
+        <rect class="b" x="620" y="70" width="150" height="50" rx="25"/>
+        <text x="695" y="99" text-anchor="middle">harnais démarré ?</text>
+
+        <rect class="ba" x="810" y="70" width="180" height="50" rx="7"/>
+        <text class="h" x="900" y="92" text-anchor="middle">Harnais OpenCode</text>
+        <text class="s" x="900" y="109" text-anchor="middle">contrôles puis tour</text>
+
+        <rect class="bl" x="200" y="165" width="570" height="38" rx="7"/>
+        <text class="h" x="485" y="189" text-anchor="middle">Ancien moteur internal-agent-run, inchangé</text>
+
+        <path class="ar" d="M160 95 H198" marker-end="url(#r-a)"/>
+        <path class="ar" d="M350 95 H388" marker-end="url(#r-a)"/><text class="al" x="369" y="86" text-anchor="middle">oui</text>
+        <path class="ar" d="M580 95 H618" marker-end="url(#r-a)"/><text class="al" x="599" y="86" text-anchor="middle">oui</text>
+        <path class="ara" d="M770 95 H808" marker-end="url(#r-aa)"/><text class="ala" x="789" y="86" text-anchor="middle">oui</text>
+        <path class="arl" d="M275 120 V163" marker-end="url(#r-al)"/><text class="al" x="282" y="146">non (mission…)</text>
+        <path class="arl" d="M485 120 V163" marker-end="url(#r-al)"/><text class="al" x="492" y="146">non (legacy)</text>
+        <path class="arl" d="M695 120 V163" marker-end="url(#r-al)"/><text class="al" x="702" y="146">non</text>
+        <text class="s" x="695" y="40" text-anchor="middle">PLATFORM=self et HARNESS_OPENCODE=1</text>
+        <path class="ll" d="M695 46 V68"/>
+      </svg>
+    </div>
+    <figcaption>Les missions restent sur l'ancien moteur pour l'instant. Un agent marqué <code>legacy</code> aussi, ce qui permet de basculer par vagues.</figcaption>
+  </figure>
+  <p class="prose">Quand l'aiguillage prend la requête, il fait les mêmes contrôles que l'ancien moteur avant d'engager la moindre dépense :</p>
+  <ul class="plain">
+    <li>la clé de service, ou une personne qui a accès à l'agent ;</li>
+    <li>une conversation qui appartient bien à l'agent ;</li>
+    <li>des crédits et un quota suffisants pour l'espace.</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── Tour de chat ───────────────────────── -->
+<section id="tour">
+  <div class="kicker">03 · Séquence</div>
+  <h2>Un tour de chat, de bout en bout</h2>
+  <p class="prose">Le contrat avec le front est celui de l'ancien moteur. La personne a déjà enregistré son message, l'appel rend tout de suite un <code>run_id</code>, et la suite arrive par la base.</p>
+  <figure>
+    <div class="fig">
+      <svg class="d" viewBox="0 0 1110 815" role="img" aria-label="Séquence d'un tour : le front enregistre le message et appelle l'aiguillage ; le tour crée le run, choisit le modèle et envoie le prompt à la session OpenCode ; la boucle d'étapes passe par les hooks, le modèle et les outils ; le pont écrit chaque événement en base ; le front reçoit la timeline et la réponse en temps réel.">
+        <defs>
+          <marker id="s-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="s-aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mka" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <!-- Lifeline heads -->
+        <g>
+          <rect class="b" x="15" y="18" width="110" height="46" rx="7"/><text class="h" x="70" y="38" text-anchor="middle">Front</text><text class="s" x="70" y="55" text-anchor="middle">React</text>
+          <rect class="ba" x="150" y="18" width="110" height="46" rx="7"/><text class="h" x="205" y="38" text-anchor="middle">Aiguillage</text><text class="s m" x="205" y="55" text-anchor="middle">route.ts</text>
+          <rect class="ba" x="285" y="18" width="110" height="46" rx="7"/><text class="h" x="340" y="38" text-anchor="middle">Tour</text><text class="s m" x="340" y="55" text-anchor="middle">chat.ts</text>
+          <rect class="ba" x="425" y="18" width="110" height="46" rx="7"/><text class="h" x="480" y="38" text-anchor="middle">OpenCode</text><text class="s" x="480" y="55" text-anchor="middle">session</text>
+          <rect class="ba" x="565" y="18" width="120" height="46" rx="7"/><text class="h" x="625" y="38" text-anchor="middle">Plugin agent</text><text class="s" x="625" y="55" text-anchor="middle">et outillage</text>
+          <rect class="b" x="710" y="18" width="110" height="46" rx="7"/><text class="h" x="765" y="38" text-anchor="middle">Modèle</text><text class="s" x="765" y="55" text-anchor="middle">LLM</text>
+          <rect class="b" x="850" y="18" width="110" height="46" rx="7"/><text class="h" x="905" y="38" text-anchor="middle">Pont</text><text class="s m" x="905" y="55" text-anchor="middle">bridge.ts</text>
+          <rect class="b" x="990" y="18" width="110" height="46" rx="7"/><text class="h" x="1045" y="38" text-anchor="middle">Base</text><text class="s" x="1045" y="55" text-anchor="middle">PostgreSQL</text>
+        </g>
+        <path class="ll" d="M70 64 V800 M205 64 V800 M340 64 V800 M480 64 V800 M625 64 V800 M765 64 V800 M905 64 V800 M1045 64 V800"/>
+
+        <!-- loop frame -->
+        <rect class="loop" x="440" y="402" width="645" height="270" rx="6"/>
+        <text class="ala" x="452" y="418">boucle d'étapes, jusqu'à la limite steps</text>
+
+        <path class="ar" d="M70 100 H1043" marker-end="url(#s-a)"/><text class="al" x="557" y="94" text-anchor="middle">1 · insère le message de la personne</text>
+        <path class="ar" d="M70 140 H203" marker-end="url(#s-a)"/><text class="al" x="137" y="134" text-anchor="middle">2 · POST</text>
+        <path class="ar" d="M205 172 H236 V188 H207" marker-end="url(#s-a)"/><text class="al" x="242" y="184">3 · accès, conversation, crédits</text>
+        <path class="ara" d="M205 220 H338" marker-end="url(#s-aa)"/><text class="ala" x="272" y="214" text-anchor="middle">4 · startChatTurn</text>
+        <path class="ar" d="M340 260 H1043" marker-end="url(#s-a)"/><text class="al" x="692" y="254" text-anchor="middle">5 · run actif ? sinon crée le run « running »</text>
+        <path class="ara" d="M340 300 H623" marker-end="url(#s-aa)"/><text class="ala" x="482" y="294" text-anchor="middle">6 · profil relu, modèle et palier du tour</text>
+        <path class="ara" d="M340 340 H478" marker-end="url(#s-aa)"/><text class="ala" x="410" y="334" text-anchor="middle">7 · prompt ou steer</text>
+        <path class="ar ret" d="M340 380 H72" marker-end="url(#s-a)"/><text class="al" x="205" y="374" text-anchor="middle">8 · { run_id, queued }</text>
+
+        <path class="ara" d="M480 445 H623" marker-end="url(#s-aa)"/><text class="ala" x="552" y="439" text-anchor="middle">9 · hooks</text>
+        <text class="s m" x="632" y="449">model.resolve, context</text>
+        <path class="ara" d="M480 485 H763" marker-end="url(#s-aa)"/><text class="ala" x="622" y="479" text-anchor="middle">10 · requête, outils visibles seulement</text>
+        <path class="ar ret" d="M765 525 H482" marker-end="url(#s-a)"/><text class="al" x="622" y="519" text-anchor="middle">11 · texte, appels d'outils (stream)</text>
+        <path class="ara" d="M480 565 H623" marker-end="url(#s-aa)"/><text class="ala" x="552" y="559" text-anchor="middle">12 · exécute</text>
+        <path class="ar" d="M625 590 H656 V606 H627" marker-end="url(#s-a)"/><text class="al" x="662" y="602">13 · handler de l'ancien moteur</text>
+        <path class="ar" d="M480 630 H903" marker-end="url(#s-a)"/><text class="al" x="692" y="624" text-anchor="middle">14 · événements session.tool.*, text.delta, step.ended</text>
+        <path class="ar" d="M905 660 H1043" marker-end="url(#s-a)"/><text class="al" x="975" y="654" text-anchor="middle">15 · timeline, coûts</text>
+
+        <path class="ar" d="M480 705 H903" marker-end="url(#s-a)"/><text class="al" x="692" y="699" text-anchor="middle">16 · session.execution.succeeded</text>
+        <path class="ar" d="M905 742 H1043" marker-end="url(#s-a)"/><text class="al" x="975" y="736" text-anchor="middle">17 · réponse, run fini</text>
+        <path class="ar ret" d="M1045 780 H72" marker-end="url(#s-a)"/><text class="al" x="557" y="774" text-anchor="middle">18 · Realtime : la timeline au fil de l'eau, puis la réponse</text>
+      </svg>
+    </div>
+    <figcaption>Pointillés : réponses et poussées vers le front. Le cadre bleu se répète à chaque étape de l'agent, jusqu'à sa limite d'étapes.</figcaption>
+  </figure>
+  <div class="cols">
+    <div>
+      <h3>Avant la boucle (1 à 8)</h3>
+      <ol class="steps">
+        <li>Le front enregistre le message dans <code>internal_agent_messages</code>, puis appelle la fonction.</li>
+        <li>L'aiguillage vérifie l'accès, la conversation et les crédits (étape 3).</li>
+        <li>Si un run est déjà en cours dans la conversation, le message entre dans sa session en <code>steer</code> : il est pris en compte à l'étape suivante, sans second run.</li>
+        <li>Sinon le tour crée le run. Une conversation garde <strong>une</strong> session OpenCode ; la première fois, elle est amorcée avec les derniers échanges.</li>
+        <li>Le profil de l'agent est relu (prompt, modèles). Le modèle du tour vient du composer, ou du classement de la demande (classifyRequest, AgentPilot, detectNeed). Un événement « status » le note dans la timeline.</li>
+      </ol>
+    </div>
+    <div>
+      <h3>Dans la boucle (9 à 15), puis la fin</h3>
+      <ol class="steps" start="6">
+        <li><code>model.resolve</code> donne le modèle du tour au travail de l'agent, et le palier léger aux titres et à la compaction.</li>
+        <li><code>context</code> ne laisse que le noyau et le lot ouvert, pose les vrais schémas et ajoute le contexte gardé.</li>
+        <li>OpenCode exécute les appels d'outils ; l'outil regroupé appelle le handler de l'ancien moteur.</li>
+        <li>Le pont transforme chaque événement en ligne de base, dans l'ordre, une file par session.</li>
+        <li>À la fin, le pont écrit la réponse dans la conversation et clôt le run. Une annulation depuis le front interrompt la session.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── Instance ───────────────────────── -->
+<section id="instance">
+  <div class="kicker">04 · Configuration</div>
+  <h2>L'instance d'un agent</h2>
+  <p class="prose">L'hôte crée une instance OpenCode par agent FounderOS. La clé est l'<code>agent_id</code> porté par la session, et l'instance n'est construite qu'au premier message. Le plugin de l'agent la configure entièrement ; rien ne vient des fichiers de la machine.</p>
+  <div class="cards">
+    <div class="card"><span class="tag">fournisseur « founderos »</span><h3>Connexion et modèles</h3><p>Compatible OpenAI. La connexion est le connecteur de l'agent, son serveur GPU ou celle de la plateforme (OpenRouter par défaut). Un modèle par route (light, standard, heavy), avec ses replis OpenRouter.</p></div>
+    <div class="card"><span class="tag">agent « founderos »</span><h3>Agent principal</h3><p>Le prompt FounderOS remplace celui d'OpenCode : entreprise, self-model, et la section « Tes outils » qui décrit les lots. Limite d'étapes : max_steps × 15, de 60 à 400.</p></div>
+    <div class="card"><span class="tag">permissions</span><h3>Ce qui est refusé</h3><p>Tout est permis sauf <code>shell</code> et l'accès hors du dossier de l'agent : en local, ils toucheraient la machine qui héberge le backend.</p></div>
+    <div class="card"><span class="tag">hook model.resolve</span><h3>Le modèle de chaque requête</h3><p>Le travail prend le modèle choisi pour le tour ; un titre ou une compaction prend le palier léger.</p></div>
+    <div class="card"><span class="tag">hook context</span><h3>Ce que voit le modèle</h3><p>À chaque requête : retire les outils hors du noyau et du lot ouvert, pose les schémas JSON réels, ajoute <code>&lt;working_context&gt;</code>.</p></div>
+    <div class="card"><span class="tag">sous-agents et skills</span><h3>Spécialistes</h3><p>Cinq spécialistes déclarés en sous-agents. Les skills de l'agent sont embarqués et filtrés par permission. Les sous-agents livrés avec OpenCode sont retirés.</p></div>
+  </div>
+</section>
+
+<!-- ───────────────────────── Lots ───────────────────────── -->
+<section id="lots">
+  <div class="kicker">05 · Outillage</div>
+  <h2>L'outillage par lots</h2>
+  <p class="prose">Le modèle voit un noyau de huit outils et la liste des lots. Il ouvre le lot dont il a besoin et ne voit que ses outils. S'il s'est trompé, il en ouvre un autre, qui ferme le précédent. Chaque famille d'outils de l'ancien moteur est devenue <strong>un</strong> outil avec un paramètre <code>action</code>, dont chaque valeur est décrite.</p>
+  <figure>
+    <div class="fig">
+      <svg class="d" viewBox="0 0 1000 255" role="img" aria-label="Au départ le modèle voit le noyau seul ; open_lot web ajoute web et browser ; open_lot livrables les remplace par document, report, generate et interface ; à chaque requête le hook context retire tous les autres outils.">
+        <defs>
+          <marker id="l-aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mka" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="b" x="20" y="30" width="250" height="125" rx="8"/>
+        <text class="h" x="36" y="54">Noyau seul</text>
+        <text class="s m" x="36" y="80">build_context  context_page</text>
+        <text class="s m" x="36" y="98">remember  open_lot</text>
+        <text class="s m" x="36" y="116">todowrite  question</text>
+        <text class="s m" x="36" y="134">skill  subagent</text>
+
+        <rect class="ba" x="375" y="30" width="250" height="125" rx="8"/>
+        <text class="h" x="391" y="54">Noyau + lot web</text>
+        <text class="s" x="391" y="80">les 8 outils du noyau</text>
+        <text class="m" x="391" y="106">web</text><text class="s" x="430" y="106">search, read, research…</text>
+        <text class="m" x="391" y="126">browser</text><text class="s" x="452" y="126">runner, sandbox, user</text>
+
+        <rect class="ba" x="730" y="30" width="250" height="125" rx="8"/>
+        <text class="h" x="746" y="54">Noyau + lot livrables</text>
+        <text class="s" x="746" y="80">les 8 outils du noyau</text>
+        <text class="m" x="746" y="104">document  report</text>
+        <text class="m" x="746" y="122">generate  interface</text>
+        <text class="no" x="746" y="142">web, browser</text>
+
+        <path class="ara" d="M270 92 H373" marker-end="url(#l-aa)"/><text class="ala m" x="322" y="84" text-anchor="middle">open_lot(web)</text>
+        <path class="ara" d="M625 92 H728" marker-end="url(#l-aa)"/><text class="ala m" x="677" y="84" text-anchor="middle">open_lot(livrables)</text>
+
+        <rect class="b" x="20" y="190" width="960" height="46" rx="8"/>
+        <text x="500" y="218" text-anchor="middle">À chaque requête, le hook context retire tous les autres outils : ils ne sont ni montrés au modèle, ni exécutables.</text>
+      </svg>
+    </div>
+    <figcaption>Un lot ouvert reste ouvert d'une étape à l'autre de la session, jusqu'au prochain <code>open_lot</code>. Un agent très équipé voit 8 outils au départ, puis 9 à 19 avec un lot ouvert ; le lot métier est le plus large.</figcaption>
+  </figure>
+  <div class="table">
+    <table>
+      <thead><tr><th>Lot</th><th>Outils</th><th>Ce qu'ils regroupent</th></tr></thead>
+      <tbody>
+        <tr><td><code>web</code></td><td><code>web</code>, <code>browser</code></td><td>web_search, read_url, deep_research, download_file, http_get, http_request, browse_web, sandbox_browser, user_browser</td></tr>
+        <tr><td><code>livrables</code></td><td><code>document</code>, <code>report</code>, <code>generate</code>, <code>interface</code></td><td>16 outils : livrables, artefacts, blocs, publication, PDF, images, interface dans le chat, guidage</td></tr>
+        <tr><td><code>applications</code></td><td><code>apps</code> (list, describe, call)</td><td>crm, send_email, run_automation, dashboard, list_connectors, et tous les outils dynamiques : MCP, connecteurs internes, Composio</td></tr>
+        <tr><td><code>metier</code></td><td>un outil par produit de l'agent</td><td>tracker, vibe_code, lead_sense, support_desk, sentinel, security_scan, pentest_scope, testing, simulation, training, policy_audit</td></tr>
+        <tr><td><code>equipe</code></td><td><code>team</code>, <code>mission</code>, <code>workflow</code></td><td>17 outils : collègues, délégation, passage de main, missions, tâches, construction de workflows</td></tr>
+        <tr><td><code>execution</code></td><td><code>run_code</code>, <code>remote_files</code>, <code>process</code>, <code>machine</code></td><td>24 outils sur une machine distante ; <code>world</code> choisit runner, sandbox ou machine d'équipe</td></tr>
+        <tr><td><code>fichiers</code></td><td><code>read</code>, <code>write</code>, <code>edit</code>, <code>glob</code>, <code>grep</code></td><td>outils natifs d'OpenCode, limités au dossier de l'agent</td></tr>
+        <tr><td><code>admin</code></td><td><code>admin</code></td><td>manage_agents, manage_projects, manage_connectors, manage_teams, manage_dashboards ; assistant de service seulement</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Disparus : load_toolset, need_tools, list_skills, use_skill, read_skill_file, use_procedure, update_todos, ask_user, say, spawn_parallel_agents, message_subagent et read_tool_output, que le noyau OpenCode remplace. Les onze outils de lecture de contexte et les quatre d'écriture en mémoire sont remplacés par <code>build_context</code> et <code>remember</code>. Au démarrage, tout ancien outil qu'aucun nouvel outil ne sert est signalé.</p>
+</section>
+
+<!-- ───────────────────────── Contexte ───────────────────────── -->
+<section id="contexte">
+  <div class="kicker">06 · Contexte</div>
+  <h2>Le contexte en deux temps</h2>
+  <p class="prose">Un seul outil va chercher du contexte, de plusieurs types à la fois. Le résultat est découpé en morceaux numérotés et rangé par type dans des balises. Le modèle lit ensuite ce qui l'intéresse, et garde ce qui servira jusqu'à la fin du travail.</p>
+  <figure>
+    <div class="fig">
+      <svg class="d" viewBox="0 0 1080 340" role="img" aria-label="build_context interroge les sources en parallèle, découpe les résultats en morceaux dans un tampon de session, rend le texte balisé s'il est court ou un index s'il est long ; context_page lit les morceaux ; keep les fait revenir dans working_context à chaque requête.">
+        <defs>
+          <marker id="c-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="c-aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mka" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="ba" x="10" y="112" width="175" height="76" rx="8"/>
+        <text class="h m" x="24" y="136">build_context</text>
+        <text class="s m" x="24" y="156">query: "Acme"</text>
+        <text class="s m" x="24" y="173">types: memory, documents…</text>
+
+        <text class="cap" x="330" y="28" text-anchor="middle">EN PARALLÈLE</text>
+        <rect class="b" x="230" y="40" width="200" height="54" rx="7"/>
+        <text class="m" x="246" y="62">memory</text><text class="s m" x="246" y="80">search_memory</text>
+        <rect class="b" x="230" y="122" width="200" height="54" rx="7"/>
+        <text class="m" x="246" y="144">documents</text><text class="s m" x="246" y="162">search_knowledge</text>
+        <rect class="b" x="230" y="204" width="200" height="54" rx="7"/>
+        <text class="m" x="246" y="226">facts</text><text class="s m" x="246" y="244">knowledge_search</text>
+
+        <rect class="b" x="480" y="100" width="175" height="100" rx="8"/>
+        <text class="h" x="567" y="126" text-anchor="middle">Tampon de session</text>
+        <text class="m" x="567" y="150" text-anchor="middle">c1 c2 c3 … c9</text>
+        <text class="s" x="567" y="172" text-anchor="middle">1 200 car. au plus</text>
+        <text class="s" x="567" y="188" text-anchor="middle">par morceau</text>
+
+        <rect class="b" x="705" y="58" width="165" height="56" rx="7"/>
+        <text class="h" x="787" y="81" text-anchor="middle">Court</text>
+        <text class="s" x="787" y="99" text-anchor="middle">texte balisé, tout de suite</text>
+        <rect class="b" x="705" y="188" width="165" height="56" rx="7"/>
+        <text class="h" x="787" y="211" text-anchor="middle">Long</text>
+        <text class="s" x="787" y="229" text-anchor="middle">index par type</text>
+
+        <rect class="ba" x="905" y="188" width="165" height="56" rx="7"/>
+        <text class="h m" x="987" y="211" text-anchor="middle">context_page</text>
+        <text class="s m" x="987" y="229" text-anchor="middle">ids, ou type + page</text>
+
+        <rect class="ba" x="480" y="282" width="590" height="44" rx="8"/>
+        <text x="775" y="309" text-anchor="middle">keep : ces morceaux reviennent dans &lt;working_context&gt; à chaque requête, jusqu'à drop</text>
+
+        <path class="ar" d="M185 140 L228 70" marker-end="url(#c-a)"/>
+        <path class="ar" d="M185 150 H228" marker-end="url(#c-a)"/>
+        <path class="ar" d="M185 160 L228 230" marker-end="url(#c-a)"/>
+        <path class="ar" d="M430 67 L478 125" marker-end="url(#c-a)"/>
+        <path class="ar" d="M430 149 H478" marker-end="url(#c-a)"/>
+        <path class="ar" d="M430 231 L478 175" marker-end="url(#c-a)"/>
+        <path class="ar" d="M655 130 L703 90" marker-end="url(#c-a)"/>
+        <text class="al" x="690" y="140" text-anchor="end">≤ 2 500 car.</text>
+        <path class="ar" d="M655 172 L703 212" marker-end="url(#c-a)"/>
+        <text class="al" x="690" y="178" text-anchor="end">au-delà</text>
+        <path class="ara" d="M870 216 H903" marker-end="url(#c-aa)"/>
+        <path class="ara" d="M987 244 V280" marker-end="url(#c-aa)"/>
+        <text class="ala" x="995" y="266">keep</text>
+      </svg>
+    </div>
+    <figcaption>Une page de <code>context_page</code> rend 8 000 caractères au plus ; le contexte gardé, 6 000. Le modèle n'a jamais à recevoir d'un coup dix résultats de recherche complets.</figcaption>
+  </figure>
+  <div class="cols">
+    <div>
+      <h3>Ce que reçoit le modèle (index)</h3>
+<pre>&lt;context query="Acme" pieces="9" size="5214"&gt;
+&lt;memory count="2"&gt;
+[c1] Acme : contact Léa Martin (61 car.)
+[c2] Acme préfère le vouvoiement (48 car.)
+&lt;/memory&gt;
+&lt;documents count="7"&gt;
+[c3] Contrat cadre Acme 2026, article 4 (812 car.)
+…
+&lt;/documents&gt;
+&lt;facts count="0"&gt;rien trouvé&lt;/facts&gt;
+&lt;/context&gt;</pre>
+    </div>
+    <div>
+      <h3>Puis, avec context_page(ids=["c3"])</h3>
+<pre>&lt;documents id="c3" source="search_knowledge"&gt;
+Contrat cadre Acme 2026, article 4 :
+délai de paiement à 45 jours fin de mois…
+&lt;/documents&gt;</pre>
+    </div>
+  </div>
+  <div class="table">
+    <table>
+      <thead><tr><th>Type</th><th>Contenu</th><th>Source dans l'ancien moteur</th></tr></thead>
+      <tbody>
+        <tr><td><code>conversation</code></td><td>Étapes plus anciennes de ce travail</td><td><code>search_history</code></td></tr>
+        <tr><td><code>memory</code></td><td>Mémoire durable de l'agent</td><td><code>search_memory</code></td></tr>
+        <tr><td><code>team</code></td><td>Mémoire partagée de l'équipe</td><td><code>team_memory</code></td></tr>
+        <tr><td><code>past_work</code></td><td>Livrables des travaux précédents</td><td><code>search_past_work</code></td></tr>
+        <tr><td><code>findings</code></td><td>Trouvailles notées pendant ce travail</td><td><code>recall_findings</code></td></tr>
+        <tr><td><code>documents</code></td><td>Base de connaissances, par passages</td><td><code>search_knowledge</code></td></tr>
+        <tr><td><code>facts</code></td><td>Graphe de connaissances : entités et faits</td><td><code>knowledge_search</code></td></tr>
+        <tr><td><code>company</code></td><td>Objectifs et organisation de l'entreprise</td><td><code>company_objectives</code>, <code>explore_company_graph</code></td></tr>
+        <tr><td><code>artifacts</code></td><td>Artefacts déjà produits</td><td><code>list_artifacts</code></td></tr>
+        <tr><td><code>resources</code></td><td>Applications, collections, automatisations</td><td><code>my_resources</code></td></tr>
+        <tr><td><code>table</code></td><td>Lignes d'une table, en lecture seule</td><td><code>query_table</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── Spécialistes ───────────────────────── -->
+<section id="specialistes">
+  <div class="kicker">07 · Délégation</div>
+  <h2>Les spécialistes</h2>
+  <p class="prose">L'agent principal reste le seul à parler à la personne, à décider et à tenir la mémoire. Une tâche bien délimitée part chez un spécialiste, dans une session enfant qui travaille en arrière-plan et ne voit que ce que la tâche demande.</p>
+  <figure>
+    <div class="fig">
+      <svg class="d" viewBox="0 0 1000 300" role="img" aria-label="L'agent principal appelle subagent avec le chercheur et une consigne ; la session du chercheur voit ses instructions, la consigne, ses types de contexte, ses outils et son skill, mais pas le prompt de l'agent, les autres lots, la délégation ni les autres skills ; elle rend un compte rendu.">
+        <defs>
+          <marker id="p-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="p-aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mka" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="b" x="20" y="40" width="250" height="220" rx="8"/>
+        <text class="h" x="36" y="66">Agent principal</text>
+        <text class="s" x="36" y="96">prompt FounderOS complet</text>
+        <text class="s" x="36" y="118">noyau + un lot ouvert</text>
+        <text class="s" x="36" y="140">mémoire, question, délégation</text>
+        <text class="s" x="36" y="162">parle à la personne</text>
+
+        <path class="ara" d="M270 95 H418" marker-end="url(#p-aa)"/>
+        <text class="ala m" x="344" y="76" text-anchor="middle">subagent</text>
+        <text class="al" x="344" y="88" text-anchor="middle">agent=chercheur, consigne</text>
+        <path class="ar ret" d="M420 215 H272" marker-end="url(#p-a)"/>
+        <text class="al" x="346" y="207" text-anchor="middle">compte rendu</text>
+        <text class="al m" x="346" y="234" text-anchor="middle">&lt;background-result&gt;</text>
+
+        <rect class="ba" x="420" y="40" width="560" height="220" rx="8"/>
+        <text class="h" x="436" y="66">Session du spécialiste « chercheur »</text>
+        <text class="cap" x="436" y="94">VOIT</text>
+        <text class="s" x="436" y="116">ses instructions de chercheur</text>
+        <text class="s" x="436" y="138">la consigne et les données reçues</text>
+        <text class="s" x="436" y="160">build_context : documents, facts, findings</text>
+        <text class="s" x="436" y="182">web, browser, context_page, todowrite</text>
+        <text class="s" x="436" y="204">skill : ses skills de veille seulement</text>
+        <text class="cap" x="730" y="94">NE VOIT PAS</text>
+        <text class="no" x="730" y="116">le prompt et la personnalité</text>
+        <text class="no" x="730" y="138">les autres lots</text>
+        <text class="no" x="730" y="160">subagent, question, remember</text>
+        <text class="no" x="730" y="182">les autres skills</text>
+        <text class="no" x="730" y="204">les autres types de contexte</text>
+      </svg>
+    </div>
+    <figcaption>Les restrictions passent par trois mécanismes : le hook <code>context</code> pour les outils, les permissions pour les skills et la délégation, et une vérification dans <code>build_context</code> pour les types.</figcaption>
+  </figure>
+  <div class="table">
+    <table>
+      <thead><tr><th>Spécialiste</th><th>Outils</th><th>Types de contexte</th><th>Skills retenus</th></tr></thead>
+      <tbody>
+        <tr><td><code>chercheur</code></td><td>web, browser</td><td>documents, facts, findings</td><td>recherche, veille, SEO, marché</td></tr>
+        <tr><td><code>redacteur</code></td><td>document, report, generate</td><td>documents, past_work, artifacts</td><td>rédaction, rapport, contenu, marque</td></tr>
+        <tr><td><code>analyste</code></td><td>run_code, remote_files</td><td>table, company, documents</td><td>données, analyse, finance, KPI</td></tr>
+        <tr><td><code>integrateur</code></td><td>apps</td><td>resources</td><td>intégration, CRM, e-mail, API</td></tr>
+        <tr><td><code>operateur</code></td><td>run_code, remote_files, process, machine</td><td>conversation, documents</td><td>code, devops, infra, tests</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose" style="color:var(--muted);font-size:14px">Un spécialiste n'existe chez un agent que si celui-ci a au moins un de ses outils.</p>
+</section>
+
+<!-- ───────────────────────── Pont ───────────────────────── -->
+<section id="pont">
+  <div class="kicker">08 · Persistance</div>
+  <h2>Le pont d'événements</h2>
+  <p class="prose">OpenCode publie des événements ; le pont les traduit en lignes que le front lit déjà. Chaque run est attaché à sa session, et les écritures d'une session passent dans l'ordre. Au redémarrage, les runs encore en cours sont rattachés : OpenCode reprend leur session et le pont reprend leur timeline.</p>
+  <div class="table">
+    <table>
+      <thead><tr><th>Événement OpenCode</th><th>Écrit dans</th></tr></thead>
+      <tbody>
+        <tr><td><code>session.tool.called</code></td><td><code>internal_agent_run_events</code> : <code>tool_call</code> (outil, arguments)</td></tr>
+        <tr><td><code>session.tool.success</code>, <code>session.tool.failed</code></td><td><code>internal_agent_run_events</code> : <code>tool_result</code> (ok, résultat)</td></tr>
+        <tr><td><code>session.text.delta</code></td><td><code>internal_agent_runs.live_output</code>, au plus toutes les 700 ms</td></tr>
+        <tr><td><code>session.step.ended</code>, <code>session.usage.recorded</code></td><td><code>internal_agent_runs</code> (tokens, coût) et <code>llm_usage</code> (harness = opencode)</td></tr>
+        <tr><td><code>session.retry.scheduled</code>, compaction</td><td>événements <code>status</code> de la timeline</td></tr>
+        <tr><td><code>session.execution.succeeded</code></td><td>message de l'agent dans <code>internal_agent_messages</code>, run <code>succeeded</code></td></tr>
+        <tr><td><code>session.execution.failed</code>, <code>.interrupted</code></td><td>run <code>failed</code> ou <code>cancelled</code></td></tr>
+        <tr><td>run annulé depuis le front (vérifié régulièrement)</td><td>dans l'autre sens : <code>session.interrupt</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── Ancien moteur ───────────────────────── -->
+<section id="ancien">
+  <div class="kicker">09 · Filet de sécurité</div>
+  <h2>L'ancien moteur</h2>
+  <p class="prose">Il sert toujours les missions, les agents marqués <code>legacy</code> et tout le cloud Supabase. Ses handlers d'outils sont aussi ceux que le harnais OpenCode appelle derrière ses outils regroupés.</p>
+  <figure>
+    <div class="fig">
+      <svg class="d" viewBox="0 0 1000 250" role="img" aria-label="L'ancien moteur : internal-agent-run traite un chat directement ou une mission par ticks, puis la boucle runToolRounds appelle le modèle et les outils du jeu complet, avec approbations humaines.">
+        <defs>
+          <marker id="g-al" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mkl" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="b" x="10" y="95" width="120" height="56" rx="7"/>
+        <text class="h" x="70" y="119" text-anchor="middle">Front</text>
+        <text class="s" x="70" y="137" text-anchor="middle">ou planificateur</text>
+
+        <rect class="bl" x="170" y="95" width="170" height="56" rx="7"/>
+        <text class="h" x="255" y="119" text-anchor="middle">internal-agent-run</text>
+        <text class="s" x="255" y="137" text-anchor="middle">Deno (cloud) ou porté</text>
+
+        <rect class="bl" x="380" y="40" width="190" height="56" rx="7"/>
+        <text class="h" x="475" y="64" text-anchor="middle">Chat : runChat</text>
+        <text class="s" x="475" y="82" text-anchor="middle">un run par message</text>
+        <rect class="bl" x="380" y="150" width="190" height="56" rx="7"/>
+        <text class="h" x="475" y="174" text-anchor="middle">Mission : ticks</text>
+        <text class="s" x="475" y="192" text-anchor="middle">file pgmq, run_state</text>
+
+        <rect class="bl" x="610" y="95" width="180" height="56" rx="7"/>
+        <text class="h m" x="700" y="119" text-anchor="middle">runToolRounds</text>
+        <text class="s" x="700" y="137" text-anchor="middle">la boucle (ai.ts)</text>
+
+        <rect class="bl" x="830" y="40" width="160" height="56" rx="7"/>
+        <text class="h" x="910" y="64" text-anchor="middle">Jeu d'outils</text>
+        <text class="s" x="910" y="82" text-anchor="middle">105 fixes + dynamiques</text>
+        <rect class="bl" x="830" y="150" width="160" height="56" rx="7"/>
+        <text class="h" x="910" y="174" text-anchor="middle">Approbations</text>
+        <text class="s m" x="910" y="192" text-anchor="middle">internal-agent-approve</text>
+
+        <path class="arl" d="M130 123 H168" marker-end="url(#g-al)"/>
+        <path class="arl" d="M340 115 L378 72" marker-end="url(#g-al)"/>
+        <path class="arl" d="M340 131 L378 175" marker-end="url(#g-al)"/>
+        <path class="arl" d="M570 72 L608 112" marker-end="url(#g-al)"/>
+        <path class="arl" d="M570 175 L608 135" marker-end="url(#g-al)"/>
+        <path class="arl" d="M790 112 L828 72" marker-end="url(#g-al)"/>
+        <path class="arl" d="M790 135 L828 175" marker-end="url(#g-al)"/>
+        <text class="al" x="818" y="160" text-anchor="end">requires_approval</text>
+      </svg>
+    </div>
+    <figcaption>Une mission avance par ticks : chaque tick reprend l'état du run, travaille un temps borné, puis se remet dans la file.</figcaption>
+  </figure>
+  <div class="cols">
+    <div>
+      <h3>Ce que fait sa boucle</h3>
+      <ul class="plain">
+        <li>Streaming, avec outils lancés en parallèle par voies dès leur arrivée dans le flux.</li>
+        <li>Arrêt coopératif en 5 s, puis interruption.</li>
+        <li>Réparation des arguments, diagnostic des erreurs d'outil, nouvelles tentatives et délais.</li>
+        <li>Compaction hybride et sorties longues conservées à part.</li>
+        <li>Choix des outils par jugement rapide (Jev) et familles chargées à la demande.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Ce qui change avec OpenCode</h3>
+      <ul class="plain">
+        <li><span class="pill new">OpenCode</span> la boucle, le streaming, la compaction, les sous-agents, les questions, les permissions.</li>
+        <li><span class="pill new">FounderOS</span> le prompt, les modèles et paliers, l'outillage par lots, le contexte, les spécialistes, le pont.</li>
+        <li><span class="pill old">ancien moteur</span> les handlers d'outils, appelés tels quels, et les missions pour l'instant.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── Fichiers ───────────────────────── -->
+<section id="fichiers">
+  <div class="kicker">10 · Code</div>
+  <h2>Où est quoi</h2>
+  <div class="table">
+    <table>
+      <thead><tr><th>Fichier</th><th>Rôle</th></tr></thead>
+      <tbody>
+        <tr><td><code>backend/src/harness/host.ts</code></td><td>Crée l'hôte OpenCode : base de sessions, instances par agent, configuration sans fichiers de la machine, todowrite activé.</td></tr>
+        <tr><td><code>backend/src/harness/route.ts</code></td><td>L'aiguillage et les contrôles d'accès et de crédits.</td></tr>
+        <tr><td><code>backend/src/harness/chat.ts</code></td><td>Un tour : run, session unique par conversation, amorce, steer, choix du modèle.</td></tr>
+        <tr><td><code>backend/src/harness/bridge.ts</code></td><td>Le pont d'événements vers la base, l'annulation, la reprise au démarrage.</td></tr>
+        <tr><td><code>backend/src/harness/store.ts</code></td><td>Les lectures et écritures en base du harnais.</td></tr>
+        <tr><td><code>backend/src/harness/runtime.ts</code></td><td>Assemble le tout ; charge l'outillage d'un agent depuis l'ancien moteur.</td></tr>
+        <tr><td><code>backend/src/harness/agent-profile.ts</code></td><td>Le profil d'un agent : prompt, connexion, routes de modèles, choix du palier.</td></tr>
+        <tr><td><code>backend/src/harness/agent-plugin.ts</code></td><td>Le plugin d'instance : fournisseur, agent principal, hook model.resolve, installation de l'outillage.</td></tr>
+        <tr><td><code>backend/src/harness/toolkit/catalogue.ts</code></td><td>Les lots, les outils regroupés, les applications, la couverture de l'ancien jeu d'outils.</td></tr>
+        <tr><td><code>backend/src/harness/toolkit/context.ts</code></td><td><code>build_context</code>, <code>context_page</code>, le contexte gardé.</td></tr>
+        <tr><td><code>backend/src/harness/toolkit/specialists.ts</code></td><td>Les cinq spécialistes et le tri des skills.</td></tr>
+        <tr><td><code>backend/src/harness/toolkit/plugin.ts</code></td><td>Enregistrement des outils, hook context, spécialistes et skills dans l'instance.</td></tr>
+        <tr><td><code>supabase/functions/internal-agent-run</code></td><td>L'ancien moteur ; exporte <code>prepareAgentToolset</code> pour le harnais.</td></tr>
+        <tr><td><code>supabase/migrations/0307_agent_harness.sql</code></td><td>Colonne <code>harness</code> et identifiants de session OpenCode ; en local seulement.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── Limites ───────────────────────── -->
+<section id="limites">
+  <div class="kicker">11 · Suite</div>
+  <h2>Limites connues</h2>
+  <ul class="plain">
+    <li><strong>Approbations.</strong> Les handlers tournent sans run : un outil qui demande une approbation humaine ne la demande pas encore sur ce chemin. Prévu en phase 4.</li>
+    <li><strong>Historique du travail.</strong> Le type <code>conversation</code> de <code>build_context</code> dépend du run et ne rend rien pour l'instant.</li>
+    <li><strong>État en mémoire.</strong> Le lot ouvert et le contexte gardé sont perdus au redémarrage du backend ; le modèle rouvre le lot.</li>
+    <li><strong>Missions.</strong> Elles tournent encore sur l'ancien moteur ; seul le chat passe par OpenCode.</li>
+    <li><strong>Exécution isolée.</strong> Le <code>shell</code> d'OpenCode reste refusé tant qu'il n'y a pas d'environnement isolé (phase 6) ; l'exécution passe par les machines distantes.</li>
+    <li><strong>Réglages.</strong> La bascule d'un agent se fait en SQL, et le tri des skills entre spécialistes par mots-clés ; il manque les écrans correspondants.</li>
+    <li><strong>Cache.</strong> Changer les outils d'une étape à l'autre casse le cache du bloc d'outils chez le fournisseur ; le prompt système reste en cache.</li>
+  </ul>
+</section>
+</div>

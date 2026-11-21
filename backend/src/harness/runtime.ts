@@ -7,6 +7,7 @@ import { logLlmUsage } from "../edge/_shared/llm-tracking.ts";
 import { assertCredits, assertQuota } from "../edge/_shared/metering.ts";
 import { chooseTurnModel, loadAgentProfile } from "./agent-profile.ts";
 import { agentPlugin, newAgentState, type KitLoader } from "./agent-plugin.ts";
+import { rpcSearchIndex, supabaseRpc } from "./toolkit/grep.ts";
 import type { Kit } from "./toolkit/plugin.ts";
 import { startBridge, type Bridge } from "./bridge.ts";
 import type { AgentSupport } from "./chat.ts";
@@ -73,6 +74,10 @@ export async function loadKit(agentId: string): Promise<Kit> {
     agentName: t.agent.name,
     isOrchestrator: !!t.agent.is_orchestrator,
     skills: t.skills,
+    // L'index de recherche (0308), à la portée de l'agent : son espace, son projet, ses lignes privées.
+    search: rpcSearchIndex(supabaseRpc(t.ctx.admin as never), {
+      workspaceId: t.agent.workspace_id, projectId: t.agent.project_id ?? null, agentId: t.agent.id,
+    }),
     legacy: {
       defs: t.allDefs.map((d) => ({ name: d.name, description: d.description, parameters: d.parameters })),
       run: (name, args, signal) => t.executor(name, args, { signal }),

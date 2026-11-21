@@ -122,7 +122,11 @@ export function agentPlugin(
           a.system = systemOf(profile);
           if (profile.steps) a.steps = profile.steps as typeof a.steps;
           a.model = { providerID: PROVIDER_ID, id: modelForRoute(profile, "standard") } as typeof a.model;
-          a.permissions = AGENT_PERMISSIONS.map((r) => ({ ...r })) as typeof a.permissions;
+          a.permissions = [
+            ...AGENT_PERMISSIONS.map((r) => ({ ...r })),
+            // Avec l'outillage : ni Code Mode, ni skills d'OpenCode.
+            ...(installed?.permissions ?? []),
+          ] as typeof a.permissions;
         });
         editor.default(AGENT_ID);
       });

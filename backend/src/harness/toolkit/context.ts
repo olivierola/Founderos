@@ -18,6 +18,7 @@
 // texte : pas de second appel pour rien.
 
 import { CONTEXT_TYPES, type LegacyToolset } from "./catalogue.ts";
+import type { GrepHit, IndexRow, SearchIndex } from "./grep.ts";
 
 export interface ContextPiece {
   id: string;
@@ -28,14 +29,16 @@ export interface ContextPiece {
   text: string;
 }
 
-/** Le contexte d'une session : les morceaux trouvés et ceux qu'elle garde. */
+/** Le contexte d'une session : les sources trouvées par grep, les morceaux lus, ceux qu'elle garde. */
 export interface SessionContextState {
   pieces: Map<string, ContextPiece>;
   pinned: Set<string>;
   next: number;
+  hits: Map<string, GrepHit>;
+  nextHit: number;
 }
 
-export const newContextState = (): SessionContextState => ({ pieces: new Map(), pinned: new Set(), next: 0 });
+export const newContextState = (): SessionContextState => ({ pieces: new Map(), pinned: new Set(), next: 0, hits: new Map(), nextHit: 0 });
 
 /** Au-delà, build_context rend un index plutôt que le texte. */
 export const INLINE_BUDGET = 2_500;
@@ -87,10 +90,62 @@ const pieceTag = (p: ContextPiece) =>
   `<${p.type} id="${p.id}" source="${p.source}">\n${p.text}\n</${p.type}>`;
 
 export interface BuildContextArgs {
+  /** Les sources trouvées par grep (g1, g2…) : le chemin principal. */
+  from?: string[];
+  /** Avec from : relire tout le document, la conversation ou l'entité. */
+  whole?: boolean;
   query?: string;
   types?: string[];
   limit?: number;
   filter?: Record<string, unknown>;
+}
+
+interface PieceGroup { type: string; pieces: ContextPiece[]; errors: string[] }
+
+/** Range les morceaux : le texte s'il est court, un index sinon. */
+function render(groups: PieceGroup[], head: string): string {
+  const total = groups.reduce((n, r) => n + r.pieces.reduce((m, p) => m + p.text.length, 0), 0);
+  const count = groups.reduce((n, r) => n + r.pieces.length, 0);
+  const inline = total <= INLINE_BUDGET;
+  const blocks = groups.map(({ type, pieces, errors }) => {
+    const err = errors.length ? ` error="${escapeAttr(errors.join(" | "))}"` : "";
+    if (!pieces.length) return `<${type} count="0"${err}>rien trouvé</${type}>`;
+    if (inline) return pieces.map(pieceTag).join("\n");
+    const lines = pieces.map((p) => `[${p.id}] ${p.title} (${p.text.length} car.)`);
+    return `<${type} count="${pieces.length}"${err}>\n${lines.join("\n")}\n</${type}>`;
+  });
+  const hint = !count
+    ? "Rien trouvé : essaie d'autres mots-clés ou un autre type."
+    : inline
+    ? "Tout est là. Garde ce qui servira plus tard avec context_page(keep=[ids])."
+    : "Ceci est un index. Lis les morceaux utiles avec context_page(ids=[…]) ou context_page(type=…, page=1) ; garde-les avec keep.";
+  return `<context ${head} pieces="${count}"${inline ? "" : ` size="${total}"`}>\n${blocks.join("\n")}\n</context>\n${hint}`;
+}
+
+/** build_context(from) : relit les sources trouvées par grep, dont on connaît le type et le chemin. */
+async function buildFromHits(index: SearchIndex, state: SessionContextState, from: string[], whole: boolean): Promise<string> {
+  const unknown = from.filter((h) => !state.hits.has(h));
+  const hits = from.map((h) => state.hits.get(h)).filter((h): h is GrepHit => !!h);
+  if (!hits.length) return `ERROR: aucune source connue parmi ${from.join(", ")}. Lance d'abord grep : il rend des identifiants g1, g2…`;
+  let rows: IndexRow[];
+  try {
+    rows = await index.read(hits.map((h) => h.id), whole);
+  } catch (e) {
+    return `ERROR: lecture impossible : ${e instanceof Error ? e.message : String(e)}`;
+  }
+  const groups = new Map<string, PieceGroup>();
+  for (const r of rows) {
+    const g = groups.get(r.type) ?? { type: r.type, pieces: [], errors: [] };
+    groups.set(r.type, g);
+    for (const text of splitPieces(r.content)) {
+      const id = `c${++state.next}`;
+      const p = { id, type: r.type, source: r.path, title: `${r.title ? `${r.title} · ` : ""}${titleOf(text)}`, text };
+      state.pieces.set(id, p);
+      g.pieces.push(p);
+    }
+  }
+  const out = render([...groups.values()], `from="${from.join(",")}"${whole ? " whole=\"true\"" : ""}`);
+  return unknown.length ? `${out}\nInconnus : ${unknown.join(", ")}.` : out;
 }
 
 /** Les types de contexte que l'agent peut lire : ceux dont l'ancien outil existe. */
@@ -111,12 +166,17 @@ export async function buildContext(
   state: SessionContextState,
   args: BuildContextArgs,
   signal?: AbortSignal,
+  index?: SearchIndex,
 ): Promise<string> {
+  if (args.from?.length) {
+    if (!index) return "ERROR: l'index de recherche n'est pas disponible : utilise query et types.";
+    return buildFromHits(index, state, args.from.map(String), !!args.whole);
+  }
   const available = availableContextTypes(legacy);
   const have = new Set(legacy.defs.map((d) => d.name));
   const query = String(args.query ?? "").trim();
   const wanted = (args.types?.length ? args.types : []).map(String);
-  if (!wanted.length) return `ERROR: types est requis. Valeurs : ${available.map((t) => t.id).join(", ")}.`;
+  if (!wanted.length) return `ERROR: donne from (les sources g1, g2… trouvées par grep) ou types. Types : ${available.map((t) => t.id).join(", ")}.`;
   const unknown = wanted.filter((w) => !available.some((t) => t.id === w));
   if (unknown.length) return `ERROR: type(s) inconnu(s) ou indisponible(s) : ${unknown.join(", ")}. Valeurs : ${available.map((t) => t.id).join(", ")}.`;
   const limit = Math.max(1, Math.min(Number(args.limit) || 6, 20));
@@ -149,23 +209,7 @@ export async function buildContext(
     return { type, pieces, errors };
   }));
 
-  const total = results.reduce((n, r) => n + r.pieces.reduce((m, p) => m + p.text.length, 0), 0);
-  const count = results.reduce((n, r) => n + r.pieces.length, 0);
-  const inline = total <= INLINE_BUDGET;
-  const blocks = results.map(({ type, pieces, errors }) => {
-    const err = errors.length ? ` error="${escapeAttr(errors.join(" | "))}"` : "";
-    if (!pieces.length) return `<${type} count="0"${err}>rien trouvé</${type}>`;
-    if (inline) return pieces.map(pieceTag).join("\n");
-    const lines = pieces.map((p) => `[${p.id}] ${p.title} (${p.text.length} car.)`);
-    return `<${type} count="${pieces.length}"${err}>\n${lines.join("\n")}\n</${type}>`;
-  });
-  const head = `<context query="${escapeAttr(query)}" pieces="${count}"${inline ? "" : ` size="${total}"`}>`;
-  const hint = !count
-    ? "Rien trouvé : essaie d'autres mots-clés ou un autre type."
-    : inline
-    ? "Tout est là. Garde ce qui servira plus tard avec context_page(keep=[ids])."
-    : "Ceci est un index. Lis les morceaux utiles avec context_page(ids=[…]) ou context_page(type=…, page=1) ; garde-les avec keep.";
-  return `${head}\n${blocks.join("\n")}\n</context>\n${hint}`;
+  return render(results, `query="${escapeAttr(query)}"`);
 }
 
 export interface ContextPageArgs {
