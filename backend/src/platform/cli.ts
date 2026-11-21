@@ -3,6 +3,7 @@
 //   keys      les clés anon et service_role dérivées de JWT_SECRET, et les
 //             variables à donner au front (VITE_SUPABASE_URL / _ANON_KEY).
 //   migrate   socle + migrations sur DATABASE_URL, sans démarrer le serveur.
+//   reindex   reconstruit l'index de recherche des agents (0308) d'après les tables.
 //   import    copie une base Supabase (ou tout PostgreSQL migré pareil) vers
 //             DATABASE_URL : comptes (mots de passe, sessions, MFA compris),
 //             identités, tout le schéma public, le storage (métadonnées et,
@@ -123,6 +124,9 @@ async function importDatabase() {
       }
     });
     console.log(`lignes copiées : ${total} ; séquences recalées : ${await resetSequences(dst)}`);
+    // Les triggers étaient coupés pendant la copie : l'index de recherche des
+    // agents (0308) est reconstruit d'après les tables copiées.
+    console.log(`index de recherche des agents : ${await rebuildSearchIndex(dst)} ligne(s)`);
 
     // Les secrets du vault : déchiffrés à la source, rechiffrés ici.
     const secrets = await src.query<{ name: string; decrypted_secret: string; description: string | null }>(
@@ -143,6 +147,12 @@ async function importDatabase() {
     await src.close();
     await dst.close();
   }
+}
+
+/** L'index de recherche des agents (0308), reconstruit d'après les tables (0309). */
+async function rebuildSearchIndex(db: Db): Promise<number> {
+  const [row] = await db.query<{ n: number }>("select public.search_index_rebuild() as n");
+  return Number(row?.n ?? 0);
 }
 
 /** Les octets du storage, lus à la source par son API (clé service_role). */
@@ -190,8 +200,17 @@ SERVICE_ROLE_KEY=${keys.service}`);
     } finally { await db.close(); }
     return;
   }
+  if (cmd === "reindex") {
+    const url = opt("--to") ?? process.env.DATABASE_URL;
+    if (!url) throw new Error("DATABASE_URL est requis.");
+    const db = await openDb(url);
+    try {
+      console.log(`index de recherche des agents : ${await rebuildSearchIndex(db)} ligne(s)`);
+    } finally { await db.close(); }
+    return;
+  }
   if (cmd === "import") return importDatabase();
-  console.log("Usage : npm run platform -- keys | migrate [--dry-run] | import --from <URL> [--storage --source-url … --source-key …] [--force]");
+  console.log("Usage : npm run platform -- keys | migrate [--dry-run] | reindex | import --from <URL> [--storage --source-url … --source-key …] [--force]");
   process.exitCode = cmd ? 1 : 0;
 }
 

@@ -170,6 +170,14 @@ describe("index de recherche des agents (0308)", { skip, timeout: 240_000 }, () 
     assert.equal((await one<{ n: number }>("select count(*)::int as n from public.search_index where source_id = $1", [id.fact]))!.n, 0);
   });
 
+  it("search_index_rebuild (0309) reconstruit l'index après une copie qui a coupé les triggers", async () => {
+    const before = (await one<{ n: number }>("select count(*)::int as n from public.search_index"))!.n;
+    await q("delete from public.search_index");
+    const rebuilt = (await one<{ n: number }>("select public.search_index_rebuild() as n"))!.n;
+    assert.equal(rebuilt, before);
+    assert.ok(rebuilt > 0);
+  });
+
   it("le grep du harnais, branché sur la base : lignes trouvées et sources numérotées", async () => {
     const state = newContextState();
     const out = await grep(indexOf(id.a), state, { pattern: "Globex facturation" }, ALL);
