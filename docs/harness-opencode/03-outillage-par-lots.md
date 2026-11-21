@@ -42,7 +42,11 @@ L'agent cherche comme un développeur dans un dépôt : un ou plusieurs `grep` a
 
 Des triggers tiennent l'index à jour : contenu modifié, ligne supprimée, fait remplacé, entité renommée (son chemin suit), document archivé. La migration remplit l'index une fois.
 
-**Portée.** Un agent voit son espace, son projet (le graphe vaut pour tout l'espace) et ses propres lignes privées (mémoire, conversations, livrables). Jamais celles d'un autre agent. L'index n'est lu que par le rôle de service.
+**Portée.** `grep` n'ouvre jamais plus que ce que l'agent pouvait déjà lire avec l'ancien moteur. L'index n'est lu que par le rôle de service.
+- **Espace, projet et lignes privées.** Un agent voit son espace, son projet (le graphe vaut pour tout l'espace) et ses propres lignes privées (mémoire, conversations, livrables). Jamais celles d'un autre agent.
+- **Types.** Un type n'est proposé que si l'agent a l'outil qui le lit : `documents` ↔ `search_knowledge`, `memory` ↔ `search_memory`, `team` ↔ `team_memory`, `facts` ↔ `knowledge_search`, `past_work` ↔ `search_past_work`, `artifacts` ↔ `list_artifacts`, `conversation` ↔ `search_history`.
+- **Collections de documents.** Ce sont celles de `search_knowledge`, c'est-à-dire l'union des `collection_ids` des lignes `rag_search` de l'agent, après application de ses pools. En mode pools, ce sont donc les collections de ses pools seulement. Sans collection désignée, et donc hors pools, l'agent voit tout le projet. Sans ligne `rag_search`, il ne voit aucun document.
+- **Double contrôle.** `search_grep` et `search_read` reçoivent ces collections (`p_collections`) et filtrent dans la base. Une ligne interdite ne sort donc ni par `grep`, ni par son identifiant, ni par `whole`.
 
 **`grep(pattern, mode, types, path, output, context, limit, offset)`**
 - `mode` :

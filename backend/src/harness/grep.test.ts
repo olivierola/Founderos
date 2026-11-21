@@ -9,9 +9,10 @@ import { describe, it } from "node:test";
 import type { LegacyToolset } from "./toolkit/catalogue.ts";
 import { buildContext, contextPage, newContextState } from "./toolkit/context.ts";
 import {
-  buildPatterns, fold, foldPattern, globToLike, grep, matchingLines,
+  buildPatterns, documentCollections, fold, foldPattern, globToLike, grep, grepTypesFor, matchingLines,
   type IndexRow, type SearchIndex,
 } from "./toolkit/grep.ts";
+import { applyPoolToToolRows, emptyScope } from "../edge/_shared/resource-pools.ts";
 
 const row = (id: string, type: string, path: string, title: string, content: string, grp = id): IndexRow => ({
   id, type, path, title, content, tags: [], meta: {}, grp, source_table: "t", source_id: id, score: 0, updated_at: "2026-11-21",
@@ -90,6 +91,35 @@ describe("pliage et motifs", () => {
     const { text, matches } = matchingLines(ROWS[0].content, p.js, 1, 6);
     assert.equal(matches, 1);
     assert.equal(text, "1- Article 3 : livraison.\n2: Article 4 : le délai de paiement des factures Acme est de 45 jours\n3- fin de mois, par virement.");
+  });
+});
+
+describe("ce que grep a le droit de lire", () => {
+  const rag = (collection_ids?: string[], enabled = true) => ({
+    id: "r", kind: "rag_search", name: "rag", description: null, enabled, requires_approval: false,
+    config: collection_ids ? { collection_ids } : {},
+  });
+
+  it("les documents suivent search_knowledge : collections désignées, tout le projet, ou rien", () => {
+    assert.deepEqual(documentCollections([rag(["c1", "c2"]), rag(["c2", "c3"])]), ["c1", "c2", "c3"]);
+    assert.equal(documentCollections([rag()]), null);
+    assert.deepEqual(documentCollections([]), []);
+    assert.deepEqual(documentCollections([rag(["c1"], false)]), []);
+  });
+
+  it("mode pools : seules les collections des pools, jamais tout le projet", () => {
+    const scope = emptyScope("agent", ["pool-1"], ["Support"]);
+    scope.knowledge.add("c-support");
+    // Une ligne « tout le projet », une autre sur une collection hors pools.
+    const rows = applyPoolToToolRows([rag(), rag(["c-rh"])], scope);
+    assert.deepEqual(documentCollections(rows as never), ["c-support"]);
+    // Des pools sans collection : aucun document.
+    assert.deepEqual(documentCollections(applyPoolToToolRows([rag()], emptyScope("agent", ["pool-2"], ["Vide"])) as never), []);
+  });
+
+  it("un type n'est proposé que si l'agent a l'outil qui le lit", () => {
+    assert.deepEqual(grepTypesFor(["search_memory", "knowledge_search", "search_history"]), ["memory", "facts", "conversation"]);
+    assert.ok(!grepTypesFor(["search_memory"]).includes("documents"));
   });
 });
 

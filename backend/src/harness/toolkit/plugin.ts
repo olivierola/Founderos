@@ -20,7 +20,7 @@ import {
   availableContextTypes, buildContext, contextPage, newContextState, pinnedBlock,
   type SessionContextState,
 } from "./context.ts";
-import { GREP_TYPES, GREP_TYPE_DOC, grep, type SearchIndex } from "./grep.ts";
+import { GREP_TYPE_DOC, grep, grepTypesFor, type GrepType, type SearchIndex } from "./grep.ts";
 import { activeSpecialists, specialistSystem, type ActiveSpecialist, type KitSkill } from "./specialists.ts";
 
 type SetupContext = Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0];
@@ -180,21 +180,22 @@ export async function installToolkit(
       run: async () => "",
     },
   ];
-  const grepTypes: string[] = kit.search ? [...GREP_TYPES] : [];
-  if (kit.search) {
+  // Seulement les types que l'agent pouvait déjà lire avec l'ancien moteur.
+  const grepTypes: GrepType[] = kit.search ? grepTypesFor(kit.legacy.defs.map((d) => d.name)) : [];
+  if (kit.search && grepTypes.length) {
     core.unshift({
       name: "grep", lot: null,
       description:
         "Chercher dans la base de connaissances par mots-clés, comme un grep dans un dépôt. Commence toujours par là. " +
         "Lance-en plusieurs si besoin : les mots de la demande, puis des mots voisins (synonymes, sigles, noms propres, forme courte : « factur » trouve facture et facturation). " +
         "Rend les lignes qui correspondent, avec leur source (g1, g2…), son type et son chemin ; lis-les ensuite avec build_context(from=[…]).\n" +
-        GREP_TYPES.map((t) => `- ${t} : ${GREP_TYPE_DOC[t]}`).join("\n"),
+        grepTypes.map((t) => `- ${t} : ${GREP_TYPE_DOC[t]}`).join("\n"),
       input: {
         type: "object",
         properties: {
           pattern: { type: "string", description: "Les mots-clés séparés par des espaces, une phrase, ou une expression régulière." },
           mode: { type: "string", enum: ["any", "all", "phrase", "regex"], description: "any (défaut) : un des mots au moins, les sources qui en ont le plus d'abord. all : tous les mots. phrase : la suite exacte. regex : expression régulière, en minuscules et sans accents." },
-          types: { type: "array", items: { type: "string", enum: [...GREP_TYPES] }, description: "Où chercher (défaut : partout)." },
+          types: { type: "array", items: { type: "string", enum: [...grepTypes] }, description: "Où chercher (défaut : partout)." },
           path: { type: "string", description: "Limiter à un chemin, à la manière d'un glob : documents/contrats/*, facts/customer/**." },
           output: { type: "string", enum: ["content", "sources", "count"], description: "content (défaut) : les lignes trouvées. sources : une ligne par source. count : combien, par type et par chemin." },
           context: { type: "number", description: "Lignes autour de chaque ligne trouvée (défaut 1, max 5)." },

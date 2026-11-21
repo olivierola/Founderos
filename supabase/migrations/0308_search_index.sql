@@ -56,6 +56,9 @@ create table if not exists public.search_index (
   tags          text[] not null default '{}',
   meta          jsonb not null default '{}',
   doc           text generated always as (public.search_fold(coalesce(title, '') || E'\n' || content)) stored,
+  -- La collection d'un passage de document : un agent en mode pools ne lit que
+  -- les collections de ses pools (p_collections de search_grep / search_read).
+  collection_id uuid generated always as ((meta->>'collection_id')::uuid) stored,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
   unique (source_table, source_id)
@@ -66,6 +69,7 @@ create index if not exists search_index_scope on public.search_index (workspace_
 create index if not exists search_index_agent on public.search_index (agent_id) where agent_id is not null;
 create index if not exists search_index_grp on public.search_index (grp);
 create index if not exists search_index_path on public.search_index (path text_pattern_ops);
+create index if not exists search_index_collection on public.search_index (collection_id) where collection_id is not null;
 
 alter table public.search_index enable row level security;
 
@@ -301,7 +305,12 @@ create trigger search_index_sync after insert or update of content or delete
 
 -- Ce qu'un agent peut lire : son espace ; son projet, ou rien de propre à un
 -- projet (le graphe vaut pour tout l'espace) ; ses lignes privées, pas celles
--- des autres agents.
+-- des autres agents. Et pour les documents, les collections qu'il a le droit
+-- de consulter (p_collections), comme search_knowledge dans l'ancien moteur :
+--   null           tout le projet (un agent hors pools, sans collection désignée) ;
+--   [c1, c2…]      ces collections seulement (collections désignées, ou celles
+--                  de ses pools en mode pools) ;
+--   []             aucun document.
 
 -- Le grep : `p_regexes` sont des expressions régulières sur le texte plié
 -- (minuscules, sans accents). p_all : toutes doivent correspondre ; sinon une
@@ -310,7 +319,8 @@ create trigger search_index_sync after insert or update of content or delete
 --
 create or replace function public.search_grep(
   p_workspace uuid, p_project uuid, p_agent uuid, p_types text[], p_regexes text[],
-  p_all boolean default false, p_path text default null, p_limit int default 50, p_offset int default 0
+  p_all boolean default false, p_path text default null, p_limit int default 50, p_offset int default 0,
+  p_collections uuid[] default null
 ) returns table (
   id uuid, type text, path text, title text, content text, tags text[], meta jsonb,
   grp text, source_table text, source_id uuid, score int, updated_at timestamptz
@@ -335,19 +345,21 @@ begin
        and (s.agent_id is null or s.agent_id = %L)
        and s.type = any(%L::text[])
        and (%L::text is null or s.path like %L)
+       and (s.type <> 'documents' or %L::uuid[] is null or s.collection_id = any(%L::uuid[]))
        and (%s)
      order by score desc, s.updated_at desc
      limit %s offset %s$q$,
     score,
     replace(cond, 's.doc ~', 'public.search_fold(coalesce(s.title, '''')) ~'),
-    p_workspace, p_project, p_agent, p_types, p_path, p_path, cond,
+    p_workspace, p_project, p_agent, p_types, p_path, p_path, p_collections, p_collections, cond,
     greatest(1, least(coalesce(p_limit, 50), 500)), greatest(0, coalesce(p_offset, 0)));
   return query execute q;
 end $$;
 
 -- Relire des lignes trouvées, ou tout leur groupe (le document entier, la conversation…).
 create or replace function public.search_read(
-  p_workspace uuid, p_project uuid, p_agent uuid, p_ids uuid[], p_whole boolean default false, p_limit int default 60
+  p_workspace uuid, p_project uuid, p_agent uuid, p_ids uuid[], p_whole boolean default false, p_limit int default 60,
+  p_collections uuid[] default null
 ) returns table (
   id uuid, type text, path text, title text, content text, tags text[], meta jsonb,
   grp text, source_table text, source_id uuid, score int, updated_at timestamptz
@@ -357,6 +369,7 @@ create or replace function public.search_read(
      where s.workspace_id = p_workspace
        and (s.project_id is null or s.project_id = p_project or s.type = 'facts')
        and (s.agent_id is null or s.agent_id = p_agent)
+       and (s.type <> 'documents' or p_collections is null or s.collection_id = any(p_collections))
   ), picked as (
     select v.grp from visible v where v.id = any(p_ids)
   )
@@ -367,8 +380,8 @@ create or replace function public.search_read(
    limit greatest(1, least(coalesce(p_limit, 60), 300))
 $$;
 
-revoke all on function public.search_grep(uuid, uuid, uuid, text[], text[], boolean, text, int, int) from public, anon, authenticated;
-revoke all on function public.search_read(uuid, uuid, uuid, uuid[], boolean, int) from public, anon, authenticated;
+revoke all on function public.search_grep(uuid, uuid, uuid, text[], text[], boolean, text, int, int, uuid[]) from public, anon, authenticated;
+revoke all on function public.search_read(uuid, uuid, uuid, uuid[], boolean, int, uuid[]) from public, anon, authenticated;
 
 -- ── Remplissage initial ──────────────────────────────────────────────────────
 

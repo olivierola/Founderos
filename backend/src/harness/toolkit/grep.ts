@@ -49,9 +49,59 @@ export interface SearchIndex {
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<IndexRow[]>;
 
-/** L'index d'un agent : ses requêtes portent toujours son espace, son projet et son identité. */
-export function rpcSearchIndex(rpc: Rpc, scope: { workspaceId: string; projectId: string | null; agentId: string }): SearchIndex {
-  const base = { p_workspace: scope.workspaceId, p_project: scope.projectId, p_agent: scope.agentId };
+/**
+ * Ce qu'un type de grep lit dans l'ancien moteur. Un type n'est proposé à un
+ * agent que s'il a cet outil-là : grep n'ouvre jamais plus que ce que l'agent
+ * pouvait déjà lire (en mode pools, buildInternalToolset ne lui donne
+ * search_knowledge que si ses pools ont des collections).
+ */
+export const GREP_TYPE_SOURCE: Record<GrepType, string> = {
+  documents: "search_knowledge",
+  memory: "search_memory",
+  team: "team_memory",
+  facts: "knowledge_search",
+  past_work: "search_past_work",
+  artifacts: "list_artifacts",
+  conversation: "search_history",
+};
+
+export const grepTypesFor = (toolNames: Iterable<string>): GrepType[] => {
+  const have = new Set(toolNames);
+  return GREP_TYPES.filter((t) => have.has(GREP_TYPE_SOURCE[t]));
+};
+
+/** Une ligne d'outil de l'agent (internal_agent_tools), après application de ses pools. */
+export interface ToolRowLite {
+  kind: string;
+  enabled: boolean;
+  config: Record<string, unknown> | null;
+}
+
+/**
+ * Les collections de documents qu'un agent peut lire, comme search_knowledge :
+ * l'union des collection_ids de ses lignes rag_search (en mode pools, déjà
+ * réduites aux collections de ses pools) ; aucune collection désignée : tout
+ * le projet (null) ; aucune ligne rag_search : aucun document ([]).
+ */
+export function documentCollections(rows: ToolRowLite[]): string[] | null {
+  const rag = rows.filter((r) => r.enabled && r.kind === "rag_search");
+  if (!rag.length) return [];
+  const ids = [...new Set(rag.flatMap((r) => {
+    const v = (r.config as { collection_ids?: unknown } | null)?.collection_ids;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+  }))];
+  return ids.length ? ids : null;
+}
+
+/** L'index d'un agent : ses requêtes portent toujours son espace, son projet, son identité et ses collections. */
+export function rpcSearchIndex(rpc: Rpc, scope: {
+  workspaceId: string;
+  projectId: string | null;
+  agentId: string;
+  /** null : tous les documents du projet ; [] : aucun ; sinon ces collections. */
+  collections: string[] | null;
+}): SearchIndex {
+  const base = { p_workspace: scope.workspaceId, p_project: scope.projectId, p_agent: scope.agentId, p_collections: scope.collections };
   return {
     grep: (p) => rpc("search_grep", {
       ...base, p_types: p.types, p_regexes: p.regexes, p_all: p.all, p_path: p.path, p_limit: p.limit, p_offset: p.offset,

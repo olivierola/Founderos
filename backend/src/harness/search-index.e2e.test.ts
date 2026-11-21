@@ -30,12 +30,13 @@ describe("index de recherche des agents (0308)", { skip, timeout: 240_000 }, () 
   // search_grep et search_read appelés comme le ferait PostgREST.
   const rpc: Rpc = async (fn, a) => (fn === "search_grep"
     ? await q<Record<string, unknown>>(
-      "select * from public.search_grep($1, $2, $3, $4::text[], $5::text[], $6, $7, $8, $9)",
-      [a.p_workspace, a.p_project, a.p_agent, a.p_types, a.p_regexes, a.p_all, a.p_path, a.p_limit, a.p_offset])
+      "select * from public.search_grep($1, $2, $3, $4::text[], $5::text[], $6, $7, $8, $9, $10::uuid[])",
+      [a.p_workspace, a.p_project, a.p_agent, a.p_types, a.p_regexes, a.p_all, a.p_path, a.p_limit, a.p_offset, a.p_collections])
     : await q<Record<string, unknown>>(
-      "select * from public.search_read($1, $2, $3, $4::uuid[], $5)",
-      [a.p_workspace, a.p_project, a.p_agent, a.p_ids, a.p_whole])) as unknown as IndexRow[];
-  const indexOf = (agent: string) => rpcSearchIndex(rpc, { workspaceId: id.ws, projectId: id.project, agentId: agent });
+      "select * from public.search_read($1, $2, $3, $4::uuid[], $5, 60, $6::uuid[])",
+      [a.p_workspace, a.p_project, a.p_agent, a.p_ids, a.p_whole, a.p_collections])) as unknown as IndexRow[];
+  const indexOf = (agent: string, collections: string[] | null = null) =>
+    rpcSearchIndex(rpc, { workspaceId: id.ws, projectId: id.project, agentId: agent, collections });
   const ALL = ["documents", "memory", "team", "facts", "past_work", "artifacts", "conversation"];
 
   before(async () => {
@@ -64,6 +65,15 @@ describe("index de recherche des agents (0308)", { skip, timeout: 240_000 }, () 
       [id.ws, id.project, id.src, id.coll, content]))!.id;
     id.c1 = await chunk("Article 4 : le délai de paiement des factures est de 45 jours\nfin de mois, par virement.");
     id.c2 = await chunk("Article 6 : pénalités de retard de 3 %. Rien de préfacturé.");
+
+    // Une seconde collection, que l'agent restreint aux contrats ne doit jamais lire.
+    id.collRh = (await one<{ id: string }>("insert into public.rag_collections (workspace_id, project_id, name) values ($1, $2, 'RH') returning id", [id.ws, id.project]))!.id;
+    id.srcRh = (await one<{ id: string }>(
+      "insert into public.rag_sources (workspace_id, project_id, type, title, collection_id) values ($1, $2, 'document', 'Grille des salaires', $3) returning id",
+      [id.ws, id.project, id.collRh]))!.id;
+    id.rh = (await one<{ id: string }>(
+      "insert into public.rag_chunks (workspace_id, project_id, source_id, collection_id, content) values ($1, $2, $3, $4, 'Salaire du directeur : confidentiel. Contrat Acme cité.') returning id",
+      [id.ws, id.project, id.srcRh, id.collRh]))!.id;
 
     id.memA = (await one<{ id: string }>(
       "insert into public.internal_agent_memories (agent_id, workspace_id, project_id, kind, content) values ($1, $2, $3, 'fact', 'Les factures Acme partent le 5 du mois.') returning id",
@@ -112,6 +122,24 @@ describe("index de recherche des agents (0308)", { skip, timeout: 240_000 }, () 
     assert.doesNotMatch(texts, /Secret des ventes/);
     const b = await indexOf(id.b).grep({ types: ["memory", "conversation"], regexes: ["\\macme", "\\mfactur"], all: false, path: null, limit: 20, offset: 0 });
     assert.deepEqual(b.map((r) => r.content), ["Secret des ventes : remise Acme de 12 %."]);
+  });
+
+  it("mode pools : un agent limité à ses collections ne trouve ni ne relit rien d'une autre", async () => {
+    const find = (collections: string[] | null) => indexOf(id.a, collections)
+      .grep({ types: ["documents"], regexes: ["\\msalaire", "\\macme"], all: false, path: null, limit: 20, offset: 0 })
+      .then((rows) => rows.map((r) => r.source_id).sort());
+    // Tout le projet (hors pools, sans collection désignée).
+    assert.ok((await find(null)).includes(id.rh));
+    // Ses collections seulement.
+    assert.deepEqual(await find([id.coll]), [id.c1, id.c2].sort());
+    // Aucune collection : aucun document.
+    assert.deepEqual(await find([]), []);
+    // Ni par l'identifiant d'une ligne interdite, ni par « tout le document ».
+    const [rhRow] = await indexOf(id.a, null).grep({ types: ["documents"], regexes: ["\\msalaire"], all: true, path: null, limit: 1, offset: 0 });
+    assert.deepEqual(await indexOf(id.a, [id.coll]).read([rhRow.id], true), []);
+    // Les autres types ne dépendent pas des collections.
+    const facts = await indexOf(id.a, []).grep({ types: ["facts"], regexes: ["\\macme"], all: true, path: null, limit: 5, offset: 0 });
+    assert.ok(facts.length > 0);
   });
 
   it("score : les sources qui ont le plus de mots d'abord ; chemin à la manière d'un glob", async () => {
