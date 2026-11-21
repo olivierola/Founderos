@@ -6,6 +6,7 @@ import { createServiceClient } from "./shared/supabase.ts";
 import { sealPendingMcpHeaders } from "./edge/_shared/mcp-headers.ts";
 import { startInstallationSync } from "./shared/installation.ts";
 import { startPlatform } from "./platform/platform.ts";
+import { startHarness, stopHarness } from "./harness/host.ts";
 
 // Le code porté lance des fetch « fire and forget » sans .catch. Sous Deno, un
 // rejet non géré tuait l'isolat d'UNE requête ; sous Node il arrêterait tout le
@@ -23,6 +24,20 @@ const platform = env.platform
     serviceKey: env.supabaseServiceRoleKey,
   })
   : null;
+
+// Le harnais OpenCode (PLATFORM=self et HARNESS_OPENCODE=1) : démarré avant
+// l'écoute, il reprend aussitôt les sessions qu'un arrêt a laissées en cours.
+// Ses modules ne sont chargés que dans ce cas.
+if (env.harness) {
+  const started = Date.now();
+  await startHarness({
+    dataDir: env.harness.dataDir,
+    fetchModels: true,
+    config: env.harness.model ? { model: env.harness.model } : undefined,
+    log: (level, message) => console.warn(`[harness] ${level} ${message}`),
+  });
+  console.log(`[harness] OpenCode prêt en ${Date.now() - started} ms (${env.harness.dataDir})`);
+}
 
 const server = createServer(undefined, { platform }).listen(env.port, () => {
   console.log(`[backend] prêt sur http://localhost:${env.port}${platform ? " (plateforme auto-hébergée)" : ""}`);
@@ -50,6 +65,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     mgmt?.close();
     // Les tâches lancées par EdgeRuntime.waitUntil ont jusqu'à 25 s pour finir.
     await drainBackgroundTasks(25_000);
+    // Les sessions en cours gardent leur revendication : reprises au redémarrage.
+    await stopHarness();
     await platform?.close().catch(() => {});
     process.exit(0);
   });

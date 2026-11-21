@@ -96,4 +96,14 @@ export const env = {
       storageDir: process.env.STORAGE_DIR || "./.data/storage",
     }
     : null,
+  /** Le harnais OpenCode embarqué (docs/harness-opencode) : seulement en
+   *  PLATFORM=self, et seulement si HARNESS_OPENCODE=1. */
+  harness: platformMode === "self" && process.env.HARNESS_OPENCODE === "1"
+    ? {
+      dataDir: process.env.HARNESS_DIR || "./.data/opencode",
+      /** Modèle par défaut des sessions (« fournisseur/modèle »), le temps
+       *  que le plugin des modèles décide par agent et par palier. */
+      model: process.env.HARNESS_MODEL || null,
+    }
+    : null,
 };

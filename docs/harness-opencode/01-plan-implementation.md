@@ -40,7 +40,20 @@ Essai dans un dossier jetable, sous Node 24.14 / Windows :
 | Tour complet : file d'entrée, étape, appel au fournisseur, nouvelle tentative programmée, échec propre | OK jusqu'au fournisseur. **Bloqué par OpenRouter** : quota quotidien de modèles gratuits épuisé (429 `free-models-per-day`) |
 | Appel de l'outil par le modèle | **Non vérifié**, à cause du quota |
 
-À vérifier en premier (phase 0) :
+**Phase 0, faite le 21/11 sur la branche `harness-opencode`** : `backend/src/harness/host.ts` et `host.test.ts`. Quatre tests passent, contre une fausse passerelle compatible OpenAI.
+- Le modèle appelle un outil FounderOS, en reçoit le résultat, puis répond.
+- Une action sous règle `ask` est refusée avec une consigne : l'outil ne part pas, et le modèle reçoit la consigne.
+- Après un arrêt du backend pendant un outil, la session reprend seule au redémarrage, et le modèle apprend que l'appel a été interrompu.
+- Les dossiers d'agent ne peuvent pas sortir de `agents/`.
+
+Le backend démarre en `PLATFORM=self` avec `HARNESS_OPENCODE=1`. OpenCode est prêt en 17 s au premier démarrage (chargement du catalogue de modèles), et `npm test` reste vert (615 tests).
+
+Trois enseignements pour la suite :
+- **Code Mode par défaut :** un outil de plugin n'est appelable directement que s'il est déclaré avec `options: { codemode: false }`. Sinon, il n'est accessible qu'à travers l'outil `execute` (Code Mode).
+- **Requêtes de titre :** OpenCode envoie une requête annexe pour titrer chaque session. Elle compte dans la consommation, et le pont devra la distinguer des tours d'agent.
+- **Permissions natives :** `permission.reply` avec `decision: "reject"` et un `message` donne le refus avec consigne sans aucun code de notre côté.
+
+Reste à vérifier :
 - **Un tour complet avec outil**, une fois le compte OpenRouter crédité : 5 $ débloquent 1 000 requêtes gratuites par jour, ou on passe en modèles payants.
 - **Le message de journal « failed to load OpenCode provider config »** : OpenCode cherche sa configuration en ligne. C'est probablement inoffensif, mais à couper par la configuration si possible.
 - **Un paquet d'interface terminal (`@opentui/core`) réclame Node 26.** Il n'est pas chargé par l'hôte embarqué, mais il faut le confirmer dans le backend.
