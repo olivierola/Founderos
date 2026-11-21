@@ -131,6 +131,22 @@ Points de conception :
 - `route.ts` monté dans `app.ts` ; plugin **pont** : `internal_agent_runs` (statut, coût, tokens), `internal_agent_run_events` (format lu par `RunTimeline`), `internal_agent_messages`, `live_output`, `logLlmUsage`.
 - **Sortie :** un chat sans outil FounderOS s'affiche dans le front local comme aujourd'hui.
 
+**Phase 1, faite le 21/11** (branche `harness-opencode`) :
+- Migration `0307_agent_harness.sql` : `internal_agents.harness`, et `opencode_session_id` sur les conversations et les runs.
+- Fichiers `backend/src/harness/` : `route.ts` (aiguillage), `chat.ts` (tour de chat), `bridge.ts` (pont), `store.ts` (accès aux données), `runtime.ts`.
+- Comportement :
+  - Une conversation garde une session OpenCode, amorcée avec les derniers échanges.
+  - Un message envoyé pendant un tour passe en `steer`, sans second run.
+  - Une annulation depuis le front interrompt la session.
+  - Un échec du fournisseur termine le run en échec, et l'agent le dit dans la conversation.
+- Tests :
+  - `chat.test.ts`, sur un magasin en mémoire ;
+  - `harness.e2e.test.ts`, sur le vrai serveur et un PGlite neuf : HTTP, OpenCode, puis run, timeline, message, consommation et session en base.
+- Pas encore couvert :
+  - **Les missions** (`mode: "mission"`) restent sur l'ancien moteur.
+  - **Les approbations** : une demande `ask` n'a pas encore de carte dans le chat (phase 4).
+  - **Le choix du moteur** se fait encore à la main en base (`update internal_agents set harness = 'opencode' where id = …`).
+
 ### Phase 2 : agents et modèles (1 semaine)
 - Plugins **agents** et **modèles** : OpenRouter et connecteurs AI Ops, paliers par agent et par connecteur, AgentPilot.
 - **Sortie :** « Ops Sentinel » répond sur son modèle moyen et passe sur Claude Opus pour une tâche lourde.

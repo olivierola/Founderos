@@ -7,6 +7,7 @@ import { sealPendingMcpHeaders } from "./edge/_shared/mcp-headers.ts";
 import { startInstallationSync } from "./shared/installation.ts";
 import { startPlatform } from "./platform/platform.ts";
 import { startHarness, stopHarness } from "./harness/host.ts";
+import { startRuntime, stopRuntime } from "./harness/runtime.ts";
 
 // Le code porté lance des fetch « fire and forget » sans .catch. Sous Deno, un
 // rejet non géré tuait l'isolat d'UNE requête ; sous Node il arrêterait tout le
@@ -30,13 +31,16 @@ const platform = env.platform
 // Ses modules ne sont chargés que dans ce cas.
 if (env.harness) {
   const started = Date.now();
-  await startHarness({
+  const harnessReady = await startHarness({
     dataDir: env.harness.dataDir,
     fetchModels: true,
     config: env.harness.model ? { model: env.harness.model } : undefined,
     log: (level, message) => console.warn(`[harness] ${level} ${message}`),
   });
   console.log(`[harness] OpenCode prêt en ${Date.now() - started} ms (${env.harness.dataDir})`);
+  // Le pont écrit dans la base de ce backend (client de service) : en mode
+  // local, ce sont les tables que le front lit.
+  startRuntime(harnessReady, createServiceClient(), env.supabaseServiceRoleKey);
 }
 
 const server = createServer(undefined, { platform }).listen(env.port, () => {
@@ -66,6 +70,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // Les tâches lancées par EdgeRuntime.waitUntil ont jusqu'à 25 s pour finir.
     await drainBackgroundTasks(25_000);
     // Les sessions en cours gardent leur revendication : reprises au redémarrage.
+    await stopRuntime();
     await stopHarness();
     await platform?.close().catch(() => {});
     process.exit(0);
