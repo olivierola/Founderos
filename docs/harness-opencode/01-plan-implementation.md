@@ -151,6 +151,16 @@ Points de conception :
 - Plugins **agents** et **modèles** : OpenRouter et connecteurs AI Ops, paliers par agent et par connecteur, AgentPilot.
 - **Sortie :** « Ops Sentinel » répond sur son modèle moyen et passe sur Claude Opus pour une tâche lourde.
 
+**Phase 2, faite le 21/11** (branche `harness-opencode`) :
+- **Une instance OpenCode par agent** : l'option `instances` du SDK, avec pour clé l'`agent_id` des métadonnées de la session. Chaque instance est configurée par `agent-plugin.ts`.
+- **Prompt** : `agent-profile.ts` réutilise `buildSystemPrompt` de l'ancien moteur, désormais exporté par `internal-agent-run`. Il remplace entièrement le prompt de développeur d'OpenCode.
+- **Connexion** : le connecteur AI Ops de l'agent (clé déchiffrée), un serveur GPU, ou la connexion par défaut de la plateforme.
+- **Paliers** : ceux de l'agent par-dessus ceux du connecteur ou de la plateforme. Une route « a,b,c » donne ses replis à OpenRouter par le champ `models`.
+- **Modèle de chaque tour** : `classifyRequest`, puis AgentPilot, puis le critère, ou le choix du composer. Il est appliqué par le hook `experimental.model.resolve` ; les titres et la compaction partent sur le palier léger. Le modèle choisi est noté dans la timeline.
+- **Permissions provisoires** : tout est permis dans le dossier de l'agent ; le shell et l'accès hors du dossier sont refusés (en local, ils toucheraient la machine hôte).
+- **Tests** : `agents.test.ts` couvre le prompt, les paliers moyen et lourd avec leurs replis, le modèle du composer, le palier léger des titres et le shell refusé. Le test de bout en bout passe par le vrai profil chargé depuis la base.
+- **Encore à faire** : la mémoire, les skills et le contexte d'équipe (phase 5). La fenêtre de contexte des modèles est fixée à 128k tant que le catalogue du fournisseur n'est pas lu.
+
 ### Phase 3 : outils (2 à 3 semaines)
 - Adaptateur générique pour les outils internes ; on garde les outils intégrés d'OpenCode pour les fichiers, le shell, la checklist, les questions, les skills et les sous-agents ; Composio et MCP passent par le client MCP natif quand c'est possible.
 - **Sortie :** `npm run eval` sur le nouveau harnais, au moins au niveau de l'ancien.

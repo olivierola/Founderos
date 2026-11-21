@@ -37,7 +37,11 @@ export interface HarnessOptions {
   fetchModels?: boolean;
   /** Journal : avertissements et erreurs d'OpenCode. */
   log?: (level: string, message: string) => void;
+  /** Un jeu de plugins par clé (un par agent FounderOS, voir runtime.ts). */
+  instances?: HarnessInstances;
 }
+
+export type HarnessInstances = NonNullable<NonNullable<Parameters<typeof OpenCode.create>[0]>["instances"]>;
 
 export interface Harness {
   readonly opencode: OpenCodeHost;
@@ -64,6 +68,7 @@ export async function createHarness(options: HarnessOptions): Promise<Harness> {
   const opencode = await OpenCode.create({
     ...(options.inMemory ? {} : { database: { path: path.join(dataDir, "opencode.db") } }),
     plugins: options.plugins ?? [],
+    ...(options.instances ? { instances: options.instances } : {}),
     config: {
       directory: configDir,
       // Pas de configuration de projet, ni des CLAUDE.md de la machine : un

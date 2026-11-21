@@ -7,7 +7,7 @@ import { sealPendingMcpHeaders } from "./edge/_shared/mcp-headers.ts";
 import { startInstallationSync } from "./shared/installation.ts";
 import { startPlatform } from "./platform/platform.ts";
 import { startHarness, stopHarness } from "./harness/host.ts";
-import { startRuntime, stopRuntime } from "./harness/runtime.ts";
+import { agentSupport, startRuntime, stopRuntime } from "./harness/runtime.ts";
 
 // Le code porté lance des fetch « fire and forget » sans .catch. Sous Deno, un
 // rejet non géré tuait l'isolat d'UNE requête ; sous Node il arrêterait tout le
@@ -31,16 +31,19 @@ const platform = env.platform
 // Ses modules ne sont chargés que dans ce cas.
 if (env.harness) {
   const started = Date.now();
+  // Le pont et les agents lisent et écrivent dans la base de ce backend (client
+  // de service) : en mode local, ce sont les tables que le front lit.
+  const harnessAdmin = createServiceClient();
+  const agents = agentSupport(harnessAdmin);
   const harnessReady = await startHarness({
+    instances: agents.instances,
     dataDir: env.harness.dataDir,
     fetchModels: true,
     config: env.harness.model ? { model: env.harness.model } : undefined,
     log: (level, message) => console.warn(`[harness] ${level} ${message}`),
   });
   console.log(`[harness] OpenCode prêt en ${Date.now() - started} ms (${env.harness.dataDir})`);
-  // Le pont écrit dans la base de ce backend (client de service) : en mode
-  // local, ce sont les tables que le front lit.
-  startRuntime(harnessReady, createServiceClient(), env.supabaseServiceRoleKey);
+  startRuntime(harnessReady, harnessAdmin, env.supabaseServiceRoleKey, agents.support);
 }
 
 const server = createServer(undefined, { platform }).listen(env.port, () => {

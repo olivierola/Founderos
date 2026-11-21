@@ -13,14 +13,43 @@
 // est amorcée avec les derniers échanges de la conversation, pour qu'un agent
 // qui change de moteur ne perde pas le fil.
 
+import { AGENT_ID, PROVIDER_ID, modelForRoute, profileModels, type AgentProfile } from "./agent-profile.ts";
+import type { AgentState } from "./agent-plugin.ts";
 import type { Bridge } from "./bridge.ts";
 import type { Harness } from "./host.ts";
 import type { HarnessAgent, HarnessStore } from "./store.ts";
+
+/** Les agents FounderOS dans OpenCode (phase 2). Absent : l'agent par défaut
+ *  d'OpenCode et le modèle de la configuration (phase 1, tests). */
+export interface AgentSupport {
+  state: AgentState;
+  load: (agentId: string) => Promise<AgentProfile>;
+  choose: (
+    profile: AgentProfile, text: string, opts: { composer?: string | null; contextChars?: number },
+  ) => Promise<{ model: string; tier: string; need: string | null }>;
+}
 
 export interface ChatDeps {
   harness: Harness;
   store: HarnessStore;
   bridge: Bridge;
+  agents?: AgentSupport;
+}
+
+/** Le profil à jour de l'agent, et le modèle de ce tour (déclaré à l'instance au besoin). */
+async function prepareAgent(agents: AgentSupport, agentId: string, text: string, composer: string | null | undefined, contextChars: number) {
+  const control = agents.state.controls.get(agentId);
+  const profile = control ? await control.refresh() : await agents.load(agentId);
+  const choice = await agents.choose(profile, text, { composer, contextChars });
+  const declared = profileModels(profile).some((m) => m.id === choice.model)
+    || (agents.state.extraModels.get(agentId)?.has(choice.model) ?? false);
+  if (!declared) {
+    const set = agents.state.extraModels.get(agentId) ?? new Set<string>();
+    set.add(choice.model);
+    agents.state.extraModels.set(agentId, set);
+    await control?.refresh();
+  }
+  return { profile, choice };
 }
 
 export interface ChatTurn {
@@ -74,7 +103,17 @@ export async function startChatTurn(
 
   const conv = await store.conversation(input.conversationId, input.agent.id);
   if (!conv) throw new Error("conversation introuvable pour cet agent");
-  const model = parseModelRef(input.model);
+
+  // L'agent FounderOS : son profil à jour et le modèle de CE tour (palier,
+  // critère, AgentPilot, ou le choix du composer). Sans support d'agent, le
+  // modèle « fournisseur/modèle » du composer s'applique tel quel.
+  const prepared = deps.agents
+    ? await prepareAgent(deps.agents, input.agent.id, text, input.model, history.reduce((n, m) => n + m.content.length, 0))
+    : null;
+  const model = prepared
+    ? { providerID: PROVIDER_ID, id: modelForRoute(prepared.profile, "standard") }
+    : parseModelRef(input.model);
+
   let sessionId: string;
   let prompt = text;
   if (!conv.sessionId) {
@@ -82,6 +121,7 @@ export async function startChatTurn(
     const session = await opencode.sessions.create({
       location: { directory },
       metadata: { workspace_id: input.agent.workspace_id, agent_id: input.agent.id, conversation_id: input.conversationId },
+      ...(prepared ? { agent: AGENT_ID } : {}),
       ...(model ? { model } : {}),
     });
     sessionId = session.id;
@@ -89,10 +129,18 @@ export async function startChatTurn(
     prompt = seedText(history.slice(0, Math.max(0, lastUserIndex)), text);
   } else {
     sessionId = conv.sessionId;
-    if (model) await opencode.session.switchModel({ sessionID: sessionId, model });
+    if (model && !prepared) await opencode.session.switchModel({ sessionID: sessionId, model });
   }
+  // Lu par le hook de l'instance quand la requête du tour part.
+  if (prepared) deps.agents!.state.turnModels.set(sessionId, prepared.choice.model);
 
   const runId = await store.createRun({ agent: input.agent, conversationId: input.conversationId, sessionId, via: "chat" });
+  if (prepared) {
+    const c = prepared.choice;
+    await store.insertEvent(runId, input.agent.id, "status", {
+      message: `Moteur OpenCode · modèle ${c.model} · palier ${c.tier}${c.need ? ` · critère ${c.need}` : ""}.`,
+    });
+  }
   // Attaché AVANT le message : aucun événement du tour ne peut passer à côté.
   bridge.bind({
     runId, sessionId, agentId: input.agent.id, workspaceId: input.agent.workspace_id,

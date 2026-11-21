@@ -44,7 +44,8 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
     const { createServer } = await import("../server.ts");
     const { createClient } = await import("@supabase/supabase-js");
     const { createHarness } = await import("./host.ts");
-    const { startRuntime, stopRuntime } = await import("./runtime.ts");
+    const { agentSupport, startRuntime, stopRuntime } = await import("./runtime.ts");
+    const { resetUpstreamCaches } = await import("../edge/_shared/llm-upstream.ts");
 
     platform = await startPlatform({
       ...env.platform!, publicUrl: env.functionsUrl, anonKey: env.supabaseAnonKey, serviceKey: env.supabaseServiceRoleKey,
@@ -54,6 +55,13 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
     serviceKey = env.supabaseServiceRoleKey;
 
     llm = await startFakeLlm();
+    // La connexion par défaut de la plateforme pointe sur la fausse passerelle :
+    // c'est par elle que loadAgentProfile résout les paliers de l'agent.
+    Object.assign(process.env, {
+      LLM_UPSTREAM: "litellm", LLM_BASE_URL: llm.baseUrl, LLM_API_KEY: "test",
+      LLM_MODEL_DEFAULT: "e2e-std", LLM_MODEL_HEAVY: "e2e-heavy", LLM_MODEL_LIGHT: "e2e-light",
+    });
+    resetUpstreamCaches();
     dataDir = await mkdtemp(path.join(os.tmpdir(), "founderos-harness-e2e-"));
     const lookup = Plugin.define({
       id: "founderos-e2e",
@@ -69,9 +77,11 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
         });
       },
     });
-    const host = await createHarness({ dataDir, plugins: [lookup], config: fakeProviderConfig(llm.baseUrl) });
     const admin = createClient(env.functionsUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const rt = startRuntime(host, admin, serviceKey);
+    // Comme index.ts : une instance OpenCode par agent FounderOS.
+    const agents = agentSupport(admin);
+    const host = await createHarness({ dataDir, plugins: [lookup], config: fakeProviderConfig(llm.baseUrl), instances: agents.instances });
+    const rt = startRuntime(host, admin, serviceKey, agents.support);
     // Un espace neuf n'a pas de crédits : le contrôle est testé ailleurs.
     rt.checkCredits = async () => {};
     stop = async () => { await stopRuntime(); await host.close(); };
@@ -124,6 +134,12 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
     }
     assert.equal(run?.status, "succeeded");
     assert.equal(run?.final_output, "Léa Martin gère Acme.");
+    // L'agent FounderOS : le prompt de buildSystemPrompt, le modèle de la plateforme.
+    assert.equal(llm.requests[0].model, "e2e-std");
+    const system = JSON.stringify((llm.requests[0].messages as Array<{ role: string; content: unknown }>).filter((m) => m.role === "system"));
+    assert.match(system, /You are Ops/);
+    assert.doesNotMatch(system, /coding agent harness/);
+    assert.ok(llm.annex.every((a) => a.model === "e2e-light"), "les titres sur le palier léger");
     assert.equal(run?.live_output, null);
     assert.ok(Number(run?.tokens_in) > 0);
 
@@ -132,7 +148,7 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
 
     const events = await platform.db.query<{ kind: string; payload: { tool?: string } }>(
       "select kind, payload from public.internal_agent_run_events where run_id = $1 order by created_at", [out.run_id]);
-    assert.deepEqual(events.map((e) => `${e.kind}:${e.payload.tool}`), ["tool_call:founderos_lookup_client", "tool_result:founderos_lookup_client"]);
+    assert.deepEqual(events.map((e) => `${e.kind}:${e.payload.tool}`), ["status:undefined", "tool_call:founderos_lookup_client", "tool_result:founderos_lookup_client"]);
 
     const reply = await one<{ content: string; run_id: string }>(
       "select content, run_id from public.internal_agent_messages where conversation_id = $1 and role = 'assistant'", [id.conv]);

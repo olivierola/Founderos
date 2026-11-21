@@ -80,6 +80,8 @@ export interface FakeLlm {
   baseUrl: string;
   /** Les requêtes du tour d'agent (avec outils), dans l'ordre. */
   requests: Array<Record<string, any>>;
+  /** Les requêtes annexes (titre, compaction : sans outils). */
+  annex: Array<Record<string, any>>;
   script: FakeTurn[];
   close(): Promise<void>;
 }
@@ -92,7 +94,7 @@ function sse(res: ServerResponse, chunks: unknown[]) {
 }
 
 export async function startFakeLlm(): Promise<FakeLlm> {
-  const fake: FakeLlm = { baseUrl: "", requests: [], script: [], close: async () => {} };
+  const fake: FakeLlm = { baseUrl: "", requests: [], annex: [], script: [], close: async () => {} };
   const server: Server = createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => { raw += c; });
@@ -101,7 +103,7 @@ export async function startFakeLlm(): Promise<FakeLlm> {
       // Les requêtes annexes (titre de la session) n'ont pas d'outils : un
       // titre, sans consommer le script du tour d'agent.
       const annex = !Array.isArray(body.tools) || body.tools.length === 0;
-      if (!annex) fake.requests.push(body);
+      (annex ? fake.annex : fake.requests).push(body);
       const turn: FakeTurn = annex ? { text: "Titre" } : fake.script.shift() ?? { text: "fin" };
       if (turn.status) {
         res.statusCode = turn.status;

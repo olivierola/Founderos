@@ -5,8 +5,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logLlmUsage } from "../edge/_shared/llm-tracking.ts";
 import { assertCredits, assertQuota } from "../edge/_shared/metering.ts";
+import { chooseTurnModel, loadAgentProfile } from "./agent-profile.ts";
+import { agentPlugin, newAgentState } from "./agent-plugin.ts";
 import { startBridge, type Bridge } from "./bridge.ts";
-import type { Harness } from "./host.ts";
+import type { AgentSupport } from "./chat.ts";
+import type { Harness, HarnessInstances } from "./host.ts";
 import { supabaseStore, type HarnessStore, type UsageRow } from "./store.ts";
 
 export interface HarnessRuntime {
@@ -18,6 +21,32 @@ export interface HarnessRuntime {
   verifyUser: (token: string) => Promise<string | null>;
   /** Crédits et quota avant d'engager la dépense (lève une erreur de quota). */
   checkCredits: (workspaceId: string) => Promise<void>;
+  /** Les agents FounderOS (prompt, modèles) : absent, l'agent par défaut d'OpenCode. */
+  agents?: AgentSupport;
+}
+
+/**
+ * Les agents FounderOS dans OpenCode : une instance par agent (la clé est
+ * l'agent_id porté par les métadonnées de la session), configurée par son
+ * plugin (agent-plugin.ts), et ce qu'il faut à un tour pour choisir son modèle.
+ */
+export function agentSupport(admin: SupabaseClient): { support: AgentSupport; instances: HarnessInstances } {
+  const state = newAgentState();
+  const load = (agentId: string) => loadAgentProfile(admin, agentId);
+  return {
+    support: {
+      state, load,
+      choose: (profile, text, opts) => chooseTurnModel(admin, profile, text, opts),
+    },
+    instances: {
+      key: (session: { metadata?: unknown }) => {
+        const id = (session.metadata as Record<string, unknown> | undefined)?.agent_id;
+        return typeof id === "string" && id ? id : "default";
+      },
+      // Une session sans agent FounderOS garde l'agent par défaut d'OpenCode.
+      configure: (key: string) => ({ plugins: key === "default" ? [] : [agentPlugin(key, () => load(key), state)] }),
+    },
+  };
 }
 
 let current: HarnessRuntime | null = null;
@@ -42,11 +71,11 @@ export function usageToLlm(row: UsageRow): Promise<void> {
 }
 
 /** Branche le magasin et le pont sur un hôte démarré. */
-export function startRuntime(harness: Harness, admin: SupabaseClient, serviceKey: string): HarnessRuntime {
+export function startRuntime(harness: Harness, admin: SupabaseClient, serviceKey: string, agents?: AgentSupport): HarnessRuntime {
   const store = supabaseStore(admin, usageToLlm);
   const bridge = startBridge(harness.opencode, store);
   current = {
-    harness, store, bridge, serviceKey,
+    harness, store, bridge, serviceKey, agents,
     verifyUser: async (token) => {
       const { data, error } = await admin.auth.getUser(token);
       return error || !data.user ? null : data.user.id;

@@ -114,7 +114,7 @@ import {
 } from "../_shared/proactivity.ts";
 import { loadSelfModel } from "../_shared/self-model.ts";
 
-interface AgentRow {
+export interface AgentRow {
   id: string;
   name: string;
   persona: string | null;
@@ -329,7 +329,7 @@ const SECURITY_DOCTRINE = [
 ].join("\n");
 
 /** True when the agent has any cybersecurity skill activated → gets the doctrine. */
-function isSecurityAgent(skills: AgentSkill[] | undefined): boolean {
+export function isSecurityAgent(skills: AgentSkill[] | undefined): boolean {
   return (skills ?? []).some((s) => (s.category ?? "").toLowerCase() === "cybersecurity");
 }
 
@@ -502,7 +502,7 @@ const AUTONOMY_RULE: Record<AutonomyLevel, string> = {
   autonomous: "- AUTONOMIE : AUTONOME. Tu agis seul sous le plafond de risque de l'équipe ; une action irréversible ou engageante demande toujours une personne. Rends compte de ce que tu as fait.",
 };
 
-function buildSystemPrompt(
+export function buildSystemPrompt(
   agent: AgentRow,
   capabilitySummary: string,
   mode: "chat" | "mission",
@@ -860,7 +860,7 @@ async function loadComposioApps(
   }
 }
 
-async function loadAgentAndTools(agentId: string) {
+export async function loadAgentAndTools(agentId: string) {
   const admin = createServiceClient();
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
@@ -1043,7 +1043,7 @@ async function loadTeamMemorySection(
 /** L'entreprise de cet agent, et sa place dedans (0212/0213). Le service est
  *  résolu par le chargeur : c'est lui qui décide de ce qui sera marqué « à
  *  toi » dans les objectifs. */
-function loadCompanySection(
+export function loadCompanySection(
   admin: ReturnType<typeof createServiceClient>,
   agent: AgentRow,
 ): Promise<CompanyContext | null> {
