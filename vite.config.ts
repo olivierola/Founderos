@@ -13,8 +13,16 @@ export default defineConfig({
   // the dev optimizer doesn't 504 on first import.
   optimizeDeps: {
     include: ["@splinetool/react-spline", "@splinetool/runtime"],
+    // Only the app: without this, the dependency scan also crawls the HTML of
+    // the reference clones at the root (opencode/, agent-desktop/) and fails on
+    // their imports.
+    entries: ["index.html"],
   },
   // The PDF renderer runs in a module worker (features/pdf/pdf.worker.ts).
   worker: { format: "es" },
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    // Reference clones and local data: nothing the dev server should watch.
+    watch: { ignored: ["**/opencode/**", "**/agent-desktop/**", "**/backend/.data/**"] },
+  },
 });
