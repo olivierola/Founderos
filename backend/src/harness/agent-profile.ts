@@ -112,13 +112,20 @@ async function connectionOf(admin: SupabaseClient, agent: AgentRow): Promise<{ c
   return { connection: { baseURL: up.baseUrl.replace(/\/+$/, ""), apiKey, headers: rest, openrouter, source: "platform" }, routes };
 }
 
-/** Le profil complet d'un agent : relu à chaque tour (il peut avoir changé). */
-export async function loadAgentProfile(admin: SupabaseClient, agentId: string): Promise<AgentProfile> {
+/**
+ * Le profil complet d'un agent : relu à chaque tour (il peut avoir changé).
+ * `connection: "optional"` : un agent embarqué en accès direct a son propre
+ * modèle ; l'absence de connexion de la plateforme ne l'empêche pas d'exister.
+ */
+export async function loadAgentProfile(admin: SupabaseClient, agentId: string, opts: { connection?: "required" | "optional" } = {}): Promise<AgentProfile> {
   const { agent } = await loadAgentAndTools(agentId);
   const [company, selfModel, link, skills] = await Promise.all([
     loadCompanySection(admin as never, agent).catch(() => null),
     loadSelfModel(admin as never, agent as never).catch(() => ""),
-    connectionOf(admin, agent),
+    connectionOf(admin, agent).catch((e) => {
+      if (opts.connection !== "optional") throw e;
+      return { connection: { baseURL: "", apiKey: "", headers: {}, openrouter: false, source: "platform" as const }, routes: {} as Record<string, string> };
+    }),
     loadActivatedSkills(admin as never, agent.id).catch(() => []),
   ]);
   const prompt = buildAgentSystem(agent, BUILTIN_CAPABILITIES, {

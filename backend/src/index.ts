@@ -10,6 +10,7 @@ import { startHarness, stopHarness } from "./harness/host.ts";
 import { agentSupport, startRuntime, stopRuntime } from "./harness/runtime.ts";
 import { installMachineProvisioner } from "./edge/_shared/team-machine.ts";
 import { dockerMachineProvisioner } from "./platform/machine-provisioner.ts";
+import { installEmbeddedDocker, localEmbeddedDocker } from "./platform/embedded-docker.ts";
 
 // Le code porté lance des fetch « fire and forget » sans .catch. Sous Deno, un
 // rejet non géré tuait l'isolat d'UNE requête ; sous Node il arrêterait tout le
@@ -32,6 +33,8 @@ const platform = env.platform
 // mode auto-hébergé seulement (MACHINE_PROVISIONER=0 pour s'en passer).
 const machineProvisioning = !!platform && process.env.MACHINE_PROVISIONER !== "0";
 if (machineProvisioning) installMachineProvisioner(dockerMachineProvisioner());
+// Les agents embarqués se construisent et se lancent aussi sur ce Docker (auto-hébergé).
+if (machineProvisioning) installEmbeddedDocker(localEmbeddedDocker());
 
 // Le harnais OpenCode, moteur des agents : démarré avant l'écoute, il reprend
 // aussitôt les sessions qu'un arrêt a laissées en cours.

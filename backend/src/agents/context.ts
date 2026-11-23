@@ -53,6 +53,8 @@ export interface AgentRow {
    *  endpoint (a RunPod-hosted model) instead of the default provider. */
   hosted_endpoint_url: string | null;
   hosted_model: string | null;
+  /** platform : le backend le fait tourner ; embedded : son conteneur (0316). */
+  deployment?: string | null;
   /** Company-registered model (aiops_providers cloud_endpoint) the agent runs on;
    *  its base_url + encrypted key are resolved at run time. Null = Anduran default. */
   hosted_provider_id?: string | null;
@@ -210,7 +212,7 @@ export async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, model_routes, created_by, service_dashboard_id, is_orchestrator, autonomy_level")
+      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, model_routes, created_by, service_dashboard_id, is_orchestrator, autonomy_level, deployment")
       .eq("id", agentId)
       .maybeSingle(),
     admin

@@ -12,6 +12,7 @@ import { deepgramStreamHttp } from "./ws/deepgram-stream.ts";
 import { platformRouter, type Platform } from "./platform/platform.ts";
 import { harnessRouter } from "./harness/route.ts";
 import { harnessRuntime } from "./harness/runtime.ts";
+import { embeddedGateway } from "./embedded/gateway.ts";
 
 export interface AppOptions {
   /** Par défaut, GATEWAY_VERIFY_JWT. */
@@ -67,6 +68,8 @@ export function createApp(registry: EdgeRegistry = edgeFunctions, options: AppOp
   // Le harnais OpenCode (PLATFORM=self, HARNESS_OPENCODE=1) prend les tours
   // de chat des agents marqués « opencode » ; le reste passe, intact.
   app.use("/functions/v1", harnessRouter(harnessRuntime));
+  // La passerelle des agents embarqués : leurs conteneurs, avec leur clé d'API.
+  app.use("/embedded/v1", embeddedGateway());
   app.use("/functions/v1", functionsRouter);
   app.all("/functions/v1/deepgram-stream", deepgramStreamHttp);
   app.use("/functions/v1", edgeRouter(registry));

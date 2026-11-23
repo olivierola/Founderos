@@ -63,6 +63,7 @@ import { fetchAgentFolders } from "./agentFolders";
 import { DashboardTile } from "./dashboardIcons";
 import { ThemeMenu } from "@/components/ThemeMenu";
 import { MachinesTab } from "@/features/machines/MachinesTab";
+import { EmbeddedAgentsTab } from "@/features/embedded-agents/EmbeddedAgentsTab";
 import { AssistantProvider, useAssistant } from "@/lib/assistant-context";
 import { AssistantPanel } from "@/features/ai-agent/AssistantPanel";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -132,7 +133,7 @@ export function ServiceDashboardPage() {
   const isWorkflowEditor = tab === "workflows" && !!sub;
   // Unknown tabs (old links, e.g. the retired /new-room) fall back to the
   // dashboard's landing page rather than rendering an empty content area.
-  const KNOWN = ["home", "agents", "dashboards", "live", "teamz", "schedules", "dashboard", "missions", "projects", "memory", "artifacts", "connectors", "pools", "workflows", "machines", "settings", "docs"];
+  const KNOWN = ["home", "agents", "dashboards", "live", "teamz", "schedules", "dashboard", "missions", "projects", "memory", "artifacts", "connectors", "pools", "workflows", "machines", "embedded", "settings", "docs"];
   const activeTab = isRoom ? "room"
     : isAgent ? "agent"
     : isAgentConfig ? "agent-config"
@@ -349,6 +350,7 @@ export function ServiceDashboardPage() {
               />
             )}
             {activeTab === "machines" && <MachinesTab dashboardId={dashboardId!} base={base} sub={sub ?? null} />}
+            {activeTab === "embedded" && <EmbeddedAgentsTab dashboardId={dashboardId!} base={base} />}
             {activeTab === "docs" && (
               <DocsPage
                 article={sub ?? null}

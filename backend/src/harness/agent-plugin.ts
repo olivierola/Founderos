@@ -71,7 +71,11 @@ export function agentPlugin(
   agentId: string,
   load: () => Promise<AgentProfile>,
   state: AgentState,
-  opts: { kit?: KitLoader; skillsDir?: string; log?: (msg: string) => void } = {},
+  opts: {
+    kit?: KitLoader; skillsDir?: string; log?: (msg: string) => void;
+    /** D'autres règles de base (agent embarqué : le shell, dans son conteneur). */
+    permissions?: ReadonlyArray<{ action: string; resource: string; effect: string }>;
+  } = {},
 ) {
   return Plugin.define({
     id: "founderos-agent",
@@ -126,7 +130,7 @@ export function agentPlugin(
           if (profile.steps) a.steps = profile.steps as typeof a.steps;
           a.model = { providerID: PROVIDER_ID, id: modelForRoute(profile, "standard") } as typeof a.model;
           a.permissions = [
-            ...AGENT_PERMISSIONS.map((r) => ({ ...r })),
+            ...(opts.permissions ?? AGENT_PERMISSIONS).map((r) => ({ ...r })),
             // Avec l'outillage : ni Code Mode, ni skills d'OpenCode.
             ...(installed?.permissions ?? []),
           ] as typeof a.permissions;

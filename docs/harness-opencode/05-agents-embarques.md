@@ -2,6 +2,30 @@
 
 Un **agent embarqué** est un agent conçu dans FounderOS, puis construit en une image de conteneur qui contient tout ce qu'il lui faut pour travailler seul : le harnais OpenCode, les plugins FounderOS, sa configuration figée, ses outils, ses skills et son propre système de fichiers. L'image tourne où l'on veut (poste, serveur du client, VM cloud, machine près des données) et reste **pilotée et surveillée depuis FounderOS**.
 
+## 0. Fait le 23/11/2026 (E0 à E2, en local)
+
+Un agent embarqué est la **troisième sorte d'agent**, à côté des collaborateurs internes et publics : un `internal_agents` avec `deployment = 'embedded'`. Ses consignes, pools, skills et modèles se règlent sur sa fiche comme pour un collaborateur ; seul l'endroit où il tourne change.
+
+| Pièce | Où |
+|---|---|
+| Base : `deployment`, réglages, versions, instances, clés (sha256), ordres ; `internal_agent_runs.instance_id` | `supabase/migrations/0316_embedded_agents.sql` |
+| Le manifeste (profil, outils des pools sans `team_*`, skills, machine, modèle) et son empreinte | `backend/src/embedded/manifest.ts` |
+| L'archive : Dockerfile, compose.yaml, .env.example sans clé, manifest.json, README, `workspace/` | `backend/src/embedded/bundle.ts` |
+| La passerelle `/embedded/v1` (clé d'API) : hello, heartbeat, manifest, tools, tools/call (pools, garde-fous, mémoire de recherche), search, llm (proxy et crédits), store (borné à l'agent, selon `sync_level`), commands | `backend/src/embedded/gateway.ts` |
+| Le SDK FounderOS (`new FounderOS({ url, apiKey })` : tools, connectors, deliverables, memory, knowledge, commands) | `backend/src/embedded/sdk.ts` |
+| Le moteur dans le conteneur : OpenCode et les plugins FounderOS, outils de la plateforme par le SDK, shell dans `/workspace`, boucle d'ordres, battement toutes les 15 s | `backend/src/embedded/runtime.ts`, `embedded/Dockerfile` (image `founderos/agent-runtime`) |
+| Construire et lancer sur le Docker de l'hôte (plateforme auto-hébergée) | `backend/src/platform/embedded-docker.ts` |
+| La fonction : list, create, update_config, export, create_key, revoke_key, command, run_local, stop_local | `backend/src/edge/embedded-agents/index.ts` |
+| Un chat ou une mission d'un agent embarqué : préparé par la plateforme (garde-fous, contexte, contrat), confié à l'instance par un ordre `run` | `forwardToInstance` dans `backend/src/harness/runs.ts` |
+| L'interface : onglet **Agents embarqués** (section Équipe), menu « Deploy collaborator », galerie « Agents embarqués » du roster | `src/features/embedded-agents/` |
+| Test de bout en bout (PGlite) : manifeste, accès direct, archive, passerelle, clés, ordres | `backend/src/embedded/embedded.e2e.test.ts` |
+
+**Limites connues :**
+- Un run exécuté dans le conteneur suit le chemin par défaut du pont : il écrit le message de l'agent et le statut du run. Les finaliseurs côté plateforme (canaux, vérification du contrat) ne s'appliquent pas encore.
+- Les salles, workflows et échanges entre agents sont refusés à un agent embarqué (409).
+- La connaissance embarquée (instantané des collections) est réglable, mais l'instantané n'est pas encore copié dans l'image : la recherche passe par la passerelle.
+- Le moteur (`founderos/agent-runtime`) se construit depuis le dépôt ; il n'est pas encore publié sur un registre.
+
 ## 1. Pourquoi c'est faisable maintenant
 
 | Ce qui existe | Ce que ça apporte |

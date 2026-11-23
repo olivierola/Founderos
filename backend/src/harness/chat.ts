@@ -113,7 +113,7 @@ export function formAnswer(fields: Array<{ key: string; options?: string[]; mult
 
 export async function startChatTurn(
   deps: ChatDeps,
-  input: { agent: HarnessAgent; conversationId: string; model?: string | null } & TurnExtras,
+  input: { agent: HarnessAgent; conversationId: string; model?: string | null; runId?: string | null } & TurnExtras,
 ): Promise<ChatTurn> {
   const { harness, store, bridge } = deps;
   const opencode = harness.opencode;
@@ -173,7 +173,7 @@ export async function startChatTurn(
   if (deps.agents && input.runContext) deps.agents.state.runContexts.set(sessionId, input.runContext);
 
   const meta = { kind: "chat" as RunKind, ...(input.meta ?? {}), ...(input.runContext ? { run_context: input.runContext } : {}) };
-  const runId = await store.createRun({ agent: input.agent, conversationId: input.conversationId, sessionId, via: "chat", meta });
+  const runId = await store.createRun({ agent: input.agent, conversationId: input.conversationId, sessionId, via: "chat", meta, runId: input.runId ?? null });
   if (prepared) {
     const c = prepared.choice;
     await store.insertEvent(runId, input.agent.id, "status", {

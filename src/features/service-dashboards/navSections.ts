@@ -3,7 +3,7 @@ import {
   ChartBarIcon, SquaresFourIcon, GraphIcon, PlugsConnectedIcon, StackIcon, BrainIcon,
   HouseSimpleIcon, BriefcaseIcon, GaugeIcon, PlugIcon,
   GearSixIcon, SlidersIcon, SparkleIcon, ChatsCircleIcon, WarningIcon,
-  DesktopTowerIcon, PulseIcon, FolderOpenIcon, ShareNetworkIcon, SlidersHorizontalIcon,
+  DesktopTowerIcon, PulseIcon, FolderOpenIcon, ShareNetworkIcon, SlidersHorizontalIcon, PackageIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
@@ -51,6 +51,7 @@ export const SECTIONS: Section[] = [
     key: "equipe", label: "Équipe", question: "Qui travaille", icon: UsersThreeIcon,
     items: [
       { label: "Collaborateurs", icon: RobotIcon, path: "agents", alsoTabs: ["agent", "agent-config", "public"] },
+      { label: "Agents embarqués", icon: PackageIcon, path: "embedded" },
       { label: "Équipes", icon: UsersThreeIcon, path: "teamz" },
       { label: "Espace 3D", icon: CubeIcon, path: "live" },
     ],
@@ -117,7 +118,7 @@ export function sectionOf(tab: string, sub?: string | null): SectionKey | null {
       if (!sub || ACCUEIL_VIEWS.has(sub)) return "accueil";
       if (PILOTAGE_VIEWS.has(sub)) return "pilotage";
       return "travail";
-    case "agents": case "agent": case "agent-config": case "public": case "teamz": case "live":
+    case "agents": case "agent": case "agent-config": case "public": case "teamz": case "live": case "embedded":
       return "equipe";
     case "dashboards":
       return "pilotage";

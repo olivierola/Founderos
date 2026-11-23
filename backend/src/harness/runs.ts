@@ -197,6 +197,8 @@ export async function startAgentRun(rt: HarnessRuntime, input: AgentRunInput): P
   if (!agent) throw new RunRequestError(404, "agent introuvable");
   const { agent: row } = await loadAgentAndTools(input.agentId);
   const deps = { harness: rt.harness, store: rt.store, bridge: rt.bridge, agents: rt.agents };
+  // Un agent embarqué tourne dans son conteneur : le run est préparé ici, puis confié à son instance.
+  if (row.deployment === "embedded") return forwardToInstance(rt, admin, agent, row, input);
 
   if (input.kind === "chat") {
     const conversationId = input.conversationId ?? "";
@@ -321,6 +323,94 @@ export async function startAgentRun(rt: HarnessRuntime, input: AgentRunInput): P
     actingUserId: input.actingUserId ?? null,
     via: input.via,
   });
+}
+
+/**
+ * Un run d'agent embarqué : préparé comme les autres (garde-fous, contexte,
+ * contrat, consigne de mission), puis confié à son conteneur par un ordre
+ * « run » que l'instance prend (/embedded/v1/commands). Le run attend « en
+ * file » jusqu'à ce qu'une instance le prenne ; ses étapes, sa réponse et sa
+ * consommation remontent par la passerelle.
+ */
+async function forwardToInstance(rt: HarnessRuntime, admin: Admin, agent: HarnessAgent, row: AgentRow, input: AgentRunInput): Promise<ChatTurn> {
+  const order = (payload: Record<string, unknown>) => admin.from("embedded_agent_commands").insert({
+    agent_id: agent.id, command: "run", payload, created_by: input.actingUserId ?? null,
+  }).then(({ error }) => { if (error) throw new Error(`ordre non transmis : ${error.message}`); });
+  const { data: live } = await admin.from("embedded_agent_instances").select("id")
+    .eq("agent_id", agent.id).eq("status", "online").gt("last_seen_at", new Date(Date.now() - 60_000).toISOString()).limit(1);
+  const waiting = !(live ?? []).length;
+  const note = async (runId: string) => {
+    if (!waiting) return;
+    await admin.from("internal_agent_run_events").insert({
+      run_id: runId, agent_id: agent.id, kind: "status",
+      payload: { message: "Agent embarqué : aucune instance en ligne pour l'instant, le travail attend que son conteneur le prenne." },
+    }).then(() => {}, () => {});
+  };
+
+  if (input.kind === "chat") {
+    const conversationId = input.conversationId ?? "";
+    if (!conversationId) throw new RunRequestError(400, "conversation_id requis pour un chat");
+    // Un tour en cours, ou une question en attente : l'instance glisse le message dans le tour.
+    const busy = (await rt.store.pendingQuestion?.(conversationId)) ?? (await rt.store.activeRun(conversationId));
+    if (busy) {
+      await order({ kind: "chat", conversation_id: conversationId, model: input.model ?? null, acting_user_id: input.actingUserId ?? null });
+      return { ok: true, run_id: busy.runId, injected: true };
+    }
+    const history = await rt.store.recentMessages(conversationId, 13);
+    const text = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+    const blocked = await guardPrompt(admin, row, "", text).catch(() => null);
+    if (blocked) return refuse(rt, admin, agent, input, blocked);
+    const trimmed = text.trim();
+    const contract = trimmed.length >= 24
+      ? await deriveContract({ source: "chat", goal: trimmed.slice(0, 800), hasTodos: true }).catch(() => null)
+      : null;
+    const context = await runContext(admin, row, null, "chat", text, []);
+    const meta = { kind: "chat", task: trimmed.slice(0, 2000), contract, embedded: true };
+    const { data: run, error } = await admin.from("internal_agent_runs").insert({
+      agent_id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id, conversation_id: conversationId,
+      status: "queued", triggered_via: input.via ?? "chat", triggered_by: input.actingUserId ?? null, run_meta: meta,
+    }).select("id").single();
+    if (error || !run) throw new Error(`run non créé : ${error?.message ?? "aucune ligne"}`);
+    const runId = (run as { id: string }).id;
+    await order({ kind: "chat", conversation_id: conversationId, run_id: runId, run_context: context, meta, model: input.model ?? null, acting_user_id: input.actingUserId ?? null });
+    await note(runId);
+    return { ok: true, run_id: runId, queued: true };
+  }
+
+  if (input.kind === "mission") {
+    if (!input.runId) throw new RunRequestError(400, "run_id requis pour une mission");
+    const { data: r0 } = await admin.from("internal_agent_runs")
+      .select("id, agent_id, mission_id, status, trigger_payload, triggered_by").eq("id", input.runId).maybeSingle();
+    const r = r0 as { id: string; agent_id: string; mission_id: string | null; status: string; trigger_payload: unknown; triggered_by: string | null } | null;
+    if (!r || r.agent_id !== agent.id) throw new RunRequestError(404, "run introuvable");
+    if (r.status !== "queued") throw new RunRequestError(409, `Run is ${r.status}, not queued`);
+    // Déjà confié à l'instance (l'ordonnanceur relance les runs restés en file) : rien à renvoyer.
+    const { data: pending } = await admin.from("embedded_agent_commands").select("id")
+      .eq("agent_id", agent.id).is("done_at", null).eq("payload->>run_id", r.id).limit(1);
+    if ((pending ?? []).length) return { ok: true, run_id: r.id, queued: true };
+    const { data: m } = await admin.from("internal_agent_missions").select(MISSION_COLUMNS).eq("id", r.mission_id ?? "").maybeSingle();
+    const mission = m as MissionRow | null;
+    if (!mission) throw new RunRequestError(404, "mission introuvable");
+    const prompt = await buildMissionPrompt(admin, r.id, r, mission);
+    const blocked = await guardPrompt(admin, row, r.id, prompt).catch(() => null);
+    if (blocked) return refuse(rt, admin, agent, input, blocked);
+    await admin.from("internal_agent_missions").update({ board_column: "in_progress" }).eq("id", mission.id).in("board_column", ["backlog", "todo"]);
+    const task = missionTaskText(mission);
+    const contract = await deriveContract({
+      source: "mission", goal: `${mission.title} — ${String(mission.brief ?? "").slice(0, 600)}`,
+      acceptanceCriteria: mission.acceptance_criteria,
+      expectedDeliverables: Array.isArray(mission.expected_deliverables) ? mission.expected_deliverables as never : [],
+      hasTodos: true,
+    }).catch(() => null);
+    const context = await runContext(admin, row, r.id, "mission", task, []);
+    const meta = { kind: "mission", task: task.slice(0, 2000), mission_id: mission.id, contract, embedded: true };
+    await admin.from("internal_agent_runs").update({ run_meta: meta }).eq("id", r.id);
+    await order({ kind: "mission", run_id: r.id, text: prompt, run_context: context, meta, acting_user_id: input.actingUserId ?? r.triggered_by ?? null });
+    await note(r.id);
+    return { ok: true, run_id: r.id, queued: true };
+  }
+
+  throw new RunRequestError(409, "Agent embarqué : il travaille dans son conteneur ; les salles, workflows et échanges entre agents ne lui sont pas encore ouverts.");
 }
 
 /** Le harnais en service, ou une erreur claire (le moteur d'agents n'a pas démarré). */

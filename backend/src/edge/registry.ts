@@ -52,6 +52,7 @@ export const edgeFunctions: Record<string, () => Promise<EdgeModule>> = {
   "internal-agent-scheduler": () => import("./internal-agent-scheduler/index.ts"),
   "invite-member": () => import("./invite-member/index.ts"),
   "machines": () => import("./machines/index.ts"),
+  "embedded-agents": () => import("./embedded-agents/index.ts"),
   "marketing-generate": () => import("./marketing-generate/index.ts"),
   "marketing-publish": () => import("./marketing-publish/index.ts"),
   "mcp-gateway": () => import("./mcp-gateway/index.ts"),

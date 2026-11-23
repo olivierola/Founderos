@@ -93,6 +93,8 @@ export interface DashboardAgent {
   requires_approval?: boolean | null;
   /** What it may do alone (0266); absent on a database without the column. */
   autonomy_level?: AutonomyLevel | null;
+  /** platform, ou embedded : il tourne dans son conteneur (0316). */
+  deployment?: string | null;
 }
 
 export function useDashboardAgents(dashboardId: string) {
@@ -264,7 +266,9 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
   const queryClient = useQueryClient();
   const { workspaceId, projectId } = useCurrentContext();
   const { data: allAgents, isLoading, error } = useDashboardAgents(dashboardId);
-  const agents = (allAgents ?? []).filter((a) => !a.is_orchestrator);
+  // Trois sortes de collaborateurs : internes, publics, et embarqués (dans leur conteneur, 0316).
+  const agents = (allAgents ?? []).filter((a) => !a.is_orchestrator && a.deployment !== "embedded");
+  const embedded = (allAgents ?? []).filter((a) => a.deployment === "embedded");
   // Agent pages live INSIDE the dashboard — a card opens the agent's tabs
   // (chat / missions / customize / …) here, not in the AI Workforce module.
   const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
@@ -273,7 +277,7 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
   const { data: publicAgents } = useDashboardPublicAgents(dashboardId);
 
   // Tool + skill counts for the whole roster in two queries, grouped client-side.
-  const ids = (agents ?? []).map((a) => a.id);
+  const ids = [...agents, ...embedded].map((a) => a.id);
   const { data: counts } = useQuery({
     queryKey: ["sd_agent_counts", dashboardId, ids.join(",")],
     enabled: ids.length > 0,
@@ -375,6 +379,13 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
                     <span className="block text-[11px] text-muted-foreground">Face client, nourri par une base de connaissances.</span>
                   </span>
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => navigate(`${sbase}/embedded?new=1`)}>
+                  <PackageIcon className="mr-2 h-4 w-4" />
+                  <span className="min-w-0">
+                    <span className="block text-sm">Agent embarqué</span>
+                    <span className="block text-[11px] text-muted-foreground">Dans son propre conteneur, piloté d'ici.</span>
+                  </span>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -420,7 +431,7 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
               <div className="mt-1 text-xs text-muted-foreground">{error instanceof Error ? error.message : "Erreur inconnue"}</div>
             </div>
           )
-          : (agents ?? []).length === 0 && (publicAgents ?? []).length === 0 ? (
+          : (agents ?? []).length === 0 && (publicAgents ?? []).length === 0 && embedded.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border p-10 text-center">
               <RobotIcon className="mx-auto mb-2 h-7 w-7 text-muted-foreground/60" />
               <div className="text-sm font-medium">Aucun collaborateur dans ce service</div>
@@ -475,6 +486,20 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
                   agents={publicAgents ?? []}
                   dashboardId={dashboardId}
                   onOpen={(id) => navigate(`${sbase}/public/${id}`)}
+                />
+              )}
+              {embedded.length > 0 && (
+                <AgentGallery
+                  title="Agents embarqués"
+                  agents={embedded}
+                  counts={countMap}
+                  activity={activity}
+                  waitingByAgent={waitingByAgent}
+                  folders={[]}
+                  toolkits={toolkits}
+                  connStatus={connStatus}
+                  onOpen={(id) => navigate(`${sbase}/embedded?a=${id}`)}
+                  onMove={move}
                 />
               )}
             </div>
