@@ -349,7 +349,44 @@ async function listFleet(admin: Admin, board: Board) {
       })),
     provisioner: await provisionerStatus(),
     catalog: catalog(),
+    embedded: await embeddedMachines(admin, board),
   };
+}
+
+/**
+ * Les machines des agents embarqués du service : le conteneur de chaque
+ * instance, tel qu'il se décrit à chaque battement de cœur (même format qu'une
+ * machine d'équipe). Elles se voient dans le parc ; elles ne se donnent pas à
+ * une équipe (c'est la machine de son agent) et se pilotent depuis l'onglet
+ * Agents embarqués.
+ */
+interface EmbeddedInstanceRow {
+  id: string; agent_id: string; name: string; status: string; container_ref: string | null; manifest_sha: string | null;
+  version: number | null; info: Record<string, unknown>; last_seen_at: string | null; created_at: string;
+}
+
+export async function embeddedMachines(admin: Admin, board: Pick<Board, "id">): Promise<Array<EmbeddedInstanceRow & {
+  agent_name: string; connectivity: string; tools: string[];
+}>> {
+  const { data: agents } = await admin.from("internal_agents").select("id, name")
+    .eq("service_dashboard_id", board.id).eq("deployment", "embedded").eq("is_archived", false);
+  const list = (agents ?? []) as Array<{ id: string; name: string }>;
+  if (!list.length) return [];
+  const ids = list.map((a) => a.id);
+  const [{ data: instances }, { data: configs }] = await Promise.all([
+    admin.from("embedded_agent_instances")
+      .select("id, agent_id, name, status, container_ref, manifest_sha, version, info, last_seen_at, created_at")
+      .in("agent_id", ids).order("created_at"),
+    admin.from("embedded_agent_configs").select("agent_id, connectivity, tools").in("agent_id", ids),
+  ]);
+  const names = new Map(list.map((a) => [a.id, a.name]));
+  const cfg = new Map(((configs ?? []) as Array<{ agent_id: string; connectivity: string; tools: string[] | null }>).map((c) => [c.agent_id, c]));
+  return ((instances ?? []) as EmbeddedInstanceRow[]).map((i) => ({
+    ...i,
+    agent_name: names.get(i.agent_id) ?? "Agent embarqué",
+    connectivity: cfg.get(i.agent_id)?.connectivity ?? "connected",
+    tools: cfg.get(i.agent_id)?.tools ?? [],
+  }));
 }
 
 async function updateMachine(admin: Admin, m: FleetMachine, body: Body, userId: string | null) {

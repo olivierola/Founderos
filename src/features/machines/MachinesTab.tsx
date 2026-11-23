@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   PlusIcon, DesktopTowerIcon, ArrowsClockwiseIcon, PulseIcon, FolderOpenIcon,
-  SlidersHorizontalIcon, CircleNotchIcon as Loader2,
+  SlidersHorizontalIcon, PackageIcon, CircleNotchIcon as Loader2,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +12,8 @@ import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/utils";
 import { formatRelative } from "@/features/tracker/pickers";
 import {
-  fleetApi, formatAge, formatKb, HEALTH_META, KIND_LABEL, machineHealth, useFleet, useRefreshFleet,
-  type Fleet, type FleetMachine, type MachineKind,
+  embeddedHealth, fleetApi, formatAge, formatKb, HEALTH_META, KIND_LABEL, machineHealth, useFleet, useRefreshFleet,
+  type EmbeddedMachine, type Fleet, type FleetMachine, type MachineKind,
 } from "./api";
 import { MachineActivity } from "./MachineActivity";
 import { MachineFiles } from "./MachineFiles";
@@ -101,12 +101,33 @@ export function MachinesTab({ dashboardId, base, sub }: { dashboardId: string; b
         <MachineCatalog dashboardId={dashboardId} base={base} fleet={fleet} />
       ) : view === "attributions" ? (
         <MachineAssignments dashboardId={dashboardId} fleet={fleet} />
+      ) : view === "overview" ? (
+        machines.length === 0 && !(fleet.embedded ?? []).length ? (
+          <EmptyFleet onAdd={() => setCreating(true)} />
+        ) : (
+          <div className="space-y-8">
+            {machines.length > 0 && (
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]">
+                {machines.map((m) => <MachineCard key={m.id} machine={m} fleet={fleet} dashboardId={dashboardId} onOpen={(v) => open(v, m.id)} />)}
+              </div>
+            )}
+            {(fleet.embedded ?? []).length > 0 && (
+              <section className="space-y-3">
+                <div>
+                  <h2 className="text-[15px] font-semibold">Machines des agents embarqués</h2>
+                  <p className="text-[12.5px] text-muted-foreground">Le conteneur de chaque instance, tel qu'il se décrit à chaque battement de cœur. Il se pilote depuis l'onglet Agents embarqués.</p>
+                </div>
+                <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]">
+                  {(fleet.embedded ?? []).map((m) => (
+                    <EmbeddedMachineCard key={m.id} machine={m} fleet={fleet} onOpen={() => navigate(`${base}/embedded?a=${m.agent_id}`)} />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )
       ) : machines.length === 0 ? (
         <EmptyFleet onAdd={() => setCreating(true)} />
-      ) : view === "overview" ? (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]">
-          {machines.map((m) => <MachineCard key={m.id} machine={m} fleet={fleet} dashboardId={dashboardId} onOpen={(v) => open(v, m.id)} />)}
-        </div>
       ) : !selected ? null : view === "activite" ? (
         <MachineActivity machine={selected} fleet={fleet} dashboardId={dashboardId} base={base} />
       ) : view === "fichiers" ? (
@@ -279,6 +300,70 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
           {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowsClockwiseIcon className="h-3.5 w-3.5" />} Tester
         </Button>
       </div>
+    </article>
+  );
+}
+
+const EMBEDDED_HEALTH = {
+  online: HEALTH_META.online,
+  paused: HEALTH_META.paused,
+  offline: HEALTH_META.offline,
+  stopped: { label: "Arrêtée", dot: "bg-muted-foreground/50", text: "text-muted-foreground" },
+} as const;
+
+const CONNECTIVITY_LABEL = { connected: "connecté", intermittent: "intermittent", isolated: "isolé" } as const;
+
+/** Le conteneur d'une instance d'agent embarqué : mêmes jauges qu'une machine d'équipe, pilotage dans l'onglet de l'agent. */
+function EmbeddedMachineCard({ machine: m, fleet, onOpen }: { machine: EmbeddedMachine; fleet: Fleet; onOpen: () => void }) {
+  const health = EMBEDDED_HEALTH[embeddedHealth(m)];
+  const info = m.info ?? {};
+  const toolNames = m.tools.map((id) => fleet.catalog?.tools.find((t) => t.id === id)?.name ?? id);
+  return (
+    <article
+      role="button" tabIndex={0} onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }}
+      title="Ouvrir l'agent embarqué"
+      className="flex cursor-pointer flex-col rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+          <PackageIcon className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-semibold tracking-tight">{m.name}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
+            <span>Agent embarqué · {m.agent_name}</span>
+            {m.version != null && <span className="font-mono text-[11.5px]">v{m.version}</span>}
+          </div>
+        </div>
+        <span className={cn("flex shrink-0 items-center gap-1.5 text-[12px] font-medium", health.text)}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", health.dot)} /> {health.label}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-3">
+        <Meter label="CPU" value={info.load ? `${info.load[0]} / ${info.cpus ?? "?"}` : undefined} used={info.load?.[0]} total={info.cpus} />
+        <Meter label="Mémoire" used={info.mem ? info.mem.total_kb - info.mem.free_kb : undefined} total={info.mem?.total_kb} />
+        <Meter label="Disque" used={info.disk ? info.disk.total_kb - info.disk.free_kb : undefined} total={info.disk?.total_kb} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+        <span>{CONNECTIVITY_LABEL[m.connectivity] ?? m.connectivity}</span>
+        {info.mem && <span>{formatKb(info.mem.total_kb)} RAM</span>}
+        {info.uptime_s != null && <span>allumée depuis {formatAge(info.uptime_s)}</span>}
+        {m.last_seen_at && <span>vue {formatRelative(m.last_seen_at)}</span>}
+      </div>
+
+      {toolNames.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {toolNames.slice(0, 6).map((n) => <span key={n} className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-foreground/80">{n}</span>)}
+          {toolNames.length > 6 && <span className="px-1 text-[11px] text-muted-foreground">+{toolNames.length - 6}</span>}
+        </div>
+      )}
+
+      {!m.last_seen_at && (
+        <p className="mt-3 text-[12px] text-muted-foreground">Ne s'est pas encore décrite : elle le fera à son prochain battement de cœur.</p>
+      )}
     </article>
   );
 }

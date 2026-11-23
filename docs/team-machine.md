@@ -31,6 +31,12 @@ Les règles :
 
 Le superviseur 0.2.0 ajoute deux opérations d'administration : `machine.info` (version, hôte, charge, mémoire, disque, limites) et `activity` (processus et jobs des équipes demandées).
 
+## Les machines des agents embarqués
+
+La vue d'ensemble montre aussi, dans une section à part, **le conteneur de chaque instance d'agent embarqué** du service. À chaque battement de cœur (toutes les 15 s), le conteneur se décrit au même format qu'une machine d'équipe (`backend/src/embedded/machine-info.ts`) : processeurs et mémoire lus dans les limites de son cgroup (pas celles de l'hôte), disque de `/workspace`, charge, durée de fonctionnement, version du moteur, outils du catalogue. La fonction `machines` les joint à la liste (`embedded`), et la carte reprend les mêmes jauges, l'état (en ligne, en pause, injoignable au-delà d'une minute sans battement, arrêtée) et le mode de connexion.
+
+Ces machines ne se donnent pas à une équipe et n'ont ni Activité ni Fichiers : ce sont les machines de leur agent, qu'on pilote (pause, rechargement, arrêt) depuis l'onglet Agents embarqués, où mène un clic sur la carte. Une instance isolée n'a aucune liaison avec FounderOS : elle ne bat pas, donc elle n'apparaît pas dans le parc (son activité arrive par l'import de son journal).
+
 ## Composer une machine : un catalogue d'outils (0317, 0318)
 
 On part d'une **machine de base** (team-machine : Node, Python, shell, navigateur) et on **coche les outils** qu'on veut y mettre, pris dans un catalogue par catégorie : Développement, Data, IA et ML, Web et collecte, Ops et cloud, Documents, **Sécurité défensive** (DFIR, analyse mémoire, captures réseau, audit de code et de dépendances, journaux) et **Audit réseau (autorisé)**. Le catalogue (`backend/src/machines/catalog.ts`, une seule source servie au front par `machines`) liste des **outils** et des **presets** (sélections toutes faites : « Analyste data », « Réponse à incident »… qu'on ajuste ensuite). Un identifiant d'outil ou de preset ne change jamais de sens : on en ajoute, on n'en retire pas.

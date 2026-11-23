@@ -443,6 +443,30 @@ describe("agents embarqués : manifeste, archive, passerelle", { skip, timeout: 
     await platform.db.command("update public.embedded_agent_configs set tools = '{}' where agent_id = $1", [id.agent]);
   });
 
+  it("la machine d'une instance apparaît dans le parc, décrite par son conteneur", async () => {
+    const { machineInfo } = await import("./machine-info.ts");
+    const { embeddedMachines } = await import("../edge/machines/index.ts");
+    const os = await import("node:os");
+    await platform.db.command("update public.embedded_agent_configs set tools = '{defsec-logs}', connectivity = 'connected' where agent_id = $1", [id.agent]);
+    const info = await machineInfo({ workspaceDir: os.tmpdir(), version: "agent-runtime 1", tools: ["defsec-logs"], built: true });
+    const beat = await gw("/heartbeat", { instance_id: id.instance, status: "online", info });
+    assert.equal(beat.status, 200, JSON.stringify(beat.json));
+
+    const fleet = await embeddedMachines(admin, { id: id.board });
+    const mine = fleet.find((m) => m.id === id.instance);
+    assert.ok(mine, "l'instance est dans le parc du service");
+    assert.equal(mine!.agent_name, "Agent ERP Lyon");
+    assert.equal(mine!.status, "online");
+    assert.equal(mine!.connectivity, "connected");
+    assert.deepEqual(mine!.tools, ["defsec-logs"]);
+    const shown = mine!.info as { cpus?: number; mem?: { total_kb: number }; version?: string };
+    assert.ok((shown.cpus ?? 0) > 0 && (shown.mem?.total_kb ?? 0) > 0, "mêmes jauges qu'une machine d'équipe");
+    assert.equal(shown.version, "agent-runtime 1");
+    // Un autre service ne voit pas cette machine.
+    assert.deepEqual(await embeddedMachines(admin, { id: "00000000-0000-0000-0000-000000000000" }), []);
+    await platform.db.command("update public.embedded_agent_configs set tools = '{}' where agent_id = $1", [id.agent]);
+  });
+
   it("une clé révoquée ne sert plus", async () => {
     await platform.db.command("update public.embedded_agent_api_keys set revoked_at = now() where id = $1", [id.key]);
     assert.equal((await gw("/manifest")).status, 401);

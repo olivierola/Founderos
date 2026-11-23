@@ -106,6 +106,33 @@ export interface Fleet {
   /** La création à la demande : possible ici, sinon pourquoi. */
   provisioner?: { available: boolean; reason?: string };
   catalog?: MachineCatalog;
+  /** Les conteneurs des agents embarqués du service (une instance = une machine). */
+  embedded?: EmbeddedMachine[];
+}
+
+/** Le conteneur d'une instance d'agent embarqué, tel qu'il se décrit à chaque battement de cœur. */
+export interface EmbeddedMachine {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  name: string;
+  status: "online" | "paused" | "stopped";
+  container_ref: string | null;
+  manifest_sha: string | null;
+  version: number | null;
+  info: MachineInfoSnapshot & { tools?: string[]; rss_mb?: number; node?: string; built?: boolean };
+  last_seen_at: string | null;
+  created_at: string;
+  connectivity: "connected" | "intermittent" | "isolated";
+  tools: string[];
+}
+
+/** L'état d'une machine d'agent embarqué : un battement de cœur il y a moins d'une minute = en ligne. */
+export function embeddedHealth(m: Pick<EmbeddedMachine, "status" | "last_seen_at">): "online" | "paused" | "offline" | "stopped" {
+  if (m.status === "stopped") return "stopped";
+  const fresh = !!m.last_seen_at && Date.now() - Date.parse(m.last_seen_at) < 60_000;
+  if (!fresh) return "offline";
+  return m.status === "paused" ? "paused" : "online";
 }
 
 export interface Probe { reachable: boolean; error?: string; info?: MachineInfoSnapshot; latency_ms?: number; seen_at?: string }
@@ -169,7 +196,9 @@ export function useFleet(dashboardId: string) {
     queryFn: () => callEdge<Fleet>("machines", { action: "list", dashboard_id: dashboardId }),
     staleTime: 15_000,
     // Une machine en création : on suit son avancement jusqu'à ce qu'elle réponde.
-    refetchInterval: (q) => (q.state.data?.machines.some((m) => m.provision_state === "creating") ? 3000 : false),
+    // Une machine en création : vite. Des machines d'agents embarqués : au rythme de leurs battements de cœur.
+    refetchInterval: (q) => (q.state.data?.machines.some((m) => m.provision_state === "creating") ? 3000
+      : (q.state.data?.embedded?.length ? 15_000 : false)),
     retry: false,
   });
 }

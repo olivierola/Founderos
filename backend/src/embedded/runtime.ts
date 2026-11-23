@@ -39,6 +39,7 @@ process.env.PLATFORM = "supabase";
 
 const { FounderOS, FounderOSError } = await import("./sdk.ts");
 const { fromJsonl, localIndex } = await import("./knowledge.ts");
+const { machineInfo } = await import("./machine-info.ts");
 const { createHarness } = await import("../harness/host.ts");
 const { agentPlugin, newAgentState } = await import("../harness/agent-plugin.ts");
 const { modelForRoute } = await import("../harness/agent-profile.ts");
@@ -72,11 +73,18 @@ interface Manifest {
   steps?: number;
   routes: Record<string, string>;
   llm: { route: "founderos" | "direct"; base_url: string | null; model: string | null; openrouter: boolean };
-  machine: { shell: boolean };
+  machine: { shell: boolean; catalog_tools?: string[] };
   skills: Kit["skills"];
   connectivity?: "connected" | "intermittent" | "isolated";
   knowledge?: { snapshot: boolean };
+  runtime_version?: string;
 }
+
+/** Ce que l'onglet Machines montre de ce conteneur (CPU, mémoire, disque…), au format d'une machine d'équipe. */
+const describeMachine = (m: Partial<Manifest> | null) => machineInfo({
+  workspaceDir, version: m?.runtime_version ? `agent-runtime ${m.runtime_version}` : undefined,
+  tools: m?.machine?.catalog_tools, built: !!built,
+});
 
 /** FounderOS ne répond pas (réseau, passerelle) : à distinguer d'un refus, qui ne se rejoue pas. */
 const unreachable = (e: unknown) => !(e instanceof FounderOSError) || e.status >= 502;
@@ -89,7 +97,7 @@ for (let wait = 5_000; !hello; wait = Math.min(wait * 2, 120_000)) {
   try {
     hello = await fos.hello({
       name: instanceName, version: Number(built?.version) || null, manifest_sha: (built?.sha as string | undefined) ?? null,
-      info: { node: process.version, platform: `${os.platform()} ${os.arch()}`, built: !!built },
+      info: await describeMachine(built as Partial<Manifest> | null) as unknown as Record<string, unknown>,
     });
   } catch (e) {
     if (!unreachable(e)) throw e;
@@ -371,7 +379,7 @@ async function handle(cmd: { id: number; command: string; payload: Record<string
 async function beat() {
   await fos.heartbeat({
     instance_id: instanceId, status: paused ? "paused" : "online", manifest_sha: manifestSha,
-    info: { uptime_s: Math.round(process.uptime()), rss_mb: Math.round(process.memoryUsage().rss / 1e6), load: os.loadavg()[0] },
+    info: await describeMachine(manifest).then((i) => i as unknown as Record<string, unknown>, () => undefined),
   }).catch((e) => log(`battement de cœur : ${e instanceof Error ? e.message : String(e)}`));
 }
 
